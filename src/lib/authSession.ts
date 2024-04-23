@@ -1,7 +1,8 @@
 import { ROUTES } from "@Jetzy/configs/routes"
+import { AuthorizedOptions } from "@Jetzy/types"
 import { getSession } from "next-auth/react"
 
-export const authorizedOnly = async (context: any) => {
+export const authorizedOnly = async (context: any, options?: AuthorizedOptions) => {
   const { resolvedUrl } = context
   const _session = await getSession(context)
 
@@ -15,24 +16,15 @@ export const authorizedOnly = async (context: any) => {
     }
 
   try {
-    // fetch site configs data
-    const _data = null
-    // Fetch dashboard analysis data
-    const _analysis = null
-
     return {
       props: {
         session: _session,
-        configs: _data,
-        analysis: _analysis,
       },
     }
   } catch (error) {
     return {
       props: {
         session: _session,
-        configs: null,
-        analysis: null,
       },
     }
   }

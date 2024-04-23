@@ -3,10 +3,12 @@ import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@Jetzy/models/eventsModal"
-import { getSession } from "next-auth/react"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await getSession({ req })
+  const session = await getServerSession(req, res, authOptions)
+
   try {
     // make sure user is logged-in before creating events
     if (!session) return sendResponse(res, null, "You need to be logged in to create an event.", false, ResCode.UNAUTHORIZED)
@@ -17,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (await Events.findOne({ name: name?.toLowerCase() }).exec()) return sendResponse(res, null, "Event already exist.", false, ResCode.BAD_REQUEST)
 
     //  create event
-    const event = await Events.create({ slug: generateRandomId(8, false), name, datetime, location, interest: interest?.toString()?.split(", "), privacy, isPaid, amount, desc, image })
+    const event = await Events.create({ slug: generateRandomId(8, false), name, datetime: new Date(datetime)?.toISOString(), location, interest: interest?.toString()?.split(", "), privacy, isPaid, amount, desc, image })
     if (!event) return sendResponse(res, null, "Failed to create event.", false, ResCode.INTERNAL_SERVER_ERROR)
 
     return sendResponse(res, event, "Event created successfully!", true, ResCode.CREATED)

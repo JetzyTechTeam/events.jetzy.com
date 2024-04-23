@@ -3,10 +3,22 @@ import { HYDRATE } from "next-redux-wrapper"
 import { CreateEventFormData, EventInterface, EventSliceState, RequestParams, UserInterface } from "@Jetzy/types"
 import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 import { AppState } from "../stores"
-import { CreateEventApis } from "@Jetzy/services/events/eventsapis"
+import { CreateEventApis, FetchEventApis, ListEventsApis } from "@Jetzy/services/events/eventsapis"
 
-export const CreateEventThunk = createAsyncThunk("event/createEvent", async (params: RequestParams<CreateEventFormData>) => {
-  return await CreateEventApis(params)
+export const CreateEventThunk = createAsyncThunk("event/createEvent", async (params: RequestParams<CreateEventFormData>, thunkApi) => {
+  const res = await CreateEventApis(params)
+  if (res?.status) {
+    thunkApi.dispatch(ListEventsThunk())
+  }
+  return res
+})
+
+export const ListEventsThunk = createAsyncThunk("event/listEvents", async () => {
+  return await ListEventsApis()
+})
+
+export const FetchEventThunk = createAsyncThunk("event/fetchEvent", async (params: RequestParams) => {
+  return await FetchEventApis(params)
 })
 
 // Initial state
@@ -42,13 +54,47 @@ export const eventSlice = createSlice({
       state.data = action.payload?.data
 
       if (action?.payload?.status) {
-        Success("Event created successfully.")
+        Success("Event created", "Event created successfully.")
       }
     })
     builder.addCase(CreateEventThunk.rejected, (state, action) => {
       state.isLoading = false
 
       ServerErrors("Failed to create event.", action?.error)
+    })
+
+    // --------------------- [Fetch Events ] ---------------------
+
+    builder.addCase(ListEventsThunk.pending, (state) => {
+      state.isFetching = true
+    })
+
+    builder.addCase(ListEventsThunk.fulfilled, (state, action) => {
+      state.isFetching = false
+      state.dataList = action.payload?.data
+    })
+
+    builder.addCase(ListEventsThunk.rejected, (state, action) => {
+      state.isFetching = false
+
+      //   ServerErrors("Failed to fetch events.", action?.error)
+    })
+
+    // --------------------- [Fetch Event ] ---------------------
+
+    builder.addCase(FetchEventThunk.pending, (state) => {
+      state.isFetching = true
+    })
+
+    builder.addCase(FetchEventThunk.fulfilled, (state, action) => {
+      state.isFetching = false
+      state.data = action.payload?.data
+    })
+
+    builder.addCase(FetchEventThunk.rejected, (state, action) => {
+      state.isFetching = false
+
+      ServerErrors("Failed to fetch event.", action?.error)
     })
   },
 })
