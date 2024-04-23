@@ -1,0 +1,14 @@
+@mixin scrollStyle {
+  &::-webkit-scrollbar {
+    width: 2px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #eceff0; /* color of the tracking area */
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: gray; /* color of the scroll thumb */
+    border-radius: 20px !important; /* roundness of the scroll thumb */
+    border: 2px solid gray; /* creates padding around scroll thumb */
+  }
+}

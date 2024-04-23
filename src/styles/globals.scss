@@ -1,0 +1,36 @@
+@import url("https://fonts.cdnfonts.com/css/montserrat");
+
+@import "mixins.scss";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+html,
+body {
+  scroll-behavior: smooth !important;
+  font-family: "Montserrat", sans-serif !important;
+  @include scrollStyle;
+
+  overflow-x: hidden !important;
+}
+
+.jb_auth_container {
+  @include scrollStyle;
+}
+
+.ashboard-main-wrapper {
+  @include scrollStyle;
+}
+
+.horizontal_scroll_container {
+  @include scrollStyle;
+  overflow-x: hidden !important;
+  scroll-behavior: smooth !important;
+}
