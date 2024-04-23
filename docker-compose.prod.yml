@@ -1,12 +1,5 @@
 version: "3.8"
 services:
-  # NGINX Service
-  nginx:
-    image: nginx:stable-alpine
-    ports:
-      - "3000:80"
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
   # Api Gateway Service
   app-service:
     image: obitechinvent/jetzy-events:latest
