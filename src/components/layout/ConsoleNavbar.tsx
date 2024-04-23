@@ -18,6 +18,7 @@ const navigation = [
 ]
 
 export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
+  // Logout user from system
   const logout = () => signOut()
   return (
     <Disclosure as="nav" className="bg-gray-800">
