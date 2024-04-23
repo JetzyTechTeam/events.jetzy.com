@@ -3,9 +3,14 @@ import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@Jetzy/models/eventsModal"
+import { getSession } from "next-auth/react"
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse<Data>) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const session = await getSession({ req })
   try {
+    // make sure user is logged-in before creating events
+    if (!session) return sendResponse(res, null, "You need to be logged in to create an event.", false, ResCode.UNAUTHORIZED)
+
     // get the request body
     const { name, datetime, location, interest, privacy, isPaid, amount, desc, image } = req?.body
     // check if the event already exist in the database
