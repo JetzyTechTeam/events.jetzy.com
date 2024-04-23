@@ -2,6 +2,11 @@ import mongoose, { Schema } from "mongoose"
 // Define the  schema
 const eventsSchema = new Schema(
   {
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+    },
     name: {
       type: String,
       required: true,
