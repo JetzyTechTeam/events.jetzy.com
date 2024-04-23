@@ -6,6 +6,7 @@ import { ConsoleNavbarProps, Pages } from "@Jetzy/types"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Image from "next/image"
 import { ROUTES } from "@Jetzy/configs/routes"
+import { signOut } from "next-auth/react"
 const user = {
   name: "Tom Cook",
   email: "tom@example.com",
@@ -15,13 +16,9 @@ const navigation = [
   { name: Pages.Dasshboard, href: ROUTES.dashboard.index },
   { name: Pages.Events, href: ROUTES.dashboard.events.create },
 ]
-const userNavigation = [
-  { name: "Your Profile", href: "#" },
-  { name: "Settings", href: "#" },
-  { name: "Sign out", href: "#" },
-]
 
 export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
+  const logout = () => signOut()
   return (
     <Disclosure as="nav" className="bg-gray-800">
       {({ open }) => (
@@ -61,15 +58,13 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
                     </div>
                     <Transition as={Fragment} enter="transition ease-out duration-100" enterFrom="transform opacity-0 scale-95" enterTo="transform opacity-100 scale-100" leave="transition ease-in duration-75" leaveFrom="transform opacity-100 scale-100" leaveTo="transform opacity-0 scale-95">
                       <Menu.Items className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-                        {userNavigation.map((item) => (
-                          <Menu.Item key={item.name}>
-                            {({ active }) => (
-                              <a href={item.href} className={classNames(active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}>
-                                {item.name}
-                              </a>
-                            )}
-                          </Menu.Item>
-                        ))}
+                        <Menu.Item>
+                          {({ active }) => (
+                            <a onClick={logout} className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}>
+                              Logout
+                            </a>
+                          )}
+                        </Menu.Item>
                       </Menu.Items>
                     </Transition>
                   </Menu>
@@ -110,11 +105,9 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
                 </button>
               </div>
               <div className="mt-3 space-y-1 px-2">
-                {userNavigation.map((item) => (
-                  <Disclosure.Button key={item.name} as="a" href={item.href} className="block rounded-md px-3 py-2 text-base font-medium text-gray-400 hover:bg-gray-700 hover:text-white">
-                    {item.name}
-                  </Disclosure.Button>
-                ))}
+                <Disclosure.Button as="button" onClick={logout} className="block rounded-md px-3 py-2 text-base font-medium text-gray-400 hover:bg-gray-700 hover:text-white">
+                  Logout
+                </Disclosure.Button>
               </div>
             </div>
           </Disclosure.Panel>

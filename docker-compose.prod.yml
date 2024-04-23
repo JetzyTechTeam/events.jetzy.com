@@ -1,0 +1,51 @@
+version: "3.8"
+services:
+  # NGINX Service
+  nginx:
+    image: nginx:stable-alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+  # Api Gateway Service
+  app-service:
+    image: obitechinvent/jetzy-events:latest
+    build:
+      context: ./
+      dockerfile: prod.Dockerfile
+
+    environment:
+      # Service port
+      - PORT=3000
+      # Node environment
+      - NODE_ENV=production
+      # JWT secret key
+      - JWT_SECRET=${JWT_SECRET}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      #  Api base url
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+      # Auth url
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      # Public url
+      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL}
+      # Stripe keys
+      - NEXT_PUBLIC_STRIPE_PUB_KEY=${NEXT_PUBLIC_STRIPE_PUB_KEY}
+      - NEXT_PUBLIC_STRIPE_SEC_KEY=${NEXT_PUBLIC_STRIPE_SEC_KEY}
+      # MongoDB database connection url
+      - NEXT_PUBLIC_DB_URL=${NEXT_PUBLIC_DB_URL}
+
+      # cloudinary keys
+      - NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=${NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}
+      - NEXT_PUBLIC_CLOUDINARY_API_KEY=${NEXT_PUBLIC_CLOUDINARY_API_KEY}
+      - NEXT_PUBLIC_CLOUDINARY_API_SECRET=${NEXT_PUBLIC_CLOUDINARY_API_SECRET}
+      - NEXT_PUBLIC_CLOUDINARY_URL=${NEXT_PUBLIC_CLOUDINARY_URL}
+
+      - EDGE_STORE_ACCESS_KEY=${EDGE_STORE_ACCESS_KEY}
+      - EDGE_STORE_SECRET_KEY=${EDGE_STORE_SECRET_KEY}
+    command: npm start
+
+  # Database Service
+  db-service:
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
