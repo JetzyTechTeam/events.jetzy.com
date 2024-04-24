@@ -13,4 +13,9 @@ export const ROUTES = {
       create: "/console/events",
     },
   },
+
+  // ----------------- Public Routes -----------------
+  events: {
+    fetch: "/events/:slug",
+  },
 }

@@ -1,6 +1,7 @@
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import CardGroup from "@Jetzy/components/misc/CardGroup"
 import CardGroupLoader from "@Jetzy/components/placeholders/CardGroupLoader"
+import { EventListingLoader } from "@Jetzy/components/placeholders/loader"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { authorizedOnly } from "@Jetzy/lib/authSession"
 import { ListEventsThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
@@ -33,7 +34,7 @@ export default function ConsoleDashboard() {
       {!dataList?.length && <p className="text-white">No events found.</p>}
 
       {/* Display the data listing  */}
-      {isFetching ? <CardGroupLoader /> : <CardGroup items={dataList as EventInterface[]} />}
+      {isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
     </ConsoleLayout>
   )
 }

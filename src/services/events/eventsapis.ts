@@ -1,4 +1,4 @@
-import { GET, POST } from "@Jetzy/configs/api"
+import { DROP, GET, POST } from "@Jetzy/configs/api"
 import { CreateEventFormData, EventInterface, RequestParams, ServerResponse } from "@Jetzy/types"
 import { eventEndPoints } from "./eventsendpoints"
 
@@ -12,4 +12,8 @@ export const ListEventsApis = async (): Promise<ServerResponse<EventInterface[],
 
 export const FetchEventApis = async (params: RequestParams): Promise<ServerResponse<EventInterface, any>> => {
   return await GET(eventEndPoints.fetch.replace(":slug", params?.id as string))
+}
+
+export const DeleteEventApis = async (params: RequestParams): Promise<ServerResponse<EventInterface, any>> => {
+  return await DROP(eventEndPoints.delete.replace(":slug", params?.id as string))
 }

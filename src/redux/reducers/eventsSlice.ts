@@ -3,7 +3,7 @@ import { HYDRATE } from "next-redux-wrapper"
 import { CreateEventFormData, EventInterface, EventSliceState, RequestParams, UserInterface } from "@Jetzy/types"
 import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 import { AppState } from "../stores"
-import { CreateEventApis, FetchEventApis, ListEventsApis } from "@Jetzy/services/events/eventsapis"
+import { CreateEventApis, DeleteEventApis, FetchEventApis, ListEventsApis } from "@Jetzy/services/events/eventsapis"
 
 export const CreateEventThunk = createAsyncThunk("event/createEvent", async (params: RequestParams<CreateEventFormData>, thunkApi) => {
   const res = await CreateEventApis(params)
@@ -19,6 +19,13 @@ export const ListEventsThunk = createAsyncThunk("event/listEvents", async () => 
 
 export const FetchEventThunk = createAsyncThunk("event/fetchEvent", async (params: RequestParams) => {
   return await FetchEventApis(params)
+})
+
+export const DeleteEventThunk = createAsyncThunk("event/deleteEvent", async (params: RequestParams, thunkApi) => {
+  const res = await DeleteEventApis(params)
+  if (res?.status) thunkApi.dispatch(ListEventsThunk())
+
+  return res
 })
 
 // Initial state
@@ -95,6 +102,27 @@ export const eventSlice = createSlice({
       state.isFetching = false
 
       ServerErrors("Failed to fetch event.", action?.error)
+    })
+
+    // --------------------- [Delete Event ] ---------------------
+
+    builder.addCase(DeleteEventThunk.pending, (state) => {
+      state.isLoading = true
+    })
+
+    builder.addCase(DeleteEventThunk.fulfilled, (state, action) => {
+      state.isLoading = false
+      state.data = action.payload?.data
+
+      if (action?.payload?.status) {
+        Success("Event deleted", "Event deleted successfully.")
+      }
+    })
+
+    builder.addCase(DeleteEventThunk.rejected, (state, action) => {
+      state.isLoading = false
+
+      ServerErrors("Failed to delete event.", action?.error)
     })
   },
 })

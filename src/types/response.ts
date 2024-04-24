@@ -23,6 +23,7 @@ export interface EventInterface {
   amount: number
   image: string
   _id: string
+  slug: string
   _v: number
   createdAt: string
   updatedAt: string

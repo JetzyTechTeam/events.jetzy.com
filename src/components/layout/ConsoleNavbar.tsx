@@ -7,6 +7,7 @@ import Logo from "@Jetzy/assets/logo/logo.png"
 import Image from "next/image"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { signOut } from "next-auth/react"
+import Link from "next/link"
 const user = {
   name: "Tom Cook",
   email: "tom@example.com",
@@ -33,9 +34,9 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
                 <div className="hidden md:block">
                   <div className="ml-10 flex items-baseline space-x-4">
                     {navigation.map((item) => (
-                      <a key={item.name} href={item.href} className={classNames(item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white", "rounded-md px-3 py-2 text-sm font-medium")} aria-current={item.name === page ? "page" : undefined}>
+                      <Link key={item.name} href={item.href} className={classNames(item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white", "rounded-md px-3 py-2 text-sm font-medium")} aria-current={item.name === page ? "page" : undefined}>
                         {item.name}
-                      </a>
+                      </Link>
                     ))}
                   </div>
                 </div>

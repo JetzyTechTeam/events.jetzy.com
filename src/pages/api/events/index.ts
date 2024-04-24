@@ -7,7 +7,7 @@ import { Events } from "@Jetzy/models/eventsModal"
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     //    get all the events from the database
-    const events = await Events.find({}).exec()
+    const events = await Events.find({}).sort({ createdAt: -1 }).exec()
 
     return sendResponse(res, events, "Events retrieved successfully!", true, ResCode.OK)
   } catch (error: any) {
