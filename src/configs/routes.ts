@@ -11,6 +11,7 @@ export const ROUTES = {
     index: "/console",
     events: {
       create: "/console/events",
+      edit: "/console/events/:slug/edit",
     },
   },
 

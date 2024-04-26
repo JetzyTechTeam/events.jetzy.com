@@ -1,7 +1,10 @@
+import { ROUTES } from "@Jetzy/configs/routes"
 import { DeleteEventThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { EventInterface } from "@Jetzy/types"
+import { ArrowTopRightOnSquareIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outline"
 import Image from "next/image"
+import Link from "next/link"
 import React from "react"
 
 interface CardItem {
@@ -33,10 +36,21 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
             </p>
             <p className="mt-2 text-sm text-gray-600 truncate text-ellipsis overflow-hidden mb-10">{item?.desc}</p>
           </div>
-          <div className=" absolute top-auto bottom-0 left-0 right-0">
-            <button onClick={() => handleDelete(item?.slug)} disabled={isLoading} className="p-3 bg-app hover:bg-red-800 text-white w-full ">
-              {isLoading ? <em>Deleting...</em> : "Delete Event"}
+          <div className="absolute top-auto bottom-0 left-0 right-0 flex items-center justify-center divide-x">
+            {/* Delete event button */}
+            <button onClick={() => handleDelete(item?.slug)} disabled={isLoading} className="p-3 bg-app hover:bg-red-800 text-white w-full flex gap-1 items-center ">
+              <TrashIcon className="h-5 w-5" /> {isLoading ? <em>Deleting...</em> : "Delete"}
             </button>
+
+            {/* Edit event button  */}
+            <Link href={ROUTES.dashboard.events.edit?.replace(":slug", item?.slug)} className="p-3 bg-app hover:bg-purple-800 text-white w-full flex gap-1 items-center">
+              <PencilSquareIcon className="h-5 w-5" /> Edit
+            </Link>
+
+            {/* preview event button */}
+            <Link href={ROUTES.events.fetch?.replace(":slug", item?.slug)} className="p-3 bg-app hover:bg-blue-800 text-white w-full flex gap-1 items-center" target="_blank">
+              <ArrowTopRightOnSquareIcon className="h-5 w-5" /> Preview
+            </Link>
           </div>
         </div>
       ))}

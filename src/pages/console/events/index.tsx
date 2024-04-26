@@ -65,7 +65,7 @@ export default function EventsPage() {
 
   return (
     <ConsoleLayout page={Pages.Events}>
-      <p className="text-white text-center">Create New Event</p>
+      <h1 className="text-white text-center text-2xl font-bold capitalized">Create New Event</h1>
       <section className="flex items-center justify-center p-3">
         <Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation}>
           {({ values, handleChange }) => (

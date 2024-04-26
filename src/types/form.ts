@@ -18,9 +18,9 @@ export type CreateEventFormData = {
   datetime: string
   location: string
   interest: string
-  privacy: EventPrivacy
+  privacy: EventPrivacy | string
   isPaid: boolean
-  amount: string
+  amount: number | string
   desc: string
   externalUrl?: string
   image: string

@@ -4,6 +4,7 @@ import { CreateEventFormData, EventInterface, EventSliceState, RequestParams, Us
 import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 import { AppState } from "../stores"
 import { CreateEventApis, DeleteEventApis, FetchEventApis, ListEventsApis } from "@Jetzy/services/events/eventsapis"
+import { UpdateEventApis } from "../../services/events/eventsapis"
 
 export const CreateEventThunk = createAsyncThunk("event/createEvent", async (params: RequestParams<CreateEventFormData>, thunkApi) => {
   const res = await CreateEventApis(params)
@@ -19,6 +20,10 @@ export const ListEventsThunk = createAsyncThunk("event/listEvents", async () => 
 
 export const FetchEventThunk = createAsyncThunk("event/fetchEvent", async (params: RequestParams) => {
   return await FetchEventApis(params)
+})
+
+export const UpdateEventThunk = createAsyncThunk("event/updateEvent", async (params: RequestParams<CreateEventFormData>) => {
+  return await UpdateEventApis(params)
 })
 
 export const DeleteEventThunk = createAsyncThunk("event/deleteEvent", async (params: RequestParams, thunkApi) => {
@@ -102,6 +107,27 @@ export const eventSlice = createSlice({
       state.isFetching = false
 
       ServerErrors("Failed to fetch event.", action?.error)
+    })
+
+    // --------------------- [Update Event ] ---------------------
+
+    builder.addCase(UpdateEventThunk.pending, (state) => {
+      state.isLoading = true
+    })
+
+    builder.addCase(UpdateEventThunk.fulfilled, (state, action) => {
+      state.isLoading = false
+      state.data = action.payload?.data
+
+      if (action?.payload?.status) {
+        Success("Event updated", "Event updated successfully.")
+      }
+    })
+
+    builder.addCase(UpdateEventThunk.rejected, (state, action) => {
+      state.isLoading = false
+
+      ServerErrors("Failed to update event.", action?.error)
     })
 
     // --------------------- [Delete Event ] ---------------------

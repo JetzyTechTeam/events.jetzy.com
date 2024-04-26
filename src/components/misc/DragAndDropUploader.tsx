@@ -4,11 +4,12 @@ import ProgressBar from "./ProgressBar"
 interface FileUploadProps {
   onUpload: (file: File) => void // Callback function to handle uploaded file
   progress?: number // Progress of file upload (0-100)
+  defaultImage?: string | null // Default image to show when no image is uploaded
 }
 
-const DragAndDropFileUpload: React.FC<FileUploadProps> = ({ onUpload, progress = 0 }) => {
+const DragAndDropFileUpload: React.FC<FileUploadProps> = ({ onUpload, defaultImage = null, progress = 0 }) => {
   const [dragOver, setDragOver] = useState(false)
-  const [previewImage, setPreviewImage] = useState<null | string>(null)
+  const [previewImage, setPreviewImage] = useState<null | string>(defaultImage)
 
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -74,7 +75,7 @@ const DragAndDropFileUpload: React.FC<FileUploadProps> = ({ onUpload, progress =
   }
 
   return (
-    <div className={`drag-and-drop-container relative rounded-lg border border-gray-300 p-4 cursor-pointer ${dragOver ? "bg-gray-100 hover:bg-gray-200" : "bg-white hover:bg-gray-50"}`} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+    <div onClick={toggleFileSelect} className={`drag-and-drop-container relative rounded-lg border border-gray-300 p-4 h-52 cursor-pointer ${dragOver ? "bg-gray-100 hover:bg-gray-200" : "bg-white hover:bg-gray-50"}`} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleSelectFile} style={{ display: "none" }} />
       {previewImage ? (
         <>
@@ -87,7 +88,7 @@ const DragAndDropFileUpload: React.FC<FileUploadProps> = ({ onUpload, progress =
         <>
           <p className="text-center text-gray-500 font-medium">Drag & Drop your image file</p>
           <p className="text-center text-gray-400 text-sm mt-2">or</p>
-          <button onClick={toggleFileSelect} type="button" className="text-center w-full text-app font-semibold hover:text-blue-600 focus:outline-none mt-2">
+          <button type="button" className="text-center w-full text-app font-semibold hover:text-blue-600 focus:outline-none mt-2">
             Click to select
           </button>
         </>

@@ -151,3 +151,63 @@ export const waitUntil = (timeout: number): Promise<void> => {
 export const classNames = (...classes) => {
   return classes.filter(Boolean).join(" ")
 }
+
+export function formatDate(dateString: string): string {
+  const date = new Date(dateString)
+  const options: Intl.DateTimeFormatOptions = {
+    weekday: "long",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: true,
+  }
+
+  const formatter = new Intl.DateTimeFormat("en-US", options)
+  return formatter.format(date)
+}
+
+export function parseDateForSelection(htmlDateString: string): string | null {
+  // Handle empty or invalid input
+  if (!htmlDateString) {
+    return null
+  }
+
+  // Regular expression for mm/dd/yyyy format (optional time)
+  const regex = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s([0-1][0-9]|2[0-3]):([0-5][0-9]))?$/
+  const match = regex.exec(htmlDateString)
+
+  // Check if parsing was successful
+  if (!match) {
+    console.error("Invalid date format (mm/dd/yyyy [--:--])")
+    return null
+  }
+
+  // Extract date components
+  const month = parseInt(match[1], 10) - 1 // Adjust for zero-based month indexing
+  const day = parseInt(match[2], 10)
+  const year = parseInt(match[3], 10)
+
+  // Extract time components (if provided)
+  const hours = match[4] ? parseInt(match[4], 10) : 0
+  const minutes = match[5] ? parseInt(match[5], 10) : 0
+
+  // Create a Date object
+  const dateObj = new Date(year, month, day, hours, minutes)
+
+  // Ensure the date is valid
+  if (isNaN(dateObj.getTime())) {
+    console.error("Invalid date")
+    return null
+  }
+
+  // Format the date object for selection (including time if provided)
+  let formattedDate = dateObj.toLocaleDateString("en-US") // Adjust locale if needed
+
+  if (hours && minutes) {
+    formattedDate += ` ${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`
+  }
+
+  return formattedDate
+}
