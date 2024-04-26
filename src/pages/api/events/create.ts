@@ -14,12 +14,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!session) return sendResponse(res, null, "You need to be logged in to create an event.", false, ResCode.UNAUTHORIZED)
 
     // get the request body
-    const { name, datetime, location, interest, privacy, isPaid, amount, desc, image } = req?.body
+    const { name, datetime, location, interest, privacy, isPaid, amount, desc, externalUrl, image } = req?.body
     // check if the event already exist in the database
     if (await Events.findOne({ name: name?.toLowerCase() }).exec()) return sendResponse(res, null, "Event already exist.", false, ResCode.BAD_REQUEST)
 
     //  create event
-    const event = await Events.create({ slug: generateRandomId(8, false), name, datetime: new Date(datetime)?.toISOString(), location, interest: interest?.toString()?.split(", "), privacy, isPaid, amount, desc, image })
+    const event = await Events.create({ slug: generateRandomId(8, false), name, datetime: new Date(datetime)?.toISOString(), location, interest: interest?.toString()?.split(", "), privacy, isPaid, amount, desc, externalUrl, image })
     if (!event) return sendResponse(res, null, "Failed to create event.", false, ResCode.INTERNAL_SERVER_ERROR)
 
     return sendResponse(res, event, "Event created successfully!", true, ResCode.CREATED)

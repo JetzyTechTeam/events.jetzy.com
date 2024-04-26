@@ -32,6 +32,7 @@ export default function EventsPage() {
     isPaid: false,
     amount: "0",
     image: "",
+    externalUrl: "",
   }
 
   const setIsPaid = (value: boolean = false) => {
@@ -56,10 +57,6 @@ export default function EventsPage() {
         updateProgressBar(progress)
       },
     })
-
-    console.log("====================================")
-    console.log(res)
-    console.log("====================================")
 
     if (formikRef?.current) {
       formikRef.current.setFieldValue("image", res?.url)
@@ -106,6 +103,16 @@ export default function EventsPage() {
                   <div className="mt-2">
                     <Field id="eventLocation" name="location" value={values?.location} onChange={handleChange} type="text" autoComplete="datetime" className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3" />
                     <ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="eventLink" className="block text-sm font-semibold leading-6 text-gray-900">
+                    Event External Link (optional)
+                  </label>
+                  <div className="mt-2">
+                    <Field id="eventLink" name="externalUrl" value={values?.externalUrl} onChange={handleChange} type="url" className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3" />
+                    <ErrorMessage name="externalUrl" component="span" className="text-red-500 block mt-1" />
                   </div>
                 </div>
 

@@ -22,6 +22,7 @@ export interface EventInterface {
   isPaid: boolean
   amount: number
   image: string
+  externalUrl: string
   _id: string
   slug: string
   _v: number

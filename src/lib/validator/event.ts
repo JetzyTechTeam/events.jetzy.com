@@ -9,5 +9,6 @@ export const eventValidation = yup.object().shape({
   privacy: yup.string().required("Please select the event privacy."),
   isPaid: yup.boolean().nullable(),
   amount: yup.number().nullable("Event amount is required."),
+  externalUrl: yup.string().nullable("Event external url is optional."),
   image: yup.string().required("Event image is required."),
 })

@@ -50,6 +50,10 @@ const eventsSchema = new Schema(
       type: String,
       required: true,
     },
+    externalUrl: {
+      type: String,
+      required: false,
+    },
     image: {
       type: String,
       required: true,

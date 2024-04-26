@@ -22,5 +22,6 @@ export type CreateEventFormData = {
   isPaid: boolean
   amount: string
   desc: string
+  externalUrl?: string
   image: string
 }
