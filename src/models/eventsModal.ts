@@ -13,7 +13,7 @@ const eventsSchema = new Schema(
     },
 
     datetime: {
-      type: Date,
+      type: String,
       required: true,
     },
     location: {

@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!event) return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
 
     // Update event
-    const updatedEvent = await Events.findByIdAndUpdate(event?._id, { name, datetime: new Date(datetime)?.toISOString(), location, interest: interest?.toString()?.split(", "), privacy, isPaid, amount, desc, externalUrl, image }, { new: true }).exec()
+    const updatedEvent = await Events.findByIdAndUpdate(event?._id, { name, datetime: datetime, location, interest: interest?.toString()?.split(", "), privacy, isPaid, amount, desc, externalUrl, image }, { new: true }).exec()
     if (!updatedEvent) return sendResponse(res, null, "Failed to update event.", false, ResCode.INTERNAL_SERVER_ERROR)
 
     return sendResponse(res, updatedEvent, "Event updated successfully!", true, ResCode.OK)

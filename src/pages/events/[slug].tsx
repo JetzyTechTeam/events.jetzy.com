@@ -47,7 +47,7 @@ export default function EventsDetailsPage() {
               {data && <h1 className="text-3xl font-bold">{capitalizeEachWord(data?.name as string)}</h1>}
               <div className="grid xs:grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div className="">
-                  <p className="text-lg font-medium">{data && formatDate(data?.datetime as string)}</p>
+                  <p className="text-lg font-medium">{data && data?.datetime}</p>
                 </div>
 
                 <div className="flex gap-4 xs:flex-col md:flex-row items-center justify-center">

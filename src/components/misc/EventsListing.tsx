@@ -27,9 +27,7 @@ const EventListing: React.FC<EventListingProps> = ({ items }) => {
             <h3 className="text-md font-bold text-gray-800">
               <Link href={ROUTES.events.fetch?.replace(":slug", item?.slug)}>{item?.name}</Link>
             </h3>
-            <p className="mt-2 text-sm text-gray-500 font-semibold">
-              {new Date(item?.datetime)?.toDateString()} {new Date(item?.datetime).toLocaleTimeString()}
-            </p>
+            <p className="mt-2 text-sm text-gray-500 font-semibold">{item?.datetime}</p>
             <p className="mt-2 text-sm text-gray-600 w-fit p-1 text-slate-100 px-2 mb-3 bg-app rounded-2xl">{item?.isPaid ? `Paid: ${DOLLAR_SIGN}${formatNumber(item?.amount)}` : "Free"}</p>
             <p className="mt-2 text-sm text-gray-600 truncate text-ellipsis overflow-hidden mb-10">{item?.desc}</p>
           </div>
