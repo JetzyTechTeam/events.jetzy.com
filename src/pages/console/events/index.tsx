@@ -91,7 +91,7 @@ export default function EventsPage() {
                     Event Date and Time
                   </label>
                   <div className="mt-2">
-                    <Field id="eventDate" name="datetime" value={values?.datetime} onChange={handleChange} type="datetime-local" autoComplete="datetime" className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3" />
+                    <Field id="eventDate" name="text" value={values?.datetime} onChange={handleChange} type="datetime-local" autoComplete="datetime" className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3" />
                     <ErrorMessage name="datetime" component="span" className="text-red-500 block mt-1" />
                   </div>
                 </div>
