@@ -31,7 +31,7 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
           <Image className="w-full h-48 object-cover object-center" src={item?.image} alt={item?.name} width={512} height={512} />
           <div className="p-4">
             <h3 className="text-lg font-semibold text-gray-800">{item?.name}</h3>
-            <p className="mt-2 text-sm text-gray-500">Date: {item?.datetime}</p>
+            <p className="mt-2 text-[10px] text-gray-500"> {item?.datetime}</p>
             <p className="mt-2 text-sm text-gray-600 truncate text-ellipsis overflow-hidden mb-10">{item?.desc}</p>
           </div>
           <div className="absolute top-auto bottom-0 left-0 right-0 flex items-center justify-center divide-x">

@@ -5,7 +5,6 @@ import React from "react"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { ListEventsThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
 import { EventListingLoader } from "@Jetzy/components/placeholders/loader"
-import CardGroup from "@Jetzy/components/misc/CardGroup"
 import { EventInterface } from "@Jetzy/types"
 import EventListing from "@Jetzy/components/misc/EventsListing"
 

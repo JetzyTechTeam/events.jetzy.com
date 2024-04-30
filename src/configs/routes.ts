@@ -18,5 +18,7 @@ export const ROUTES = {
   // ----------------- Public Routes -----------------
   events: {
     fetch: "/events/:slug",
+    bookTicket: "/events/:slug/tickets",
+    buyTicket: "/events/:slug/buyticket",
   },
 }

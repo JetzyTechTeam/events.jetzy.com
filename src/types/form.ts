@@ -25,3 +25,12 @@ export type CreateEventFormData = {
   externalUrl?: string
   image: string
 }
+
+export type CreateTicketFormData = {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  event: string
+  quantity: number
+}

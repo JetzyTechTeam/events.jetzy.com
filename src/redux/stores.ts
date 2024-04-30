@@ -4,6 +4,7 @@ import appSlice from "./reducers/appSlice"
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux"
 import authSlice from "./reducers/authSlice"
 import eventSlice from "./reducers/eventsSlice"
+import ticketSlice from "./reducers/ticketsSlice"
 
 const makeStore = () =>
   configureStore({
@@ -11,6 +12,7 @@ const makeStore = () =>
       [appSlice?.name]: appSlice.reducer,
       [authSlice?.name]: authSlice.reducer,
       [eventSlice?.name]: eventSlice.reducer,
+      [ticketSlice?.name]: ticketSlice.reducer,
     },
     devTools: true,
   })
