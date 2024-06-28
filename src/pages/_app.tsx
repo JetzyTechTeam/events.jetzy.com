@@ -12,22 +12,34 @@ import React from "react"
 import { databaseConfig } from "@Jetzy/configs/databaseConfig"
 import { EdgeStoreProvider } from "@Jetzy/lib/edgestore"
 
-databaseConfig()
-  .then(() => console.log("Database connected successfully."))
-  .catch((error) => console.error("Error connecting to the database: ", error))
-export default function App({ Component, pageProps: { session, ...pageProps } }: AppProps<{ session: Session }>) {
-  const { store, props } = wrapper.useWrappedStore(pageProps)
-  React.useEffect(() => {}, [])
-  return (
-    <Provider store={store}>
-      <SessionProvider session={session}>
-        {/* <QueryClientProvider client={queryClient}> */}
-        <ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
-        <EdgeStoreProvider>
-          <Component {...pageProps} />
-        </EdgeStoreProvider>
-        {/* </QueryClientProvider> */}
-      </SessionProvider>
-    </Provider>
-  )
+databaseConfig().catch((error) => console.error("Error connecting to the database: ", error))
+export default function App({
+	Component,
+	pageProps: { session, ...pageProps },
+}: AppProps<{ session: Session }>) {
+	const { store, props } = wrapper.useWrappedStore(pageProps)
+	React.useEffect(() => {}, [])
+	return (
+		<Provider store={store}>
+			<SessionProvider session={session}>
+				{/* <QueryClientProvider client={queryClient}> */}
+				<ToastContainer
+					position="bottom-right"
+					autoClose={5000}
+					hideProgressBar={false}
+					newestOnTop={false}
+					closeOnClick
+					rtl={false}
+					pauseOnFocusLoss
+					draggable
+					pauseOnHover
+					theme="light"
+				/>
+				<EdgeStoreProvider>
+					<Component {...pageProps} />
+				</EdgeStoreProvider>
+				{/* </QueryClientProvider> */}
+			</SessionProvider>
+		</Provider>
+	)
 }
