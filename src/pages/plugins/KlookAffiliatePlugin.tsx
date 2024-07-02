@@ -19,19 +19,10 @@ export default function KlookAffiliatePlugin() {
 	}, []) // Empty dependency array means this effect runs once after the initial render
 
 	return (
-		<ins
-			className="klk-aff-widget"
-			data-wid="65506"
-			data-adid="876697"
-			data-actids="7705,7635,5035"
-			data-prod="mul_act"
-			data-price="false"
-			data-lang=""
-			data-width="160"
-			data-height="600"
-			data-currency=""
-		>
-			<a href="//www.klook.com/">Klook.com</a>
-		</ins>
+		<div className="mb-32  text-center lg:max-w-5xl lg:w-full lg:mb-0   lg:text-left relative z-10">
+			<ins className="klk-aff-widget" data-adid="876633" data-lang="" data-currency="" data-cardH="126" data-padding="92" data-lgH="470" data-edgeValue="655" data-prod="static_widget" data-amount="5">
+				<a href="//www.klook.com/">Klook.com</a>
+			</ins>
+		</div>
 	)
 }
