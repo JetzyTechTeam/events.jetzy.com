@@ -13,28 +13,15 @@ import { databaseConfig } from "@Jetzy/configs/databaseConfig"
 import { EdgeStoreProvider } from "@Jetzy/lib/edgestore"
 
 databaseConfig().catch((error) => console.error("Error connecting to the database: ", error))
-export default function App({
-	Component,
-	pageProps: { session, ...pageProps },
-}: AppProps<{ session: Session }>) {
+
+export default function App({ Component, pageProps: { session, ...pageProps } }: AppProps<{ session: Session }>) {
 	const { store, props } = wrapper.useWrappedStore(pageProps)
 	React.useEffect(() => {}, [])
 	return (
 		<Provider store={store}>
 			<SessionProvider session={session}>
 				{/* <QueryClientProvider client={queryClient}> */}
-				<ToastContainer
-					position="bottom-right"
-					autoClose={5000}
-					hideProgressBar={false}
-					newestOnTop={false}
-					closeOnClick
-					rtl={false}
-					pauseOnFocusLoss
-					draggable
-					pauseOnHover
-					theme="light"
-				/>
+				<ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
 				<EdgeStoreProvider>
 					<Component {...pageProps} />
 				</EdgeStoreProvider>

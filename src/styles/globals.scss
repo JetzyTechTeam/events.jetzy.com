@@ -7,30 +7,37 @@
 @tailwind utilities;
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+	.text-balance {
+		text-wrap: balance;
+	}
 }
 
 html,
 body {
-  scroll-behavior: smooth !important;
-  font-family: "Montserrat", sans-serif !important;
-  @include scrollStyle;
+	scroll-behavior: smooth !important;
+	font-family: "Montserrat", sans-serif !important;
+	@include scrollStyle;
 
-  overflow-x: hidden !important;
+	overflow-x: hidden !important;
 }
 
 .jb_auth_container {
-  @include scrollStyle;
+	@include scrollStyle;
 }
 
 .ashboard-main-wrapper {
-  @include scrollStyle;
+	@include scrollStyle;
 }
 
 .horizontal_scroll_container {
-  @include scrollStyle;
-  overflow-x: hidden !important;
-  scroll-behavior: smooth !important;
+	@include scrollStyle;
+	overflow-x: hidden !important;
+	scroll-behavior: smooth !important;
+}
+
+#aichatbot {
+	position: fixed !important;
+	bottom: 0 !important;
+	right: 0 !important;
+	z-index: 9999 !important;
 }

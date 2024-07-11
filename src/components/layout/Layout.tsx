@@ -1,4 +1,5 @@
 import KlookAffiliatePlugin from "@Jetzy/pages/plugins/KlookAffiliatePlugin"
+import SendbirdChatbot from "@Jetzy/pages/plugins/SendbirdChatbot"
 import { LayoutProps } from "@Jetzy/types"
 import Head from "next/head"
 import React from "react"
@@ -47,6 +48,9 @@ export default function Layout({ children, title }: LayoutProps) {
 					</div>
 				</div> */}
 			</main>
+
+			{/* Sendbird chatbot */}
+			<SendbirdChatbot />
 		</>
 	)
 }
