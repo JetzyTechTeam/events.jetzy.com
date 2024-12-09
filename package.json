@@ -24,7 +24,7 @@
     "cloudinary": "^2.2.0",
     "formik": "^2.4.5",
     "framer-motion": "^11.3.21",
-    "mongoose": "^8.3.2",
+    "mongoose": "^8.8.3",
     "next": "14.2.2",
     "next-auth": "^4.24.7",
     "next-redux-wrapper": "^8.1.0",
