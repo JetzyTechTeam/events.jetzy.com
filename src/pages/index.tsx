@@ -1,21 +1,7 @@
-import Image from "next/image"
-import { Inter } from "next/font/google"
-import Layout from "@Jetzy/components/layout/Layout"
 import React from "react"
-import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import { ListEventsThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
-import { EventListingLoader } from "@Jetzy/components/placeholders/loader"
-import { EventInterface } from "@Jetzy/types"
-import EventListing from "@Jetzy/components/misc/EventsListing"
+
+import HostedEvents from "@Jetzy/components/HostedEvents"
 
 export default function Home() {
-  const { isFetching, dataList } = useAppSelector(getEventState)
-  const dispatcher = useAppDispatch()
-
-  React.useEffect(() => {
-    // Dispatcher the event to fetch events list from the server
-    dispatcher(ListEventsThunk())
-  }, [])
-
-  return <Layout>{isFetching ? <EventListingLoader /> : <EventListing items={dataList as EventInterface[]} />}</Layout>
+	return <HostedEvents />
 }

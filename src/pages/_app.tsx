@@ -21,7 +21,7 @@ export default function App({ Component, pageProps: { session, ...pageProps } }:
 		<Provider store={store}>
 			<SessionProvider session={session}>
 				{/* <QueryClientProvider client={queryClient}> */}
-				<ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
+				<ToastContainer position="top-center" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
 				<EdgeStoreProvider>
 					<Component {...pageProps} />
 				</EdgeStoreProvider>

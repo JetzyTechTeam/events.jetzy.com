@@ -21,19 +21,19 @@ body {
 	overflow-x: hidden !important;
 }
 
-.jb_auth_container {
-	@include scrollStyle;
-}
+// .jb_auth_container {
+// 	@include scrollStyle;
+// }
 
-.ashboard-main-wrapper {
-	@include scrollStyle;
-}
+// .ashboard-main-wrapper {
+// 	@include scrollStyle;
+// }
 
-.horizontal_scroll_container {
-	@include scrollStyle;
-	overflow-x: hidden !important;
-	scroll-behavior: smooth !important;
-}
+// .horizontal_scroll_container {
+// 	@include scrollStyle;
+// 	overflow-x: hidden !important;
+// 	scroll-behavior: smooth !important;
+// }
 
 #aichatbot {
 	position: fixed !important;
