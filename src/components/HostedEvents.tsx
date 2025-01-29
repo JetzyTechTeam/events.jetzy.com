@@ -57,7 +57,7 @@ export default function HostedEvents() {
 							{/* Date and Time */}
 							<div className="bg-gray-50 p-4 rounded-lg">
 								<h3 className="font-semibold text-lg text-gray-800">Date and Time</h3>
-								<p className="text-gray-600 mt-1">Sat, Nov 20, 2021, 7:00 PM – Sun, Nov 21, 2021, 12:00 AM EST</p>
+								<p className="text-gray-600 mt-1">Saturday, February 15 · 4 - 11pm EST</p>
 							</div>
 
 							{/* Location */}
