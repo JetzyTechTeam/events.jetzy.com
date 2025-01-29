@@ -5,8 +5,18 @@ import Image from "next/image"
 import EventPage from "@Jetzy/components/EventPage"
 import EventDetails from "@Jetzy/components/EventDetails"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
+import { useWebShare } from "@Jetzy/hooks/useShare"
 
 export default function HostedEvents() {
+	const shareUrl = window.location.href
+	const shareTitle = "KIR Art and Fashion Extravaganza by Rain Events and KIR Moda"
+	const shareDesc = "Get ready for a fabulous mix of art and fashion at the KIR Art & Fashion Show Fair - it's going to be a blast!"
+	const sharer = useWebShare({
+		title: shareTitle,
+		text: shareDesc,
+		url: shareUrl,
+	})
+
 	return (
 		<>
 			<div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-7">
@@ -25,6 +35,13 @@ export default function HostedEvents() {
 								<p className="text-gray-600 text-sm sm:text-base mb-5">Saturday, February 15 · 4 - 11pm EST</p>
 								<h2 className="text-2xl sm:text-3xl font-bold text-gray-800">KIR Art and Fashion Extravaganza by Rain Events and KIR Moda</h2>
 								<p className="text-gray-600 text-sm sm:text-base">Get ready for a fabulous mix of art and fashion at the KIR Art & Fashion Show Fair - it&apos;s going to be a blast!</p>
+								{/* share button  */}
+								<button
+									onClick={() => sharer.share()}
+									className="mt-6 bg-gradient-to-r opacity-50   from-purple-600 to-indigo-600 font-bold text-white px-6 py-3  whitespace-nowrap rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
+								>
+									Share this event
+								</button>
 							</div>
 							<a
 								role="button"

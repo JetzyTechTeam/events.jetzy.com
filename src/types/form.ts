@@ -35,6 +35,14 @@ export type CreateTicketFormData = {
 	quantity: number
 }
 
+export type CreateJetzyAccountFormData = {
+	firstName: string
+	lastName: string
+	email: string
+	phone: string
+	role: string
+}
+
 export type CheckoutFormData = {
 	tickets: string
 	user: string

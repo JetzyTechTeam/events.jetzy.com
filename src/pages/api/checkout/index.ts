@@ -1,6 +1,7 @@
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
+import { CreateJetzyAccountApi } from "@Jetzy/services/auth/authapis"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
 
@@ -26,6 +27,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Get request params
 		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
+
+		// create jetzy user
+		try {
+			await CreateJetzyAccountApi({ data: { ...user, role: "user" } })
+		} catch (error: any) {
+			console.error("Error:", error.message)
+		}
 
 		// using price api from stripe create price for the tickets selected
 		const prices = tickets.map((ticket) => {
