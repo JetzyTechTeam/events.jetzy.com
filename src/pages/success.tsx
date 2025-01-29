@@ -43,7 +43,10 @@ const CheckoutSuccessPage: React.FC = () => {
 
 					{/* Success Message */}
 					<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Thank You for Your Purchase!</h1>
-					<p className="text-gray-600 mb-6">Your payment was successful. You will receive a confirmation email shortly.</p>
+					<p className="text-gray-600 mb-6">
+						Your payment was successful.
+						{/* You will receive a confirmation email shortly. */}
+					</p>
 
 					{/* Order Summary */}
 					<div className="bg-gray-50 p-6 rounded-lg text-left">
