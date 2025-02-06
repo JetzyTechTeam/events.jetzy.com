@@ -9,30 +9,21 @@ import { Error } from "@Jetzy/lib/_toaster"
 const ticketsItems = [
 	{
 		id: 1,
-		name: "VVIP",
-		price: 100,
+		name: "General Admission",
+		price: 25,
 		quantity: 1,
 		isSelected: false,
 		text: "Sales end on Feb 15, 2025",
-		desc: "Includes unlimited wine and champagne bracelet and automatic entry into raffle for a piece of Sergey Kir's Art!",
+		desc: "Access to the event and main lounge. One complimentary drink",
 	},
 	{
 		id: 2,
-		name: "VIP",
-		price: 60,
+		name: "VIP Admission",
+		price: 75,
 		quantity: 1,
 		isSelected: false,
 		text: "Sales end on Feb 15, 2025",
-		desc: "Includes unlimited wine and champagne bracelet and automatic entry into raffle for a piece of Sergey Kir's Art! \n \n 2 months free Jetzy Select $90 value",
-	},
-	{
-		id: 3,
-		name: "General Admission",
-		price: 30,
-		quantity: 1,
-		isSelected: false,
-		text: "Sales end on Feb 15, 2025",
-		desc: "Automatic entry into raffle for a piece of Sergey Kir's Art. Do not purchase this ticket if you would like to drink you will need to pay the difference of the all inclusive ticket on site.",
+		desc: "Exclusive access to the VIP section. Meet and Greet with celebrities and models.  Premium seating and priority service. Two complimentary artisanal cocktails",
 	},
 ]
 

@@ -1,30 +1,66 @@
 import EnhancedLayout from "@Jetzy/components/layout/EnhancedLayout"
 import React from "react"
-import SampleImage from "@Jetzy/assets/sample.jpeg"
 import Image from "next/image"
 import EventPage from "@Jetzy/components/EventPage"
 import EventDetails from "@Jetzy/components/EventDetails"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
+import Slider from "react-slick";
+import { ChevronLeftSVG, ChevronRightSVG } from "@Jetzy/assets/icons"
+
+import "slick-carousel/slick/slick.css";
+import "slick-carousel/slick/slick-theme.css";
+
+import SampleImage from "@Jetzy/assets/event-banners/event-1.jpeg"
+import Event2 from "@Jetzy/assets/event-banners/event-2.jpeg"
+import Event3 from "@Jetzy/assets/event-banners/event-3.jpeg"
+import Event4 from "@Jetzy/assets/event-banners/event-4.jpg"
+import Event5 from "@Jetzy/assets/event-banners/event-5.jpg"
+import Event6 from "@Jetzy/assets/event-banners/event-6.jpg"
+import Event7 from "@Jetzy/assets/event-banners/event-7.jpeg"
+import Event8 from "@Jetzy/assets/event-banners/event-8.jpeg"
+
+
+const images = [SampleImage, Event2, Event3, Event4, Event5, Event6, Event7, Event8]
+
+const eventDetails = {
+	title: `Nightingale Valentine's Soirée`,
+	description: 'Join us for an unforgettable evening of elegance, music, and connection at Nightingale, the most captivating Art Deco-inspired lounge in the city.',
+	timestamp: 'Saturday, February 15 · 4 - 11pm EST',
+	location: 'Nightingale, New York, NY 10007, United States',
+	aboutEvent: `Welcome to the <strong>Nightingale Valentine's Soirée</strong>, an exclusive event designed to tantalize all five senses. Step into a world of rich colors, plush textures, and a nostalgic Art Deco ambiance that transports you to an era of elegance and grandeur.`
+}
+
+const settings = {
+	infinite: true,
+	speed: 500,
+	slidesToShow: 1,
+	slidesToScroll: 1,
+	autoplay: true,
+  autoplaySpeed: 2000,
+	arrow: true,
+	nextArrow: (
+		<CustomArrow>
+			<ChevronRightSVG stroke="#fff" width={16} height={16} />
+		</CustomArrow>
+	),
+	prevArrow: (
+		<CustomArrow>
+			<ChevronLeftSVG stroke="#fff" width={16} height={16} />
+		</CustomArrow>
+	),
+};
 
 export default function HostedEvents() {
 	const shareUrl = window.location.href
 	const shareTitle = "Nightingale Valentine's Soirée"
 	const shareDesc = "Join us for an unforgettable evening of elegance, music, and connection at Nightingale, the most captivating Art Deco-inspired lounge in the city."
+
 	const sharer = useWebShare({
 		title: shareTitle,
 		text: shareDesc,
 		url: shareUrl,
 	})
-
-
-	const eventDetails = {
-		title: `Nightingale Valentine's Soirée`,
-		description: 'Join us for an unforgettable evening of elegance, music, and connection at Nightingale, the most captivating Art Deco-inspired lounge in the city.',
-		timestamp: 'Saturday, February 15 · 4 - 11pm EST',
-		location: 'Nightingale, New York, NY 10007, United States',
-		aboutEvent: `Welcome to the <strong>Nightingale Valentine's Soirée</strong>, an exclusive event designed to tantalize all five senses. Step into a world of rich colors, plush textures, and a nostalgic Art Deco ambiance that transports you to an era of elegance and grandeur.`
-	}
 
 	return (
 		<>
@@ -33,7 +69,13 @@ export default function HostedEvents() {
 				<div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 					{/* Banner Image */}
 					<div className="relative">
-						<Image src={SampleImage} alt="Event Banner" className="w-full md:h-96 sm:h-52 object-cover" />
+					<Slider {...settings}>
+    {images.map((image, idx) => (
+      <div key={idx}>
+        <Image src={image} alt="Event Banner" className="w-full md:h-96 sm:h-52 object-cover" />
+      </div>
+    ))}
+  </Slider>
 					</div>
 
 					{/* Content Section */}
@@ -90,4 +132,25 @@ export default function HostedEvents() {
 			<EventCheckoutModel />
 		</>
 	)
+}
+
+
+function CustomArrow(props: {
+  className?: string;
+  onClick?: () => void;
+  children?: React.ReactNode;
+}) {
+  const { className, onClick, children } = props;
+  return (
+    <div
+      className={`absolute top-1/2 transform -translate-y-1/2 z-10 cursor-pointer ${
+        className?.includes("slick-next") ? "right-4" : "left-4"
+      }`}
+      onClick={onClick}
+    >
+      <div className="p-2 bg-[#00000033] rounded-full w-max backdrop-blur-md">
+        {children}
+      </div>
+    </div>
+  );
 }
