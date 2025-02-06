@@ -67,7 +67,7 @@ const EventPage: React.FC = () => {
 		}
 
 		const ticketsSelected = tickets
-			.map((ticket, index) => ({ id: ticket.id, name: ticket.name, price: ticketsItems[index].price, quantity: ticket.quantity, isSelected: ticket.isSelected }))
+			.map((ticket, index) => ({ id: ticket.id, name: ticket.name, price: ticketsItems[index].price, quantity: ticket.quantity, isSelected: ticket.isSelected, desc: ticket.desc }))
 			.filter((ticket) => ticket.isSelected)
 		dispatcher(setSelectedTickets(ticketsSelected))
 

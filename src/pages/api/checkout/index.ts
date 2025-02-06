@@ -12,6 +12,7 @@ type BodyParams = {
 		price: number
 		quantity: number
 		isSelected: boolean
+		desc: string
 	}>
 	user: {
 		firstName: string
@@ -42,6 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					currency: "usd",
 					product_data: {
 						name: ticket.name,
+						description: ticket.desc,
 					},
 					unit_amount: ticket.price * 100,
 				},

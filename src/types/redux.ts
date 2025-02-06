@@ -21,6 +21,7 @@ export interface ICheckoutSliceState {
 		price: number
 		quantity: number
 		isSelected: boolean
+		desc: string
 	}>
 	showCheckout: boolean
 	formData?: {
