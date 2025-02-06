@@ -9,13 +9,22 @@ import { useWebShare } from "@Jetzy/hooks/useShare"
 
 export default function HostedEvents() {
 	const shareUrl = window.location.href
-	const shareTitle = "KIR Art and Fashion Extravaganza by Rain Events and KIR Moda"
-	const shareDesc = "Get ready for a fabulous mix of art and fashion at the KIR Art & Fashion Show Fair - it's going to be a blast!"
+	const shareTitle = "Nightingale Valentine's Soirée"
+	const shareDesc = "Join us for an unforgettable evening of elegance, music, and connection at Nightingale, the most captivating Art Deco-inspired lounge in the city."
 	const sharer = useWebShare({
 		title: shareTitle,
 		text: shareDesc,
 		url: shareUrl,
 	})
+
+
+	const eventDetails = {
+		title: `Nightingale Valentine's Soirée`,
+		description: 'Join us for an unforgettable evening of elegance, music, and connection at Nightingale, the most captivating Art Deco-inspired lounge in the city.',
+		timestamp: 'Saturday, February 15 · 4 - 11pm EST',
+		location: 'Nightingale, New York, NY 10007, United States',
+		aboutEvent: `Welcome to the <strong>Nightingale Valentine's Soirée</strong>, an exclusive event designed to tantalize all five senses. Step into a world of rich colors, plush textures, and a nostalgic Art Deco ambiance that transports you to an era of elegance and grandeur.`
+	}
 
 	return (
 		<>
@@ -32,9 +41,9 @@ export default function HostedEvents() {
 						{/* Header Section */}
 						<div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
 							<div className="text-center sm:text-left">
-								<p className="text-gray-600 text-sm sm:text-base mb-5">Saturday, February 15 · 4 - 11pm EST</p>
-								<h2 className="text-2xl sm:text-3xl font-bold text-gray-800">KIR Art and Fashion Extravaganza by Rain Events and KIR Moda</h2>
-								<p className="text-gray-600 text-sm sm:text-base">Get ready for a fabulous mix of art and fashion at the KIR Art & Fashion Show Fair - it&apos;s going to be a blast!</p>
+								<p className="text-gray-600 text-sm sm:text-base mb-5">{eventDetails.timestamp}</p>
+								<h2 className="text-2xl sm:text-3xl font-bold text-gray-800">{eventDetails.title}</h2>
+								<p className="text-gray-600 text-sm sm:text-base">{eventDetails.description}</p>
 								{/* share button  */}
 								<button
 									onClick={() => sharer.share()}
@@ -57,13 +66,13 @@ export default function HostedEvents() {
 							{/* Date and Time */}
 							<div className="bg-gray-50 p-4 rounded-lg">
 								<h3 className="font-semibold text-lg text-gray-800">Date and Time</h3>
-								<p className="text-gray-600 mt-1">Saturday, February 15 · 4 - 11pm EST</p>
+								<p className="text-gray-600 mt-1">{eventDetails.timestamp}</p>
 							</div>
 
 							{/* Location */}
 							<div className="bg-gray-50 p-4 rounded-lg">
 								<h3 className="font-semibold text-lg text-gray-800">Location</h3>
-								<p className="text-gray-600 mt-1">185 Greenwich Street #4405 Ground Floor (C2 New York, NY 10007) United States</p>
+								<p className="text-gray-600 mt-1">{eventDetails.location}</p>
 							</div>
 
 							{/* About Event */}
