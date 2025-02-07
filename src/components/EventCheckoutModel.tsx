@@ -5,6 +5,7 @@ import React, { useState } from "react"
 import Spinner from "./misc/Spinner"
 
 export default function EventCheckoutModel() {
+	const [acceptTerms, setAcceptTerms] = useState(false)
 	const { showCheckout, tickets, isLoading } = useAppSelector(getCheckoutStore)
 	const dispatch = useAppDispatch()
 
@@ -28,6 +29,11 @@ export default function EventCheckoutModel() {
 	// Handle form submission
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
+
+		if (!acceptTerms) {
+			Error("Terms Required", "Please accept the terms and conditions to continue.")
+			return
+		}
 
 		const hasFilledAllFields = Object.values(formData).every((value) => value)
 		if (!hasFilledAllFields) {
@@ -63,6 +69,9 @@ export default function EventCheckoutModel() {
 						>
 							&times;
 						</button>
+<div className="bg-purple-100 text-purple-700 p-3 rounded-t-2xl text-center font-semibold">
+							This deal is reserved for Jetzy Users Only.
+						</div>
 
 						{/* Form */}
 						<form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -106,7 +115,24 @@ export default function EventCheckoutModel() {
 								/>
 							</div>
 							{/* an info paragrph */}
-							<p className="text-sm text-gray-600">By completing and submitting this form, you’ll instantly receive a free Jetzy Membership, unlocking access to exclusive deals and special offers!</p>
+							<p className="text-sm text-gray-600">
+								By signing up, you create a Jetzy account for exclusive deals. Existing accounts won&apos;t be duplicated.
+							</p>
+
+							{/* Terms Checkbox */}
+							<div className="flex items-start space-x-2">
+								<input
+									type="checkbox"
+									id="terms"
+									checked={acceptTerms}
+									onChange={(e) => setAcceptTerms(e.target.checked)}
+									className="mt-1"
+									required
+								/>
+								<label htmlFor="terms" className="text-sm text-gray-600">
+									I accept the Terms and Conditions and consent to creating a Jetzy account.
+								</label>
+							</div>
 							<button
 								disabled={isLoading}
 								type="submit"
