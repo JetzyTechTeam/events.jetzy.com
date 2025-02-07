@@ -40,7 +40,7 @@ export default function BuyEventTicketPage() {
   return (
     <Layout>
       {isFetching ? (
-        <div className="flex items-center justify-center p-5 w-full m-auto block">
+        <div className="flex items-center justify-center p-5 w-full m-auto">
           <Spinner classes="text-slate-100 h-10 w-10" />
         </div>
       ) : (
@@ -72,7 +72,7 @@ export default function BuyEventTicketPage() {
                   <p className="text-sm font-medium mt-4">Your payment was successful. You will receive an email shortly.</p>
                   {/* return home button */}
                   <div className="mt-4">
-                    <button className="bg-app text-white p-2 rounded-md flex gap-2 m-auto block" onClick={() => navigation.push("/")}>
+                    <button className="bg-app text-white p-2 rounded-md flex gap-2 m-auto" onClick={() => navigation.push("/")}>
                       <ArrowUturnUpIcon className="h-5 w-5 rotate-[-90deg]" /> Return Home
                     </button>
                   </div>

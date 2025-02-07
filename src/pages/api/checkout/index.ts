@@ -1,7 +1,7 @@
+import { createUserAction } from "@Jetzy/actions/create-user-action"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
-import { CreateJetzyAccountApi } from "@Jetzy/services/auth/authapis"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
 
@@ -31,9 +31,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// create jetzy user
 		try {
-			await CreateJetzyAccountApi({ data: { ...user, role: "user" } })
-		} catch (error: any) {
-			console.error("Error:", error.message)
+			await createUserAction({ 
+				firstName: user.firstName,
+				lastName: user.lastName,
+				email: user.email,
+				phone: user.phone,
+				role: "user"
+		})
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
+			console.error("Error:", errorMessage)
 		}
 
 		// using price api from stripe create price for the tickets selected
