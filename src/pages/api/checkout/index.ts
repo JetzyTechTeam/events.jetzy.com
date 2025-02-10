@@ -81,7 +81,7 @@ export default async function handler(
       },
       customer_email: user.email,
     });
-    if (session) {
+    if (session.payment_status === 'paid') {
       await sendTicketConfirmation({
         firstName: user.firstName,
         lastName: user.lastName,
