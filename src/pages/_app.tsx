@@ -9,10 +9,8 @@ import { ToastContainer } from "react-toastify"
 import "@Jetzy/styles/globals.scss"
 import "react-toastify/dist/ReactToastify.css"
 import React from "react"
-import { databaseConfig } from "@Jetzy/configs/databaseConfig"
 import { EdgeStoreProvider } from "@Jetzy/lib/edgestore"
 
-databaseConfig().catch((error) => console.error("Error connecting to the database: ", error))
 
 export default function App({ Component, pageProps: { session, ...pageProps } }: AppProps<{ session: Session }>) {
 	const { store, props } = wrapper.useWrappedStore(pageProps)

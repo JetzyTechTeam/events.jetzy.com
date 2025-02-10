@@ -1,7 +1,6 @@
 import { createUserAction } from "@Jetzy/actions/create-user-action";
 import { sendResponse } from "@Jetzy/lib/helpers";
 import { ResCode } from "@Jetzy/lib/responseCodes";
-import { sendTicketConfirmation } from "@Jetzy/lib/send-grid";
 import { uniqueId } from "@Jetzy/lib/utils";
 import { NextApiRequest, NextApiResponse } from "next";
 import Stripe from "stripe";
@@ -71,26 +70,18 @@ export default async function handler(
       payment_method_types: ["card"],
       line_items: prices,
       mode: "payment",
-      success_url: `${process.env.NEXT_PUBLIC_URL}/success?payload=${req?.body?.tickets}`,
+      success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}&payload=${req?.body?.tickets}`,
       cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
       metadata: {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
         phone: user.phone,
+        tickets: req.body.tickets,
       },
       customer_email: user.email,
     });
-    if (session.payment_status === 'paid') {
-      await sendTicketConfirmation({
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        tickets,
-        orderNumber: reference,
-      });
-
+    if (session) {
       return sendResponse(
         res,
         session,

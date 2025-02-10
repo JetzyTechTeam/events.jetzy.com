@@ -1,5 +1,8 @@
+import { sendEmailAction } from "@Jetzy/actions/send-email-action"
+import axios from "axios"
 import { useRouter } from "next/router"
 import React from "react"
+import Stripe from "stripe"
 
 type OrderItem = {
 	id: number
@@ -8,12 +11,15 @@ type OrderItem = {
 	quantity: number
 	isSelected: boolean
 }
+
+const stripe = new Stripe(process.env.NEXT_PUBLIC_STRIPE_SEC_KEY as string);
+
 const CheckoutSuccessPage: React.FC = () => {
 	const router = useRouter()
 	const query = router.query
 	const [orderItems, setOrderItems] = React.useState<Array<OrderItem>>([])
 
-	const { payload } = query
+	const { payload, session_id } = query
 
 	React.useEffect(() => {
 		if (payload) {
@@ -21,6 +27,33 @@ const CheckoutSuccessPage: React.FC = () => {
 			setOrderItems(items)
 		}
 	}, [payload])
+
+	React.useEffect(() => {
+		const checkPaymentStatus = async () => {
+			if (session_id) {
+				try {
+					const response = await axios.get(`/api/get-session?session_id=${session_id}`);
+					const session = response.data;
+	
+					if (session.payment_status === 'paid' && session.metadata && session.client_reference_id) {
+						// Use the API route to send the email
+						await axios.post('/api/send-email', {
+							firstName: session.metadata.firstName,
+							lastName: session.metadata.lastName,
+							email: session.metadata.email,
+							phone: session.metadata.phone,
+							tickets: JSON.parse(session.metadata.tickets),
+							orderNumber: session.client_reference_id,
+						});
+					}
+				} catch (error) {
+					console.error('Error checking payment status:', error);
+				}
+			}
+		};
+	
+		checkPaymentStatus();
+	}, [session_id])
 
 	if (!payload) return null
 	// calculate the total of the order
