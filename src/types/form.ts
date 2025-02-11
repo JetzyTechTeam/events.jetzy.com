@@ -14,6 +14,10 @@ export type SignInFormData = {
 }
 
 export type CreateEventFormData = {
+	startDate: string
+	startTime: string
+	endDate: string
+	endTime: string
 	name: string
 	datetime: string
 	location: string

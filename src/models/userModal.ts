@@ -1,39 +1,42 @@
-import mongoose, { Schema } from "mongoose"
+"use server"
+
+import { dbconn } from "@Jetzy/configs/database"
+import { Roles } from "@Jetzy/types"
+import { Schema } from "mongoose"
 // Define the user schema
-const usersSchema = new Schema(
-  {
-    firstName: {
-      type: String,
-      required: true,
-    },
+export const usersSchema = new Schema(
+	{
+		firstName: {
+			type: String,
+			required: true,
+		},
 
-    lastName: {
-      type: String,
-      required: true,
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-    },
+		lastName: {
+			type: String,
+			required: true,
+		},
+		email: {
+			type: String,
+			required: true,
+			unique: true,
+		},
 
-    password: {
-      type: String,
-      required: true,
-    },
+		password: {
+			type: String,
+			required: true,
+		},
 
-    role: {
-      type: String,
-      required: true,
-      enum: {
-        values: ["user", "admin"],
-        message: "Invalid status type",
-      },
-      default: "user",
-    },
-  },
-  { timestamps: true }
+		role: {
+			type: String,
+			required: true,
+			enum: {
+				values: Object.values(Roles),
+				message: "Invalid status type",
+			},
+			default: "user",
+		},
+	},
+	{ timestamps: true },
 )
 
-// Export the user model
-export const Users = mongoose.models["Users"] || mongoose.model("Users", usersSchema)
+export const Users = dbconn.models.Users || dbconn.model("Users", usersSchema)

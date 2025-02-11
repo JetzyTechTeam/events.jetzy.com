@@ -12,33 +12,33 @@ import Link from "next/link"
 import React from "react"
 
 const CreateEventButton = () => {
-  return (
-    <div className="w-full px-5 flex justify-end">
-      <Link href={ROUTES.dashboard.events.create} className="p-3 bg-app rounded-3xl">
-        Create Event
-      </Link>
-    </div>
-  )
+	return (
+		<div className="w-full px-5 flex justify-end">
+			<Link href={ROUTES.dashboard.events.create} className="p-3 bg-app rounded-3xl">
+				Create Event
+			</Link>
+		</div>
+	)
 }
 export default function ConsoleDashboard() {
-  const { isFetching, dataList } = useAppSelector(getEventState)
-  const dispatcher = useAppDispatch()
+	const { isFetching, dataList } = useAppSelector(getEventState)
+	const dispatcher = useAppDispatch()
 
-  React.useEffect(() => {
-    // Dispatcher the event to fetch events list from the server
-    dispatcher(ListEventsThunk())
-  }, [])
+	React.useEffect(() => {
+		// Dispatcher the event to fetch events list from the server
+		dispatcher(ListEventsThunk())
+	}, [])
 
-  return (
-    <ConsoleLayout page={Pages.Dasshboard} component={<CreateEventButton />}>
-      {!dataList?.length && <p className="text-white">No events found.</p>}
+	return (
+		<ConsoleLayout page={Pages.Dasshboard} component={<CreateEventButton />}>
+			{!dataList?.length && <p className="text-white">No events found.</p>}
 
-      {/* Display the data listing  */}
-      {isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
-    </ConsoleLayout>
-  )
+			{/* Display the data listing  */}
+			{isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
+		</ConsoleLayout>
+	)
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-  return authorizedOnly(context, { fetchEvents: true })
+	return authorizedOnly(context, { fetchEvents: true })
 }

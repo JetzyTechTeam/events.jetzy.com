@@ -1,6 +1,5 @@
+@use "mixins.scss" as components;
 @import url("https://fonts.cdnfonts.com/css/montserrat");
-
-@import "mixins.scss";
 
 @tailwind base;
 @tailwind components;
@@ -16,24 +15,10 @@ html,
 body {
 	scroll-behavior: smooth !important;
 	font-family: "Montserrat", sans-serif !important;
-	@include scrollStyle;
+	@include components.scrollStyle;
 
 	overflow-x: hidden !important;
 }
-
-// .jb_auth_container {
-// 	@include scrollStyle;
-// }
-
-// .ashboard-main-wrapper {
-// 	@include scrollStyle;
-// }
-
-// .horizontal_scroll_container {
-// 	@include scrollStyle;
-// 	overflow-x: hidden !important;
-// 	scroll-behavior: smooth !important;
-// }
 
 #aichatbot {
 	position: fixed !important;
