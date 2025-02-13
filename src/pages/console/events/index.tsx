@@ -32,27 +32,33 @@ export default function EventsPage() {
 	const { isLoading } = useAppSelector(getEventState)
 	const dispatcher = useAppDispatch()
 
+	const [isPaid, setIsPaid] = React.useState(false)
+
 	const formInitData: CreateEventFormData = {
 		name: "",
 		datetime: "",
 		desc: "",
 		location: "",
-		// privacy: EventPrivacy.PUBLIC,
-		// isPaid: false,
+		isPaid: false,
+		images: [],
+		tickets: [],
 		startDate: "",
 		startTime: "",
 		endDate: "",
 		endTime: "",
 	}
 
-	const setIsPaid = (value: boolean = false) => {
-		if (formikRef?.current) {
-			formikRef.current.setFieldValue("isPaid", value)
-		}
-	}
+	const handleSubmit = (values: CreateEventFormData) => {
+		// set the tickets data
+		values.tickets = eventTicketsData
 
-	const handleSubmit = (value: CreateEventFormData) => {
-		dispatcher(CreateEventThunk({ data: value })).then((res: any) => {
+		// set the images data
+		values.images = uploadedImages
+
+		// set the isPaid value
+		values.isPaid = isPaid
+
+		dispatcher(CreateEventThunk({ data: values })).then((res: any) => {
 			if (res?.payload?.status) {
 				navigation.push(ROUTES.dashboard.index)
 			}
@@ -61,6 +67,7 @@ export default function EventsPage() {
 
 	const submitForms = () => {
 		if (formikRef?.current) {
+			// submit the form
 			formikRef.current.submitForm()
 		}
 	}
@@ -257,13 +264,35 @@ export default function EventsPage() {
 												<ErrorMessage name="desc" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
+
+										<div>
+											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+												If this event is paid, please toggle the switch to add tickets
+											</label>
+											<div className="mt-2">
+												<Switch
+													checked={isPaid}
+													onChange={setIsPaid}
+													className={`${isPaid ? "bg-app" : "bg-app/50"}
+          relative inline-flex h-[38px] w-[74px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
+												>
+													<span className="sr-only">Use setting</span>
+													<span
+														aria-hidden="true"
+														className={`${isPaid ? "translate-x-9" : "translate-x-0"}
+            pointer-events-none inline-block h-[34px] w-[34px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
+													/>
+												</Switch>
+												<ErrorMessage name="privacy" component="span" className="text-red-500 block mt-1" />
+											</div>
+										</div>
 									</section>
 								</Form>
 							)}
 						</Formik>
 
 						{/* Events tickets */}
-						<AddTickets onSave={handleSave} onDelete={handleDelete} />
+						{isPaid && <AddTickets onSave={handleSave} onDelete={handleDelete} />}
 
 						{/* Submit Button */}
 						<div>

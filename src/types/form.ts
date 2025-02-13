@@ -1,4 +1,6 @@
+import { TicketData } from "@/components/events/TicketCard"
 import { EventPrivacy } from "./const"
+import { FileUploadData } from "@/components/misc/DragAndDropUploader"
 
 export type SignUpFormData = {
 	firstName: string
@@ -21,8 +23,9 @@ export type CreateEventFormData = {
 	name: string
 	datetime: string
 	location: string
-	// privacy: EventPrivacy | string
-	// isPaid: boolean
+	images: FileUploadData[]
+	tickets: TicketData[]
+	isPaid: boolean
 	desc: string
 }
 

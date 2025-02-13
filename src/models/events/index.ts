@@ -1,18 +1,30 @@
 import { dbconn } from "@Jetzy/configs/database"
 import mongoose, { Schema } from "mongoose"
 
-const datetimeSchema = new Schema(
+const eventTciketsSchema = new Schema(
 	{
-		start: {
-			type: Date,
+		name: {
+			type: String,
 			required: true,
 		},
-		end: {
-			type: Date,
+		price: {
+			type: Number,
+			required: true,
+		},
+		desc: {
+			type: String,
+			required: true,
+		},
+		priceId: {
+			type: String,
+			required: true,
+		},
+		bookingLimits: {
+			type: Number,
 			required: true,
 		},
 	},
-	{ _id: false, timestamps: false },
+	{ timestamps: true },
 )
 
 // Define the  schema
@@ -28,48 +40,43 @@ const eventsSchema = new Schema(
 			required: true,
 		},
 
-		datetime: datetimeSchema,
+		startsOn: {
+			type: Date,
+			required: true,
+		},
+		endsOn: {
+			type: Date,
+			required: true,
+		},
 		location: {
 			type: String,
 			required: true,
 		},
 
-		interest: {
-			type: Array<String>,
-			required: true,
-		},
-
-		privacy: {
-			type: String,
-			required: true,
-			enum: {
-				values: ["private", "public", "group"],
-				message: "Invalid privacy type",
-			},
-			default: "public",
-		},
 		isPaid: {
 			type: Boolean,
 			required: true,
 			default: false,
-		},
-		amount: {
-			type: Number,
-			required: false,
-			default: 0,
 		},
 
 		desc: {
 			type: String,
 			required: true,
 		},
-		externalUrl: {
-			type: String,
+
+		images: {
+			type: [String],
+			required: true,
+		},
+
+		tickets: {
+			type: [eventTciketsSchema],
 			required: false,
 		},
-		image: {
-			type: String,
-			required: true,
+
+		isDeleted: {
+			type: Boolean,
+			default: false,
 		},
 	},
 	{ timestamps: true },
