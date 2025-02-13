@@ -5,11 +5,14 @@ const es = initEdgeStore.create()
  * This is the main router for the edgestore buckets.
  */
 const edgeStoreRouter = es.router({
-  publicFiles: es.imageBucket(),
+	publicFiles: es.imageBucket().beforeDelete(async ({ ctx, fileInfo }) => {
+		console.log("Deleting file", fileInfo.url)
+		return true // allow the delete
+	}),
 })
 
 export default createEdgeStoreNextHandler({
-  router: edgeStoreRouter,
+	router: edgeStoreRouter,
 })
 
 /**

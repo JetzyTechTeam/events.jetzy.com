@@ -21,13 +21,9 @@ export type CreateEventFormData = {
 	name: string
 	datetime: string
 	location: string
-	interest: string
-	privacy: EventPrivacy | string
-	isPaid: boolean
-	amount: number | string
+	// privacy: EventPrivacy | string
+	// isPaid: boolean
 	desc: string
-	externalUrl?: string
-	image: string
 }
 
 export type CreateTicketFormData = {

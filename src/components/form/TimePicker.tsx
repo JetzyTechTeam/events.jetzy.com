@@ -14,6 +14,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time" }: Pr
 		const timepicker = flatpickr(ref.current, {
 			enableTime: true,
 			noCalendar: true,
+			time_24hr: false,
 			dateFormat: "H:i",
 			onChange: (selectedDates, dateStr, instance) => {
 				onChange(dateStr)

@@ -1,5 +1,5 @@
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
-import DragAndDropFileUpload from "@Jetzy/components/misc/DragAndDropUploader"
+import DragAndDropFileUpload, { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { authorizedOnly } from "@Jetzy/lib/authSession"
@@ -13,13 +13,20 @@ import { ErrorMessage, Field, Form, Formik, FormikProps } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
 import React from "react"
-import flatpicker from "flatpickr"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
+import { PlusIcon } from "@heroicons/react/24/outline"
+import AddTickets from "@/components/events/AddTickets"
+import { TicketData } from "@/components/events/TicketCard"
+import { uniqueId } from "@/lib/utils"
+import { Error } from "@/lib/_toaster"
+
+const eventTicketsData: TicketData[] = []
+const uploadedImages: FileUploadData[] = []
 
 export default function EventsPage() {
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
-	const [progress, updateProgressBar] = React.useState(0)
+
 	const { edgestore } = useEdgeStore()
 	const navigation = useRouter()
 	const { isLoading } = useAppSelector(getEventState)
@@ -30,12 +37,8 @@ export default function EventsPage() {
 		datetime: "",
 		desc: "",
 		location: "",
-		interest: "",
-		privacy: EventPrivacy.PUBLIC,
-		isPaid: false,
-		amount: "0",
-		image: "",
-		externalUrl: "",
+		// privacy: EventPrivacy.PUBLIC,
+		// isPaid: false,
 		startDate: "",
 		startTime: "",
 		endDate: "",
@@ -56,19 +59,63 @@ export default function EventsPage() {
 		})
 	}
 
-	const fileUploader = async (file: File) => {
-		const res = await edgestore.publicFiles.upload({
-			file,
-			onProgressChange: (progress) => {
-				// you can use this to show a progress bar
-				updateProgressBar(progress)
-			},
-		})
-
+	const submitForms = () => {
 		if (formikRef?.current) {
-			formikRef.current.setFieldValue("image", res?.url)
+			formikRef.current.submitForm()
 		}
 	}
+
+	const fileUploader = async (data: FileUploadData) => {
+		// check if the image is already in the array of uploaded images using the id from data object
+		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
+		if (imageIndex !== -1) {
+			uploadedImages[imageIndex] = data
+		} else {
+			// update the image url
+			uploadedImages.push(data)
+		}
+	}
+
+	const fileUpoaderRemoveImage = async (data: FileUploadData) => {
+		// remove the image from the array of uploaded images
+		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
+		if (imageIndex !== -1) {
+			// get the image to be removed
+			const image = uploadedImages[imageIndex]
+			uploadedImages.splice(imageIndex, 1)
+
+			try {
+				// delete the image from the server
+				await edgestore.publicFiles.delete({ url: image.file })
+			} catch (error: any) {
+				console.error("Error deleting image", error)
+				Error("Error", "Failed to delete image")
+			}
+		}
+	}
+	// ---------------------------------------------------------------------------------------------
+
+	// handle tickets save
+	const handleSave = (data: TicketData) => {
+		// using the ticket id check if it already exist in the array of tickets, if it does update the ticket data otherwise add the ticket to the array
+		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
+		if (ticketIndex !== -1) {
+			// update the ticket data
+			eventTicketsData[ticketIndex] = data
+		} else {
+			// add the ticket to the array
+			eventTicketsData.push(data)
+		}
+	}
+
+	const handleDelete = (data: TicketData) => {
+		// remove the ticket from the array
+		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
+		if (ticketIndex !== -1) {
+			eventTicketsData.splice(ticketIndex, 1)
+		}
+	}
+	// ---------------------------------------------------------------------------------------------
 
 	const handleStartDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
@@ -94,216 +141,142 @@ export default function EventsPage() {
 		}
 	}
 
+	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
+
 	return (
 		<ConsoleLayout page={Pages.Events}>
 			<h1 className="text-slat-300 text-center text-2xl font-bold capitalized">Create New Event</h1>
 			<section className="flex items-center justify-center p-3">
-				<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation}>
-					{({ values, handleChange }) => (
-						<Form className="space-y-6 md:w-5/12 xs:w-full" action="#" method="POST">
-							{/* Image Uploader */}
-							<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
-								<DragAndDropFileUpload onUpload={fileUploader} progress={progress} />
-							</section>
+				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
+					{/* Image Uploader */}
+					<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+						{imageUploadComponents}
 
-							<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
-								<div>
-									<label htmlFor="eventName" className="block text-sm font-semibold leading-6 text-gray-900">
-										Name
-									</label>
-									<div className="mt-2">
-										<Field
-											id="eventName"
-											name="name"
-											value={values?.name}
-											onChange={handleChange}
-											type="text"
-											autoComplete="name"
-											className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										/>
-										<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
-									</div>
-								</div>
+						{/* button to add new components */}
+						<div className="flex justify-center items-center">
+							<button
+								type="button"
+								onClick={() => {
+									setImageUploadComponents([
+										...imageUploadComponents,
+										<DragAndDropFileUpload customId={uniqueId(10)} onUpload={fileUploader} onDelete={fileUpoaderRemoveImage} uploadedFiles={uploadedImages} key={uniqueId()} />,
+									])
+								}}
+								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
+							>
+								<PlusIcon className="h-6 w-6 mr-2" /> Add Image
+							</button>
+						</div>
+					</section>
 
-								<div>
-									<label className="block text-sm font-semibold leading-6 text-gray-900">Date and Time</label>
-									<div className="mt-2 grid grid-rows-2">
-										<div className="grid grid-cols-3 gap-2">
-											<div className="col-span-2">
-												<label className="block text-xs leading-6 text-gray-500">Start Date</label>
-												<DatePicker onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" />
+					<section className="space-y-6">
+						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation}>
+							{({ values, handleChange }) => (
+								<Form action="#" method="POST">
+									<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+										<div>
+											<label htmlFor="eventName" className="block text-sm font-semibold leading-6 text-gray-900">
+												Name
+											</label>
+											<div className="mt-2">
+												<Field
+													id="eventName"
+													name="name"
+													value={values?.name}
+													onChange={handleChange}
+													type="text"
+													autoComplete="name"
+													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+												/>
+												<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
 											</div>
+										</div>
 
-											<div className="col-span-1">
-												<label className="block text-xs leading-6 text-gray-500">Start Time</label>
-												<TimePicker onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" />
+										<div>
+											<label className="block text-sm font-semibold leading-6 text-gray-900">Date and Time</label>
+											<div className="mt-2 grid grid-rows-2">
+												<div className="grid grid-cols-3 gap-2">
+													<div className="col-span-2">
+														<label className="block text-xs leading-6 text-gray-500">Start Date</label>
+														<DatePicker onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" />
+													</div>
+
+													<div className="col-span-1">
+														<label className="block text-xs leading-6 text-gray-500">Start Time</label>
+														<TimePicker onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" />
+													</div>
+												</div>
+
+												<div className="grid grid-cols-3 gap-2">
+													<div className="col-span-2">
+														<label className="block text-xs leading-6 text-gray-500">End Date</label>
+														<DatePicker onChange={(date) => handleEndDateChange(date)} placeholder="End Date" />
+													</div>
+
+													<div className="col-span-1">
+														<label className="block text-xs leading-6 text-gray-500">End Time</label>
+														<TimePicker onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" />
+													</div>
+												</div>
 											</div>
 										</div>
 
-										<div className="grid grid-cols-3 gap-2">
-											<div className="col-span-2">
-												<label className="block text-xs leading-6 text-gray-500">End Date</label>
-												<DatePicker onChange={(date) => handleEndDateChange(date)} placeholder="End Date" />
-											</div>
-
-											<div className="col-span-1">
-												<label className="block text-xs leading-6 text-gray-500">End Time</label>
-												<TimePicker onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" />
+										<div>
+											<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6 text-gray-900">
+												Location
+											</label>
+											<div className="mt-2">
+												<Field
+													id="eventLocation"
+													name="location"
+													value={values?.location}
+													onChange={handleChange}
+													type="text"
+													placeholder="Physical addres or Virtual link"
+													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+												/>
+												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
-									</div>
-								</div>
 
-								<div>
-									<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6 text-gray-900">
-										Event Location
-									</label>
-									<div className="mt-2">
-										<Field
-											id="eventLocation"
-											name="location"
-											value={values?.location}
-											onChange={handleChange}
-											type="text"
-											autoComplete="datetime"
-											className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										/>
-										<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
-									</div>
-								</div>
-
-								<div>
-									<label htmlFor="eventLink" className="block text-sm font-semibold leading-6 text-gray-900">
-										Event External Link (optional)
-									</label>
-									<div className="mt-2">
-										<Field
-											id="eventLink"
-											name="externalUrl"
-											value={values?.externalUrl}
-											onChange={handleChange}
-											type="url"
-											className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										/>
-										<ErrorMessage name="externalUrl" component="span" className="text-red-500 block mt-1" />
-									</div>
-								</div>
-
-								<div>
-									<label htmlFor="eventIneterest" className="block text-sm font-semibold leading-6 text-gray-900">
-										Interest (<span className="text-sm italic">Seperate interest with commas</span>)
-									</label>
-									<div className="mt-2">
-										<Field
-											id="eventIneterest"
-											name="interest"
-											value={values?.interest}
-											onChange={handleChange}
-											type="text"
-											autoComplete="datetime"
-											className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										/>
-										<ErrorMessage name="interest" component="span" className="text-red-500 block mt-1" />
-									</div>
-								</div>
-
-								<div>
-									<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
-										Event Privacy
-									</label>
-									<div className="mt-2">
-										<Field
-											id="eventPrivacy"
-											as="select"
-											name="privacy"
-											value={values?.privacy}
-											onChange={handleChange}
-											type="text"
-											autoComplete="datetime"
-											className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										>
-											<option value={EventPrivacy.PUBLIC}>Public</option>
-											<option value={EventPrivacy.PRIVATE}>Private</option>
-											<option value={EventPrivacy.GROUP}>Group</option>
-										</Field>
-										<ErrorMessage name="privacy" component="span" className="text-red-500 block mt-1" />
-									</div>
-								</div>
-
-								<div>
-									<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
-										Paid Event (<span className="text-sm italic">Is this event paid?</span> )
-									</label>
-									<div className="mt-2">
-										<Switch
-											checked={values?.isPaid}
-											onChange={setIsPaid}
-											className={`${values?.isPaid ? "bg-app" : "bg-app/50"}
-          relative inline-flex h-[38px] w-[74px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
-										>
-											<span className="sr-only">Use setting</span>
-											<span
-												aria-hidden="true"
-												className={`${values?.isPaid ? "translate-x-9" : "translate-x-0"}
-            pointer-events-none inline-block h-[34px] w-[34px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
-											/>
-										</Switch>
-										<ErrorMessage name="privacy" component="span" className="text-red-500 block mt-1" />
-									</div>
-								</div>
-								{/* Only show the amount when the event is paid */}
-								{values?.isPaid && (
-									<div>
-										<label htmlFor="eventAmount" className="block text-sm font-semibold leading-6 text-gray-900">
-											Event Amount
-										</label>
-										<div className="mt-2">
-											<Field
-												id="eventAmount"
-												name="amount"
-												value={values?.amount}
-												onChange={handleChange}
-												type="number"
-												step="any"
-												autoComplete="datetime"
-												className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-											/>
-											<ErrorMessage name="amount" component="span" className="text-red-500 block mt-1" />
+										<div>
+											<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6 text-gray-900">
+												Description
+											</label>
+											<div className="mt-2">
+												<Field
+													id="eventDescription"
+													as={"textarea"}
+													name="desc"
+													value={values?.desc}
+													onChange={handleChange}
+													type="text"
+													autoComplete="datetime"
+													className="block w-full h-20 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+												/>
+												<ErrorMessage name="desc" component="span" className="text-red-500 block mt-1" />
+											</div>
 										</div>
-									</div>
-								)}
+									</section>
+								</Form>
+							)}
+						</Formik>
 
-								<div>
-									<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6 text-gray-900">
-										Event Description
-									</label>
-									<div className="mt-2">
-										<Field
-											id="eventDescription"
-											as={"textarea"}
-											name="desc"
-											value={values?.desc}
-											onChange={handleChange}
-											type="text"
-											autoComplete="datetime"
-											className="block w-full h-20 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										/>
-										<ErrorMessage name="desc" component="span" className="text-red-500 block mt-1" />
-									</div>
-								</div>
-							</section>
+						{/* Events tickets */}
+						<AddTickets onSave={handleSave} onDelete={handleDelete} />
 
-							<div>
-								<button
-									type="submit"
-									className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
-								>
-									{isLoading ? <Spinner /> : "Create Event"}
-								</button>
-							</div>
-						</Form>
-					)}
-				</Formik>
+						{/* Submit Button */}
+						<div>
+							<button
+								type="button"
+								onClick={submitForms}
+								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
+							>
+								{isLoading ? <Spinner /> : "Create Event"}
+							</button>
+						</div>
+					</section>
+				</div>
 			</section>
 		</ConsoleLayout>
 	)
