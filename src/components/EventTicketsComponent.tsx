@@ -5,38 +5,42 @@ import ExpandText from "./misc/ExpandText"
 import { waitUntil } from "@Jetzy/lib/utils"
 import Spinner from "./misc/Spinner"
 import { Error } from "@Jetzy/lib/_toaster"
+import { IEvent } from "@/models/events/types"
 
-const ticketsItems = [
-	{
-		id: 1,
-		name: "General Admission",
-		price: 25,
-		quantity: 1,
-		isSelected: false,
-		text: "Sales end on Feb 15, 2025",
-		desc: "Access to the event and main lounge. One complimentary drink",
-	},
-	{
-		id: 2,
-		name: "VIP Admission",
-		price: 75,
-		quantity: 1,
-		isSelected: false,
-		text: "Sales end on Feb 15, 2025",
-		desc: "Exclusive access to the VIP section. Meet and Greet with celebrities and models.  Premium seating and priority service. Two complimentary artisanal cocktails",
-	},
-]
+type Props = {
+	event: IEvent
+}
 
-const EventPage: React.FC = () => {
+const EventTicketsComponent: React.FC<Props> = ({ event }) => {
+	// format the event tickets
+	const ticketsItems = event.tickets.map((ticket, index) => {
+		return {
+			id: ticket._id.toString(),
+			name: ticket.name,
+			price: ticket.price,
+			quantity: 1,
+			isSelected: false,
+			text: `Sales end on ${new Date(event.endsOn).toDateString()}`,
+			desc: ticket.desc,
+			priceId: ticket.stripeProductId,
+			eventId: event._id.toString(),
+		}
+	})
+
 	// State for ticket quantities
 	const [tickets, setTickets] = useState(ticketsItems)
+
+	// Clone a static verion of the tickets so when increasing the qty the amount is not recalculated from the original price
+	const staticTickets = ticketsItems.copyWithin(0, 0)
+
+	// State for loader
 	const [isLoading, setLoader] = useState(false)
 
 	// State for checkout modal
 	const dispatcher = useAppDispatch()
 
 	// Handle increment/decrement for tickets
-	const handleQuantityChange = (id: number, delta: number) => {
+	const handleQuantityChange = (id: string, delta: number) => {
 		setTickets((prevTickets) =>
 			prevTickets.map((ticket, index) => {
 				const newQty = Math.max(1, ticket.quantity + delta)
@@ -47,7 +51,7 @@ const EventPage: React.FC = () => {
 		)
 	}
 
-	const handleTicketSelection = (id: number) => {
+	const handleTicketSelection = (id: string) => {
 		setTickets((prevTickets) =>
 			prevTickets.map((ticket) => {
 				return ticket.id === id ? { ...ticket, isSelected: !ticket.isSelected } : ticket
@@ -67,8 +71,18 @@ const EventPage: React.FC = () => {
 		}
 
 		const ticketsSelected = tickets
-			.map((ticket, index) => ({ id: ticket.id, name: ticket.name, price: ticketsItems[index].price, quantity: ticket.quantity, isSelected: ticket.isSelected, desc: ticket.desc }))
+			.map((ticket, index) => ({
+				id: ticket.id,
+				name: ticket.name,
+				price: ticketsItems[index].price,
+				quantity: ticket.quantity,
+				isSelected: ticket.isSelected,
+				desc: ticket.desc,
+				priceId: ticket.priceId,
+				eventId: ticket.eventId,
+			}))
 			.filter((ticket) => ticket.isSelected)
+
 		dispatcher(setSelectedTickets(ticketsSelected))
 
 		waitUntil(500).then(() => {
@@ -89,23 +103,23 @@ const EventPage: React.FC = () => {
 							<h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Tickets</h2>
 							<p className="text-gray-600 text-sm sm:text-base">Select your ticket and checkout event.</p>
 						</div>
-						<button
-							disabled={isLoading}
-							onClick={() => showCheckoutForm(true)}
-							className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
-						>
-							{isLoading ? <Spinner /> : "Checkout"}
-						</button>
+
+						{/* Total Price to pay */}
+						<div className="text-center sm:text-right">
+							<h3 className="text-2xl font-semibold text-gray-800">
+								Total: {tickets.reduce((acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc), 0).toLocaleString("en-US", { style: "currency", currency: "usd" })}
+							</h3>
+						</div>
 					</div>
 
 					{/* Ticket Section */}
 					<div className="space-y-6">
-						{tickets.map((ticket) => (
+						{tickets.map((ticket, index) => (
 							<div key={ticket.id} className="bg-gray-50 p-4 rounded-lg">
 								<div className="flex flex-col sm:flex-row justify-between items-center">
 									<div className="md:text-left xs:text-center">
 										<h3 className="font-semibold text-lg text-gray-800">{ticket.name}</h3>
-										<p className="text-gray-600">${ticket.price}</p>
+										<p className="text-gray-600">{staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}</p>
 									</div>
 
 									{!ticket.isSelected ? (
@@ -139,10 +153,21 @@ const EventPage: React.FC = () => {
 							</div>
 						))}
 					</div>
+
+					{/* Checkout Section */}
+					<div className="flex justify-center items-center my-4">
+						<button
+							disabled={isLoading}
+							onClick={() => showCheckoutForm(true)}
+							className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
+						>
+							{isLoading ? <Spinner /> : "Checkout"}
+						</button>
+					</div>
 				</div>
 			</div>
 		</>
 	)
 }
 
-export default EventPage
+export default EventTicketsComponent

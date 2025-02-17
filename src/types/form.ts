@@ -21,8 +21,9 @@ export type CreateEventFormData = {
 	endDate: string
 	endTime: string
 	name: string
-	datetime: string
 	location: string
+	capacity: number
+	requireApproval: boolean
 	images: FileUploadData[]
 	tickets: TicketData[]
 	isPaid: boolean

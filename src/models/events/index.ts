@@ -1,7 +1,9 @@
 import { dbconn } from "@Jetzy/configs/database"
-import mongoose, { Schema } from "mongoose"
+import { Model, Schema } from "mongoose"
+import { IEvent, IEventTicket } from "./types"
+import { EventTracker } from "./event-tracker"
 
-const eventTciketsSchema = new Schema(
+const eventTciketsSchema = new Schema<IEventTicket>(
 	{
 		name: {
 			type: String,
@@ -15,12 +17,8 @@ const eventTciketsSchema = new Schema(
 			type: String,
 			required: true,
 		},
-		priceId: {
+		stripeProductId: {
 			type: String,
-			required: true,
-		},
-		bookingLimits: {
-			type: Number,
 			required: true,
 		},
 	},
@@ -28,12 +26,13 @@ const eventTciketsSchema = new Schema(
 )
 
 // Define the  schema
-const eventsSchema = new Schema(
+const eventsSchema = new Schema<IEvent>(
 	{
 		slug: {
 			type: String,
 			required: true,
 			unique: true,
+			index: true,
 		},
 		name: {
 			type: String,
@@ -69,6 +68,16 @@ const eventsSchema = new Schema(
 			required: true,
 		},
 
+		capacity: {
+			type: Number,
+			default: 0, // 0 means unlimited
+		},
+
+		requireApproval: {
+			type: Boolean,
+			default: false, // false means no approval required
+		},
+
 		tickets: {
 			type: [eventTciketsSchema],
 			required: false,
@@ -79,8 +88,19 @@ const eventsSchema = new Schema(
 			default: false,
 		},
 	},
-	{ timestamps: true },
+	{
+		timestamps: true,
+		methods: {
+			createEventTracker: async function (eventCapacity: number) {
+				const eventTracker = await EventTracker.create({
+					eventId: this._id,
+					eventCapacity,
+				})
+				return eventTracker
+			},
+		},
+	},
 )
 
 // Export the user model
-export const Events = dbconn.models["Events"] || dbconn.model("Events", eventsSchema)
+export const Events: Model<IEvent> = dbconn.models["Events"] || dbconn.model("Events", eventsSchema)

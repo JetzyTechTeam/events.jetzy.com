@@ -6,7 +6,6 @@ export type TicketData = {
 	title: string
 	price: number
 	description: string
-	limit: number
 }
 
 export interface TicketCardProps {
@@ -22,7 +21,6 @@ const TicketCard: React.FC<TicketCardProps> = ({ onDelete, onSave }) => {
 		title: "",
 		price: 0,
 		description: "",
-		limit: 0,
 	}
 
 	const [data, setData] = useState(defaultData)
@@ -34,7 +32,7 @@ const TicketCard: React.FC<TicketCardProps> = ({ onDelete, onSave }) => {
 	}
 
 	// Button is enabled if any field differs from its default value.
-	const [hasChanges, updateChanges] = useState(data.title !== defaultData.title || data.price !== defaultData.price || data.description !== defaultData.description || data.limit !== defaultData.limit)
+	const [hasChanges, updateChanges] = useState(data.title !== defaultData.title || data.price !== defaultData.price || data.description !== defaultData.description)
 
 	const handleDelete = () => {
 		setVisible(false)
@@ -98,21 +96,6 @@ const TicketCard: React.FC<TicketCardProps> = ({ onDelete, onSave }) => {
 					value={data.description}
 					onChange={(e) => handleChange("description", e.target.value)}
 					placeholder="Enter description"
-					className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-				/>
-			</div>
-
-			{/* Max Booking Limit Input */}
-			<div>
-				<label htmlFor="ticket-limit" className="block text-gray-700 font-bold mb-1">
-					Max Booking Limit
-				</label>
-				<input
-					id="ticket-limit"
-					type="number"
-					value={data.limit}
-					onChange={(e) => handleChange("limit", Number(e.target.value))}
-					placeholder="Enter max booking limit"
 					className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
 			</div>

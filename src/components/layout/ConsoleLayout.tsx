@@ -8,7 +8,7 @@ export default function ConsoleLayout({ page, children, component }: ConsoleDash
 			{/* Navbar */}
 			<ConsoleNavbar page={page} />
 			<header className="bg-white shadow">
-				<div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex md:flex-row xs:flex-col gap-4">
+				<div className="mx-auto max-w-7xl px-4 py-6 xs:px-6 lg:px-8 flex md:flex-row xs:flex-col justify-between gap-4">
 					<h1 className="text-3xl font-bold tracking-tight text-gray-900 w-full">{page}</h1>
 					{component}
 				</div>

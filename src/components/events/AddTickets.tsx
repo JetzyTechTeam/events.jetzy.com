@@ -9,7 +9,7 @@ export default function AddTickets(props: Props) {
 		<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
 			<header className="grid grid-rows-2 divide-y divide-slate-400">
 				<div className="pb-2 flex items-center justify-between">
-					<h2 className="text-slat-400 font-bold">Add Event Tickets</h2>
+					<h2 className="text-slat-400 font-bold">Add Tickets</h2>
 
 					{/* plus button icon */}
 

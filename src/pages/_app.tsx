@@ -11,6 +11,8 @@ import "react-toastify/dist/ReactToastify.css"
 import React from "react"
 import { EdgeStoreProvider } from "@Jetzy/lib/edgestore"
 
+import { ChakraProvider } from "@chakra-ui/react"
+
 export default function App({ Component, pageProps: { session, ...pageProps } }: AppProps<{ session: Session }>) {
 	const { store, props } = wrapper.useWrappedStore(pageProps)
 	React.useEffect(() => {}, [])
@@ -19,7 +21,9 @@ export default function App({ Component, pageProps: { session, ...pageProps } }:
 			<SessionProvider session={session}>
 				<ToastContainer position="top-center" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
 				<EdgeStoreProvider>
-					<Component {...pageProps} />
+					<ChakraProvider>
+						<Component {...pageProps} />
+					</ChakraProvider>
 				</EdgeStoreProvider>
 			</SessionProvider>
 		</ReduxProvider>

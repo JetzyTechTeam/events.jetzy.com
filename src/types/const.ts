@@ -1,22 +1,23 @@
 export enum Pages {
-  Dasshboard = "Dashboard",
-  Events = "Events",
+	Dasshboard = "Dashboard",
+	Events = "Events",
+	Bookings = "Bookings",
 }
 
 export enum Roles {
-  USER = "user",
-  ADMIN = "admin",
+	USER = "user",
+	ADMIN = "admin",
 }
 
 export enum EventPrivacy {
-  PUBLIC = "public",
-  PRIVATE = "private",
-  GROUP = "group",
+	PUBLIC = "public",
+	PRIVATE = "private",
+	GROUP = "group",
 }
 
 export enum TransactionStatus {
-  PENDING = "pending",
-  SUCCESS = "success",
-  FAILED = "failed",
-  RESERVED = "reserved",
+	PENDING = "pending",
+	SUCCESS = "success",
+	FAILED = "failed",
+	RESERVED = "reserved",
 }

@@ -13,8 +13,8 @@ import React from "react"
 
 const CreateEventButton = () => {
 	return (
-		<div className="w-full px-5 flex justify-end">
-			<Link href={ROUTES.dashboard.events.create} className="p-3 bg-app rounded-3xl">
+		<div className="md:w-full xs:w-fit  flex justify-end">
+			<Link href={ROUTES.dashboard.events.create} className="p-1.5 bg-app rounded-3xl">
 				Create Event
 			</Link>
 		</div>
