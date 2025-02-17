@@ -51,7 +51,18 @@ export default function CreateEventPage() {
 
 	const handleSubmit = (values: CreateEventFormData) => {
 		// set the tickets data
-		values.tickets = eventTicketsData
+		if (isPaid) {
+			values.tickets = eventTicketsData
+		} else {
+			values.tickets = [
+				{
+					id: uniqueId(10),
+					title: "Free Ticket",
+					price: 0,
+					description: "This is a free ticket",
+				},
+			]
+		}
 
 		// set the images data
 		values.images = uploadedImages

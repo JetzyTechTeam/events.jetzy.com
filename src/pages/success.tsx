@@ -1,3 +1,4 @@
+import { Error } from "@/lib/_toaster"
 import { sendEmailAction } from "@Jetzy/actions/send-email-action"
 import axios from "axios"
 import { useRouter } from "next/router"
@@ -30,19 +31,11 @@ const CheckoutSuccessPage: React.FC = () => {
 		const checkPaymentStatus = async () => {
 			if (session_id) {
 				try {
-					const response = await axios.get(`/api/get-session?session_id=${session_id}`)
+					const response = await axios.get(`/api/checkout/confirm?session_id=${session_id}`)
 					const session = response.data
 
-					if (session.payment_status === "paid" && session.metadata && session.client_reference_id) {
-						// Use the API route to send the email
-						await axios.post("/api/send-email", {
-							firstName: session.metadata.firstName,
-							lastName: session.metadata.lastName,
-							email: session.metadata.email,
-							phone: session.metadata.phone,
-							tickets: JSON.parse(session.metadata.tickets),
-							orderNumber: session.client_reference_id,
-						})
+					if (session.payment_status !== "paid") {
+						Error("Payment Error", "Your payment was not successful. Please try again.")
 					}
 				} catch (error) {
 					console.error("Error checking payment status:", error)

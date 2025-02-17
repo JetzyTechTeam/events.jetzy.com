@@ -1,4 +1,6 @@
+import { sendTicketConfirmation } from "@/lib/send-grid"
 import { uniqueId } from "@/lib/utils"
+import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -45,9 +47,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// get the session metadata
 		const metadata = session.metadata as SessionMetadata
 
-		console.log("====================================")
-		console.log(metadata)
-		console.log("====================================")
 		// get the tickets from the metadata
 		const tickets = JSON.parse(metadata.tickets) as TicketsProps
 
@@ -70,6 +69,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 			// update the event tracker
 			await booking.updateEventTracker()
+
+			const event = await Events.findById(metadata.eventId)
+			if (!event) {
+				return res.status(404).json({ message: "Event not found" })
+			}
+
+			// send email to the customer
+			await sendTicketConfirmation({
+				event,
+				firstName: metadata.firstName,
+				lastName: metadata.lastName,
+				email: metadata.email,
+				phone: metadata.phone,
+				tickets: tickets.map((ticket) => ({
+					name: ticket.name,
+					price: ticket.price,
+					quantity: ticket.quantity,
+					desc: ticket.desc,
+				})),
+				orderNumber: `JZ-${session.client_reference_id}`,
+			})
 		}
 
 		res.status(200).json(session)

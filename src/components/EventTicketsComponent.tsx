@@ -19,8 +19,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 			name: ticket.name,
 			price: ticket.price,
 			quantity: 1,
-			isSelected: false,
-			text: `Sales end on ${new Date(event.endsOn).toDateString()}`,
+			isSelected: event.isPaid ? false : true,
+			text: `${event.isPaid ? "Sales" : "Registration"} end on ${new Date(event.endsOn).toDateString()}`,
 			desc: ticket.desc,
 			priceId: ticket.stripeProductId,
 			eventId: event._id.toString(),
@@ -122,7 +122,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 										<p className="text-gray-600">{staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}</p>
 									</div>
 
-									{!ticket.isSelected ? (
+									{!ticket.isSelected && event.isPaid ? (
 										<div className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800">
 											<button
 												onClick={() => handleTicketSelection(ticket.id)}
@@ -132,20 +132,24 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 											</button>
 										</div>
 									) : (
-										<div className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800">
-											<button onClick={() => handleQuantityChange(ticket.id, -1)} className="bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300">
-												-
-											</button>
-											<span className="text-lg font-semibold">{ticket.quantity}</span>
-											<button onClick={() => handleQuantityChange(ticket.id, 1)} className="bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300">
-												+
-											</button>
-											{/* remove   */}
+										<>
+											{event.isPaid && (
+												<div className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800">
+													<button onClick={() => handleQuantityChange(ticket.id, -1)} className="bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300">
+														-
+													</button>
+													<span className="text-lg font-semibold">{ticket.quantity}</span>
+													<button onClick={() => handleQuantityChange(ticket.id, 1)} className="bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300">
+														+
+													</button>
+													{/* remove   */}
 
-											<button onClick={() => handleTicketSelection(ticket.id)} className="bg-red-200 text-red-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-300">
-												-
-											</button>
-										</div>
+													<button onClick={() => handleTicketSelection(ticket.id)} className="bg-red-200 text-red-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-300">
+														-
+													</button>
+												</div>
+											)}
+										</>
 									)}
 								</div>
 								<p className="text-gray-600 mt-1 text-xs md:text-left xs:text-center">{ticket.text}</p>

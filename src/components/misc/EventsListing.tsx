@@ -28,7 +28,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 	const diffTime = Math.abs(currentDate.getTime() - eventDate.getTime())
 	const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
-	const isNew = diffDays < 7
+	const isNew = diffDays < 2
 
 	return (
 		<Box

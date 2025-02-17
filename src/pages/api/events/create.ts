@@ -8,6 +8,7 @@ import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import zod from "zod"
 import Stripe from "stripe"
+import { formatTextWithLineBreaks } from "@/lib/utils"
 
 // create validation schema
 
@@ -30,7 +31,7 @@ const schema = zod.object({
 		zod.object({
 			id: zod.string().nonempty(),
 			title: zod.string().nonempty(),
-			price: zod.number().positive(),
+			price: zod.number().nonnegative(),
 			description: zod.string().nonempty(),
 		}),
 	),
@@ -90,7 +91,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			slug: generateRandomId(10),
 			name,
 			location,
-			desc,
+			desc: formatTextWithLineBreaks(desc),
 			startsOn: start,
 			endsOn: end,
 			isPaid,
