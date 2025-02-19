@@ -70,6 +70,12 @@ export default function CreateEventPage() {
 		// set the isPaid value
 		values.isPaid = isPaid
 
+		// make sure basic required fields are not empty
+		if (!values.name || !values.location || !values.desc || !values.startDate || !values.startTime || !values.endDate || !values.endTime) {
+			Error("Error", "Please fill all required fields")
+			return
+		}
+
 		dispatcher(CreateEventThunk({ data: { payload: JSON.stringify(values) } })).then((res: any) => {
 			if (res?.payload?.status) {
 				navigation.push(ROUTES.dashboard.index)

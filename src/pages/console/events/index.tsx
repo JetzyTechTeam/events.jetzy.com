@@ -74,7 +74,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	return {
 		props: {
-			events: JSON.stringify(data),
+			events: JSON?.stringify(data),
 			pagination,
 		},
 	}

@@ -81,7 +81,7 @@ const bookingSchema = new Schema<IBookings>(
 
 			// Get the event details
 			async getEvent() {
-				const event = await Events.findOne({ _id: this.eventId, isDeleted: false }, "_id name location startsOn endsOn tickets")
+				const event = await Events.findOne({ _id: this.eventId }, "_id name location startsOn endsOn tickets")
 				if (!event) return null
 				return event
 			},
