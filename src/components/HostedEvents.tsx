@@ -19,7 +19,9 @@ import Event8 from "@Jetzy/assets/event-banners/event-8.jpeg"
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { IEvent } from "@/models/events/types"
 import { Image } from "@chakra-ui/react"
-import { CalendarDateRangeIcon, MapPinIcon, ShareIcon, TicketIcon } from "@heroicons/react/24/outline"
+import { CalendarDateRangeIcon, HomeIcon, MapPinIcon, ShareIcon, TicketIcon } from "@heroicons/react/24/outline"
+import Link from "next/link"
+import { ROUTES } from "@/configs/routes"
 
 const images = [SampleImage, Event2, Event3, Event4, Event5, Event6, Event7, Event8]
 
@@ -68,6 +70,15 @@ export default function HostedEvents({ event }: Props) {
 	return (
 		<>
 			<div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-7">
+				<div className="text-center text-white text-lg font-bold mb-10">
+					<Link
+						role="button"
+						href={ROUTES.home}
+						className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3  whitespace-nowrap rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
+					>
+						<HomeIcon className="w-6 h-6 inline-block mr-2" /> See more events
+					</Link>
+				</div>
 				{/* Main Container */}
 				<div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 					{/* Banner Image */}

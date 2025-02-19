@@ -1,6 +1,3 @@
-const baseUrl = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "http://localhost:3000"
-const scheme = process.env.NODE_ENV === "development" ? "http" : "https"
-
 export const ROUTES = {
 	// ----------------- Auth Routes -----------------
 	create: `/signup`,
@@ -12,7 +9,7 @@ export const ROUTES = {
 		events: {
 			index: "/console/events",
 			create: "/console/events/create",
-			edit: "/console/events/:slug/edit",
+			edit: "/console/events/:eventId/update",
 			tickets: "/console/events/:eventId/tickets",
 		},
 

@@ -13,18 +13,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// make sure user is logged-in before creating events
 		if (!session) return sendResponse(res, null, "You need to be logged in to perform this action.", false, ResCode.UNAUTHORIZED)
 
-		//  get an event by its slug or id
-		let event
-		try {
-			event = await Events.findOneAndDelete({ _id: req?.query?.slug }).exec()
-		} catch (error: any) {
-			if (error?.message?.includes("Cast to ObjectId failed")) {
-				event = await Events.findOneAndDelete({ slug: req?.query?.slug }).exec()
-			}
-		}
-		if (!event) return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
+		// Get the event id from the request
+		const { eventId } = req.query
 
-		return sendResponse(res, event, "Event deleted successfully!", true, ResCode.OK)
+		// Find the event by id and delete it
+		const event = await Events.findById(eventId)
+		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
+
+		// Now lets make sure the event has not booking and the date is not past
+		const bookings = await event.getBookings()
+		if (bookings.length > 0) {
+			// soft delete the event
+			await Events.findByIdAndUpdate(eventId, { isDeleted: true })
+		} else {
+			// hard delete the event
+			await Events.findByIdAndDelete(eventId)
+			event.deleteTracker()
+		}
+
+		return sendResponse(res, null, "Event deleted successfully", true, ResCode.NO_CONTENT)
 	} catch (error: any) {
 		console.log("Error:", error.message)
 		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)

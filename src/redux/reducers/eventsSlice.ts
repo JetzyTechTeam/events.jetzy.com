@@ -3,7 +3,7 @@ import { HYDRATE } from "next-redux-wrapper"
 import { CreateEventFormData, EventInterface, EventSliceState, RequestParams, UserInterface } from "@Jetzy/types"
 import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 import { AppState } from "../stores"
-import { CreateEventApis, DeleteEventApis, FetchEventApis, ListEventsApis } from "@Jetzy/services/events/eventsapis"
+import { CreateEventApis, DeleteEventApis, DeleteTicketApis, FetchEventApis, ListEventsApis, UpdateTicketApis } from "@Jetzy/services/events/eventsapis"
 import { UpdateEventApis } from "../../services/events/eventsapis"
 
 export const CreateEventThunk = createAsyncThunk("event/createEvent", async (params: RequestParams<{ payload: string }>, thunkApi) => {
@@ -22,7 +22,7 @@ export const FetchEventThunk = createAsyncThunk("event/fetchEvent", async (param
 	return await FetchEventApis(params)
 })
 
-export const UpdateEventThunk = createAsyncThunk("event/updateEvent", async (params: RequestParams<CreateEventFormData>) => {
+export const UpdateEventThunk = createAsyncThunk("event/updateEvent", async (params: RequestParams<{ payload: string }>) => {
 	return await UpdateEventApis(params)
 })
 
@@ -32,6 +32,17 @@ export const DeleteEventThunk = createAsyncThunk("event/deleteEvent", async (par
 
 	return res
 })
+
+export const DeleteTicketThunk = createAsyncThunk("event/deleteTicket", async (params: RequestParams<{ eventId: string; ticketId: string }>) => {
+	return await DeleteTicketApis(params)
+})
+
+export const UpdateTicketThunk = createAsyncThunk(
+	"event/updateTicket",
+	async (params: RequestParams<{ payload: { title: string; description: string }; params: { eventId: string; ticketId: string } }>) => {
+		return await UpdateTicketApis(params)
+	},
+)
 
 // Initial state
 const initialState: EventSliceState<EventInterface> = {
@@ -149,6 +160,48 @@ export const eventSlice = createSlice({
 			state.isLoading = false
 
 			ServerErrors("Failed to delete event.", action?.error)
+		})
+
+		// --------------------- [Delete Ticket ] ---------------------
+
+		builder.addCase(DeleteTicketThunk.pending, (state) => {
+			state.isLoading = true
+		})
+
+		builder.addCase(DeleteTicketThunk.fulfilled, (state, action) => {
+			state.isLoading = false
+			state.data = action.payload?.data
+
+			if (action?.payload?.status) {
+				Success("Ticket deleted", "Ticket deleted successfully.")
+			}
+		})
+
+		builder.addCase(DeleteTicketThunk.rejected, (state, action) => {
+			state.isLoading = false
+
+			ServerErrors("Failed to delete ticket.", action?.error)
+		})
+
+		// --------------------- [Update Ticket ] ---------------------
+
+		builder.addCase(UpdateTicketThunk.pending, (state) => {
+			state.isLoading = true
+		})
+
+		builder.addCase(UpdateTicketThunk.fulfilled, (state, action) => {
+			state.isLoading = false
+			state.data = action.payload?.data
+
+			if (action?.payload?.status) {
+				Success("Ticket updated", "Ticket updated successfully.")
+			}
+		})
+
+		builder.addCase(UpdateTicketThunk.rejected, (state, action) => {
+			state.isLoading = false
+
+			ServerErrors("Failed to update ticket.", action?.error)
 		})
 	},
 })

@@ -1,5 +1,26 @@
 import React from "react"
-import { Table, Thead, Tbody, Tfoot, Tr, Th, Td, TableCaption, TableContainer, IconButton, Menu, MenuButton, MenuList, MenuItem, Flex, Button, Text, useDisclosure, Box } from "@chakra-ui/react"
+import {
+	Table,
+	Thead,
+	Tbody,
+	Tfoot,
+	Tr,
+	Th,
+	Td,
+	TableCaption,
+	TableContainer,
+	IconButton,
+	Menu,
+	MenuButton,
+	MenuList,
+	MenuItem,
+	Flex,
+	Button,
+	Text,
+	useDisclosure,
+	Box,
+	Spinner,
+} from "@chakra-ui/react"
 import { EllipsisVerticalIcon, PencilIcon, PlusCircleIcon, TrashIcon } from "@heroicons/react/24/outline"
 import { Pagination } from "@/pages/console/events"
 import Image from "next/image"
@@ -9,6 +30,10 @@ import { IEvent } from "@/models/events/types"
 
 import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalFooter, ModalBody, ModalCloseButton } from "@chakra-ui/react"
 import ExpandText from "../misc/ExpandText"
+import { useAppDispatch, useAppSelector } from "@/redux/stores"
+import { DeleteEventThunk, getEventState } from "@/redux/reducers/eventsSlice"
+import { useEdgeStore } from "@/lib/edgestore"
+import { useRouter } from "next/router"
 
 type Props = {
 	rows: IEvent[]
@@ -16,14 +41,36 @@ type Props = {
 }
 const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 	const [event, setEventData] = React.useState<IEvent>(rows[0])
+	const [tableData, setTableData] = React.useState<IEvent[]>(rows)
+	const edgestore = useEdgeStore()
+	const router = useRouter()
 
 	const { isOpen, onOpen, onClose } = useDisclosure()
+
+	const dispatcher = useAppDispatch()
+	const { isLoading } = useAppSelector(getEventState)
+
+	const handleRemove = (item: IEvent) => {
+		dispatcher(DeleteEventThunk({ id: item._id.toString() })).then((res: any) => {
+			setTableData((prev) => prev.filter((event) => event._id.toString() !== item._id.toString()))
+
+			// delete the images from edge store server
+			if (item.images.length > 0) {
+				item.images.forEach((image) => {
+					edgestore.edgestore.publicFiles.delete({ url: image })
+				})
+			}
+		})
+	}
 
 	return (
 		<>
 			<TableContainer bg="white" borderRadius="md" boxShadow="md" p={2} mx={2}>
 				<Table variant="striped" colorScheme="gray">
-					<TableCaption>List of events.</TableCaption>
+					<TableCaption>
+						List of events.
+						{isLoading && <Spinner size="md" />}
+					</TableCaption>
 					<Thead>
 						<Tr>
 							<Th>Name</Th>
@@ -33,7 +80,7 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 						</Tr>
 					</Thead>
 					<Tbody>
-						{rows.map((row) => (
+						{tableData.map((row) => (
 							<Tr key={row._id.toString()}>
 								<Td fontWeight={"bold"}>
 									{/* image and event name */}
@@ -69,9 +116,12 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 									<Menu placement="top-end">
 										<MenuButton as={IconButton} aria-label="Options" icon={<EllipsisVerticalIcon style={{ width: 20, height: 20 }} />} variant="outline" />
 										<MenuList>
-											<MenuItem icon={<PencilIcon style={{ width: 20, height: 20 }} />}>Edit</MenuItem>
-											<MenuItem icon={<TrashIcon style={{ width: 20, height: 20 }} />}>Delete</MenuItem>
-											<MenuItem icon={<PlusCircleIcon style={{ width: 20, height: 20 }} />}>Add more tickets</MenuItem>
+											<MenuItem onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))} icon={<PencilIcon style={{ width: 20, height: 20 }} />}>
+												Edit
+											</MenuItem>
+											<MenuItem onClick={() => handleRemove(row)} icon={<TrashIcon style={{ width: 20, height: 20 }} />}>
+												Delete
+											</MenuItem>
 										</MenuList>
 									</Menu>
 								</Td>

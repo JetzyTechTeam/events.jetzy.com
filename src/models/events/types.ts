@@ -1,4 +1,4 @@
-import { Types } from "mongoose"
+import { Model, Types } from "mongoose"
 import { IBaseModelProps } from "../types"
 
 export interface IEventTicket {
@@ -23,6 +23,8 @@ export interface IEvent extends IBaseModelProps {
 	requireApproval: boolean // If true, user must be approved before they can attend
 	tickets: IEventTicket[]
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
+	getBookings(): Promise<IBookings[]>
+	deleteTracker(): Promise<void>
 }
 
 export enum BookingStatus {
@@ -36,6 +38,7 @@ export enum BookingStatus {
 export interface IBookings extends IBaseModelProps {
 	bookingRef: string
 	eventId: Types.ObjectId
+	event: IEvent
 	tickets: Array<{
 		ticketId: Types.ObjectId
 		quantity: number
@@ -48,6 +51,7 @@ export interface IBookings extends IBaseModelProps {
 	tax: number
 	total: number
 	updateEventTracker: () => Promise<void>
+	getEvent: () => Promise<IEvent>
 }
 
 export interface IEventTracker extends IBaseModelProps {

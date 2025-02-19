@@ -4,14 +4,16 @@ import flatpickr from "flatpickr"
 type Props = {
 	onChange: (date: string) => void
 	placeholder?: string
+	defaultDate?: string
 }
-export default function DatePicker({ onChange, placeholder = "Select a date" }: Props) {
+export default function DatePicker({ onChange, defaultDate, placeholder = "Select a date" }: Props) {
 	const ref = React.createRef<HTMLInputElement>()
 
 	React.useEffect(() => {
 		if (!ref.current) return
 
 		const datepicker = flatpickr(ref.current, {
+			...(defaultDate && { defaultDate }),
 			enableTime: false,
 			minDate: "today",
 			dateFormat: "F j, Y",

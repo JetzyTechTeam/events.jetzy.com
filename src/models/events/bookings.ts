@@ -2,6 +2,7 @@ import { Model, Schema } from "mongoose"
 import { BookingStatus, IBookings } from "./types"
 import { dbconn } from "@/configs/database"
 import { EventTracker } from "./event-tracker"
+import { Events } from "."
 
 const bookingSchema = new Schema<IBookings>(
 	{
@@ -76,6 +77,13 @@ const bookingSchema = new Schema<IBookings>(
 
 				eventTracker.bookedTickets += this.tickets.reduce((acc, curr) => acc + curr.quantity, 0)
 				await eventTracker.save()
+			},
+
+			// Get the event details
+			async getEvent() {
+				const event = await Events.findOne({ _id: this.eventId, isDeleted: false }, "_id name location startsOn endsOn tickets")
+				if (!event) return null
+				return event
 			},
 		},
 	},

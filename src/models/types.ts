@@ -5,4 +5,5 @@ export interface IBaseModelProps {
 	isDeleted: boolean
 	createdAt: string
 	updatedAt: string
+	toJSON: () => any
 }

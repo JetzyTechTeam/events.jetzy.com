@@ -11,8 +11,9 @@ import React from "react"
 type Props = {
 	tickets: string | null
 	eventName: string
+	eventId: string
 }
-export default function EventTicketsPage({ tickets, eventName }: Props) {
+export default function EventTicketsPage({ tickets, eventName, eventId }: Props) {
 	if (!tickets) {
 		return (
 			<ConsoleLayout page={Pages.Events}>
@@ -28,11 +29,12 @@ export default function EventTicketsPage({ tickets, eventName }: Props) {
 		title: ticket.name,
 		price: ticket.price,
 		date: ticket.createdAt,
+		desc: ticket.desc,
 	}))
 
 	return (
 		<ConsoleLayout page={Pages.Events}>
-			<EventTicketTable rows={data} eventName={eventName} />
+			<EventTicketTable rows={data} eventName={eventName} eventId={eventId} />
 		</ConsoleLayout>
 	)
 }
@@ -55,6 +57,7 @@ export const getServerSideProps: GetServerSideProps<any, Params> = async (contex
 			props: {
 				tickets: null,
 				eventName: "",
+				eventId: eventId,
 			},
 		}
 	}
@@ -63,6 +66,7 @@ export const getServerSideProps: GetServerSideProps<any, Params> = async (contex
 		props: {
 			tickets: JSON.stringify(event.tickets),
 			eventName: event.name,
+			eventId: eventId,
 		},
 	}
 }

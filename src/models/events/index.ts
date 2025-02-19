@@ -2,6 +2,7 @@ import { dbconn } from "@Jetzy/configs/database"
 import { Model, Schema } from "mongoose"
 import { IEvent, IEventTicket } from "./types"
 import { EventTracker } from "./event-tracker"
+import { Bookings } from "./bookings"
 
 const eventTciketsSchema = new Schema<IEventTicket>(
 	{
@@ -97,6 +98,17 @@ const eventsSchema = new Schema<IEvent>(
 					eventCapacity,
 				})
 				return eventTracker
+			},
+
+			// Get Bookings for this event
+			getBookings: async function () {
+				const bookings = await Bookings.find({ eventId: this._id, isDeleted: false })
+				return bookings
+			},
+
+			// Delete the event tracker
+			deleteTracker: async function () {
+				await EventTracker.findOneAndDelete({ eventId: this._id })
 			},
 		},
 	},

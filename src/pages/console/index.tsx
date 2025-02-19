@@ -31,7 +31,7 @@ export default function ConsoleDashboard() {
 
 	return (
 		<ConsoleLayout page={Pages.Dasshboard} component={<CreateEventButton />}>
-			{!dataList?.length && <p className="text-white">No events found.</p>}
+			{!dataList?.length && !isFetching && <p className="text-gray-700">No events found.</p>}
 
 			{/* Display the data listing  */}
 			{isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
