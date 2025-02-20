@@ -20,6 +20,7 @@
     "@sendgrid/mail": "^8.1.4",
     "@stripe/react-stripe-js": "^2.7.0",
     "@stripe/stripe-js": "^3.3.0",
+    "@vercel/analytics": "^1.5.0",
     "@vercel/blob": "^0.27.1",
     "axios": "^1.7.3",
     "bcrypt": "^5.1.1",

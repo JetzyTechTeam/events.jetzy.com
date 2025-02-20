@@ -10,6 +10,7 @@ import "@Jetzy/styles/globals.scss"
 import "react-toastify/dist/ReactToastify.css"
 import React from "react"
 import { EdgeStoreProvider } from "@Jetzy/lib/edgestore"
+import { Analytics } from "@vercel/analytics/react"
 
 import { ChakraProvider } from "@chakra-ui/react"
 
@@ -18,6 +19,7 @@ export default function App({ Component, pageProps: { session, ...pageProps } }:
 	React.useEffect(() => {}, [])
 	return (
 		<ReduxProvider store={store}>
+			<Analytics />
 			<SessionProvider session={session}>
 				<ToastContainer position="top-center" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
 				<EdgeStoreProvider>
