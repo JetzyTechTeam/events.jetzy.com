@@ -22,6 +22,9 @@ export type CreateEventFormData = {
 	endTime: string
 	name: string
 	location: string
+	longitude?: number
+	latitude?: number
+	placeId?: string
 	capacity: number
 	requireApproval: boolean
 	images: FileUploadData[]

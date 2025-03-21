@@ -52,7 +52,20 @@ const eventsSchema = new Schema<IEvent>(
 			type: String,
 			required: true,
 		},
-
+		coordinates: {
+			long: {
+				type: Number,
+				required: false,
+			},
+			lat: {
+				type: Number,
+				required: false,
+			},
+			placeId: {
+				type: String,
+				required: false,
+			},
+		},
 		isPaid: {
 			type: Boolean,
 			required: true,

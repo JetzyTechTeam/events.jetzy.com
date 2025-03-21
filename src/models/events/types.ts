@@ -14,6 +14,11 @@ export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
 	location: string
+	coordinates: {
+		long: number
+		lat: number
+		placeId: string
+	}
 	desc: string
 	isPaid: boolean
 	images: string[]

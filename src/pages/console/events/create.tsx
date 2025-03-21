@@ -20,6 +20,7 @@ import AddTickets from "@/components/events/AddTickets"
 import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
+import { usePlacesWidget } from "react-google-autocomplete"
 
 const eventTicketsData: TicketData[] = []
 const uploadedImages: FileUploadData[] = []
@@ -48,6 +49,27 @@ export default function CreateEventPage() {
 		endDate: "",
 		endTime: "",
 	}
+
+	// GOOGLE PLACE API
+	const { ref } = usePlacesWidget({
+		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+		onPlaceSelected: (place) => {
+			if (formikRef.current) {
+				formikRef.current?.setFieldValue("location", place.formatted_address)
+				// Get the geometry location coordinates
+				const lat = place.geometry.location.lat()
+				const lng = place.geometry.location.lng()
+
+				// Get the place id
+				const placeId = place.place_id
+
+				// set the location coordinates and place id
+				formikRef.current?.setFieldValue("latitude", lat)
+				formikRef.current?.setFieldValue("longitude", lng)
+				formikRef.current?.setFieldValue("placeId", placeId)
+			}
+		},
+	})
 
 	const handleSubmit = (values: CreateEventFormData) => {
 		// set the tickets data
@@ -254,12 +276,13 @@ export default function CreateEventPage() {
 											</label>
 											<div className="mt-2">
 												<Field
+													ref={ref}
 													id="eventLocation"
 													name="location"
 													value={values?.location}
 													onChange={handleChange}
 													type="text"
-													placeholder="Physical addres or Virtual link"
+													placeholder="Physical addres"
 													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />

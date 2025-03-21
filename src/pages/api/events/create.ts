@@ -19,6 +19,9 @@ const schema = zod.object({
 	endTime: zod.string().nonempty(),
 	name: zod.string().nonempty(),
 	location: zod.string().nonempty(),
+	longitude: zod.number().optional(),
+	latitude: zod.number().optional(),
+	placeId: zod.string().optional(),
 	capacity: zod.number().nonnegative(),
 	requireApproval: zod.boolean(),
 	images: zod.array(
@@ -58,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc } = params
+		const { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc } = params
 
 		// construct datetime for start and end dates
 		const start = new Date(`${startDate} ${startTime}`)
@@ -91,6 +94,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			slug: generateRandomId(10),
 			name,
 			location,
+			coordinates: {
+				long: longitude,
+				lat: latitude,
+				placeId,
+			},
 			desc: formatTextWithLineBreaks(desc),
 			startsOn: start,
 			endsOn: end,
