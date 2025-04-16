@@ -79,7 +79,7 @@ const TicketCard: React.FC<TicketCardProps> = ({ onDelete, onSave }) => {
 				<input
 					id="ticket-price"
 					type="number"
-					value={data.price}
+					defaultValue={data.price}
 					onChange={(e) => handleChange("price", Number(e.target.value))}
 					placeholder="Enter price"
 					className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
