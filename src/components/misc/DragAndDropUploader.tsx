@@ -132,9 +132,9 @@ const DragAndDropFileUpload: React.FC<FileUploadProps> = ({ onUpload, onDelete, 
 	return (
 		<section className={` relative rounded-lg border border-gray-300 p-4 h-fit cursor-pointer ${dragOver ? "bg-gray-100 hover:bg-gray-200" : "bg-white hover:bg-gray-50"}`}>
 			{/* Delete (or Close) Button */}
-			<button className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-2xl focus:outline-none" onClick={handleDelete}>
+			{defaultImage === null && <button className="absolute top-2 right-2 text-gray-500 hover:text-gray-700 text-2xl focus:outline-none" onClick={handleDelete}>
 				&times;
-			</button>
+			</button>}
 			<div onClick={toggleFileSelect} className={`drag-and-drop-container`} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}>
 				<input ref={fileInputRef} type="file" accept="image/*" onChange={handleSelectFile} style={{ display: "none" }} />
 				{previewImage ? (

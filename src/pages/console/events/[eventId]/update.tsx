@@ -186,6 +186,7 @@ export default function CreateEventPage({ event }: Props) {
 								onUpload={fileUploader}
 								onDelete={fileUpoaderRemoveImage}
 								uploadedFiles={uploadedImages}
+								defaultImage={img.file}
 								key={img.id}
 							/>
 						))}
