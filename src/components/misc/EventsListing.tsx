@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useMemo } from "react"
 import { Box, Image, Text, Stack, SimpleGrid, Container, useColorModeValue, Badge } from "@chakra-ui/react"
 import { IEvent } from "@/models/events/types"
 import Pagination from "./Pagination"
@@ -30,6 +30,15 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 
 	const isNew = diffDays < 2
 
+	const { formattedDate, formattedTime } = useMemo(() => {
+    const date = new Date(event.startsOn);
+    return {
+      formattedDate: date.toDateString(),
+      formattedTime: date.toLocaleTimeString(),
+    };
+  }, [event.startsOn]);
+
+
 	return (
 		<Box
 			borderWidth="1px"
@@ -53,8 +62,8 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 							</Badge>
 						)}
 					</Text>
-					<Text fontSize="md" color="gray.500">
-						{new Date(event.startsOn.toString()).toDateString()} {new Date(event.startsOn.toString()).toLocaleTimeString()}
+					<Text fontSize="md" color="gray.500" suppressHydrationWarning>
+						{formattedDate} {formattedTime}
 						<br />
 						<Badge ml="1" fontSize="0.8em" colorScheme="orange" rounded={"md"}>
 							{event.isPaid ? "Get Tickets" : "Free"}

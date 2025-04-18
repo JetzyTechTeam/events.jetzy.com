@@ -69,6 +69,16 @@ export default function CreateEventPage() {
 				formikRef.current?.setFieldValue("placeId", placeId)
 			}
 		},
+		options: {
+			fields: [
+				"formatted_address",
+				"geometry",
+				"place_id",
+				"name",
+				"address_components"
+			],
+			types: ["establishment"],
+		},
 	})
 
 	const handleSubmit = (values: CreateEventFormData) => {
@@ -282,7 +292,7 @@ export default function CreateEventPage() {
 													value={values?.location}
 													onChange={handleChange}
 													type="text"
-													placeholder="Physical addres"
+													placeholder="Physical address"
 													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />

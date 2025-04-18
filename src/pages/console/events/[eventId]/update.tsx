@@ -24,14 +24,13 @@ import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
 import { IEvent } from "@/models/events/types"
 
-const eventTicketsData: TicketData[] = []
-const uploadedImages: FileUploadData[] = []
-
 type Props = {
 	event: string
 }
 export default function CreateEventPage({ event }: Props) {
 	const eventDetails = JSON.parse(event) as IEvent
+  const [eventTicketsData, setEventTicketsData] = React.useState<TicketData[]>([])
+  const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([])
 
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
 
@@ -41,8 +40,43 @@ export default function CreateEventPage({ event }: Props) {
 	const dispatcher = useAppDispatch()
 
 	const [isPaid, setIsPaid] = React.useState(eventDetails.isPaid)
+	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
 
-	// ---------------------------------------------------------------------------------------------
+	// --- Initialize images and tickets on mount ---
+	React.useEffect(() => {
+		if (eventDetails.images && eventDetails.images.length > 0) {
+      const newUploadedImages: FileUploadData[] = eventDetails.images.map(img => ({
+        id: uniqueId(10),
+        file: img,
+      }))
+      setUploadedImages(newUploadedImages)
+      
+      setImageUploadComponents(
+        newUploadedImages.map((img) => (
+          <DragAndDropFileUpload
+            customId={img.id}
+            onUpload={fileUploader}
+            onDelete={fileUpoaderRemoveImage}
+            uploadedFiles={newUploadedImages}
+            key={img.id}
+          />
+        ))
+      )
+    }
+
+    // Handle tickets
+    if (eventDetails.tickets && eventDetails.tickets.length > 0) {
+      const newTickets: TicketData[] = eventDetails.tickets.map(ticket => ({
+        id: ticket._id?.toString() || uniqueId(10),
+        title: ticket.name,
+        price: Number(ticket.price),
+        description: ticket.desc,
+      }))
+      setEventTicketsData(newTickets)
+    }
+	}, [event])
+
+	// --- Initial form values ---
 	const formInitData: CreateEventFormData = {
 		name: eventDetails.name,
 		desc: eventDetails.desc,
@@ -50,22 +84,17 @@ export default function CreateEventPage({ event }: Props) {
 		capacity: eventDetails.capacity,
 		requireApproval: eventDetails.requireApproval,
 		isPaid: eventDetails.isPaid,
-		images: [],
-		tickets: [],
-		startDate: new Date(eventDetails.startsOn.toString()).toDateString(),
-		startTime: new Date(eventDetails.startsOn.toString()).toTimeString(),
-		endDate: new Date(eventDetails.endsOn.toString()).toDateString(),
-		endTime: new Date(eventDetails.endsOn.toString()).toTimeString(),
+    images: uploadedImages,
+    tickets: eventTicketsData,
+		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
+		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
+		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
+		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
 	}
 
 	const handleSubmit = (values: CreateEventFormData) => {
-		// set the tickets data
 		values.tickets = eventTicketsData
-
-		// set the images data
 		values.images = uploadedImages
-
-		// set the isPaid value
 		values.isPaid = isPaid
 
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify(values) }, id: eventDetails._id.toString() })).then((res: any) => {
@@ -77,32 +106,25 @@ export default function CreateEventPage({ event }: Props) {
 
 	const submitForms = () => {
 		if (formikRef?.current) {
-			// submit the form
 			formikRef.current.submitForm()
 		}
 	}
 
 	const fileUploader = async (data: FileUploadData) => {
-		// check if the image is already in the array of uploaded images using the id from data object
 		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
 		if (imageIndex !== -1) {
 			uploadedImages[imageIndex] = data
 		} else {
-			// update the image url
 			uploadedImages.push(data)
 		}
 	}
 
 	const fileUpoaderRemoveImage = async (data: FileUploadData) => {
-		// remove the image from the array of uploaded images
 		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
 		if (imageIndex !== -1) {
-			// get the image to be removed
 			const image = uploadedImages[imageIndex]
 			uploadedImages.splice(imageIndex, 1)
-
 			try {
-				// delete the image from the server
 				await edgestore.publicFiles.delete({ url: image.file })
 			} catch (error: any) {
 				console.error("Error deleting image", error)
@@ -110,36 +132,28 @@ export default function CreateEventPage({ event }: Props) {
 			}
 		}
 	}
-	// ---------------------------------------------------------------------------------------------
 
-	// handle tickets save
 	const handleSave = (data: TicketData) => {
-		// using the ticket id check if it already exist in the array of tickets, if it does update the ticket data otherwise add the ticket to the array
 		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
 		if (ticketIndex !== -1) {
-			// update the ticket data
 			eventTicketsData[ticketIndex] = data
 		} else {
-			// add the ticket to the array
 			eventTicketsData.push(data)
 		}
 	}
 
 	const handleDelete = (data: TicketData) => {
-		// remove the ticket from the array
 		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
 		if (ticketIndex !== -1) {
 			eventTicketsData.splice(ticketIndex, 1)
 		}
 	}
-	// ---------------------------------------------------------------------------------------------
 
 	const handleStartDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
 			if (date) {
 				formikRef.current.setFieldValue("startDate", date)
 			}
-
 			if (time) {
 				formikRef.current.setFieldValue("startTime", time)
 			}
@@ -151,14 +165,11 @@ export default function CreateEventPage({ event }: Props) {
 			if (date) {
 				formikRef.current.setFieldValue("endDate", date)
 			}
-
 			if (time) {
 				formikRef.current.setFieldValue("endTime", time)
 			}
 		}
 	}
-
-	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
 
 	return (
 		<ConsoleLayout page={Pages.Events}>
@@ -169,16 +180,23 @@ export default function CreateEventPage({ event }: Props) {
 				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
 					{/* Image Uploader */}
 					<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
-						{imageUploadComponents}
-
-						{/* button to add new components */}
+					{uploadedImages.map((img) => (
+							<DragAndDropFileUpload
+								customId={img.id}
+								onUpload={fileUploader}
+								onDelete={fileUpoaderRemoveImage}
+								uploadedFiles={uploadedImages}
+								key={img.id}
+							/>
+						))}
 						<div className="flex justify-center items-center">
-							<button
+						<button
 								type="button"
 								onClick={() => {
-									setImageUploadComponents([
-										...imageUploadComponents,
-										<DragAndDropFileUpload customId={uniqueId(10)} onUpload={fileUploader} onDelete={fileUpoaderRemoveImage} uploadedFiles={uploadedImages} key={uniqueId()} />,
+									const id = uniqueId(10)
+									setUploadedImages([
+										...uploadedImages,
+										{ id, file: "" }
 									])
 								}}
 								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
@@ -189,7 +207,7 @@ export default function CreateEventPage({ event }: Props) {
 					</section>
 
 					<section className="space-y-6">
-						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation}>
+						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation} enableReinitialize>
 							{({ values, handleChange }) => (
 								<Form action="#" method="POST" className="space-y-6">
 									<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
@@ -217,24 +235,37 @@ export default function CreateEventPage({ event }: Props) {
 												<div className="grid grid-cols-3 gap-2">
 													<div className="col-span-2">
 														<label className="block text-xs leading-6 text-gray-500">Start Date</label>
-														<DatePicker onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" />
+														<DatePicker
+															onChange={(date) => handleStartDateChange(date)}
+															placeholder="Start Date"
+															defaultDate={values.startDate}
+														/>
 													</div>
-
 													<div className="col-span-1">
 														<label className="block text-xs leading-6 text-gray-500">Start Time</label>
-														<TimePicker onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" />
+														<TimePicker
+															onChange={(time) => handleStartDateChange(undefined, time)}
+															placeholder="Start Time"
+															defaultValue={values.startTime}
+														/>
 													</div>
 												</div>
-
 												<div className="grid grid-cols-3 gap-2">
 													<div className="col-span-2">
 														<label className="block text-xs leading-6 text-gray-500">End Date</label>
-														<DatePicker onChange={(date) => handleEndDateChange(date)} placeholder="End Date" />
+														<DatePicker
+															onChange={(date) => handleEndDateChange(date)}
+															placeholder="End Date"
+															defaultDate={values.endDate}
+														/>
 													</div>
-
 													<div className="col-span-1">
 														<label className="block text-xs leading-6 text-gray-500">End Time</label>
-														<TimePicker onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" />
+														<TimePicker
+															onChange={(time) => handleEndDateChange(undefined, time)}
+															placeholder="End Time"
+															defaultValue={values.endTime}
+														/>
 													</div>
 												</div>
 											</div>
@@ -355,7 +386,7 @@ export default function CreateEventPage({ event }: Props) {
 						</Formik>
 
 						{/* Events tickets */}
-						{isPaid && <AddTickets onSave={handleSave} onDelete={handleDelete} />}
+						{isPaid && <AddTickets onSave={handleSave} onDelete={handleDelete} initialTickets={eventTicketsData} />}
 
 						{/* Submit Button */}
 						<div>
