@@ -31,6 +31,7 @@ export type CreateEventFormData = {
 	tickets: TicketData[]
 	isPaid: boolean
 	desc: string
+	privacy: 'public' | 'private'
 }
 
 export type CreateTicketFormData = {

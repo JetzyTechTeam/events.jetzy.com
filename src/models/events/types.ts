@@ -27,6 +27,7 @@ export interface IEvent extends IBaseModelProps {
 	capacity: number // Number of tickets available
 	requireApproval: boolean // If true, user must be approved before they can attend
 	tickets: IEventTicket[]
+	privacy: 'public' | 'private';
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
 	getBookings(): Promise<IBookings[]>
 	deleteTracker(): Promise<void>

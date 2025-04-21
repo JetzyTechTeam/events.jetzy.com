@@ -39,7 +39,12 @@ const eventsSchema = new Schema<IEvent>(
 			type: String,
 			required: true,
 		},
-
+		privacy: {
+			type: String,
+			enum: ["public", "private"],
+			default: 'public',
+			required: true,
+		},
 		startsOn: {
 			type: Date,
 			required: true,

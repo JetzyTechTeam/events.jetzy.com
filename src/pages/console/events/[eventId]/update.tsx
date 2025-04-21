@@ -86,6 +86,7 @@ export default function CreateEventPage({ event }: Props) {
 		isPaid: eventDetails.isPaid,
     images: uploadedImages,
     tickets: eventTicketsData,
+		privacy: eventDetails.privacy,
 		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
 		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
 		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
