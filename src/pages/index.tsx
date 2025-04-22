@@ -34,7 +34,8 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * limit
 	// Get events
-	const events = await Events.find({ isDeleted: false, type: 'public' }).skip(skip).limit(limit).sort({ createdAt: -1 })
+	const events = await Events.find({ isDeleted: false, privacy: 'public' }).skip(skip).limit(limit).sort({ createdAt: -1 })
+
 	if (!events) return { props: { events: null, pagination: null } }
 
 	// get total count of events
