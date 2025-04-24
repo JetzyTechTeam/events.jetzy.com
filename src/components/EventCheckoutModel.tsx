@@ -26,6 +26,12 @@ export default function EventCheckoutModel() {
 		}))
 	}
 
+	// TODO:
+	// since user is created
+	// get the _id based on user email
+	// and upon successful checkout 
+	// dump in the db
+
 	// Handle form submission
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()

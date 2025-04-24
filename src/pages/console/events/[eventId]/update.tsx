@@ -23,6 +23,9 @@ import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
 import { IEvent } from "@/models/events/types"
+import { EmailProps, sendUpdateEventEmail } from "@/actions/send-update-email-to-users.action"
+import { Bookings } from "@/models/events/bookings"
+import axios from "axios"
 
 type Props = {
 	event: string
@@ -93,10 +96,65 @@ export default function CreateEventPage({ event }: Props) {
 		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
 	}
 
-	const handleSubmit = (values: CreateEventFormData) => {
+	const sendEventUpdate = (eventData: EmailProps) => {
+		return axios.post('/api/send-update-event-email', eventData)
+			.then((response) => response.data)
+			.catch((error) => {
+				console.error('Error calling update event API:', error);
+				throw error;
+			});
+	};
+
+	const handleSubmit = async (values: CreateEventFormData) => {
 		values.tickets = eventTicketsData
 		values.images = uploadedImages
 		values.isPaid = isPaid
+
+		const nameChanged = values.name !== eventDetails.name
+		const locationChanged = values.location !== eventDetails.location
+		const startDateChanged = values.startDate !== new Date(eventDetails.startsOn).toISOString().slice(0, 10)
+		const startTimeChanged = values.startTime !== new Date(eventDetails.startsOn).toTimeString().slice(0, 5)
+		const endDateChanged = values.endDate !== new Date(eventDetails.endsOn).toISOString().slice(0, 10)
+		const endTimeChanged = values.endTime !== new Date(eventDetails.endsOn).toTimeString().slice(0, 5)
+
+		const dateTimeChanged = startDateChanged || startTimeChanged || endDateChanged || endTimeChanged
+
+// Fetch bookings for the event
+const events = await axios.post(`/api/get-bookings`, {
+	eventId: eventDetails._id
+})
+  .then(response => response.data)
+  .catch(error => {
+    console.error('Error fetching bookings:', error);
+    return [];
+  });
+
+
+		if (nameChanged || locationChanged || dateTimeChanged) {
+			const updatePromises = events.map((event: any) =>
+				sendEventUpdate({
+					eventName: values.name,
+					oldEventName: eventDetails.name,
+					location: values.location,
+					oldLocation: eventDetails.location,
+					startDate: values.startDate,
+					oldStartDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10),
+					endDate: values.endDate,
+					oldEndDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
+					endTime: values.endTime,
+					oldEndTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
+					startTime: values.startTime,
+					oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
+					userEmail: event.customerEmail,
+				}))
+				Promise.all(updatePromises)
+				.then((results) => {
+					console.log('All event updates sent successfully:', results);
+				})
+				.catch((error) => {
+					console.error('One or more event updates failed:', error);
+				});
+		}
 
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify(values) }, id: eventDetails._id.toString() })).then((res: any) => {
 			if (res?.payload?.status) {

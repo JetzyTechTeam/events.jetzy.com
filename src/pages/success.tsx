@@ -1,9 +1,8 @@
+'use client'
 import { Error } from "@/lib/_toaster"
-import { sendEmailAction } from "@Jetzy/actions/send-email-action"
 import axios from "axios"
 import { useRouter } from "next/router"
 import React from "react"
-import Stripe from "stripe"
 
 type OrderItem = {
 	id: number
@@ -11,6 +10,7 @@ type OrderItem = {
 	price: number
 	quantity: number
 	isSelected: boolean
+	priceId: string;
 }
 
 const CheckoutSuccessPage: React.FC = () => {
@@ -37,6 +37,7 @@ const CheckoutSuccessPage: React.FC = () => {
 					if (session.payment_status !== "paid") {
 						Error("Payment Error", "Your payment was not successful. Please try again.")
 					}
+
 				} catch (error) {
 					console.error("Error checking payment status:", error)
 				}

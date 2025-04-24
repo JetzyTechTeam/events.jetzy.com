@@ -1,3 +1,4 @@
+'use server'
 import connectMongo from "@Jetzy/lib/connect-db"
 
 type UserData = {
