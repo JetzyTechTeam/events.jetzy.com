@@ -107,9 +107,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					isPaid,
 					capacity,
 					requireApproval,
-				},
-
-				$push: {
 					tickets: tickets.map((ticket, index) => ({
 						name: ticket.title,
 						desc: ticket.description,

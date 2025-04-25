@@ -31,7 +31,7 @@ type Props = {
 	event: string
 }
 export default function CreateEventPage({ event }: Props) {
-	const eventDetails = JSON.parse(event) as IEvent
+	const eventDetails = React.useMemo(() => JSON.parse(event) as IEvent, [event]);
   const [eventTicketsData, setEventTicketsData] = React.useState<TicketData[]>([])
   const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([])
 
