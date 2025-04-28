@@ -94,6 +94,7 @@ export default function CreateEventPage({ event }: Props) {
 		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
 		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
 		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
+		timezone: eventDetails?.timezone || '',
 	}
 
 	const sendEventUpdate = (eventData: EmailProps) => {

@@ -106,6 +106,10 @@ export default function HostedEvents({ event }: Props) {
 								<p className="text-gray-600 text-sm sm:text-base mb-5">
 									{new Date(event.startsOn.toString()).toDateString()} {new Date(event.startsOn.toString()).toLocaleTimeString()}
 								</p>
+								<p className="text-gray-600 text-sm sm:text-base mb-5">
+									{event?.timezone || ''}
+								</p>
+
 								<h2 className="text-2xl sm:text-3xl font-bold text-gray-800">{event.name}</h2>
 								<p className="text-gray-600 text-sm sm:text-base">{event.desc.slice(0, 20)}...</p>
 								{/* share button  */}

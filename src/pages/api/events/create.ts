@@ -61,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy } = params
+		const { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone } = params
 
 		// construct datetime for start and end dates
 		const start = new Date(`${startDate} ${startTime}`)
@@ -107,6 +107,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			images: images.map((image) => image.file),
 			capacity,
 			requireApproval,
+			timezone,
 			tickets: tickets.map((ticket, index) => ({
 				name: ticket.title,
 				desc: ticket.description,

@@ -9,7 +9,7 @@ import { CreateEventThunk, getEventState } from "@Jetzy/redux/reducers/eventsSli
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { CreateEventFormData, EventPrivacy, Pages } from "@Jetzy/types"
 import { Switch } from "@headlessui/react"
-import { ErrorMessage, Field, Form, Formik, FormikProps } from "formik"
+import { ErrorMessage, Field, Form, Formik, FormikProps, useFormikContext } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
 import React from "react"
@@ -21,9 +21,23 @@ import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
 import { usePlacesWidget } from "react-google-autocomplete"
+import moment from 'moment-timezone';
 
 const eventTicketsData: TicketData[] = []
 const uploadedImages: FileUploadData[] = []
+
+const timezones = moment.tz.names().map((tz) => {
+  const offset = moment.tz(tz).utcOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const hours = Math.floor(Math.abs(offset) / 60)
+    .toString()
+    .padStart(2, '0');
+  const minutes = (Math.abs(offset) % 60).toString().padStart(2, '0');
+  return {
+    label: `(UTC${sign}${hours}:${minutes})`,
+    value: tz,
+  };
+});
 
 export default function CreateEventPage() {
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
@@ -48,7 +62,8 @@ export default function CreateEventPage() {
 		startTime: "",
 		endDate: "",
 		endTime: "",
-		privacy: 'public'
+		privacy: 'public',
+		timezone: '',
 	}
 
 	// GOOGLE PLACE API
@@ -273,7 +288,6 @@ export default function CreateEventPage() {
 											</div>
 										</div>
 										
-
 										<div>
 											<label className="block text-sm font-semibold leading-6 text-gray-900">Date and Time</label>
 											<div className="mt-2 grid grid-rows-2">
@@ -301,6 +315,10 @@ export default function CreateEventPage() {
 													</div>
 												</div>
 											</div>
+										</div>
+
+										<div className="mt-2">
+											<TimezoneSelect />
 										</div>
 
 										<div>
@@ -440,4 +458,30 @@ export default function CreateEventPage() {
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
 	return authorizedOnly(context)
+}
+
+export const TimezoneSelect: React.FC = () => {
+  const { values, handleChange } = useFormikContext<any>()
+  return (
+    <>
+      <label htmlFor="timezone" className="block text-xs leading-6 text-gray-500">
+        Timezone
+      </label>
+      <Field
+        as="select"
+        id="timezone"
+        name="timezone"
+        value={values?.timezone}
+        onChange={handleChange}
+        className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+      >
+        {timezones.map((tz) => (
+          <option key={`${tz.label} ${tz.value}`} value={`${tz.label} ${tz.value}`}>
+            {tz.label} {tz.value}
+          </option>
+        ))}
+      </Field>
+      <ErrorMessage name="timezone" component="span" className="text-red-500 block mt-1" />
+    </>
+  )
 }

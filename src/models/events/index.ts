@@ -53,6 +53,10 @@ const eventsSchema = new Schema<IEvent>(
 			type: Date,
 			required: true,
 		},
+		timezone: {
+				type: String,
+				required: true,
+		}, 
 		location: {
 			type: String,
 			required: true,

@@ -32,6 +32,7 @@ export type CreateEventFormData = {
 	isPaid: boolean
 	desc: string
 	privacy: 'public' | 'private'
+	timezone: string
 }
 
 export type CreateTicketFormData = {
