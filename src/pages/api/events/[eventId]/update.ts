@@ -39,6 +39,7 @@ const schema = zod.object({
 	),
 	isPaid: zod.boolean(),
 	desc: zod.string().nonempty(),
+	timezone: zod.string().nonempty()
 })
 
 // create stripe instance
@@ -62,7 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc } = params
+		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone } = params
 
 		// construct datetime for start and end dates
 		const start = new Date(`${startDate} ${startTime}`)
@@ -114,6 +115,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						stripeProductId: stripeProducts[index].id,
 					})),
 					images: images.map((image) => image.file),
+					timezone: timezone
 				},
 			},
 			{ new: true },
