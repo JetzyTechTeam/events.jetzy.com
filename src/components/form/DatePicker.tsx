@@ -12,25 +12,27 @@ export default function DatePicker({ onChange, defaultDate, placeholder = "Selec
 	React.useEffect(() => {
 		if (!ref.current) return;
 	
-		const datepicker = flatpickr(ref.current, {
+    const datepicker = flatpickr(ref.current, {
       dateFormat: "Y-m-d",
       enableTime: false,
-      // minDate: "today", 
-      defaultDate: defaultDate, 
+      defaultDate: defaultDate,
       disableMobile: false,
-      allowInput: true, 
+      allowInput: true,
+      minDate: defaultDate && new Date(defaultDate) < new Date()
+        ? defaultDate
+        : "today",
       onReady: (selectedDates, dateStr, instance) => {
         if (defaultDate) {
-          instance.setDate(defaultDate, false)
+          instance.setDate(defaultDate, false);
         }
       },
       onChange: (dates) => {
         if (dates.length > 0) {
-          const selectedDate = dates[0]
-          onChange(selectedDate.toISOString().split("T")[0])
+          const selectedDate = dates[0];
+          onChange(selectedDate.toISOString().split("T")[0]);
         }
       },
-    })
+    });
 	
 		return () => {
 			datepicker.destroy();
