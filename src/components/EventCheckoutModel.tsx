@@ -8,6 +8,7 @@ export default function EventCheckoutModel() {
 	const [acceptTerms, setAcceptTerms] = useState(false)
 	const { showCheckout, tickets, isLoading } = useAppSelector(getCheckoutStore)
 	const dispatch = useAppDispatch()
+	const [phoneError, setPhoneError] = useState("")
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -24,13 +25,15 @@ export default function EventCheckoutModel() {
 			...prevData,
 			[name]: value,
 		}))
+		if (name === "phone") {
+			const phonePattern = /^\+?1?\d{10,15}$/
+			if (!phonePattern.test(value)) {
+				setPhoneError("Please enter a valid phone number.")
+			} else {
+				setPhoneError("")
+			}
+		}
 	}
-
-	// TODO:
-	// since user is created
-	// get the _id based on user email
-	// and upon successful checkout 
-	// dump in the db
 
 	// Handle form submission
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -116,8 +119,13 @@ export default function EventCheckoutModel() {
 									onChange={handleInputChange}
 									className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
 									required
+									pattern="^\+?[0-9]{7,15}$"
+									title="Enter a valid phone number (e.g., +1234567890)"
 								/>
-							</div>
+								{phoneError && (
+										<span className="text-red-500 text-sm">{phoneError}</span>
+									)}
+								</div>
 							{/* an info paragrph */}
 							<p className="text-sm text-gray-600">By signing up, you create a Jetzy account for exclusive deals. Existing accounts won&apos;t be duplicated.</p>
 
