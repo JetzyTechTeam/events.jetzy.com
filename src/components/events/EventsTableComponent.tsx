@@ -112,18 +112,15 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 									</Link>
 								</Td>
 								<Td>{new Date(row.createdAt).toDateString()}</Td>
-								<Td>
-									<Menu placement="top-end">
-										<MenuButton as={IconButton} aria-label="Options" icon={<EllipsisVerticalIcon style={{ width: 20, height: 20 }} />} variant="outline" />
-										<MenuList>
-											<MenuItem onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))} icon={<PencilIcon style={{ width: 20, height: 20 }} />}>
-												Edit
-											</MenuItem>
-											<MenuItem onClick={() => handleRemove(row)} icon={<TrashIcon style={{ width: 20, height: 20 }} />}>
-												Delete
-											</MenuItem>
-										</MenuList>
-									</Menu>
+								<Td className="space-x-2">
+								<Button size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+								 onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))}
+								>
+								Edit
+								</Button>
+								<Button size='sm' leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
+								Delete
+								</Button>
 								</Td>
 							</Tr>
 						))}
