@@ -63,6 +63,10 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 		})
 	}
 
+	const  onView = () => {
+		router.push(ROUTES.dashboard.events.edit.replace(":eventId", event._id.toString()))
+	}
+
 	return (
 		<>
 			<TableContainer bg="white" borderRadius="md" boxShadow="md" p={2} mx={2}>
@@ -224,7 +228,7 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 						<Button colorScheme="blue" mr={3} onClick={onClose}>
 							Close
 						</Button>
-						<Button variant="ghost">Edit</Button>
+						<Button variant="ghost" onClick={onView}>View</Button>
 					</ModalFooter>
 				</ModalContent>
 			</Modal>
