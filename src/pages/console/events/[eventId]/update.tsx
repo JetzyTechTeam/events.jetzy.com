@@ -1,3 +1,4 @@
+'use client'
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { Types } from "mongoose"
@@ -182,11 +183,19 @@ const events = await axios.post(`/api/get-bookings`, {
 
 	const fileUpoaderRemoveImage = async (data: FileUploadData) => {
 		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
+
 		if (imageIndex !== -1) {
 			const image = uploadedImages[imageIndex]
-			uploadedImages.splice(imageIndex, 1)
+			const newImages = [...uploadedImages]
+			newImages.splice(imageIndex, 1)
+			setUploadedImages(newImages)
+
 			try {
-				await edgestore.publicFiles.delete({ url: image.file })
+				await fetch('/api/delete-image', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ url: image.file }),
+				});
 			} catch (error: any) {
 				console.error("Error deleting image", error)
 				Error("Error", "Failed to delete image")
@@ -242,6 +251,7 @@ const events = await axios.post(`/api/get-bookings`, {
 					{/* Image Uploader */}
 					<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
 					{uploadedImages.map((img) => (
+						<div key={img.id} className="relative">
 							<DragAndDropFileUpload
 								customId={img.id}
 								onUpload={fileUploader}
@@ -250,6 +260,15 @@ const events = await axios.post(`/api/get-bookings`, {
 								defaultImage={img.file}
 								key={img.id}
 							/>
+							<button
+								type="button"
+								onClick={() => fileUpoaderRemoveImage(img)}
+								className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-7 h-7 p-1 hover:bg-red-700 transition flex justify-center items-center"
+								title="Delete Image"
+							>
+								&#10005;
+							</button>
+							</div>
 						))}
 						<div className="flex justify-center items-center">
 						<button
