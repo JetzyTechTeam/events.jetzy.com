@@ -99,7 +99,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			},
 			{
 				$set: {
-					slug: generateRandomId(10),
 					name,
 					location,
 					desc: formatTextWithLineBreaks(desc),
