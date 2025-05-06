@@ -65,6 +65,7 @@ export default function CreateEventPage() {
 		endTime: "",
 		privacy: 'public',
 		timezone: '',
+		showParticipants: false
 	}
 
 	// GOOGLE PLACE API
@@ -268,7 +269,7 @@ export default function CreateEventPage() {
 										</div>
 
 												{/* Event Privacy Field */}
-												<div>
+										<div>
 											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
 												Event Privacy
 											</label>
@@ -285,6 +286,28 @@ export default function CreateEventPage() {
 													<option value="private">Private</option>
 												</Field>
 												<ErrorMessage name="privacy" component="span" className="text-red-500 block mt-1" />
+											</div>
+										</div>
+
+											{/* Show Participants Switch */}
+										<div className="flex items-center justify-between mt-4">
+											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6 text-gray-900">
+												Show Participants
+											</label>
+											<div className="mt-2">
+												<Switch
+													checked={values.showParticipants}
+													onChange={() => handleChange({ target: { name: "showParticipants", value: !values.showParticipants } })}
+													className={`${values.showParticipants ? "bg-app" : "bg-app/50"}
+														relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
+												>
+													<span className="sr-only">Show Participants</span>
+													<span
+														aria-hidden="true"
+														className={`${values.showParticipants ? "translate-x-6" : "translate-x-0"}
+															pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
+													/>
+												</Switch>
 											</div>
 										</div>
 										

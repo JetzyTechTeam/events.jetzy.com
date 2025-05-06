@@ -45,6 +45,11 @@ const eventsSchema = new Schema<IEvent>(
 			default: 'public',
 			required: true,
 		},
+		showParticipants: {
+			type: Boolean,
+			required: true,
+			default: false,
+		},
 		startsOn: {
 			type: Date,
 			required: true,

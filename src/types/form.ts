@@ -27,6 +27,7 @@ export type CreateEventFormData = {
 	placeId?: string
 	capacity: number
 	requireApproval: boolean
+	showParticipants: boolean
 	images: FileUploadData[]
 	tickets: TicketData[]
 	isPaid: boolean

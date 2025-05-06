@@ -14,6 +14,7 @@ export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
 	location: string
+	showParticipants: boolean
 	coordinates: {
 		long: number
 		lat: number
