@@ -48,6 +48,7 @@ export default function CreateEventPage() {
 	const dispatcher = useAppDispatch()
 
 	const [isPaid, setIsPaid] = React.useState(false)
+	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
 
 	const formInitData: CreateEventFormData = {
 		name: "",
@@ -214,7 +215,6 @@ export default function CreateEventPage() {
 		}
 	}
 
-	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
 
 	return (
 		<ConsoleLayout page={Pages.Events}>

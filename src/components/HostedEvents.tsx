@@ -87,13 +87,13 @@ export default function HostedEvents({ event }: Props) {
 							<Slider {...settings}>
 								{event.images.map((image, idx) => (
 									<div key={idx}>
-										<Image src={image} alt="Event Banner" className="w-full md:h-96 sm:h-52 object-cover" />
+										<Image src={image} alt="Event Banner" className="w-full md:h-[30rem] sm:h-52 object-cover object-top" />
 									</div>
 								))}
 							</Slider>
 						) : (
 							<div>
-								<Image src={event.images[0]} alt="Event Banner" className="w-full md:h-96 sm:h-52 object-cover" />
+								<Image src={event.images[0]} alt="Event Banner" className="w-full md:h-[30rem] sm:h-52 object-cover object-top" />
 							</div>
 						)}
 					</div>
