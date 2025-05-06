@@ -97,6 +97,7 @@ export default function CreateEventPage({ event }: Props) {
 		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
 		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
 		timezone: eventDetails?.timezone || '',
+		showParticipants: eventDetails.showParticipants || false,
 	}
 
 	const sendEventUpdate = (eventData: EmailProps) => {
@@ -307,6 +308,47 @@ const events = await axios.post(`/api/get-bookings`, {
 													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
+											</div>
+										</div>
+
+										<div>
+											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+												Event Privacy
+											</label>
+											<div className="mt-2">
+												<Field
+													as="select"
+													id="eventPrivacy"
+													name="privacy"
+													value={values?.privacy}
+													onChange={handleChange}
+													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+												>
+													<option value="public">Public</option>
+													<option value="private">Private</option>
+												</Field>
+												<ErrorMessage name="privacy" component="span" className="text-red-500 block mt-1" />
+											</div>
+										</div>
+
+										<div className="flex items-center justify-between mt-4">
+											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6 text-gray-900">
+												Show Participants
+											</label>
+											<div className="mt-2">
+												<Switch
+													checked={values.showParticipants}
+													onChange={() => handleChange({ target: { name: "showParticipants", value: !values.showParticipants } })}
+													className={`${values.showParticipants ? "bg-app" : "bg-app/50"}
+														relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
+												>
+													<span className="sr-only">Show Participants</span>
+													<span
+														aria-hidden="true"
+														className={`${values.showParticipants ? "translate-x-6" : "translate-x-0"}
+															pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
+													/>
+												</Switch>
 											</div>
 										</div>
 
