@@ -28,6 +28,7 @@
     "flatpickr": "^4.6.13",
     "formik": "^2.4.5",
     "framer-motion": "^11.18.2",
+    "luxon": "^3.6.1",
     "moment-timezone": "^0.5.48",
     "mongodb": "^6.13.0",
     "mongoose": "^8.10.0",
@@ -52,6 +53,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
+    "@types/luxon": "^3.6.2",
     "@types/mongodb": "^4.0.7",
     "@types/node": "^20",
     "@types/react": "^18",

@@ -1,5 +1,6 @@
 import { IEvent } from "@/models/events/types"
 import sgMail from "@sendgrid/mail"
+import { DateTime } from "luxon"
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY as string)
 
@@ -20,14 +21,11 @@ type TicketEmailData = {
 
 export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber }: TicketEmailData) => {
 	// format event start and end time
-	const startTimestamp =
-		new Date(event.startsOn.toLocaleDateString("en-US", { timeZone: "America/New_York" })).toDateString() +
-		" " +
-		new Date(event.startsOn.toLocaleTimeString("en-US", { timeZone: "America/New_York" })).toTimeString()
-	const endTimestamp =
-		new Date(event.endsOn.toLocaleDateString("en-US", { timeZone: "America/New_York" })).toDateString() +
-		" " +
-		new Date(event.endsOn.toLocaleTimeString("en-US", { timeZone: "America/New_York" })).toTimeString()
+	const start = DateTime.fromISO(event.startsOn.toISOString()).setZone("America/New_York")
+	const end = DateTime.fromISO(event.endsOn.toISOString()).setZone("America/New_York")
+	
+	const startTimestamp = `${start.toFormat("EEE MMM dd yyyy")} ${start.toFormat("hh:mm a")}`
+	const endTimestamp = `${end.toFormat("EEE MMM dd yyyy")} ${end.toFormat("hh:mm a")}`
 
 	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
 	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
