@@ -1,3 +1,4 @@
+'use client'
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { authorizedOnly } from "@/lib/authSession";
 import { Events } from "@/models/events";
