@@ -4,7 +4,24 @@ import { authorizedOnly } from "@/lib/authSession";
 import { Events } from "@/models/events";
 import { GetServerSideProps } from "next";
 import React, { useEffect, useState } from "react";
-import { Button, Form, Input, Modal, Typography } from "antd";
+import {
+  Button,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
+  Input,
+  Text,
+  Textarea,
+  useToast,
+  Box,
+  UnorderedList,
+  ListItem,
+  Flex,
+  Heading,
+} from "@chakra-ui/react";
 import { DateTime } from "luxon";
 import axios from "axios";
 
@@ -21,16 +38,16 @@ export default function Manage({ event }: any) {
           className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300"
           onClick={() => setInviteGuestsModal(true)}
         >
-          <Typography.Text className="font-bold">Invite Guests</Typography.Text>
+          <p className="font-bold">Invite Guests</p>
         </div>
         <div className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300">
-          <Typography.Text className="font-bold">Send a Blast</Typography.Text>
+          <p className="font-bold">Send a Blast</p>
         </div>
         <div
           className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300"
           onClick={() => setShareModal(true)}
         >
-          <Typography.Text className="font-bold">Share Event</Typography.Text>
+          <p className="font-bold">Share Event</p>
         </div>
       </div>
 
@@ -56,10 +73,10 @@ export default function Manage({ event }: any) {
           />
         </div>
         <div className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
-          <Typography.Title level={4}>When & Where</Typography.Title>
-          <Typography.Text className="font-semibold">
+          <h4>When & Where</h4>
+          <p className="font-semibold">
             <span className="text-gray-500">At:</span> {event.location}
-          </Typography.Text>
+          </p>
           <EventDateTime iso={event.startsOn} label="From:" />
           <EventDateTime iso={event.endsOn} label="To:" />
         </div>
@@ -81,18 +98,28 @@ function InviteGuestsModal({
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-
-
-  const [form] = Form.useForm();
+  const [emailInput, setEmailInput] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const toast = useToast();
 
   const handleAddEmail = () => {
-    form.validateFields().then((values) => {
-      const email = values.email.trim();
-      if (email && !emails.includes(email)) {
-        setEmails([...emails, email]);
-        form.resetFields(["email"]);
-      }
-    });
+    const email = emailInput.trim();
+    if (!email) {
+      setEmailError("Please enter an email");
+      return;
+    }
+    // Simple email validation
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailError("Please enter a valid email");
+      return;
+    }
+    if (emails.includes(email)) {
+      setEmailError("Email already added");
+      return;
+    }
+    setEmails([...emails, email]);
+    setEmailInput("");
+    setEmailError("");
   };
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -119,130 +146,144 @@ function InviteGuestsModal({
       setEmails([]);
       setMessage("");
       setInviteGuestsModal(false);
+      toast({
+        title: "Invitations sent!",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
     } catch (error) {
       setLoading(false);
+      toast({
+        title: "Failed to send invitations.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
     }
   };
+
   useEffect(() => {
     if (!inviteGuestsModal) {
       setStep(1);
       setEmails([]);
-      form.resetFields();
+      setMessage("");
+      setEmailInput("");
+      setEmailError("");
     }
-  }, [inviteGuestsModal, form]);
+  }, [inviteGuestsModal]);
 
   return (
-    <Modal
-      centered
-      open={inviteGuestsModal}
-      footer={null}
-      onCancel={() => setInviteGuestsModal(false)}
-      width={step === 2 ? 900 : 400}
-    >
-      <div className="flex flex-col gap-y-3">
-        {step === 1 && (
-          <>
-            <Typography.Title level={4}>Invite Guests</Typography.Title>
-            <Typography.Text className="font-semibold">
-              Invite your guests by email:
-            </Typography.Text>
-            <Form form={form} autoComplete="off" onFinish={() => {}}>
-              <Form.Item
-                name="email"
-                rules={[
-                  { required: true, message: "Please enter an email" },
-                  { type: "email", message: "Please enter a valid email" },
-                ]}
-              >
-                <Input
-                  type="email"
-                  size="large"
-                  placeholder="Enter your guest's email"
-                  className="w-full bg-transparent outline-none"
-                  onKeyDown={handleInputKeyDown}
-                  suffix={
-                    <Button type="primary" onClick={handleAddEmail}>
-                      Add
-                    </Button>
-                  }
-                />
-              </Form.Item>
-            </Form>
-            {emails.length > 0 && (
-              <div className="mt-2">
-                <Typography.Text className="font-semibold">
-                  Inviting {emails.length} Emails:
-                </Typography.Text>
-                <ul className="list-disc">
-                  {emails.map((email) => (
-                    <li
-                      key={email}
-                      className="flex items-center justify-between"
-                    >
-                      <span>{email}</span>
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        onClick={() =>
-                          setEmails(emails.filter((e) => e !== email))
-                        }
-                        style={{ marginLeft: 8 }}
-                      >
-                        x
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+    <Modal isOpen={inviteGuestsModal} onClose={() => setInviteGuestsModal(false)} isCentered size={step === 2 ? "2xl" : "sm"}>
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>
+          {step === 1 ? "Invite Guests" : "Review Invited Emails"}
+        </ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <Box display="flex" flexDirection="column" gap={4}>
+            {step === 1 && (
+              <>
+                <Text fontWeight="bold">Invite your guests by email:</Text>
+                <Flex gap={2}>
+                  <Input
+                    type="email"
+                    placeholder="Enter your guest's email"
+                    value={emailInput}
+                    onChange={e => setEmailInput(e.target.value)}
+                    onKeyDown={handleInputKeyDown}
+                    isInvalid={!!emailError}
+                  />
+                  <Button colorScheme="blue" onClick={handleAddEmail}>
+                    Add
+                  </Button>
+                </Flex>
+                {emailError && <Text color="red.500" fontSize="sm">{emailError}</Text>}
+                {emails.length > 0 && (
+                  <Box mt={2}>
+                    <Text fontWeight="bold">Inviting {emails.length} Emails:</Text>
+                    <UnorderedList>
+                      {emails.map((email) => (
+                        <ListItem key={email}>
+                          <Flex align="center" justify="space-between">
+                            <span>{email}</span>
+                            <Button
+                              size="xs"
+                              colorScheme="red"
+                              variant="ghost"
+                              ml={2}
+                              onClick={() => setEmails(emails.filter(e => e !== email))}
+                            >
+                              x
+                            </Button>
+                          </Flex>
+                        </ListItem>
+                      ))}
+                    </UnorderedList>
+                  </Box>
+                )}
+                <Button
+                  colorScheme="blue"
+                  mt={4}
+                  isDisabled={emails.length === 0}
+                  onClick={handleNext}
+                  width="full"
+                >
+                  Next
+                </Button>
+              </>
             )}
-            <Button disabled={emails.length === 0} onClick={handleNext}>
-              Next
-            </Button>
-          </>
-        )}
-        {step === 2 && (
-          <>
-            <div className="flex items-start justify-between p-5">
-              <div>
-                <Typography.Title level={4}>
-                  Review Invited Emails
-                </Typography.Title>
-                <Typography.Text className="font-semibold">
-                  Here are the emails you have entered:
-                </Typography.Text>
-                <ul className="list-disc pl-5">
-                  {emails.map((email) => (
-                    <li key={email}>{email}</li>
-                  ))}
-                </ul>
-              </div>
-              <div className="border rounded-xl p-2 flex flex-col gap-y-3">
-                <Typography.Text className="font-semibold">
-                  Hi, Jetzy Events invite you to join {event.name}.
-                </Typography.Text>
-                <Input.TextArea
-                  rows={3}
-                  placeholder="Enter a custom message here..."
-                  onChange={e => setMessage(e.target.value)}
-                />
-                <Typography.Text className="font-semibold">
-                  RSVP: {process.env.NEXT_PUBLIC_URL}/{event.slug}
-                </Typography.Text>
-
-                <Typography.Text>
-                  We will send guests an invitation link to register for the
-                  event.
-                </Typography.Text>
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-x-2 mt-4">
-              <Button onClick={handleBack}>Back</Button>
-              <Button type="primary" onClick={onSendInvitation}>Send Invitations</Button>
-            </div>
-          </>
-        )}
-      </div>
+            {step === 2 && (
+              <>
+                <Flex align="flex-start" justify="space-between" gap={6} flexWrap="wrap">
+                  <Box flex="1">
+                    <Heading as="h4" size="md" mb={2}>
+                      Review Invited Emails
+                    </Heading>
+                    <Text fontWeight="bold" mb={2}>
+                      Here are the emails you have entered:
+                    </Text>
+                    <UnorderedList pl={5}>
+                      {emails.map((email) => (
+                        <ListItem key={email}>{email}</ListItem>
+                      ))}
+                    </UnorderedList>
+                  </Box>
+                  <Box borderWidth="1px" borderRadius="xl" p={4} flex="1" minW="300px">
+                    <Text fontWeight="bold" mb={2}>
+                      Hi, Jetzy Events invite you to join {event.name}.
+                    </Text>
+                    <Textarea
+                      rows={3}
+                      placeholder="Enter a custom message here..."
+                      value={message}
+                      onChange={e => setMessage(e.target.value)}
+                      mb={2}
+                    />
+                    <Text fontWeight="bold" mb={1}>
+                      RSVP: {process.env.NEXT_PUBLIC_URL}/{event.slug}
+                    </Text>
+                    <Text fontSize="sm">
+                      We will send guests an invitation link to register for the event.
+                    </Text>
+                  </Box>
+                </Flex>
+                <Flex mt={6} justify="space-between">
+                  <Button onClick={handleBack}>Back</Button>
+                  <Button
+                    colorScheme="blue"
+                    isLoading={loading}
+                    onClick={onSendInvitation}
+                  >
+                    Send Invitations
+                  </Button>
+                </Flex>
+              </>
+            )}
+          </Box>
+        </ModalBody>
+      </ModalContent>
     </Modal>
   );
 }
@@ -268,21 +309,23 @@ function ShareModal({
   };
 
   return (
-    <Modal
-      centered
-      open={shareModal}
-      footer={null}
-      onCancel={() => setShareModal(false)}
-    >
-      <div className="flex flex-col gap-y-3">
-        <Typography.Text className="font-semibold">
-          Share the link:
-        </Typography.Text>
-        <div className="w-full border bg-gray-100 rounded-xl p-2">
-          {sharelink}
-        </div>
-        <Button onClick={onCopy}>{copied ? "Copied!" : "Copy"}</Button>
-      </div>
+    <Modal isOpen={shareModal} onClose={() => setShareModal(false)} isCentered>
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>Share Event</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <Box display="flex" flexDirection="column" gap={3}>
+            <Text fontWeight="bold">Share the link:</Text>
+            <Box w="100%" borderWidth="1px" bg="gray.100" rounded="xl" p={2} wordBreak="break-all">
+              {sharelink}
+            </Box>
+            <Button onClick={onCopy} colorScheme="blue">
+              {copied ? "Copied!" : "Copy"}
+            </Button>
+          </Box>
+        </ModalBody>
+      </ModalContent>
     </Modal>
   );
 }
@@ -297,9 +340,9 @@ function EventDateTime({ iso, label }: { iso: string; label: string }) {
     );
   }, [iso]);
   return (
-    <Typography.Text className="font-semibold">
+    <p className="font-semibold">
       <span className="text-gray-500">{label}</span> {formatted}
-    </Typography.Text>
+    </p>
   );
 }
 

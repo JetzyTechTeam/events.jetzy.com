@@ -14,8 +14,6 @@ import { Analytics } from "@vercel/analytics/react";
 
 import { ChakraProvider } from "@chakra-ui/react";
 import ReactQueryProvider from "@/lib/react-query-provider";
-import { AntdRegistry } from "@ant-design/nextjs-registry";
-import '@ant-design/v5-patch-for-react-19'
 
 export default function App({
   Component,
@@ -24,7 +22,6 @@ export default function App({
   const { store, props } = wrapper.useWrappedStore(pageProps);
   return (
     <ReactQueryProvider>
-      <AntdRegistry>
       <ReduxProvider store={store}>
         <Analytics />
         <SessionProvider session={session}>
@@ -47,7 +44,6 @@ export default function App({
           </EdgeStoreProvider>
         </SessionProvider>
       </ReduxProvider>
-      </AntdRegistry>
     </ReactQueryProvider>
   );
 }
