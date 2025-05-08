@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import sendgrid from "@sendgrid/mail";
+import { EventInvitation } from "@/models/events/event-invitations";
 
 sendgrid.setApiKey(process.env.SENDGRID_API_KEY as string);
 
@@ -8,7 +9,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ message: "Method not allowed" });
   }
   try {
-    const { emails, subject, message, eventLink } = req.body;
+    const { emails, subject, message, eventLink, eventId } = req.body;
 
     if (!emails || !Array.isArray(emails) || emails.length === 0) {
       return res.status(400).json({ message: "No emails provided" });
@@ -47,6 +48,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     };
 
     await sendgrid.sendMultiple(msg);
+
+    await EventInvitation.create([
+      ...emails.map((email: string) => ({
+        email,
+        eventId,
+      })),
+    ]);
 
     return res.status(200).json({ message: "Invitations sent successfully" });
   } catch (error) {

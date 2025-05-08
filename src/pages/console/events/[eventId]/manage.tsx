@@ -21,9 +21,15 @@ import {
   ListItem,
   Flex,
   Heading,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanels,
+  TabPanel,
 } from "@chakra-ui/react";
 import { DateTime } from "luxon";
 import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
 
 export default function Manage({ event }: any) {
   event = JSON.parse(event);
@@ -64,24 +70,83 @@ export default function Manage({ event }: any) {
         setShareModal={setShareModal}
         eventSlug={event.slug}
       />
-      <div className="flex flex-col h-full gap-y-5">
-        <div className="w-full h-[30rem] object-cover object-top rounded-2xl">
-          <img
-            src={event.images}
-            alt={event.name}
-            className="w-full h-[30rem] object-cover object-top rounded-2xl"
-          />
-        </div>
-        <div className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
-          <h4>When & Where</h4>
-          <p className="font-semibold">
-            <span className="text-gray-500">At:</span> {event.location}
-          </p>
-          <EventDateTime iso={event.startsOn} label="From:" />
-          <EventDateTime iso={event.endsOn} label="To:" />
-        </div>
-      </div>
+     <Tabs variant="enclosed" colorScheme="blue">
+      <TabList>
+        <Tab>Overview</Tab>
+        <Tab>Guests</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel>
+          <div className="flex flex-col h-full gap-y-5">
+            <div className="w-full h-[30rem] object-cover object-top rounded-2xl">
+              <img
+                src={event.images}
+                alt={event.name}
+                className="w-full h-[30rem] object-cover object-top rounded-2xl"
+              />
+            </div>
+            <div className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
+              <h4>When & Where</h4>
+              <p className="font-semibold">
+                <span className="text-gray-500">At:</span> {event.location}
+              </p>
+              <EventDateTime iso={event.startsOn} label="From:" />
+              <EventDateTime iso={event.endsOn} label="To:" />
+            </div>
+          </div>
+        </TabPanel>
+        <TabPanel>
+          {/* Guests list content goes here */}
+          <div className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
+           <GuestsList eventId={event._id} />
+          </div>
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
     </ConsoleLayout>
+  );
+}
+
+function GuestsList({ eventId }: { eventId: string }) {
+  const fetchGuests = async () => {
+    const res = await axios.get("/api/guests-list", { params: { eventId } });
+    return res.data || [];
+  };
+
+  const { data: guests = [], isLoading, isError } = useQuery({
+    queryKey: ["guests-list", eventId],
+    queryFn: fetchGuests,
+  });
+
+  if (isLoading) {
+    return <Text>Loading guests...</Text>;
+  }
+  if (isError) {
+    return <Text color="red.500">Failed to load guests.</Text>;
+  }
+  if (!guests.length) {
+    return <Text>No guests found.</Text>;
+  }
+  return (
+    <Box className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
+      <Heading as="h4" size="md" mb={2}>
+        Guests List
+      </Heading>
+      <Flex fontWeight="bold" mb={2}>
+        <Box flex="1">Email</Box>
+        <Box flex="1">Status</Box>
+        <Box flex="1">Invited At</Box>
+      </Flex>
+      {guests.map((guest: { email: string; status: string; invitedAt: string}) => (
+        <Flex key={guest.email} borderBottom="1px solid #eee" py={2}>
+          <Box flex="1">{guest.email}</Box>
+          <Box flex="1">{guest.status}</Box>
+          <Box flex="1">{guest.invitedAt
+              ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED)
+              : "-"}</Box>
+        </Flex>
+      ))}
+    </Box>
   );
 }
 
@@ -140,6 +205,7 @@ function InviteGuestsModal({
         message,
         subject: `Hi, Jetzy Events invite you to join ${event.name}!`,
         eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+        eventId: event._id,
       });
       setLoading(false);
       setStep(1);
