@@ -128,7 +128,7 @@ export default function CreateEventPage() {
 
 		dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({...values, privacy: values.privacy}) } })).then((res: any) => {
 			if (res?.payload?.status) {
-				navigation.push(ROUTES.dashboard.index)
+				navigation.push(`/console/events/${res.payload.data._id}/manage`);
 			}
 		})
 	}

@@ -11,6 +11,7 @@ export const ROUTES = {
 			create: "/console/events/create",
 			edit: "/console/events/:eventId/update",
 			tickets: "/console/events/:eventId/tickets",
+			manage: "/console/events/:eventId/manage",
 		},
 
 		// ----------------- Orders  Routes -----------------

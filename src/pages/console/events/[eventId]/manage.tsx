@@ -141,7 +141,6 @@ function InviteGuestsModal({
       <div className="flex flex-col gap-y-3">
         {step === 1 && (
           <>
-            {" "}
             <Typography.Title level={4}>Invite Guests</Typography.Title>
             <Typography.Text className="font-semibold">
               Invite your guests by email:
