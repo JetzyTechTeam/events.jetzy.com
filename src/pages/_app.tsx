@@ -22,7 +22,6 @@ export default function App({
   pageProps: { session, ...pageProps },
 }: AppProps<{ session: Session }>) {
   const { store, props } = wrapper.useWrappedStore(pageProps);
-  React.useEffect(() => {}, []);
   return (
     <ReactQueryProvider>
       <AntdRegistry>
