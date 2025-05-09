@@ -1,9 +1,10 @@
 import React, { useMemo } from "react"
-import { Box, Image, Text, Stack, SimpleGrid, Container, useColorModeValue, Badge } from "@chakra-ui/react"
+import { Box, Image, Text, Stack, SimpleGrid, Container, useColorModeValue, Badge, Heading, Button } from "@chakra-ui/react"
 import { IEvent } from "@/models/events/types"
 import Pagination from "./Pagination"
 import { useRouter } from "next/router"
 import { ROUTES } from "@/configs/routes"
+import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 
 type EventType = {
 	id: number
@@ -19,14 +20,15 @@ interface EventCardProps {
 }
 
 const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
-	const cardBg = useColorModeValue("white", "gray.700")
-	const borderColor = useColorModeValue("gray.200", "gray.600")
+	const cardBg = useColorModeValue("#1e1e1e", "gray.700")
+	const borderColor = useColorModeValue("#434343", "gray.600")
 
 	// calculate the event creation date difference from now in days to a a new badge
 	const eventDate = new Date(event.createdAt.toString())
 	const currentDate = new Date()
 	const diffTime = Math.abs(currentDate.getTime() - eventDate.getTime())
 	const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+	const location = event.location;
 
 	const isNew = diffDays < 2
 
@@ -51,24 +53,27 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 			_hover={{ transform: "scale(1.03)", transition: "transform 0.2s ease-in-out" }}
 			onClick={() => onClick(event)}
 		>
-			<Image src={event.images[0]} alt={event.name} objectFit="cover" w="100%" h="200px" />
-			<Box p="6">
+			<Box p='2'>
+				<Image src={event.images[0]} alt={event.name} objectFit="cover" w="100%" h="200px" rounded='lg' />
+			</Box>
+			<Box p="2">
 				<Stack spacing="3">
 					<Text fontSize="xl" fontWeight="bold">
 						{event.name}
-						{isNew && (
-							<Badge ml="1" fontSize="0.8em" colorScheme="purple" rounded={"md"}>
-								New
-							</Badge>
-						)}
 					</Text>
-					<Text fontSize="md" color="gray.500" suppressHydrationWarning>
-						{formattedDate} {formattedTime}
-						<br />
-						<Badge ml="1" fontSize="0.8em" colorScheme="orange" rounded={"md"}>
-							{event.isPaid ? "Get Tickets" : "Free"}
-						</Badge>
-					</Text>
+					<Box h='24'>
+						<Text fontSize="sm" color="gray.500" suppressHydrationWarning display='flex' gap='2'>
+							<DateTimeSVG />
+							{formattedDate} {formattedTime}
+						</Text>
+						<Text fontSize="sm" color="gray.500" suppressHydrationWarning display='flex' gap='2' mt='2'>
+						<span><LocationSVG /></span>
+							{location}
+						</Text>
+					</Box>
+					<Box bg='#3E3E3E' w='max-content' px='2' py='1' rounded='lg' display='flex' justifyContent='end'>
+						<Text className="uppercase text-xs font-semibold">get tickets</Text>
+					</Box>
 				</Stack>
 			</Box>
 		</Box>
@@ -96,15 +101,19 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 
 	return (
 		<Container
-			maxW="container.full"
+			maxW="container.lg"
 			display={"flex"}
 			flexDir={"column"}
 			gap={2}
 			justifyContent={"space-between"}
 			py={10}
-			className="min-h-screen w-full bg-gradient-to-br from-purple-900 to-indigo-900"
+			className="min-h-screen w-full"
 		>
-			<SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing="8">
+			<Box mb='6'>
+				<Heading>Discover Events</Heading>
+				<Text pt='3'>Discover exciting events where you can enjoy activities that match your interests and passions!</Text>
+			</Box>
+			<SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8">
 				{items.map((event) => (
 					<EventCard key={event._id.toString()} event={event} onClick={handleEventClick} />
 				))}

@@ -94,32 +94,25 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 	return (
 		<>
 			{/* Main Container */}
-			<div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all mt-8" id="event-tickets">
+			<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8" id="event-tickets">
 				{/* Content Section */}
 				<div className="p-6 sm:p-8">
 					{/* Header Section */}
 					<div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
 						<div className="text-center sm:text-left">
-							<h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Tickets</h2>
-							<p className="text-gray-600 text-sm sm:text-base">Select your ticket and checkout event.</p>
-						</div>
-
-						{/* Total Price to pay */}
-						<div className="text-center sm:text-right">
-							<h3 className="text-2xl font-semibold text-gray-800">
-								Total: {tickets.reduce((acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc), 0).toLocaleString("en-US", { style: "currency", currency: "usd" })}
-							</h3>
+							<h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
+							<p className="text-[#bbbbbb] text-sm sm:text-base">Select your tickets and proceed to checkout.</p>
 						</div>
 					</div>
 
 					{/* Ticket Section */}
 					<div className="space-y-6">
 						{tickets.map((ticket, index) => (
-							<div key={ticket.id} className="bg-gray-50 p-4 rounded-lg">
+							<div key={ticket.id} className="bg-[#2b2b2b] p-4 rounded-lg">
 								<div className="flex flex-col sm:flex-row justify-between items-center">
 									<div className="md:text-left xs:text-center">
-										<h3 className="font-semibold text-lg text-gray-800">{ticket.name}</h3>
-										<p className="text-gray-600">{staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}</p>
+										<h3 className="font-semibold text-lg">{ticket.name}</h3>
+										<p className="text-jetzy">{staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}</p>
 									</div>
 
 									{!ticket.isSelected && event.isPaid ? (
@@ -143,7 +136,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 														+
 													</button>
 													{/* remove   */}
-
 													<button onClick={() => handleTicketSelection(ticket.id)} className="bg-red-200 text-red-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-300">
 														-
 													</button>
@@ -159,11 +151,18 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 					</div>
 
 					{/* Checkout Section */}
-					<div className="flex justify-center items-center my-4">
+					<div className="flex justify-between items-center my-4">
+						{/* Total Price to pay */}
+						<div className="text-center sm:text-right">
+							<h3 className="text-2xl font-semibold">
+								{tickets.reduce((acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc), 0).toLocaleString("en-US", { style: "currency", currency: "usd" })}
+							</h3>
+						</div>
+
 						<button
 							disabled={isLoading}
 							onClick={() => showCheckoutForm(true)}
-							className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
+							className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50"
 						>
 							{isLoading ? <Spinner /> : "Checkout"}
 						</button>

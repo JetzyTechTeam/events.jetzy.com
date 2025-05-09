@@ -7,7 +7,7 @@ export default function Document() {
 				<meta name="description" content="Jetzy - Events" />
 				<link rel="icon" href="/favicon.ico" />
 			</Head>
-			<body className="bg-slate-200">
+			<body className="bg-[#090C10] text-white">
 				<Main />
 				<NextScript />
 			</body>

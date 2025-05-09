@@ -10,6 +10,7 @@ const config: Config = {
         app: "#F79432",
         danger: "rgb(220 38 38)",
         warning: "rgb(251 146 60)",
+        jetzy: '#F79432'
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
