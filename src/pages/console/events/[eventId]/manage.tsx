@@ -26,6 +26,7 @@ import {
   Tab,
   TabPanels,
   TabPanel,
+  Select,
 } from "@chakra-ui/react";
 import { DateTime } from "luxon";
 import axios from "axios";
@@ -36,6 +37,7 @@ export default function Manage({ event }: any) {
 
   const [shareModal, setShareModal] = useState(false);
   const [inviteGuestsModal, setInviteGuestsModal] = useState(false);
+  const [sendBlastModal, setSendBlastModal] = useState(false);
 
   return (
     <ConsoleLayout page={event.name}>
@@ -46,7 +48,9 @@ export default function Manage({ event }: any) {
         >
           <p className="font-bold">Invite Guests</p>
         </div>
-        <div className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300">
+        <div className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300"
+        onClick={() => setSendBlastModal(true)}
+        >
           <p className="font-bold">Send a Blast</p>
         </div>
         <div
@@ -61,6 +65,13 @@ export default function Manage({ event }: any) {
       <InviteGuestsModal
         inviteGuestsModal={inviteGuestsModal}
         setInviteGuestsModal={setInviteGuestsModal}
+        event={event}
+      />
+
+      {/* SEND BLAST MODAL  */}
+      <SendBlastModal
+        sendBlastModal={sendBlastModal}
+        setSendBlastModal={setSendBlastModal}
         event={event}
       />
 
@@ -105,6 +116,104 @@ export default function Manage({ event }: any) {
     </Tabs>
     </ConsoleLayout>
   );
+}
+
+function SendBlastModal({
+  sendBlastModal,
+  setSendBlastModal,
+  event,
+}: { sendBlastModal: boolean; setSendBlastModal: (sendBlastModal: boolean) => void; event: any; }) {
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const toast = useToast();
+
+  const onSendBlast = async () => {
+    if (!status || !subject.trim() || !message.trim()) {
+      setError("All fields are required.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      await axios.post("/api/send-blast", {
+        event,
+        message,
+        subject,
+        status,
+        eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+      })
+
+      toast({
+        title: "Blast sent!",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      })
+
+    } catch (error) {
+      toast({
+        title: "Failed to send blast.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+    setLoading(false);
+    setSendBlastModal(false);
+  }
+
+  return (
+    <Modal isOpen={sendBlastModal} onClose={() => setSendBlastModal(false)} isCentered size="2xl">
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>Send a Blast</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <Box display="flex" flexDirection="column" gap={4}>
+            <Text fontWeight="bold">Send a Blast:</Text>
+            <Select mb={4} placeholder="Select a Status"
+            value={status}
+             onChange={e => setStatus(e.target.value)}
+             isRequired
+            >
+              <option value="pending">Pending</option>
+              <option value="accepted">Accepted</option>
+              <option value="rejected">Rejected</option>
+            </Select>
+            <Input
+              type="text"
+              placeholder="Enter a Subject here..."
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              mb={2}
+              isRequired
+            />
+            <Textarea
+              rows={3}
+              placeholder="Enter your blast message here..."
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              mb={2}
+              isRequired
+            />
+                        {error && <Text color="red.500">{error}</Text>}
+
+            <Button
+              colorScheme="blue"
+              isLoading={loading}
+              onClick={onSendBlast}
+            >
+              Send Blast
+            </Button>
+          </Box>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  )
 }
 
 function GuestsList({ eventId }: { eventId: string }) {

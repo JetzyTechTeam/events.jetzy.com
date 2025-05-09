@@ -122,6 +122,11 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 								>
 								Edit
 								</Button>
+								<Button size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+								 onClick={() => router.push(ROUTES.dashboard.events.manage.replace(":eventId", row._id.toString()))}
+								>
+								Manage
+								</Button>
 								<Button size='sm' leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
 								Delete
 								</Button>
