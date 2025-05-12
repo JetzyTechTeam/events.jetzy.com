@@ -1,4 +1,4 @@
-'use client'
+"use client";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { authorizedOnly } from "@/lib/authSession";
 import { Events } from "@/models/events";
@@ -31,6 +31,14 @@ import {
 import { DateTime } from "luxon";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
+import {
+  DateTimeSVG,
+  LocationSVG,
+  MessageSVG,
+  UserPlusSVG,
+} from "@/assets/icons";
+import { ShareIcon } from "@heroicons/react/20/solid";
+import { useRouter } from "next/router";
 
 export default function Manage({ event }: any) {
   event = JSON.parse(event);
@@ -38,83 +46,129 @@ export default function Manage({ event }: any) {
   const [shareModal, setShareModal] = useState(false);
   const [inviteGuestsModal, setInviteGuestsModal] = useState(false);
   const [sendBlastModal, setSendBlastModal] = useState(false);
+  const router = useRouter();
 
   return (
-    <ConsoleLayout page={event.name}>
-      <div className="flex items-center justify-between gap-x-5 mb-10">
-        <div
-          className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300"
-          onClick={() => setInviteGuestsModal(true)}
-        >
-          <p className="font-bold">Invite Guests</p>
+    <>
+      <ConsoleLayout page={event.name} component={
+        <div>
+          <Button
+            bg="#3E3E3E"
+            color="white"
+            _hover={{ bg: "#323232" }}
+            _active={{ bg: "#323232" }}
+            onClick={() => router.push(`/console/events/${event._id}/update`)}
+          >
+            Edit Event
+          </Button>
         </div>
-        <div className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300"
-        onClick={() => setSendBlastModal(true)}
-        >
-          <p className="font-bold">Send a Blast</p>
-        </div>
-        <div
-          className="bg-white rounded-xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300"
-          onClick={() => setShareModal(true)}
-        >
-          <p className="font-bold">Share Event</p>
-        </div>
-      </div>
+      }>
+        {/* INVITE GUESTS MODAL  */}
+        <InviteGuestsModal
+          inviteGuestsModal={inviteGuestsModal}
+          setInviteGuestsModal={setInviteGuestsModal}
+          event={event}
+        />
 
-      {/* INVITE GUESTS MODAL  */}
-      <InviteGuestsModal
-        inviteGuestsModal={inviteGuestsModal}
-        setInviteGuestsModal={setInviteGuestsModal}
-        event={event}
-      />
+        {/* SEND BLAST MODAL  */}
+        <SendBlastModal
+          sendBlastModal={sendBlastModal}
+          setSendBlastModal={setSendBlastModal}
+          event={event}
+        />
 
-      {/* SEND BLAST MODAL  */}
-      <SendBlastModal
-        sendBlastModal={sendBlastModal}
-        setSendBlastModal={setSendBlastModal}
-        event={event}
-      />
-
-      {/* SHARE MODAL  */}
-      <ShareModal
-        shareModal={shareModal}
-        setShareModal={setShareModal}
-        eventSlug={event.slug}
-      />
-     <Tabs variant="enclosed" colorScheme="blue">
-      <TabList>
-        <Tab>Overview</Tab>
-        <Tab>Guests</Tab>
-      </TabList>
-      <TabPanels>
-        <TabPanel>
-          <div className="flex flex-col h-full gap-y-5">
-            <div className="w-full h-[30rem] object-cover object-top rounded-2xl">
-              <img
-                src={event.images}
-                alt={event.name}
-                className="w-full h-[30rem] object-cover object-top rounded-2xl"
-              />
-            </div>
-            <div className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
-              <h4>When & Where</h4>
-              <p className="font-semibold">
-                <span className="text-gray-500">At:</span> {event.location}
-              </p>
-              <EventDateTime iso={event.startsOn} label="From:" />
-              <EventDateTime iso={event.endsOn} label="To:" />
-            </div>
+        {/* SHARE MODAL  */}
+        <ShareModal
+          shareModal={shareModal}
+          setShareModal={setShareModal}
+          eventSlug={event.slug}
+        />
+        <Tabs variant="line">
+          <TabList borderBottom="2px solid #9C9C9C">
+            <Tab
+                  fontWeight="bold"
+        color="#9C9C9C"
+            _selected={{
+              color: "#F79432", 
+              borderBottom: "2px solid #F79432",
+            }}
+            >Overview</Tab>
+            <Tab
+                  fontWeight="bold"
+        color="#9C9C9C"
+              _selected={{
+                color: "#F79432", 
+                borderBottom: "2px solid #F79432",
+              }}
+            >Guests</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel>
+            <div className="flex items-center justify-between gap-x-5 mb-10">
+          <div
+            className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
+            onClick={() => setInviteGuestsModal(true)}
+          >
+            <UserPlusSVG />
+            <p className="font-bold text-[#9C9C9C]">Invite Guests</p>
           </div>
-        </TabPanel>
-        <TabPanel>
-          {/* Guests list content goes here */}
-          <div className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
-           <GuestsList eventId={event._id} />
+          <div
+            className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
+            onClick={() => setSendBlastModal(true)}
+          >
+            <MessageSVG />
+            <p className="font-bold text-[#9C9C9C]">Send a Blast</p>
           </div>
-        </TabPanel>
-      </TabPanels>
-    </Tabs>
-    </ConsoleLayout>
+          <div
+            className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
+            onClick={() => setShareModal(true)}
+          >
+            <ShareIcon className="w-6 h-6 text-[#949494]" />
+            <p className="font-bold text-[#9C9C9C]">Share Event</p>
+          </div>
+        </div>
+              <div className="flex h-full gap-x-5">
+                <div className="w-[250px] h-[200px] object-cover object-top rounded-2xl">
+                  <img
+                    src={event.images}
+                    alt={event.name}
+                    className="w-full h-full object-cover object-top rounded-2xl"
+                  />
+                </div>
+                <div className="w-full">
+                  <div className="p-3 flex flex-col gap-y-3 border-b border-[#585858] pb-10">
+                    <h4 className="font-bold">When</h4>
+                    <p className="font-semibold flex gap-x-2 items-center">
+                      <DateTimeSVG stroke="#fff" />
+                      {event.location}
+                    </p>
+                  </div>
+                  <div className="py-10 px-3 flex flex-col gap-y-3 border-b border-[#585858]">
+                    <h4 className="font-bold">Where</h4>
+                    <p className="font-semibold flex gap-x-2 items-center">
+                      <LocationSVG stroke="#fff" />
+                      {event.location}
+                    </p>
+                  </div>
+                  <div className="p-3 flex flex-col gap-y-3">
+                    <h4 className="font-bold">Description</h4>
+                    <p className="font-semibold text-[#B5B6B7]">{event.desc}</p>
+                  </div>
+                  {/* <EventDateTime iso={event.startsOn} />
+                  <EventDateTime iso={event.endsOn} /> */}
+                </div>
+              </div>
+            </TabPanel>
+            <TabPanel>
+              {/* Guests list content goes here */}
+              <div className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3">
+                <GuestsList eventId={event._id} />
+              </div>
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
+      </ConsoleLayout>
+    </>
   );
 }
 
@@ -122,7 +176,11 @@ function SendBlastModal({
   sendBlastModal,
   setSendBlastModal,
   event,
-}: { sendBlastModal: boolean; setSendBlastModal: (sendBlastModal: boolean) => void; event: any; }) {
+}: {
+  sendBlastModal: boolean;
+  setSendBlastModal: (sendBlastModal: boolean) => void;
+  event: any;
+}) {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("");
@@ -145,15 +203,14 @@ function SendBlastModal({
         subject,
         status,
         eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
-      })
+      });
 
       toast({
         title: "Blast sent!",
         status: "success",
         duration: 3000,
         isClosable: true,
-      })
-
+      });
     } catch (error) {
       toast({
         title: "Failed to send blast.",
@@ -164,56 +221,82 @@ function SendBlastModal({
     }
     setLoading(false);
     setSendBlastModal(false);
-  }
+  };
 
   return (
-    <Modal isOpen={sendBlastModal} onClose={() => setSendBlastModal(false)} isCentered size="2xl">
+    <Modal
+      isOpen={sendBlastModal}
+      onClose={() => setSendBlastModal(false)}
+      isCentered
+      size="xl"
+    >
       <ModalOverlay />
-      <ModalContent>
+      <ModalContent bg="#1E1E1E" color="white">
         <ModalHeader>Send a Blast</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
           <Box display="flex" flexDirection="column" gap={4}>
-            <Text fontWeight="bold">Send a Blast:</Text>
-            <Select mb={4} placeholder="Select a Status"
-            value={status}
-             onChange={e => setStatus(e.target.value)}
-             isRequired
+            <Text fontWeight="bold">Status</Text>
+            <Select
+              mb={4}
+              placeholder="Select a Status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
             >
               <option value="pending">Pending</option>
               <option value="accepted">Accepted</option>
               <option value="rejected">Rejected</option>
             </Select>
+            <h3 className="font-bold">Subject</h3>
             <Input
               type="text"
               placeholder="Enter a Subject here..."
               value={subject}
-              onChange={e => setSubject(e.target.value)}
+              onChange={(e) => setSubject(e.target.value)}
               mb={2}
               isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
             />
+
+            <h3 className="font-bold">Body</h3>
             <Textarea
-              rows={3}
+              rows={5}
               placeholder="Enter your blast message here..."
               value={message}
-              onChange={e => setMessage(e.target.value)}
+              onChange={(e) => setMessage(e.target.value)}
               mb={2}
               isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
             />
-                        {error && <Text color="red.500">{error}</Text>}
+            {error && <Text color="red.500">{error}</Text>}
 
             <Button
-              colorScheme="blue"
-              isLoading={loading}
-              onClick={onSendBlast}
-            >
-              Send Blast
-            </Button>
+  size="lg"
+  bg="#F79432"
+  color="black"
+  _hover={{ bg: "#f78c22" }}
+  _active={{ bg: "#e67a10" }}
+  isLoading={loading}
+  onClick={onSendBlast}
+>
+  Send Blast
+</Button>
           </Box>
         </ModalBody>
       </ModalContent>
     </Modal>
-  )
+  );
 }
 
 function GuestsList({ eventId }: { eventId: string }) {
@@ -222,7 +305,11 @@ function GuestsList({ eventId }: { eventId: string }) {
     return res.data || [];
   };
 
-  const { data: guests = [], isLoading, isError } = useQuery({
+  const {
+    data: guests = [],
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ["guests-list", eventId],
     queryFn: fetchGuests,
   });
@@ -237,24 +324,27 @@ function GuestsList({ eventId }: { eventId: string }) {
     return <Text>No guests found.</Text>;
   }
   return (
-    <Box className="bg-white rounded-xl p-3 flex flex-col gap-y-3">
-      <Heading as="h4" size="md" mb={2}>
-        Guests List
-      </Heading>
+    <Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3">
       <Flex fontWeight="bold" mb={2}>
         <Box flex="1">Email</Box>
         <Box flex="1">Status</Box>
         <Box flex="1">Invited At</Box>
       </Flex>
-      {guests.map((guest: { email: string; status: string; invitedAt: string}) => (
-        <Flex key={guest.email} borderBottom="1px solid #eee" py={2}>
-          <Box flex="1">{guest.email}</Box>
-          <Box flex="1">{guest.status}</Box>
-          <Box flex="1">{guest.invitedAt
-              ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED)
-              : "-"}</Box>
-        </Flex>
-      ))}
+      {guests.map(
+        (guest: { email: string; status: string; invitedAt: string }) => (
+          <Flex key={guest.email} borderBottom="1px solid #4B4B4B" py={2}>
+            <Box flex="1">{guest.email}</Box>
+            <Box flex="1">{guest.status}</Box>
+            <Box flex="1">
+              {guest.invitedAt
+                ? DateTime.fromISO(guest.invitedAt).toLocaleString(
+                    DateTime.DATETIME_MED
+                  )
+                : "-"}
+            </Box>
+          </Flex>
+        )
+      )}
     </Box>
   );
 }
@@ -349,9 +439,14 @@ function InviteGuestsModal({
   }, [inviteGuestsModal]);
 
   return (
-    <Modal isOpen={inviteGuestsModal} onClose={() => setInviteGuestsModal(false)} isCentered size={step === 2 ? "2xl" : "sm"}>
+    <Modal
+      isOpen={inviteGuestsModal}
+      onClose={() => setInviteGuestsModal(false)}
+      isCentered
+      size={step === 2 ? '4xl': '2xl'}
+    >
       <ModalOverlay />
-      <ModalContent>
+      <ModalContent bg="#1E1E1E" color="white">
         <ModalHeader>
           {step === 1 ? "Invite Guests" : "Review Invited Emails"}
         </ModalHeader>
@@ -366,21 +461,31 @@ function InviteGuestsModal({
                     type="email"
                     placeholder="Enter your guest's email"
                     value={emailInput}
-                    onChange={e => setEmailInput(e.target.value)}
+                    onChange={(e) => setEmailInput(e.target.value)}
                     onKeyDown={handleInputKeyDown}
                     isInvalid={!!emailError}
                   />
-                  <Button colorScheme="blue" onClick={handleAddEmail}>
+                  <Button
+  bg="#F79432"
+  color="black"
+  _hover={{ bg: "#f78c22" }}
+  _active={{ bg: "#e67a10" }} onClick={handleAddEmail}>
                     Add
                   </Button>
                 </Flex>
-                {emailError && <Text color="red.500" fontSize="sm">{emailError}</Text>}
+                {emailError && (
+                  <Text color="red.500" fontSize="sm">
+                    {emailError}
+                  </Text>
+                )}
                 {emails.length > 0 && (
                   <Box mt={2}>
-                    <Text fontWeight="bold">Inviting {emails.length} Emails:</Text>
-                    <UnorderedList>
+                    <Text fontWeight="bold">
+                      Inviting {emails.length} Emails:
+                    </Text>
+                    <UnorderedList listStyleType='none' m='0'>
                       {emails.map((email) => (
-                        <ListItem key={email}>
+                        <ListItem key={email} className="bg-[#383838] p-2 rounded-lg">
                           <Flex align="center" justify="space-between">
                             <span>{email}</span>
                             <Button
@@ -388,7 +493,9 @@ function InviteGuestsModal({
                               colorScheme="red"
                               variant="ghost"
                               ml={2}
-                              onClick={() => setEmails(emails.filter(e => e !== email))}
+                              onClick={() =>
+                                setEmails(emails.filter((e) => e !== email))
+                              }
                             >
                               x
                             </Button>
@@ -399,7 +506,11 @@ function InviteGuestsModal({
                   </Box>
                 )}
                 <Button
-                  colorScheme="blue"
+                  size="lg"
+                  bg="#F79432"
+                  color="black"
+                  _hover={{ bg: "#f78c22" }}
+                  _active={{ bg: "#e67a10" }}
                   mt={4}
                   isDisabled={emails.length === 0}
                   onClick={handleNext}
@@ -411,12 +522,17 @@ function InviteGuestsModal({
             )}
             {step === 2 && (
               <>
-                <Flex align="flex-start" justify="space-between" gap={6} flexWrap="wrap">
+                <Flex
+                  align="flex-start"
+                  justify="space-between"
+                  gap={6}
+                  flexWrap="wrap"
+                >
                   <Box flex="1">
                     <Heading as="h4" size="md" mb={2}>
                       Review Invited Emails
                     </Heading>
-                    <Text fontWeight="bold" mb={2}>
+                    <Text mb={2}>
                       Here are the emails you have entered:
                     </Text>
                     <UnorderedList pl={5}>
@@ -425,7 +541,13 @@ function InviteGuestsModal({
                       ))}
                     </UnorderedList>
                   </Box>
-                  <Box borderWidth="1px" borderRadius="xl" p={4} flex="1" minW="300px">
+                  <Box
+                    borderWidth="1px"
+                    borderRadius="xl"
+                    p={4}
+                    flex="1"
+                    minW="300px"
+                  >
                     <Text fontWeight="bold" mb={2}>
                       Hi, Jetzy Events invite you to join {event.name}.
                     </Text>
@@ -433,21 +555,25 @@ function InviteGuestsModal({
                       rows={3}
                       placeholder="Enter a custom message here..."
                       value={message}
-                      onChange={e => setMessage(e.target.value)}
+                      onChange={(e) => setMessage(e.target.value)}
                       mb={2}
                     />
                     <Text fontWeight="bold" mb={1}>
                       RSVP: {process.env.NEXT_PUBLIC_URL}/{event.slug}
                     </Text>
                     <Text fontSize="sm">
-                      We will send guests an invitation link to register for the event.
+                      We will send guests an invitation link to register for the
+                      event.
                     </Text>
                   </Box>
                 </Flex>
                 <Flex mt={6} justify="space-between">
                   <Button onClick={handleBack}>Back</Button>
                   <Button
-                    colorScheme="blue"
+                    bg="#F79432"
+                    color="black"
+                    _hover={{ bg: "#f78c22" }}
+                    _active={{ bg: "#e67a10" }}
                     isLoading={loading}
                     onClick={onSendInvitation}
                   >
@@ -486,16 +612,31 @@ function ShareModal({
   return (
     <Modal isOpen={shareModal} onClose={() => setShareModal(false)} isCentered>
       <ModalOverlay />
-      <ModalContent>
+      <ModalContent bg="#1E1E1E" color="white">
         <ModalHeader>Share Event</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
           <Box display="flex" flexDirection="column" gap={3}>
             <Text fontWeight="bold">Share the link:</Text>
-            <Box w="100%" borderWidth="1px" bg="gray.100" rounded="xl" p={2} wordBreak="break-all">
+            <Box
+              w="100%"
+              borderWidth="1px"
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
+              rounded="xl"
+              p={2}
+              wordBreak="break-all"
+            >
               {sharelink}
             </Box>
-            <Button onClick={onCopy} colorScheme="blue">
+            <Button onClick={onCopy}  bg="#F79432"
+  color="black"
+  _hover={{ bg: "#f78c22" }}
+  _active={{ bg: "#e67a10" }}
+  size='lg'
+  >
               {copied ? "Copied!" : "Copy"}
             </Button>
           </Box>
@@ -505,7 +646,7 @@ function ShareModal({
   );
 }
 
-function EventDateTime({ iso, label }: { iso: string; label: string }) {
+function EventDateTime({ iso }: { iso: string }) {
   const [formatted, setFormatted] = useState("");
   useEffect(() => {
     setFormatted(
@@ -514,11 +655,7 @@ function EventDateTime({ iso, label }: { iso: string; label: string }) {
         .toLocaleString(DateTime.DATETIME_MED)
     );
   }, [iso]);
-  return (
-    <p className="font-semibold">
-      <span className="text-gray-500">{label}</span> {formatted}
-    </p>
-  );
+  return <p className="font-semibold">{formatted}</p>;
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (

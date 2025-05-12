@@ -1,3 +1,23 @@
+export const MessageSVG = () => {
+  return (
+    <svg width="26" height="25" viewBox="0 0 26 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3.45898 5.46875H22.209V18.75C22.209 18.9572 22.1267 19.1559 21.9802 19.3024C21.8336 19.4489 21.6349 19.5312 21.4277 19.5312H4.24023C4.03303 19.5312 3.83432 19.4489 3.68781 19.3024C3.54129 19.1559 3.45898 18.9572 3.45898 18.75V5.46875Z" stroke="#949494" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M22.209 5.46875L12.834 14.0625L3.45898 5.46875" stroke="#949494" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+export const UserPlusSVG = () => {
+  return (
+    <svg width="25" height="25" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.1875 5.46875H21.875" stroke="#949494" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M19.5312 3.125V7.8125" stroke="#949494" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3.02539 21.0928C3.9859 19.4303 5.367 18.0498 7.02996 17.09C8.69292 16.1302 10.5792 15.625 12.4992 15.625C14.4193 15.625 16.3055 16.1303 17.9685 17.0901C19.6314 18.0499 21.0125 19.4305 21.973 21.093" stroke="#949494" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M18.3644 11.5413C17.9466 12.6693 17.212 13.6527 16.2489 14.3733C15.2858 15.094 14.1351 15.5212 12.935 15.6037C11.735 15.6863 10.5366 15.4205 9.48392 14.8385C8.43122 14.2565 7.56896 13.3829 7.00072 12.3227C6.43248 11.2625 6.18243 10.0607 6.28061 8.86187C6.37879 7.663 6.82102 6.51797 7.55418 5.56435C8.28734 4.61072 9.28024 3.88905 10.4136 3.48603C11.547 3.08302 12.7726 3.01581 13.9432 3.29247" stroke="#949494" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
 export const DirectionSVG = () => {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
