@@ -529,9 +529,6 @@ function InviteGuestsModal({
                   flexWrap="wrap"
                 >
                   <Box flex="1">
-                    <Heading as="h4" size="md" mb={2}>
-                      Review Invited Emails
-                    </Heading>
                     <Text mb={2}>
                       Here are the emails you have entered:
                     </Text>
@@ -549,7 +546,7 @@ function InviteGuestsModal({
                     minW="300px"
                   >
                     <Text fontWeight="bold" mb={2}>
-                      Hi, Jetzy Events invite you to join {event.name}.
+                      Hi, Jetzy Events invites you to join {event.name}.
                     </Text>
                     <Textarea
                       rows={3}

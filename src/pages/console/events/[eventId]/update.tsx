@@ -250,7 +250,7 @@ const events = await axios.post(`/api/get-bookings`, {
 			<section className="flex items-center justify-center p-3">
 				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
 					{/* Image Uploader */}
-					<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+					<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
 					{uploadedImages.map((img) => (
 						<div key={img.id} className="relative">
 							<DragAndDropFileUpload
@@ -292,9 +292,9 @@ const events = await axios.post(`/api/get-bookings`, {
 						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation} enableReinitialize>
 							{({ values, handleChange }) => (
 								<Form action="#" method="POST" className="space-y-6">
-									<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
 										<div>
-											<label htmlFor="eventName" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventName" className="block text-sm font-semibold leading-6">
 												Name
 											</label>
 											<div className="mt-2">
@@ -305,14 +305,14 @@ const events = await axios.post(`/api/get-bookings`, {
 													onChange={handleChange}
 													type="text"
 													autoComplete="name"
-													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
 
 										<div>
-											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 												Event Privacy
 											</label>
 											<div className="mt-2">
@@ -322,7 +322,7 @@ const events = await axios.post(`/api/get-bookings`, {
 													name="privacy"
 													value={values?.privacy}
 													onChange={handleChange}
-													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												>
 													<option value="public">Public</option>
 													<option value="private">Private</option>
@@ -332,7 +332,7 @@ const events = await axios.post(`/api/get-bookings`, {
 										</div>
 
 										<div className="flex items-center justify-between mt-4">
-											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6">
 												Show Participants
 											</label>
 											<div className="mt-2">
@@ -353,7 +353,7 @@ const events = await axios.post(`/api/get-bookings`, {
 										</div>
 
 										<div>
-											<label className="block text-sm font-semibold leading-6 text-gray-900">Date and Time</label>
+											<label className="block text-sm font-semibold leading-6">Date and Time</label>
 											<div className="mt-2 grid grid-rows-2">
 												<div className="grid grid-cols-3 gap-2">
 													<div className="col-span-2">
@@ -399,7 +399,7 @@ const events = await axios.post(`/api/get-bookings`, {
 										</div>
 
 										<div>
-											<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6">
 												Location
 											</label>
 											<div className="mt-2">
@@ -410,14 +410,14 @@ const events = await axios.post(`/api/get-bookings`, {
 													onChange={handleChange}
 													type="text"
 													placeholder="Physical addres or Virtual link"
-													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
 
 										<div>
-											<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6">
 												Description
 											</label>
 											<div className="mt-2">
@@ -429,20 +429,20 @@ const events = await axios.post(`/api/get-bookings`, {
 													onChange={handleChange}
 													type="text"
 													autoComplete="datetime"
-													className="block w-full h-20 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-20 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="desc" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
 									</section>
 
-									<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+									<section className="bg-[#1E1E1E]  space-y-6 p-3 rounded-lg">
 										<header className="grid grid-rows-2 divide-y divide-slate-400">
 											<div className="flex items-center justify-between">
 												<h2 className="text-slat-400 font-bold">Event Options</h2>
 
 												<div className="flex items-center space-x-2">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 														{!isPaid ? "Free" : "Paid"}
 													</label>
 													<div className="mt-2">
@@ -464,7 +464,7 @@ const events = await axios.post(`/api/get-bookings`, {
 											</div>
 											<div className="w-full">
 												<div className="py-2 flex items-center justify-between">
-													<label htmlFor="eventCapacity" className="block text-sm font-semibold leading-6 text-gray-900">
+													<label htmlFor="eventCapacity" className="block text-sm font-semibold leading-6">
 														Capacity
 													</label>
 													<div className="mt-2">
@@ -476,7 +476,7 @@ const events = await axios.post(`/api/get-bookings`, {
 															min={0}
 															type="number"
 															placeholder="Enter 0 for unlimited"
-															className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+															className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 														/>
 														<ErrorMessage name="capacity" component="span" className="text-red-500 block mt-1" />
 													</div>
@@ -485,7 +485,7 @@ const events = await axios.post(`/api/get-bookings`, {
 												{/* requires approval */}
 
 												<div className="flex items-center justify-between">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 														Require Approval
 													</label>
 													<div className="mt-2">
@@ -520,7 +520,7 @@ const events = await axios.post(`/api/get-bookings`, {
 							<button
 								type="button"
 								onClick={submitForms}
-								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
+								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
 							>
 								{isLoading ? <Spinner /> : "Update Event"}
 							</button>

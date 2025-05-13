@@ -57,15 +57,15 @@ export default function LoginPage() {
 			<div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
 				<div className="sm:mx-auto sm:w-full sm:max-w-sm">
 					<Image className="mx-auto h-20 w-auto" src={Logo} alt="Jetzy Life" />
-					<h2 className="mt-10 text-center text-2xl font-bold leading-9 tracking-tight text-slate-400">Sign in to your account</h2>
+					<h2 className="mt-10 text-center text-2xl font-bold leading-9 tracking-tight">Sign in to your account</h2>
 				</div>
 
-				<div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm bg-slate-200 p-3 rounded-lg">
+				<div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm bg-[#1E1E1E] p-3 rounded-lg">
 					<Formik initialValues={formData} onSubmit={handleSubmit} validationSchema={loginValidatorScheme}>
 						{({ values, handleChange }) => (
 							<Form className="space-y-6" action="#" method="POST">
 								<div>
-									<label htmlFor="email" className="block text-sm font-medium leading-6 text-gray-900">
+									<label htmlFor="email" className="block text-sm font-medium leading-6">
 										Email address
 									</label>
 									<div className="mt-2">
@@ -77,7 +77,7 @@ export default function LoginPage() {
 											type="email"
 											autoComplete="email"
 											required
-											className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
 										<ErrorMessage name="email" component="span" className="text-red-500 block mt-1" />
 									</div>
@@ -85,7 +85,7 @@ export default function LoginPage() {
 
 								<div>
 									<div className="flex items-center justify-between">
-										<label htmlFor="password" className="block text-sm font-medium leading-6 text-gray-900">
+										<label htmlFor="password" className="block text-sm font-medium leading-6">
 											Password
 										</label>
 									</div>
@@ -98,7 +98,7 @@ export default function LoginPage() {
 											type="password"
 											autoComplete="current-password"
 											required
-											className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
 										<ErrorMessage name="password" component="span" className="text-red-500 block mt-1" />
 									</div>
