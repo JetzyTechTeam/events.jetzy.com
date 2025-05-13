@@ -9,11 +9,6 @@ import {
 	Td,
 	TableCaption,
 	TableContainer,
-	IconButton,
-	Menu,
-	MenuButton,
-	MenuList,
-	MenuItem,
 	Flex,
 	Button,
 	Text,
@@ -21,7 +16,7 @@ import {
 	Box,
 	Spinner,
 } from "@chakra-ui/react"
-import { EllipsisVerticalIcon, PencilIcon, PlusCircleIcon, TrashIcon } from "@heroicons/react/24/outline"
+import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline"
 import { Pagination } from "@/pages/console/events"
 import Image from "next/image"
 import Link from "next/link"
@@ -40,7 +35,7 @@ type Props = {
 	pagination: Pagination
 }
 const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
-	const [event, setEventData] = React.useState<IEvent>(rows[0])
+	const [event, setEventData] = React.useState<IEvent>(rows[0] || [])
 	const [tableData, setTableData] = React.useState<IEvent[]>(rows)
 	const edgestore = useEdgeStore()
 	const router = useRouter()
@@ -69,8 +64,8 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 
 	return (
 		<>
-			<TableContainer bg="white" borderRadius="md" boxShadow="md" p={2} mx={2}>
-				<Table variant="striped" colorScheme="gray">
+			<TableContainer bg="black" borderRadius="md" p={2} mx={2}>
+				<Table>
 					<TableCaption>
 						List of events.
 						{isLoading && <Spinner size="md" />}
@@ -84,7 +79,7 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 						</Tr>
 					</Thead>
 					<Tbody>
-						{tableData.map((row) => (
+						{tableData && tableData.map((row) => (
 							<Tr key={row._id.toString()}>
 								<Td fontWeight={"bold"}>
 									{/* image and event name */}
@@ -98,8 +93,7 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 												onOpen()
 											}}
 											variant="link"
-											colorScheme="blue"
-											// handle text overflow to truncate
+											color='white'
 											overflow="hidden"
 											whiteSpace="nowrap"
 											textOverflow="ellipsis"
@@ -110,24 +104,24 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 								</Td>
 								<Td>
 									<Link href={ROUTES.dashboard.events.tickets.replace(":eventId", row._id.toString())}>
-										<Button variant="link" colorScheme="blue">
+										<Button variant="link">
 											{row.tickets.length}
 										</Button>
 									</Link>
 								</Td>
 								<Td>{new Date(row.createdAt).toDateString()}</Td>
 								<Td className="space-x-2">
-								<Button size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
 								 onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))}
 								>
 								Edit
 								</Button>
-								<Button size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
 								 onClick={() => router.push(ROUTES.dashboard.events.manage.replace(":eventId", row._id.toString()))}
 								>
 								Manage
 								</Button>
-								<Button size='sm' leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
+								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
 								Delete
 								</Button>
 								</Td>
@@ -171,9 +165,15 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 					<ModalCloseButton />
 					<ModalBody>
 						<div className="space-y-4">
-							<div className="">
+						<div className="">
+							{event.images && event.images.length > 0 ? (
 								<Image src={event.images[0]} alt={event.name} width={200} height={200} className="d-block m-auto" />
-							</div>
+							) : (
+								<Box width={200} height={200} display="flex" alignItems="center" justifyContent="center" bg="gray.100" color="gray.500">
+									No Image
+								</Box>
+							)}
+						</div>
 							<div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white shadow rounded-lg">
 								<div className="flex-1">
 									<p className="text-lg font-medium text-gray-900">{event.name}</p>
@@ -214,14 +214,14 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 							<div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white shadow rounded-lg">
 								<div className="flex-1">
 									<p className="text-md font-medium text-gray-900">
-										{new Date(event.startsOn.toString()).toDateString()} {new Date(event.startsOn.toString()).toLocaleTimeString()}
+										{new Date(event.startsOn?.toString())?.toDateString()} {new Date(event.startsOn?.toString())?.toLocaleTimeString()}
 									</p>
 									<p className="text-sm text-gray-500">Start Date</p>
 								</div>
 
 								<div className="flex-1">
 									<p className="text-md font-medium text-gray-900">
-										{new Date(event.endsOn.toString()).toDateString()} {new Date(event.endsOn.toString()).toLocaleTimeString()}
+										{new Date(event.endsOn?.toString())?.toDateString()} {new Date(event.endsOn?.toString())?.toLocaleTimeString()}
 									</p>
 									<p className="text-sm text-gray-500">Start Date</p>
 								</div>

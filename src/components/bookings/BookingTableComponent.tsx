@@ -38,8 +38,8 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 
 	return (
 		<>
-			<TableContainer bg="white" width={"full"} borderRadius="md" boxShadow="md" p={2} mx={2}>
-				<Table variant="striped" colorScheme="gray" width="full">
+			<TableContainer bg="#181818" width={"full"} borderRadius="md" boxShadow="md" p={2} mx={2}>
+				<Table width="full">
 					<TableCaption placement="top">
 						{/* Export button  */}
 						<Button variant="outline" colorScheme="blue" onClick={handleExport} leftIcon={<PlusCircleIcon style={{ width: 20, height: 20 }} />}>
@@ -64,7 +64,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 								<Td fontWeight={"bold"}>
 									<Button
 										variant="link"
-										colorScheme="blue"
+										color='white'
 										// handle text overflow to truncate
 										overflow="hidden"
 										whiteSpace="nowrap"
@@ -75,7 +75,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 								</Td>
 
 								<Td>
-									<Button variant="link" colorScheme="blue">
+									<Button variant="link">
 										{row.event.name.slice(0, 10)}...
 									</Button>
 								</Td>
@@ -96,10 +96,10 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 								<Td>{new Date(row.createdAt).toDateString()}</Td>
 								<Td>
 									<Menu placement="top-end">
-										<MenuButton as={IconButton} aria-label="Options" icon={<EllipsisVerticalIcon style={{ width: 20, height: 20 }} />} variant="outline" />
-										<MenuList>
-											<MenuItem icon={<PencilIcon style={{ width: 20, height: 20 }} />}>Confirm</MenuItem>
-											<MenuItem icon={<TrashIcon style={{ width: 20, height: 20 }} />}>View</MenuItem>
+										<MenuButton as={IconButton} bg='#181818' _hover='#181818' _active='#181818' color='white' aria-label="Options" icon={<EllipsisVerticalIcon style={{ width: 20, height: 20 }} />} variant="outline" />
+										<MenuList bg='#181818'>
+											<MenuItem bg='#181818' icon={<PencilIcon style={{ width: 20, height: 20 }} />}>Confirm</MenuItem>
+											<MenuItem bg='#181818' icon={<TrashIcon style={{ width: 20, height: 20 }} />}>View</MenuItem>
 										</MenuList>
 									</Menu>
 								</Td>

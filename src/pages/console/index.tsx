@@ -14,7 +14,7 @@ import React from "react"
 const CreateEventButton = () => {
 	return (
 		<div className="md:w-full xs:w-fit  flex justify-end">
-			<Link href={ROUTES.dashboard.events.create} className="p-1.5 bg-app rounded-3xl">
+			<Link href={ROUTES.dashboard.events.create} className="px-3 py-1.5 font-bold bg-app text-black rounded-3xl">
 				Create Event
 			</Link>
 		</div>
@@ -31,7 +31,7 @@ export default function ConsoleDashboard() {
 
 	return (
 		<ConsoleLayout page={Pages.Dasshboard} component={<CreateEventButton />}>
-			{!dataList?.length && !isFetching && <p className="text-gray-700">No events found.</p>}
+			{!dataList?.length && !isFetching && <p>No events found.</p>}
 
 			{/* Display the data listing  */}
 			{isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
