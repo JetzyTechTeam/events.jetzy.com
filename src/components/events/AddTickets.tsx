@@ -23,10 +23,10 @@ export default function AddTickets(props: Props) {
   }, [props.initialTickets])
   
   return (
-    <section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+    <section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
       <header className="grid grid-rows-2 divide-y divide-slate-400">
         <div className="pb-2 flex items-center justify-between">
-          <h2 className="text-slate-800 font-bold">Add Tickets</h2>
+          <h2 className="font-bold">Add Tickets</h2>
           <button
             onClick={() => setTickets([...tickets, <TicketCard key={tickets.length} {...props} />])}
             type="button"

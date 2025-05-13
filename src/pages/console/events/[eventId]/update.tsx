@@ -281,7 +281,7 @@ const events = await axios.post(`/api/get-bookings`, {
 										{ id, file: "" }
 									])
 								}}
-								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
+								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
 							>
 								<PlusIcon className="h-6 w-6 mr-2" /> Add Image
 							</button>

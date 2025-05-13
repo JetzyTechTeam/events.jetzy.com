@@ -220,12 +220,12 @@ export default function CreateEventPage() {
 	return (
 		<ConsoleLayout page={Pages.Events}>
 			<header className="py-6">
-				<h1 className="text-slat-300 text-center text-2xl font-bold capitalized">Create New Event</h1>
+				<h1 className="text-center text-2xl font-bold capitalized">Create New Event</h1>
 			</header>
 			<section className="flex items-center justify-center p-3">
 				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
 					{/* Image Uploader */}
-					<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+					<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
 						{imageUploadComponents}
 
 						{/* button to add new components */}
@@ -238,7 +238,7 @@ export default function CreateEventPage() {
 										<DragAndDropFileUpload customId={uniqueId(10)} onUpload={fileUploader} onDelete={fileUpoaderRemoveImage} uploadedFiles={uploadedImages} key={uniqueId()} />,
 									])
 								}}
-								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
+								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
 							>
 								<PlusIcon className="h-6 w-6 mr-2" /> Add Image
 							</button>
@@ -249,9 +249,9 @@ export default function CreateEventPage() {
 						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation}>
 							{({ values, handleChange }) => (
 								<Form action="#" method="POST" className="space-y-6">
-									<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
 										<div>
-											<label htmlFor="eventName" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventName" className="block text-sm font-semibold leading-6">
 												Name
 											</label>
 											<div className="mt-2">
@@ -262,7 +262,7 @@ export default function CreateEventPage() {
 													onChange={handleChange}
 													type="text"
 													autoComplete="name"
-													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
 											</div>
@@ -270,7 +270,7 @@ export default function CreateEventPage() {
 
 												{/* Event Privacy Field */}
 										<div>
-											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 												Event Privacy
 											</label>
 											<div className="mt-2">
@@ -280,7 +280,7 @@ export default function CreateEventPage() {
 													name="privacy"
 													value={values?.privacy}
 													onChange={handleChange}
-													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												>
 													<option value="public">Public</option>
 													<option value="private">Private</option>
@@ -291,7 +291,7 @@ export default function CreateEventPage() {
 
 											{/* Show Participants Switch */}
 										<div className="flex items-center justify-between mt-4">
-											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6">
 												Show Participants
 											</label>
 											<div className="mt-2">
@@ -312,28 +312,28 @@ export default function CreateEventPage() {
 										</div>
 										
 										<div>
-											<label className="block text-sm font-semibold leading-6 text-gray-900">Date and Time</label>
+											<label className="block text-sm font-semibold leading-6">Date and Time</label>
 											<div className="mt-2 grid grid-rows-2">
 												<div className="grid grid-cols-3 gap-2">
 													<div className="col-span-2">
-														<label className="block text-xs leading-6 text-gray-500">Start Date</label>
+														<label className="block text-xs leading-6">Start Date</label>
 														<DatePicker onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" />
 													</div>
 
 													<div className="col-span-1">
-														<label className="block text-xs leading-6 text-gray-500">Start Time</label>
+														<label className="block text-xs leading-6">Start Time</label>
 														<TimePicker onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" />
 													</div>
 												</div>
 
 												<div className="grid grid-cols-3 gap-2">
 													<div className="col-span-2">
-														<label className="block text-xs leading-6 text-gray-500">End Date</label>
+														<label className="block text-xs leading-6">End Date</label>
 														<DatePicker onChange={(date) => handleEndDateChange(date)} placeholder="End Date" />
 													</div>
 
 													<div className="col-span-1">
-														<label className="block text-xs leading-6 text-gray-500">End Time</label>
+														<label className="block text-xs leading-6">End Time</label>
 														<TimePicker onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" />
 													</div>
 												</div>
@@ -345,7 +345,7 @@ export default function CreateEventPage() {
 										</div>
 
 										<div>
-											<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6">
 												Location
 											</label>
 											<div className="mt-2">
@@ -357,14 +357,14 @@ export default function CreateEventPage() {
 													onChange={handleChange}
 													type="text"
 													placeholder="Physical address"
-													className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
 
 										<div>
-											<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6 text-gray-900">
+											<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6">
 												Description
 											</label>
 											<div className="mt-2">
@@ -376,20 +376,20 @@ export default function CreateEventPage() {
 													onChange={handleChange}
 													type="text"
 													autoComplete="datetime"
-													className="block w-full h-20 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-20 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="desc" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
 									</section>
 
-									<section className="bg-slate-300 space-y-6 p-3 rounded-lg">
+									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
 										<header className="grid grid-rows-2 divide-y divide-slate-400">
 											<div className="flex items-center justify-between">
 												<h2 className="text-slat-400 font-bold">Event Options</h2>
 
 												<div className="flex items-center space-x-2">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 														{!isPaid ? "Free" : "Paid"}
 													</label>
 													<div className="mt-2">
@@ -411,7 +411,7 @@ export default function CreateEventPage() {
 											</div>
 											<div className="w-full">
 												<div className="py-2 flex items-center justify-between">
-													<label htmlFor="eventCapacity" className="block text-sm font-semibold leading-6 text-gray-900">
+													<label htmlFor="eventCapacity" className="block text-sm font-semibold leading-6">
 														Capacity
 													</label>
 													<div className="mt-2">
@@ -423,7 +423,7 @@ export default function CreateEventPage() {
 															min={0}
 															type="number"
 															placeholder="Enter 0 for unlimited"
-															className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+															className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 														/>
 														<ErrorMessage name="capacity" component="span" className="text-red-500 block mt-1" />
 													</div>
@@ -432,7 +432,7 @@ export default function CreateEventPage() {
 												{/* requires approval */}
 
 												<div className="flex items-center justify-between">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6 text-gray-900">
+													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 														Require Approval
 													</label>
 													<div className="mt-2">
@@ -467,7 +467,7 @@ export default function CreateEventPage() {
 							<button
 								type="button"
 								onClick={submitForms}
-								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-white shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
+								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
 							>
 								{isLoading ? <Spinner /> : "Create Event"}
 							</button>
@@ -487,7 +487,7 @@ export const TimezoneSelect: React.FC = () => {
   const { values, handleChange } = useFormikContext<any>()
   return (
     <>
-      <label htmlFor="timezone" className="block text-xs leading-6 text-gray-500">
+      <label htmlFor="timezone" className="block text-xs leading-6">
         Timezone
       </label>
       <Field
@@ -496,7 +496,7 @@ export const TimezoneSelect: React.FC = () => {
         name="timezone"
         value={values?.timezone}
         onChange={handleChange}
-        className="block w-full h-12 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+        className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
       >
         {timezones.map((tz) => (
           <option key={`${tz.label} ${tz.value}`} value={`${tz.label} ${tz.value}`}>
