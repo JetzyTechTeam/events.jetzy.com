@@ -50,19 +50,22 @@ export default function Manage({ event }: any) {
 
   return (
     <>
-      <ConsoleLayout page={event.name} component={
-        <div>
-          <Button
-            bg="#3E3E3E"
-            color="white"
-            _hover={{ bg: "#323232" }}
-            _active={{ bg: "#323232" }}
-            onClick={() => router.push(`/console/events/${event._id}/update`)}
-          >
-            Edit Event
-          </Button>
-        </div>
-      }>
+      <ConsoleLayout
+        page={event.name}
+        component={
+          <div>
+            <Button
+              bg="#3E3E3E"
+              color="white"
+              _hover={{ bg: "#323232" }}
+              _active={{ bg: "#323232" }}
+              onClick={() => router.push(`/console/events/${event._id}/update`)}
+            >
+              Edit Event
+            </Button>
+          </div>
+        }
+      >
         {/* INVITE GUESTS MODAL  */}
         <InviteGuestsModal
           inviteGuestsModal={inviteGuestsModal}
@@ -86,51 +89,55 @@ export default function Manage({ event }: any) {
         <Tabs variant="line">
           <TabList borderBottom="2px solid #9C9C9C">
             <Tab
-                  fontWeight="bold"
-        color="#9C9C9C"
-            _selected={{
-              color: "#F79432", 
-              borderBottom: "2px solid #F79432",
-            }}
-            >Overview</Tab>
-            <Tab
-                  fontWeight="bold"
-        color="#9C9C9C"
+              fontWeight="bold"
+              color="#9C9C9C"
               _selected={{
-                color: "#F79432", 
+                color: "#F79432",
                 borderBottom: "2px solid #F79432",
               }}
-            >Guests</Tab>
+            >
+              Overview
+            </Tab>
+            <Tab
+              fontWeight="bold"
+              color="#9C9C9C"
+              _selected={{
+                color: "#F79432",
+                borderBottom: "2px solid #F79432",
+              }}
+            >
+              Guests
+            </Tab>
           </TabList>
           <TabPanels>
             <TabPanel>
-            <div className="flex items-center justify-between gap-x-5 mb-10">
-          <div
-            className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
-            onClick={() => setInviteGuestsModal(true)}
-          >
-            <UserPlusSVG />
-            <p className="font-bold text-[#9C9C9C]">Invite Guests</p>
-          </div>
-          <div
-            className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
-            onClick={() => setSendBlastModal(true)}
-          >
-            <MessageSVG />
-            <p className="font-bold text-[#9C9C9C]">Send a Blast</p>
-          </div>
-          <div
-            className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
-            onClick={() => setShareModal(true)}
-          >
-            <ShareIcon className="w-6 h-6 text-[#949494]" />
-            <p className="font-bold text-[#9C9C9C]">Share Event</p>
-          </div>
-        </div>
+              <div className="flex items-center justify-between gap-x-5 mb-10">
+                <div
+                  className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
+                  onClick={() => setInviteGuestsModal(true)}
+                >
+                  <UserPlusSVG />
+                  <p className="font-bold text-[#9C9C9C]">Invite Guests</p>
+                </div>
+                <div
+                  className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
+                  onClick={() => setSendBlastModal(true)}
+                >
+                  <MessageSVG />
+                  <p className="font-bold text-[#9C9C9C]">Send a Blast</p>
+                </div>
+                <div
+                  className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
+                  onClick={() => setShareModal(true)}
+                >
+                  <ShareIcon className="w-6 h-6 text-[#949494]" />
+                  <p className="font-bold text-[#9C9C9C]">Share Event</p>
+                </div>
+              </div>
               <div className="flex h-full gap-x-5">
                 <div className="w-[250px] h-[200px] object-cover object-top rounded-2xl">
                   <img
-                    src={event.images}
+                    src={event.images[0]}
                     alt={event.name}
                     className="w-full h-full object-cover object-top rounded-2xl"
                   />
@@ -140,8 +147,8 @@ export default function Manage({ event }: any) {
                     <h4 className="font-bold">When</h4>
                     <p className="font-semibold flex gap-x-2 items-center">
                       <DateTimeSVG stroke="#fff" />
-                      {event.location}
-                    </p>
+                      {DateTime.fromISO(event.startsOn).toLocal().toFormat('EEE LLL dd yyyy hh:mm:ss a')} {event.timezone}
+                     </p>
                   </div>
                   <div className="py-10 px-3 flex flex-col gap-y-3 border-b border-[#585858]">
                     <h4 className="font-bold">Where</h4>
@@ -282,16 +289,16 @@ function SendBlastModal({
             {error && <Text color="red.500">{error}</Text>}
 
             <Button
-  size="lg"
-  bg="#F79432"
-  color="black"
-  _hover={{ bg: "#f78c22" }}
-  _active={{ bg: "#e67a10" }}
-  isLoading={loading}
-  onClick={onSendBlast}
->
-  Send Blast
-</Button>
+              size="lg"
+              bg="#F79432"
+              color="black"
+              _hover={{ bg: "#f78c22" }}
+              _active={{ bg: "#e67a10" }}
+              isLoading={loading}
+              onClick={onSendBlast}
+            >
+              Send Blast
+            </Button>
           </Box>
         </ModalBody>
       </ModalContent>
@@ -443,7 +450,7 @@ function InviteGuestsModal({
       isOpen={inviteGuestsModal}
       onClose={() => setInviteGuestsModal(false)}
       isCentered
-      size={step === 2 ? '4xl': '2xl'}
+      size={step === 2 ? "4xl" : "2xl"}
     >
       <ModalOverlay />
       <ModalContent bg="#1E1E1E" color="white">
@@ -466,10 +473,12 @@ function InviteGuestsModal({
                     isInvalid={!!emailError}
                   />
                   <Button
-  bg="#F79432"
-  color="black"
-  _hover={{ bg: "#f78c22" }}
-  _active={{ bg: "#e67a10" }} onClick={handleAddEmail}>
+                    bg="#F79432"
+                    color="black"
+                    _hover={{ bg: "#f78c22" }}
+                    _active={{ bg: "#e67a10" }}
+                    onClick={handleAddEmail}
+                  >
                     Add
                   </Button>
                 </Flex>
@@ -483,9 +492,13 @@ function InviteGuestsModal({
                     <Text fontWeight="bold">
                       Inviting {emails.length} Emails:
                     </Text>
-                    <UnorderedList listStyleType='none' m='0'>
+                    <UnorderedList listStyleType="none" m="0" pt='2'>
                       {emails.map((email) => (
-                        <ListItem key={email} className="bg-[#383838] p-2 rounded-lg">
+                        <ListItem
+                          key={email}
+                          className="bg-[#383838] p-2 rounded-lg"
+                          my='2'
+                        >
                           <Flex align="center" justify="space-between">
                             <span>{email}</span>
                             <Button
@@ -529,9 +542,7 @@ function InviteGuestsModal({
                   flexWrap="wrap"
                 >
                   <Box flex="1">
-                    <Text mb={2}>
-                      Here are the emails you have entered:
-                    </Text>
+                    <Text mb={2}>Here are the emails you have entered:</Text>
                     <UnorderedList pl={5}>
                       {emails.map((email) => (
                         <ListItem key={email}>{email}</ListItem>
@@ -628,12 +639,14 @@ function ShareModal({
             >
               {sharelink}
             </Box>
-            <Button onClick={onCopy}  bg="#F79432"
-  color="black"
-  _hover={{ bg: "#f78c22" }}
-  _active={{ bg: "#e67a10" }}
-  size='lg'
-  >
+            <Button
+              onClick={onCopy}
+              bg="#F79432"
+              color="black"
+              _hover={{ bg: "#f78c22" }}
+              _active={{ bg: "#e67a10" }}
+              size="lg"
+            >
               {copied ? "Copied!" : "Copy"}
             </Button>
           </Box>
