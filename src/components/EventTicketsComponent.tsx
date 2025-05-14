@@ -134,18 +134,42 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                     <CheckmarkSVG />
                   </span>
                 )}
-                <div className="flex flex-col sm:flex-row justify-between items-center">
+                <div className="flex sm:flex-row justify-between items-center w-full">
                   <div className="md:text-left xs:text-center">
                     <h3 className="font-semibold text-lg">{ticket.name}</h3>
                     <p className="text-xs my-2">
                       Select your tickets and proceed to checkout
                     </p>
-                    <p className="text-jetzy font-bold text-xl">
-                      {staticTickets[index].price.toLocaleString("en-US", {
-                        style: "currency",
-                        currency: "usd",
-                      })}
-                    </p>
+                    <div className="flex items-center justify-between w-full">
+                      <p className="text-jetzy font-bold text-xl">
+                        {staticTickets[index].price.toLocaleString("en-US", {
+                          style: "currency",
+                          currency: "usd",
+                        })}
+                      </p>
+                      {event.isPaid && ticket.isSelected && (
+                        <div
+                          className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800 absolute bottom-5 right-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => handleQuantityChange(ticket.id, -1)}
+                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center"
+                          >
+                            -
+                          </button>
+                          <p className="text-white text-lg font-semibold">
+                            {ticket.quantity}
+                          </p>
+                          <button
+                            onClick={() => handleQuantityChange(ticket.id, 1)}
+                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* {!ticket.isSelected && event.isPaid && (
@@ -159,8 +183,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 										</div>
 									)
 								} */}
-
-                  {/* event.isPaid */}
                 </div>
               </div>
             ))}
@@ -222,19 +244,3 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 };
 
 export default EventTicketsComponent;
-
-// {event.isPaid && (
-// 	<div className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800">
-// 		<button onClick={() => handleQuantityChange(ticket.id, -1)} className="bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300">
-// 			-
-// 		</button>
-// 		<span className="text-lg font-semibold">{ticket.quantity}</span>
-// 		<button onClick={() => handleQuantityChange(ticket.id, 1)} className="bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300">
-// 			+
-// 		</button>
-// 		{/* remove   */}
-// 		<button onClick={() => handleTicketSelection(ticket.id)} className="bg-red-200 text-red-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-300">
-// 			-
-// 		</button>
-// 	</div>
-// )}

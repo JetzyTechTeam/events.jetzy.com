@@ -136,7 +136,7 @@ export default function HostedEvents({ event }: Props) {
                 <h3 className="text-sm sm:text-base font-semibold ">
                   Description</h3>
                 <p className="text-sm sm:text-base text-[#bbbbbb]">
-                  {event.desc.slice(0, 20)}...
+                  {event.desc}
                 </p>
               </div>
 
