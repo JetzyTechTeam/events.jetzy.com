@@ -161,8 +161,6 @@ export default function Manage({ event }: any) {
                     <h4 className="font-bold">Description</h4>
                     <p className="font-semibold text-[#B5B6B7]">{event.desc}</p>
                   </div>
-                  {/* <EventDateTime iso={event.startsOn} />
-                  <EventDateTime iso={event.endsOn} /> */}
                 </div>
               </div>
             </TabPanel>
@@ -575,7 +573,7 @@ function InviteGuestsModal({
                     </Text>
                   </Box>
                 </Flex>
-                <Flex mt={6} justify="space-between">
+                <Flex mt={4} mb={4} justify="space-between">
                   <Button onClick={handleBack}>Back</Button>
                   <Button
                     bg="#F79432"
