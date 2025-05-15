@@ -1,510 +1,380 @@
-import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
-import DragAndDropFileUpload, { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
-import Spinner from "@Jetzy/components/misc/Spinner"
-import { ROUTES } from "@Jetzy/configs/routes"
-import { authorizedOnly } from "@Jetzy/lib/authSession"
-import { useEdgeStore } from "@Jetzy/lib/edgestore"
-import { eventValidation } from "@Jetzy/lib/validator/event"
-import { CreateEventThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
-import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import { CreateEventFormData, EventPrivacy, Pages } from "@Jetzy/types"
-import { Switch } from "@headlessui/react"
-import { ErrorMessage, Field, Form, Formik, FormikProps, useFormikContext } from "formik"
-import { GetServerSideProps } from "next"
-import { useRouter } from "next/router"
-import React from "react"
-import DatePicker from "@/components/form/DatePicker"
-import TimePicker from "@/components/form/TimePicker"
-import { PlusIcon } from "@heroicons/react/24/outline"
-import AddTickets from "@/components/events/AddTickets"
-import { TicketData } from "@/components/events/TicketCard"
-import { uniqueId } from "@/lib/utils"
-import { Error } from "@/lib/_toaster"
-import { usePlacesWidget } from "react-google-autocomplete"
-import moment from 'moment-timezone';
-
-const eventTicketsData: TicketData[] = []
-const uploadedImages: FileUploadData[] = []
+import React from "react";
+import {
+  Box,
+  Button,
+  Flex,
+  FormControl,
+  FormLabel,
+  Input,
+  Switch,
+  Text,
+  Textarea,
+  Image,
+  InputGroup,
+  InputLeftElement,
+  useDisclosure,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
+} from "@chakra-ui/react";
+import { Formik, Form, Field, FormikProps } from "formik";
+import ConsoleLayout from "@/components/layout/ConsoleLayout";
+import { CreateEventFormData, Pages } from "@/types";
+import moment from "moment-timezone";
+import { usePlacesWidget } from "react-google-autocomplete";
+import {
+  DescriptionSVG,
+  DotSVG,
+  DottedLinesSVG,
+  LocationSVG,
+  PlusSVG,
+  TicketSVG,
+  UploadImageSVG,
+  UserTickSVG,
+} from "@/assets/icons";
+import TimePicker from "@/components/form/TimePicker";
+import DatePicker from "@/components/form/DatePicker";
 
 const timezones = moment.tz.names().map((tz) => {
   const offset = moment.tz(tz).utcOffset();
-  const sign = offset >= 0 ? '+' : '-';
+  const sign = offset >= 0 ? "+" : "-";
   const hours = Math.floor(Math.abs(offset) / 60)
     .toString()
-    .padStart(2, '0');
-  const minutes = (Math.abs(offset) % 60).toString().padStart(2, '0');
+    .padStart(2, "0");
+  const minutes = (Math.abs(offset) % 60).toString().padStart(2, "0");
   return {
     label: `(UTC${sign}${hours}:${minutes})`,
     value: tz,
   };
 });
 
-export default function CreateEventPage() {
-	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
+const initialValues = {
+  eventName: "",
+  startTime: "",
+  startDate: "",
+  endTime: "",
+  endDate: "",
+  location: "",
+  description: "",
+  requireApproval: false,
+  tickets: [],
+  image: "",
+};
 
-	const { edgestore } = useEdgeStore()
-	const navigation = useRouter()
-	const { isLoading } = useAppSelector(getEventState)
-	const dispatcher = useAppDispatch()
+const CreateEventPage = () => {
+  const { isOpen, onOpen, onClose } = useDisclosure();
 
-	const [isPaid, setIsPaid] = React.useState(false)
-	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
+  const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
 
-	const formInitData: CreateEventFormData = {
-		name: "",
-		desc: "",
-		location: "",
-		capacity: 0,
-		requireApproval: false,
-		isPaid: false,
-		images: [],
-		tickets: [],
-		startDate: "",
-		startTime: "",
-		endDate: "",
-		endTime: "",
-		privacy: 'public',
-		timezone: '',
-		showParticipants: false
-	}
+  const { ref } = usePlacesWidget({
+    apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+    onPlaceSelected: (place) => {
+      if (formikRef.current) {
+        formikRef.current?.setFieldValue("location", place.formatted_address);
+        // Get the geometry location coordinates
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
 
-	// GOOGLE PLACE API
-	const { ref } = usePlacesWidget({
-		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-		onPlaceSelected: (place) => {
-			if (formikRef.current) {
-				formikRef.current?.setFieldValue("location", place.formatted_address)
-				// Get the geometry location coordinates
-				const lat = place.geometry.location.lat()
-				const lng = place.geometry.location.lng()
+        // Get the place id
+        const placeId = place.place_id;
 
-				// Get the place id
-				const placeId = place.place_id
-
-				// set the location coordinates and place id
-				formikRef.current?.setFieldValue("latitude", lat)
-				formikRef.current?.setFieldValue("longitude", lng)
-				formikRef.current?.setFieldValue("placeId", placeId)
-			}
-		},
-		options: {
-			fields: [
-				"formatted_address",
-				"geometry",
-				"place_id",
-				"name",
-				"address_components"
-			],
-			types: ["establishment"],
-		},
-	})
-
-	const handleSubmit = (values: CreateEventFormData) => {
-		// set the tickets data
-		if (isPaid) {
-			values.tickets = eventTicketsData
-		} else {
-			values.tickets = [
-				{
-					id: uniqueId(10),
-					title: "Free Ticket",
-					price: 0,
-					description: "This is a free ticket",
-				},
-			]
-		}
-
-		// set the images data
-		values.images = uploadedImages
-
-		// set the isPaid value
-		values.isPaid = isPaid
-
-		// make sure basic required fields are not empty
-		if (!values.name || !values.location || !values.desc || !values.startDate || !values.startTime || !values.endDate || !values.endTime) {
-			Error("Error", "Please fill all required fields")
-			return
-		}
-
-		dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({...values, privacy: values.privacy}) } })).then((res: any) => {
-			if (res?.payload?.status) {
-				navigation.push(`/console/events/${res.payload.data._id}/manage`);
-			}
-		})
-	}
-
-	const submitForms = () => {
-		if (formikRef?.current) {
-			// submit the form
-			formikRef.current.submitForm()
-		}
-	}
-
-	const fileUploader = async (data: FileUploadData) => {
-		// check if the image is already in the array of uploaded images using the id from data object
-		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
-		if (imageIndex !== -1) {
-			uploadedImages[imageIndex] = data
-		} else {
-			// update the image url
-			uploadedImages.push(data)
-		}
-	}
-
-	const fileUpoaderRemoveImage = async (data: FileUploadData) => {
-		// remove the image from the array of uploaded images
-		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
-		if (imageIndex !== -1) {
-			// get the image to be removed
-			const image = uploadedImages[imageIndex]
-			uploadedImages.splice(imageIndex, 1)
-
-			try {
-				// delete the image from the server
-				await edgestore.publicFiles.delete({ url: image.file })
-			} catch (error: any) {
-				console.error("Error deleting image", error)
-				Error("Error", "Failed to delete image")
-			}
-		}
-	}
-	// ---------------------------------------------------------------------------------------------
-
-	// handle tickets save
-	const handleSave = (data: TicketData) => {
-		// using the ticket id check if it already exist in the array of tickets, if it does update the ticket data otherwise add the ticket to the array
-		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
-		if (ticketIndex !== -1) {
-			// update the ticket data
-			eventTicketsData[ticketIndex] = data
-		} else {
-			// add the ticket to the array
-			eventTicketsData.push(data)
-		}
-	}
-
-	const handleDelete = (data: TicketData) => {
-		// remove the ticket from the array
-		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
-		if (ticketIndex !== -1) {
-			eventTicketsData.splice(ticketIndex, 1)
-		}
-	}
-	// ---------------------------------------------------------------------------------------------
-
-	const handleStartDateChange = (date?: string, time?: string) => {
-		if (formikRef?.current) {
-			if (date) {
-				formikRef.current.setFieldValue("startDate", date)
-			}
-
-			if (time) {
-				formikRef.current.setFieldValue("startTime", time)
-			}
-		}
-	}
-
-	const handleEndDateChange = (date?: string, time?: string) => {
-		if (formikRef?.current) {
-			if (date) {
-				formikRef.current.setFieldValue("endDate", date)
-			}
-
-			if (time) {
-				formikRef.current.setFieldValue("endTime", time)
-			}
-		}
-	}
-
-
-	return (
-		<ConsoleLayout page={Pages.Events}>
-			<header className="py-6">
-				<h1 className="text-center text-2xl font-bold capitalized">Create New Event</h1>
-			</header>
-			<section className="flex items-center justify-center p-3">
-				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
-					{/* Image Uploader */}
-					<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
-						{imageUploadComponents}
-
-						{/* button to add new components */}
-						<div className="flex justify-center items-center">
-							<button
-								type="button"
-								onClick={() => {
-									setImageUploadComponents([
-										...imageUploadComponents,
-										<DragAndDropFileUpload customId={uniqueId(10)} onUpload={fileUploader} onDelete={fileUpoaderRemoveImage} uploadedFiles={uploadedImages} key={uniqueId()} />,
-									])
-								}}
-								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
-							>
-								<PlusIcon className="h-6 w-6 mr-2" /> Add Image
-							</button>
-						</div>
-					</section>
-
-					<section className="space-y-6">
-						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation}>
-							{({ values, handleChange }) => (
-								<Form action="#" method="POST" className="space-y-6">
-									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
-										<div>
-											<label htmlFor="eventName" className="block text-sm font-semibold leading-6">
-												Name
-											</label>
-											<div className="mt-2">
-												<Field
-													id="eventName"
-													name="name"
-													value={values?.name}
-													onChange={handleChange}
-													type="text"
-													autoComplete="name"
-													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-												/>
-												<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-
-												{/* Event Privacy Field */}
-										<div>
-											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
-												Event Privacy
-											</label>
-											<div className="mt-2">
-												<Field
-													as="select"
-													id="eventPrivacy"
-													name="privacy"
-													value={values?.privacy}
-													onChange={handleChange}
-													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-												>
-													<option value="public">Public</option>
-													<option value="private">Private</option>
-												</Field>
-												<ErrorMessage name="privacy" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-
-											{/* Show Participants Switch */}
-										<div className="flex items-center justify-between mt-4">
-											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6">
-												Show Participants
-											</label>
-											<div className="mt-2">
-												<Switch
-													checked={values.showParticipants}
-													onChange={() => handleChange({ target: { name: "showParticipants", value: !values.showParticipants } })}
-													className={`${values.showParticipants ? "bg-app" : "bg-app/50"}
-														relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
-												>
-													<span className="sr-only">Show Participants</span>
-													<span
-														aria-hidden="true"
-														className={`${values.showParticipants ? "translate-x-6" : "translate-x-0"}
-															pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
-													/>
-												</Switch>
-											</div>
-										</div>
-										
-										<div>
-											<label className="block text-sm font-semibold leading-6">Date and Time</label>
-											<div className="mt-2 grid grid-rows-2">
-												<div className="grid grid-cols-3 gap-2">
-													<div className="col-span-2">
-														<label className="block text-xs leading-6">Start Date</label>
-														<DatePicker onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" />
-													</div>
-
-													<div className="col-span-1">
-														<label className="block text-xs leading-6">Start Time</label>
-														<TimePicker onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" />
-													</div>
-												</div>
-
-												<div className="grid grid-cols-3 gap-2">
-													<div className="col-span-2">
-														<label className="block text-xs leading-6">End Date</label>
-														<DatePicker onChange={(date) => handleEndDateChange(date)} placeholder="End Date" />
-													</div>
-
-													<div className="col-span-1">
-														<label className="block text-xs leading-6">End Time</label>
-														<TimePicker onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" />
-													</div>
-												</div>
-											</div>
-										</div>
-
-										<div className="mt-2">
-											<TimezoneSelect />
-										</div>
-
-										<div>
-											<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6">
-												Location
-											</label>
-											<div className="mt-2">
-												<Field
-													ref={ref}
-													id="eventLocation"
-													name="location"
-													value={values?.location}
-													onChange={handleChange}
-													type="text"
-													placeholder="Physical address"
-													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-												/>
-												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-
-										<div>
-											<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6">
-												Description
-											</label>
-											<div className="mt-2">
-												<Field
-													id="eventDescription"
-													as={"textarea"}
-													name="desc"
-													value={values?.desc}
-													onChange={handleChange}
-													type="text"
-													autoComplete="datetime"
-													className="bg-[#1E1E1E] block w-full h-20 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-												/>
-												<ErrorMessage name="desc" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-									</section>
-
-									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
-										<header className="grid grid-rows-2 divide-y divide-slate-400">
-											<div className="flex items-center justify-between">
-												<h2 className="text-slat-400 font-bold">Event Options</h2>
-
-												<div className="flex items-center space-x-2">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
-														{!isPaid ? "Free" : "Paid"}
-													</label>
-													<div className="mt-2">
-														<Switch
-															checked={isPaid}
-															onChange={setIsPaid}
-															className={`${isPaid ? "bg-app" : "bg-app/50"}
-          relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
-														>
-															<span className="sr-only">Use setting</span>
-															<span
-																aria-hidden="true"
-																className={`${isPaid ? "translate-x-6" : "translate-x-0"}
-            pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
-															/>
-														</Switch>
-													</div>
-												</div>
-											</div>
-											<div className="w-full">
-												<div className="py-2 flex items-center justify-between">
-													<label htmlFor="eventCapacity" className="block text-sm font-semibold leading-6">
-														Capacity
-													</label>
-													<div className="mt-2">
-														<Field
-															id="eventCapacity"
-															name="capacity"
-															value={values?.capacity}
-															onChange={handleChange}
-															min={0}
-															type="number"
-															placeholder="Enter 0 for unlimited"
-															className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-														/>
-														<ErrorMessage name="capacity" component="span" className="text-red-500 block mt-1" />
-													</div>
-												</div>
-
-												{/* requires approval */}
-
-												<div className="flex items-center justify-between">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
-														Require Approval
-													</label>
-													<div className="mt-2">
-														<Switch
-															checked={values.requireApproval}
-															onChange={() => handleChange({ target: { name: "requireApproval", value: !values.requireApproval } })}
-															className={`${values.requireApproval ? "bg-app" : "bg-app/50"}
-          relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
-														>
-															<span className="sr-only">Use setting</span>
-															<span
-																aria-hidden="true"
-																className={`${values.requireApproval ? "translate-x-6" : "translate-x-0"}
-            pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
-															/>
-														</Switch>
-														<ErrorMessage name="requireApproval" component="span" className="text-red-500 block mt-1" />
-													</div>
-												</div>
-											</div>
-										</header>
-									</section>
-								</Form>
-							)}
-						</Formik>
-
-						{/* Events tickets */}
-						{isPaid && <AddTickets onSave={handleSave} onDelete={handleDelete} />}
-
-						{/* Submit Button */}
-						<div>
-							<button
-								type="button"
-								onClick={submitForms}
-								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
-							>
-								{isLoading ? <Spinner /> : "Create Event"}
-							</button>
-						</div>
-					</section>
-				</div>
-			</section>
-		</ConsoleLayout>
-	)
-}
-
-export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	return authorizedOnly(context)
-}
-
-export const TimezoneSelect: React.FC = () => {
-  const { values, handleChange } = useFormikContext<any>()
+        // set the location coordinates and place id
+        formikRef.current?.setFieldValue("latitude", lat);
+        formikRef.current?.setFieldValue("longitude", lng);
+        formikRef.current?.setFieldValue("placeId", placeId);
+      }
+    },
+    options: {
+      fields: [
+        "formatted_address",
+        "geometry",
+        "place_id",
+        "name",
+        "address_components",
+      ],
+      types: ["establishment"],
+    },
+  });
   return (
-    <>
-      <label htmlFor="timezone" className="block text-xs leading-6">
-        Timezone
-      </label>
-      <Field
-        as="select"
-        id="timezone"
-        name="timezone"
-        value={values?.timezone}
-        onChange={handleChange}
-        className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+    <ConsoleLayout
+      page={Pages.CreateEvent}
+      backBtn="/console/events"
+      maxW="max-w-4xl"
+    >
+      <Formik
+        initialValues={initialValues}
+        onSubmit={(values) => {
+          // handle submit
+          console.log(values);
+        }}
       >
-        {timezones.map((tz) => (
-          <option key={`${tz.label} ${tz.value}`} value={`${tz.label} ${tz.value}`}>
-            {tz.label} {tz.value}
-          </option>
-        ))}
-      </Field>
-      <ErrorMessage name="timezone" component="span" className="text-red-500 block mt-1" />
-    </>
-  )
-}
+        {({ values, setFieldValue }) => (
+          <Form>
+            <Flex
+              direction={{ base: "column", md: "row" }}
+              gap={8}
+              p={8}
+              borderRadius="2xl"
+              maxW="900px"
+              mx="auto"
+              boxShadow="2xl"
+            >
+              {/* Left Side: Form Fields */}
+              <Box flex="1">
+                <FormControl mb={4}>
+                  <Field
+                    as={Input}
+                    name="eventName"
+                    placeholder="Event Name"
+                    size="lg"
+                    color="white"
+                    border="none"
+                    h="20"
+                    fontSize="38"
+                    fontWeight="bold"
+                    p="0"
+                    _focus={{ border: "none", boxShadow: "none" }}
+                    _placeholder={{ color: "#FFFFFF52" }}
+                  />
+                </FormControl>
+                <Flex
+                  gap={4}
+                  alignItems="center"
+                  justifyContent="space-between"
+                  mb="4"
+                  bg="#14161B"
+                  rounded="xl"
+                  p="2"
+                >
+                  <Box pl="3" className="relative">
+                    <Box className="absolute top-5 left-4">
+                      <DottedLinesSVG />
+                    </Box>
+                    <FormLabel color="#FFFFFFA3" mb="5">
+                      <Flex gap="3" alignItems="center">
+                        <DotSVG />
+
+                        <Text>Start</Text>
+                      </Flex>
+                    </FormLabel>
+                    <FormLabel color="#FFFFFFA3">
+                      <Flex gap="3" alignItems="center">
+                        <DotSVG />
+                        <Text>End</Text>
+                      </Flex>
+                    </FormLabel>
+                  </Box>
+                  <Flex gap="4">
+                    <Box>
+                      <FormControl mb="2">
+                        <TimePicker
+                          onChange={(time) => console.log(time)}
+                          placeholder="Start Time"
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <TimePicker
+                          onChange={(time) => console.log(time)}
+                          placeholder="End Time"
+                        />
+                      </FormControl>
+                    </Box>
+                    <Box>
+                      <FormControl mb="2">
+                        <DatePicker
+                          onChange={(date) => console.log(date)}
+                          placeholder="Start Date"
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <DatePicker
+                          onChange={(date) => console.log(date)}
+                          placeholder="End Date"
+                        />
+                      </FormControl>
+                    </Box>
+                  </Flex>
+                </Flex>
+                <FormControl mb={4}>
+                  <InputGroup>
+                    <InputLeftElement pointerEvents="none">
+                      <LocationSVG />
+                    </InputLeftElement>
+                    <Field
+                      as={Input}
+                      name="location"
+                      placeholder="Choose Location"
+                      bg="#141619"
+                      color="white"
+                      border="none"
+                      pl="10"
+                    />
+                  </InputGroup>
+                </FormControl>
+                <FormControl mb={4}>
+                  <InputGroup>
+                    <InputLeftElement pointerEvents="none">
+                      <DescriptionSVG />
+                    </InputLeftElement>
+                    <Field
+                      as={Textarea}
+                      name="description"
+                      placeholder="Add Description"
+                      bg="#141619"
+                      color="white"
+                      border="none"
+                      rows="1"
+                      pl="10"
+                    />
+                  </InputGroup>
+                </FormControl>
+                <Text fontWeight="semibold" color="gray.400" mb={2}>
+                  Event Options
+                </Text>
+                <Box bg="#141619" rounded="xl" px="3" py="2">
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Flex gap="3" alignItems="center">
+                      <UserTickSVG />
+                      <Text color="gray.400" mr={2}>
+                        Require Approval
+                      </Text>
+                    </Flex>
+                    <Switch
+                      name="requireApproval"
+                      isChecked={values.requireApproval}
+                      onChange={() =>
+                        setFieldValue(
+                          "requireApproval",
+                          !values.requireApproval
+                        )
+                      }
+                    />
+                  </Flex>
+                  {/* <Divider orientation='horizontal' bgColor='#1B1F22' /> */}
+                  <Flex align="center" justifyContent="space-between">
+                    <Flex gap="3" alignItems="center">
+                      <TicketSVG />
+                      <Text color="gray.400" mr={2}>
+                        Tickets
+                      </Text>
+                    </Flex>
+                    <Button
+                      bg="transparent"
+                      color="white"
+                      _hover={{ bg: "transparent" }}
+                      _active={{ bg: "transparent" }}
+                      size="sm"
+                      onClick={onOpen}
+                      rightIcon={<PlusSVG />}
+                      p='0'
+                    >
+                      Add
+                    </Button>
+                  </Flex>
+                </Box>
+                <Button
+                  type="submit"
+                  mt="10"
+                  bg="#F79432"
+                  size="lg"
+                  width="100%"
+                  borderRadius="xl"
+                  color="black"
+                >
+                  Create Event
+                </Button>
+
+                {/* Tickets Modal */}
+                <Modal isOpen={isOpen} onClose={onClose} isCentered>
+                  <ModalOverlay />
+                  <ModalContent bg="#1E1E1E" color="white">
+                    <ModalHeader>Add Ticket</ModalHeader>
+                    <ModalCloseButton />
+                    <ModalBody>
+                      <FormControl mb={4}>
+                        <FormLabel>Ticket Name</FormLabel>
+                        <Input
+                          placeholder="Enter ticket name"
+                          bg="#090C10"
+                          border="1px solid #444"
+                        />
+                      </FormControl>
+                      <FormControl mb={4}>
+                        <FormLabel>Description</FormLabel>
+                        <Textarea
+                          placeholder="Enter description"
+                          bg="#090C10"
+                          border="1px solid #444"
+                        />
+                      </FormControl>
+                      <FormControl mb={4}>
+                        <FormLabel>Price</FormLabel>
+                        <Input
+                          type="number"
+                          placeholder="Enter price"
+                          bg="#090C10"
+                          border="1px solid #444"
+                        />
+                      </FormControl>
+                    </ModalBody>
+
+                    <ModalFooter>
+                      <Flex flexDirection="column" w="full" gap="3">
+                        <Button
+                          bg="#F79432"
+                          w="full"
+                          color="black"
+                          mr={3}
+                          onClick={onClose}
+                        >
+                          Add
+                        </Button>
+                        <Button variant="unstyled" onClick={onClose}>
+                          Cancel
+                        </Button>
+                      </Flex>
+                    </ModalFooter>
+                  </ModalContent>
+                </Modal>
+              </Box>
+              {/* Right Side: Image Upload/Preview */}
+              <Box
+                width="270px"
+                height="133px"
+                bg="#2B2B2B"
+                borderRadius="lg"
+                display="flex"
+                flexDirection="column"
+                justifyContent="center"
+                alignItems="center"
+                cursor="pointer"
+                _hover={{ bg: "#3A3A3A" }}
+              >
+                <Box
+                  bg="#2B2B2B"
+                  borderRadius="full"
+                  p={2}
+                  mb={1}
+                  display="flex"
+                  justifyContent="center"
+                  alignItems="center"
+                >
+                  <UploadImageSVG />
+                </Box>
+                <Text fontSize="sm" color="gray.400">
+                  Add Photo
+                </Text>
+              </Box>
+            </Flex>
+          </Form>
+        )}
+      </Formik>
+    </ConsoleLayout>
+  );
+};
+
+export default CreateEventPage;

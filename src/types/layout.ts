@@ -9,6 +9,8 @@ export interface ConsoleDashboardProps {
 	page: Pages
 	children?: React.ReactNode
 	component?: React.ReactNode
+	backBtn?: string;
+	maxW?: string
 }
 
 export interface ConsoleNavbarProps extends ConsoleDashboardProps {}
