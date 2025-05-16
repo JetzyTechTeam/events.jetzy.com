@@ -9,7 +9,6 @@ import {
   Switch,
   Text,
   Textarea,
-  Image,
   InputGroup,
   InputLeftElement,
   useDisclosure,
@@ -20,8 +19,21 @@ import {
   ModalCloseButton,
   ModalBody,
   ModalFooter,
+  MenuList,
+  MenuItem,
+  Menu,
+  MenuButton,
+  IconButton,
 } from "@chakra-ui/react";
-import { Formik, Form, Field, FormikProps } from "formik";
+import {
+  Formik,
+  Form,
+  Field,
+  FormikProps,
+  ErrorMessage,
+  useFormikContext,
+  FieldArray,
+} from "formik";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { CreateEventFormData, Pages } from "@/types";
 import moment from "moment-timezone";
@@ -31,13 +43,21 @@ import {
   DotSVG,
   DottedLinesSVG,
   LocationSVG,
+  LockSVG,
+  MultipleUsersSVG,
   PlusSVG,
   TicketSVG,
   UploadImageSVG,
   UserTickSVG,
+  VerticalDotsSVG,
 } from "@/assets/icons";
 import TimePicker from "@/components/form/TimePicker";
 import DatePicker from "@/components/form/DatePicker";
+import { Error } from "@/lib/_toaster";
+import { CreateEventThunk } from "@/redux/reducers/eventsSlice";
+import { useAppDispatch } from "@/redux/stores";
+import { useRouter } from "next/router";
+import { TicketData } from "@/components/events/TicketCard";
 
 const timezones = moment.tz.names().map((tz) => {
   const offset = moment.tz(tz).utcOffset();
@@ -53,23 +73,34 @@ const timezones = moment.tz.names().map((tz) => {
 });
 
 const initialValues = {
-  eventName: "",
+  name: "",
+  desc: "",
   startTime: "",
   startDate: "",
   endTime: "",
   endDate: "",
   location: "",
-  description: "",
   requireApproval: false,
   tickets: [],
-  image: "",
+  images: [],
+  timezone: "",
+  capacity: 0,
+  privacy: "public",
 };
 
 const CreateEventPage = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const dispatcher = useAppDispatch();
+  const navigation = useRouter();
 
   const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
-
+  const [editIndex, setEditIndex] = React.useState<number | null>(null);
+  const [tempTicket, setTempTicket] = React.useState<TicketData>({
+    id: "",
+    title: "",
+    description: "",
+    price: 0,
+  });
   const { ref } = usePlacesWidget({
     apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
     onPlaceSelected: (place) => {
@@ -99,6 +130,52 @@ const CreateEventPage = () => {
       types: ["establishment"],
     },
   });
+
+  const onSubmit = (values: CreateEventFormData) => {
+    console.log(values);
+    if (
+      !values.name ||
+      !values.location ||
+      !values.desc ||
+      !values.startDate ||
+      !values.startTime ||
+      !values.endDate ||
+      !values.endTime
+    ) {
+      Error("Error", "Please fill all required fields");
+      return;
+    }
+
+    // dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({...values, privacy: values.privacy}) } })).then((res: any) => {
+    // 	if (res?.payload?.status) {
+    // 		navigation.push(`/console/events/${res.payload.data._id}/manage`);
+    // 	}
+    // })
+  };
+
+  const handleStartDateChange = (date?: string, time?: string) => {
+    if (formikRef?.current) {
+      if (date) {
+        formikRef.current.setFieldValue("startDate", date);
+      }
+
+      if (time) {
+        formikRef.current.setFieldValue("startTime", time);
+      }
+    }
+  };
+  const handleEndDateChange = (date?: string, time?: string) => {
+    if (formikRef?.current) {
+      if (date) {
+        formikRef.current.setFieldValue("endDate", date);
+      }
+
+      if (time) {
+        formikRef.current.setFieldValue("endTime", time);
+      }
+    }
+  };
+
   return (
     <ConsoleLayout
       page={Pages.CreateEvent}
@@ -106,11 +183,9 @@ const CreateEventPage = () => {
       maxW="max-w-4xl"
     >
       <Formik
-        initialValues={initialValues}
-        onSubmit={(values) => {
-          // handle submit
-          console.log(values);
-        }}
+        initialValues={initialValues as CreateEventFormData}
+        onSubmit={onSubmit}
+        innerRef={formikRef}
       >
         {({ values, setFieldValue }) => (
           <Form>
@@ -126,20 +201,26 @@ const CreateEventPage = () => {
               {/* Left Side: Form Fields */}
               <Box flex="1">
                 <FormControl mb={4}>
-                  <Field
-                    as={Input}
-                    name="eventName"
-                    placeholder="Event Name"
-                    size="lg"
-                    color="white"
-                    border="none"
-                    h="20"
-                    fontSize="38"
-                    fontWeight="bold"
-                    p="0"
-                    _focus={{ border: "none", boxShadow: "none" }}
-                    _placeholder={{ color: "#FFFFFF52" }}
-                  />
+                  <Flex alignItems="center">
+                    <Field
+                      as={Input}
+                      id="name"
+                      name="name"
+                      placeholder="Event Name"
+                      size="lg"
+                      color="white"
+                      border="none"
+                      h="20"
+                      fontSize="38"
+                      fontWeight="bold"
+                      p="0"
+                      _focus={{ border: "none", boxShadow: "none" }}
+                      _placeholder={{ color: "#FFFFFF52" }}
+                      value={values?.name}
+                    />
+
+                    <TimezoneSelect />
+                  </Flex>
                 </FormControl>
                 <Flex
                   gap={4}
@@ -172,13 +253,17 @@ const CreateEventPage = () => {
                     <Box>
                       <FormControl mb="2">
                         <TimePicker
-                          onChange={(time) => console.log(time)}
+                          onChange={(time) =>
+                            handleStartDateChange(undefined, time)
+                          }
                           placeholder="Start Time"
                         />
                       </FormControl>
                       <FormControl>
                         <TimePicker
-                          onChange={(time) => console.log(time)}
+                          onChange={(time) =>
+                            handleEndDateChange(undefined, time)
+                          }
                           placeholder="End Time"
                         />
                       </FormControl>
@@ -186,13 +271,13 @@ const CreateEventPage = () => {
                     <Box>
                       <FormControl mb="2">
                         <DatePicker
-                          onChange={(date) => console.log(date)}
+                          onChange={(date) => handleStartDateChange(date)}
                           placeholder="Start Date"
                         />
                       </FormControl>
                       <FormControl>
                         <DatePicker
-                          onChange={(date) => console.log(date)}
+                          onChange={(date) => handleEndDateChange(date)}
                           placeholder="End Date"
                         />
                       </FormControl>
@@ -205,7 +290,9 @@ const CreateEventPage = () => {
                       <LocationSVG />
                     </InputLeftElement>
                     <Field
+                      ref={ref}
                       as={Input}
+                      id="location"
                       name="location"
                       placeholder="Choose Location"
                       bg="#141619"
@@ -222,7 +309,7 @@ const CreateEventPage = () => {
                     </InputLeftElement>
                     <Field
                       as={Textarea}
-                      name="description"
+                      name="desc"
                       placeholder="Add Description"
                       bg="#141619"
                       color="white"
@@ -236,7 +323,25 @@ const CreateEventPage = () => {
                   Event Options
                 </Text>
                 <Box bg="#141619" rounded="xl" px="3" py="2">
-                  <Flex align="center" justifyContent="space-between" mb={4}>
+                  <Flex align="center" justifyContent="space-between" mt="2">
+                    <Flex gap="3" alignItems="center">
+                      <LockSVG />
+                      <Text color="gray.400" mr={2}>
+                        Privacy
+                      </Text>
+                    </Flex>
+                    <Field
+                      as="select"
+                      id="privacy"
+                      name="privacy"
+                      value={values?.privacy}
+                      className="bg-[#1E1E1E] block w-[100px] h-10 rounded-md border-0 py-1 shadow-sm sm:text-sm sm:leading-6 p-3"
+                    >
+                      <option value="private">Private</option>
+                      <option value="public">Public</option>
+                    </Field>
+                  </Flex>
+                  <Flex align="center" justifyContent="space-between" my={4}>
                     <Flex gap="3" alignItems="center">
                       <UserTickSVG />
                       <Text color="gray.400" mr={2}>
@@ -254,7 +359,26 @@ const CreateEventPage = () => {
                       }
                     />
                   </Flex>
-                  {/* <Divider orientation='horizontal' bgColor='#1B1F22' /> */}
+                  <Flex align="center" justifyContent="space-between" mb="4">
+                    <Flex gap="3" alignItems="center">
+                      <MultipleUsersSVG />
+                      <Text color="gray.400" mr={2}>
+                        Capacity
+                      </Text>
+                    </Flex>
+                    <Field
+                      as={Input}
+                      type="number"
+                      min={0}
+                      value={values.capacity || 0}
+                      name="capacity"
+                      bg="#1C1F24"
+                      color="white"
+                      border="none"
+                      w="80px"
+                      h="30px"
+                    />
+                  </Flex>
                   <Flex align="center" justifyContent="space-between">
                     <Flex gap="3" alignItems="center">
                       <TicketSVG />
@@ -270,11 +394,82 @@ const CreateEventPage = () => {
                       size="sm"
                       onClick={onOpen}
                       rightIcon={<PlusSVG />}
-                      p='0'
+                      p="0"
                     >
                       Add
                     </Button>
                   </Flex>
+                  <FieldArray name="tickets">
+                    {({ remove, replace, push }) => (
+                      <>
+                        {values.tickets.map((ticket, index) => (
+                          <Box
+                            key={index}
+                            py="2"
+                            px="3"
+                            bg="#2B2B2B"
+                            borderRadius="md"
+                            border="1px solid #464646"
+                            my={4}
+                            position="relative"
+                          >
+                            <Box>
+                              <Text fontWeight="bold">{ticket.title}</Text>
+                              <Text fontSize="sm" my="2">
+                                {ticket.description}
+                              </Text>
+                              <Text
+                                fontSize="lg"
+                                fontWeight="bold"
+                                color="#F79432"
+                              >
+                                ${ticket.price}
+                              </Text>
+                            </Box>
+
+                            {/* Vertical Dots Menu */}
+                            <Box position="absolute" top="3" right="3">
+                              <Menu>
+                                <MenuButton
+                                  as={IconButton}
+                                  icon={<VerticalDotsSVG />}
+                                  variant="ghost"
+                                  size="sm"
+                                  color="white"
+                                  _hover={{ bg: "#333" }}
+                                  _active={{ bg: "#444" }}
+                                />
+                                <MenuList
+                                  bg="#1D1F24"
+                                  border="1px solid #444"
+                                  color="white"
+                                >
+                                  <MenuItem
+                                    bg="transparent"
+                                    _hover={{ bg: "#333" }}
+                                    onClick={() => {
+                                      setEditIndex(index);
+                                      setTempTicket(ticket);
+                                      onOpen();
+                                    }}
+                                  >
+                                    Edit
+                                  </MenuItem>
+                                  <MenuItem
+                                    bg="transparent"
+                                    _hover={{ bg: "#333" }}
+                                    onClick={() => remove(index)} // ✅ This is correct
+                                  >
+                                    Delete
+                                  </MenuItem>
+                                </MenuList>
+                              </Menu>
+                            </Box>
+                          </Box>
+                        ))}
+                      </>
+                    )}
+                  </FieldArray>
                 </Box>
                 <Button
                   type="submit"
@@ -289,57 +484,121 @@ const CreateEventPage = () => {
                 </Button>
 
                 {/* Tickets Modal */}
-                <Modal isOpen={isOpen} onClose={onClose} isCentered>
-                  <ModalOverlay />
-                  <ModalContent bg="#1E1E1E" color="white">
-                    <ModalHeader>Add Ticket</ModalHeader>
-                    <ModalCloseButton />
-                    <ModalBody>
-                      <FormControl mb={4}>
-                        <FormLabel>Ticket Name</FormLabel>
-                        <Input
-                          placeholder="Enter ticket name"
-                          bg="#090C10"
-                          border="1px solid #444"
-                        />
-                      </FormControl>
-                      <FormControl mb={4}>
-                        <FormLabel>Description</FormLabel>
-                        <Textarea
-                          placeholder="Enter description"
-                          bg="#090C10"
-                          border="1px solid #444"
-                        />
-                      </FormControl>
-                      <FormControl mb={4}>
-                        <FormLabel>Price</FormLabel>
-                        <Input
-                          type="number"
-                          placeholder="Enter price"
-                          bg="#090C10"
-                          border="1px solid #444"
-                        />
-                      </FormControl>
-                    </ModalBody>
+                <FieldArray name="tickets">
+                  {({ push, replace }) => (
+                    <Modal isOpen={isOpen} onClose={onClose} isCentered>
+                      <ModalOverlay />
+                      <ModalContent bg="#1E1E1E" color="white">
+                        <ModalHeader>
+                          {editIndex !== null ? "Edit Ticket" : "Add Ticket"}
+                        </ModalHeader>
+                        <ModalCloseButton />
+                        <ModalBody>
+                          <FormControl mb={4}>
+                            <FormLabel>Ticket Name</FormLabel>
+                            <Input
+                              id="ticketTitle"
+                              name="ticketTitle"
+                              placeholder="Enter ticket name"
+                              bg="#090C10"
+                              border="1px solid #444"
+                              value={tempTicket.title}
+                              onChange={(e) =>
+                                setTempTicket({
+                                  ...tempTicket,
+                                  title: e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                          <FormControl mb={4}>
+                            <FormLabel>Description</FormLabel>
+                            <Textarea
+                              id="ticketDescription"
+                              name="ticketDescription"
+                              placeholder="Enter description"
+                              bg="#090C10"
+                              border="1px solid #444"
+                              value={tempTicket.description}
+                              onChange={(e) =>
+                                setTempTicket({
+                                  ...tempTicket,
+                                  description: e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                          <FormControl mb={4}>
+                            <FormLabel>Price</FormLabel>
+                            <Input
+                              id="ticketPrice"
+                              name="ticketPrice"
+                              type="number"
+                              placeholder="Enter price"
+                              bg="#090C10"
+                              border="1px solid #444"
+                              value={tempTicket.price}
+                              onChange={(e) =>
+                                setTempTicket({
+                                  ...tempTicket,
+                                  price: parseFloat(e.target.value),
+                                })
+                              }
+                            />
+                          </FormControl>
+                        </ModalBody>
 
-                    <ModalFooter>
-                      <Flex flexDirection="column" w="full" gap="3">
-                        <Button
-                          bg="#F79432"
-                          w="full"
-                          color="black"
-                          mr={3}
-                          onClick={onClose}
-                        >
-                          Add
-                        </Button>
-                        <Button variant="unstyled" onClick={onClose}>
-                          Cancel
-                        </Button>
-                      </Flex>
-                    </ModalFooter>
-                  </ModalContent>
-                </Modal>
+                        <ModalFooter>
+                          <Flex flexDirection="column" w="full" gap="3">
+                            <Button
+                              bg="#F79432"
+                              w="full"
+                              color="black"
+                              mr={3}
+                              onClick={() => {
+                                if (
+                                  editIndex === null &&
+                                  tempTicket.title &&
+                                  tempTicket.price
+                                ) {
+                                  push({
+                                    ...tempTicket,
+                                    id: new Date().getTime().toString(),
+                                  });
+                                  setTempTicket({
+                                    id: "",
+                                    title: "",
+                                    description: "",
+                                    price: 0,
+                                  });
+                                } else if (editIndex !== null) {
+                                  replace(editIndex, tempTicket);
+                                }
+                                onClose();
+                              }}
+                            >
+                              {editIndex !== null ? "Update" : "Add"}
+                            </Button>
+                            <Button
+                              variant="unstyled"
+                              onClick={() => {
+                                setTempTicket({
+                                  id: "",
+                                  title: "",
+                                  description: "",
+                                  price: 0,
+                                });
+                                onClose();
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </Flex>
+                        </ModalFooter>
+                      </ModalContent>
+                    </Modal>
+                  )}
+                </FieldArray>
               </Box>
               {/* Right Side: Image Upload/Preview */}
               <Box
@@ -378,3 +637,33 @@ const CreateEventPage = () => {
 };
 
 export default CreateEventPage;
+
+export const TimezoneSelect: React.FC = () => {
+  const { values, handleChange } = useFormikContext<any>();
+  return (
+    <>
+      <Field
+        as="select"
+        id="timezone"
+        name="timezone"
+        value={values?.timezone}
+        onChange={handleChange}
+        className="bg-[#1E1E1E] block w-[130px] h-12 rounded-md border-0 py-1.5 shadow-sm sm:text-sm sm:leading-6 p-3"
+      >
+        {timezones.map((tz) => (
+          <option
+            key={`${tz.label} ${tz.value}`}
+            value={`${tz.label} ${tz.value}`}
+          >
+            {tz.label} {tz.value}
+          </option>
+        ))}
+      </Field>
+      <ErrorMessage
+        name="timezone"
+        component="span"
+        className="text-red-500 block mt-1"
+      />
+    </>
+  );
+};
