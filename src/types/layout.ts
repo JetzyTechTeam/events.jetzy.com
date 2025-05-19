@@ -1,3 +1,4 @@
+import { z } from "zod"
 import { Pages } from "./const"
 
 export interface LayoutProps {
@@ -6,11 +7,12 @@ export interface LayoutProps {
 }
 
 export interface ConsoleDashboardProps {
-	page: Pages
+	page?: Pages
 	children?: React.ReactNode
 	component?: React.ReactNode
 	backBtn?: string;
 	maxW?: string
+	className?: string;
 }
 
 export interface ConsoleNavbarProps extends ConsoleDashboardProps {}

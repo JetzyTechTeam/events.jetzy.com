@@ -1,81 +1,138 @@
-import ConsoleLayout from "@/components/layout/ConsoleLayout"
-import EventsTableComponent from "@/components/events/EventsTableComponent"
-import { ROUTES } from "@/configs/routes"
-import { authorizedOnly } from "@/lib/authSession"
-import { Events } from "@/models/events"
-import { IEvent } from "@/models/events/types"
-import { Pages } from "@/types"
-import { GetServerSideProps } from "next"
-import Link from "next/link"
-import React from "react"
+import { DateTimeSVG, LocationSVG } from "@/assets/icons";
+import ConsoleLayout from "@/components/layout/ConsoleLayout";
+import { authorizedOnly } from "@/lib/authSession";
+import { Events } from "@/models/events";
+import { IEvent } from "@/models/events/types";
+import { Pages } from "@/types";
+import { Heading, Text } from "@chakra-ui/react";
+import { GetServerSideProps } from "next";
+import Image from "next/image";
+import Link from "next/link";
+import React from "react";
 
-const CreateEventButton = () => {
-	return (
-		<div className="md:w-full xs:w-fit  flex justify-end">
-			<Link href={ROUTES.dashboard.events.create} className="px-3 py-1.5 bg-app text-black font-bold rounded-3xl">
-				Create Event
-			</Link>
-		</div>
-	)
-}
-
-export type Pagination = {
-	total: number
-	page: number
-	showing: number
-	limit: number
-	totalPages: number
-}
+type Pagination = {
+  total: number;
+  page: number;
+  showing: number;
+  limit: number;
+  totalPages: number;
+};
 
 type Props = {
-	events: string
-	pagination: Pagination
+  events: string;
+  pagination: Pagination;
+};
+
+export default function EventsListing({ events, pagination }: Props) {
+  const data = JSON.parse(events) as IEvent[];
+
+  if (!data.length) return <p>No events found.</p>;
+ 
+  return (
+    <ConsoleLayout maxW="max-w-[800px]" className="px-0">
+      <div className="max-w-[800px] mx-auto mb-5">
+        <Heading as="h2" fontSize={28}>
+          Events
+        </Heading>
+      </div>
+      <div className="space-y-5 max-w-[800px] mx-auto">
+        {data.map((event) => (
+          <ListingCard {...event} key={event.slug} />
+        ))}
+      </div>
+    </ConsoleLayout>
+  );
 }
-export default function EventsPage({ events, pagination }: Props) {
-	const data = JSON.parse(events) as IEvent[]
 
-	return (
-		<ConsoleLayout page={Pages.Events} component={<CreateEventButton />}>
-			<EventsTableComponent rows={data} pagination={pagination} />
-			<div className="bg-red-100"></div>
-		</ConsoleLayout>
-	)
-}
+const ListingCard = (props: IEvent) => {
+  const event = props;
+  return (
+    <div className="flex items-center justify-between bg-[#1E1E1E] rounded-xl p-5">
+      {/* CONTENT SECTION  */}
+      <div className="space-y-5">
+        <Heading as="h3" fontSize={20}>
+          {event.name}
+        </Heading>
+        <div className="space-y-2">
+          <Text className="flex gap-x-2 text-[#A7A7A7]">
+            <DateTimeSVG />
+            <span>
+              {new Date(event.startsOn?.toString()).toDateString()}{" "}
+              {event.timezone}
+            </span>
+          </Text>
+          <Text className="flex gap-x-2 text-[#A7A7A7]">
+            <LocationSVG />
+            <span>{event.location}</span>
+          </Text>
+        </div>
+        <div className="space-x-3">
+          <Link href="" className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+            Manage Event
+          </Link>
+          <Link href="" className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+            Edit Event
+          </Link>
+          <Link
+            href=""
+            className="bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm"
+          >
+            Delete Event
+          </Link>
+        </div>
+      </div>
 
-export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	// check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+      {/* IMAGE SECTION */}
+      <Image
+        src={event && event?.images[0]}
+        alt={event.name}
+        className="w-[180px] h-[150px] rounded-xl"
+        width={180}
+        height={150}
+      />
+    </div>
+  );
+};
 
-	// lets paginate the events
-	const limit = 20
-	const page = context.query.page ? parseInt(context.query.page as string) : 1
-	const skip = (page - 1) * limit
-	// fetch events
-	const events = await Events.find({ isDeleted: false }).limit(limit).skip(skip).sort({ createdAt: -1 })
-	if (!events) return { props: { events: [] } }
+export const getServerSideProps: GetServerSideProps<any, any> = async (
+  context
+) => {
+  // check if user is authorized
+  const session = await authorizedOnly(context);
+  if (!session) return session;
 
-	// get total count of events
-	const total = await Events.countDocuments({ isDeleted: false })
-	// serialize the events
-	const data = events.map((event) => event.toJSON())
+  // lets paginate the events
+  const limit = 20;
+  const page = context.query.page ? parseInt(context.query.page as string) : 1;
+  const skip = (page - 1) * limit;
+  // fetch events
+  const events = await Events.find({ isDeleted: false })
+    .limit(limit)
+    .skip(skip)
+    .sort({ createdAt: -1 });
+  if (!events) return { props: { events: [] } };
 
-	// calculate page total and current page
-	const totalPages = Math.ceil(total / limit)
+  // get total count of events
+  const total = await Events.countDocuments({ isDeleted: false });
+  // serialize the events
+  const data = events.map((event) => event.toJSON());
 
-	// pagination object
-	const pagination = {
-		total,
-		page,
-		showing: data.length,
-		limit,
-		totalPages,
-	}
+  // calculate page total and current page
+  const totalPages = Math.ceil(total / limit);
 
-	return {
-		props: {
-			events: JSON?.stringify(data),
-			pagination,
-		},
-	}
-}
+  // pagination object
+  const pagination = {
+    total,
+    page,
+    showing: data.length,
+    limit,
+    totalPages,
+  };
+
+  return {
+    props: {
+      events: JSON?.stringify(data),
+      pagination,
+    },
+  };
+};

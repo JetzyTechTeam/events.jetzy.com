@@ -13,7 +13,7 @@ interface ImageUploadBoxProps {
   }[];
 }
 
-export const ImageUploadBox: React.FC<ImageUploadBoxProps> = ({
+const ImageUploadBox: React.FC<ImageUploadBoxProps> = ({
   onImageChange,
   isUploading,
   uploadProgress,
@@ -116,3 +116,5 @@ export const ImageUploadBox: React.FC<ImageUploadBoxProps> = ({
     </>
   );
 };
+
+export default ImageUploadBox;

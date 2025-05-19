@@ -17,7 +17,7 @@ import {
 	Spinner,
 } from "@chakra-ui/react"
 import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline"
-import { Pagination } from "@/pages/console/events"
+import { Pagination } from "@/pages/console/events/index.old"
 import Image from "next/image"
 import Link from "next/link"
 import { ROUTES } from "@/configs/routes"

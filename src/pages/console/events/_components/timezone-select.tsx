@@ -14,7 +14,7 @@ const timezones = moment.tz.names().map((tz) => {
   };
 });
 
-export const TimezoneSelect: React.FC = () => {
+const TimezoneSelect: React.FC = () => {
   const { values, handleChange } = useFormikContext<any>()
   return (
     <>
@@ -36,3 +36,5 @@ export const TimezoneSelect: React.FC = () => {
     </>
   )
 }
+
+export default TimezoneSelect;

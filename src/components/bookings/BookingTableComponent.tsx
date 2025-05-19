@@ -1,7 +1,7 @@
 import React from "react"
 import { Table, Thead, Tbody, Tfoot, Tr, Th, Td, TableCaption, TableContainer, IconButton, Menu, MenuButton, MenuList, MenuItem, Flex, Button, Text, useDisclosure, Box, Badge } from "@chakra-ui/react"
 import { EllipsisVerticalIcon, EyeIcon, PencilIcon, PlusCircleIcon, TrashIcon } from "@heroicons/react/24/outline"
-import { Pagination } from "@/pages/console/events"
+import { Pagination } from "@/pages/console/events/index.old"
 import { IBookings, IEvent } from "@/models/events/types"
 import { Exportable } from "@/pages/console/bookings"
 import { downloadExcel } from "react-export-table-to-excel"

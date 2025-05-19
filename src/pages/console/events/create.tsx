@@ -24,16 +24,12 @@ import {
   Menu,
   MenuButton,
   IconButton,
-  Image,
-  Spinner,
 } from "@chakra-ui/react";
 import {
   Formik,
   Form,
   Field,
   FormikProps,
-  ErrorMessage,
-  useFormikContext,
   FieldArray,
 } from "formik";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
@@ -48,7 +44,6 @@ import {
   MultipleUsersSVG,
   PlusSVG,
   TicketSVG,
-  UploadImageSVG,
   UserTickSVG,
   VerticalDotsSVG,
 } from "@/assets/icons";
@@ -59,12 +54,11 @@ import { CreateEventThunk } from "@/redux/reducers/eventsSlice";
 import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
-import { PlusIcon } from "@heroicons/react/24/outline";
-import DragAndDropFileUpload, { FileUploadData } from "@/components/misc/DragAndDropUploader";
+import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { useEdgeStore } from "@/lib/edgestore";
 import { uniqueId } from "@/lib/utils";
-import { ImageUploadBox } from "./_components/image-upload-box";
-import { TimezoneSelect } from "./_components/timezone-select";
+import ImageUploadBox  from "./_components/image-upload-box";
+import TimezoneSelect from "./_components/timezone-select";
 
 const initialValues = {
   name: "",

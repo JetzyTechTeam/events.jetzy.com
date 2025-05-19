@@ -17,14 +17,11 @@ import { useRouter } from "next/router"
 import React from "react"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
-import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline"
-import AddTickets from "@/components/events/AddTickets"
 import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
 import { IEvent } from "@/models/events/types"
-import { EmailProps, sendUpdateEventEmail } from "@/actions/send-update-email-to-users.action"
-import { Bookings } from "@/models/events/bookings"
+import { EmailProps } from "@/actions/send-update-email-to-users.action"
 import axios from "axios"
 import moment from "moment-timezone";
 import {
@@ -51,7 +48,6 @@ import {
   Menu,
   MenuButton,
   IconButton,
-  Image,
   Switch
 } from "@chakra-ui/react";
 import {
@@ -63,28 +59,12 @@ import {
   MultipleUsersSVG,
   PlusSVG,
   TicketSVG,
-  UploadImageSVG,
   UserTickSVG,
   VerticalDotsSVG,
 } from "@/assets/icons";
 import { usePlacesWidget } from "react-google-autocomplete";
-import { ImageUploadBox } from "../_components/image-upload-box"
-import { TimezoneSelect } from "../_components/timezone-select"
-
-
-const timezones = moment.tz.names().map((tz) => {
-  const offset = moment.tz(tz).utcOffset();
-  const sign = offset >= 0 ? "+" : "-";
-  const hours = Math.floor(Math.abs(offset) / 60)
-    .toString()
-    .padStart(2, "0");
-  const minutes = (Math.abs(offset) % 60).toString().padStart(2, "0");
-  return {
-    label: `(UTC${sign}${hours}:${minutes})`,
-    value: tz,
-  };
-});
-
+import ImageUploadBox from "../_components/image-upload-box"
+import TimezoneSelect from "../_components/timezone-select"
 
 type Props = {
 	event: string
@@ -268,7 +248,6 @@ export default function UpdateEventPage({ event }: Props) {
 
 
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: eventDetails._id.toString() })).then((res: any) => {
-			console.log({res: res.payload})
 			if (res?.payload?.status) {
 				navigation.push(ROUTES.dashboard.events.index)
 			}
