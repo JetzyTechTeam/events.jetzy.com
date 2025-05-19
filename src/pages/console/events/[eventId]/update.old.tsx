@@ -27,7 +27,7 @@ import { IEvent } from "@/models/events/types"
 import { EmailProps, sendUpdateEventEmail } from "@/actions/send-update-email-to-users.action"
 import { Bookings } from "@/models/events/bookings"
 import axios from "axios"
-import { TimezoneSelect } from "../_components/timezone-select"
+import TimezoneSelect from "../_components/timezone-select"
 
 type Props = {
 	event: string
