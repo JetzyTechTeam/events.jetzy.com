@@ -58,7 +58,7 @@ import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { useEdgeStore } from "@/lib/edgestore";
 import { uniqueId } from "@/lib/utils";
 import ImageUploadBox  from "./_components/image-upload-box";
-import TimezoneSelect from "./_components/timezone-select";
+import TimezoneSelect from "../../../components/timezone-select";
 
 const initialValues = {
   name: "",

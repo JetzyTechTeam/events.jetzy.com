@@ -21,7 +21,7 @@ import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
 import { usePlacesWidget } from "react-google-autocomplete"
-import TimezoneSelect from "./_components/timezone-select"
+import TimezoneSelect from "../../../components/timezone-select"
 
 const eventTicketsData: TicketData[] = []
 const uploadedImages: FileUploadData[] = []
