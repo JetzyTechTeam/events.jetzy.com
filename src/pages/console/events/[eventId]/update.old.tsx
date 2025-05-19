@@ -1,15 +1,18 @@
+'use client'
+import { authorizedOnly } from "@/lib/authSession"
+import { Events } from "@/models/events"
+import { Types } from "mongoose"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import DragAndDropFileUpload, { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { ROUTES } from "@Jetzy/configs/routes"
-import { authorizedOnly } from "@Jetzy/lib/authSession"
 import { useEdgeStore } from "@Jetzy/lib/edgestore"
 import { eventValidation } from "@Jetzy/lib/validator/event"
-import { CreateEventThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
+import { getEventState, UpdateEventThunk } from "@Jetzy/redux/reducers/eventsSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import { CreateEventFormData, EventPrivacy, Pages } from "@Jetzy/types"
+import { CreateEventFormData, Pages } from "@Jetzy/types"
 import { Switch } from "@headlessui/react"
-import { ErrorMessage, Field, Form, Formik, FormikProps, useFormikContext } from "formik"
+import { ErrorMessage, Field, Form, Formik, FormikProps } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
 import React from "react"
@@ -20,13 +23,20 @@ import AddTickets from "@/components/events/AddTickets"
 import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
-import { usePlacesWidget } from "react-google-autocomplete"
-import { TimezoneSelect } from "./_components/timezone-select"
+import { IEvent } from "@/models/events/types"
+import { EmailProps, sendUpdateEventEmail } from "@/actions/send-update-email-to-users.action"
+import { Bookings } from "@/models/events/bookings"
+import axios from "axios"
+import { TimezoneSelect } from "../_components/timezone-select"
 
-const eventTicketsData: TicketData[] = []
-const uploadedImages: FileUploadData[] = []
+type Props = {
+	event: string
+}
+export default function CreateEventPage({ event }: Props) {
+	const eventDetails = React.useMemo(() => JSON.parse(event) as IEvent, [event]);
+  const [eventTicketsData, setEventTicketsData] = React.useState<TicketData[]>([])
+  const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([])
 
-export default function CreateEventPage() {
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
 
 	const { edgestore } = useEdgeStore()
@@ -34,157 +44,187 @@ export default function CreateEventPage() {
 	const { isLoading } = useAppSelector(getEventState)
 	const dispatcher = useAppDispatch()
 
-	const [isPaid, setIsPaid] = React.useState(false)
+	const [isPaid, setIsPaid] = React.useState(eventDetails.isPaid)
 	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
 
+	// --- Initialize images and tickets on mount ---
+	React.useEffect(() => {
+		if (eventDetails.images && eventDetails.images.length > 0) {
+      const newUploadedImages: FileUploadData[] = eventDetails.images.map(img => ({
+        id: uniqueId(10),
+        file: img,
+      }))
+      setUploadedImages(newUploadedImages)
+      
+      setImageUploadComponents(
+        newUploadedImages.map((img) => (
+          <DragAndDropFileUpload
+            customId={img.id}
+            onUpload={fileUploader}
+            onDelete={fileUpoaderRemoveImage}
+            uploadedFiles={newUploadedImages}
+            key={img.id}
+          />
+        ))
+      )
+    }
+
+    // Handle tickets
+    if (eventDetails.tickets && eventDetails.tickets.length > 0) {
+      const newTickets: TicketData[] = eventDetails.tickets.map(ticket => ({
+        id: ticket._id?.toString() || uniqueId(10),
+        title: ticket.name,
+        price: Number(ticket.price),
+        description: ticket.desc,
+      }))
+      setEventTicketsData(newTickets)
+    }
+	}, [event])
+
+	// --- Initial form values ---
 	const formInitData: CreateEventFormData = {
-		name: "",
-		desc: "",
-		location: "",
-		capacity: 0,
-		requireApproval: false,
-		isPaid: false,
-		images: [],
-		tickets: [],
-		startDate: "",
-		startTime: "",
-		endDate: "",
-		endTime: "",
-		privacy: 'public',
-		timezone: '',
-		showParticipants: false
+		name: eventDetails.name,
+		desc: eventDetails.desc,
+		location: eventDetails.location,
+		capacity: eventDetails.capacity,
+		requireApproval: eventDetails.requireApproval,
+		isPaid: eventDetails.isPaid,
+    images: uploadedImages,
+    tickets: eventTicketsData,
+		privacy: eventDetails.privacy,
+		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
+		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
+		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
+		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
+		timezone: eventDetails?.timezone || '',
+		showParticipants: eventDetails.showParticipants || false,
 	}
 
-	// GOOGLE PLACE API
-	const { ref } = usePlacesWidget({
-		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-		onPlaceSelected: (place) => {
-			if (formikRef.current) {
-				formikRef.current?.setFieldValue("location", place.formatted_address)
-				// Get the geometry location coordinates
-				const lat = place.geometry.location.lat()
-				const lng = place.geometry.location.lng()
+	const sendEventUpdate = (eventData: EmailProps) => {
+		return axios.post('/api/send-update-event-email', eventData)
+			.then((response) => response.data)
+			.catch((error) => {
+				console.error('Error calling update event API:', error);
+				throw error;
+			});
+	};
 
-				// Get the place id
-				const placeId = place.place_id
-
-				// set the location coordinates and place id
-				formikRef.current?.setFieldValue("latitude", lat)
-				formikRef.current?.setFieldValue("longitude", lng)
-				formikRef.current?.setFieldValue("placeId", placeId)
-			}
-		},
-		options: {
-			fields: [
-				"formatted_address",
-				"geometry",
-				"place_id",
-				"name",
-				"address_components"
-			],
-			types: ["establishment"],
-		},
-	})
-
-	const handleSubmit = (values: CreateEventFormData) => {
-		// set the tickets data
-		if (isPaid) {
-			values.tickets = eventTicketsData
-		} else {
-			values.tickets = [
-				{
-					id: uniqueId(10),
-					title: "Free Ticket",
-					price: 0,
-					description: "This is a free ticket",
-				},
-			]
-		}
-
-		// set the images data
+	const handleSubmit = async (values: CreateEventFormData) => {
+		values.tickets = eventTicketsData
 		values.images = uploadedImages
-
-		// set the isPaid value
 		values.isPaid = isPaid
 
-		// make sure basic required fields are not empty
-		if (!values.name || !values.location || !values.desc || !values.startDate || !values.startTime || !values.endDate || !values.endTime) {
-			Error("Error", "Please fill all required fields")
-			return
+		const nameChanged = values.name !== eventDetails.name
+		const locationChanged = values.location !== eventDetails.location
+		const startDateChanged = values.startDate !== new Date(eventDetails.startsOn).toISOString().slice(0, 10)
+		const startTimeChanged = values.startTime !== new Date(eventDetails.startsOn).toTimeString().slice(0, 5)
+		const endDateChanged = values.endDate !== new Date(eventDetails.endsOn).toISOString().slice(0, 10)
+		const endTimeChanged = values.endTime !== new Date(eventDetails.endsOn).toTimeString().slice(0, 5)
+
+		const dateTimeChanged = startDateChanged || startTimeChanged || endDateChanged || endTimeChanged
+
+// Fetch bookings for the event
+const events = await axios.post(`/api/get-bookings`, {
+	eventId: eventDetails._id
+})
+  .then(response => response.data)
+  .catch(error => {
+    console.error('Error fetching bookings:', error);
+    return [];
+  });
+
+
+		if (nameChanged || locationChanged || dateTimeChanged) {
+			const updatePromises = events.map((event: any) =>
+				sendEventUpdate({
+					eventName: values.name,
+					oldEventName: eventDetails.name,
+					location: values.location,
+					oldLocation: eventDetails.location,
+					startDate: values.startDate,
+					oldStartDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10),
+					endDate: values.endDate,
+					oldEndDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
+					endTime: values.endTime,
+					oldEndTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
+					startTime: values.startTime,
+					oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
+					userEmail: event.customerEmail,
+				}))
+				Promise.all(updatePromises)
+				.then((results) => {
+					console.log('All event updates sent successfully:', results);
+				})
+				.catch((error) => {
+					console.error('One or more event updates failed:', error);
+				});
 		}
 
-		dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({...values, privacy: values.privacy}) } })).then((res: any) => {
+		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify(values) }, id: eventDetails._id.toString() })).then((res: any) => {
 			if (res?.payload?.status) {
-				navigation.push(`/console/events/${res.payload.data._id}/manage`);
+				navigation.push(ROUTES.dashboard.events.index)
 			}
 		})
 	}
 
 	const submitForms = () => {
 		if (formikRef?.current) {
-			// submit the form
 			formikRef.current.submitForm()
 		}
 	}
 
 	const fileUploader = async (data: FileUploadData) => {
-		// check if the image is already in the array of uploaded images using the id from data object
 		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
 		if (imageIndex !== -1) {
 			uploadedImages[imageIndex] = data
 		} else {
-			// update the image url
 			uploadedImages.push(data)
 		}
 	}
 
 	const fileUpoaderRemoveImage = async (data: FileUploadData) => {
-		// remove the image from the array of uploaded images
 		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
+
 		if (imageIndex !== -1) {
-			// get the image to be removed
 			const image = uploadedImages[imageIndex]
-			uploadedImages.splice(imageIndex, 1)
+			const newImages = [...uploadedImages]
+			newImages.splice(imageIndex, 1)
+			setUploadedImages(newImages)
 
 			try {
-				// delete the image from the server
-				await edgestore.publicFiles.delete({ url: image.file })
+				await fetch('/api/delete-image', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ url: image.file }),
+				});
 			} catch (error: any) {
 				console.error("Error deleting image", error)
 				Error("Error", "Failed to delete image")
 			}
 		}
 	}
-	// ---------------------------------------------------------------------------------------------
 
-	// handle tickets save
 	const handleSave = (data: TicketData) => {
-		// using the ticket id check if it already exist in the array of tickets, if it does update the ticket data otherwise add the ticket to the array
 		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
 		if (ticketIndex !== -1) {
-			// update the ticket data
 			eventTicketsData[ticketIndex] = data
 		} else {
-			// add the ticket to the array
 			eventTicketsData.push(data)
 		}
 	}
 
 	const handleDelete = (data: TicketData) => {
-		// remove the ticket from the array
 		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
 		if (ticketIndex !== -1) {
 			eventTicketsData.splice(ticketIndex, 1)
 		}
 	}
-	// ---------------------------------------------------------------------------------------------
 
 	const handleStartDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
 			if (date) {
 				formikRef.current.setFieldValue("startDate", date)
 			}
-
 			if (time) {
 				formikRef.current.setFieldValue("startTime", time)
 			}
@@ -196,33 +236,49 @@ export default function CreateEventPage() {
 			if (date) {
 				formikRef.current.setFieldValue("endDate", date)
 			}
-
 			if (time) {
 				formikRef.current.setFieldValue("endTime", time)
 			}
 		}
 	}
 
-
 	return (
 		<ConsoleLayout page={Pages.Events}>
 			<header className="py-6">
-				<h1 className="text-center text-2xl font-bold capitalized">Create New Event</h1>
+				<h1 className="text-slat-300 text-center text-2xl font-bold capitalized">Update Event</h1>
 			</header>
 			<section className="flex items-center justify-center p-3">
 				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
 					{/* Image Uploader */}
 					<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
-						{imageUploadComponents}
-
-						{/* button to add new components */}
-						<div className="flex justify-center items-center">
+					{uploadedImages.map((img) => (
+						<div key={img.id} className="relative">
+							<DragAndDropFileUpload
+								customId={img.id}
+								onUpload={fileUploader}
+								onDelete={fileUpoaderRemoveImage}
+								uploadedFiles={uploadedImages}
+								defaultImage={img.file}
+								key={img.id}
+							/>
 							<button
 								type="button"
+								onClick={() => fileUpoaderRemoveImage(img)}
+								className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-7 h-7 p-1 hover:bg-red-700 transition flex justify-center items-center"
+								title="Delete Image"
+							>
+								&#10005;
+							</button>
+							</div>
+						))}
+						<div className="flex justify-center items-center">
+						<button
+								type="button"
 								onClick={() => {
-									setImageUploadComponents([
-										...imageUploadComponents,
-										<DragAndDropFileUpload customId={uniqueId(10)} onUpload={fileUploader} onDelete={fileUpoaderRemoveImage} uploadedFiles={uploadedImages} key={uniqueId()} />,
+									const id = uniqueId(10)
+									setUploadedImages([
+										...uploadedImages,
+										{ id, file: "" }
 									])
 								}}
 								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
@@ -233,7 +289,7 @@ export default function CreateEventPage() {
 					</section>
 
 					<section className="space-y-6">
-						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation}>
+						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation} enableReinitialize>
 							{({ values, handleChange }) => (
 								<Form action="#" method="POST" className="space-y-6">
 									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
@@ -249,13 +305,12 @@ export default function CreateEventPage() {
 													onChange={handleChange}
 													type="text"
 													autoComplete="name"
-													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
 											</div>
 										</div>
 
-												{/* Event Privacy Field */}
 										<div>
 											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 												Event Privacy
@@ -276,7 +331,6 @@ export default function CreateEventPage() {
 											</div>
 										</div>
 
-											{/* Show Participants Switch */}
 										<div className="flex items-center justify-between mt-4">
 											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6">
 												Show Participants
@@ -297,37 +351,50 @@ export default function CreateEventPage() {
 												</Switch>
 											</div>
 										</div>
-										
+
 										<div>
 											<label className="block text-sm font-semibold leading-6">Date and Time</label>
 											<div className="mt-2 grid grid-rows-2">
 												<div className="grid grid-cols-3 gap-2">
 													<div className="col-span-2">
-														<label className="block text-xs leading-6">Start Date</label>
-														<DatePicker onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" />
+														<label className="block text-xs leading-6 text-gray-500">Start Date</label>
+														<DatePicker
+															onChange={(date) => handleStartDateChange(date)}
+															placeholder="Start Date"
+															defaultDate={values.startDate}
+														/>
 													</div>
-
 													<div className="col-span-1">
-														<label className="block text-xs leading-6">Start Time</label>
-														<TimePicker onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" />
+														<label className="block text-xs leading-6 text-gray-500">Start Time</label>
+														<TimePicker
+															onChange={(time) => handleStartDateChange(undefined, time)}
+															placeholder="Start Time"
+															defaultValue={values.startTime}
+														/>
 													</div>
 												</div>
-
 												<div className="grid grid-cols-3 gap-2">
 													<div className="col-span-2">
-														<label className="block text-xs leading-6">End Date</label>
-														<DatePicker onChange={(date) => handleEndDateChange(date)} placeholder="End Date" />
+														<label className="block text-xs leading-6 text-gray-500">End Date</label>
+														<DatePicker
+															onChange={(date) => handleEndDateChange(date)}
+															placeholder="End Date"
+															defaultDate={values.endDate}
+														/>
 													</div>
-
 													<div className="col-span-1">
-														<label className="block text-xs leading-6">End Time</label>
-														<TimePicker onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" />
+														<label className="block text-xs leading-6 text-gray-500">End Time</label>
+														<TimePicker
+															onChange={(time) => handleEndDateChange(undefined, time)}
+															placeholder="End Time"
+															defaultValue={values.endTime}
+														/>
 													</div>
 												</div>
 											</div>
 										</div>
 
-										<div className="mt-2">
+										<div>
 											<TimezoneSelect />
 										</div>
 
@@ -337,13 +404,12 @@ export default function CreateEventPage() {
 											</label>
 											<div className="mt-2">
 												<Field
-													ref={ref}
 													id="eventLocation"
 													name="location"
 													value={values?.location}
 													onChange={handleChange}
 													type="text"
-													placeholder="Physical address"
+													placeholder="Physical addres or Virtual link"
 													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 												/>
 												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
@@ -370,7 +436,7 @@ export default function CreateEventPage() {
 										</div>
 									</section>
 
-									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
+									<section className="bg-[#1E1E1E]  space-y-6 p-3 rounded-lg">
 										<header className="grid grid-rows-2 divide-y divide-slate-400">
 											<div className="flex items-center justify-between">
 												<h2 className="text-slat-400 font-bold">Event Options</h2>
@@ -447,7 +513,7 @@ export default function CreateEventPage() {
 						</Formik>
 
 						{/* Events tickets */}
-						{isPaid && <AddTickets onSave={handleSave} onDelete={handleDelete} />}
+						{isPaid && <AddTickets onSave={handleSave} onDelete={handleDelete} initialTickets={eventTicketsData} />}
 
 						{/* Submit Button */}
 						<div>
@@ -456,7 +522,7 @@ export default function CreateEventPage() {
 								onClick={submitForms}
 								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
 							>
-								{isLoading ? <Spinner /> : "Create Event"}
+								{isLoading ? <Spinner /> : "Update Event"}
 							</button>
 						</div>
 					</section>
@@ -466,6 +532,30 @@ export default function CreateEventPage() {
 	)
 }
 
-export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	return authorizedOnly(context)
+type Params = {
+	eventId: string
+}
+export const getServerSideProps: GetServerSideProps<any, Params> = async (context) => {
+	// check if user is authorized
+	const session = await authorizedOnly(context)
+	if (!session) return session
+
+	const { eventId } = context.params as Params
+
+	// using event id, fetch event tickets from the database
+
+	const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
+	if (!event) {
+		return {
+			props: {
+				event: null,
+			},
+		}
+	}
+
+	return {
+		props: {
+			event: JSON.stringify(event.toJSON()),
+		},
+	}
 }

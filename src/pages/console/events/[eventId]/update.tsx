@@ -5,20 +5,19 @@ import { Types } from "mongoose"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import DragAndDropFileUpload, { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import Spinner from "@Jetzy/components/misc/Spinner"
-import { ROUTES } from "@Jetzy/configs/routes"
+import { ROUTES } from "@/configs/routes"
 import { useEdgeStore } from "@Jetzy/lib/edgestore"
 import { eventValidation } from "@Jetzy/lib/validator/event"
-import { getEventState, UpdateEventThunk } from "@Jetzy/redux/reducers/eventsSlice"
-import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import { CreateEventFormData, Pages } from "@Jetzy/types"
-import { Switch } from "@headlessui/react"
-import { ErrorMessage, Field, Form, Formik, FormikProps } from "formik"
+import { getEventState, UpdateEventThunk } from "@/redux/reducers/eventsSlice"
+import { useAppDispatch, useAppSelector } from "@/redux/stores"
+import { CreateEventFormData, Pages } from "@/types"
+import { ErrorMessage, Field, Form, Formik, FormikProps, useFormikContext, FieldArray } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
 import React from "react"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
-import { PlusIcon } from "@heroicons/react/24/outline"
+import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline"
 import AddTickets from "@/components/events/AddTickets"
 import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
@@ -27,70 +26,132 @@ import { IEvent } from "@/models/events/types"
 import { EmailProps, sendUpdateEventEmail } from "@/actions/send-update-email-to-users.action"
 import { Bookings } from "@/models/events/bookings"
 import axios from "axios"
-import { TimezoneSelect } from "../create.old"
+import moment from "moment-timezone";
+import {
+  Box,
+  Button,
+  Flex,
+  FormControl,
+  FormLabel,
+  Input,
+  Text,
+  Textarea,
+  InputGroup,
+  InputLeftElement,
+  useDisclosure,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
+  MenuList,
+  MenuItem,
+  Menu,
+  MenuButton,
+  IconButton,
+  Image,
+  Switch
+} from "@chakra-ui/react";
+import {
+  DescriptionSVG,
+  DotSVG,
+  DottedLinesSVG,
+  LocationSVG,
+  LockSVG,
+  MultipleUsersSVG,
+  PlusSVG,
+  TicketSVG,
+  UploadImageSVG,
+  UserTickSVG,
+  VerticalDotsSVG,
+} from "@/assets/icons";
+import { usePlacesWidget } from "react-google-autocomplete";
+import { ImageUploadBox } from "../_components/image-upload-box"
+import { TimezoneSelect } from "../_components/timezone-select"
+
+
+const timezones = moment.tz.names().map((tz) => {
+  const offset = moment.tz(tz).utcOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const hours = Math.floor(Math.abs(offset) / 60)
+    .toString()
+    .padStart(2, "0");
+  const minutes = (Math.abs(offset) % 60).toString().padStart(2, "0");
+  return {
+    label: `(UTC${sign}${hours}:${minutes})`,
+    value: tz,
+  };
+});
+
 
 type Props = {
 	event: string
 }
-export default function CreateEventPage({ event }: Props) {
+export default function UpdateEventPage({ event }: Props) {
 	const eventDetails = React.useMemo(() => JSON.parse(event) as IEvent, [event]);
-  const [eventTicketsData, setEventTicketsData] = React.useState<TicketData[]>([])
-  const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([])
 
-	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
+	const { isOpen, onOpen, onClose } = useDisclosure();
+	const dispatcher = useAppDispatch();
+	const navigation = useRouter();
+	const { edgestore } = useEdgeStore();
 
-	const { edgestore } = useEdgeStore()
-	const navigation = useRouter()
-	const { isLoading } = useAppSelector(getEventState)
-	const dispatcher = useAppDispatch()
+	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
 
-	const [isPaid, setIsPaid] = React.useState(eventDetails.isPaid)
-	const [imageUploadComponents, setImageUploadComponents] = React.useState<React.ReactNode[]>([])
+	const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([]);
+	const [uploadProgress, setUploadProgress] = React.useState(0)
+	const [isUploading, setIsUploading] = React.useState(false);
+	const [isSubmitting, setIsSubmitting] = React.useState(false);
+	const [editIndex, setEditIndex] = React.useState<number | null>(null);
+	const [tempTicket, setTempTicket] = React.useState<TicketData>({
+		id: "",
+		title: "",
+		description: "",
+		price: 0,
+	});
 
 	// --- Initialize images and tickets on mount ---
 	React.useEffect(() => {
 		if (eventDetails.images && eventDetails.images.length > 0) {
-      const newUploadedImages: FileUploadData[] = eventDetails.images.map(img => ({
-        id: uniqueId(10),
-        file: img,
-      }))
-      setUploadedImages(newUploadedImages)
-      
-      setImageUploadComponents(
-        newUploadedImages.map((img) => (
-          <DragAndDropFileUpload
-            customId={img.id}
-            onUpload={fileUploader}
-            onDelete={fileUpoaderRemoveImage}
-            uploadedFiles={newUploadedImages}
-            key={img.id}
-          />
-        ))
-      )
-    }
+			const newUploadedImages: FileUploadData[] = eventDetails.images.map(img => ({
+				id: uniqueId(10),
+				file: img,
+			}))
+			setUploadedImages(newUploadedImages)
+		}
 
-    // Handle tickets
-    if (eventDetails.tickets && eventDetails.tickets.length > 0) {
-      const newTickets: TicketData[] = eventDetails.tickets.map(ticket => ({
-        id: ticket._id?.toString() || uniqueId(10),
-        title: ticket.name,
-        price: Number(ticket.price),
-        description: ticket.desc,
-      }))
-      setEventTicketsData(newTickets)
-    }
-	}, [event])
+		// Handle tickets
+		if (eventDetails.tickets && eventDetails.tickets.length > 0) {
+			const newTickets: TicketData[] = eventDetails.tickets.map(ticket => ({
+				id: ticket._id?.toString() || uniqueId(10),
+				title: ticket.name,
+				price: Number(ticket.price),
+				description: ticket.desc,
+			}))
+			// Set initial tickets in Formik state
+			if (formikRef.current) {
+				formikRef.current.setFieldValue("tickets", newTickets);
+			}
+		}
+	}, [eventDetails]);
+
 
 	// --- Initial form values ---
-	const formInitData: CreateEventFormData = {
+	const initialValues: CreateEventFormData = {
 		name: eventDetails.name,
 		desc: eventDetails.desc,
 		location: eventDetails.location,
 		capacity: eventDetails.capacity,
 		requireApproval: eventDetails.requireApproval,
 		isPaid: eventDetails.isPaid,
-    images: uploadedImages,
-    tickets: eventTicketsData,
+		images: uploadedImages,
+		tickets: eventDetails.tickets.map(ticket => ({
+			id: ticket._id?.toString() || uniqueId(10),
+			title: ticket.name,
+			price: Number(ticket.price),
+			description: ticket.desc,
+		})),
 		privacy: eventDetails.privacy,
 		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
 		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
@@ -99,6 +160,36 @@ export default function CreateEventPage({ event }: Props) {
 		timezone: eventDetails?.timezone || '',
 		showParticipants: eventDetails.showParticipants || false,
 	}
+
+	const { ref } = usePlacesWidget({
+		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+		onPlaceSelected: (place) => {
+			if (formikRef.current) {
+				formikRef.current?.setFieldValue("location", place.formatted_address);
+				// Get the geometry location coordinates
+				const lat = place.geometry.location.lat();
+				const lng = place.geometry.location.lng();
+
+				// Get the place id
+				const placeId = place.place_id;
+
+				// set the location coordinates and place id
+				formikRef.current?.setFieldValue("latitude", lat);
+				formikRef.current?.setFieldValue("longitude", lng);
+				formikRef.current?.setFieldValue("placeId", placeId);
+			}
+		},
+		options: {
+			fields: [
+				"formatted_address",
+				"geometry",
+				"place_id",
+				"name",
+				"address_components",
+			],
+			types: ["establishment"],
+		},
+	});
 
 	const sendEventUpdate = (eventData: EmailProps) => {
 		return axios.post('/api/send-update-event-email', eventData)
@@ -109,10 +200,25 @@ export default function CreateEventPage({ event }: Props) {
 			});
 	};
 
-	const handleSubmit = async (values: CreateEventFormData) => {
-		values.tickets = eventTicketsData
-		values.images = uploadedImages
-		values.isPaid = isPaid
+	const onSubmit = async (values: CreateEventFormData) => {
+		if (
+			!values.name ||
+			!values.location ||
+			!values.desc ||
+			!values.startDate ||
+			!values.startTime ||
+			!values.endDate ||
+			!values.endTime
+		) {
+			Error("Error", "Please fill all required fields");
+			return;
+		}
+		values.images = uploadedImages;
+
+		if (values.tickets.length > 0) values.isPaid = true
+		else values.isPaid = false
+
+		setIsSubmitting(true);
 
 		const nameChanged = values.name !== eventDetails.name
 		const locationChanged = values.location !== eventDetails.location
@@ -123,15 +229,15 @@ export default function CreateEventPage({ event }: Props) {
 
 		const dateTimeChanged = startDateChanged || startTimeChanged || endDateChanged || endTimeChanged
 
-// Fetch bookings for the event
-const events = await axios.post(`/api/get-bookings`, {
-	eventId: eventDetails._id
-})
-  .then(response => response.data)
-  .catch(error => {
-    console.error('Error fetching bookings:', error);
-    return [];
-  });
+		// Fetch bookings for the event
+		const events = await axios.post(`/api/get-bookings`, {
+			eventId: eventDetails._id
+		})
+			.then(response => response.data)
+			.catch(error => {
+				console.error('Error fetching bookings:', error);
+				return [];
+			});
 
 
 		if (nameChanged || locationChanged || dateTimeChanged) {
@@ -151,7 +257,7 @@ const events = await axios.post(`/api/get-bookings`, {
 					oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
 					userEmail: event.customerEmail,
 				}))
-				Promise.all(updatePromises)
+			Promise.all(updatePromises)
 				.then((results) => {
 					console.log('All event updates sent successfully:', results);
 				})
@@ -160,396 +266,532 @@ const events = await axios.post(`/api/get-bookings`, {
 				});
 		}
 
-		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify(values) }, id: eventDetails._id.toString() })).then((res: any) => {
+
+		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: eventDetails._id.toString() })).then((res: any) => {
+			console.log({res: res.payload})
 			if (res?.payload?.status) {
 				navigation.push(ROUTES.dashboard.events.index)
 			}
-		})
-	}
-
-	const submitForms = () => {
-		if (formikRef?.current) {
-			formikRef.current.submitForm()
-		}
-	}
-
-	const fileUploader = async (data: FileUploadData) => {
-		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
-		if (imageIndex !== -1) {
-			uploadedImages[imageIndex] = data
-		} else {
-			uploadedImages.push(data)
-		}
-	}
-
-	const fileUpoaderRemoveImage = async (data: FileUploadData) => {
-		const imageIndex = uploadedImages.findIndex((image) => image.id === data.id)
-
-		if (imageIndex !== -1) {
-			const image = uploadedImages[imageIndex]
-			const newImages = [...uploadedImages]
-			newImages.splice(imageIndex, 1)
-			setUploadedImages(newImages)
-
-			try {
-				await fetch('/api/delete-image', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ url: image.file }),
-				});
-			} catch (error: any) {
-				console.error("Error deleting image", error)
-				Error("Error", "Failed to delete image")
-			}
-		}
-	}
-
-	const handleSave = (data: TicketData) => {
-		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
-		if (ticketIndex !== -1) {
-			eventTicketsData[ticketIndex] = data
-		} else {
-			eventTicketsData.push(data)
-		}
-	}
-
-	const handleDelete = (data: TicketData) => {
-		const ticketIndex = eventTicketsData.findIndex((ticket) => ticket.id === data.id)
-		if (ticketIndex !== -1) {
-			eventTicketsData.splice(ticketIndex, 1)
-		}
-	}
+		}).finally(() => {
+			setIsSubmitting(false);
+		});
+	};
 
 	const handleStartDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
 			if (date) {
-				formikRef.current.setFieldValue("startDate", date)
+				formikRef.current.setFieldValue("startDate", date);
 			}
+
 			if (time) {
-				formikRef.current.setFieldValue("startTime", time)
+				formikRef.current.setFieldValue("startTime", time);
 			}
 		}
-	}
-
+	};
 	const handleEndDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
 			if (date) {
-				formikRef.current.setFieldValue("endDate", date)
+				formikRef.current.setFieldValue("endDate", date);
 			}
+
 			if (time) {
-				formikRef.current.setFieldValue("endTime", time)
+				formikRef.current.setFieldValue("endTime", time);
 			}
 		}
-	}
+	};
+
+	const handleImageUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploading) return; // Prevent multiple uploads at once
+
+		setIsUploading(true);
+		setUploadProgress(0);
+
+		try {
+			// Process each file selected
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				console.log(`Uploading file ${i + 1} of ${files.length}: ${file.name}`);
+
+				// Upload the current file
+				const res = await edgestore.publicFiles.upload({
+					file,
+					onProgressChange: (progress) => {
+						setUploadProgress(progress);
+					},
+				});
+
+				// Add the new image data to the array
+				setUploadedImages((prevImages) => [
+					...prevImages,
+					{ id: uniqueId(10), file: res.url },
+				]);
+				console.log(`Finished uploading ${file.name}`);
+			}
+		} catch (error: any) {
+			console.error("Error uploading file", error);
+			Error("Error", "Failed to upload file");
+		} finally {
+			setIsUploading(false);
+			setUploadProgress(0);
+		}
+	};
+
+	const handleImageDelete = async (imageUrl: string) => {
+		try {
+			await edgestore.publicFiles.delete({ url: imageUrl });
+			setUploadedImages((prevImages) =>
+				prevImages.filter((img) => img.file !== imageUrl)
+			);
+		} catch (error: any) {
+			console.error("Error deleting image", error);
+			Error("Error", "Failed to delete image");
+		}
+	};
+
 
 	return (
-		<ConsoleLayout page={Pages.Events}>
-			<header className="py-6">
-				<h1 className="text-slat-300 text-center text-2xl font-bold capitalized">Update Event</h1>
-			</header>
-			<section className="flex items-center justify-center p-3">
-				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
-					{/* Image Uploader */}
-					<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
-					{uploadedImages.map((img) => (
-						<div key={img.id} className="relative">
-							<DragAndDropFileUpload
-								customId={img.id}
-								onUpload={fileUploader}
-								onDelete={fileUpoaderRemoveImage}
-								uploadedFiles={uploadedImages}
-								defaultImage={img.file}
-								key={img.id}
-							/>
-							<button
-								type="button"
-								onClick={() => fileUpoaderRemoveImage(img)}
-								className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-7 h-7 p-1 hover:bg-red-700 transition flex justify-center items-center"
-								title="Delete Image"
-							>
-								&#10005;
-							</button>
-							</div>
-						))}
-						<div className="flex justify-center items-center">
-						<button
-								type="button"
-								onClick={() => {
-									const id = uniqueId(10)
-									setUploadedImages([
-										...uploadedImages,
-										{ id, file: "" }
-									])
-								}}
-								className="flex items-center justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
-							>
-								<PlusIcon className="h-6 w-6 mr-2" /> Add Image
-							</button>
-						</div>
-					</section>
+		<ConsoleLayout
+			page={Pages.CreateEvent}
+			backBtn={`/console/events/${eventDetails._id}/manage`}
+			maxW="max-w-4xl"
+		>
+			<Formik
+				initialValues={initialValues as CreateEventFormData}
+				onSubmit={onSubmit}
+				innerRef={formikRef}
+				enableReinitialize={true} // Important to update form with eventDetails
+			>
+				{({ values, setFieldValue }) => (
+					<Form>
+						<Flex
+							direction={{ base: "column", md: "row" }}
+							gap={8}
+							p={8}
+							borderRadius="2xl"
+							maxW="900px"
+							mx="auto"
+							boxShadow="2xl"
+						>
+							{/* Left Side: Form Fields */}
+							<Box flex="1">
+								<FormControl mb={4}>
+									<Flex alignItems="center">
+									<Field
+                      as={Input}
+                      id="name"
+                      name="name"
+                      placeholder="Event Name"
+                      size="lg"
+                      color="white"
+                      border="none"
+                      h="20"
+                      fontSize="38"
+                      fontWeight="bold"
+                      p="0"
+                      _focus={{ border: "none", boxShadow: "none" }}
+                      _placeholder={{ color: "#FFFFFF52" }}
+                      value={values?.name}
+                    />
+										<TimezoneSelect />
+									</Flex>
+								</FormControl>
+								<Flex
+									gap={4}
+									alignItems="center"
+									justifyContent="space-between"
+									mb="4"
+									bg="#14161B"
+									rounded="xl"
+									p="2"
+								>
+									<Box pl="3" className="relative">
+										<Box className="absolute top-5 left-4">
+											<DottedLinesSVG />
+										</Box>
+										<FormLabel color="#FFFFFFA3" mb="5">
+											<Flex gap="3" alignItems="center">
+												<DotSVG />
 
-					<section className="space-y-6">
-						<Formik innerRef={formikRef} initialValues={formInitData} onSubmit={handleSubmit} validationSchema={eventValidation} enableReinitialize>
-							{({ values, handleChange }) => (
-								<Form action="#" method="POST" className="space-y-6">
-									<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
-										<div>
-											<label htmlFor="eventName" className="block text-sm font-semibold leading-6">
-												Name
-											</label>
-											<div className="mt-2">
-												<Field
-													id="eventName"
-													name="name"
-													value={values?.name}
-													onChange={handleChange}
-													type="text"
-													autoComplete="name"
-													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+												<Text>Start</Text>
+											</Flex>
+										</FormLabel>
+										<FormLabel color="#FFFFFFA3">
+											<Flex gap="3" alignItems="center">
+												<DotSVG />
+												<Text>End</Text>
+											</Flex>
+										</FormLabel>
+									</Box>
+									<Flex gap="4">
+										<Box>
+											<FormControl mb="2">
+												<TimePicker
+													onChange={(time) =>
+														handleStartDateChange(undefined, time)
+													}
+													placeholder="Start Time"
+													defaultValue={values.startTime}
 												/>
-												<ErrorMessage name="name" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-
-										<div>
-											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
-												Event Privacy
-											</label>
-											<div className="mt-2">
-												<Field
-													as="select"
-													id="eventPrivacy"
-													name="privacy"
-													value={values?.privacy}
-													onChange={handleChange}
-													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-												>
-													<option value="public">Public</option>
-													<option value="private">Private</option>
-												</Field>
-												<ErrorMessage name="privacy" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-
-										<div className="flex items-center justify-between mt-4">
-											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6">
-												Show Participants
-											</label>
-											<div className="mt-2">
-												<Switch
-													checked={values.showParticipants}
-													onChange={() => handleChange({ target: { name: "showParticipants", value: !values.showParticipants } })}
-													className={`${values.showParticipants ? "bg-app" : "bg-app/50"}
-														relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
-												>
-													<span className="sr-only">Show Participants</span>
-													<span
-														aria-hidden="true"
-														className={`${values.showParticipants ? "translate-x-6" : "translate-x-0"}
-															pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
-													/>
-												</Switch>
-											</div>
-										</div>
-
-										<div>
-											<label className="block text-sm font-semibold leading-6">Date and Time</label>
-											<div className="mt-2 grid grid-rows-2">
-												<div className="grid grid-cols-3 gap-2">
-													<div className="col-span-2">
-														<label className="block text-xs leading-6 text-gray-500">Start Date</label>
-														<DatePicker
-															onChange={(date) => handleStartDateChange(date)}
-															placeholder="Start Date"
-															defaultDate={values.startDate}
-														/>
-													</div>
-													<div className="col-span-1">
-														<label className="block text-xs leading-6 text-gray-500">Start Time</label>
-														<TimePicker
-															onChange={(time) => handleStartDateChange(undefined, time)}
-															placeholder="Start Time"
-															defaultValue={values.startTime}
-														/>
-													</div>
-												</div>
-												<div className="grid grid-cols-3 gap-2">
-													<div className="col-span-2">
-														<label className="block text-xs leading-6 text-gray-500">End Date</label>
-														<DatePicker
-															onChange={(date) => handleEndDateChange(date)}
-															placeholder="End Date"
-															defaultDate={values.endDate}
-														/>
-													</div>
-													<div className="col-span-1">
-														<label className="block text-xs leading-6 text-gray-500">End Time</label>
-														<TimePicker
-															onChange={(time) => handleEndDateChange(undefined, time)}
-															placeholder="End Time"
-															defaultValue={values.endTime}
-														/>
-													</div>
-												</div>
-											</div>
-										</div>
-
-										<div>
-											<TimezoneSelect />
-										</div>
-
-										<div>
-											<label htmlFor="eventLocation" className="block text-sm font-semibold leading-6">
-												Location
-											</label>
-											<div className="mt-2">
-												<Field
-													id="eventLocation"
-													name="location"
-													value={values?.location}
-													onChange={handleChange}
-													type="text"
-													placeholder="Physical addres or Virtual link"
-													className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											</FormControl>
+											<FormControl>
+												<TimePicker
+													onChange={(time) =>
+														handleEndDateChange(undefined, time)
+													}
+													placeholder="End Time"
+													defaultValue={values.endTime}
 												/>
-												<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-
-										<div>
-											<label htmlFor="eventDescription" className="block text-sm font-semibold leading-6">
-												Description
-											</label>
-											<div className="mt-2">
-												<Field
-													id="eventDescription"
-													as={"textarea"}
-													name="desc"
-													value={values?.desc}
-													onChange={handleChange}
-													type="text"
-													autoComplete="datetime"
-													className="bg-[#1E1E1E] block w-full h-20 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											</FormControl>
+										</Box>
+										<Box>
+											<FormControl mb="2">
+												<DatePicker
+													onChange={(date) => handleStartDateChange(date)}
+													placeholder="Start Date"
+													defaultDate={values.startDate}
 												/>
-												<ErrorMessage name="desc" component="span" className="text-red-500 block mt-1" />
-											</div>
-										</div>
-									</section>
+											</FormControl>
+											<FormControl>
+												<DatePicker
+													onChange={(date) => handleEndDateChange(date)}
+													placeholder="End Date"
+													defaultDate={values.endDate}
+												/>
+											</FormControl>
+										</Box>
+									</Flex>
+								</Flex>
+								<FormControl mb={4}>
+									<InputGroup>
+										<InputLeftElement pointerEvents="none">
+											<LocationSVG />
+										</InputLeftElement>
+										<Field
+											ref={ref}
+											as={Input}
+											id="location"
+											name="location"
+											placeholder="Choose Location"
+											bg="#141619"
+											color="white"
+											border="none"
+											pl="10"
+											value={values.location}
+										/>
+									</InputGroup>
+								</FormControl>
+								<FormControl mb={4}>
+									<InputGroup>
+										<InputLeftElement pointerEvents="none">
+											<DescriptionSVG />
+										</InputLeftElement>
+										<Field
+											as={Textarea}
+											name="desc"
+											placeholder="Add Description"
+											bg="#141619"
+											color="white"
+											border="none"
+											rows="1"
+											pl="10"
+											value={values.desc}
+										/>
+									</InputGroup>
+								</FormControl>
+								<Text fontWeight="semibold" color="gray.400" mb={2}>
+									Event Options
+								</Text>
+								<Box bg="#141619" rounded="xl" px="3" py="2">
+									<Flex align="center" justifyContent="space-between" mt="2">
+										<Flex gap="3" alignItems="center">
+											<LockSVG />
+											<Text color="gray.400" mr={2}>
+												Privacy
+											</Text>
+										</Flex>
+										<Field
+											as="select"
+											id="privacy"
+											name="privacy"
+											value={values?.privacy}
+											className="bg-[#1E1E1E] block w-[100px] h-10 rounded-md border-0 py-1 shadow-sm sm:text-sm sm:leading-6 p-3"
+										>
+											<option value="private">Private</option>
+											<option value="public">Public</option>
+										</Field>
+									</Flex>
+									<Flex align="center" justifyContent="space-between" my={4}>
+										<Flex gap="3" alignItems="center">
+											<UserTickSVG />
+											<Text color="gray.400" mr={2}>
+												Require Approval
+											</Text>
+										</Flex>
+										<Switch
+											 name="requireApproval"
+                       isChecked={values.requireApproval}
+                       colorScheme="orange"
+											onChange={() =>
+												setFieldValue(
+													"requireApproval",
+													!values.requireApproval
+												)
+											}
+										/>
+									</Flex>
+									<Flex align="center" justifyContent="space-between" mb="4">
+										<Flex gap="3" alignItems="center">
+											<MultipleUsersSVG />
+											<Text color="gray.400" mr={2}>
+												Capacity
+											</Text>
+										</Flex>
+										<Field
+											as={Input}
+											type="number"
+											min={0}
+											value={values.capacity || 0}
+											name="capacity"
+											bg="#1C1F24"
+											color="white"
+											border="none"
+											w="80px"
+											h="30px"
+										/>
+									</Flex>
+									<Flex align="center" justifyContent="space-between">
+										<Flex gap="3" alignItems="center">
+											<TicketSVG />
+											<Text color="gray.400" mr={2}>
+												Tickets
+											</Text>
+										</Flex>
+										<Button
+											bg="transparent"
+											color="white"
+											_hover={{ bg: "transparent" }}
+											_active={{ bg: "transparent" }}
+											size="sm"
+											onClick={() => {
+												setEditIndex(null); // Reset edit index for new ticket
+												setTempTicket({ id: "", title: "", description: "", price: 0 }); // Reset temp ticket
+												onOpen();
+											}}
+											rightIcon={<PlusSVG />}
+											p="0"
+										>
+											Add
+										</Button>
+									</Flex>
+									<FieldArray name="tickets">
+										{({ remove, replace, push }) => (
+											<>
+												{values.tickets.map((ticket, index) => (
+													<Box
+														key={ticket.id || index} // Use ticket.id if available, otherwise index
+														py="2"
+														px="3"
+														bg="#2B2B2B"
+														borderRadius="md"
+														border="1px solid #464646"
+														my={4}
+														position="relative"
+													>
+														<Box>
+															<Text fontWeight="bold">{ticket.title}</Text>
+															<Text fontSize="sm" my="2">
+																{ticket.description}
+															</Text>
+															<Text
+																fontSize="lg"
+																fontWeight="bold"
+																color="#F79432"
+															>
+																${ticket.price}
+															</Text>
+														</Box>
 
-									<section className="bg-[#1E1E1E]  space-y-6 p-3 rounded-lg">
-										<header className="grid grid-rows-2 divide-y divide-slate-400">
-											<div className="flex items-center justify-between">
-												<h2 className="text-slat-400 font-bold">Event Options</h2>
+														{/* Vertical Dots Menu */}
+														<Box position="absolute" top="3" right="3">
+															<Menu>
+																<MenuButton
+																	as={IconButton}
+																	icon={<VerticalDotsSVG />}
+																	variant="ghost"
+																	size="sm"
+																	color="white"
+																	_hover={{ bg: "#333" }}
+																	_active={{ bg: "#444" }}
+																/>
+																<MenuList
+																	bg="#1D1F24"
+																	border="1px solid #444"
+																	color="white"
+																>
+																	<MenuItem
+																		bg="transparent"
+																		_hover={{ bg: "#333" }}
+																		onClick={() => {
+																			setEditIndex(index);
+																			setTempTicket(ticket);
+																			onOpen();
+																		}}
+																	>
+																		Edit
+																	</MenuItem>
+																	<MenuItem
+																		bg="transparent"
+																		_hover={{ bg: "#333" }}
+																		onClick={() => remove(index)}
+																	>
+																		Delete
+																	</MenuItem>
+																</MenuList>
+															</Menu>
+														</Box>
+													</Box>
+												))}
+											</>
+										)}
+									</FieldArray>
+								</Box>
+								<Button
+									type="submit"
+									mt="10"
+									bg="#F79432"
+									size="lg"
+									width="100%"
+									borderRadius="xl"
+									color="black"
+									isLoading={isSubmitting}
+									isDisabled={isSubmitting || isUploading}
+								>
+									Update Event
+								</Button>
 
-												<div className="flex items-center space-x-2">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
-														{!isPaid ? "Free" : "Paid"}
-													</label>
-													<div className="mt-2">
-														<Switch
-															checked={isPaid}
-															onChange={setIsPaid}
-															className={`${isPaid ? "bg-app" : "bg-app/50"}
-          relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
-														>
-															<span className="sr-only">Use setting</span>
-															<span
-																aria-hidden="true"
-																className={`${isPaid ? "translate-x-6" : "translate-x-0"}
-            pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
-															/>
-														</Switch>
-													</div>
-												</div>
-											</div>
-											<div className="w-full">
-												<div className="py-2 flex items-center justify-between">
-													<label htmlFor="eventCapacity" className="block text-sm font-semibold leading-6">
-														Capacity
-													</label>
-													<div className="mt-2">
-														<Field
-															id="eventCapacity"
-															name="capacity"
-															value={values?.capacity}
-															onChange={handleChange}
-															min={0}
+								{/* Tickets Modal */}
+								<FieldArray name="tickets">
+									{({ push, replace }) => (
+										<Modal isOpen={isOpen} onClose={onClose} isCentered>
+											<ModalOverlay />
+											<ModalContent bg="#1E1E1E" color="white">
+												<ModalHeader>
+													{editIndex !== null ? "Edit Ticket" : "Add Ticket"}
+												</ModalHeader>
+												<ModalCloseButton />
+												<ModalBody>
+													<FormControl mb={4}>
+														<FormLabel>Ticket Name</FormLabel>
+														<Input
+															id="ticketTitle"
+															name="ticketTitle"
+															placeholder="Enter ticket name"
+															bg="#090C10"
+															border="1px solid #444"
+															value={tempTicket.title}
+															onChange={(e) =>
+																setTempTicket({
+																	...tempTicket,
+																	title: e.target.value,
+																})
+															}
+														/>
+													</FormControl>
+													<FormControl mb={4}>
+														<FormLabel>Description</FormLabel>
+														<Textarea
+															id="ticketDescription"
+															name="ticketDescription"
+															placeholder="Enter description"
+															bg="#090C10"
+															border="1px solid #444"
+															value={tempTicket.description}
+															onChange={(e) =>
+																setTempTicket({
+																	...tempTicket,
+																	description: e.target.value,
+																})
+															}
+														/>
+													</FormControl>
+													<FormControl mb={4}>
+														<FormLabel>Price</FormLabel>
+														<Input
+															id="ticketPrice"
+															name="ticketPrice"
 															type="number"
-															placeholder="Enter 0 for unlimited"
-															className="bg-[#1E1E1E] block w-full h-12 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+															placeholder="Enter price"
+															bg="#090C10"
+															border="1px solid #444"
+															value={tempTicket.price}
+															onChange={(e) =>
+																setTempTicket({
+																	...tempTicket,
+																	price: parseFloat(e.target.value),
+																})
+															}
 														/>
-														<ErrorMessage name="capacity" component="span" className="text-red-500 block mt-1" />
-													</div>
-												</div>
+													</FormControl>
+												</ModalBody>
+												<ModalFooter>
+													<Button
+														bg="#F79432"
+														color="black"
+														mr={3}
+														onClick={() => {
+															if (editIndex !== null) {
+																// Edit existing ticket
+																replace(editIndex, tempTicket);
+															} else {
+																// Add new ticket
+																push({ ...tempTicket, id: uniqueId(10) });
+															}
+															onClose();
+														}}
+													>
+														{editIndex !== null ? "Save Changes" : "Add Ticket"}
+													</Button>
+													<Button variant="ghost" onClick={onClose}>
+														Cancel
+													</Button>
+												</ModalFooter>
+											</ModalContent>
+										</Modal>
+									)}
+								</FieldArray>
+							</Box>
 
-												{/* requires approval */}
-
-												<div className="flex items-center justify-between">
-													<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
-														Require Approval
-													</label>
-													<div className="mt-2">
-														<Switch
-															checked={values.requireApproval}
-															onChange={() => handleChange({ target: { name: "requireApproval", value: !values.requireApproval } })}
-															className={`${values.requireApproval ? "bg-app" : "bg-app/50"}
-          relative inline-flex h-[24px] w-[50px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2  focus-visible:ring-white/75`}
-														>
-															<span className="sr-only">Use setting</span>
-															<span
-																aria-hidden="true"
-																className={`${values.requireApproval ? "translate-x-6" : "translate-x-0"}
-            pointer-events-none inline-block h-[20px] w-[20px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out`}
-															/>
-														</Switch>
-														<ErrorMessage name="requireApproval" component="span" className="text-red-500 block mt-1" />
-													</div>
-												</div>
-											</div>
-										</header>
-									</section>
-								</Form>
-							)}
-						</Formik>
-
-						{/* Events tickets */}
-						{isPaid && <AddTickets onSave={handleSave} onDelete={handleDelete} initialTickets={eventTicketsData} />}
-
-						{/* Submit Button */}
-						<div>
-							<button
-								type="button"
-								onClick={submitForms}
-								className="flex w-full justify-center rounded-md bg-app px-3 py-1.5 text-sm font-semibold leading-6 text-black shadow-sm hover:bg-app/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app"
-							>
-								{isLoading ? <Spinner /> : "Update Event"}
-							</button>
-						</div>
-					</section>
-				</div>
-			</section>
+							{/* Right Side: Image Upload */}
+							<Box id="images" mb={6}>
+                <FormLabel>Event Image</FormLabel>
+                <ImageUploadBox
+                  uploadedImages={uploadedImages} 
+                  onImageChange={handleImageUpload}
+                  isUploading={isUploading}
+                  uploadProgress={uploadProgress}
+                  handleImageDelete={handleImageDelete}
+                />
+              </Box>
+						</Flex>
+					</Form>
+				)}
+			</Formik>
 		</ConsoleLayout>
-	)
+	);
 }
 
-type Params = {
-	eventId: string
-}
-export const getServerSideProps: GetServerSideProps<any, Params> = async (context) => {
+export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = async (context) => {
 	// check if user is authorized
 	const session = await authorizedOnly(context)
 	if (!session) return session
 
-	const { eventId } = context.params as Params
+	const { eventId } = context.params as { eventId: string }
 
 	// using event id, fetch event tickets from the database
-
 	const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
 	if (!event) {
 		return {
-			props: {
-				event: null,
-			},
+			notFound: true,
 		}
 	}
 

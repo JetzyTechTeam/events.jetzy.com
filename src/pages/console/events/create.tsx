@@ -38,7 +38,6 @@ import {
 } from "formik";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { CreateEventFormData, Pages } from "@/types";
-import moment from "moment-timezone";
 import { usePlacesWidget } from "react-google-autocomplete";
 import {
   DescriptionSVG,
@@ -64,19 +63,8 @@ import { PlusIcon } from "@heroicons/react/24/outline";
 import DragAndDropFileUpload, { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { useEdgeStore } from "@/lib/edgestore";
 import { uniqueId } from "@/lib/utils";
-
-const timezones = moment.tz.names().map((tz) => {
-  const offset = moment.tz(tz).utcOffset();
-  const sign = offset >= 0 ? "+" : "-";
-  const hours = Math.floor(Math.abs(offset) / 60)
-    .toString()
-    .padStart(2, "0");
-  const minutes = (Math.abs(offset) % 60).toString().padStart(2, "0");
-  return {
-    label: `(UTC${sign}${hours}:${minutes})`,
-    value: tz,
-  };
-});
+import { ImageUploadBox } from "./_components/image-upload-box";
+import { TimezoneSelect } from "./_components/timezone-select";
 
 const initialValues = {
   name: "",
@@ -691,136 +679,3 @@ const CreateEventPage = () => {
 };
 
 export default CreateEventPage;
-
-export const TimezoneSelect: React.FC = () => {
-  const { values, handleChange } = useFormikContext<any>();
-  return (
-    <>
-      <Field
-        as="select"
-        id="timezone"
-        name="timezone"
-        value={values?.timezone}
-        onChange={handleChange}
-        className="bg-[#1E1E1E] block w-[130px] h-12 rounded-md border-0 py-1.5 shadow-sm sm:text-sm sm:leading-6 p-3"
-      >
-        {timezones.map((tz) => (
-          <option
-            key={`${tz.label} ${tz.value}`}
-            value={`${tz.label} ${tz.value}`}
-          >
-            {tz.label} {tz.value}
-          </option>
-        ))}
-      </Field>
-      <ErrorMessage
-        name="timezone"
-        component="span"
-        className="text-red-500 block mt-1"
-      />
-    </>
-  );
-};
-
-
-interface ImageUploadBoxProps {
-  onImageChange: (files: FileList | null) => void;
-  isUploading: boolean;
-  uploadProgress: number;
-  handleImageDelete: (file: string) => void;
-  uploadedImages: {
-    file: string,
-    id: string
-  }[]
-}
-
-const ImageUploadBox: React.FC<ImageUploadBoxProps> = ({  onImageChange,  isUploading, uploadProgress, uploadedImages, handleImageDelete }) => {
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onImageChange(e.target.files);
-    e.target.value = '';
-  };
-
-  const handleClick = () => {
-    if (!isUploading) { 
-      inputRef.current?.click();
-    }
-  };
-
-
-  return (
-    <>
-    {uploadedImages.map((image) => (
-                      <Box key={image.id} position="relative" width="270px" height="133px" mb='5'>
-                        <Image
-                          src={image.file}
-                          alt="Preview"
-                          width="100%"
-                          height="100%"
-                          objectFit="cover"
-                          borderRadius="lg"
-                        />
-                        {/* Add a delete button for each image */}
-                        <Button
-                          size="xs"
-                          colorScheme="red"
-                          position="absolute"
-                          top="2"
-                          right="2"
-                          onClick={() => handleImageDelete(image.file)}
-                        >
-                          X
-                        </Button>
-                      </Box>
-                    ))}
- <Box
-      width="270px"
-      height="133px"
-      bg="#2B2B2B"
-      borderRadius="lg"
-      display="flex"
-      flexDirection="column"
-      justifyContent="center"
-      alignItems="center"
-      cursor={isUploading ? "not-allowed" : "pointer"}
-      _hover={{ bg: isUploading ? "#2B2B2B" : "#3A3A3A" }}
-      onClick={handleClick}
-      position="relative"
-    >
-      <input
-        type="file"
-        accept="image/png, image/jpeg, image/jpg"
-        multiple // Allow multiple file selection
-        ref={inputRef}
-        style={{ display: "none" }}
-        onChange={handleFileChange}
-      />
-
-      {isUploading ? (
-        <Flex direction="column" alignItems="center">
-          <Spinner size="xl" color="#F79432" />
-          <Text mt={2} color="gray.400">{Math.round(uploadProgress)}%</Text>
-        </Flex>
-      ) : (
-        <>
-          <Box
-            bg="#2B2B2B"
-            borderRadius="full"
-            p={2}
-            mb={1}
-            display="flex"
-            justifyContent="center"
-            alignItems="center"
-          >
-            <UploadImageSVG />
-          </Box>
-          <Text fontSize="sm" color="gray.400">
-            Add Photo
-          </Text>
-        </>
-      )}
-    </Box>
-    </>
-  );
-};
