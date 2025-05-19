@@ -17,6 +17,7 @@ const navigation = [
 	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
 	{ name: Pages.Events, href: ROUTES.dashboard.events.index },
 	{ name: Pages.Bookings, href: ROUTES.dashboard.bookings.index },
+	{ name: 'Create Event', href: ROUTES.dashboard.events.create },
 ]
 
 export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {

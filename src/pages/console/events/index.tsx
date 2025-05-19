@@ -1,14 +1,20 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { authorizedOnly } from "@/lib/authSession";
+import { useEdgeStore } from "@/lib/edgestore";
 import { Events } from "@/models/events";
 import { IEvent } from "@/models/events/types";
+import { DeleteEventThunk } from "@/redux/reducers/eventsSlice";
+import { useAppDispatch } from "@/redux/stores";
 import { Pages } from "@/types";
 import { Heading, Text } from "@chakra-ui/react";
+import axios from "axios";
 import { GetServerSideProps } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import React from "react";
+import { toast } from "react-toastify";
 
 type Pagination = {
   total: number;
@@ -24,10 +30,13 @@ type Props = {
 };
 
 export default function EventsListing({ events, pagination }: Props) {
-  const data = JSON.parse(events) as IEvent[];
+  const initialData = JSON.parse(events) as IEvent[];
+  const [eventList, setEventList] = React.useState<IEvent[]>(initialData);
 
-  if (!data.length) return <p>No events found.</p>;
- 
+  const handleEventRemoved = (removedEventId: string) => {
+    setEventList(prevList => prevList.filter(event => event._id.toString() !== removedEventId));
+  };
+
   return (
     <ConsoleLayout maxW="max-w-[800px]" className="px-0">
       <div className="max-w-[800px] mx-auto mb-5">
@@ -35,17 +44,42 @@ export default function EventsListing({ events, pagination }: Props) {
           Events
         </Heading>
       </div>
+
       <div className="space-y-5 max-w-[800px] mx-auto">
-        {data.map((event) => (
-          <ListingCard {...event} key={event.slug} />
+      {!eventList.length && <p>No events found.</p>}
+
+     {eventList.map((event) => (
+          <ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} />
         ))}
       </div>
     </ConsoleLayout>
   );
 }
 
-const ListingCard = (props: IEvent) => {
+const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) => {
   const event = props;
+  const dispatcher = useAppDispatch();
+  const edgestore = useEdgeStore();
+  const [loading, setLoading] = React.useState(false); 
+  const router = useRouter(); 
+
+
+  const handleRemove = (item: IEvent) => {
+    setLoading(true);
+    dispatcher(DeleteEventThunk({ id: item._id.toString() })).then((res: any) => {
+			// delete the images from edge store server
+			if (item.images.length > 0) {
+				item.images.forEach((image) => {
+					edgestore.edgestore.publicFiles.delete({ url: image })
+				})
+			}
+        toast.success("Event deleted successfully!");
+        props.onEventRemoved(item._id.toString());
+		}).finally(() => {
+      setLoading(false);
+    });
+	}
+
   return (
     <div className="flex items-center justify-between bg-[#1E1E1E] rounded-xl p-5">
       {/* CONTENT SECTION  */}
@@ -66,19 +100,20 @@ const ListingCard = (props: IEvent) => {
             <span>{event.location}</span>
           </Text>
         </div>
-        <div className="space-x-3">
-          <Link href="" className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+        <div className="flex items-center gap-x-3">
+          <Link href={`/console/events/${event._id}/manage`} className="bg-[#3E3E3E] p-2 rounded-md text-sm">
             Manage Event
           </Link>
-          <Link href="" className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+          <Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm">
             Edit Event
           </Link>
-          <Link
-            href=""
-            className="bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm"
+          <div
+            onClick={() => handleRemove(event)}
+            className={`w-max bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm cursor-pointer ${loading ? 'opacity-50 cursor-not-allowed' : ''}`} 
+            style={{ pointerEvents: loading ? 'none' : 'auto' }}
           >
-            Delete Event
-          </Link>
+            {loading ? 'Deleting...' : 'Delete Event'}
+          </div>
         </div>
       </div>
 
