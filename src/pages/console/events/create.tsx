@@ -57,7 +57,7 @@ import { TicketData } from "@/components/events/TicketCard";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { useEdgeStore } from "@/lib/edgestore";
 import { uniqueId } from "@/lib/utils";
-import ImageUploadBox  from "./_components/image-upload-box";
+import ImageUploadBox  from "../../../components/image-upload-box";
 import TimezoneSelect from "../../../components/timezone-select";
 
 const initialValues = {

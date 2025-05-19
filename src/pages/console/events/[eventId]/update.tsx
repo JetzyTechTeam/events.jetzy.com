@@ -63,7 +63,7 @@ import {
   VerticalDotsSVG,
 } from "@/assets/icons";
 import { usePlacesWidget } from "react-google-autocomplete";
-import ImageUploadBox from "../_components/image-upload-box"
+import ImageUploadBox from "../../../../components/image-upload-box"
 import TimezoneSelect from "../../../../components/timezone-select"
 
 type Props = {
