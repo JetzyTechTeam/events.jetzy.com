@@ -8,6 +8,7 @@ interface IEventInvitations {
   invitedAt: Date;
   acceptedAt?: Date;
   declinedAt?: Date;
+  name?: string;
 }
 
 const eventInvitationSchema = new Schema({
@@ -15,6 +16,10 @@ const eventInvitationSchema = new Schema({
     type: Schema.Types.ObjectId,
     required: true,
     ref: "Event",
+  },
+  name: {
+    type: String,
+    default: "",
   },
   email: {
     type: String,

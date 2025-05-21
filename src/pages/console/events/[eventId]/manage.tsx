@@ -408,7 +408,7 @@ function InviteGuestsModal({
         emails,
         message,
         subject: `Hi, Jetzy Events invite you to join ${event.name}!`,
-        eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+        eventLink: `${process.env.NEXT_PUBLIC_URL}/events/${event._id}/guests/invite`,
         eventId: event._id,
       });
       setLoading(false);

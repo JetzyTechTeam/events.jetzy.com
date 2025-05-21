@@ -289,7 +289,6 @@ export default function UpdateEventPage({ event }: Props) {
 			// Process each file selected
 			for (let i = 0; i < files.length; i++) {
 				const file = files[i];
-				console.log(`Uploading file ${i + 1} of ${files.length}: ${file.name}`);
 
 				// Upload the current file
 				const res = await edgestore.publicFiles.upload({
@@ -304,7 +303,6 @@ export default function UpdateEventPage({ event }: Props) {
 					...prevImages,
 					{ id: uniqueId(10), file: res.url },
 				]);
-				console.log(`Finished uploading ${file.name}`);
 			}
 		} catch (error: any) {
 			console.error("Error uploading file", error);
@@ -338,7 +336,7 @@ export default function UpdateEventPage({ event }: Props) {
 				initialValues={initialValues as CreateEventFormData}
 				onSubmit={onSubmit}
 				innerRef={formikRef}
-				enableReinitialize={true} // Important to update form with eventDetails
+				enableReinitialize={true}
 			>
 				{({ values, setFieldValue }) => (
 					<Form>

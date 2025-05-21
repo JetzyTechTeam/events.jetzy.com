@@ -74,7 +74,6 @@ export default function HostedEvents({ event }: Props) {
     fetch(`/api/get-event-participants?eventId=${event._id}`)
       .then((response) => response.json())
       .then((data) => {
-        console.log({ data });
         setParticipants(data.participants);
         setLoading(false);
       })
@@ -83,8 +82,6 @@ export default function HostedEvents({ event }: Props) {
         setLoading(false);
       });
   }, [event._id]);
-
-  console.log(participants);
 
   return (
     <>
