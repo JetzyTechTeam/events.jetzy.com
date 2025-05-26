@@ -61,7 +61,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants } = params
+		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants } = params
+
+		if (!tickets || tickets.length === 0) {
+			tickets = [{
+				id: generateRandomId(8),
+				title: "General Admission",
+				price: 0,
+				description: "Free ticket for this event."
+			}]
+		}
 
 		// construct datetime for start and end dates
 		const start = new Date(`${startDate} ${startTime}`)

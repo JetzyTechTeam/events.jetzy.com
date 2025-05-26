@@ -55,6 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// generate a reference id
 		const reference = uniqueId(20)
+
 		// create a checkout session
 		const session = await stripe.checkout.sessions.create({
 			client_reference_id: reference,
@@ -69,10 +70,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				email: user.email,
 				phone: user.phone,
 				tickets: req.body.tickets,
-				eventId: tickets[0].eventId,
+				eventId: tickets[0]?.eventId || "",
 			},
 			customer_email: user.email,
 		})
+
 		if (session) {
 			return sendResponse(res, session, "Checkout created successfully!", true, ResCode.OK)
 		}

@@ -16,13 +16,13 @@ type Props = {
 
 const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   // format the event tickets
-  const ticketsItems = event.tickets.map((ticket, index) => {
+  const ticketsItems = event.tickets.map((ticket) => {
     return {
       id: ticket._id.toString(),
       name: ticket.name,
       price: ticket.price,
       quantity: 1,
-      isSelected: event.isPaid ? false : true,
+      isSelected: event.isPaid ? true : false,
       priceId: ticket.stripeProductId,
       eventId: event._id.toString(),
     };
@@ -73,8 +73,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
     setLoader(true);
     // make sure the ticket at least one is selected
     const hasSelected = tickets.some((ticket) => ticket.isSelected);
-    if (!hasSelected) {
-      // alert("Please select at least one ticket.")
+    if (event.isPaid && !hasSelected) {
+      alert("Please select at least one ticket.")
       setLoader(false);
       Error("Ticket Required", "Please select at least one ticket.");
       return;
@@ -171,18 +171,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                       )}
                     </div>
                   </div>
-
-                  {/* {!ticket.isSelected && event.isPaid && (
-										<div className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800">
-											<button
-												onClick={() => handleTicketSelection(ticket.id)}
-												className={`bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-300 ${ticket.isSelected ? "bg-purple-600 text-white" : ""}`}
-											>
-												{ticket.isSelected ? "✓" : "+"}
-											</button>
-										</div>
-									)
-								} */}
                 </div>
               </div>
             ))}
