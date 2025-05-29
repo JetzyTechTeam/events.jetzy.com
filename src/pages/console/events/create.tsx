@@ -33,7 +33,7 @@ import {
   FieldArray,
 } from "formik";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
-import { CreateEventFormData, Pages } from "@/types";
+import { CreateEventFormData, Pages, Roles } from "@/types";
 import { usePlacesWidget } from "react-google-autocomplete";
 import {
   DescriptionSVG,
@@ -59,6 +59,7 @@ import { useEdgeStore } from "@/lib/edgestore";
 import { uniqueId } from "@/lib/utils";
 import ImageUploadBox  from "../../../components/image-upload-box";
 import TimezoneSelect from "../../../components/timezone-select";
+import { useSession } from "next-auth/react";
 
 const initialValues = {
   name: "",
@@ -81,6 +82,8 @@ const CreateEventPage = () => {
   const dispatcher = useAppDispatch();
   const navigation = useRouter();
   const { edgestore } = useEdgeStore(); 
+  const { data: session } = useSession();
+  const router = useRouter();
 
   const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
 
@@ -225,6 +228,9 @@ const CreateEventPage = () => {
       Error("Error", "Failed to delete image");
     } 
   };
+
+  // @ts-ignore 
+  if (session?.user?.role === Roles.USER) router.push('/console')
 
   return (
     <ConsoleLayout

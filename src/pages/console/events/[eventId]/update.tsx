@@ -3,15 +3,11 @@ import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { Types } from "mongoose"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
-import DragAndDropFileUpload, { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
-import Spinner from "@Jetzy/components/misc/Spinner"
+import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { ROUTES } from "@/configs/routes"
 import { useEdgeStore } from "@Jetzy/lib/edgestore"
-import { eventValidation } from "@Jetzy/lib/validator/event"
-import { getEventState, UpdateEventThunk } from "@/redux/reducers/eventsSlice"
-import { useAppDispatch, useAppSelector } from "@/redux/stores"
-import { CreateEventFormData, Pages } from "@/types"
-import { ErrorMessage, Field, Form, Formik, FormikProps, useFormikContext, FieldArray } from "formik"
+import { CreateEventFormData, Pages, Roles } from "@/types"
+import { Field, Form, Formik, FormikProps, FieldArray } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
 import React from "react"
@@ -23,7 +19,6 @@ import { Error } from "@/lib/_toaster"
 import { IEvent } from "@/models/events/types"
 import { EmailProps } from "@/actions/send-update-email-to-users.action"
 import axios from "axios"
-import moment from "moment-timezone";
 import {
   Box,
   Button,
@@ -65,6 +60,9 @@ import {
 import { usePlacesWidget } from "react-google-autocomplete";
 import ImageUploadBox from "../../../../components/image-upload-box"
 import TimezoneSelect from "../../../../components/timezone-select"
+import { useSession } from "next-auth/react"
+import { useAppDispatch } from "@/redux/stores"
+import { UpdateEventThunk } from "@/redux/reducers/eventsSlice"
 
 type Props = {
 	event: string
@@ -76,6 +74,8 @@ export default function UpdateEventPage({ event }: Props) {
 	const dispatcher = useAppDispatch();
 	const navigation = useRouter();
 	const { edgestore } = useEdgeStore();
+	const { data: session } = useSession()
+	const router = useRouter();
 
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
 
@@ -325,6 +325,9 @@ export default function UpdateEventPage({ event }: Props) {
 		}
 	};
 
+
+  // @ts-ignore 
+  if (session?.user?.role === Roles.USER) router.push('/console')
 
 	return (
 		<ConsoleLayout

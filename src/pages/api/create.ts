@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 		// get the request body
 		const { firstName, lastName, email, password } = req?.body
 		// set the user role
-		const userType = Roles.ADMIN
+		const userType = Roles.USER
 
 		// hash user password
 		const hashPassword = await bcrypt.hash(password, 10)

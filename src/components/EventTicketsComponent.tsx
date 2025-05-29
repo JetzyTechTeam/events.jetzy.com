@@ -9,12 +9,27 @@ import Spinner from "./misc/Spinner";
 import { Error } from "@Jetzy/lib/_toaster";
 import { IEvent } from "@/models/events/types";
 import { CheckmarkSVG, DirectionSVG } from "@/assets/icons";
+import {
+  Button,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
+  Textarea,
+  useDisclosure,
+  useToast,
+} from "@chakra-ui/react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import axios from "axios";
 
 type Props = {
   event: IEvent;
 };
 
 const EventTicketsComponent: React.FC<Props> = ({ event }) => {
+  const eventId = event._id.toString();
   // format the event tickets
   const ticketsItems = event.tickets.map((ticket) => {
     return {
@@ -74,7 +89,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
     // make sure the ticket at least one is selected
     const hasSelected = tickets.some((ticket) => ticket.isSelected);
     if (event.isPaid && !hasSelected) {
-      alert("Please select at least one ticket.")
+      alert("Please select at least one ticket.");
       setLoader(false);
       Error("Ticket Required", "Please select at least one ticket.");
       return;
@@ -203,14 +218,22 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </button>
           </div>
         </div>
-        {/* map section  */}
       </div>
+
+      {/* map section  */}
       <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">
         <div className="flex items-center justify-between">
           <h1 className="font-bold text-xl">Event Location</h1>
-          <div className="bg-jetzy p-2 rounded-xl">
+          <a
+            href={`https://www.google.com/maps?q=${encodeURIComponent(
+              event.location
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-jetzy p-2 rounded-xl"
+          >
             <DirectionSVG />
-          </div>
+          </a>
         </div>
         <p className="text-xl">{event.location}</p>
         <div className="mt-4 w-full h-64 rounded-xl overflow-hidden">
@@ -227,8 +250,155 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
           ></iframe>
         </div>
       </div>
+
+      {/* comments section  */}
+      <CommentsSection eventId={eventId} />
     </>
   );
 };
 
 export default EventTicketsComponent;
+
+const CommentsSection = ({ eventId }: { eventId: string }) => {
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [comment, setComment] = React.useState("");
+  const toast = useToast();
+
+  const {
+    data: comments = [],
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["eventComments", eventId],
+    queryFn: async () => {
+      const response = await axios.get(
+        `/api/events/comments/get?eventId=${eventId}`
+      );
+      return response.data;
+    },
+    enabled: !!eventId,
+  });
+
+  const commentMutation = useMutation({
+    mutationKey: ["postComment"],
+    mutationFn: async (comment: string) => {
+      const response = await axios.post("/api/events/comments/create", {
+        comment,
+        eventId,
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      setComment("");
+      onClose();
+      refetch();
+      toast({
+        title: "Comment Posted.",
+        description: "Your comment has been successfully posted.",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+    },
+    onError: (err) => {
+      console.error("Error posting comment:", err);
+      toast({
+        title: "Error Posting Comment.",
+        description: "There was an error posting your comment.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    },
+  });
+
+  const handlePostComment = () => {
+    if (comment.trim()) {
+      commentMutation.mutate(comment);
+    }
+  };
+
+  return (
+    <>
+      <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">
+        <div className="flex items-center justify-between">
+          <h1 className="font-bold text-xl">Comments</h1>
+          <p
+            className="text-jetzy p-2 rounded-xl cursor-pointer"
+            onClick={onOpen}
+          >
+            Write a comment
+          </p>
+        </div>
+        {isLoading ? (
+          <div className="flex justify-center items-center h-20">
+            <Spinner />
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {comments.map(
+              (entry: {
+                _id: string;
+                userId: { email: string };
+                createdAt: string;
+                comment: string;
+              }) => (
+                <div key={entry._id} className="bg-[#060E1A] rounded-xl p-3">
+                  <div className="mb-2">
+                    <h3 className="text-[15px] text-[#FBFBFB] font-medium">
+                      {entry.userId.email}
+                    </h3>
+                    <p className="text-xs text-[#8F8F8F]">
+                      {new Date(entry.createdAt).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <p className="text-sm">{entry.comment}</p>
+                </div>
+              )
+            )}
+          </div>
+        )}
+
+        <Modal isCentered isOpen={isOpen} onClose={onClose}>
+          <ModalOverlay />
+          <ModalContent bg="#1E1E1E">
+            <ModalHeader>Write a Comment</ModalHeader>
+            <ModalBody>
+              <Textarea
+                value={comment}
+                placeholder="Enter your comment here..."
+                onChange={(e) => setComment(e.target.value)}
+                bg="#090C10"
+                border="1px solid #444444"
+              />
+            </ModalBody>
+
+            <ModalFooter display="flex" flexDirection="column" gap="3">
+              <Button
+                colorScheme="orange"
+                w="full"
+                onClick={handlePostComment}
+                disabled={commentMutation.isPending}
+                isLoading={commentMutation.isPending}
+              >
+                Post
+              </Button>
+              <Button
+                variant="unstyled"
+                w="full"
+                color="white"
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      </div>
+    </>
+  );
+};

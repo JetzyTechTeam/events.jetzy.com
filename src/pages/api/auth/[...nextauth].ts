@@ -61,8 +61,7 @@ export const authOptions: NextAuthOptions = {
       //   @ts-ignore
       if (token?.profile) {
         // @ts-ignore
-        session.profile = token?.profile
-        session.user = token?.profile
+        session.user = token?.profile._doc
       }
 
       return session

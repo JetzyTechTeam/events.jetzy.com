@@ -10,8 +10,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const participants = await Bookings.find({eventId: new mongoose.Types.ObjectId(eventId as string)});
 
-  console.log(participants);
-
   if (!participants) {
     return res.status(404).json({ message: 'No participants found' })
   }

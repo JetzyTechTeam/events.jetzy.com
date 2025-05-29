@@ -39,6 +39,9 @@ import {
 } from "@/assets/icons";
 import { ShareIcon } from "@heroicons/react/20/solid";
 import { useRouter } from "next/router";
+import { Roles } from "@/types";
+import { redirect } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 export default function Manage({ event }: any) {
   event = JSON.parse(event);
@@ -47,6 +50,10 @@ export default function Manage({ event }: any) {
   const [inviteGuestsModal, setInviteGuestsModal] = useState(false);
   const [sendBlastModal, setSendBlastModal] = useState(false);
   const router = useRouter();
+  const { data: session } = useSession()
+
+  // @ts-ignore 
+  if (session?.user?.role === Roles.USER) router.push('/console')
 
   return (
     <>

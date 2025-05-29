@@ -6,10 +6,11 @@ import { Events } from "@/models/events";
 import { IEvent } from "@/models/events/types";
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice";
 import { useAppDispatch } from "@/redux/stores";
-import { Pages } from "@/types";
+import { Pages, Roles } from "@/types";
 import { Heading, Text } from "@chakra-ui/react";
 import axios from "axios";
 import { GetServerSideProps } from "next";
+import { useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -32,10 +33,15 @@ type Props = {
 export default function EventsListing({ events, pagination }: Props) {
   const initialData = JSON.parse(events) as IEvent[];
   const [eventList, setEventList] = React.useState<IEvent[]>(initialData);
+	const { data: session } = useSession()
+  const router = useRouter();
 
   const handleEventRemoved = (removedEventId: string) => {
     setEventList(prevList => prevList.filter(event => event._id.toString() !== removedEventId));
   };
+
+  // @ts-ignore 
+  if (session?.user?.role === Roles.USER) router.push('/console')
 
   return (
     <ConsoleLayout maxW="max-w-[800px]" className="px-0">
