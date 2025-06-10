@@ -18,6 +18,12 @@ const commentSchema = new Schema(
       type: String,
       required: true,
     },
+    parentCommentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Comment',
+      default: 'root', 
+      index: true,
+    },
   },
   {
     timestamps: true,

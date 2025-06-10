@@ -39,4 +39,4 @@ export const usersSchema = new Schema(
 	{ timestamps: true },
 )
 
-export const Users = dbconn.models.Users || dbconn.model("Users", usersSchema)
+export const Users = dbconn.models.Users || dbconn.model("Users", usersSchema, 'users')

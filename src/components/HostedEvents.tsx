@@ -1,5 +1,4 @@
 import React from "react";
-import EventDetails from "@Jetzy/components/EventDetails";
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel";
 import { useWebShare } from "@Jetzy/hooks/useShare";
 import Slider from "react-slick";
@@ -11,16 +10,7 @@ import "slick-carousel/slick/slick-theme.css";
 import EventTicketsComponent from "@/components/EventTicketsComponent";
 import { IEvent } from "@/models/events/types";
 import { Image } from "@chakra-ui/react";
-import {
-  CalendarDateRangeIcon,
-  HomeIcon,
-  MapPinIcon,
-  ShareIcon,
-  TicketIcon,
-} from "@heroicons/react/24/outline";
-import Link from "next/link";
-import { ROUTES } from "@/configs/routes";
-import axios from "axios";
+import { ShareIcon } from "@heroicons/react/24/outline";
 
 const settings = {
   infinite: true,
@@ -45,12 +35,8 @@ const settings = {
 type Props = {
   event: IEvent;
 };
-export default function HostedEvents({ event }: Props) {
-  const [participants, setParticipants] = React.useState<
-    { customerName: string; customerEmail: string }[]
-  >([]);
-  const [loading, setLoading] = React.useState(true);
 
+export default function HostedEvents({ event }: Props) {
   const shareUrl = window.location.href;
   const shareTitle = event.name;
   const shareDesc = event.desc;
@@ -60,28 +46,6 @@ export default function HostedEvents({ event }: Props) {
     text: shareDesc,
     url: shareUrl,
   });
-
-  // React.useEffect(() => {
-  //   const getEventParticipants = async () => {
-  // 		setLoading(true);
-  // 		const result = await axios.get(`/api/get-event-participants?eventId=${event._id}`);
-  // 		setParticipants(Array.isArray(result.data) ? result.data : []);
-  // 		setLoading(false);
-  //   };
-  //   getEventParticipants();
-  // }, [event._id]);
-  React.useEffect(() => {
-    fetch(`/api/get-event-participants?eventId=${event._id}`)
-      .then((response) => response.json())
-      .then((data) => {
-        setParticipants(data.participants);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error fetching event participants:", error);
-        setLoading(false);
-      });
-  }, [event._id]);
 
   return (
     <>

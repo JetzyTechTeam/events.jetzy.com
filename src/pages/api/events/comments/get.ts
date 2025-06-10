@@ -13,10 +13,13 @@ export default async function handler(
       eventId: new mongoose.Types.ObjectId(eventId as string),
     })
       .populate({ path: "userId", select: "email phoneNumber" })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .exec();
 
     return res.status(200).json(comments);
-  } catch (error) {
-    return res.status(500).json({ message: "Internal Server Error" });
+  } catch (error: unknown) {
+    console.log({error})
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    return res.status(500).json({ message: errorMessage || "Something went wrong" });
   }
 }
