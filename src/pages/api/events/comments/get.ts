@@ -1,4 +1,5 @@
 import { Comments } from "@/models/events/comments";
+import { Users } from "@/models/userModal";
 import mongoose from "mongoose";
 import { NextApiRequest, NextApiResponse } from "next";
 
@@ -8,7 +9,7 @@ export default async function handler(
 ) {
   try {
     const { eventId } = req.query;
-    
+
     const comments = await Comments.find({
       eventId: new mongoose.Types.ObjectId(eventId as string),
     })

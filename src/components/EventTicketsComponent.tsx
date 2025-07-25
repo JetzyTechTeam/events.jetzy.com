@@ -536,6 +536,10 @@ const CommentsSection = ({
   const [editTextMap, setEditTextMap] = useState<Record<string, string>>({});
   const toast = useToast();
 
+  const { data: session } = useSession();
+
+  console.log({session})
+
   const {
     data: comments = [],
     isLoading,
@@ -708,9 +712,9 @@ const CommentsSection = ({
     <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">
       <div className="flex items-center justify-between">
         <h1 className="font-bold text-xl">Comments</h1>
-        <p className="text-jetzy p-2 rounded-xl cursor-pointer" onClick={onOpen}>
-          Write a comment
-        </p>
+        {session === null ? <></> : <p className="text-jetzy p-2 rounded-xl cursor-pointer" onClick={onOpen}>
+            Write a comment
+          </p>}
       </div>
 
       {isLoading ? (

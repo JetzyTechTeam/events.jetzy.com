@@ -1,10 +1,11 @@
-import React from "react"
-import { Table, Thead, Tbody, Tfoot, Tr, Th, Td, TableCaption, TableContainer, IconButton, Menu, MenuButton, MenuList, MenuItem, Flex, Button, Text, useDisclosure, Box, Badge } from "@chakra-ui/react"
+import React, { useEffect, useState } from "react"
+import { Table, Thead, Tbody, Tfoot, Tr, Th, Td, TableCaption, TableContainer, IconButton, Menu, MenuButton, MenuList, MenuItem, Flex, Button, Text, useDisclosure, Box, Badge, Spinner } from "@chakra-ui/react"
 import { EllipsisVerticalIcon, EyeIcon, PencilIcon, PlusCircleIcon, TrashIcon } from "@heroicons/react/24/outline"
 import { Pagination } from "@/pages/console/events/index.old"
 import { IBookings, IEvent } from "@/models/events/types"
 import { Exportable } from "@/pages/console/bookings"
 import { downloadExcel } from "react-export-table-to-excel"
+import { useRouter } from "next/router"
 
 type Props = {
 	rows: IBookings[]
@@ -12,7 +13,10 @@ type Props = {
 	exportable: Exportable[]
 }
 const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }) => {
+	const [loading, setLoading] = useState(false)
+
 	const exportTableHeaders = ["Reference", "Event", "Amount", "Status", "Customer", "Tickets", "Date"]
+	const router = useRouter();
 
 	const exportTableData = exportable.map((row) => [
 		row.booking.bookingRef,
@@ -34,6 +38,42 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 				body: exportTableData,
 			},
 		})
+	}
+
+	const handlePrev = () => {
+		if (pagination.page > 1) {
+			router.push(`/console/bookings?page=${pagination.page - 1}`);
+		}
+	};
+
+	const handleNext = () => {
+		if (pagination.page < pagination.totalPages) {
+			router.push(`/console/bookings?page=${pagination.page + 1}`);
+		}
+	};
+
+
+	useEffect(() => {
+		const handleStart = () => setLoading(true)
+		const handleComplete = () => setLoading(false)
+
+		router.events.on('routeChangeStart', handleStart)
+		router.events.on('routeChangeComplete', handleComplete)
+		router.events.on('routeChangeError', handleComplete)
+
+		return () => {
+			router.events.off('routeChangeStart', handleStart)
+			router.events.off('routeChangeComplete', handleComplete)
+			router.events.off('routeChangeError', handleComplete)
+		}
+	}, [router])
+
+	if (loading) {
+		return (
+			<Flex justify="center" align="center" height="300px">
+				<Spinner size="xl" thickness="4px" color="blue.500" />
+			</Flex>
+		)
 	}
 
 	return (
@@ -65,7 +105,6 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 									<Button
 										variant="link"
 										color='white'
-										// handle text overflow to truncate
 										overflow="hidden"
 										whiteSpace="nowrap"
 										textOverflow="ellipsis"
@@ -99,7 +138,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 										<MenuButton as={IconButton} bg='#181818' _hover='#181818' _active='#181818' color='white' aria-label="Options" icon={<EllipsisVerticalIcon style={{ width: 20, height: 20 }} />} variant="outline" />
 										<MenuList bg='#181818'>
 											<MenuItem bg='#181818' icon={<PencilIcon style={{ width: 20, height: 20 }} />}>Confirm</MenuItem>
-											<MenuItem bg='#181818' icon={<TrashIcon style={{ width: 20, height: 20 }} />}>View</MenuItem>
+											<MenuItem bg='#181818' icon={<EyeIcon style={{ width: 20, height: 20 }} />}>View</MenuItem>
 										</MenuList>
 									</Menu>
 								</Td>
@@ -112,7 +151,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 								<Flex justify="center" align="center" mt={4}>
 									<Button
 										variant="link"
-										//   onClick={handlePrev}
+										onClick={handlePrev}
 										disabled={pagination.page === 1}
 										mr={2}
 									>
@@ -123,7 +162,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, pagination, exportable }
 									</Text>
 									<Button
 										variant="link"
-										//   onClick={handleNext}
+										onClick={handleNext}
 										disabled={pagination.page === pagination.totalPages}
 										ml={2}
 									>

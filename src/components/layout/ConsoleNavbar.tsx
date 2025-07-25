@@ -19,7 +19,7 @@ const navigation = [
 export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	// Logout user from system
 	const { data: session } = useSession()
-	const logout = () => signOut()
+	const logout = () => signOut({callbackUrl: '/'})
 
 	const user = {
 		name: session?.user?.name,

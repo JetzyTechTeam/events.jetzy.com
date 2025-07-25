@@ -8,6 +8,7 @@ import { ListEventsThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlic
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { EventInterface, Pages } from "@Jetzy/types"
 import { GetServerSideProps } from "next"
+import { useSession } from "next-auth/react"
 import Link from "next/link"
 import React from "react"
 
@@ -24,13 +25,22 @@ export default function ConsoleDashboard() {
 	const { isFetching, dataList } = useAppSelector(getEventState)
 	const dispatcher = useAppDispatch()
 
+	const { data: session } = useSession();
+
+	// @ts-ignore
+	const admin = session?.user?.role === "admin";
+ 
 	React.useEffect(() => {
 		// Dispatcher the event to fetch events list from the server
 		dispatcher(ListEventsThunk())
 	}, [])
 
 	return (
-		<ConsoleLayout page={Pages.Dasshboard} component={<CreateEventButton />}>
+		<ConsoleLayout page={Pages.Dasshboard} component={
+			admin ?
+		<CreateEventButton />
+		: <></>
+		}>
 			{!dataList?.length && !isFetching && <p>No events found.</p>}
 
 			{/* Display the data listing  */}

@@ -22,7 +22,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // Assuming Comments is a Mongoose model
     const result = await Comments.deleteOne({
       eventId: new mongoose.Types.ObjectId(eventId as string),
       _id: new mongoose.Types.ObjectId(commentId as string),

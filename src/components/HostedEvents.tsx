@@ -11,6 +11,8 @@ import EventTicketsComponent from "@/components/EventTicketsComponent";
 import { IEvent } from "@/models/events/types";
 import { Image } from "@chakra-ui/react";
 import { ShareIcon } from "@heroicons/react/24/outline";
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 
 const settings = {
   infinite: true,
@@ -121,6 +123,8 @@ export default function HostedEvents({ event }: Props) {
           </div>
         </div>
 
+        <GuestsList eventId={event._id.toString()} />
+
         <EventTicketsComponent event={event} />
       </div>
       <EventCheckoutModel />
@@ -146,4 +150,31 @@ function CustomArrow(props: {
       </div>
     </div>
   );
+}
+
+
+function GuestsList({ eventId }: { eventId: string }) {
+  const { data: guests, isLoading } = useQuery({
+    queryKey: ["eventGuests", eventId],
+    queryFn: () => axios.get(`/api/events/guests?eventId=${eventId}`)
+  })
+
+  console.log({guests})
+
+  return (
+    <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
+      <h3 className="text-lg font-semibold mb-4">Guests</h3>
+      <ul className="space-y-2">
+        {isLoading && <li>Loading guests...</li>}
+        {!isLoading && guests?.data?.data?.length === 0 && (
+          <li>No guests found for this event.</li>
+        )}
+        {guests?.data?.data?.map((guest: {_id: string; name: string}) => (
+          <li key={guest._id} className="flex justify-between items-center">
+            <span>{guest.name}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }

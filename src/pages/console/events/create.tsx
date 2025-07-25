@@ -60,6 +60,7 @@ import { uniqueId } from "@/lib/utils";
 import ImageUploadBox  from "../../../components/image-upload-box";
 import TimezoneSelect from "../../../components/timezone-select";
 import { useSession } from "next-auth/react";
+import { z } from "zod";
 
 const initialValues = {
   name: "",
@@ -76,6 +77,16 @@ const initialValues = {
   capacity: 0,
   privacy: "public",
 };
+
+const createEventSchema = z.object({
+  name: z.string().min(1, "Event name is required"),
+  location: z.string().min(1, "Location is required"),
+  desc: z.string().min(1, "Description is required"),
+  startDate: z.string().min(1, "Start date is required"),
+  startTime: z.string().min(1, "Start time is required"),
+  endDate: z.string().min(1, "End date is required"),
+  endTime: z.string().min(1, "End time is required"),
+});
 
 const CreateEventPage = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -130,18 +141,14 @@ const CreateEventPage = () => {
   });
 
   const onSubmit = (values: CreateEventFormData) => {
-    if (
-      !values.name ||
-      !values.location ||
-      !values.desc ||
-      !values.startDate ||
-      !values.startTime ||
-      !values.endDate ||
-      !values.endTime
-    ) {
-      Error("Error", "Please fill all required fields");
-      return;
-    }
+  const validation = createEventSchema.safeParse(values);
+
+  if (!validation.success) {
+    const firstError = Object.values(validation.error.flatten().fieldErrors)[0]?.[0];
+    Error("Validation Error", firstError || "Please fix the form errors");
+    return;
+  }
+
     values.images = uploadedImages;
 
     if (values.tickets.length > 0) values.isPaid = true
@@ -206,7 +213,6 @@ const CreateEventPage = () => {
           ...prevImages,
           { id: uniqueId(10), file: res.url },
         ]);
-        console.log(`Finished uploading ${file.name}`);
       }
     } catch (error: any) {
       console.error("Error uploading file", error);

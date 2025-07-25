@@ -77,7 +77,7 @@ export default function LoginPage() {
 											type="email"
 											autoComplete="email"
 											required
-											className="block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="text-white bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
 										<ErrorMessage name="email" component="span" className="text-red-500 block mt-1" />
 									</div>
@@ -98,7 +98,8 @@ export default function LoginPage() {
 											type="password"
 											autoComplete="current-password"
 											required
-											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="text-white bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+
 										/>
 										<ErrorMessage name="password" component="span" className="text-red-500 block mt-1" />
 									</div>
