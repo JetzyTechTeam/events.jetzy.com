@@ -19,9 +19,9 @@ const commentSchema = new Schema(
       required: true,
     },
     parentCommentId: {
-      type: Schema.Types.ObjectId,
+      type: Schema.Types.Mixed,
       ref: 'Comment',
-      default: 'root', 
+      default: null, 
       index: true,
     },
   },

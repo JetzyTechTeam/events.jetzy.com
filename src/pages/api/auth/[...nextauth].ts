@@ -22,23 +22,33 @@ export const authOptions: NextAuthOptions = {
       },
 
       async authorize(credentials, req) {
-        // You need to provide your own logic here that takes the credentials
-        // submitted and returns either a object representing a user or value
-        // that is false/null if the credentials are invalid.
-        // e.g. return { id: 1, name: 'J Smith', email: 'jsmith@example.com' }
-        // You can also use the `req` object to obtain additional parameters
-        // (i.e., the request IP address)
-        if (typeof credentials?.email === "undefined" || typeof credentials?.password === "undefined") throw new Error("Please provide your credentials.")
+        const { email, password } = credentials ?? {};
 
-        // get the params
-        const { email, password } = credentials
-        // check if user exist
-        if (!(await Users.findOne({ email }).exec())) throw new Error("User was not found.")
+        if (!email || !password) throw new Error("Please provide your credentials.");
 
-        // Get the user
-        const user = await Users.findOne({ email })
-        // check if password is correct
-        if (!(await bcrypt.compare(password, user?.password))) throw new Error("Invalid password.")
+        const user = await Users.findOne({ email }).select('+password');
+        if (!user) throw new Error("User was not found.");
+
+        const isPasswordCorrect = await bcrypt.compare(password, user.password);
+        if (!isPasswordCorrect) throw new Error("Invalid password.");
+        // // You need to provide your own logic here that takes the credentials
+        // // submitted and returns either a object representing a user or value
+        // // that is false/null if the credentials are invalid.
+        // // e.g. return { id: 1, name: 'J Smith', email: 'jsmith@example.com' }
+        // // You can also use the `req` object to obtain additional parameters
+        // // (i.e., the request IP address)
+        // if (typeof credentials?.email === "undefined" || typeof credentials?.password === "undefined") throw new Error("Please provide your credentials.")
+
+        // // get the params
+        // const { email, password } = credentials
+        // // check if user exist
+        // if (!(await Users.findOne({ email }).exec())) throw new Error("User was not found.")
+
+        // // Get the user
+        // const user = await Users.findOne({ email })
+        // console.log({ user })
+        // // check if password is correct
+        // if (!(await bcrypt.compare(password, user?.password))) throw new Error("Invalid password.")
 
         return { ...user }
       },

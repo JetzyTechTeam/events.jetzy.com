@@ -141,13 +141,24 @@ const CreateEventPage = () => {
   });
 
   const onSubmit = (values: CreateEventFormData) => {
-  const validation = createEventSchema.safeParse(values);
+    const validation = createEventSchema.safeParse(values);
 
-  if (!validation.success) {
-    const firstError = Object.values(validation.error.flatten().fieldErrors)[0]?.[0];
-    Error("Validation Error", firstError || "Please fix the form errors");
-    return;
-  }
+    if (!validation.success) {
+      const firstError = Object.values(validation.error.flatten().fieldErrors)[0]?.[0];
+      Error("Validation Error", firstError || "Please fix the form errors");
+      return;
+    }
+
+    if (values.tickets.length === 0) {
+      values.tickets = [
+        {
+          id: uniqueId(10),
+          title: "Free Ticket",
+          price: 0,
+          description: "This is a free ticket",
+        },
+      ]
+    }
 
     values.images = uploadedImages;
 
