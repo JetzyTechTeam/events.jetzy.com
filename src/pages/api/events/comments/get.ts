@@ -19,7 +19,6 @@ export default async function handler(
 
     return res.status(200).json(comments);
   } catch (error: unknown) {
-    console.log({error})
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return res.status(500).json({ message: errorMessage || "Something went wrong" });
   }

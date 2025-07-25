@@ -8,12 +8,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ message: "Missing eventId or email" });
   }
 
+  console.log({eventId, email});
+
   try {
     const guest = await EventInvitation.findOne({
       eventId, 
       email,
       status: "pending"
     })
+
+    console.log({guest});
 
     if (!guest) {
       return res.status(404).json({ message: "Guest not found" });

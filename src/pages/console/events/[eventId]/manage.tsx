@@ -259,10 +259,19 @@ function SendBlastModal({
               borderColor="#444444"
               color="white"
               _placeholder={{ color: "gray.400" }}
+              _focus={{
+                bg: "#090C10",
+                borderColor: "#888",
+                color: "white",
+              }}
+              _hover={{
+                bg: "#090C10",
+                borderColor: "#666",
+              }}
             >
-              <option value="pending">Pending</option>
-              <option value="accepted">Accepted</option>
-              <option value="rejected">Rejected</option>
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="pending">Pending</option>
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="accepted">Accepted</option>
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="rejected">Rejected</option>
             </Select>
             <h3 className="font-bold">Subject</h3>
             <Input

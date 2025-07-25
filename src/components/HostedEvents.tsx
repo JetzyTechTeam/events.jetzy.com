@@ -159,22 +159,32 @@ function GuestsList({ eventId }: { eventId: string }) {
     queryFn: () => axios.get(`/api/events/guests?eventId=${eventId}`)
   })
 
-  console.log({guests})
-
   return (
     <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
       <h3 className="text-lg font-semibold mb-4">Guests</h3>
-      <ul className="space-y-2">
-        {isLoading && <li>Loading guests...</li>}
-        {!isLoading && guests?.data?.data?.length === 0 && (
-          <li>No guests found for this event.</li>
-        )}
-        {guests?.data?.data?.map((guest: {_id: string; name: string}) => (
-          <li key={guest._id} className="flex justify-between items-center">
-            <span>{guest.name}</span>
-          </li>
-        ))}
-      </ul>
+      <ul className="space-y-3">
+  {isLoading && (
+    <li className="text-gray-400 text-sm">Loading guests...</li>
+  )}
+
+  {!isLoading && guests?.data?.data?.length === 0 && (
+    <li className="text-gray-500 italic text-sm">No guests found for this event.</li>
+  )}
+
+  {guests?.data?.data?.map((guest: { _id: string; name: string }) => (
+    <li
+      key={guest._id}
+      className="flex items-center justify-between bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition"
+    >
+      <div className="flex items-center gap-4">
+        <div className="w-9 h-9 rounded-full bg-[#444] flex items-center justify-center text-white font-semibold uppercase">
+          {guest.name.charAt(0)}
+        </div>
+        <span className="text-white font-medium">{guest.name}</span>
+      </div>
+    </li>
+  ))}
+</ul>
     </div>
   )
 }

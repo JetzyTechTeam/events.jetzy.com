@@ -13,8 +13,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { eventId, commentId, newComment } = req.body;
 
-  console.log({ eventId, commentId, newComment });
-
   if (!eventId || !commentId || !newComment) {
     return res.status(400).json({ message: "Missing EventId, CommentId or NewComment!" });
   }

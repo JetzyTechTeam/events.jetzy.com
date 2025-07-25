@@ -27,6 +27,23 @@ export default function GuestsInvited({ event }: { event: string }) {
   const handleOpenModal = () => setIsModalOpen(true);
   const handleCloseModal = () => setIsModalOpen(false);
 
+  const fetchGuestStatus = async () => {
+    if (!data?._id || !email) {
+      setIsStatusLoading(false);
+      return;
+    }
+    setIsStatusLoading(true);
+    try {
+      const response = await axios.get(`/api/guests/find-by-email?eventId=${data._id}&email=${email}`);
+      setGuestStatus(response.data?.status || null); 
+    } catch (err) {
+      console.error("Failed to fetch guest status:", err);
+      setGuestStatus(null);
+    } finally {
+      setIsStatusLoading(false);
+    }
+  };
+
   const handleRegister = async () => { 
     setIsLoading(true);
     setError(null);
@@ -40,6 +57,8 @@ export default function GuestsInvited({ event }: { event: string }) {
         duration: 3000,
         isClosable: true,
       });
+
+      await fetchGuestStatus();
       handleCloseModal();
     } catch (err: any) {
       setError(err.message || "Registration failed");
@@ -66,6 +85,8 @@ export default function GuestsInvited({ event }: { event: string }) {
         duration: 3000,
         isClosable: true,
       });
+
+      await fetchGuestStatus();
     } catch (err: any) {
       console.error("Decline failed:", err);
       setError(err.message || "Decline failed");
@@ -82,23 +103,6 @@ export default function GuestsInvited({ event }: { event: string }) {
   };
 
   React.useEffect(() => {
-    const fetchGuestStatus = async () => {
-      if (!data?._id || !email) {
-        setIsStatusLoading(false);
-        return;
-      }
-      setIsStatusLoading(true);
-      try {
-        const response = await axios.get(`/api/guests/find-by-email?eventId=${data._id}&email=${email}`);
-        setGuestStatus(response.data?.status || null); 
-      } catch (err) {
-        console.error("Failed to fetch guest status:", err);
-        setGuestStatus(null);
-      } finally {
-        setIsStatusLoading(false);
-      }
-    };
-
     fetchGuestStatus();
   }, [data?._id, email]);
 
@@ -208,7 +212,7 @@ export default function GuestsInvited({ event }: { event: string }) {
           </Flex>
 
           <Flex gap={4} mt={5}>
-            <Button colorScheme="orange" color='black' w='full' onClick={handleOpenModal}> 
+            <Button colorScheme="orange" color='black' w='full' onClick={handleOpenModal} disabled={isButtonDisabled}> 
               Accept
             </Button>
             <Button bg='#3E3E3E' color='white' w='full' _hover={{ bg: '#3E3E3E'}} _active={{bg: '#3E3E3E'}} onClick={handleDecline} isLoading={isLoading} disabled={isButtonDisabled}>

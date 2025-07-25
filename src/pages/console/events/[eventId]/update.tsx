@@ -63,10 +63,22 @@ import TimezoneSelect from "../../../../components/timezone-select"
 import { useSession } from "next-auth/react"
 import { useAppDispatch } from "@/redux/stores"
 import { UpdateEventThunk } from "@/redux/reducers/eventsSlice"
+import { z } from "zod"
 
 type Props = {
 	event: string
 }
+
+const updateEventSchema = z.object({
+	name: z.string().min(1, "Event name is required"),
+	location: z.string().min(1, "Location is required"),
+	desc: z.string().min(1, "Description is required"),
+	startDate: z.string().min(1, "Start date is required"),
+	startTime: z.string().min(1, "Start time is required"),
+	endDate: z.string().min(1, "End date is required"),
+	endTime: z.string().min(1, "End time is required"),
+});
+
 export default function UpdateEventPage({ event }: Props) {
 	const eventDetails = React.useMemo(() => JSON.parse(event) as IEvent, [event]);
 
@@ -181,18 +193,14 @@ export default function UpdateEventPage({ event }: Props) {
 	};
 
 	const onSubmit = async (values: CreateEventFormData) => {
-		if (
-			!values.name ||
-			!values.location ||
-			!values.desc ||
-			!values.startDate ||
-			!values.startTime ||
-			!values.endDate ||
-			!values.endTime
-		) {
-			Error("Error", "Please fill all required fields");
+		const validation = updateEventSchema.safeParse(values);
+
+		if (!validation.success) {
+			const firstError = Object.values(validation.error.flatten().fieldErrors)[0]?.[0];
+			Error("Validation Error", firstError || "Please fix the form errors");
 			return;
 		}
+
 		values.images = uploadedImages;
 
 		if (values.tickets.length > 0) values.isPaid = true
@@ -267,6 +275,7 @@ export default function UpdateEventPage({ event }: Props) {
 			}
 		}
 	};
+	
 	const handleEndDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
 			if (date) {

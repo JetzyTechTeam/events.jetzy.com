@@ -538,8 +538,6 @@ const CommentsSection = ({
 
   const { data: session } = useSession();
 
-  console.log({session})
-
   const {
     data: comments = [],
     isLoading,

@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return sendResponse(res, [], "No guests found for this event", true, ResCode.OK);
     }
 
-    return guests;
+    return sendResponse(res, guests, "Guests found for this event", true, ResCode.OK);
 
   } catch (error: any) {
     return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)

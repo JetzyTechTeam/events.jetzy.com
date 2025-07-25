@@ -15,18 +15,22 @@ type Data = {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<Data>) {
 	try {
-		// get the request body
 		const { firstName, lastName, email, password } = req?.body
-		// set the user role
+
 		const userType = Roles.USER
 
-		// hash user password
 		const hashPassword = await bcrypt.hash(password, 10)
+		const existingUser = await Users.findOne({ email });
 
-		// check if the user already exist
-		// if (await Users.findOne({ role: userType })) return sendResponse(res, null, "System only support one supper admin user.", false, ResCode.UNAUTHORIZED)
+		if (existingUser) {
+			if (!existingUser.password || existingUser.password === "") {
+				existingUser.password = hashPassword;
 
-		// create user account
+   		 	await existingUser.save({ validateModifiedOnly: true });
+				return sendResponse(res, existingUser, "User account created successfully.", true, ResCode.OK);
+			}
+		}
+
 		const user = await Users.create({ firstName, lastName, email, password: hashPassword, role: userType })
 		if (!user) return sendResponse(res, null, "Failed to create user account.", false, ResCode.INTERNAL_SERVER_ERROR)
 
