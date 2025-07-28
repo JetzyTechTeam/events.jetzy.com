@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel";
 import { useWebShare } from "@Jetzy/hooks/useShare";
 import Slider from "react-slick";
@@ -50,6 +50,18 @@ export default function HostedEvents({ event }: Props) {
     url: shareUrl,
   });
 
+  const { formattedDate, formattedTime } = useMemo(() => {
+    const date = new Date(event.startsOn);
+    return {
+      formattedDate: date.toDateString(),
+      formattedTime: date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }),
+    };
+  }, [event.startsOn]);
+
   return (
     <>
       <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
@@ -92,8 +104,8 @@ export default function HostedEvents({ event }: Props) {
                 </h2>
                 <p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb]">
                   <DateTimeSVG />
-                  {new Date(event.startsOn.toString()).toDateString()}{" "}
-                  {new Date(event.startsOn.toString()).toLocaleTimeString()} {event?.timezone || ""}
+                  {formattedDate},{" "}
+                  {formattedTime} {event?.timezone || ""}
                 </p>
                 <p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb]">
                   <LocationSVG />

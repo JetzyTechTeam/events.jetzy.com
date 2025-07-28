@@ -56,7 +56,11 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
     const date = new Date(event.startsOn);
     return {
       formattedDate: date.toDateString(),
-      formattedTime: date.toLocaleTimeString(),
+      formattedTime: date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      }),
     };
   }, [event.startsOn]);
 
