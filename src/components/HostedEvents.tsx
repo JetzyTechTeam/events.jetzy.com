@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel";
 import { useWebShare } from "@Jetzy/hooks/useShare";
 import Slider from "react-slick";
@@ -40,9 +40,16 @@ type Props = {
 };
 
 export default function HostedEvents({ event }: Props) {
-  const shareUrl = window.location.href;
+  const [shareUrl, setShareUrl] = useState("");
+
   const shareTitle = event.name;
   const shareDesc = event.desc;
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setShareUrl(window.location.href);
+    }
+  }, []);
 
   const sharer = useWebShare({
     title: shareTitle,
