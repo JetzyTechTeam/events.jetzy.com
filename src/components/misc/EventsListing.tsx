@@ -222,7 +222,7 @@ const Navbar = () => {
                   size="sm"
                 />
                 {/* @ts-ignore */}
-                <Text>{user?.fullName || user?.email}</Text>
+                <Text>{user?.email}</Text>
               </Flex>
             </MenuButton>
             <MenuList bg="black" color="white">
