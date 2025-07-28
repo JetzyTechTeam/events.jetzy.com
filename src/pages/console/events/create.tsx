@@ -209,7 +209,6 @@ const CreateEventPage = () => {
       // Process each file selected
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        console.log(`Uploading file ${i + 1} of ${files.length}: ${file.name}`);
 
         // Upload the current file
         const res = await edgestore.publicFiles.upload({
