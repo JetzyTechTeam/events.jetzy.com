@@ -42,8 +42,12 @@ type Props = {
 export default function HostedEvents({ event }: Props) {
   const [shareUrl, setShareUrl] = useState("");
 
-  const shareTitle = event.name;
-  const shareDesc = event.desc;
+  const clonedEvent = useMemo(() => structuredClone(event), [event]);
+
+  const shareTitle = clonedEvent.name;
+  const shareDesc = clonedEvent.desc;
+
+
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -58,7 +62,7 @@ export default function HostedEvents({ event }: Props) {
   });
 
   const { formattedDate, formattedTime } = useMemo(() => {
-    const date = new Date(event.startsOn);
+    const date = new Date(clonedEvent.startsOn);
     return {
       formattedDate: date.toDateString(),
       formattedTime: date.toLocaleTimeString([], {
@@ -67,7 +71,7 @@ export default function HostedEvents({ event }: Props) {
         hour12: true,
       }),
     };
-  }, [event.startsOn]);
+  }, [clonedEvent.startsOn]);
 
   return (
     <>
@@ -78,9 +82,9 @@ export default function HostedEvents({ event }: Props) {
         <div className="max-w-4xl mx-auto bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
           {/* Banner Image */}
           <div className="relative p-3">
-            {event.images.length > 1 ? (
+            {clonedEvent.images.length > 1 ? (
               <Slider {...settings}>
-                {event.images.map((image, idx) => (
+                {clonedEvent.images.map((image, idx) => (
                   <div key={idx}>
                     <Image
                       src={image}
@@ -93,7 +97,7 @@ export default function HostedEvents({ event }: Props) {
             ) : (
               <div>
                 <Image
-                  src={event.images[0]}
+                  src={clonedEvent.images[0]}
                   alt="Event Banner"
                   className="w-full md:h-[335px] sm:h-52 object-cover object-top rounded-xl"
                 />
@@ -107,22 +111,22 @@ export default function HostedEvents({ event }: Props) {
             <div className="flex flex-col sm:flex-row justify-between items-start mb-6 space-y-4 sm:space-y-0">
               <div className="text-center sm:text-left">
                 <h2 className="text-3xl font-bold">
-                  {event.name}
+                  {clonedEvent.name}
                 </h2>
                 <p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb]">
                   <DateTimeSVG />
                   {formattedDate},{" "}
-                  {formattedTime} {event?.timezone || ""}
+                  {formattedTime} {clonedEvent?.timezone || ""}
                 </p>
                 <p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb]">
                   <LocationSVG />
-                  {event.location}
+                  {clonedEvent.location}
                 </p>
 
                 <h3 className="text-sm sm:text-base font-semibold ">
                   Description</h3>
                 <p className="text-sm sm:text-base text-[#bbbbbb]">
-                  {event.desc}
+                  {clonedEvent.desc}
                 </p>
               </div>
 
@@ -146,9 +150,9 @@ export default function HostedEvents({ event }: Props) {
           </div>
         </div>
 
-        <GuestsList eventId={event._id.toString()} />
+        <GuestsList eventId={clonedEvent._id.toString()} />
 
-        <EventTicketsComponent event={event} />
+        <EventTicketsComponent event={clonedEvent} />
       </div>
       <EventCheckoutModel />
     </>
