@@ -11,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { eventId, comment } = req.body;
-  
+
   if (!eventId || !comment) {
     return res.status(400).json({ message: "Missing EventId or Comment!" });
   }

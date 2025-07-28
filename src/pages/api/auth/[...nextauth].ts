@@ -16,6 +16,7 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
 
+      // @ts-ignore
       async authorize(credentials, req) {
         const { email, password } = credentials ?? {};
 
@@ -28,7 +29,7 @@ export const authOptions: NextAuthOptions = {
         if (!isPasswordCorrect) throw new Error("Invalid password.");
         
         const userData = {
-          id: user._id.toString(),
+          _id: user._id.toString(),
           fullName: `${user.firstName} ${user.lastName}`,
           email: user.email,
           image: user.image,
@@ -56,18 +57,7 @@ export const authOptions: NextAuthOptions = {
       //   @ts-ignore
       if (token?.profile) {
         // @ts-ignore
-        session.user = {
-           // @ts-ignore
-           _id: token?.profile?._id,
-           // @ts-ignore
-           fullName: `${token?.profile?.firstName} ${token?.profile?.lastName}`,
-           // @ts-ignore
-           email: token?.profile?.email,
-           // @ts-ignore
-           image: token?.profile?.image,
-           // @ts-ignore
-          role: token?.profile?.role,
-        }
+        session.user = token.profile
       }
 
       return session
