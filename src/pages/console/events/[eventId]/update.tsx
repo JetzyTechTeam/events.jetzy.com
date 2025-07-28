@@ -227,8 +227,7 @@ export default function UpdateEventPage({ event }: Props) {
 				return [];
 			});
 
-
-		if (nameChanged || locationChanged || dateTimeChanged) {
+		if (events.length > 0 && (nameChanged || locationChanged || dateTimeChanged)) {
 			const updatePromises = events.map((event: any) =>
 				sendEventUpdate({
 					eventName: values.name,
@@ -740,7 +739,7 @@ export default function UpdateEventPage({ event }: Props) {
 													>
 														{editIndex !== null ? "Save Changes" : "Add Ticket"}
 													</Button>
-													<Button variant="ghost" onClick={onClose}>
+													<Button variant="ghost" color='white' _hover={{ color: 'black', bg: 'orange'}} onClick={onClose}>
 														Cancel
 													</Button>
 												</ModalFooter>
