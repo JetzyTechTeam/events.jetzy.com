@@ -27,7 +27,13 @@ export const authOptions: NextAuthOptions = {
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
         if (!isPasswordCorrect) throw new Error("Invalid password.");
 
-        return { ...user }
+          return {
+            id: user._id.toString(),
+            fullName: `${user.firstName} ${user.lastName}`,
+            email: user.email,
+            image: user.image,
+            role: user.role,
+          };
       },
     }),
   ],
@@ -48,7 +54,18 @@ export const authOptions: NextAuthOptions = {
       //   @ts-ignore
       if (token?.profile) {
         // @ts-ignore
-        session.user = token?.profile._doc
+        session.user = {
+           // @ts-ignore
+           _id: token?.profile?._doc?._id,
+           // @ts-ignore
+           fullName: `${token?.profile?._doc?.firstName} ${token?.profile?._doc?.lastName}`,
+           // @ts-ignore
+           email: token?.profile?._doc?.email,
+           // @ts-ignore
+           image: token?.profile?._doc?.image,
+           // @ts-ignore
+          role: token?.profile?._doc?.role,
+        }
       }
 
       return session

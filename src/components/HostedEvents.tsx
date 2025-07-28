@@ -9,10 +9,11 @@ import "slick-carousel/slick/slick-theme.css";
 
 import EventTicketsComponent from "@/components/EventTicketsComponent";
 import { IEvent } from "@/models/events/types";
-import { Image } from "@chakra-ui/react";
+import { Button, Image } from "@chakra-ui/react";
 import { ShareIcon } from "@heroicons/react/24/outline";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
+import Link from "next/link";
 
 const settings = {
   infinite: true,
@@ -52,6 +53,9 @@ export default function HostedEvents({ event }: Props) {
   return (
     <>
       <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
+        <div className="max-w-4xl mx-auto mb-6">
+          <Link href='/' className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Back</Link>
+        </div>
         <div className="max-w-4xl mx-auto bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
           {/* Banner Image */}
           <div className="relative p-3">
