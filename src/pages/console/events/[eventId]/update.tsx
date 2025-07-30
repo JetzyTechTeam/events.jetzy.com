@@ -43,7 +43,8 @@ import {
   Menu,
   MenuButton,
   IconButton,
-  Switch
+  Switch,
+	useToast
 } from "@chakra-ui/react";
 import {
   DescriptionSVG,
@@ -88,6 +89,7 @@ export default function UpdateEventPage({ event }: Props) {
 	const { edgestore } = useEdgeStore();
 	const { data: session } = useSession()
 	const router = useRouter();
+	const toast = useToast();
 
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
 
@@ -677,6 +679,7 @@ export default function UpdateEventPage({ event }: Props) {
 															bg="#090C10"
 															border="1px solid #444"
 															value={tempTicket.title}
+															required
 															onChange={(e) =>
 																setTempTicket({
 																	...tempTicket,
@@ -694,6 +697,7 @@ export default function UpdateEventPage({ event }: Props) {
 															bg="#090C10"
 															border="1px solid #444"
 															value={tempTicket.description}
+															required
 															onChange={(e) =>
 																setTempTicket({
 																	...tempTicket,
@@ -727,6 +731,17 @@ export default function UpdateEventPage({ event }: Props) {
 														color="black"
 														mr={3}
 														onClick={() => {
+															if (!tempTicket.title.trim() || !tempTicket.description.trim()) {
+																toast({
+																	title: "Missing required fields",
+																	description: "You need to provide a ticket title and description.",
+																	status: "error",
+																	duration: 4000,
+																	isClosable: true,
+																});
+																return;
+															}
+
 															if (editIndex !== null) {
 																// Edit existing ticket
 																replace(editIndex, tempTicket);

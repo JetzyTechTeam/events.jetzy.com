@@ -47,8 +47,6 @@ export default function HostedEvents({ event }: Props) {
   const shareTitle = clonedEvent.name;
   const shareDesc = clonedEvent.desc;
 
-
-
   useEffect(() => {
     if (typeof window !== "undefined") {
       setShareUrl(window.location.href);
@@ -61,17 +59,25 @@ export default function HostedEvents({ event }: Props) {
     url: shareUrl,
   });
 
-  const { formattedDate, formattedTime } = useMemo(() => {
-    const date = new Date(clonedEvent.startsOn);
-    return {
-      formattedDate: date.toDateString(),
-      formattedTime: date.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      }),
-    };
-  }, [clonedEvent.startsOn]);
+const { formattedDate, formattedTime } = useMemo(() => {
+  const date = new Date(clonedEvent.startsOn);
+
+  const formattedDate = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: '2-digit',
+    timeZone: 'UTC',
+  }).format(date);
+
+  const formattedTime = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  }).format(date);
+
+  return { formattedDate, formattedTime };
+}, [clonedEvent.startsOn]);
 
   return (
     <>

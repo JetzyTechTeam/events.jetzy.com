@@ -52,17 +52,25 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 
   const isNew = diffDays < 2;
 
-  const { formattedDate, formattedTime } = useMemo(() => {
-    const date = new Date(event.startsOn);
-    return {
-      formattedDate: date.toDateString(),
-      formattedTime: date.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      }),
-    };
-  }, [event.startsOn]);
+const { formattedDate, formattedTime } = useMemo(() => {
+  const date = new Date(event.startsOn);
+
+  const formattedDate = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: '2-digit',
+    timeZone: 'UTC',
+  }).format(date);
+
+  const formattedTime = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  }).format(date);
+
+  return { formattedDate, formattedTime };
+}, [event.startsOn]);
 
   return (
     <Box
