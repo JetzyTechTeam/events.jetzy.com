@@ -23,6 +23,7 @@ export default function LoginPage() {
 		confirmPassword: "",
 		firstName: "",
 		lastName: "",
+		shouldBeAJetzyMember: false,
 	}
 
 	const handleSubmit = (values: SignUpFormData) => {
@@ -140,6 +141,20 @@ export default function LoginPage() {
 										/>
 										<ErrorMessage name="confirmPassword" component="span" className="text-red-500 block mt-1" />
 									</div>
+								</div>
+
+								{/* Jetzy Member Checkbox */}
+								<div className="flex items-center gap-2 mt-4">
+									<Field
+										type="checkbox"
+										id="shouldBeAJetzyMember"
+										name="shouldBeAJetzyMember"
+										className="h-4 w-4 text-app focus:ring-app border-gray-300 rounded"
+										checked={values?.shouldBeAJetzyMember}
+									/>
+									<label htmlFor="shouldBeAJetzyMember" className="block text-sm text-white">
+										Sign me up as a Jetzy Member
+									</label>
 								</div>
 
 								<div>

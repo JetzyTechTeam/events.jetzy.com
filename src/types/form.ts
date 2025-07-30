@@ -8,6 +8,7 @@ export type SignUpFormData = {
 	email: string
 	password: string
 	confirmPassword?: string
+	shouldBeAJetzyMember: boolean
 }
 
 export type SignInFormData = {
