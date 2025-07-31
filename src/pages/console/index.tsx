@@ -32,8 +32,10 @@ export default function ConsoleDashboard() {
  
 	React.useEffect(() => {
 		// Dispatcher the event to fetch events list from the server
-		dispatcher(ListEventsThunk())
-	}, [])
+		if (admin) {
+			dispatcher(ListEventsThunk())
+		}
+	}, [admin])
 
 	return (
 		<ConsoleLayout page={Pages.Dasshboard} component={

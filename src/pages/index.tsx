@@ -2,8 +2,10 @@ import EventListing from "@/components/misc/EventsListing"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { GetServerSideProps } from "next"
+import { getServerSession } from "next-auth"
 import dynamic from "next/dynamic"
 import React from "react"
+import { authOptions } from "./api/auth/[...nextauth]"
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { ssr: false })
 
@@ -29,6 +31,24 @@ export default function Home({ events, pagination }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
+	const session = await getServerSession(context.req, context.res, authOptions)
+
+	// @ts-ignore
+	 if (!session || session.user?.role !== "admin") {
+    return {
+      props: {
+        events: JSON.stringify([]),
+        pagination: {
+          total: 0,
+          page: 1,
+          showing: 0,
+          limit: 20,
+          totalPages: 0,
+        },
+      },
+    };
+  }
+
 	// lets paginate the events
 	const limit = 20
 	const page = context.query.page ? parseInt(context.query.page as string) : 1

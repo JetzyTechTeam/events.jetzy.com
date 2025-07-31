@@ -169,7 +169,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
       display={"flex"}
       flexDir={"column"}
       gap={2}
-      justifyContent={"space-between"}
+      justifyContent={"flex-start"}
       py={10}
       className="min-h-screen w-full"
     >
@@ -181,7 +181,14 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
           your interests and passions!
         </Text>
       </Box>
-      <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8">
+      <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>
+        {items.length === 0 && (
+          <Box>
+            <Text fontSize="xl" color="gray.500">
+              No events found
+            </Text>
+          </Box>
+        )}
         {items.map((event) => (
           <EventCard
             key={event._id.toString()}
