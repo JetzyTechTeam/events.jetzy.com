@@ -362,7 +362,7 @@ const CreateEventPage = () => {
                       <LocationSVG />
                     </InputLeftElement>
                     <Field
-                      ref={ref}
+                      // ref={ref}
                       as={Input}
                       id="location"
                       name="location"

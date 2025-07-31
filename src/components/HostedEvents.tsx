@@ -88,8 +88,8 @@ const { formattedDate, formattedTime } = useMemo(() => {
     <>
       <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
         <div className="max-w-4xl mx-auto mb-6 flex items-center justify-between">
-          <Link href='/' className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Back</Link>
-        {isAdmin && <Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Edit Event</Link>}
+         {isAdmin && <Link href='/' className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Back</Link>}
+         {isAdmin && <Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Edit Event</Link>}
         </div>
         <div className="max-w-4xl mx-auto bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
           {/* Banner Image */}
@@ -164,6 +164,8 @@ const { formattedDate, formattedTime } = useMemo(() => {
 
         {/* <GuestsList eventId={clonedEvent._id.toString()} /> */}
 
+      {isAdmin && <EventBookings eventId={clonedEvent._id.toString()} /> }
+
         <EventTicketsComponent event={clonedEvent} />
       </div>
       <EventCheckoutModel />
@@ -226,4 +228,96 @@ function GuestsList({ eventId }: { eventId: string }) {
 </ul>
     </div>
   )
+}
+interface TicketInfo {
+  ticketId: string;
+  quantity: number;
+  _id: string;
+}
+
+interface Booking {
+  _id: string;
+  bookingRef: string;
+  tickets: TicketInfo[];
+  status: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  subTotal: number;
+  tax: number;
+  total: number;
+}
+
+function EventBookings({ eventId }: { eventId: string }) {
+  const { data: bookings, isLoading } = useQuery({
+    queryKey: ["eventBookings", eventId],
+    queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
+  });
+
+  return (
+    <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
+      <h3 className="text-lg font-semibold mb-4 text-white">Bookings</h3>
+
+      {isLoading && <p className="text-gray-300">Loading bookings...</p>}
+
+      {!isLoading && bookings?.data?.length === 0 && (
+        <p className="text-gray-300">No bookings found for this event.</p>
+      )}
+
+      {!isLoading &&
+        bookings?.data?.map((booking: Booking) => (
+          <div
+            key={booking._id}
+            className="border-b border-[#434343] py-4 last:border-b-0"
+          >
+            <p className="text-sm text-[#bbbbbb]">
+              <span className="font-semibold text-white">Booking Ref:</span>{" "}
+              {booking.bookingRef}
+            </p>
+
+            <p className="text-sm text-[#bbbbbb] mt-1">
+              <span className="font-semibold text-white">Customer:</span>{" "}
+              {booking.customerName}
+            </p>
+            <p className="text-sm text-[#bbbbbb] mt-1">
+              <span className="font-semibold text-white">Email:</span>{" "}
+              {booking.customerEmail}
+            </p>
+            <p className="text-sm text-[#bbbbbb] mt-1">
+              <span className="font-semibold text-white">Phone:</span>{" "}
+              {booking.customerPhone}
+            </p>
+
+            <p className="text-sm text-[#bbbbbb] mt-1">
+              <span className="font-semibold text-white">Status:</span>{" "}
+              {booking.status}
+            </p>
+
+            <div className="mt-3">
+              <p className="font-semibold text-white text-sm">Tickets:</p>
+              <ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
+                {booking.tickets.map((ticket) => (
+                  <li key={ticket._id}>
+                     Quantity:{" "}
+                    <span className="text-white">{ticket.quantity}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex items-center gap-6 text-sm mt-3 text-[#bbbbbb]">
+              <p>
+                <span className="font-semibold text-white">Subtotal:</span> ${booking.subTotal}
+              </p>
+              <p>
+                <span className="font-semibold text-white">Tax:</span> ${booking.tax}
+              </p>
+              <p>
+                <span className="font-semibold text-white">Total:</span> ${booking.total}
+              </p>
+            </div>
+          </div>
+        ))}
+    </div>
+  );
 }

@@ -62,7 +62,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <h3 style="color: #333; margin: 0 0 10px 0;">${ticket.name}</h3>
                 <p><strong>Quantity: </strong> ${ticket.quantity}</p>
                 <p><strong>Price per ticket: </strong> $${ticket.price}</p>
-                <p><strong>Description: </strong> ${ticket.desc}</p>
+                <p><strong>Description: </strong> ${ticket.desc || ''}</p>
               </div>
             `,
 							)
