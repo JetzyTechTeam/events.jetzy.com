@@ -225,7 +225,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
       </div>
 
       {/* map section  */}
-      <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">
+      {/* <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">
         <div className="flex items-center justify-between">
           <h1 className="font-bold text-xl">Event Location</h1>
           <a
@@ -253,7 +253,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             )}&output=embed`}
           ></iframe>
         </div>
-      </div>
+      </div> */}
 
       {/* comments section  */}
       <CommentsSection eventId={eventId} currentUser={session?.data?.user as UserType} />
