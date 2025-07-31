@@ -14,6 +14,7 @@ import { ShareIcon } from "@heroicons/react/24/outline";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 const settings = {
   infinite: true,
@@ -41,11 +42,15 @@ type Props = {
 
 export default function HostedEvents({ event }: Props) {
   const [shareUrl, setShareUrl] = useState("");
+  const { data: session } = useSession();
 
   const clonedEvent = useMemo(() => structuredClone(event), [event]);
 
   const shareTitle = clonedEvent.name;
   const shareDesc = clonedEvent.desc;
+
+  // @ts-ignore
+  const isAdmin = session?.user?.role === "admin";
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -82,8 +87,9 @@ const { formattedDate, formattedTime } = useMemo(() => {
   return (
     <>
       <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
-        <div className="max-w-4xl mx-auto mb-6">
+        <div className="max-w-4xl mx-auto mb-6 flex items-center justify-between">
           <Link href='/' className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Back</Link>
+        {isAdmin && <Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Edit Event</Link>}
         </div>
         <div className="max-w-4xl mx-auto bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
           {/* Banner Image */}
@@ -156,7 +162,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
           </div>
         </div>
 
-        <GuestsList eventId={clonedEvent._id.toString()} />
+        {/* <GuestsList eventId={clonedEvent._id.toString()} /> */}
 
         <EventTicketsComponent event={clonedEvent} />
       </div>
