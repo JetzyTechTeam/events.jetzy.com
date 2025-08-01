@@ -94,6 +94,12 @@ const CheckoutSuccessPage: React.FC = () => {
 								month: 'long',
 								day: '2-digit',
 								timeZone: 'UTC',
+							}).format(new Date(parsedEvent!.startsOn))}&nbsp;
+							{new Intl.DateTimeFormat('en-US', {
+								hour: '2-digit',
+								minute: '2-digit',
+								hour12: true,
+								timeZone: 'UTC',
 							}).format(new Date(parsedEvent!.startsOn))}
               {parsedEvent?.timezone ? ` (${parsedEvent?.timezone})` : ""}
             </p>
