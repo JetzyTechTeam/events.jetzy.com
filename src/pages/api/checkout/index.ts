@@ -1,7 +1,9 @@
+import { Events } from "@/models/events"
 import { createUserAction } from "@Jetzy/actions/create-user-action"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
+import { useQuery } from "@tanstack/react-query"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
 
@@ -25,6 +27,7 @@ type BodyParams = {
 }
 // initialize stripe
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
 		// Get request params
@@ -56,13 +59,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// generate a reference id
 		const reference = uniqueId(20)
 
+		const event = await Events.findOne({
+			_id: tickets[0]?.eventId,
+			isDeleted: false,
+		})
+
+		const eventDetails = { 
+			name: event?.name,
+			location: event?.location,
+			startsOn: event?.startsOn,
+			timezone: event?.timezone,
+			slug: event?.slug,
+		}
+
 		// create a checkout session
 		const session = await stripe.checkout.sessions.create({
 			client_reference_id: reference,
 			payment_method_types: ["card"],
 			line_items: prices,
 			mode: "payment",
-			success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}&payload=${req?.body?.tickets}`,
+			success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}&payload=${req?.body?.tickets}&event=${encodeURIComponent(JSON.stringify(eventDetails))}`,
 			cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
 			metadata: {
 				firstName: user.firstName,
