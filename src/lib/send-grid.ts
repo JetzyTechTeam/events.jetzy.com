@@ -32,7 +32,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 	const location = event.location
 	try {
 		await sgMail.send({
-			to: email,
+		  to: [email, "tech@jetzyapp.com"],
 			from: process.env.SENDGRID_EMAIL_SENDER as string,
 			subject: `Jetzy [Booking Confirmation] ${event.name}`,
 			html: `

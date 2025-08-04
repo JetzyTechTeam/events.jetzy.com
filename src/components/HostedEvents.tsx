@@ -162,9 +162,9 @@ const { formattedDate, formattedTime } = useMemo(() => {
           </div>
         </div>
 
-        {/* <GuestsList eventId={clonedEvent._id.toString()} /> */}
 
-      {isAdmin && <EventBookings eventId={clonedEvent._id.toString()} /> }
+        {isAdmin && <EventBookings eventId={clonedEvent._id.toString()} /> }
+        {isAdmin && <GuestsList eventId={clonedEvent._id.toString()} />}
 
         <EventTicketsComponent event={clonedEvent} />
       </div>
