@@ -229,31 +229,31 @@ export default function UpdateEventPage({ event }: Props) {
 				return [];
 			});
 
-		if (events.length > 0 && (nameChanged || locationChanged || dateTimeChanged)) {
-			const updatePromises = events.map((event: any) =>
-				sendEventUpdate({
-					eventName: values.name,
-					oldEventName: eventDetails.name,
-					location: values.location,
-					oldLocation: eventDetails.location,
-					startDate: values.startDate,
-					oldStartDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10),
-					endDate: values.endDate,
-					oldEndDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
-					endTime: values.endTime,
-					oldEndTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
-					startTime: values.startTime,
-					oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
-					userEmail: event.customerEmail,
-				}))
-			Promise.all(updatePromises)
-				.then((results) => {
-					console.log('All event updates sent successfully:', results);
-				})
-				.catch((error) => {
-					console.error('One or more event updates failed:', error);
-				});
-		}
+		// if (events.length > 0 && (nameChanged || locationChanged || dateTimeChanged)) {
+		// 	const updatePromises = events.map((event: any) =>
+		// 		sendEventUpdate({
+		// 			eventName: values.name,
+		// 			oldEventName: eventDetails.name,
+		// 			location: values.location,
+		// 			oldLocation: eventDetails.location,
+		// 			startDate: values.startDate,
+		// 			oldStartDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10),
+		// 			endDate: values.endDate,
+		// 			oldEndDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
+		// 			endTime: values.endTime,
+		// 			oldEndTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
+		// 			startTime: values.startTime,
+		// 			oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
+		// 			userEmail: event.customerEmail,
+		// 		}))
+		// 	Promise.all(updatePromises)
+		// 		.then((results) => {
+		// 			console.log('All event updates sent successfully:', results);
+		// 		})
+		// 		.catch((error) => {
+		// 			console.error('One or more event updates failed:', error);
+		// 		});
+		// }
 
 
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: eventDetails._id.toString() })).then((res: any) => {

@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import Linkify from "linkify-react";
 
 const settings = {
   infinite: true,
@@ -137,9 +138,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
 
                 <h3 className="text-sm sm:text-base font-semibold ">
                   Description</h3>
-                <p className="text-sm sm:text-base text-[#bbbbbb]">
-                  {clonedEvent.desc}
-                </p>
+                  <EventDescription description={clonedEvent.desc} />
               </div>
 
               <div className="flex gap-x-3 sm:items-end">
@@ -318,6 +317,22 @@ function EventBookings({ eventId }: { eventId: string }) {
             </div>
           </div>
         ))}
+    </div>
+  );
+}
+
+
+const linkifyOptions = {
+  target: '_blank',
+  className: 'text-orange-600 underline hover:text-orange-800',
+};
+
+function EventDescription({ description }: { description: string }) {
+  return (
+    <div className="leading-relaxed text-sm sm:text-base text-[#bbbbbb] whitespace-pre-wrap">
+      <Linkify options={linkifyOptions}>
+        {description}
+      </Linkify>
     </div>
   );
 }
