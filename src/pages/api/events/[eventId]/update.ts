@@ -10,9 +10,14 @@ import Stripe from "stripe"
 import { formatTextWithLineBreaks } from "@/lib/utils"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 // create validation schema
-
 const schema = zod.object({
 	eventId: zod.string().nonempty(),
 	startDate: zod.string().nonempty(),
@@ -66,8 +71,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy } = params
 
 		// construct datetime for start and end dates
-		const start = new Date(`${startDate} ${startTime}`)
-		const end = new Date(`${endDate} ${endTime}`)
+		const extractedTimeZone = timezone?.split(') ')[1]
+		const start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		const end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
 
 		// check if start date is greater than end date
 		if (start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)

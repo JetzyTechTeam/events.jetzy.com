@@ -67,6 +67,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
       overflow="hidden"
       bg={cardBg}
       boxShadow="lg"
+      height='470'
       cursor="pointer"
       _hover={{
         transform: "scale(1.03)",
