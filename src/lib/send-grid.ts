@@ -1,6 +1,11 @@
 import { IEvent } from "@/models/events/types"
 import sgMail from "@sendgrid/mail"
-import { DateTime } from "luxon"
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY as string)
 
@@ -21,11 +26,13 @@ type TicketEmailData = {
 
 export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber }: TicketEmailData) => {
 	// format event start and end time
-	const start = DateTime.fromISO(event.startsOn.toISOString()).setZone("America/New_York")
-	const end = DateTime.fromISO(event.endsOn.toISOString()).setZone("America/New_York")
-	
-	const startTimestamp = `${start.toFormat("EEE MMM dd yyyy")} ${start.toFormat("hh:mm a")}`
-	const endTimestamp = `${end.toFormat("EEE MMM dd yyyy")} ${end.toFormat("hh:mm a")}`
+	const eventTimezone = event.timezone
+
+	const start = dayjs.utc(event.startsOn).tz(eventTimezone)
+	const end = dayjs.utc(event.endsOn).tz(eventTimezone)
+
+	const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
+	const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
 
 	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
 	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
