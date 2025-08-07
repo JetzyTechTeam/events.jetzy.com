@@ -16,6 +16,12 @@ import axios from "axios";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import Linkify from "linkify-react";
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 const settings = {
   infinite: true,
@@ -65,25 +71,18 @@ export default function HostedEvents({ event }: Props) {
     url: shareUrl,
   });
 
+
 const { formattedDate, formattedTime } = useMemo(() => {
-  const date = new Date(clonedEvent.startsOn);
+  if (!clonedEvent?.startsOn) return { formattedDate: '', formattedTime: '' }
 
-  const formattedDate = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: '2-digit',
-    timeZone: 'UTC',
-  }).format(date);
+  const userTimeZone = clonedEvent.timezone?.split(') ')[1]
+  const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
 
-  const formattedTime = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'UTC',
-  }).format(date);
+  const formattedDate = date.format('MMMM DD, YYYY') 
+  const formattedTime = date.format('hh:mm A') 
 
-  return { formattedDate, formattedTime };
-}, [clonedEvent.startsOn]);
+  return { formattedDate, formattedTime }
+}, [clonedEvent.startsOn])
 
   return (
     <>

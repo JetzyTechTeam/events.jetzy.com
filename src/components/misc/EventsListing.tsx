@@ -7,7 +7,6 @@ import {
   SimpleGrid,
   Container,
   useColorModeValue,
-  Badge,
   Heading,
   Button,
   Flex,
@@ -24,16 +23,12 @@ import { useRouter } from "next/router";
 import { ROUTES } from "@/configs/routes";
 import { DateTimeSVG, LocationSVG } from "@/assets/icons";
 import { signOut, useSession } from "next-auth/react";
-import { ChevronDownIcon } from "@heroicons/react/24/outline";
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
 
-type EventType = {
-  id: number;
-  name: string;
-  date: string;
-  image: string;
-  details: string;
-};
-
+dayjs.extend(utc)
+dayjs.extend(timezone)
 interface EventCardProps {
   event: IEvent;
   onClick: (event: IEvent) => void;
@@ -53,24 +48,16 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
   const isNew = diffDays < 2;
 
 const { formattedDate, formattedTime } = useMemo(() => {
-  const date = new Date(event.startsOn);
+  if (!event?.startsOn) return { formattedDate: '', formattedTime: '' }
 
-  const formattedDate = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: '2-digit',
-    timeZone: 'UTC',
-  }).format(date);
+  const userTimeZone = event.timezone?.split(') ')[1]
+  const date = dayjs.utc(event.startsOn).tz(userTimeZone)
 
-  const formattedTime = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'UTC',
-  }).format(date);
+  const formattedDate = date.format('MMMM DD, YYYY') 
+  const formattedTime = date.format('hh:mm A') 
 
-  return { formattedDate, formattedTime };
-}, [event.startsOn]);
+  return { formattedDate, formattedTime }
+}, [event.startsOn])
 
   return (
     <Box
