@@ -1,9 +1,14 @@
 'use client'
 import { Error } from "@/lib/_toaster"
-import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import { useRouter } from "next/router"
-import React from "react"
+import React, { useMemo } from "react"
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 type OrderItem = {
 	id: number
@@ -32,8 +37,21 @@ const CheckoutSuccessPage: React.FC = () => {
 	const parsedEvent: IEvent | null = event
 		? JSON.parse(event as string)
 		: null
+		
 
-	React.useEffect(() => {
+		const { formattedDate, formattedTime } = useMemo(() => {
+			if (!parsedEvent?.startsOn) return { formattedDate: '', formattedTime: '' }
+		
+			const userTimeZone = parsedEvent.timezone?.split(') ')[1]
+			const date = dayjs.utc(parsedEvent.startsOn).tz(userTimeZone)
+		
+			const formattedDate = date.format('MMMM DD, YYYY') 
+			const formattedTime = date.format('hh:mm A') 
+		
+			return { formattedDate, formattedTime }
+		}, [parsedEvent])
+
+		React.useEffect(() => {
 		if (payload) {
 			const items = JSON.parse(payload as string) as OrderItem[]
 			setOrderItems(items)
@@ -89,19 +107,8 @@ const CheckoutSuccessPage: React.FC = () => {
             <p className="text-gray-700"><strong>Venue:</strong> {parsedEvent?.location}</p>
             <p className="text-gray-700">
               <strong>Date & Time:</strong>{" "}
-              {new Intl.DateTimeFormat('en-US', {
-								year: 'numeric',
-								month: 'long',
-								day: '2-digit',
-								timeZone: 'UTC',
-							}).format(new Date(parsedEvent!.startsOn))}&nbsp;
-							{new Intl.DateTimeFormat('en-US', {
-								hour: '2-digit',
-								minute: '2-digit',
-								hour12: true,
-								timeZone: 'UTC',
-							}).format(new Date(parsedEvent!.startsOn))}
-              {parsedEvent?.timezone ? ` (${parsedEvent?.timezone})` : ""}
+              {formattedDate}&nbsp;{formattedTime}
+								{parsedEvent?.timezone ? ` (${parsedEvent?.timezone})` : ""}
             </p>
           </div>
         )}
