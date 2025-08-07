@@ -26,7 +26,7 @@ type TicketEmailData = {
 
 export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber }: TicketEmailData) => {
 	// format event start and end time
-	const eventTimezone = event.timezone
+	const eventTimezone = event.timezone.split(') ')[1]
 
 	const start = dayjs.utc(event.startsOn).tz(eventTimezone)
 	const end = dayjs.utc(event.endsOn).tz(eventTimezone)
