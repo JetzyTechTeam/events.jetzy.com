@@ -97,21 +97,21 @@ const { formattedDate, formattedTime } = useMemo(() => {
             {clonedEvent.images.length > 1 ? (
               <Slider {...settings}>
                 {clonedEvent.images.map((image, idx) => (
-                  <div key={idx}>
+                  <div key={idx} className="!flex !items-center !justify-center w-full md:h-[335px] sm:h-52 bg-black rounded-xl">
                     <Image
                       src={image}
                       alt="Event Banner"
-                      className="w-full md:h-[335px] sm:h-52 object-cover object-top rounded-xl"
+                      className="max-h-full max-w-full object-contain rounded-xl"
                     />
                   </div>
                 ))}
               </Slider>
             ) : (
-              <div>
+              <div className="w-full md:h-[335px] sm:h-52 bg-black flex items-center justify-center rounded-xl">
                 <Image
                   src={clonedEvent.images[0]}
                   alt="Event Banner"
-                  className="w-full md:h-[335px] sm:h-52 object-cover object-top rounded-xl"
+                  className="max-h-full max-w-full object-contain rounded-xl"
                 />
               </div>
             )}
@@ -327,11 +327,18 @@ const linkifyOptions = {
 };
 
 function EventDescription({ description }: { description: string }) {
+  if (!description) return '';
+  const lines = description.split('\n')
+
   return (
-    <div className="leading-relaxed text-sm sm:text-base text-[#bbbbbb] whitespace-pre-wrap">
-      <Linkify options={linkifyOptions}>
-        {description}
-      </Linkify>
+    <div className="text-sm sm:text-base text-[#bbbbbb]">
+      {lines.map((line, i) => (
+        <p key={i} className="leading-[24px] mb-2">
+          <Linkify options={linkifyOptions}>
+            {line}
+          </Linkify>
+        </p>
+      ))}
     </div>
-  );
+  )
 }
