@@ -482,7 +482,7 @@ export default function UpdateEventPage({ event }: Props) {
 											bg="#141619"
 											color="white"
 											border="none"
-											rows="1"
+											rows="8"
 											pl="10"
 											value={values.desc}
 										/>
