@@ -2,7 +2,6 @@ import { wrapper } from "@Jetzy/redux/stores";
 import { Session } from "next-auth";
 import { SessionProvider } from "next-auth/react";
 import type { AppProps } from "next/app";
-// import { QueryClient, QueryClientProvider } from "react-query"
 import { Provider as ReduxProvider } from "react-redux";
 import { ToastContainer } from "react-toastify";
 import "flatpickr/dist/flatpickr.min.css";
@@ -14,6 +13,7 @@ import { Analytics } from "@vercel/analytics/react";
 
 import { ChakraProvider } from "@chakra-ui/react";
 import ReactQueryProvider from "@/lib/react-query-provider";
+import { GoogleAnalytics } from '@next/third-parties/google'
 
 export default function App({
   Component,
@@ -22,6 +22,7 @@ export default function App({
   const { store, props } = wrapper.useWrappedStore(pageProps);
   return (
     <ReactQueryProvider>
+      <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
       <ReduxProvider store={store}>
         <Analytics />
         <SessionProvider session={session}>

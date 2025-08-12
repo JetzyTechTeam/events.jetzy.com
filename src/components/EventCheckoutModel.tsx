@@ -3,8 +3,9 @@ import { CreateCheckoutSessionThunk, getCheckoutStore, toggleCheckoutForm } from
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import React, { useState } from "react"
 import Spinner from "./misc/Spinner"
+import { sendGAEvent } from "@next/third-parties/google"
 
-export default function EventCheckoutModel() {
+export default function EventCheckoutModel({ event }: { event: string }) {
 	// const [acceptTerms, setAcceptTerms] = useState(false)
 	const { showCheckout, tickets, isLoading } = useAppSelector(getCheckoutStore)
 	const dispatch = useAppDispatch()
@@ -50,6 +51,12 @@ export default function EventCheckoutModel() {
 			return
 		}
 
+		sendGAEvent({
+			category: "Event",
+			action: "Checkout Form Submitted",
+			label: event,
+		})
+
 		dispatch(
 			CreateCheckoutSessionThunk({
 				data: {
@@ -73,7 +80,10 @@ export default function EventCheckoutModel() {
 					<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-md relative">
 						{/* Close Button */}
 						<button
-							onClick={() => dispatch(toggleCheckoutForm(false))}
+							onClick={() => {
+								dispatch(toggleCheckoutForm(false))
+								sendGAEvent({ category: "Event", action: "Checkout Modal Closed", label: event })	
+							}}
 							className="absolute top-2 right-2 bg-black text-white w-8 h-8 rounded-full flex items-center justify-center"
 						>
 							&times;

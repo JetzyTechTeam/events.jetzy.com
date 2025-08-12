@@ -8,7 +8,7 @@ import { waitUntil } from "@Jetzy/lib/utils";
 import Spinner from "./misc/Spinner";
 import { Error } from "@Jetzy/lib/_toaster";
 import { IEvent } from "@/models/events/types";
-import { CheckmarkSVG, DirectionSVG } from "@/assets/icons";
+import { CheckmarkSVG } from "@/assets/icons";
 import {
   Button,
   Modal,
@@ -24,6 +24,8 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { useSession } from "next-auth/react";
+import Linkify from "linkify-react";
+import { sendGAEvent } from "@next/third-parties/google";
 
 type Props = {
   event: IEvent;
@@ -40,6 +42,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
       id: ticket._id.toString(),
       name: ticket.name,
       price: ticket.price,
+      description: ticket.desc,
       quantity: 1,
       isSelected: event.isPaid ? true : false,
       priceId: ticket.stripeProductId,
@@ -104,6 +107,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         id: ticket.id,
         name: ticket.name,
         price: ticketsItems[index].price,
+        description: ticket.description,
         quantity: ticket.quantity,
         isSelected: ticket.isSelected,
         priceId: ticket.priceId,
@@ -146,7 +150,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                 className={`relative bg-[#2b2b2b] p-4 rounded-lg cursor-pointer border-2 ${
                   ticket.isSelected ? "border-jetzy" : "border-transparent"
                 }`}
-                onClick={() => handleTicketSelection(ticket.id)}
+                onClick={() => { 
+                  handleTicketSelection(ticket.id)
+                  sendGAEvent({
+                    category: "Event",
+                    action: "Ticket Selected",
+                    label: ticket.name,
+                    eventName: event.name,
+                  });
+                }}
               >
                 {ticket.isSelected && (
                   <span className="absolute top-2 right-2">
@@ -158,6 +170,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                     <h3 className="font-semibold text-lg">{ticket.name}</h3>
                     <p className="text-xs my-2">
                       Select your tickets and proceed to checkout
+                    </p>
+                    <p className="text-xs my-2">
+                      <Linkify options={{
+                        target: '_blank',
+                        className: 'text-orange-600 underline hover:text-orange-800',
+                      }}>
+                        {ticket.description}
+                      </Linkify>
                     </p>
                     <div className="flex items-center justify-between w-full">
                       <p className="text-jetzy font-bold text-xl">
@@ -215,7 +235,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
             <button
               disabled={isLoading}
-              onClick={() => showCheckoutForm(true)}
+              onClick={() => {
+                showCheckoutForm(true)
+                sendGAEvent({ 
+                  category: "Event",
+                  action: "Checkout Button Clicked",
+                  label: event.name, })
+              }}
               className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50"
             >
               {isLoading ? <Spinner /> : "Checkout"}

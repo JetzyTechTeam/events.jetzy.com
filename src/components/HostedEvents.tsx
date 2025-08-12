@@ -166,7 +166,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
 
         <EventTicketsComponent event={clonedEvent} />
       </div>
-      <EventCheckoutModel />
+      <EventCheckoutModel event={clonedEvent.name} />
     </>
   );
 }

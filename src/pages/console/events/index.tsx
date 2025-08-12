@@ -6,7 +6,7 @@ import { Events } from "@/models/events";
 import { IEvent } from "@/models/events/types";
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice";
 import { useAppDispatch } from "@/redux/stores";
-import { Pages, Roles } from "@/types";
+import { Roles } from "@/types";
 import {
   AlertDialog,
   AlertDialogBody,
@@ -19,7 +19,6 @@ import {
   Text,
   useDisclosure,
 } from "@chakra-ui/react";
-import axios from "axios";
 import { GetServerSideProps } from "next";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
@@ -116,6 +115,7 @@ const ListingCard = (
 
   return (
     <>
+    <Link href={`/${event._id}`} className="space-y-5">
       <div className="flex items-center justify-between bg-[#1E1E1E] rounded-xl p-5">
         {/* CONTENT SECTION  */}
         <div className="space-y-5">
@@ -169,7 +169,7 @@ const ListingCard = (
           height={150}
         />
       </div>
-
+</Link>
       <AlertDialog
         isOpen={isOpen}
         leastDestructiveRef={cancelRef}
