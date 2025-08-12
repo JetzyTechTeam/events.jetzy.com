@@ -22,7 +22,7 @@ export default function App({
   const { store, props } = wrapper.useWrappedStore(pageProps);
   return (
     <ReactQueryProvider>
-      <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
+      <GoogleAnalytics gaId={process.env.GOOGLE_ANALYTICS_ID as string} />
       <ReduxProvider store={store}>
         <Analytics />
         <SessionProvider session={session}>
