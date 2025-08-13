@@ -13,7 +13,6 @@ import { Analytics } from "@vercel/analytics/react";
 
 import { ChakraProvider } from "@chakra-ui/react";
 import ReactQueryProvider from "@/lib/react-query-provider";
-import { GoogleAnalytics } from '@next/third-parties/google'
 
 export default function App({
   Component,
@@ -22,7 +21,6 @@ export default function App({
   const { store, props } = wrapper.useWrappedStore(pageProps);
   return (
     <ReactQueryProvider>
-      <GoogleAnalytics gaId={process.env.GOOGLE_ANALYTICS_ID as string} />
       <ReduxProvider store={store}>
         <Analytics />
         <SessionProvider session={session}>
