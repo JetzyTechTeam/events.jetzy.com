@@ -252,10 +252,41 @@ function EventBookings({ eventId }: { eventId: string }) {
     queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
   });
 
+const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
+    if (!bookings?.data)  return   { totalTickets: 0, uniqueCustomers: 0 };
+
+    let ticketCount= 0;//# of tickets
+    const customerSet = new Set<string>();//unique email to count number of customers
+
+    bookings.data.forEach((booking: Booking) => {
+      //increment for each ticket
+      booking.tickets.forEach((ticket) => {
+
+        ticketCount += ticket.quantity;
+      });
+
+      
+      customerSet.add(booking.customerEmail);
+    });
+
+    return {   totalTickets: ticketCount, uniqueCustomers: customerSet.size};
+  },   [bookings?.data]);
+
   return (
     <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
-      <h3 className="text-lg font-semibold mb-4 text-white">Bookings</h3>
-
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-white">Bookings</h3>
+        {!isLoading && (
+          <div className="text-sm text-white">
+            <span className="mr-4 ">
+              <span className="font-semibold   text-white ">Tickets:</span>{totalTickets}
+            </span>
+            <span>
+              <span className="font-semibold text-white" >Customers:</span>  {uniqueCustomers}
+            </span>
+          </div>
+        )}
+      </div>
       {isLoading && <p className="text-gray-300">Loading bookings...</p>}
 
       {!isLoading && bookings?.data?.length === 0 && (

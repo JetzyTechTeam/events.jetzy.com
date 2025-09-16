@@ -26,6 +26,8 @@ import { signOut, useSession } from "next-auth/react";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -35,6 +37,16 @@ interface EventCardProps {
 }
 
 const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
+
+  
+const { data: totals } = useQuery({
+  queryKey: ["eventTotals", event._id] ,
+  queryFn:  () => axios.get(`/api/events/${event._id}/totals`),
+});
+
+const totalTickets =totals?.data?.totalTickets?? 0;
+const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
+
   const cardBg = useColorModeValue("#1e1e1e", "gray.700");
   const borderColor = useColorModeValue("#434343", "gray.600");
 
@@ -115,17 +127,24 @@ const { formattedDate, formattedTime } = useMemo(() => {
               {location}
             </Text>
           </Box>
-          <Box
-            bg="#3E3E3E"
-            w="max-content"
-            px="2"
-            py="1"
-            rounded="lg"
-            display="flex"
-            justifyContent="end"
-          >
-            <Text className="uppercase text-xs font-semibold">get tickets</Text>
+          <Box display="flex" alignItems="center" justifyContent="space-between " mt=" 2">
+            <Text fontSize=" sm " >
+              {totalTickets} Tickets |  {uniqueGuests} Customers
+            </Text>
+            <Box
+              bg="#3E3E3E"
+              w="max-content"
+              px="2"
+              py="1"
+              rounded="lg"
+              display="flex"
+              justifyContent="end"
+            >
+              <Text className="uppercase text-xs font-semibold">get tickets</Text>
+            </Box>
           </Box>
+
+
         </Stack>
       </Box>
     </Box>
