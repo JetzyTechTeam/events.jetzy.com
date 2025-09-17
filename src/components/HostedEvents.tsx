@@ -274,6 +274,9 @@ const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
 
   return (
     <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
+      
+      
+      
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-white">Bookings</h3>
         {!isLoading && (
@@ -287,6 +290,8 @@ const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
           </div>
         )}
       </div>
+
+
       {isLoading && <p className="text-gray-300">Loading bookings...</p>}
 
       {!isLoading && bookings?.data?.length === 0 && (

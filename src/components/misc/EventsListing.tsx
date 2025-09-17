@@ -29,6 +29,7 @@ import timezone from 'dayjs/plugin/timezone'
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 
+
 dayjs.extend(utc)
 dayjs.extend(timezone)
 interface EventCardProps {
@@ -43,6 +44,10 @@ const { data: totals } = useQuery({
   queryKey: ["eventTotals", event._id] ,
   queryFn:  () => axios.get(`/api/events/${event._id}/totals`),
 });
+
+const { data: session } = useSession();
+  // @ts-ignore
+  const isAdmin = session?.user?.role === "admin";
 
 const totalTickets =totals?.data?.totalTickets?? 0;
 const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
@@ -128,9 +133,12 @@ const { formattedDate, formattedTime } = useMemo(() => {
             </Text>
           </Box>
           <Box display="flex" alignItems="center" justifyContent="space-between " mt=" 2">
+            {isAdmin && 
             <Text fontSize=" sm " >
               {totalTickets} Tickets |  {uniqueGuests} Customers
             </Text>
+            }
+
             <Box
               bg="#3E3E3E"
               w="max-content"

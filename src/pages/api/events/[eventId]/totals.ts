@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const  totalTickets = bookings.reduce((sum, b) => {
         return sum +   b.tickets.reduce((tSum, t) => tSum + t.quantity,   0);
     }, 0);
-
+        
         //unique guests/customers based on email
         const uniqueGuests = new Set(bookings.map(b => b.customerEmail)).size;
 
