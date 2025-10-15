@@ -27,7 +27,19 @@ export default function LoginPage() {
 	}
 
 	const handleSubmit = (values: SignUpFormData) => {
-		dispatcher(CreateUserAccountThunk({ data: values })).then((res: any) => {
+		
+		const sanitized = {
+			...values,
+			email: values.email?.trim(),
+			firstName: values.firstName?.trim(),
+			lastName: values.lastName?.trim(),
+			password: values.password?.trim() ,
+			confirmPassword: values.confirmPassword?.trim(),
+			shouldBeAJetzyMember: values.shouldBeAJetzyMember,
+
+		};
+
+		dispatcher(CreateUserAccountThunk({ data: sanitized })).then((res: any) => {
 			if (res?.payload?.status) navigate.push(ROUTES.login)
 		})
 	}
@@ -145,6 +157,8 @@ export default function LoginPage() {
 
 								{/* Jetzy Member Checkbox */}
 								<div className="flex items-center gap-2 mt-4">
+
+
 									<Field
 										type="checkbox"
 										id="shouldBeAJetzyMember"
@@ -155,6 +169,9 @@ export default function LoginPage() {
 									<label htmlFor="shouldBeAJetzyMember" className="block text-sm text-white">
 										Sign me up as a Jetzy Member
 									</label>
+
+
+
 								</div>
 
 								<div>

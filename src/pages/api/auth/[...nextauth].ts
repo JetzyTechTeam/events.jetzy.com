@@ -1,4 +1,5 @@
 import { Users } from "@Jetzy/models/userModal"
+import { EventUsers } from "@/models/eventUsersModal"
 import NextAuth, { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcrypt"
@@ -14,15 +15,22 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "text", placeholder: "Email Address" },
         password: { label: "Password", type: "password" },
+        isJetzyMember:{label: "isJetzyMember",type:"text"}
+
       },
 
       // @ts-ignore
       async authorize(credentials, req) {
-        const { email, password } = credentials ?? {};
+        const { email, password , isJetzyMember} = credentials ?? {};
 
         if (!email || !password) throw new Error("Please provide your credentials.");
 
-        const user = await Users.findOne({ email }).select('+password');
+        
+        const userModel = isJetzyMember ==="true" ? EventUsers : Users
+
+        //const user = await Users.findOne({ email }).select('+password');
+        const user = await userModel.findOne({email}).select('+password')
+
         if (!user) throw new Error("User was not found.");
 
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
@@ -32,8 +40,9 @@ export const authOptions: NextAuthOptions = {
           _id: user._id.toString(),
           fullName: `${user.firstName} ${user.lastName}`,
           email: user.email,
-          image: user.image,
+          //image: user.image,
           role: user.role,
+          ...(user.image ? { image: user.image } : {}),
         };
 
         return userData;

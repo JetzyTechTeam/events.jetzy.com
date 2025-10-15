@@ -22,24 +22,30 @@ export default function LoginPage() {
 	const formData: SignInFormData = {
 		email: "",
 		password: "",
+		isJetzyMember:false,
 	}
 
 	const handleSubmit = async (values: SignInFormData) => {
 		setLoader(true)
 
+
 		//  Process user login
 		const res = await signIn("credentials", {
 			email: values?.email,
 			password: values?.password,
+			isJetzyMember:values?.isJetzyMember , 
 			redirect: false,
 		})
+
+		
 
 		// handle error
 		if (res?.error) {
 			setLoader(false)
 
+			
 			// format an error message
-			const error = { message: res?.error }
+			const error = { message: res?.error  }
 
 			ServerErrors("Sorry", error)
 
@@ -64,6 +70,8 @@ export default function LoginPage() {
 					<Formik initialValues={formData} onSubmit={handleSubmit} validationSchema={loginValidatorScheme}>
 						{({ values, handleChange }) => (
 							<Form className="space-y-6" action="#" method="POST">
+
+
 								<div>
 									<label htmlFor="email" className="block text-sm font-medium leading-6">
 										Email address
@@ -105,6 +113,19 @@ export default function LoginPage() {
 									</div>
 								</div>
 
+								<div className="flex items-center">
+									<Field
+										id="isJetzyMember"
+										name="isJetzyMember"
+										type="checkbox"
+										className="h-4 w-4 text-app focus:ring-app border-gray-300 rounded"
+									/>
+									<label htmlFor="isJetzyMember" className="ml-2 block text-sm text-gray-300">
+										I am a Jetzy member
+									</label>
+								</div>
+
+
 								<div>
 									<button
 										type="submit"
@@ -113,6 +134,9 @@ export default function LoginPage() {
 										{isLoading ? <Spinner /> : "Sign in"}
 									</button>
 								</div>
+
+
+
 							</Form>
 						)}
 					</Formik>

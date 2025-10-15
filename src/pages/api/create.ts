@@ -24,21 +24,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 		const hashPassword = await bcrypt.hash(password, 10)
 
 		let user = null;
+		const isJetzyMember = shouldBeAJetzyMember === 'true';
 
-		if (!shouldBeAJetzyMember) {
+		if (!isJetzyMember) {
+			
 			const existingUser = await Users.findOne({ email });
+			
 
 			if (existingUser) {
 				if (!existingUser.password || existingUser.password === "") {
+			
 					existingUser.password = hashPassword;
 
 					await existingUser.save({ validateModifiedOnly: true });
-					return sendResponse(res, existingUser, "User account created successfully.", true, ResCode.OK);
+					return sendResponse(res, existingUser, "user account created successfully.", true, ResCode.OK);
 				}
 			}
 
 			user = await Users.create({ firstName, lastName, email, password: hashPassword, role: userType })
+			
 		} else {
+			
 			user = await EventUsers.create({ 
 				firstName,
 				lastName,
