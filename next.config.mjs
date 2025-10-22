@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename)
 
 const nextConfig = {
 	reactStrictMode: true,
+	outputFileTracingRoot: __dirname,
 	sassOptions: {
 		includePaths: [path.join(__dirname, "styles")],
 	},

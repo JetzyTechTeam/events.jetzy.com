@@ -3,13 +3,13 @@ import { MongoClient, Db } from "mongodb"
 let cachedDb: Db | null = null
 
 const connectMongo = async (): Promise<Db> => {
-	if (!process.env.NEXT_DB_URL) {
-		throw new Error("Add the NEXT_DB_URL environment variable inside .env.local to use MongoDB")
+	if (!process.env.NEXT_EVENTS_DB_URL) {
+		throw new Error("Add the NEXT_EVENTS_DB_URL environment variable inside .env.local to use MongoDB")
 	}
 
 	if (cachedDb) return cachedDb
 
-	const client = new MongoClient(process.env.NEXT_DB_URL)
+	const client = new MongoClient(process.env.NEXT_EVENTS_DB_URL)
 
 	try {
 		await client.connect()

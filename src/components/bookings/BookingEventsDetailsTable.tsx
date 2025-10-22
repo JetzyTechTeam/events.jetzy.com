@@ -23,7 +23,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable }) => {
 		row.booking.status,
 		`${row.booking.customerName} | ${row.booking.customerEmail} | ${row.booking.customerPhone}`,
 		row.bookedTickets.join(", "),
-		new Date(row.booking.createdAt).toDateString(),
+		new Date(row.booking.createdAt).toLocaleString(),
 	])
 
 	const handleExport = () => {
@@ -95,7 +95,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable }) => {
 										</Badge>
 									</Box>
 								</Td>
-								<Td>{new Date(row.createdAt).toDateString()}</Td>
+								<Td>{new Date(row.createdAt).toLocaleString()}</Td>
 							</Tr>
 						)
 						)}

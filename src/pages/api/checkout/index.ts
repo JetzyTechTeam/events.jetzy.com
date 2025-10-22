@@ -26,13 +26,40 @@ type BodyParams = {
 	}
 }
 // initialize stripe
-const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
+if (!process.env.NEXT_STRIPE_SECRET_KEY) {
+	throw new Error("NEXT_STRIPE_SECRET_KEY environment variable is required")
+}
+const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
+		// Validate request method
+		if (req.method !== 'POST') {
+			return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
+		}
+
+		// Validate required environment variables
+		if (!process.env.NEXT_PUBLIC_URL) {
+			return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
+		}
+
 		// Get request params
+		if (!req.body?.tickets || !req.body?.user) {
+			return sendResponse(res, null, "Missing required parameters: tickets and user", false, ResCode.BAD_REQUEST)
+		}
+
 		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
+
+		// Validate tickets array
+		if (!Array.isArray(tickets) || tickets.length === 0) {
+			return sendResponse(res, null, "Invalid tickets data", false, ResCode.BAD_REQUEST)
+		}
+
+		// Validate user data
+		if (!user.email || !user.firstName || !user.lastName) {
+			return sendResponse(res, null, "Invalid user data", false, ResCode.BAD_REQUEST)
+		}
 
 		// create jetzy user
 		try {
@@ -89,6 +116,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				eventId: tickets[0]?.eventId || "",
 			},
 			customer_email: user.email,
+		}).catch((stripeError) => {
+			console.error("Stripe session creation failed:", stripeError)
+			throw new Error(`Stripe error: ${stripeError.message}`)
 		})
 
 		if (session) {

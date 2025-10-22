@@ -49,8 +49,11 @@ const { data: session } = useSession();
   // @ts-ignore
   const isAdmin = session?.user?.role === "admin";
 
-const totalTickets =totals?.data?.totalTickets?? 0;
+const totalTickets = totals?.data?.totalTickets ?? 0;
 const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
+
+// Calculate total available tickets for percentage
+const totalAvailableTickets = event.capacity ?? 0;
 
   const cardBg = useColorModeValue("#1e1e1e", "gray.700");
   const borderColor = useColorModeValue("#434343", "gray.600");
@@ -133,11 +136,11 @@ const { formattedDate, formattedTime } = useMemo(() => {
             </Text>
           </Box>
           <Box display="flex" alignItems="center" justifyContent="space-between " mt=" 2">
-            {isAdmin && 
-            <Text fontSize=" sm " >
-              {totalTickets} Tickets |  {uniqueGuests} Customers
-            </Text>
-            }
+            {/* Show tickets sold for all users */}
+            <Box fontSize="sm" color="gray.400">
+              <Text>Total people: {uniqueGuests}</Text>
+              <Text>Total tickets: {totalTickets}</Text>
+            </Box>
 
             <Box
               bg="#3E3E3E"
