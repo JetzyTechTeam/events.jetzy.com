@@ -1,11 +1,7 @@
 import { initEdgeStore } from "@edgestore/server"
 import { createEdgeStoreNextHandler } from "@edgestore/server/adapters/next/pages"
 
-const es = initEdgeStore.create({
-	auth: {
-		isPublic: true,
-	},
-})
+const es = initEdgeStore.create()
 
 /**
  * This is the main router for the edgestore buckets.
