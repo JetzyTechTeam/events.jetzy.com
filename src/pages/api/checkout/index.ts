@@ -105,7 +105,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			payment_method_types: ["card"],
 			line_items: prices,
 			mode: "payment",
-			success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}&payload=${req?.body?.tickets}&event=${encodeURIComponent(JSON.stringify(eventDetails))}`,
+			success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
 			cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
 			metadata: {
 				firstName: user.firstName,
@@ -114,6 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				phone: user.phone,
 				tickets: req.body.tickets,
 				eventId: tickets[0]?.eventId || "",
+				eventDetails: JSON.stringify(eventDetails),
 			},
 			customer_email: user.email,
 		}).catch((stripeError) => {

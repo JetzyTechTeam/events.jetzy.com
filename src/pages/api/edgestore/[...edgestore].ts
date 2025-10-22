@@ -13,9 +13,11 @@ const edgeStoreRouter = es.router({
 	}),
 })
 
-export default createEdgeStoreNextHandler({
+const handler = createEdgeStoreNextHandler({
 	router: edgeStoreRouter,
 })
+
+export default handler
 
 /**
  * This type is used to create the type-safe client for the frontend.
