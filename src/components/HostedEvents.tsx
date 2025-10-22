@@ -244,6 +244,7 @@ interface Booking {
   subTotal: number;
   tax: number;
   total: number;
+  createdAt: string;
 }
 
 function EventBookings({ eventId }: { eventId: string }) {
@@ -325,6 +326,11 @@ const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
             <p className="text-sm text-[#bbbbbb] mt-1">
               <span className="font-semibold text-white">Status:</span>{" "}
               {booking.status}
+            </p>
+
+            <p className="text-sm text-[#bbbbbb] mt-1">
+              <span className="font-semibold text-white">Created:</span>{" "}
+              {new Date(booking.createdAt).toLocaleString()}
             </p>
 
             <div className="mt-3">
