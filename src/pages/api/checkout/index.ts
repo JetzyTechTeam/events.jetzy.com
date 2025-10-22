@@ -99,14 +99,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			slug: event?.slug,
 		}
 
+		// Validate and log URLs
+		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"
+		console.log("NEXT_PUBLIC_URL:", baseUrl)
+		
+		// Ensure URL is properly formatted
+		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
+		const successUrl = `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
+		const cancelUrl = `${cleanBaseUrl}/cancel`
+		
+		console.log("Success URL:", successUrl)
+		console.log("Cancel URL:", cancelUrl)
+
+		// Validate URLs
+		try {
+			new URL(successUrl.replace('{CHECKOUT_SESSION_ID}', 'test'))
+			new URL(cancelUrl)
+		} catch (urlError) {
+			console.error("Invalid URL format:", urlError)
+			throw new Error(`Invalid URL format: ${urlError.message}`)
+		}
+
 		// create a checkout session
 		const session = await stripe.checkout.sessions.create({
 			client_reference_id: reference,
 			payment_method_types: ["card"],
 			line_items: prices,
 			mode: "payment",
-			success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-			cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
+			success_url: successUrl,
+			cancel_url: cancelUrl,
 			metadata: {
 				firstName: user.firstName,
 				lastName: user.lastName,
