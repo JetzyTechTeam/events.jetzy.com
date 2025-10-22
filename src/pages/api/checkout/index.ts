@@ -115,9 +115,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		try {
 			new URL(successUrl.replace('{CHECKOUT_SESSION_ID}', 'test'))
 			new URL(cancelUrl)
-		} catch (urlError) {
+		} catch (urlError: any) {
 			console.error("Invalid URL format:", urlError)
-			throw new Error(`Invalid URL format: ${urlError.message}`)
+			throw new Error(`Invalid URL format: ${urlError.message || urlError}`)
 		}
 
 		// create a checkout session
