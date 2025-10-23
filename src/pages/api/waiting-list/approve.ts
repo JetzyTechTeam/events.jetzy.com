@@ -83,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					name: ticket.name,
 					price: ticket.price,
 					quantity: ticket.quantity,
-					desc: ticket.desc || ''
+					desc: ''
 				})),
 				orderNumber: bookingRef,
 			})
