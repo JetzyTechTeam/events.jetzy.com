@@ -143,7 +143,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 									</div>
 									<h2 className="text-2xl font-bold text-yellow-400 mb-2">Event at Capacity</h2>
 									<p className="text-gray-300 mb-4">
-										Unfortunately, "{waitingListData?.eventName}" has reached its capacity limit.
+										Unfortunately, &quot;{waitingListData?.eventName}&quot; has reached its capacity limit.
 									</p>
 									<div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-4 mb-6">
 										<p className="text-yellow-200 text-sm">
@@ -152,7 +152,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 										</p>
 									</div>
 									<p className="text-gray-300 mb-6">
-										Would you like to join our waiting list? We'll notify you immediately if spots become available.
+										Would you like to join our waiting list? We&apos;ll notify you immediately if spots become available.
 									</p>
 									<div className="flex space-x-3">
 										<button
