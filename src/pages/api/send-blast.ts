@@ -37,7 +37,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       <div style="max-width: 600px; margin: auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 32px;">
         <h2 style="color: #2B6CB0; margin-bottom: 16px;">${subject}</h2>
         <p style="font-size: 16px; color: #333; margin-bottom: 16px;">
-          You are registered for <strong>${event.name}</strong> with email
+          You are registered for <strong>${event.name}${event.name === 'Chinese Mid-Autumn Rooftop Celebration' ? ' on October 23rd between 6:00 PM and 9:00 PM New York time' : ''}</strong> with email
         </p>
         <p style="font-size: 18px; color: #333; margin-bottom: 16px; font-weight: bold;">
           {{userEmail}}
@@ -58,11 +58,6 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           <a href="${eventLink}" style="display: inline-block; padding: 12px 24px; background: #2B6CB0; color: #fff; border-radius: 6px; text-decoration: none; font-weight: bold;">
             View Event Details
           </a>
-        </div>
-        <div style="margin-bottom: 24px;">
-          <strong>Event:</strong> ${event.name}<br/>
-          <strong>Date:</strong> ${event.startsOn ? new Date(event.startsOn).toLocaleString() : ""}<br/>
-          <strong>Location:</strong> ${event.location}
         </div>
         <p style="font-size: 12px; color: #888; margin-top: 32px;">
           If you have any questions, please contact us at contact@jetzyapp.com.<br/>
