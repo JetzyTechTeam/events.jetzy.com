@@ -162,6 +162,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
 
 
         {isAdmin && <EventBookings eventId={clonedEvent._id.toString()} /> }
+        {isAdmin && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} /> }
         {isAdmin && <GuestsList eventId={clonedEvent._id.toString()} />}
 
         <EventTicketsComponent event={clonedEvent} />
@@ -367,6 +368,130 @@ const linkifyOptions = {
   target: '_blank',
   className: 'text-orange-600 underline hover:text-orange-800',
 };
+
+function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: string }) {
+  const { data: waitingList, isLoading, refetch } = useQuery({
+    queryKey: ["eventWaitingList", eventId],
+    queryFn: () => axios.get(`/api/waiting-list/${eventId}`),
+  });
+
+  const handleApprove = async (waitingListId: string) => {
+    try {
+      const response = await axios.post('/api/waiting-list/approve', {
+        waitingListId,
+        eventName,
+      });
+      
+      if (response.data.status) {
+        alert('User approved and notified successfully!');
+        refetch();
+      } else {
+        alert('Failed to approve user');
+      }
+    } catch (error) {
+      console.error('Error approving user:', error);
+      alert('Failed to approve user');
+    }
+  };
+
+  const handleRemove = async (waitingListId: string) => {
+    if (!confirm('Are you sure you want to remove this user from the waiting list?')) {
+      return;
+    }
+
+    try {
+      const response = await axios.delete('/api/waiting-list/remove', {
+        data: { waitingListId }
+      });
+      
+      if (response.data.status) {
+        alert('User removed from waiting list successfully!');
+        refetch();
+      } else {
+        alert('Failed to remove user');
+      }
+    } catch (error) {
+      console.error('Error removing user:', error);
+      alert('Failed to remove user');
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-white">Waiting List</h3>
+        {!isLoading && waitingList?.data && (
+          <div className="text-sm text-white">
+            <span className="font-semibold text-white">
+              Total: {waitingList.data.length} users
+            </span>
+          </div>
+        )}
+      </div>
+
+      {isLoading && <p className="text-gray-300">Loading waiting list...</p>}
+
+      {!isLoading && waitingList?.data?.length === 0 && (
+        <p className="text-gray-300">No users on waiting list.</p>
+      )}
+
+      {!isLoading &&
+        waitingList?.data?.map((user: any) => (
+          <div
+            key={user._id}
+            className="border-b border-[#434343] py-4 last:border-b-0"
+          >
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <p className="text-sm text-[#bbbbbb]">
+                  <span className="font-semibold text-white">Name:</span>{" "}
+                  {user.firstName} {user.lastName}
+                </p>
+                <p className="text-sm text-[#bbbbbb] mt-1">
+                  <span className="font-semibold text-white">Email:</span>{" "}
+                  {user.email}
+                </p>
+                <p className="text-sm text-[#bbbbbb] mt-1">
+                  <span className="font-semibold text-white">Phone:</span>{" "}
+                  {user.phone}
+                </p>
+                <p className="text-sm text-[#bbbbbb] mt-1">
+                  <span className="font-semibold text-white">Joined:</span>{" "}
+                  {new Date(user.createdAt).toLocaleString()}
+                </p>
+
+                <div className="mt-3">
+                  <p className="font-semibold text-white text-sm">Requested Tickets:</p>
+                  <ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
+                    {user.tickets.map((ticket: any, index: number) => (
+                      <li key={index}>
+                        {ticket.quantity} x {ticket.name} (${ticket.price} each)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex gap-2 ml-4">
+                <button
+                  onClick={() => handleApprove(user._id)}
+                  className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => handleRemove(user._id)}
+                  className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
 
 function EventDescription({ description }: { description: string }) {
   if (!description) return '';
