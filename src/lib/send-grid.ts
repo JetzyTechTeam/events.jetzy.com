@@ -155,6 +155,8 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
 }
 
 export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber }: TicketEmailData) => {
+	console.log("sendTicketConfirmation called with:", { email, orderNumber, eventName: event.name })
+	
 	// format event start and end time
 	const eventTimezone = event.timezone.split(') ')[1]
 
@@ -167,6 +169,9 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
 	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
 	const location = event.location
+	
+	console.log("Email details:", { timestamp, location, totalAmount, tickets })
+	
 	try {
 		await sgMail.send({
 		  to: [email, "tech@jetzyapp.com"],
@@ -222,8 +227,9 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         </div>
       `,
 		})
+		console.log("Ticket confirmation email sent successfully to:", email)
 	} catch (error) {
-		console.error("Failed to send email:", error)
+		console.error("Failed to send ticket confirmation email:", error)
 		throw error
 	}
 }

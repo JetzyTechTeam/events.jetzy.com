@@ -160,6 +160,204 @@ export default function Manage({ event }: any) {
 	)
 }
 
+function SendBlastModal({
+  sendBlastModal,
+  setSendBlastModal,
+  event,
+}: {
+  sendBlastModal: boolean;
+  setSendBlastModal: (sendBlastModal: boolean) => void;
+  event: any;
+}) {
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [status, setStatus] = useState("");
+  const [targetType, setTargetType] = useState("invitations");
+  const [emailType, setEmailType] = useState("custom");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const toast = useToast();
+
+  const onSendBlast = async () => {
+    if (!status || !subject.trim() || !message.trim()) {
+      setError("All fields are required.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      await axios.post("/api/send-blast", {
+        event,
+        message,
+        subject,
+        status,
+        targetType,
+        emailType,
+        eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+      });
+
+      toast({
+        title: "Blast sent!",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to send blast.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+    setLoading(false);
+    setSendBlastModal(false);
+  };
+
+  return (
+    <Modal
+      isOpen={sendBlastModal}
+      onClose={() => setSendBlastModal(false)}
+      isCentered
+      size="xl"
+    >
+      <ModalOverlay />
+      <ModalContent bg="#1E1E1E" color="white">
+        <ModalHeader>Send a Blast</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <Box display="flex" flexDirection="column" gap={4}>
+            <Text fontWeight="bold">Target Audience</Text>
+            <Select
+              mb={4}
+              placeholder="Select target audience"
+              value={targetType}
+              onChange={(e) => setTargetType(e.target.value)}
+              isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
+              _focus={{
+                bg: "#090C10",
+                borderColor: "#888",
+                color: "white",
+              }}
+              _hover={{
+                bg: "#090C10",
+                borderColor: "#666",
+              }}
+            >
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="invitations">Event Invitations</option>
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="bookings">Event Bookings</option>
+            </Select>
+            
+            <Text fontWeight="bold">Email Type</Text>
+            <Select
+              mb={4}
+              placeholder="Select email type"
+              value={emailType}
+              onChange={(e) => setEmailType(e.target.value)}
+              isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
+              _focus={{
+                bg: "#090C10",
+                borderColor: "#888",
+                color: "white",
+              }}
+              _hover={{
+                bg: "#090C10",
+                borderColor: "#666",
+              }}
+            >
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="custom">Custom Message</option>
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="availability">Event Availability</option>
+            </Select>
+            <Text fontWeight="bold">Status</Text>
+            <Select
+              mb={4}
+              placeholder="Select a Status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
+              _focus={{
+                bg: "#090C10",
+                borderColor: "#888",
+                color: "white",
+              }}
+              _hover={{
+                bg: "#090C10",
+                borderColor: "#666",
+              }}
+            >
+              {targetType === 'bookings' ? (
+                <>
+                  <option style={{ backgroundColor: '#090C10', color: 'white' }} value="all">All Bookings</option>
+                  <option style={{ backgroundColor: '#090C10', color: 'white' }} value="pending">Pending</option>
+                  <option style={{ backgroundColor: '#090C10', color: 'white' }} value="approved">Approved</option>
+                  <option style={{ backgroundColor: '#090C10', color: 'white' }} value="confirmed">Confirmed</option>
+                </>
+              ) : (
+                <>
+                  <option style={{ backgroundColor: '#090C10', color: 'white' }} value="pending">Pending</option>
+                  <option style={{ backgroundColor: '#090C10', color: 'white' }} value="accepted">Accepted</option>
+                  <option style={{ backgroundColor: '#090C10', color: 'white' }} value="rejected">Rejected</option>
+                </>
+              )}
+            </Select>
+            <h3 className="font-bold">Subject</h3>
+            <Input
+              type="text"
+              placeholder="Enter a Subject here..."
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              mb={2}
+              isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
+            />
+
+            <h3 className="font-bold">Body</h3>
+            <Textarea
+              rows={5}
+              placeholder="Enter your blast message here..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              mb={2}
+              isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
+            />
+            {error && <Text color="red.500">{error}</Text>}
+
+            <Button
+              size="lg"
+              bg="#F79432"
+              color="black"
+              _hover={{ bg: "#f78c22" }}
+              _active={{ bg: "#e67a10" }}
+              isLoading={loading}
+              onClick={onSendBlast}
+            >
+              Send Blast
+            </Button>
+          </Box>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  );
 function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlastModal: boolean; setSendBlastModal: (sendBlastModal: boolean) => void; event: any }) {
 	const [subject, setSubject] = useState("")
 	const [message, setMessage] = useState("")

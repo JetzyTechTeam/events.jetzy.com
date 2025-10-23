@@ -37,7 +37,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const session = useSession();
 
   // format the event tickets
-  const ticketsItems = event.tickets.map((ticket) => {
+  const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : []).map((ticket) => {
     return {
       id: ticket._id.toString(),
       name: ticket.name,

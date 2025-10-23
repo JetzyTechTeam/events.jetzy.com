@@ -37,36 +37,32 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (
 ) => {
   const session = await getServerSession(context.req, context.res, authOptions);
 
-  // @ts-ignore
-  // if (!session) {
-  //   return {
-  //     props: {
-  //       events: JSON.stringify([]),
-  //       pagination: {
-  //         total: 0,
-  //         page: 1,
-  //         showing: 0,
-  //         limit: 20,
-  //         totalPages: 0,
-  //       },
-  //     },
-  //   };
-  // }
-
   // lets paginate the events
   const limit = 20;
   const page = context.query.page ? parseInt(context.query.page as string) : 1;
   const skip = (page - 1) * limit;
-  // Get events
-  const events = await Events.find({ isDeleted: false, privacy: "public" })
+  
+  // Check if user is signed in
+  const isSignedIn = !!session;
+  
+  // Define the query based on authentication status
+  let query: any = { isDeleted: false, privacy: "public" };
+  
+  // If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
+  if (!isSignedIn) {
+    query.name = "Chinese Mid-Autumn Rooftop Celebration";
+  }
+  
+  // Get events based on authentication status
+  const events = await Events.find(query)
     .skip(skip)
     .limit(limit)
     .sort({ createdAt: -1 });
 
   if (!events) return { props: { events: null, pagination: null } };
 
-  // get total count of events
-  const total = await Events.countDocuments({ isDeleted: false });
+  // get total count of events based on authentication status
+  const total = await Events.countDocuments(query);
   // serialize the events
   const data = events.map((event) => event.toJSON());
 
