@@ -76,20 +76,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 
 			// send email to the customer
-			await sendTicketConfirmation({
-				event,
-				firstName: metadata.firstName,
-				lastName: metadata.lastName,
-				email: metadata.email,
-				phone: metadata.phone,
-				tickets: tickets.map((ticket) => ({
-					name: ticket.name,
-					price: ticket.price,
-					quantity: ticket.quantity,
-					desc: ticket.desc,
-				})),
-				orderNumber: `JZ-${session.client_reference_id}`,
-			})
+			try {
+				console.log("Sending ticket confirmation email to:", metadata.email)
+				await sendTicketConfirmation({
+					event,
+					firstName: metadata.firstName,
+					lastName: metadata.lastName,
+					email: metadata.email,
+					phone: metadata.phone,
+					tickets: tickets.map((ticket) => ({
+						name: ticket.name,
+						price: ticket.price,
+						quantity: ticket.quantity,
+						desc: ticket.desc,
+					})),
+					orderNumber: `JZ-${session.client_reference_id}`,
+				})
+				console.log("Ticket confirmation email sent successfully")
+			} catch (emailError) {
+				console.error("Failed to send ticket confirmation email:", emailError)
+				// Don't fail the request if email fails
+			}
 		}
 
 		return res.status(200).json(session)
