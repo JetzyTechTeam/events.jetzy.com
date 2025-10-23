@@ -532,10 +532,10 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-white">Waiting List</h3>
-        {!isLoading && waitingList?.data && (
+        {!isLoading && waitingList?.data?.data && (
           <div className="text-sm text-white">
             <span className="font-semibold text-white">
-              Total: {waitingList.data.length} users
+              Total: {waitingList.data.data.length} users
             </span>
           </div>
         )}
@@ -543,13 +543,13 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
 
       {isLoading && <p className="text-gray-300">Loading waiting list...</p>}
 
-      {!isLoading && waitingList?.data?.length === 0 && (
+      {!isLoading && waitingList?.data?.data?.length === 0 && (
         <p className="text-gray-300">No users on waiting list.</p>
       )}
 
       {!isLoading &&
-        waitingList?.data && Array.isArray(waitingList.data) &&
-        waitingList.data.map((user: any) => (
+        waitingList?.data?.data && Array.isArray(waitingList.data.data) &&
+        waitingList.data.data.map((user: any) => (
           <div
             key={user._id}
             className="border-b border-[#434343] py-4 last:border-b-0"
