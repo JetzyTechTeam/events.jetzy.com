@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next"
 import { WaitingList } from "@/models/waitingList"
 import { Bookings } from "@/models/events/bookings"
-import { Events } from "@/models/events/events"
+import { Events } from "@/models/events"
 import { EventTracker } from "@/models/events/event-tracker"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
