@@ -142,18 +142,21 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 						{showWaitingList ? (
 							<div className="p-6 space-y-6">
 								<div className="text-center">
-									<div className="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
-										<svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<div className="w-16 h-16 mx-auto mb-4 bg-[#F79432]/20 rounded-full flex items-center justify-center">
+										<svg className="w-8 h-8 text-[#F79432]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
 										</svg>
 									</div>
-									<h2 className="text-2xl font-bold text-green-400 mb-4">Thank You for Registering!</h2>
+									<h2 className="text-2xl font-bold text-[#F79432] mb-4">Thank You for Registering!</h2>
 									<p className="text-gray-300 mb-6">
 										The event &quot;{waitingListData?.eventName}&quot; is currently at capacity. We will email you if you get on the list.
 									</p>
-									<div className="bg-green-900/20 border border-green-600/30 rounded-lg p-4">
-										<p className="text-green-200 text-sm">
-											We appreciate your interest and will notify you immediately if spots become available.
+									<p className="text-white mb-6">
+										We appreciate your interest and will notify you immediately if spots become available.
+									</p>
+									<div className="bg-[#F79432]/20 border border-[#F79432]/30 rounded-lg p-6">
+										<p className="text-[#F79432] text-2xl font-bold text-center">
+											You are on the waitlist
 										</p>
 									</div>
 									<div className="mt-6">
