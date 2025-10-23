@@ -197,6 +197,7 @@ function SendBlastModal({
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("");
   const [targetType, setTargetType] = useState("invitations");
+  const [emailType, setEmailType] = useState("custom");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -216,6 +217,7 @@ function SendBlastModal({
         subject,
         status,
         targetType,
+        emailType,
         eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
       });
 
@@ -273,6 +275,31 @@ function SendBlastModal({
             >
               <option style={{ backgroundColor: '#090C10', color: 'white' }} value="invitations">Event Invitations</option>
               <option style={{ backgroundColor: '#090C10', color: 'white' }} value="bookings">Event Bookings</option>
+            </Select>
+            
+            <Text fontWeight="bold">Email Type</Text>
+            <Select
+              mb={4}
+              placeholder="Select email type"
+              value={emailType}
+              onChange={(e) => setEmailType(e.target.value)}
+              isRequired
+              bg="#090C10"
+              borderColor="#444444"
+              color="white"
+              _placeholder={{ color: "gray.400" }}
+              _focus={{
+                bg: "#090C10",
+                borderColor: "#888",
+                color: "white",
+              }}
+              _hover={{
+                bg: "#090C10",
+                borderColor: "#666",
+              }}
+            >
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="custom">Custom Message</option>
+              <option style={{ backgroundColor: '#090C10', color: 'white' }} value="availability">Event Availability</option>
             </Select>
             <Text fontWeight="bold">Status</Text>
             <Select
