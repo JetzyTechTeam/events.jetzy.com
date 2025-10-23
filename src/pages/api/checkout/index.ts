@@ -91,6 +91,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			isDeleted: false,
 		})
 
+		if (!event) {
+			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
+		}
+
+		// Check if event has capacity limit
+		if (event.capacity > 0) {
+			// Get current booked tickets from event tracker
+			const { EventTracker } = await import("@/models/events/event-tracker")
+			const eventTracker = await EventTracker.findOne({ eventId: event._id })
+			
+			if (eventTracker) {
+				const totalTicketsRequested = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+				const availableCapacity = event.capacity - eventTracker.bookedTickets
+				
+				if (availableCapacity < totalTicketsRequested) {
+					// Event is at capacity, return waiting list option
+					return sendResponse(res, {
+						atCapacity: true,
+						availableCapacity,
+						requestedTickets: totalTicketsRequested,
+						eventName: event.name,
+						eventId: event._id,
+					}, "Event capacity reached. Would you like to join the waiting list?", true, ResCode.OK)
+				}
+			}
+		}
+
 		const eventDetails = { 
 			name: event?.name,
 			location: event?.location,
