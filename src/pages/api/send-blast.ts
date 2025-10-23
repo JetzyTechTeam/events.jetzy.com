@@ -41,6 +41,12 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
             View Event Details
           </a>
         </div>
+        <p style="font-size: 16px; color: #333; margin-bottom: 16px;">
+          You are registered for <strong>${event.name}</strong>
+        </p>
+        <p style="font-size: 18px; color: #333; margin-bottom: 16px; font-weight: bold;">
+          {{userEmail}}
+        </p>
         <p style="font-size: 16px; color: #333; margin-bottom: 24px;">
           ${message}
         </p>
@@ -55,13 +61,13 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
             If you can no longer attend this event and want to cancel your booking, click the button below to free up your ticket slots for other attendees.
           </p>
           <div style="text-align: center;">
-            <a href="${process.env.NEXT_PUBLIC_URL}/cancel-booking?bookingRef={{bookingRef}}" style="display: inline-block; padding: 10px 20px; background: #dc3545; color: #fff; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px;">
+            <a href="${process.env.NEXT_PUBLIC_URL}/cancel-booking?bookingRef={{bookingRef}}" style="display: inline-block; padding: 20px 40px; background: #dc3545; color: #fff; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 18px;">
               Cancel My Booking
             </a>
           </div>
         </div>
         <p style="font-size: 12px; color: #888; margin-top: 32px;">
-          If you have any questions, please contact us.<br/>
+          If you have any questions, please contact us at contact@jetzyapp.com.<br/>
           &copy; ${new Date().getFullYear()} Jetzy Events
         </p>
       </div>
@@ -71,11 +77,16 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     findPeople.forEach(async (person) => {
       // Create personalized HTML with booking reference if available
       let personalizedHtml = html;
+      
+      // Replace user email placeholder
+      const userEmail = (person as any).email || (person as any).customerEmail;
+      personalizedHtml = personalizedHtml.replace('{{userEmail}}', userEmail);
+      
       if (targetType === 'bookings' && 'bookingRef' in person && person.bookingRef) {
-        personalizedHtml = html.replace('{{bookingRef}}', person.bookingRef);
+        personalizedHtml = personalizedHtml.replace('{{bookingRef}}', person.bookingRef);
       } else {
         // Remove the cancel section for non-booking targets
-        personalizedHtml = html.replace(/<div style="background: #f8f9fa; border-left: 4px solid #dc3545; padding: 16px; margin: 24px 0; border-radius: 4px;">[\s\S]*?<\/div>/g, '');
+        personalizedHtml = personalizedHtml.replace(/<div style="background: #f8f9fa; border-left: 4px solid #dc3545; padding: 16px; margin: 24px 0; border-radius: 4px;">[\s\S]*?<\/div>/g, '');
       }
 
       await sendgrid.sendMultiple({
