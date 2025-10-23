@@ -58,6 +58,41 @@ export default function HostedEvents({ event }: Props) {
     return structuredClone(event);
   }, [event]);
 
+  const shareTitle = clonedEvent?.name || '';
+  const shareDesc = clonedEvent?.desc || '';
+
+  // @ts-ignore
+  const isAdmin = session?.user?.role === "admin";
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setShareUrl(window.location.href);
+    }
+  }, []);
+
+  const sharer = useWebShare({
+    title: shareTitle,
+    text: shareDesc,
+    url: shareUrl,
+  });
+
+  const { formattedDate, formattedTime } = useMemo(() => {
+    if (!clonedEvent?.startsOn) return { formattedDate: '', formattedTime: '' }
+
+    try {
+      const userTimeZone = clonedEvent.timezone?.split(') ')[1] || clonedEvent.timezone || 'UTC'
+      const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
+
+      const formattedDate = date.format('MMMM DD, YYYY') 
+      const formattedTime = date.format('hh:mm A') 
+
+      return { formattedDate, formattedTime }
+    } catch (error) {
+      console.error('Error formatting date:', error)
+      return { formattedDate: '', formattedTime: '' }
+    }
+  }, [clonedEvent?.startsOn, clonedEvent?.timezone])
+
   // Add error boundary for event data
   if (!clonedEvent) {
     return (
@@ -82,42 +117,6 @@ export default function HostedEvents({ event }: Props) {
       </div>
     )
   }
-
-  const shareTitle = clonedEvent.name;
-  const shareDesc = clonedEvent.desc;
-
-  // @ts-ignore
-  const isAdmin = session?.user?.role === "admin";
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setShareUrl(window.location.href);
-    }
-  }, []);
-
-  const sharer = useWebShare({
-    title: shareTitle,
-    text: shareDesc,
-    url: shareUrl,
-  });
-
-
-const { formattedDate, formattedTime } = useMemo(() => {
-  if (!clonedEvent?.startsOn) return { formattedDate: '', formattedTime: '' }
-
-  try {
-    const userTimeZone = clonedEvent.timezone?.split(') ')[1] || clonedEvent.timezone || 'UTC'
-    const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
-
-    const formattedDate = date.format('MMMM DD, YYYY') 
-    const formattedTime = date.format('hh:mm A') 
-
-    return { formattedDate, formattedTime }
-  } catch (error) {
-    console.error('Error formatting date:', error)
-    return { formattedDate: '', formattedTime: '' }
-  }
-}, [clonedEvent.startsOn, clonedEvent.timezone])
 
   return (
     <>
