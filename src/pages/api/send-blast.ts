@@ -71,7 +71,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     findPeople.forEach(async (person) => {
       // Create personalized HTML with booking reference if available
       let personalizedHtml = html;
-      if (targetType === 'bookings' && person.bookingRef) {
+      if (targetType === 'bookings' && 'bookingRef' in person && person.bookingRef) {
         personalizedHtml = html.replace('{{bookingRef}}', person.bookingRef);
       } else {
         // Remove the cancel section for non-booking targets
@@ -79,7 +79,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       }
 
       await sendgrid.sendMultiple({
-        to: person.email || person.customerEmail,
+        to: person.email || (person as any).customerEmail,
         from: process.env.SENDGRID_EMAIL_SENDER as string,
         subject: subject,
         html: personalizedHtml,
