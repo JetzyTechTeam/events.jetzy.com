@@ -30,10 +30,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Booking is already cancelled", false, ResCode.BAD_REQUEST)
 		}
 
-		// Check if booking can be cancelled (not confirmed or already processed)
-		if (booking.status === BookingStatus.CONFIRMED) {
-			return sendResponse(res, null, "Cannot cancel confirmed booking. Please contact support.", false, ResCode.BAD_REQUEST)
-		}
+		// Allow cancellation of confirmed bookings
+		// Only prevent cancellation if already cancelled
 
 		// Update booking status to cancelled
 		await Bookings.findByIdAndUpdate(booking._id, { 
