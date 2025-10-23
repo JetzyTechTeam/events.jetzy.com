@@ -51,8 +51,15 @@ export default function HostedEvents({ event }: Props) {
   const [shareUrl, setShareUrl] = useState("");
   const { data: session } = useSession();
 
+  const clonedEvent = useMemo(() => {
+    if (!event || !event._id || !event.name) {
+      return null;
+    }
+    return structuredClone(event);
+  }, [event]);
+
   // Add error boundary for event data
-  if (!event || !event._id || !event.name) {
+  if (!clonedEvent) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
@@ -75,8 +82,6 @@ export default function HostedEvents({ event }: Props) {
       </div>
     )
   }
-
-  const clonedEvent = useMemo(() => structuredClone(event), [event]);
 
   const shareTitle = clonedEvent.name;
   const shareDesc = clonedEvent.desc;
