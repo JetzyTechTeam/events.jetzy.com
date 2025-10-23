@@ -122,12 +122,6 @@ export default function CancelBookingPage() {
 						>
 							{loading ? 'Cancelling...' : 'Yes, Cancel My Booking'}
 						</button>
-						<button
-							onClick={() => router.back()}
-							className="bg-gray-600 text-white px-6 py-3 rounded-full hover:bg-gray-700 transition-all transform hover:scale-105 shadow-lg"
-						>
-							Keep My Booking
-						</button>
 					</div>
 				</div>
 			</div>
