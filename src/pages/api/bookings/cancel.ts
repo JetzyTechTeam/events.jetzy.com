@@ -52,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Get updated booking for response
 		const updatedBooking = await Bookings.findById(booking._id)
 
-		return sendResponse(res, updatedBooking, "Booking cancelled successfully", true, ResCode.OK)
+		return sendResponse(res, updatedBooking, "Booking cancelled successfully", true, ResCode.OK) true, ResCode.OK)
 	} catch (error: any) {
 		console.error("Error cancelling booking:", error)
 		return sendResponse(res, null, `Failed to cancel booking: ${error.message}`, false, ResCode.INTERNAL_SERVER_ERROR)
