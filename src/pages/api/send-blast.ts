@@ -42,7 +42,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           </a>
         </div>
         <p style="font-size: 16px; color: #333; margin-bottom: 16px;">
-          You are registered for <strong>${event.name}</strong> with
+          You are registered for <strong>${event.name}</strong> with email
         </p>
         <p style="font-size: 18px; color: #333; margin-bottom: 16px; font-weight: bold;">
           {{userEmail}}
