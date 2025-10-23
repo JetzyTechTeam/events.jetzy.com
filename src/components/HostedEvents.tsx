@@ -49,14 +49,33 @@ type Props = {
 
 export default function HostedEvents({ event }: Props) {
   const [shareUrl, setShareUrl] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const { data: session } = useSession();
 
   const clonedEvent = useMemo(() => {
+    console.log('Event data:', event);
     if (!event || !event._id || !event.name) {
+      console.log('Invalid event data:', { event, hasId: !!event?._id, hasName: !!event?.name });
       return null;
     }
-    return structuredClone(event);
+    try {
+      const cloned = structuredClone(event);
+      console.log('Cloned event:', cloned);
+      return cloned;
+    } catch (error) {
+      console.error('Error cloning event:', error);
+      return null;
+    }
   }, [event]);
+
+  useEffect(() => {
+    // Add a small delay to prevent immediate error display
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   const shareTitle = clonedEvent?.name || '';
   const shareDesc = clonedEvent?.desc || '';
@@ -92,6 +111,23 @@ export default function HostedEvents({ event }: Props) {
       return { formattedDate: '', formattedTime: '' }
     }
   }, [clonedEvent?.startsOn, clonedEvent?.timezone])
+
+  // Show loading state initially
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+          <div className="p-6 sm:p-8 text-center">
+            <div className="mb-6">
+              <div className="w-16 h-16 mx-auto border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Loading Event...</h1>
+            <p className="text-gray-600 mb-6">Please wait while we load the event details.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Add error boundary for event data
   if (!clonedEvent) {

@@ -46,25 +46,41 @@ export default function EventDetailPage({ event }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	// let get the slug from the request params
-	const { slug } = context.params
+	try {
+		// let get the slug from the request params
+		const { slug } = context.params
 
-	if (!slug)
-		// If the slug is not found, return a 404
+		if (!slug) {
+			console.log('No slug provided');
+			return {
+				notFound: true,
+			}
+		}
+
+		console.log('Looking for event with slug:', slug);
+
+		// Get the event by slug
+		const event = await Events.findOne({ slug: slug as string, isDeleted: false })
+		
+		if (!event) {
+			console.log('Event not found for slug:', slug);
+			return { notFound: true } // If the event is not found, return a 404
+		}
+
+		console.log('Event found:', { id: event._id, name: event.name, slug: event.slug });
+
+		// compress the event data
+		const eventData = JSON.stringify(event.toJSON())
+
+		return {
+			props: {
+				event: eventData,
+			},
+		}
+	} catch (error) {
+		console.error('Error in getServerSideProps:', error);
 		return {
 			notFound: true,
 		}
-
-	// Get the event by slug
-	const event = await Events.findOne({ slug: slug as string, isDeleted: false })
-	if (!event) return { notFound: true } // If the event is not found, return a 404
-
-	// compress the event data
-	const eventData = JSON.stringify(event.toJSON())
-
-	return {
-		props: {
-			event: eventData,
-		},
 	}
 }
