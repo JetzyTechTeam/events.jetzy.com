@@ -3,7 +3,7 @@ import { dbconn } from "@/configs/database"
 
 export interface IWaitingList {
 	_id: string
-	eventId: string
+	eventId: any
 	firstName: string
 	lastName: string
 	email: string
