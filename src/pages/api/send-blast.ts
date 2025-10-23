@@ -36,6 +36,11 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     <div style="font-family: Arial, sans-serif; background: #f9f9f9; padding: 32px;">
       <div style="max-width: 600px; margin: auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 32px;">
         <h2 style="color: #2B6CB0; margin-bottom: 16px;">${subject}</h2>
+        <div style="text-align: center; margin-bottom: 24px;">
+          <a href="${eventLink}" style="display: inline-block; padding: 12px 24px; background: #2B6CB0; color: #fff; border-radius: 6px; text-decoration: none; font-weight: bold;">
+            View Event Details
+          </a>
+        </div>
         <p style="font-size: 16px; color: #333; margin-bottom: 24px;">
           ${message}
         </p>
@@ -43,11 +48,6 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           <strong>Event:</strong> ${event.name}<br/>
           <strong>Date:</strong> ${event.startsOn ? new Date(event.startsOn).toLocaleString() : ""}<br/>
           <strong>Location:</strong> ${event.location}
-        </div>
-        <div style="text-align: center; margin-bottom: 24px;">
-          <a href="${eventLink}" style="display: inline-block; padding: 12px 24px; background: #2B6CB0; color: #fff; border-radius: 6px; text-decoration: none; font-weight: bold; margin-right: 12px;">
-            View Event Details
-          </a>
         </div>
         <div style="background: #f8f9fa; border-left: 4px solid #dc3545; padding: 16px; margin: 24px 0; border-radius: 4px;">
           <p style="margin: 0 0 12px 0; font-size: 14px; color: #6c757d;">
