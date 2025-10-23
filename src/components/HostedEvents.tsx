@@ -487,6 +487,27 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
     queryFn: () => axios.get(`/api/waiting-list/${eventId}`),
   });
 
+  // Debug logging
+  console.log("EventWaitingList Debug:", {
+    eventId,
+    isLoading,
+    waitingList,
+    dataLength: waitingList?.data?.data?.length
+  });
+
+  // Test API call directly
+  React.useEffect(() => {
+    const testApi = async () => {
+      try {
+        const response = await axios.get(`/api/waiting-list/${eventId}`);
+        console.log("Direct API test result:", response.data);
+      } catch (error) {
+        console.error("Direct API test error:", error);
+      }
+    };
+    testApi();
+  }, [eventId]);
+
   const handleApprove = async (waitingListId: string) => {
     try {
       const response = await axios.post('/api/waiting-list/approve', {
