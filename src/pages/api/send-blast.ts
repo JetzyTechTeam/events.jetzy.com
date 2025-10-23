@@ -47,7 +47,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           If you can not attend, kindly cancel to make room for people on waitlist.
         </p>
         <div style="text-align: center; margin-bottom: 24px;">
-          <a href="${process.env.NEXT_PUBLIC_URL}/cancel-booking?bookingRef={{bookingRef}}" style="display: inline-block; padding: 20px 40px; background: #dc3545; color: #fff; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 18px;">
+          <a href="${process.env.NEXT_PUBLIC_URL}/cancel-booking?bookingRef={{bookingRef}}" style="display: inline-block; padding: 20px 40px; background: #dc3545; color: #fff; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 20px;">
             Cancel My Booking
           </a>
         </div>
