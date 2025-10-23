@@ -2,17 +2,24 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { WaitingList } from "@/models/waitingList"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
+import mongoose from "mongoose"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	const { eventId } = req.query
 
 	if (req.method === "GET") {
 		try {
+			console.log("Fetching waiting list for eventId:", eventId)
+			
+			// Convert string eventId to ObjectId for proper querying
+			const objectId = new mongoose.Types.ObjectId(eventId as string)
+			
 			const waitingList = await WaitingList.find({ 
-				eventId,
+				eventId: objectId,
 				status: 'waiting'
 			}).sort({ createdAt: 1 }) // Oldest first
 
+			console.log("Found waiting list entries:", waitingList.length)
 			return sendResponse(res, waitingList, "Waiting list retrieved successfully", true, ResCode.OK)
 		} catch (error: any) {
 			console.error("Error fetching waiting list:", error)

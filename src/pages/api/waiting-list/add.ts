@@ -4,6 +4,7 @@ import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { sendWaitingListNotification } from "@/lib/send-grid"
 import { dbconn } from "@/configs/database"
+import mongoose from "mongoose"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -37,9 +38,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		console.log("Transformed tickets:", transformedTickets)
 
+		// Convert eventId to ObjectId for proper database operations
+		const objectId = new mongoose.Types.ObjectId(eventId)
+		
 		// Check if user is already on waiting list for this event
 		const existingEntry = await WaitingList.findOne({
-			eventId,
+			eventId: objectId,
 			email,
 		})
 
@@ -51,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Add to waiting list
 		const waitingListEntry = await WaitingList.create({
-			eventId,
+			eventId: objectId,
 			firstName,
 			lastName,
 			email,
