@@ -24,7 +24,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		if (existingEntry) {
-			return sendResponse(res, null, "You are already on the waiting list for this event", false, ResCode.BAD_REQUEST)
+			// User is already on waiting list, return success without error
+			return sendResponse(res, existingEntry, "Already on waiting list", true, ResCode.OK)
 		}
 
 		// Add to waiting list

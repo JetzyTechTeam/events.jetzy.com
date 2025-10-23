@@ -1,7 +1,7 @@
 import { Error } from "@Jetzy/lib/_toaster"
 import { CreateCheckoutSessionThunk, getCheckoutStore, toggleCheckoutForm } from "@Jetzy/redux/reducers/checkoutSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 
@@ -83,7 +83,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	}
 
 	// Handle joining waiting list
-	const handleJoinWaitingList = async () => {
+	const handleJoinWaitingList = useCallback(async () => {
 		try {
 			const response = await fetch('/api/waiting-list/add', {
 				method: 'POST',
@@ -105,6 +105,10 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			
 			if (result.status) {
 				setWaitingListRegistered(true)
+				// Don't show error message if user is already on waiting list
+				if (result.message !== "Already on waiting list") {
+					// Only show success message for new registrations
+				}
 			} else {
 				Error("Error", result.message || "Failed to join waiting list")
 			}
@@ -112,14 +116,14 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			console.error("Error joining waiting list:", error)
 			Error("Error", "Failed to join waiting list. Please try again.")
 		}
-	}
+	}, [waitingListData, formData, tickets])
 
 	// Automatically register to waiting list when waiting list is shown
 	useEffect(() => {
 		if (showWaitingList && !waitingListRegistered && formData.firstName && formData.lastName && formData.email && formData.phone) {
 			handleJoinWaitingList()
 		}
-	}, [showWaitingList, waitingListRegistered, formData.firstName, formData.lastName, formData.email, formData.phone])
+	}, [showWaitingList, waitingListRegistered, formData.firstName, formData.lastName, formData.email, formData.phone, handleJoinWaitingList])
 
 	return (
 		<>
