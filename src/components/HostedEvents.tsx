@@ -49,6 +49,7 @@ type Props = {
 
 export default function HostedEvents({ event }: Props) {
   const [shareUrl, setShareUrl] = useState("");
+  const [activeTab, setActiveTab] = useState<'bookings' | 'waiting-list'>('bookings');
   const { data: session } = useSession();
 
   // Validate event data early and safely
@@ -208,8 +209,47 @@ export default function HostedEvents({ event }: Props) {
         </div>
 
 
-        {isAdmin && clonedEvent?._id && <EventBookings eventId={clonedEvent._id.toString()} /> }
-        {isAdmin && clonedEvent?._id && clonedEvent?.name && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} /> }
+        {isAdmin && clonedEvent?._id && (
+          <div className="max-w-4xl mx-auto mt-8">
+            {/* Admin Tabs */}
+            <div className="bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden">
+              {/* Tab Headers */}
+              <div className="flex border-b border-[#434343]">
+                <button
+                  onClick={() => setActiveTab('bookings')}
+                  className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${
+                    activeTab === 'bookings'
+                      ? 'bg-[#F79432] text-black'
+                      : 'text-white hover:bg-[#434343]'
+                  }`}
+                >
+                  Bookings
+                </button>
+                <button
+                  onClick={() => setActiveTab('waiting-list')}
+                  className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${
+                    activeTab === 'waiting-list'
+                      ? 'bg-[#F79432] text-black'
+                      : 'text-white hover:bg-[#434343]'
+                  }`}
+                >
+                  Waiting List
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              <div className="p-6">
+                {activeTab === 'bookings' && (
+                  <EventBookings eventId={clonedEvent._id.toString()} />
+                )}
+                {activeTab === 'waiting-list' && (
+                  <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
         {clonedEvent && <EventTicketsComponent event={clonedEvent} />}
@@ -346,7 +386,7 @@ const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
   },   [bookings?.data]);
 
   return (
-    <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
+    <div>
       
       
       
@@ -489,7 +529,7 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
   };
 
   return (
-    <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-white">Waiting List</h3>
         {!isLoading && waitingList?.data && (
