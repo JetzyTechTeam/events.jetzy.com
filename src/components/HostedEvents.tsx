@@ -365,25 +365,21 @@ function EventBookings({ eventId }: { eventId: string }) {
     queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
   });
 
-const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
-    if (!bookings?.data)  return   { totalTickets: 0, uniqueCustomers: 0 };
+  const { data: totals, isLoading: totalsLoading } = useQuery({
+    queryKey: ["eventTotals", eventId],
+    queryFn: () => axios.get(`/api/events/${eventId}/totals`),
+  });
 
-    let ticketCount= 0;//# of tickets
-    const customerSet = new Set<string>();//unique email to count number of customers
+  const { totalTickets, uniqueCustomers, cancelledTickets, cancelledGuests } = React.useMemo(() => {
+    if (!totals?.data) return { totalTickets: 0, uniqueCustomers: 0, cancelledTickets: 0, cancelledGuests: 0 };
 
-    bookings.data.forEach((booking: Booking) => {
-      //increment for each ticket
-      booking.tickets.forEach((ticket) => {
-
-        ticketCount += ticket.quantity;
-      });
-
-      
-      customerSet.add(booking.customerEmail);
-    });
-
-    return {   totalTickets: ticketCount, uniqueCustomers: customerSet.size};
-  },   [bookings?.data]);
+    return {
+      totalTickets: totals.data.totalTickets || 0,
+      uniqueCustomers: totals.data.uniqueGuests || 0,
+      cancelledTickets: totals.data.cancelledTickets || 0,
+      cancelledGuests: totals.data.cancelledGuests || 0,
+    };
+  }, [totals?.data]);
 
   return (
     <div>
@@ -392,14 +388,24 @@ const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
       
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-white">Bookings</h3>
-        {!isLoading && (
+        {!isLoading && !totalsLoading && (
           <div className="text-sm text-white">
-            <span className="mr-4 ">
-              <span className="font-semibold   text-white ">Tickets:</span>{totalTickets}
-            </span>
-            <span>
-              <span className="font-semibold text-white" >Customers:</span>  {uniqueCustomers}
-            </span>
+            <div className="flex flex-col space-y-1">
+              <div className="flex space-x-4">
+                <span className="font-semibold text-white">Active Tickets:</span>
+                <span className="text-green-400">{totalTickets}</span>
+                <span className="font-semibold text-white">Active Customers:</span>
+                <span className="text-green-400">{uniqueCustomers}</span>
+              </div>
+              {(cancelledTickets > 0 || cancelledGuests > 0) && (
+                <div className="flex space-x-4">
+                  <span className="font-semibold text-white">Cancelled Tickets:</span>
+                  <span className="text-red-400">{cancelledTickets}</span>
+                  <span className="font-semibold text-white">Cancelled Customers:</span>
+                  <span className="text-red-400">{cancelledGuests}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
