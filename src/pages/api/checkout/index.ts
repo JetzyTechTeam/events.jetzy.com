@@ -26,13 +26,40 @@ type BodyParams = {
 	}
 }
 // initialize stripe
-const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
+if (!process.env.NEXT_STRIPE_SECRET_KEY) {
+	throw new Error("NEXT_STRIPE_SECRET_KEY environment variable is required")
+}
+const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
+		// Validate request method
+		if (req.method !== 'POST') {
+			return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
+		}
+
+		// Validate required environment variables
+		if (!process.env.NEXT_PUBLIC_URL) {
+			return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
+		}
+
 		// Get request params
+		if (!req.body?.tickets || !req.body?.user) {
+			return sendResponse(res, null, "Missing required parameters: tickets and user", false, ResCode.BAD_REQUEST)
+		}
+
 		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
+
+		// Validate tickets array
+		if (!Array.isArray(tickets) || tickets.length === 0) {
+			return sendResponse(res, null, "Invalid tickets data", false, ResCode.BAD_REQUEST)
+		}
+
+		// Validate user data
+		if (!user.email || !user.firstName || !user.lastName) {
+			return sendResponse(res, null, "Invalid user data", false, ResCode.BAD_REQUEST)
+		}
 
 		// create jetzy user
 		try {
@@ -64,6 +91,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			isDeleted: false,
 		})
 
+		if (!event) {
+			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
+		}
+
+		// Check if event has capacity limit
+		if (event.capacity > 0) {
+			// Get current booked tickets from event tracker
+			const { EventTracker } = await import("@/models/events/event-tracker")
+			const eventTracker = await EventTracker.findOne({ eventId: event._id })
+			
+			if (eventTracker) {
+				const totalTicketsRequested = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+				const availableCapacity = event.capacity - eventTracker.bookedTickets
+				
+				if (availableCapacity < totalTicketsRequested) {
+					// Event is at capacity, return waiting list option
+					return sendResponse(res, {
+						atCapacity: true,
+						availableCapacity,
+						requestedTickets: totalTicketsRequested,
+						eventName: event.name,
+						eventId: event._id,
+					}, "Event capacity reached. Would you like to join the waiting list?", true, ResCode.OK)
+				}
+			}
+		}
+
 		const eventDetails = { 
 			name: event?.name,
 			location: event?.location,
@@ -72,14 +126,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			slug: event?.slug,
 		}
 
+		// Validate and log URLs
+		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"
+		console.log("NEXT_PUBLIC_URL:", baseUrl)
+		
+		// Ensure URL is properly formatted
+		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
+		const successUrl = `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
+		const cancelUrl = `${cleanBaseUrl}/cancel`
+		
+		console.log("Success URL:", successUrl)
+		console.log("Cancel URL:", cancelUrl)
+
+		// Validate URLs
+		try {
+			new URL(successUrl.replace('{CHECKOUT_SESSION_ID}', 'test'))
+			new URL(cancelUrl)
+		} catch (urlError: any) {
+			console.error("Invalid URL format:", urlError)
+			throw new Error(`Invalid URL format: ${urlError.message || urlError}`)
+		}
+
 		// create a checkout session
 		const session = await stripe.checkout.sessions.create({
 			client_reference_id: reference,
 			payment_method_types: ["card"],
 			line_items: prices,
 			mode: "payment",
-			success_url: `${process.env.NEXT_PUBLIC_URL}/success?session_id={CHECKOUT_SESSION_ID}&payload=${req?.body?.tickets}&event=${encodeURIComponent(JSON.stringify(eventDetails))}`,
-			cancel_url: `${process.env.NEXT_PUBLIC_URL}/cancel`,
+			success_url: successUrl,
+			cancel_url: cancelUrl,
 			metadata: {
 				firstName: user.firstName,
 				lastName: user.lastName,
@@ -87,8 +162,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				phone: user.phone,
 				tickets: req.body.tickets,
 				eventId: tickets[0]?.eventId || "",
+				eventDetails: JSON.stringify(eventDetails),
 			},
 			customer_email: user.email,
+		}).catch((stripeError) => {
+			console.error("Stripe session creation failed:", stripeError)
+			throw new Error(`Stripe error: ${stripeError.message}`)
 		})
 
 		if (session) {

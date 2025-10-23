@@ -1,120 +1,122 @@
-import BookingTableComponent from "@/components/bookings/BookingTableComponent"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
-import { Bookings } from "@/models/events/bookings"
-import { IBookings, IEvent } from "@/models/events/types"
+import { Events } from "@/models/events"
+import { IBookings , IEvent} from "@/models/events/types"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
 import React from "react"
+import BookingTableEvents from "@/components/bookings/BookingEventsTable"
 
-type Props = {
-	bookings: string | null
-	pagination: {
-		total: number
-		page: number
+
+type Props={
+	events : IEvent[] | null
+	pagination :{
+		total : number
+		page: number 
 		showing: number
 		limit: number
-		totalPages: number
+		totalPages: number 
 	}
-	exportable: string | null
 }
+export type Booking = {
+	_id: string;
+	bookingRef: string;
+	eventId: string;
+	tickets: { ticketId: string; quantity: number }[];
+	status: string;
+	customerName: string;
+	customerEmail: string;
+	customerPhone: string;
+	total: number;
+	createdAt:string;
+};
 
 export type Exportable = {
 	booking: IBookings
 	event: IEvent
 	bookedTickets: string[]
 }
-export default function BookingsPage({ bookings, pagination, exportable }: Props) {
-	if (!bookings) {
-		return (
-			<ConsoleLayout page={Pages.Bookings}>
-				<div>No bookings found</div>
-			</ConsoleLayout>
-		)
-	}
 
-	if (!exportable) {
+export default function BookingsPage({ events , pagination  }: Props) {
+	if (!events) {
 		return (
-			<ConsoleLayout page={Pages.Bookings}>
+			<ConsoleLayout page={Pages.Bookings}> 
 				<div>No bookings found</div>
 			</ConsoleLayout>
+			
 		)
 	}
 
 	return (
 		<ConsoleLayout page={Pages.Bookings}>
-			<BookingTableComponent rows={JSON.parse(bookings) as IBookings[]} pagination={pagination} exportable={JSON.parse(exportable) as Exportable[]} />
+			
+			<BookingTableEvents events={events} pagination={pagination}/>
 		</ConsoleLayout>
 	)
 }
-
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	// check if user is authorized
+	//check if user is authorized
 	const session = await authorizedOnly(context)
 	if (!session) return session
 
-	// Booking pagination params
-	const limit = 20
+	//pagination
+	//const limit = 5
+	const limit =10
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * limit
 
-	// Fetch the bookings from the database
-	const bookings = await Bookings.find({ isDeleted: false }).limit(limit).skip(skip).sort({ createdAt: -1 })
-	if (!bookings) return { props: { bookings: null } }
 
-	// get total count of bookings
-	const total = await Bookings.countDocuments({ isDeleted: false })
-	// serialize the bookings
-	const data = await Promise.all(
-		bookings.map(async (booking) => {
-			const event = await booking.getEvent()
 
-			return {
-				...booking.toJSON(),
-				event,
-			}
-		}),
-	)
+  //fetch fields
+    const events = await Events.find(
+    { isDeleted: false },
+    { _id: 1, name: 1, startsOn: 1, endsOn: 1 } 
+    )
+    .sort({ startsOn: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean(); // plain JS objects
 
-	// calculate page total and current page
+    if (!events || events.length === 0) {
+        return {
+            props: {
+			events: [],
+			pagination: { total: 0, page, showing: 0, limit, totalPages: 0 },
+        },
+        };
+    }
+
+	
+  //serialize _id and Dates
+    const serializedEvents = events.map((e) => ({
+    ...e,
+    _id: e._id.toString(),
+    startsOn: e.startsOn.toISOString(),
+    endsOn: e.endsOn.toISOString(),
+    }));
+
+
+	const total =await Events.countDocuments({isDeleted:false})
+
+
+	//calculate page total and current page
 	const totalPages = Math.ceil(total / limit)
 
-	// pagination object
+	//pagination object
 	const pagination = {
 		total,
 		page,
-		showing: data.length,
+		showing: events.length,
 		limit,
 		totalPages,
 	}
 
-	// Get bookings to be export into excel
-	const bookingsForExport = await Bookings.find({ isDeleted: false }).sort({ createdAt: -1 })
-	if (!bookingsForExport) return { props: { bookings: null, exportable: null } }
-
-	// using the ticket id, get the  event details
-	const exportable = await Promise.all(
-		bookingsForExport.map(async (booking) => {
-			const event = await booking.getEvent()
-
-			const bookedTickets = booking.tickets.map((ticket) => {
-				const eventTicket = event?.tickets.find((t) => t._id.toString() === ticket.ticketId.toString())
-				return `${eventTicket?.name} x ${ticket.quantity}`
-			})
-
-			return {
-				booking: booking.toJSON(),
-				event: event.toJSON(),
-				bookedTickets,
-			}
-		}),
-	)
-
 	return {
 		props: {
-			bookings: JSON.stringify(data),
+			//bookings: JSON.stringify(data),
+			events:serializedEvents,
 			pagination,
-			exportable: JSON.stringify(exportable),
+			//exportable: JSON.stringify(exportable),
 		},
 	}
 }

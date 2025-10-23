@@ -26,6 +26,9 @@ import { signOut, useSession } from "next-auth/react";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -35,6 +38,23 @@ interface EventCardProps {
 }
 
 const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
+
+  
+const { data: totals } = useQuery({
+  queryKey: ["eventTotals", event._id] ,
+  queryFn:  () => axios.get(`/api/events/${event._id}/totals`),
+});
+
+const { data: session } = useSession();
+  // @ts-ignore
+  const isAdmin = session?.user?.role === "admin";
+
+const totalTickets = totals?.data?.totalTickets ?? 0;
+const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
+
+// Calculate total available tickets for percentage
+const totalAvailableTickets = event.capacity ?? 0;
+
   const cardBg = useColorModeValue("#1e1e1e", "gray.700");
   const borderColor = useColorModeValue("#434343", "gray.600");
 
@@ -57,7 +77,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
   const formattedTime = date.format('hh:mm A') 
 
   return { formattedDate, formattedTime }
-}, [event.startsOn])
+}, [event.startsOn, event.timezone])
 
   return (
     <Box
@@ -87,7 +107,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
       </Box>
       <Box p="2">
         <Stack spacing="3">
-          <Text fontSize="xl" fontWeight="bold">
+          <Text fontSize="xl" fontWeight="bold" wordBreak="break-word" overflowWrap="anywhere">
             {event.name}
           </Text>
           <Box h="24">
@@ -108,6 +128,8 @@ const { formattedDate, formattedTime } = useMemo(() => {
               display="flex"
               gap="2"
               mt="2"
+              wordBreak="break-word"
+              overflowWrap="anywhere"
             >
               <span>
                 <LocationSVG />
@@ -115,17 +137,27 @@ const { formattedDate, formattedTime } = useMemo(() => {
               {location}
             </Text>
           </Box>
-          <Box
-            bg="#3E3E3E"
-            w="max-content"
-            px="2"
-            py="1"
-            rounded="lg"
-            display="flex"
-            justifyContent="end"
-          >
-            <Text className="uppercase text-xs font-semibold">get tickets</Text>
+          <Box display="flex" alignItems="center" justifyContent="space-between " mt=" 2">
+            {/* Show tickets sold for all users */}
+            <Box fontSize="sm" color="gray.400">
+              <Text>Total people: {uniqueGuests}</Text>
+              <Text>Total tickets: {totalTickets}</Text>
+            </Box>
+
+            <Box
+              bg="#3E3E3E"
+              w="max-content"
+              px="2"
+              py="1"
+              rounded="lg"
+              display="flex"
+              justifyContent="end"
+            >
+              <Text className="uppercase text-xs font-semibold">get tickets</Text>
+            </Box>
           </Box>
+
+
         </Stack>
       </Box>
     </Box>

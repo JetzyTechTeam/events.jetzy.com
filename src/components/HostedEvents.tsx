@@ -51,10 +51,23 @@ export default function HostedEvents({ event }: Props) {
   const [shareUrl, setShareUrl] = useState("");
   const { data: session } = useSession();
 
-  const clonedEvent = useMemo(() => structuredClone(event), [event]);
+  // Validate event data early and safely
+  const isValidEvent = event && event._id && event.name;
 
-  const shareTitle = clonedEvent.name;
-  const shareDesc = clonedEvent.desc;
+  const clonedEvent = useMemo(() => {
+    if (!isValidEvent) {
+      return null;
+    }
+    try {
+      return structuredClone(event);
+    } catch (error) {
+      console.error('Error cloning event:', error);
+      return null;
+    }
+  }, [event, isValidEvent]);
+
+  const shareTitle = clonedEvent?.name || '';
+  const shareDesc = clonedEvent?.desc || '';
 
   // @ts-ignore
   const isAdmin = session?.user?.role === "admin";
@@ -71,18 +84,47 @@ export default function HostedEvents({ event }: Props) {
     url: shareUrl,
   });
 
+  const { formattedDate, formattedTime } = useMemo(() => {
+    if (!clonedEvent?.startsOn) return { formattedDate: '', formattedTime: '' }
 
-const { formattedDate, formattedTime } = useMemo(() => {
-  if (!clonedEvent?.startsOn) return { formattedDate: '', formattedTime: '' }
+    try {
+      const userTimeZone = clonedEvent.timezone?.split(') ')[1] || clonedEvent.timezone || 'UTC'
+      const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
 
-  const userTimeZone = clonedEvent.timezone?.split(') ')[1]
-  const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
+      const formattedDate = date.format('MMMM DD, YYYY') 
+      const formattedTime = date.format('hh:mm A') 
 
-  const formattedDate = date.format('MMMM DD, YYYY') 
-  const formattedTime = date.format('hh:mm A') 
+      return { formattedDate, formattedTime }
+    } catch (error) {
+      console.error('Error formatting date:', error)
+      return { formattedDate: '', formattedTime: '' }
+    }
+  }, [clonedEvent?.startsOn, clonedEvent?.timezone])
 
-  return { formattedDate, formattedTime }
-}, [clonedEvent.startsOn])
+  // Add error boundary for event data - only show if event is truly invalid
+  if (!isValidEvent || !clonedEvent) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+          <div className="p-6 sm:p-8 text-center">
+            <div className="mb-6">
+              <svg className="w-16 h-16 mx-auto text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Event Not Found</h1>
+            <p className="text-gray-600 mb-6">We couldn&apos;t find the event you were looking for. Please try again or contact the event organizer for more information.</p>
+            <button
+              onClick={() => window.location.href = "/"}
+              className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
+            >
+              See All Events
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -94,7 +136,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
         <div className="max-w-4xl mx-auto bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
           {/* Banner Image */}
           <div className="relative p-3">
-            {clonedEvent.images.length > 1 ? (
+            {clonedEvent.images && clonedEvent.images.length > 1 ? (
               <Slider {...settings}>
                 {clonedEvent.images.map((image, idx) => (
                   <div key={idx} className="!flex !items-center !justify-center w-full md:h-[335px] sm:h-52 bg-black rounded-xl">
@@ -106,13 +148,17 @@ const { formattedDate, formattedTime } = useMemo(() => {
                   </div>
                 ))}
               </Slider>
-            ) : (
+            ) : clonedEvent.images && clonedEvent.images.length === 1 ? (
               <div className="w-full md:h-[335px] sm:h-52 bg-black flex items-center justify-center rounded-xl">
                 <Image
                   src={clonedEvent.images[0]}
                   alt="Event Banner"
                   className="max-h-full max-w-full object-contain rounded-xl"
                 />
+              </div>
+            ) : (
+              <div className="w-full md:h-[335px] sm:h-52 bg-gray-800 flex items-center justify-center rounded-xl">
+                <p className="text-gray-400">No image available</p>
               </div>
             )}
           </div>
@@ -122,17 +168,17 @@ const { formattedDate, formattedTime } = useMemo(() => {
             {/* Header Section */}
             <div className="flex flex-col sm:flex-row justify-between items-start mb-6 space-y-4 sm:space-y-0">
               <div className="text-center sm:text-left">
-                <h2 className="text-3xl font-bold">
+                <h2 className="text-3xl font-bold break-words overflow-wrap-anywhere">
                   {clonedEvent.name}
                 </h2>
-                <p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb]">
+                <p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb] break-words">
                   <DateTimeSVG />
                   {formattedDate},{" "}
                   {formattedTime} {clonedEvent?.timezone || ""}
                 </p>
-                <p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb]">
+                <p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb] break-words">
                   <LocationSVG />
-                  {clonedEvent.location}
+                  <span className="break-words overflow-wrap-anywhere">{clonedEvent.location}</span>
                 </p>
 
                 <h3 className="text-sm sm:text-base font-semibold ">
@@ -162,6 +208,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
 
 
         {isAdmin && <EventBookings eventId={clonedEvent._id.toString()} /> }
+        {isAdmin && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} /> }
         {isAdmin && <GuestsList eventId={clonedEvent._id.toString()} />}
 
         <EventTicketsComponent event={clonedEvent} />
@@ -244,6 +291,7 @@ interface Booking {
   subTotal: number;
   tax: number;
   total: number;
+  createdAt: string;
 }
 
 function EventBookings({ eventId }: { eventId: string }) {
@@ -252,9 +300,45 @@ function EventBookings({ eventId }: { eventId: string }) {
     queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
   });
 
+const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
+    if (!bookings?.data)  return   { totalTickets: 0, uniqueCustomers: 0 };
+
+    let ticketCount= 0;//# of tickets
+    const customerSet = new Set<string>();//unique email to count number of customers
+
+    bookings.data.forEach((booking: Booking) => {
+      //increment for each ticket
+      booking.tickets.forEach((ticket) => {
+
+        ticketCount += ticket.quantity;
+      });
+
+      
+      customerSet.add(booking.customerEmail);
+    });
+
+    return {   totalTickets: ticketCount, uniqueCustomers: customerSet.size};
+  },   [bookings?.data]);
+
   return (
     <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
-      <h3 className="text-lg font-semibold mb-4 text-white">Bookings</h3>
+      
+      
+      
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-white">Bookings</h3>
+        {!isLoading && (
+          <div className="text-sm text-white">
+            <span className="mr-4 ">
+              <span className="font-semibold   text-white ">Tickets:</span>{totalTickets}
+            </span>
+            <span>
+              <span className="font-semibold text-white" >Customers:</span>  {uniqueCustomers}
+            </span>
+          </div>
+        )}
+      </div>
+
 
       {isLoading && <p className="text-gray-300">Loading bookings...</p>}
 
@@ -289,6 +373,11 @@ function EventBookings({ eventId }: { eventId: string }) {
             <p className="text-sm text-[#bbbbbb] mt-1">
               <span className="font-semibold text-white">Status:</span>{" "}
               {booking.status}
+            </p>
+
+            <p className="text-sm text-[#bbbbbb] mt-1">
+              <span className="font-semibold text-white">Created:</span>{" "}
+              {new Date(booking.createdAt).toLocaleString()}
             </p>
 
             <div className="mt-3">
@@ -326,14 +415,138 @@ const linkifyOptions = {
   className: 'text-orange-600 underline hover:text-orange-800',
 };
 
+function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: string }) {
+  const { data: waitingList, isLoading, refetch } = useQuery({
+    queryKey: ["eventWaitingList", eventId],
+    queryFn: () => axios.get(`/api/waiting-list/${eventId}`),
+  });
+
+  const handleApprove = async (waitingListId: string) => {
+    try {
+      const response = await axios.post('/api/waiting-list/approve', {
+        waitingListId,
+        eventName,
+      });
+      
+      if (response.data.status) {
+        alert('User approved and notified successfully!');
+        refetch();
+      } else {
+        alert('Failed to approve user');
+      }
+    } catch (error) {
+      console.error('Error approving user:', error);
+      alert('Failed to approve user');
+    }
+  };
+
+  const handleRemove = async (waitingListId: string) => {
+    if (!confirm('Are you sure you want to remove this user from the waiting list?')) {
+      return;
+    }
+
+    try {
+      const response = await axios.delete('/api/waiting-list/remove', {
+        data: { waitingListId }
+      });
+      
+      if (response.data.status) {
+        alert('User removed from waiting list successfully!');
+        refetch();
+      } else {
+        alert('Failed to remove user');
+      }
+    } catch (error) {
+      console.error('Error removing user:', error);
+      alert('Failed to remove user');
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-white">Waiting List</h3>
+        {!isLoading && waitingList?.data && (
+          <div className="text-sm text-white">
+            <span className="font-semibold text-white">
+              Total: {waitingList.data.length} users
+            </span>
+          </div>
+        )}
+      </div>
+
+      {isLoading && <p className="text-gray-300">Loading waiting list...</p>}
+
+      {!isLoading && waitingList?.data?.length === 0 && (
+        <p className="text-gray-300">No users on waiting list.</p>
+      )}
+
+      {!isLoading &&
+        waitingList?.data?.map((user: any) => (
+          <div
+            key={user._id}
+            className="border-b border-[#434343] py-4 last:border-b-0"
+          >
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <p className="text-sm text-[#bbbbbb]">
+                  <span className="font-semibold text-white">Name:</span>{" "}
+                  {user.firstName} {user.lastName}
+                </p>
+                <p className="text-sm text-[#bbbbbb] mt-1">
+                  <span className="font-semibold text-white">Email:</span>{" "}
+                  {user.email}
+                </p>
+                <p className="text-sm text-[#bbbbbb] mt-1">
+                  <span className="font-semibold text-white">Phone:</span>{" "}
+                  {user.phone}
+                </p>
+                <p className="text-sm text-[#bbbbbb] mt-1">
+                  <span className="font-semibold text-white">Joined:</span>{" "}
+                  {new Date(user.createdAt).toLocaleString()}
+                </p>
+
+                <div className="mt-3">
+                  <p className="font-semibold text-white text-sm">Requested Tickets:</p>
+                  <ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
+                    {user.tickets.map((ticket: any, index: number) => (
+                      <li key={index}>
+                        {ticket.quantity} x {ticket.name} (${ticket.price} each)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex gap-2 ml-4">
+                <button
+                  onClick={() => handleApprove(user._id)}
+                  className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => handleRemove(user._id)}
+                  className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
+
 function EventDescription({ description }: { description: string }) {
   if (!description) return '';
   const lines = description.split('\n')
 
   return (
-    <div className="text-sm sm:text-base text-[#bbbbbb]">
+    <div className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere">
       {lines.map((line, i) => (
-        <p key={i} className="leading-[24px] mb-2">
+        <p key={i} className="leading-[24px] mb-2 break-words overflow-wrap-anywhere">
           <Linkify options={linkifyOptions}>
             {line}
           </Linkify>

@@ -1,6 +1,8 @@
 import { initEdgeStore } from "@edgestore/server"
 import { createEdgeStoreNextHandler } from "@edgestore/server/adapters/next/pages"
+
 const es = initEdgeStore.create()
+
 /**
  * This is the main router for the edgestore buckets.
  */
@@ -11,9 +13,11 @@ const edgeStoreRouter = es.router({
 	}),
 })
 
-export default createEdgeStoreNextHandler({
+const handler = createEdgeStoreNextHandler({
 	router: edgeStoreRouter,
 })
+
+export default handler
 
 /**
  * This type is used to create the type-safe client for the frontend.

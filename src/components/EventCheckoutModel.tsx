@@ -10,6 +10,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	const { showCheckout, tickets, isLoading } = useAppSelector(getCheckoutStore)
 	const dispatch = useAppDispatch()
 	const [phoneError, setPhoneError] = useState("")
+	const [waitingListData, setWaitingListData] = useState<any>(null)
+	const [showWaitingList, setShowWaitingList] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -66,11 +68,51 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			}),
 		).then((res: any) => {
 			if (res.payload?.status) {
-				// redirect user to payment page
-				dispatch(toggleCheckoutForm(false))
-				window.location.href = res?.payload?.data?.url
+				// Check if event is at capacity
+				if (res.payload?.data?.atCapacity) {
+					setWaitingListData(res.payload.data)
+					setShowWaitingList(true)
+				} else {
+					// redirect user to payment page
+					dispatch(toggleCheckoutForm(false))
+					window.location.href = res?.payload?.data?.url
+				}
 			}
 		})
+	}
+
+	// Handle joining waiting list
+	const handleJoinWaitingList = async () => {
+		try {
+			const response = await fetch('/api/waiting-list/add', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					eventId: waitingListData.eventId,
+					firstName: formData.firstName,
+					lastName: formData.lastName,
+					email: formData.email,
+					phone: formData.phone,
+					tickets: tickets,
+					eventName: waitingListData.eventName,
+				}),
+			})
+
+			const result = await response.json()
+			
+			if (result.status) {
+				Error("Success", "You've been added to the waiting list! We'll notify you if spots become available.")
+				dispatch(toggleCheckoutForm(false))
+				setShowWaitingList(false)
+			} else {
+				Error("Error", result.message || "Failed to join waiting list")
+			}
+		} catch (error) {
+			console.error("Error joining waiting list:", error)
+			Error("Error", "Failed to join waiting list. Please try again.")
+		}
 	}
 
 	return (
@@ -90,9 +132,51 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 						</button>
 						{/* <div className="bg-jetzy text-black p-3 rounded-t-2xl text-center font-semibold">This deal is reserved for Jetzy Users Only.</div> */}
 
-						{/* Form */}
-						<form onSubmit={handleSubmit} className="p-6 space-y-6">
-							<h2 className="text-2xl font-bold">Checkout</h2>
+						{/* Waiting List UI */}
+						{showWaitingList ? (
+							<div className="p-6 space-y-6">
+								<div className="text-center">
+									<div className="w-16 h-16 mx-auto mb-4 bg-yellow-100 rounded-full flex items-center justify-center">
+										<svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+										</svg>
+									</div>
+									<h2 className="text-2xl font-bold text-yellow-400 mb-2">Event at Capacity</h2>
+									<p className="text-gray-300 mb-4">
+										Unfortunately, &quot;{waitingListData?.eventName}&quot; has reached its capacity limit.
+									</p>
+									<div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-4 mb-6">
+										<p className="text-yellow-200 text-sm">
+											<strong>Available spots:</strong> {waitingListData?.availableCapacity}<br/>
+											<strong>You requested:</strong> {waitingListData?.requestedTickets}
+										</p>
+									</div>
+									<p className="text-gray-300 mb-6">
+										Would you like to join our waiting list? We&apos;ll notify you immediately if spots become available.
+									</p>
+									<div className="flex space-x-3">
+										<button
+											onClick={() => {
+												setShowWaitingList(false)
+												dispatch(toggleCheckoutForm(false))
+											}}
+											className="flex-1 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+										>
+											Cancel
+										</button>
+										<button
+											onClick={handleJoinWaitingList}
+											className="flex-1 bg-yellow-600 text-black font-bold px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors"
+										>
+											Join Waiting List
+										</button>
+									</div>
+								</div>
+							</div>
+						) : (
+							/* Form */
+							<form onSubmit={handleSubmit} className="p-6 space-y-6">
+								<h2 className="text-2xl font-bold">Checkout</h2>
 							<div className="space-y-4">
 								<input
 									type="text"
@@ -146,14 +230,15 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 									I accept the Terms and Conditions and consent to creating a Jetzy account.
 								</label>
 							</div> */}
-							<button
-								disabled={isLoading}
-								type="submit"
-								className="w-full bg-jetzy text-black font-bold  px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
-							>
-								{isLoading ? <Spinner /> : "Submit"}
-							</button>
-						</form>
+								<button
+									disabled={isLoading}
+									type="submit"
+									className="w-full bg-jetzy text-black font-bold  px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
+								>
+									{isLoading ? <Spinner /> : "Submit"}
+								</button>
+							</form>
+						)}
 					</div>
 				</div>
 			)}

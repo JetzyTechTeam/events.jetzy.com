@@ -14,6 +14,7 @@ export type SignUpFormData = {
 export type SignInFormData = {
 	email: string
 	password: string
+	isJetzyMember: boolean //added
 }
 
 export type CreateEventFormData = {

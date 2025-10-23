@@ -31,6 +31,9 @@ const CheckoutSuccessPage: React.FC = () => {
 	const router = useRouter()
 	const query = router.query
 	const [orderItems, setOrderItems] = React.useState<Array<OrderItem>>([])
+	const [sessionData, setSessionData] = React.useState<any>(null)
+	const [isLoading, setIsLoading] = React.useState(true)
+	const [eventData, setEventData] = React.useState<IEvent | null>(null)
 
 	let { payload, session_id, event } = query
 
@@ -55,6 +58,7 @@ const CheckoutSuccessPage: React.FC = () => {
 		if (payload) {
 			const items = JSON.parse(payload as string) as OrderItem[]
 			setOrderItems(items)
+			setIsLoading(false)
 		}
 	}, [payload])
 
@@ -64,21 +68,79 @@ const CheckoutSuccessPage: React.FC = () => {
 				try {
 					const response = await axios.get(`/api/checkout/confirm?session_id=${session_id}`)
 					const session = response.data
+					setSessionData(session)
 
 					if (session.payment_status !== "paid") {
 						Error("Payment Error", "Your payment was not successful. Please try again.")
+						return
+					}
+
+					// If we have session data but no payload, fetch the booking details
+					if (!payload && session.metadata) {
+						try {
+							const tickets = JSON.parse(session.metadata.tickets)
+							const eventDetails = JSON.parse(session.metadata.eventDetails)
+							
+							// Convert tickets to OrderItem format
+							const items = tickets.map((ticket: any) => ({
+								id: ticket.id,
+								name: ticket.name,
+								price: ticket.price,
+								quantity: ticket.quantity,
+								isSelected: true,
+								priceId: ticket.priceId
+							}))
+							
+							setOrderItems(items)
+							setEventData(eventDetails)
+						} catch (error) {
+							console.error("Error parsing session metadata:", error)
+						}
 					}
 
 				} catch (error) {
 					console.error("Error checking payment status:", error)
+					Error("Error", "Unable to verify payment. Please contact support.")
+				} finally {
+					setIsLoading(false)
 				}
+			} else {
+				setIsLoading(false)
 			}
 		}
 
 		checkPaymentStatus()
-	}, [session_id])
+	}, [session_id, payload])
 
-	if (!payload) return null
+	// Show loading state
+	if (isLoading) {
+		return (
+			<div className="min-h-screen bg-[#0A0B0F] flex items-center justify-center">
+				<div className="text-center">
+					<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#F79432] mx-auto mb-4"></div>
+					<p className="text-white">Verifying your payment...</p>
+				</div>
+			</div>
+		)
+	}
+
+	// Show error if no session_id and no payload
+	if (!session_id && !payload) {
+		return (
+			<div className="min-h-screen bg-[#0A0B0F] flex items-center justify-center">
+				<div className="text-center">
+					<h1 className="text-2xl font-bold text-white mb-4">Invalid Access</h1>
+					<p className="text-gray-300 mb-6">This page can only be accessed after a successful payment.</p>
+					<button
+						onClick={() => router.push('/')}
+						className="bg-[#F79432] text-white px-6 py-3 rounded-full hover:bg-orange-600 transition-colors"
+					>
+						Go to Home
+					</button>
+				</div>
+			</div>
+		)
+	}
 	// calculate the total of the order
 	const total = orderItems.reduce((acc, item) => {
 		return acc + item.price * item.quantity
@@ -101,14 +163,14 @@ const CheckoutSuccessPage: React.FC = () => {
         <h2 className="text-xl font-bold text-gray-800 mb-4">Order Summary</h2>
 
         {/* Event Info */}
-        {event && (
+        {(event || eventData) && (
           <div className="mb-6 space-y-1">
-            <p className="text-gray-700"><strong>Event:</strong> {parsedEvent?.name}</p>
-            <p className="text-gray-700"><strong>Venue:</strong> {parsedEvent?.location}</p>
-            <p className="text-gray-700">
+            <p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Event:</strong> {parsedEvent?.name || eventData?.name}</p>
+            <p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Venue:</strong> {parsedEvent?.location || eventData?.location}</p>
+            <p className="text-gray-700 break-words overflow-wrap-anywhere">
               <strong>Date & Time:</strong>{" "}
               {formattedDate}&nbsp;{formattedTime}
-								{parsedEvent?.timezone ? ` (${parsedEvent?.timezone})` : ""}
+								{(parsedEvent?.timezone || eventData?.timezone) ? ` (${parsedEvent?.timezone || eventData?.timezone})` : ""}
             </p>
           </div>
         )}
@@ -130,10 +192,10 @@ const CheckoutSuccessPage: React.FC = () => {
       </div>
 
       <button
-        onClick={() => router.push(`/${parsedEvent?.slug}`)}
+        onClick={() => router.push(`/${parsedEvent?.slug || eventData?.slug || ''}`)}
         className="mt-6 bg-[#F79432] text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
       >
-        Back to Home
+        Back to Event
       </button>
     </div>
   </div>
