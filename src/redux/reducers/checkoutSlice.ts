@@ -57,9 +57,7 @@ export const checkoutSlice = createSlice({
 			state.isLoading = false
 			state.session = action.payload?.data
 
-			if (action?.payload?.status) {
-				Success("Checkout", "Please complete your payment to confirm your booking.")
-			}
+			// Removed toast message to prevent confusion with waiting list flow
 		})
 		builder.addCase(CreateCheckoutSessionThunk.rejected, (state, action) => {
 			state.isLoading = false
