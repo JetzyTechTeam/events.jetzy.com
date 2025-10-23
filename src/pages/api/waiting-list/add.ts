@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next"
 import { WaitingList } from "@/models/waitingList"
-import { sendResponse, ResCode } from "@/lib/responseCodes"
+import { sendResponse } from "@/lib/helpers"
+import { ResCode } from "@/lib/responseCodes"
 import { sendWaitingListNotification } from "@/lib/send-grid"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
