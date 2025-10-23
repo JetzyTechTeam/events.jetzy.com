@@ -12,6 +12,7 @@ export const ROUTES = {
 			edit: "/console/events/:eventId/update",
 			tickets: "/console/events/:eventId/tickets",
 			manage: "/console/events/:eventId/manage",
+			checkIn: "/console/events/:eventId/check-in",
 		},
 
 		// ----------------- Orders  Routes -----------------
