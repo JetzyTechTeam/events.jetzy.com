@@ -151,18 +151,14 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
 										</svg>
 									</div>
-									<h2 className="text-2xl font-bold text-[#F79432] mb-4">Thank You for Registering!</h2>
-									<p className="text-gray-300 mb-6">
-										The event &quot;{waitingListData?.eventName}&quot; is currently at capacity. We will email you if you get on the list.
-									</p>
-									<p className="text-white mb-6">
-										We appreciate your interest and will notify you immediately if spots become available.
-									</p>
-									<div className="bg-[#F79432]/20 border border-[#F79432]/30 rounded-lg p-6">
+									<div className="bg-[#F79432]/20 border border-[#F79432]/30 rounded-lg p-6 mb-6">
 										<p className="text-[#F79432] text-2xl font-bold text-center">
 											You are on the waitlist
 										</p>
 									</div>
+									<p className="text-white mb-6">
+										We appreciate your interest. Our event &quot;{waitingListData?.eventName}&quot; is currently at capacity. We will email you if spots open up and you get on the list.
+									</p>
 									<div className="mt-6">
 										<button
 											onClick={() => {
