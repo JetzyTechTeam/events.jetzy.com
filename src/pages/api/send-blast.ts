@@ -79,7 +79,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       }
 
       await sendgrid.sendMultiple({
-        to: person.email || (person as any).customerEmail,
+        to: (person as any).email || (person as any).customerEmail,
         from: process.env.SENDGRID_EMAIL_SENDER as string,
         subject: subject,
         html: personalizedHtml,
