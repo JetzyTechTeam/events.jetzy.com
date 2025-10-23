@@ -3,6 +3,8 @@ import { IEvent } from "@/models/events/types"
 import { GetServerSideProps } from "next"
 import dynamic from "next/dynamic"
 import React from "react"
+import ErrorBoundary from "@/components/ErrorBoundary"
+
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { ssr: false }) // Import the HostedEvents component dynamically
 
 type Props = {
@@ -17,7 +19,11 @@ export default function EventDetailPage({ event }: Props) {
 			throw new Error("Invalid event data")
 		}
 
-		return <HostedEvents event={data} />
+		return (
+			<ErrorBoundary>
+				<HostedEvents event={data} />
+			</ErrorBoundary>
+		)
 	} catch (error) {
 		console.error("Error parsing event data:", error)
 		// Return the error page directly
@@ -51,23 +57,17 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		const { slug } = context.params
 
 		if (!slug) {
-			console.log('No slug provided');
 			return {
 				notFound: true,
 			}
 		}
 
-		console.log('Looking for event with slug:', slug);
-
 		// Get the event by slug
 		const event = await Events.findOne({ slug: slug as string, isDeleted: false })
 		
 		if (!event) {
-			console.log('Event not found for slug:', slug);
 			return { notFound: true } // If the event is not found, return a 404
 		}
-
-		console.log('Event found:', { id: event._id, name: event.name, slug: event.slug });
 
 		// compress the event data
 		const eventData = JSON.stringify(event.toJSON())
