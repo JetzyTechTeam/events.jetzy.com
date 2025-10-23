@@ -88,7 +88,7 @@ export default function HostedEvents({ event }: Props) {
     if (!clonedEvent?.startsOn) return { formattedDate: '', formattedTime: '' }
 
     try {
-      const userTimeZone = clonedEvent.timezone?.split(') ')[1] || clonedEvent.timezone || 'UTC'
+      const userTimeZone = clonedEvent?.timezone?.split(') ')[1] || clonedEvent?.timezone || 'UTC'
       const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
 
       const formattedDate = date.format('MMMM DD, YYYY') 
@@ -126,9 +126,10 @@ export default function HostedEvents({ event }: Props) {
     )
   }
 
-  return (
-    <>
-      <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
+  try {
+    return (
+      <>
+        <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
         <div className="max-w-4xl mx-auto mb-6 flex items-center justify-between">
          {isAdmin && <Link href='/' className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Back</Link>}
          {isAdmin && <Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">Edit Event</Link>}
@@ -136,7 +137,7 @@ export default function HostedEvents({ event }: Props) {
         <div className="max-w-4xl mx-auto bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
           {/* Banner Image */}
           <div className="relative p-3">
-            {clonedEvent.images && clonedEvent.images.length > 1 ? (
+            {clonedEvent?.images && Array.isArray(clonedEvent.images) && clonedEvent.images.length > 1 ? (
               <Slider {...settings}>
                 {clonedEvent.images.map((image, idx) => (
                   <div key={idx} className="!flex !items-center !justify-center w-full md:h-[335px] sm:h-52 bg-black rounded-xl">
@@ -148,7 +149,7 @@ export default function HostedEvents({ event }: Props) {
                   </div>
                 ))}
               </Slider>
-            ) : clonedEvent.images && clonedEvent.images.length === 1 ? (
+            ) : clonedEvent?.images && Array.isArray(clonedEvent.images) && clonedEvent.images.length === 1 ? (
               <div className="w-full md:h-[335px] sm:h-52 bg-black flex items-center justify-center rounded-xl">
                 <Image
                   src={clonedEvent.images[0]}
@@ -207,15 +208,39 @@ export default function HostedEvents({ event }: Props) {
         </div>
 
 
-        {isAdmin && <EventBookings eventId={clonedEvent._id.toString()} /> }
-        {isAdmin && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} /> }
-        {isAdmin && <GuestsList eventId={clonedEvent._id.toString()} />}
+        {isAdmin && clonedEvent?._id && <EventBookings eventId={clonedEvent._id.toString()} /> }
+        {isAdmin && clonedEvent?._id && clonedEvent?.name && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} /> }
+        {isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
-        <EventTicketsComponent event={clonedEvent} />
+        {clonedEvent && <EventTicketsComponent event={clonedEvent} />}
       </div>
-      <EventCheckoutModel event={clonedEvent.name} />
-    </>
-  );
+      {clonedEvent?.name && <EventCheckoutModel event={clonedEvent.name} />}
+      </>
+    );
+  } catch (error) {
+    console.error('Error in HostedEvents render:', error);
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+          <div className="p-6 sm:p-8 text-center">
+            <div className="mb-6">
+              <svg className="w-16 h-16 mx-auto text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Something went wrong</h1>
+            <p className="text-gray-600 mb-6">We encountered an error while loading the event. Please try refreshing the page.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }
 
 function CustomArrow(props: {
@@ -257,7 +282,7 @@ function GuestsList({ eventId }: { eventId: string }) {
     <li className="text-gray-500 italic text-sm">No guests found for this event.</li>
   )}
 
-  {guests?.data?.data?.map((guest: { _id: string; name: string }) => (
+  {guests?.data?.data && Array.isArray(guests.data.data) && guests.data.data.map((guest: { _id: string; name: string }) => (
     <li
       key={guest._id}
       className="flex items-center justify-between bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition"
@@ -347,7 +372,8 @@ const {  totalTickets , uniqueCustomers } = React.useMemo(() => {
       )}
 
       {!isLoading &&
-        bookings?.data?.map((booking: Booking) => (
+        bookings?.data && Array.isArray(bookings.data) &&
+        bookings.data.map((booking: Booking) => (
           <div
             key={booking._id}
             className="border-b border-[#434343] py-4 last:border-b-0"
@@ -482,7 +508,8 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
       )}
 
       {!isLoading &&
-        waitingList?.data?.map((user: any) => (
+        waitingList?.data && Array.isArray(waitingList.data) &&
+        waitingList.data.map((user: any) => (
           <div
             key={user._id}
             className="border-b border-[#434343] py-4 last:border-b-0"
