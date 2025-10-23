@@ -3,6 +3,7 @@ import { WaitingList } from "@/models/waitingList"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { sendWaitingListNotification } from "@/lib/send-grid"
+import { dbconn } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -10,12 +11,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
-		const { eventId, firstName, lastName, email, phone, tickets } = req.body
+		console.log("Waiting list add request:", req.body)
+		
+		// Check database connection
+		if (dbconn.readyState !== 1) {
+			console.log("Database not connected, attempting to connect...")
+			await dbconn.asPromise()
+		}
+		
+		const { eventId, firstName, lastName, email, phone, tickets, eventName } = req.body
 
 		// Validate required fields
 		if (!eventId || !firstName || !lastName || !email || !phone || !tickets) {
+			console.log("Missing required fields:", { eventId, firstName, lastName, email, phone, tickets })
 			return sendResponse(res, null, "Missing required fields", false, ResCode.BAD_REQUEST)
 		}
+
+		// Transform tickets to match schema
+		const transformedTickets = tickets.map((ticket: any) => ({
+			ticketId: ticket.id || ticket.ticketId,
+			quantity: ticket.quantity || 1,
+			name: ticket.name,
+			price: ticket.price || 0
+		}))
+
+		console.log("Transformed tickets:", transformedTickets)
 
 		// Check if user is already on waiting list for this event
 		const existingEntry = await WaitingList.findOne({
@@ -24,6 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		if (existingEntry) {
+			console.log("User already on waiting list:", existingEntry._id)
 			// User is already on waiting list, return success without error
 			return sendResponse(res, existingEntry, "Already on waiting list", true, ResCode.OK)
 		}
@@ -35,9 +56,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			lastName,
 			email,
 			phone,
-			tickets,
+			tickets: transformedTickets,
 			status: 'waiting',
 		})
+
+		console.log("Created waiting list entry:", waitingListEntry._id)
 
 		// Send notification email
 		try {
@@ -45,8 +68,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				firstName,
 				lastName,
 				email,
-				eventName: req.body.eventName || "Event",
+				eventName: eventName || "Event",
 			})
+			console.log("Waiting list notification sent successfully")
 		} catch (emailError) {
 			console.error("Failed to send waiting list notification:", emailError)
 			// Don't fail the request if email fails
@@ -55,6 +79,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, waitingListEntry, "Added to waiting list successfully", true, ResCode.OK)
 	} catch (error: any) {
 		console.error("Error adding to waiting list:", error)
-		return sendResponse(res, null, "Failed to add to waiting list", false, ResCode.INTERNAL_SERVER_ERROR)
+		console.error("Error details:", {
+			message: error.message,
+			stack: error.stack,
+			name: error.name
+		})
+		return sendResponse(res, null, `Failed to add to waiting list: ${error.message}`, false, ResCode.INTERNAL_SERVER_ERROR)
 	}
 }
