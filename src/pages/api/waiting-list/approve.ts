@@ -34,6 +34,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
+		// Check event capacity before approving
+		const eventTracker = await EventTracker.findOne({ eventId: waitingListEntry.eventId })
+		if (!eventTracker) {
+			return sendResponse(res, null, "Event tracker not found", false, ResCode.NOT_FOUND)
+		}
+
+		// Calculate total tickets requested by this waiting list user
+		const requestedTickets = waitingListEntry.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+		
+		// Check if adding these tickets would exceed capacity
+		if (eventTracker.bookedTickets + requestedTickets > eventTracker.eventCapacity) {
+			return sendResponse(res, null, "Cannot approve: Event is at full capacity", false, ResCode.BAD_REQUEST)
+		}
+
 		// Generate booking reference
 		const bookingRef = `JZ-${Math.random().toString(36).substring(2, 15)}`
 
@@ -59,13 +73,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			total
 		})
 
-		// Update event tracker
-		const eventTracker = await EventTracker.findOne({ eventId: waitingListEntry.eventId })
-		if (eventTracker) {
-			const totalTicketsToAdd = waitingListEntry.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-			eventTracker.bookedTickets += totalTicketsToAdd
-			await eventTracker.save()
-		}
+		// Update event tracker (already fetched above)
+		const totalTicketsToAdd = waitingListEntry.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+		eventTracker.bookedTickets += totalTicketsToAdd
+		await eventTracker.save()
 
 		// Update waiting list status to approved
 		await WaitingList.findByIdAndUpdate(waitingListId, { status: 'approved' })
