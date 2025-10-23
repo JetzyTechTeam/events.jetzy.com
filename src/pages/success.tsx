@@ -165,9 +165,9 @@ const CheckoutSuccessPage: React.FC = () => {
         {/* Event Info */}
         {(event || eventData) && (
           <div className="mb-6 space-y-1">
-            <p className="text-gray-700"><strong>Event:</strong> {parsedEvent?.name || eventData?.name}</p>
-            <p className="text-gray-700"><strong>Venue:</strong> {parsedEvent?.location || eventData?.location}</p>
-            <p className="text-gray-700">
+            <p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Event:</strong> {parsedEvent?.name || eventData?.name}</p>
+            <p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Venue:</strong> {parsedEvent?.location || eventData?.location}</p>
+            <p className="text-gray-700 break-words overflow-wrap-anywhere">
               <strong>Date & Time:</strong>{" "}
               {formattedDate}&nbsp;{formattedTime}
 								{(parsedEvent?.timezone || eventData?.timezone) ? ` (${parsedEvent?.timezone || eventData?.timezone})` : ""}

@@ -82,7 +82,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
   const formattedTime = date.format('hh:mm A') 
 
   return { formattedDate, formattedTime }
-}, [clonedEvent.startsOn])
+}, [clonedEvent.startsOn, clonedEvent.timezone])
 
   return (
     <>
@@ -122,17 +122,17 @@ const { formattedDate, formattedTime } = useMemo(() => {
             {/* Header Section */}
             <div className="flex flex-col sm:flex-row justify-between items-start mb-6 space-y-4 sm:space-y-0">
               <div className="text-center sm:text-left">
-                <h2 className="text-3xl font-bold">
+                <h2 className="text-3xl font-bold break-words overflow-wrap-anywhere">
                   {clonedEvent.name}
                 </h2>
-                <p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb]">
+                <p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb] break-words">
                   <DateTimeSVG />
                   {formattedDate},{" "}
                   {formattedTime} {clonedEvent?.timezone || ""}
                 </p>
-                <p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb]">
+                <p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb] break-words">
                   <LocationSVG />
-                  {clonedEvent.location}
+                  <span className="break-words overflow-wrap-anywhere">{clonedEvent.location}</span>
                 </p>
 
                 <h3 className="text-sm sm:text-base font-semibold ">
@@ -373,9 +373,9 @@ function EventDescription({ description }: { description: string }) {
   const lines = description.split('\n')
 
   return (
-    <div className="text-sm sm:text-base text-[#bbbbbb]">
+    <div className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere">
       {lines.map((line, i) => (
-        <p key={i} className="leading-[24px] mb-2">
+        <p key={i} className="leading-[24px] mb-2 break-words overflow-wrap-anywhere">
           <Linkify options={linkifyOptions}>
             {line}
           </Linkify>

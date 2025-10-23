@@ -77,7 +77,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
   const formattedTime = date.format('hh:mm A') 
 
   return { formattedDate, formattedTime }
-}, [event.startsOn])
+}, [event.startsOn, event.timezone])
 
   return (
     <Box
@@ -107,7 +107,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
       </Box>
       <Box p="2">
         <Stack spacing="3">
-          <Text fontSize="xl" fontWeight="bold">
+          <Text fontSize="xl" fontWeight="bold" wordBreak="break-word" overflowWrap="anywhere">
             {event.name}
           </Text>
           <Box h="24">
@@ -128,6 +128,8 @@ const { formattedDate, formattedTime } = useMemo(() => {
               display="flex"
               gap="2"
               mt="2"
+              wordBreak="break-word"
+              overflowWrap="anywhere"
             >
               <span>
                 <LocationSVG />
