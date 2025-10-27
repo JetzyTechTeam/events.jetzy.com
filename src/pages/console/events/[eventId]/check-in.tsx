@@ -8,12 +8,16 @@ import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { Box, Container, Heading, Text, Alert, AlertIcon } from "@chakra-ui/react"
+import { useRouter } from "next/router"
 
 interface CheckInPageProps {
 	event: string | null
 }
 
 export default function CheckInPage({ event }: CheckInPageProps) {
+	const router = useRouter()
+	const eventId = router.query.eventId as string
+
 	if (!event) {
 		return (
 			<ConsoleLayout page={Pages.Manage}>
@@ -28,7 +32,7 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 	const eventData: IEvent = JSON.parse(event)
 
 	return (
-		<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl">
+		<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl" backBtn={`/console/events/${eventId}/manage`}>
 			<Container maxW="container.xl" py={8}>
 				<CheckInStats eventId={eventData._id.toString()} />
 				<CheckInPortal eventId={eventData._id.toString()} eventName={eventData.name} />

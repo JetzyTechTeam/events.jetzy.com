@@ -44,14 +44,14 @@ export default function EventsListing({ events, pagination }: Props) {
 
 	return (
 		<ConsoleLayout maxW="max-w-[800px]" className="px-0">
-			<div className="max-w-[800px] mx-auto mb-5">
-				<Heading as="h2" fontSize={28}>
+			<div className="max-w-[800px] mx-auto mb-5 px-4 sm:px-0">
+				<Heading as="h2" fontSize={{ base: 24, sm: 28 }}>
 					Events
 				</Heading>
 			</div>
 
-			<div className="space-y-5 max-w-[800px] mx-auto">
-				{!eventList.length && <p>No events found.</p>}
+			<div className="space-y-4 sm:space-y-5 max-w-[800px] mx-auto px-4 sm:px-0">
+				{!eventList.length && <p className="text-center text-gray-400 py-8">No events found.</p>}
 
 				{eventList.map((event) => (
 					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} />
@@ -97,36 +97,42 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 	return (
 		<>
 			<div className="space-y-5">
-				<div className="flex items-center justify-between bg-[#1E1E1E] rounded-xl p-5">
+				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#1E1E1E] rounded-xl p-4 sm:p-5 gap-4">
 					{/* CONTENT SECTION  */}
-					<div className="space-y-5">
-						<Link href={`/${event._id}`}>
-							<Heading as="h3" fontSize={20} cursor="pointer" _hover={{ textDecoration: "underline" }}>
+					<div className="space-y-3 sm:space-y-5 flex-1 w-full">
+						<Link href={`/${event.slug}`}>
+							<Heading as="h3" fontSize={{ base: 18, sm: 20 }} cursor="pointer" _hover={{ textDecoration: "underline" }} className="line-clamp-2">
 								{event.name}
 							</Heading>
 						</Link>
 						<div className="space-y-2">
-							<Text className="flex gap-x-2 text-[#A7A7A7]">
-								<DateTimeSVG />
-								<span>
+							<Text className="flex gap-x-2 text-[#A7A7A7] text-sm sm:text-base">
+								<span className="flex-shrink-0">
+									<DateTimeSVG />
+								</span>
+								<span className="break-words">
 									{new Date(event.startsOn?.toString()).toDateString()} {event.timezone}
 								</span>
 							</Text>
-							<Text className="flex gap-x-2 text-[#A7A7A7]">
-								<LocationSVG />
-								<span>{event.location}</span>
+							<Text className="flex gap-x-2 text-[#A7A7A7] text-sm sm:text-base">
+								<span className="flex-shrink-0">
+									<LocationSVG />
+								</span>
+								<span className="break-words line-clamp-2">{event.location}</span>
 							</Text>
 						</div>
-						<div className="flex items-center gap-x-3">
-							<Link href={`/console/events/${event._id}/manage`} className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+						<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+							<Link href={`/console/events/${event._id}/manage`} className="bg-[#3E3E3E] p-2 rounded-md text-sm text-center hover:bg-[#4E4E4E] transition-colors">
 								Manage Event
 							</Link>
-							<Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+							<Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm text-center hover:bg-[#4E4E4E] transition-colors">
 								Edit Event
 							</Link>
 							<div
 								onClick={() => confirmDelete(event)}
-								className={`w-max bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm cursor-pointer ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+								className={`w-full sm:w-max bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm cursor-pointer text-center hover:bg-[#451919] transition-colors ${
+									loading ? "opacity-50 cursor-not-allowed" : ""
+								}`}
 								style={{ pointerEvents: loading ? "none" : "auto" }}
 							>
 								{loading ? "Deleting..." : "Delete Event"}
@@ -135,12 +141,14 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 					</div>
 
 					{/* IMAGE SECTION */}
-					<Image src={event && event?.images[0]} alt={event.name} className="w-[180px] h-[150px] rounded-xl" width={180} height={150} />
+					<div className="w-full sm:w-[180px] h-[200px] sm:h-[150px] flex-shrink-0">
+						<Image src={event && event?.images[0]} alt={event.name} className="w-full h-full rounded-xl object-cover" width={180} height={150} />
+					</div>
 				</div>
 			</div>
 			<AlertDialog isOpen={isOpen} leastDestructiveRef={cancelRef} onClose={onClose}>
 				<AlertDialogOverlay>
-					<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
+					<AlertDialogContent bg="#1E1E1E" border="1px solid #444" mx={4}>
 						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
 							Delete Event
 						</AlertDialogHeader>
@@ -148,7 +156,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 						<AlertDialogBody color="white">Are you sure you want to delete this event? This action cannot be undone.</AlertDialogBody>
 
 						<AlertDialogFooter>
-							<Button ref={cancelRef} onClick={onClose}>
+							<Button ref={cancelRef} onClick={onClose} size={{ base: "sm", sm: "md" }}>
 								Cancel
 							</Button>
 							<Button
@@ -161,6 +169,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 								}}
 								ml={3}
 								isLoading={loading}
+								size={{ base: "sm", sm: "md" }}
 							>
 								Delete
 							</Button>
