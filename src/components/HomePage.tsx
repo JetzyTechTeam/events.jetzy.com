@@ -1,10 +1,8 @@
 import React, { useState } from "react"
 import { Box, Container, Text, Heading, Grid, Button, HStack, VStack, Image, Badge, Icon, SimpleGrid, Flex, Select, Spacer } from "@chakra-ui/react"
 import { MdRestaurant, MdNightlife, MdFavoriteBorder, MdAirplanemodeActive, MdTheaters, MdSportsFootball, MdCalendarToday, MdAccessTime, MdLocationOn, MdArrowForward } from "react-icons/md"
-import JetzyLogo from "@Jetzy/assets/logo/jetzy_logo.png"
-import Link from "next/link"
-import NextImage from "next/image"
 import { useRouter } from "next/router"
+import Navbar from "@Jetzy/components/layout/Navbar"
 import Footer from "@Jetzy/components/layout/Footer"
 
 // Category icons using react-icons
@@ -109,32 +107,10 @@ const HomePage: React.FC = () => {
 
 	return (
 		<Box bg="gray.50" minH="100vh">
-			{/* Header */}
-			<Box bg="white" borderBottom="1px" borderColor="gray.200" py={4}>
-				<Container maxW="1200px">
-					<Flex align="center" justify="space-between">
-						<HStack spacing={8}>
-							<NextImage src={JetzyLogo} alt="Jetzy" width={120} height={40} />
-							<HStack spacing={6} display={{ base: "none", md: "flex" }}>
-								<Text color="gray.600" cursor="pointer" _hover={{ color: "purple.600" }}>
-									Dashboard
-								</Text>
-								<Text fontWeight="semibold" color="purple.600" cursor="pointer">
-									Events
-								</Text>
-							</HStack>
-						</HStack>
-						<HStack spacing={4}>
-							<Button variant="ghost" size="sm" fontSize="lg">
-								🔔
-							</Button>
-							<Button variant="ghost" size="sm" fontSize="lg">
-								👤
-							</Button>
-						</HStack>
-					</Flex>
-				</Container>
-			</Box>
+			<Navbar />
+
+			{/* Spacer for fixed header */}
+			<Box h="72px" />
 
 			<Container maxW="1200px" py={{ base: 4, md: 8 }} px={{ base: 4, md: 6 }}>
 				{/* Find Events Header */}

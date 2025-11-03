@@ -23,10 +23,8 @@ import {
 	IconButton,
 } from "@chakra-ui/react"
 import { MdArrowBack, MdCalendarToday, MdAccessTime, MdLocationOn, MdShare, MdRemove, MdAdd } from "react-icons/md"
-import Link from "next/link"
-import NextImage from "next/image"
 import { useRouter } from "next/router"
-import JetzyLogo from "@Jetzy/assets/logo/jetzy_logo.png"
+import Navbar from "@Jetzy/components/layout/Navbar"
 import Footer from "@Jetzy/components/layout/Footer"
 
 // Mock featured guests data
@@ -86,32 +84,10 @@ const EventDetailsPage: React.FC = () => {
 
 	return (
 		<Box bg="gray.50" minH="100vh">
-			{/* Header */}
-			<Box bg="white" borderBottom="1px" borderColor="gray.200" py={4}>
-				<Container maxW="1200px" px={{ base: 4, md: 6 }}>
-					<Flex align="center" justify="space-between">
-						<HStack spacing={8}>
-							<NextImage src={JetzyLogo} alt="Jetzy" width={120} height={40} />
-							<HStack spacing={6} display={{ base: "none", md: "flex" }}>
-								<Text color="gray.600" cursor="pointer" _hover={{ color: "purple.600" }}>
-									Dashboard
-								</Text>
-								<Text fontWeight="semibold" color="purple.600" cursor="pointer">
-									Events
-								</Text>
-							</HStack>
-						</HStack>
-						<HStack spacing={4}>
-							<Button variant="ghost" size="sm" fontSize="lg">
-								🔔
-							</Button>
-							<Button variant="ghost" size="sm" fontSize="lg">
-								👤
-							</Button>
-						</HStack>
-					</Flex>
-				</Container>
-			</Box>
+			<Navbar />
+
+			{/* Spacer for fixed header */}
+			<Box h="72px" />
 			<Container maxW={{ base: "600px", md: "800px" }} py={{ base: 4, md: 6 }} px={{ base: 4, md: 6 }}>
 				{/* Back Button */}
 				<Button variant="ghost" leftIcon={<MdArrowBack />} mb={4} color="gray.700" _hover={{ bg: "gray.100" }} size="sm" pl={0} onClick={() => router.back()}>
@@ -222,55 +198,56 @@ const EventDetailsPage: React.FC = () => {
 							</Text>
 						</VStack>
 
-						{/* Presented By */}
-						<VStack align="start" spacing={3} mb={6}>
-							<Text fontSize="sm" fontWeight="semibold" color="gray.500">
-								Presented by
-							</Text>
-							<HStack spacing={3}>
-								<Avatar name={event.presentedBy.name} size="sm" bg="gray.800" />
-								<HStack spacing={1}>
-									<Text fontWeight="semibold" fontSize="sm" color="gray.900">
-										Jetzy Community
+						{/* Two column layout for Presented By and Hosted By */}
+						<SimpleGrid columns={2} spacing={6} w="full">
+							<Box>
+								{/* Presented By */}
+								<VStack align="start" spacing={3} mb={6}>
+									<Text fontSize="sm" fontWeight="semibold" color="gray.500">
+										Presented by
 									</Text>
-									<Text fontSize="md" color="gray.400">
-										...
+									<HStack spacing={3}>
+										<Avatar name={event.presentedBy.name} size="sm" bg="gray.300" />
+										<HStack spacing={1}>
+											<Text fontWeight="semibold" fontSize="sm" color="gray.900">
+												Jetzy Community
+											</Text>
+											<Text fontSize="md" color="gray.400">
+												...
+											</Text>
+										</HStack>
+									</HStack>
+								</VStack>
+								{/* Hosted By */}
+								<VStack align="start" spacing={3} mb={6}>
+									<Text fontSize="sm" fontWeight="semibold" color="gray.500">
+										Hosted by
 									</Text>
-								</HStack>
-							</HStack>
-						</VStack>
-
-						{/* Hosted By */}
-						<VStack align="start" spacing={3} mb={6}>
-							<Text fontSize="sm" fontWeight="semibold" color="gray.500">
-								Hosted by
-							</Text>
-							<HStack spacing={2} align="center">
-								<Avatar size="xs" bg="purple.100" color="purple.600">
-									<Text fontSize="10px" fontWeight="bold">
-										10
+									<HStack spacing={2} align="center">
+										<Avatar name="1 0" size="sm" bg="purple.100" color="purple.600"></Avatar>
+										<Text fontSize="sm" color="gray.900">
+											Jetzy Community
+										</Text>
+									</HStack>
+									<HStack spacing={-1}>
+										{coHosts.map((host, index) => (
+											<Avatar key={index} name={host.name} src={host.avatar} size="sm" border="2px solid white" borderColor="white" />
+										))}
+									</HStack>
+								</VStack>
+							</Box>
+							<Box>
+								{/* Questions */}
+								<VStack align="start" spacing={2}>
+									<Text fontSize="sm" fontWeight="semibold" color="gray.500">
+										Questions?
 									</Text>
-								</Avatar>
-								<Text fontSize="sm" color="gray.900">
-									Jetzy Community
-								</Text>
-							</HStack>
-							<HStack spacing={-1}>
-								{coHosts.map((host, index) => (
-									<Avatar key={index} name={host.name} src={host.avatar} size="sm" border="2px solid white" borderColor="white" />
-								))}
-							</HStack>
-						</VStack>
-
-						{/* Questions */}
-						<VStack align="start" spacing={2}>
-							<Text fontSize="sm" fontWeight="semibold" color="gray.500">
-								Questions?
-							</Text>
-							<Text color="gray.700" fontSize="sm">
-								Ben at ben@jetzyapp.com
-							</Text>
-						</VStack>
+									<Text color="gray.700" fontSize="sm">
+										Ben at ben@jetzyapp.com
+									</Text>
+								</VStack>
+							</Box>
+						</SimpleGrid>
 					</Box>
 				</Box>
 			</Container>
