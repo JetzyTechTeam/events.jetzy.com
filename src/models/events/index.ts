@@ -110,6 +110,16 @@ const eventsSchema = new Schema<IEvent>(
 			type: Boolean,
 			default: false,
 		},
+
+		eventUsersCreated: {
+			type: Boolean,
+			default: false,
+		},
+
+		eventGroupCreated: {
+			type: Boolean,
+			default: false,
+		},
 	},
 	{
 		timestamps: true,

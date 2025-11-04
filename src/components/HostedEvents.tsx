@@ -50,6 +50,8 @@ type Props = {
 export default function HostedEvents({ event }: Props) {
 	const [shareUrl, setShareUrl] = useState("")
 	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list">("bookings")
+	const [isCreatingUsers, setIsCreatingUsers] = useState(false)
+	const [isCreatingGroup, setIsCreatingGroup] = useState(false)
 	const { data: session } = useSession()
 
 	// Validate event data early and safely
@@ -101,6 +103,66 @@ export default function HostedEvents({ event }: Props) {
 			return { formattedDate: "", formattedTime: "" }
 		}
 	}, [clonedEvent?.startsOn, clonedEvent?.timezone])
+
+	// Check if event has ended
+	const hasEventEnded = useMemo(() => {
+		if (!clonedEvent?.endsOn) return false
+		return new Date() > new Date(clonedEvent.endsOn)
+	}, [clonedEvent?.endsOn])
+
+	const handleCreateUsers = async () => {
+		if (!clonedEvent?._id) return
+
+		setIsCreatingUsers(true)
+		try {
+			console.log(`[HostedEvents] Creating users for event ${clonedEvent._id}`)
+			const response = await axios.post(`/api/events/${clonedEvent._id}/create-users`)
+			console.log(`[HostedEvents] Create users response:`, response.data)
+			if (response.data.status) {
+				alert(`Success: ${response.data.message}`)
+				// Refresh event data to update flags
+				window.location.reload()
+			} else {
+				const errorMsg = response.data.message || "Failed to create users"
+				console.error(`[HostedEvents] Create users failed:`, errorMsg)
+				alert(`Error: ${errorMsg}`)
+			}
+		} catch (error: any) {
+			console.error("[HostedEvents] Error creating users:", error)
+			const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || "Failed to create users"
+			console.error("[HostedEvents] Error message:", errorMessage)
+			alert(`Error: ${errorMessage}`)
+		} finally {
+			setIsCreatingUsers(false)
+		}
+	}
+
+	const handleCreateGroup = async () => {
+		if (!clonedEvent?._id) return
+
+		setIsCreatingGroup(true)
+		try {
+			console.log(`[HostedEvents] Creating group for event ${clonedEvent._id}`)
+			const response = await axios.post(`/api/events/${clonedEvent._id}/create-group`)
+			console.log(`[HostedEvents] Create group response:`, response.data)
+			if (response.data.status) {
+				alert(`Success: ${response.data.message}`)
+				// Refresh event data to update flags
+				window.location.reload()
+			} else {
+				const errorMsg = response.data.message || "Failed to create group"
+				console.error(`[HostedEvents] Create group failed:`, errorMsg)
+				alert(`Error: ${errorMsg}`)
+			}
+		} catch (error: any) {
+			console.error("[HostedEvents] Error creating group:", error)
+			const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || "Failed to create group"
+			console.error("[HostedEvents] Error message:", errorMessage)
+			alert(`Error: ${errorMessage}`)
+		} finally {
+			setIsCreatingGroup(false)
+		}
+	}
 
 	// Add error boundary for event data - only show if event is truly invalid
 	if (!isValidEvent || !clonedEvent) {
@@ -184,18 +246,68 @@ export default function HostedEvents({ event }: Props) {
 									<EventDescription description={clonedEvent.desc} />
 								</div>
 
-								<div className="flex gap-x-3 sm:items-end">
-									<button onClick={() => sharer.share()} className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full">
-										<ShareIcon className="w-6 h-6 text-white inline-block" />
-									</button>
+								<div className="flex flex-col gap-y-3 sm:items-end">
+									<div className="flex gap-x-3">
+										<button onClick={() => sharer.share()} className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full">
+											<ShareIcon className="w-6 h-6 text-white inline-block" />
+										</button>
 
-									<a
-										role="button"
-										href="#event-tickets"
-										className="bg-[#F79432] text-black font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm"
-									>
-										Get Tickets
-									</a>
+										<a
+											role="button"
+											href={hasEventEnded ? undefined : "#event-tickets"}
+											onClick={(e) => {
+												if (hasEventEnded) {
+													e.preventDefault()
+												}
+											}}
+											className={`font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform shadow-lg text-sm ${
+												hasEventEnded
+													? "bg-[#666666] text-gray-400 cursor-not-allowed"
+													: "bg-[#F79432] text-black hover:scale-105"
+											}`}
+										>
+											Get Tickets
+										</a>
+									</div>
+
+									{/* Admin buttons for ended events */}
+									{isAdmin && hasEventEnded && clonedEvent?._id && (
+										<div className="flex flex-col gap-y-2 w-full sm:w-auto">
+											<button
+												onClick={handleCreateUsers}
+												disabled={
+													isCreatingUsers ||
+													isCreatingGroup ||
+													clonedEvent.eventUsersCreated ||
+													clonedEvent.eventGroupCreated
+												}
+												className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${
+													clonedEvent.eventUsersCreated || clonedEvent.eventGroupCreated
+														? "bg-[#666666] text-gray-400 cursor-not-allowed"
+														: "bg-[#4a9eff] text-white hover:bg-[#3a8eef] hover:scale-105"
+												}`}
+											>
+												{isCreatingUsers ? "Creating Users..." : clonedEvent.eventUsersCreated ? "Users Created ✓" : "Create Purchased Tickets Users"}
+											</button>
+
+											<button
+												onClick={handleCreateGroup}
+												disabled={
+													isCreatingUsers ||
+													isCreatingGroup ||
+													clonedEvent.eventGroupCreated ||
+													clonedEvent.eventUsersCreated
+												}
+												className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${
+													clonedEvent.eventGroupCreated || clonedEvent.eventUsersCreated
+														? "bg-[#666666] text-gray-400 cursor-not-allowed"
+														: "bg-[#9b59b6] text-white hover:bg-[#8b49a6] hover:scale-105"
+												}`}
+											>
+												{isCreatingGroup ? "Creating Group..." : clonedEvent.eventGroupCreated ? "Group Created ✓" : "Create User Interest Group"}
+											</button>
+										</div>
+									)}
 								</div>
 							</div>
 						</div>
