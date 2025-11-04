@@ -7,7 +7,7 @@ import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
 import { Roles } from "@/types"
-import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, Heading, Text, useDisclosure } from "@chakra-ui/react"
+import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, useDisclosure } from "@chakra-ui/react"
 import { GetServerSideProps } from "next"
 import { useSession } from "next-auth/react"
 import Image from "next/image"
@@ -45,13 +45,15 @@ export default function EventsListing({ events, pagination }: Props) {
 	return (
 		<ConsoleLayout maxW="max-w-[800px]" className="px-0">
 			<div className="max-w-[800px] mx-auto mb-5 px-4 sm:px-0">
-				<Heading as="h2" fontSize={{ base: 24, sm: 28 }}>
-					Events
-				</Heading>
+				<h2 className="text-2xl sm:text-3xl font-bold text-text-primary">Events</h2>
 			</div>
 
 			<div className="space-y-4 sm:space-y-5 max-w-[800px] mx-auto px-4 sm:px-0">
-				{!eventList.length && <p className="text-center text-gray-400 py-8">No events found.</p>}
+				{!eventList.length && (
+					<div className="text-center py-12">
+						<p className="text-text-muted text-lg">No events found.</p>
+					</div>
+				)}
 
 				{eventList.map((event) => (
 					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} />
@@ -97,40 +99,41 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 	return (
 		<>
 			<div className="space-y-5">
-				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#1E1E1E] rounded-xl p-4 sm:p-5 gap-4">
+				<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white border border-border-light shadow-sm rounded-xl p-4 sm:p-5 gap-4 hover:shadow-md transition-shadow">
 					{/* CONTENT SECTION  */}
 					<div className="space-y-3 sm:space-y-5 flex-1 w-full">
 						<Link href={`/${event.slug}`}>
-							<Heading as="h3" fontSize={{ base: 18, sm: 20 }} cursor="pointer" _hover={{ textDecoration: "underline" }} className="line-clamp-2">
-								{event.name}
-							</Heading>
+							<h3 className="text-lg sm:text-xl font-semibold text-text-primary cursor-pointer hover:text-primary-purple transition-colors line-clamp-2">{event.name}</h3>
 						</Link>
 						<div className="space-y-2">
-							<Text className="flex gap-x-2 text-[#A7A7A7] text-sm sm:text-base">
+							<p className="flex gap-x-2 text-text-secondary text-sm sm:text-base">
 								<span className="flex-shrink-0">
 									<DateTimeSVG />
 								</span>
 								<span className="break-words">
 									{new Date(event.startsOn?.toString()).toDateString()} {event.timezone}
 								</span>
-							</Text>
-							<Text className="flex gap-x-2 text-[#A7A7A7] text-sm sm:text-base">
+							</p>
+							<p className="flex gap-x-2 text-text-secondary text-sm sm:text-base">
 								<span className="flex-shrink-0">
 									<LocationSVG />
 								</span>
 								<span className="break-words line-clamp-2">{event.location}</span>
-							</Text>
+							</p>
 						</div>
 						<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-							<Link href={`/console/events/${event._id}/manage`} className="bg-[#3E3E3E] p-2 rounded-md text-sm text-center hover:bg-[#4E4E4E] transition-colors">
+							<Link href={`/console/events/${event._id}/manage`} className="bg-primary-purple text-white px-4 py-2 rounded-lg text-sm text-center hover:bg-primary-dark transition-colors font-medium">
 								Manage Event
 							</Link>
-							<Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm text-center hover:bg-[#4E4E4E] transition-colors">
+							<Link
+								href={`/console/events/${event._id}/update`}
+								className="bg-background-gray text-text-primary px-4 py-2 rounded-lg text-sm text-center hover:bg-border-gray transition-colors font-medium"
+							>
 								Edit Event
 							</Link>
 							<div
 								onClick={() => confirmDelete(event)}
-								className={`w-full sm:w-max bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm cursor-pointer text-center hover:bg-[#451919] transition-colors ${
+								className={`w-full sm:w-max bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm cursor-pointer text-center hover:bg-red-100 transition-colors font-medium ${
 									loading ? "opacity-50 cursor-not-allowed" : ""
 								}`}
 								style={{ pointerEvents: loading ? "none" : "auto" }}
@@ -142,21 +145,21 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 
 					{/* IMAGE SECTION */}
 					<div className="w-full sm:w-[180px] h-[200px] sm:h-[150px] flex-shrink-0">
-						<Image src={event && event?.images[0]} alt={event.name} className="w-full h-full rounded-xl object-cover" width={180} height={150} />
+						<Image src={event && event?.images[0]} alt={event.name} className="w-full h-full rounded-xl object-cover border border-border-light" width={180} height={150} />
 					</div>
 				</div>
 			</div>
 			<AlertDialog isOpen={isOpen} leastDestructiveRef={cancelRef} onClose={onClose}>
 				<AlertDialogOverlay>
-					<AlertDialogContent bg="#1E1E1E" border="1px solid #444" mx={4}>
-						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
+					<AlertDialogContent bg="white" border="1px solid" borderColor="border.light" mx={4}>
+						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="text.primary">
 							Delete Event
 						</AlertDialogHeader>
 
-						<AlertDialogBody color="white">Are you sure you want to delete this event? This action cannot be undone.</AlertDialogBody>
+						<AlertDialogBody color="text.secondary">Are you sure you want to delete this event? This action cannot be undone.</AlertDialogBody>
 
 						<AlertDialogFooter>
-							<Button ref={cancelRef} onClick={onClose} size={{ base: "sm", sm: "md" }}>
+							<Button ref={cancelRef} onClick={onClose} size={{ base: "sm", sm: "md" }} bg="background.gray" color="text.primary" _hover={{ bg: "border.gray" }}>
 								Cancel
 							</Button>
 							<Button

@@ -14,8 +14,8 @@ import React from "react"
 
 const CreateEventButton = () => {
 	return (
-		<div className="md:w-full xs:w-fit  flex justify-end">
-			<Link href={ROUTES.dashboard.events.create} className="px-3 py-1.5 font-bold bg-app text-black rounded-3xl">
+		<div className="md:w-full xs:w-fit flex justify-end">
+			<Link href={ROUTES.dashboard.events.create} className="px-6 py-2.5 font-semibold bg-primary-purple text-white rounded-lg hover:bg-primary-dark transition-colors shadow-sm">
 				Create Event
 			</Link>
 		</div>
@@ -25,11 +25,11 @@ export default function ConsoleDashboard() {
 	const { isFetching, dataList } = useAppSelector(getEventState)
 	const dispatcher = useAppDispatch()
 
-	const { data: session } = useSession();
+	const { data: session } = useSession()
 
 	// @ts-ignore
-	const admin = session?.user?.role === "admin";
- 
+	const admin = session?.user?.role === "admin"
+
 	React.useEffect(() => {
 		// Dispatcher the event to fetch events list from the server
 		if (admin) {
@@ -38,12 +38,12 @@ export default function ConsoleDashboard() {
 	}, [admin])
 
 	return (
-		<ConsoleLayout page={Pages.Dasshboard} component={
-			admin ?
-		<CreateEventButton />
-		: <></>
-		}>
-			{!dataList?.length && !isFetching && <p>No events found.</p>}
+		<ConsoleLayout page={Pages.Dasshboard} component={admin ? <CreateEventButton /> : <></>}>
+			{!dataList?.length && !isFetching && (
+				<div className="text-center py-12">
+					<p className="text-text-muted text-lg">No events found.</p>
+				</div>
+			)}
 
 			{/* Display the data listing  */}
 			{isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}

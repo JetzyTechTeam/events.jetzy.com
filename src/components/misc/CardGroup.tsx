@@ -24,13 +24,19 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 	const handleDelete = (id: string) => dispatcher(DeleteEventThunk({ id }))
 
 	return (
-		<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+		<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
 			{items?.map((item) => (
-				<Link href={ROUTES.eventDetails.replace("[slug]", item?.slug)} key={item?._id.toString()} className="bg-[#1E1E1E] shadow-md rounded-lg overflow-hidden relative">
-					<Image className="w-full h-48 object-cover object-top" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+				<Link
+					href={ROUTES.eventDetails.replace("[slug]", item?.slug)}
+					key={item?._id.toString()}
+					className="bg-white border border-border-light shadow-sm rounded-xl overflow-hidden hover:shadow-md transition-shadow duration-300 group"
+				>
+					<div className="relative h-48 w-full overflow-hidden">
+						<Image className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+					</div>
 					<div className="p-4">
-						<h3 className="text-lg font-semibold">{item?.name}</h3>
-						<p className="mt-2 text-sm truncate text-ellipsis overflow-hidden mb-10">{item?.desc}</p>
+						<h3 className="text-lg font-semibold text-text-primary group-hover:text-primary-purple transition-colors line-clamp-2">{item?.name}</h3>
+						<p className="mt-2 text-sm text-text-muted line-clamp-3">{item?.desc}</p>
 					</div>
 				</Link>
 			))}
