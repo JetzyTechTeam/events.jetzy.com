@@ -26,6 +26,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		// Ensure database connection is ready
+		const { dbconn } = await import("@/configs/database")
+		if (dbconn.readyState !== 1) {
+			console.log("[group-accept] Database not connected, attempting to connect...")
+			await dbconn.asPromise()
+		}
+
 		const { eventId } = req.query
 		const { token, email, interestId } = req.body
 

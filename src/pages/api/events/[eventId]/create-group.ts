@@ -4,6 +4,7 @@ import { ResCode } from "@/lib/responseCodes"
 import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
 import { Users } from "@/models/userModal"
+import { WaitingList } from "@/models/waitingList"
 import InterestV2model from "@/models/interest-v2"
 import InterestUsermodel from "@/models/interest-user"
 import { getServerSession } from "next-auth"
@@ -35,6 +36,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		// Ensure database connection is ready
+		const { dbconn } = await import("@/configs/database")
+		if (dbconn.readyState !== 1) {
+			console.log("[create-group] Database not connected, attempting to connect...")
+			await dbconn.asPromise()
+		}
+
 		// Verify admin authentication
 		const session = await getServerSession(req, res, authOptions)
 		if (!session) {
@@ -112,8 +120,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			isDeleted: false,
 		}).lean()
 
-		if (!bookings || bookings.length === 0) {
-			console.log(`[create-group] No bookings found for event ${eventId}, rolling back group creation`)
+		// Get all waiting list entries for the event
+		const waitingListEntries = await WaitingList.find({
+			eventId: new Types.ObjectId(eventId),
+		}).lean()
+
+		if ((!bookings || bookings.length === 0) && (!waitingListEntries || waitingListEntries.length === 0)) {
+			console.log(`[create-group] No bookings or waiting list entries found for event ${eventId}, rolling back group creation`)
 			// Rollback group creation
 			try {
 				await InterestV2model.findByIdAndDelete(interestGroup._id)
@@ -122,17 +135,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 			return sendResponse(
 				res,
-				{ created: 0, skipped: 0 },
-				"No bookings found for this event. Cannot create interest group.",
+				{ created: 0, skipped: 0, fromBookings: 0, fromWaitingList: 0 },
+				"No bookings or waiting list entries found for this event. Cannot create interest group.",
 				false,
 				ResCode.BAD_REQUEST
 			)
 		}
 
-		console.log(`[create-group] Found ${bookings.length} bookings for event ${eventId}`)
+		console.log(`[create-group] Found ${bookings?.length || 0} bookings and ${waitingListEntries?.length || 0} waiting list entries for event ${eventId}`)
 
-		// Extract unique customer emails
-		const uniqueEmails = [...new Set(bookings.map((booking) => booking.customerEmail.toLowerCase().trim()))]
+		// Extract unique customer emails from bookings
+		const bookingEmails = bookings.map((booking) => ({
+			email: booking.customerEmail.toLowerCase().trim(),
+			source: "booking" as const,
+			booking,
+			waitingListEntry: null as any,
+		}))
+
+		// Extract unique customer emails from waiting list
+		const waitingListEmails = waitingListEntries.map((entry) => ({
+			email: entry.email.toLowerCase().trim(),
+			source: "waitingList" as const,
+			booking: null as any,
+			waitingListEntry: entry,
+		}))
+
+		// Combine and deduplicate emails (bookings take priority if email exists in both)
+		const emailMap = new Map<string, { email: string; source: "booking" | "waitingList"; booking: any; waitingListEntry: any }>()
+		
+		// Add waiting list entries first
+		for (const item of waitingListEmails) {
+			if (!emailMap.has(item.email)) {
+				emailMap.set(item.email, item)
+			}
+		}
+		
+		// Add bookings (will overwrite waiting list if duplicate)
+		for (const item of bookingEmails) {
+			emailMap.set(item.email, item)
+		}
+
+		const uniqueEmails = Array.from(emailMap.values())
 
 		// Default password
 		const defaultPassword = "123456"
@@ -143,21 +186,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const interestUserEntries: any[] = []
 		const emailErrors: any[] = []
 		const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000"
+		let fromBookingsCount = 0
+		let fromWaitingListCount = 0
 
-		// For each booking email, find or create user account and create InterestUser entry
-		for (const email of uniqueEmails) {
+		// For each email, find or create user account and create InterestUser entry
+		for (const item of uniqueEmails) {
+			const { email, source, booking, waitingListEntry } = item
+			
 			try {
 				// Find or create user account
 				let user = await Users.findOne({ email: email.toLowerCase() })
 
 				let isNewUser = false
+				let isFromWaitingList = source === "waitingList"
+				
 				if (!user) {
-					// Find booking to get customer name
-					const booking = bookings.find((b) => b.customerEmail.toLowerCase().trim() === email)
 					let firstName = "User"
 					let lastName = ""
 
 					if (booking && booking.customerName) {
+						// Use booking name
 						const nameParts = booking.customerName.trim().split(/\s+/)
 						if (nameParts.length >= 2) {
 							firstName = nameParts[0]
@@ -165,8 +213,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						} else if (nameParts.length === 1) {
 							firstName = nameParts[0]
 						}
+					} else if (waitingListEntry) {
+						// Use waiting list name
+						firstName = waitingListEntry.firstName || "User"
+						lastName = waitingListEntry.lastName || ""
 					} else {
-						// Extract name from email if no booking name
+						// Extract name from email if no other source
 						const emailName = email.split("@")[0]
 						const nameParts = emailName.split(/[._-]/)
 						if (nameParts.length >= 2) {
@@ -187,16 +239,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					})
 
 					isNewUser = true
+					if (isFromWaitingList) {
+						fromWaitingListCount++
+					} else {
+						fromBookingsCount++
+					}
 					createdUsers.push({
 						email,
 						userId: user._id,
 						isNewUser: true,
+						source: isFromWaitingList ? "waitingList" : "booking",
 					})
 				} else {
+					if (isFromWaitingList) {
+						fromWaitingListCount++
+					} else {
+						fromBookingsCount++
+					}
 					createdUsers.push({
 						email,
 						userId: user._id,
 						isNewUser: false,
+						source: isFromWaitingList ? "waitingList" : "booking",
 					})
 				}
 
@@ -228,59 +292,112 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					const token = generateInviteToken(interestGroup._id.toString(), user._id.toString(), email)
 					const acceptLink = `${baseUrl}/events/${eventId}/group/accept?token=${token}&email=${encodeURIComponent(email)}&interestId=${interestGroup._id.toString()}`
 
-					// Send email with credentials and acceptance link
-					const emailHtml = `
-						<div style="font-family: Arial, sans-serif; background: #f9f9f9; padding: 40px 0;">
-							<div style="max-width: 600px; margin: 0 auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 32px;">
-								<h2 style="color: #2d3748; text-align: center; margin-bottom: 24px;">Join ${event.name} Interest Group</h2>
-								<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
-									Hello ${user.firstName || "there"},
-								</p>
-								<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
-									You're invited to join the interest group for <strong>${event.name}</strong>!
-								</p>
-								<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
-									${event.desc ? `Event Details: ${event.desc.substring(0, 200)}${event.desc.length > 200 ? "..." : ""}` : ""}
-								</p>
-								${isNewUser ? `
-									<div style="background: #f7fafc; border-left: 4px solid #3182ce; padding: 16px; margin: 24px 0; border-radius: 4px;">
-										<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Your Account Credentials:</p>
+					// Send different email based on source
+					let emailHtml = ""
+					let emailSubject = ""
+
+					if (isFromWaitingList) {
+						// Waiting list email - more engaging, community-focused
+						emailSubject = `Join ${event.name} Interest Group - Connect with Others!`
+						emailHtml = `
+							<div style="font-family: Arial, sans-serif; background: #f9f9f9; padding: 40px 0;">
+								<div style="max-width: 600px; margin: 0 auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 32px;">
+									<h2 style="color: #2d3748; text-align: center; margin-bottom: 24px;">Join ${event.name} Interest Group</h2>
+									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
+										Hello ${user.firstName || "there"},
+									</p>
+									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
+										We noticed you missed <strong>${event.name}</strong>, but that doesn't mean you have to miss out on the community! You're invited to join the interest group and connect with others who also missed this event.
+									</p>
+									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
+										This is a great opportunity to stay connected with like-minded people, share experiences, and be the first to know about future events!
+									</p>
+									${event.desc ? `
+										<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
+											Event Details: ${event.desc.substring(0, 200)}${event.desc.length > 200 ? "..." : ""}
+										</p>
+									` : ""}
+									${isNewUser ? `
+										<div style="background: #f7fafc; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
+											<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Your Account Credentials:</p>
+											<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
+												<strong>Email:</strong> ${email}<br/>
+												<strong>Password:</strong> ${defaultPassword}
+											</p>
+										</div>
+									` : ""}
+									<div style="background: #fff5e6; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
+										<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Join the Community:</p>
 										<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
-											<strong>Email:</strong> ${email}<br/>
-											<strong>Password:</strong> ${defaultPassword}
+											Connect with others who also missed the event and stay in the loop for future opportunities. Click the button below to accept the invitation and join the interest group!
 										</p>
 									</div>
-								` : ""}
-								<div style="background: #e6f7ff; border-left: 4px solid #1890ff; padding: 16px; margin: 24px 0; border-radius: 4px;">
-									<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Join the Group:</p>
-									<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
-										Click the button below to accept the invitation and join the interest group.
+									<div style="text-align: center; margin: 32px 0;">
+										<a href="${acceptLink}" style="display: inline-block; background: #F79432; color: #000; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
+											Accept & Join Group
+										</a>
+									</div>
+									<p style="font-size: 12px; color: #a0aec0; text-align: center; margin-top: 32px;">
+										This invitation was sent because you were on the waiting list for an event on Jetzy Events.
+									</p>
+									<p style="font-size: 12px; color: #a0aec0; text-align: center; margin-top: 16px;">
+										&copy; ${new Date().getFullYear()} Jetzy Events
 									</p>
 								</div>
-								<div style="text-align: center; margin: 32px 0;">
-									<a href="${acceptLink}" style="display: inline-block; background: #3182ce; color: #fff; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
-										Accept & Join Group
-									</a>
-								</div>
-								<p style="font-size: 14px; color: #a0aec0; text-align: center;">
-									If the button above does not work, copy and paste this link into your browser:<br/>
-									<a href="${acceptLink}" style="color: #3182ce;">${acceptLink}</a>
-								</p>
-								<p style="font-size: 12px; color: #a0aec0; text-align: center; margin-top: 32px;">
-									This invitation was sent because you registered for an event on Jetzy Events.
-								</p>
-								<p style="font-size: 12px; color: #a0aec0; text-align: center; margin-top: 16px;">
-									&copy; ${new Date().getFullYear()} Jetzy Events
-								</p>
 							</div>
-						</div>
-					`
+						`
+					} else {
+						// Booking email - original template
+						emailSubject = `Join ${event.name} Interest Group`
+						emailHtml = `
+							<div style="font-family: Arial, sans-serif; background: #f9f9f9; padding: 40px 0;">
+								<div style="max-width: 600px; margin: 0 auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 32px;">
+									<h2 style="color: #2d3748; text-align: center; margin-bottom: 24px;">Join ${event.name} Interest Group</h2>
+									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
+										Hello ${user.firstName || "there"},
+									</p>
+									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
+										You're invited to join the interest group for <strong>${event.name}</strong>!
+									</p>
+									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
+										${event.desc ? `Event Details: ${event.desc.substring(0, 200)}${event.desc.length > 200 ? "..." : ""}` : ""}
+									</p>
+									${isNewUser ? `
+										<div style="background: #f7fafc; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
+											<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Your Account Credentials:</p>
+											<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
+												<strong>Email:</strong> ${email}<br/>
+												<strong>Password:</strong> ${defaultPassword}
+											</p>
+										</div>
+									` : ""}
+									<div style="background: #fff5e6; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
+										<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Join the Group:</p>
+										<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
+											Click the button below to accept the invitation and join the interest group.
+										</p>
+									</div>
+									<div style="text-align: center; margin: 32px 0;">
+										<a href="${acceptLink}" style="display: inline-block; background: #F79432; color: #000; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
+											Accept & Join Group
+										</a>
+									</div>
+									<p style="font-size: 12px; color: #a0aec0; text-align: center; margin-top: 32px;">
+										This invitation was sent because you registered for an event on Jetzy Events.
+									</p>
+									<p style="font-size: 12px; color: #a0aec0; text-align: center; margin-top: 16px;">
+										&copy; ${new Date().getFullYear()} Jetzy Events
+									</p>
+								</div>
+							</div>
+						`
+					}
 
 					try {
 						await sendgrid.send({
 							to: email,
 							from: process.env.SENDGRID_EMAIL_SENDER as string,
-							subject: `Join ${event.name} Interest Group`,
+							subject: emailSubject,
 							html: emailHtml,
 						})
 					} catch (emailError) {
@@ -304,7 +421,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Don't fail the whole request if flag update fails, but log it
 		}
 
-		console.log(`[create-group] Successfully created group ${interestGroup._id} with ${interestUserEntries.length} members`)
+		const totalFromBookings = uniqueEmails.filter((item) => item.source === "booking").length
+		const totalFromWaitingList = uniqueEmails.filter((item) => item.source === "waitingList").length
+
+		console.log(`[create-group] Successfully created group ${interestGroup._id} with ${interestUserEntries.length} members (${fromBookingsCount} from bookings, ${fromWaitingListCount} from waiting list)`)
 
 		return sendResponse(
 			res,
@@ -314,9 +434,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				groupName: interestGroup.name,
 				usersProcessed: interestUserEntries.length,
 				usersCreated: createdUsers.filter((u) => u.isNewUser).length,
+				fromBookings: fromBookingsCount,
+				fromWaitingList: fromWaitingListCount,
+				totalFromBookings,
+				totalFromWaitingList,
 				errors: emailErrors.length > 0 ? emailErrors : undefined,
 			},
-			`Successfully created interest group "${interestGroup.name}" and sent invitations to ${interestUserEntries.length} user${interestUserEntries.length !== 1 ? "s" : ""}`,
+			`Successfully created interest group "${interestGroup.name}" and sent invitations to ${interestUserEntries.length} user${interestUserEntries.length !== 1 ? "s" : ""} (${fromBookingsCount} from bookings, ${fromWaitingListCount} from waiting list)`,
 			true,
 			ResCode.OK
 		)

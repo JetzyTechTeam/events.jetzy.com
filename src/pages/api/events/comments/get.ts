@@ -8,6 +8,23 @@ export default async function handler(
   res: NextApiResponse
 ) {
   try {
+    // Ensure database connection is ready
+    const { dbconn } = await import("@/configs/database")
+    if (dbconn.readyState !== 1) {
+      console.log("[comments/get] Database not connected, attempting to connect...")
+      try {
+        await Promise.race([
+          dbconn.asPromise(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Connection timeout")), 30000)
+          )
+        ])
+      } catch (connError: any) {
+        console.error("[comments/get] Database connection failed:", connError.message)
+        return res.status(500).json({ message: "Database connection failed" })
+      }
+    }
+
     const { eventId } = req.query;
 
     if (!eventId) {

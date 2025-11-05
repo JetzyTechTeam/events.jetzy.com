@@ -37,6 +37,13 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (
 ) => {
   const session = await getServerSession(context.req, context.res, authOptions);
 
+  // Ensure database connection is ready
+  const { dbconn } = await import("@/configs/database")
+  if (dbconn.readyState !== 1) {
+    console.log("[index] Database not connected, attempting to connect...")
+    await dbconn.asPromise()
+  }
+
   // lets paginate the events
   const limit = 20;
   const page = context.query.page ? parseInt(context.query.page as string) : 1;

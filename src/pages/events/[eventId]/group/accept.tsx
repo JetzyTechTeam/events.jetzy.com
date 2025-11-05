@@ -19,11 +19,13 @@ type Props = {
 	user: string | null
 	isValid: boolean
 	error: string | null
+	formattedDate?: string
+	alreadyAccepted?: boolean
 }
 
-export default function GroupAcceptPage({ event: eventStr, group: groupStr, user: userStr, isValid, error: serverError }: Props) {
+export default function GroupAcceptPage({ event: eventStr, group: groupStr, user: userStr, isValid, error: serverError, formattedDate, alreadyAccepted: initialAccepted }: Props) {
 	const [isLoading, setIsLoading] = useState(false)
-	const [isAccepted, setIsAccepted] = useState(false)
+	const [isAccepted, setIsAccepted] = useState(initialAccepted || false)
 	const [error, setError] = useState<string | null>(serverError)
 	const toast = useToast()
 	const router = useRouter()
@@ -42,13 +44,10 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 		console.error("Error parsing data:", e)
 	}
 
+	// Debug: Log when isAccepted changes
 	useEffect(() => {
-		// Check if already accepted
-		if (groupData && userData) {
-			// The status check is done server-side, but we can verify client-side too
-			setIsAccepted(false) // Will be set by API response
-		}
-	}, [groupData, userData])
+		console.log("[GroupAccept] isAccepted state changed:", isAccepted)
+	}, [isAccepted])
 
 	const handleAccept = async () => {
 		if (!token || !email || !interestId) {
@@ -60,14 +59,25 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 		setError(null)
 
 		try {
+			console.log("[GroupAccept] Sending accept request:", { token, email, interestId })
 			const response = await axios.post(`/api/events/${router.query.eventId}/group/accept`, {
 				token,
 				email,
 				interestId,
 			})
 
-			if (response.data.status) {
-				setIsAccepted(true)
+			console.log("[GroupAccept] Response received:", response.data)
+
+			if (response.data.status === true) {
+				console.log("[GroupAccept] Response status is true, updating state")
+				// Clear any errors first
+				setError(null)
+				// Update state - use callback to ensure state update
+				setIsAccepted((prev) => {
+					console.log("[GroupAccept] isAccepted state update:", prev, "-> true")
+					return true
+				})
+				setIsLoading(false)
 				toast({
 					title: "Success!",
 					description: "You have successfully joined the interest group!",
@@ -76,7 +86,9 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 					isClosable: true,
 				})
 			} else {
+				console.log("[GroupAccept] Response status was false:", response.data)
 				setError(response.data.message || "Failed to join group")
+				setIsLoading(false)
 				toast({
 					title: "Error",
 					description: response.data.message || "Failed to join group",
@@ -86,8 +98,10 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 				})
 			}
 		} catch (err: any) {
+			console.error("[GroupAccept] Error:", err)
 			const errorMessage = err.response?.data?.message || err.message || "Failed to join group"
 			setError(errorMessage)
+			setIsLoading(false)
 			toast({
 				title: "Error",
 				description: errorMessage,
@@ -95,8 +109,6 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 				duration: 5000,
 				isClosable: true,
 			})
-		} finally {
-			setIsLoading(false)
 		}
 	}
 
@@ -137,7 +149,7 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 	}
 
 	return (
-		<ConsoleLayout>
+		<ConsoleLayout key={isAccepted ? "accepted" : "pending"}>
 			<Box maxW="5xl" mx="auto" mt={8}>
 				<Flex gap={6} direction={{ base: "column", md: "row" }}>
 					{/* Event Image */}
@@ -176,9 +188,9 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 										Event Details:
 									</Text>
 									<Text color="gray.700">Location: {eventData.location}</Text>
-									{eventData.startsOn && (
+									{formattedDate && (
 										<Text color="gray.700">
-											Date: {new Date(eventData.startsOn).toLocaleDateString()}
+											Date: {formattedDate}
 										</Text>
 									)}
 								</Box>
@@ -192,17 +204,29 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 						)}
 
 						<Flex gap={4} mt={6}>
-							<Button
-								colorScheme="orange"
-								color="black"
-								w="full"
-								onClick={handleAccept}
-								isLoading={isLoading}
-								disabled={isLoading || isAccepted}
-								size="lg"
-							>
-								{isLoading ? <Spinner size="sm" /> : "Accept & Join Group"}
-							</Button>
+							{isAccepted ? (
+								<Button
+									colorScheme="green"
+									color="white"
+									w="full"
+									size="lg"
+									disabled
+								>
+									✓ Already Joined
+								</Button>
+							) : (
+								<Button
+									colorScheme="orange"
+									color="black"
+									w="full"
+									onClick={handleAccept}
+									isLoading={isLoading}
+									disabled={isLoading || isAccepted}
+									size="lg"
+								>
+									{isLoading ? <Spinner size="sm" /> : "Accept & Join Group"}
+								</Button>
+							)}
 						</Flex>
 					</Box>
 				</Flex>
@@ -222,11 +246,20 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 				user: null,
 				isValid: false,
 				error: "Missing required parameters",
+				formattedDate: undefined,
+				alreadyAccepted: false,
 			},
 		}
 	}
 
 	try {
+		// Ensure database connection is ready
+		const { dbconn } = await import("@/configs/database")
+		if (dbconn.readyState !== 1) {
+			console.log("[GroupAccept] Database not connected, attempting to connect...")
+			await dbconn.asPromise()
+		}
+
 		// Get event
 		const event = await Events.findOne({
 			_id: new Types.ObjectId(eventId as string),
@@ -241,8 +274,21 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 					user: null,
 					isValid: false,
 					error: "Event not found",
+					formattedDate: undefined,
+					alreadyAccepted: false,
 				},
 			}
+		}
+
+		// Format date consistently for server and client
+		let formattedDate: string | undefined
+		if (event.startsOn) {
+			const date = new Date(event.startsOn)
+			formattedDate = date.toLocaleDateString("en-US", {
+				year: "numeric",
+				month: "long",
+				day: "numeric",
+			})
 		}
 
 		// Get interest group
@@ -255,6 +301,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 					user: null,
 					isValid: false,
 					error: "Interest group not found",
+					formattedDate,
+					alreadyAccepted: false,
 				},
 			}
 		}
@@ -269,6 +317,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 					user: null,
 					isValid: false,
 					error: "User not found",
+					formattedDate,
+					alreadyAccepted: false,
 				},
 			}
 		}
@@ -286,6 +336,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 					user: JSON.stringify(user.toJSON()),
 					isValid: false,
 					error: "Invalid or expired invitation link",
+					formattedDate,
+					alreadyAccepted: false,
 				},
 			}
 		}
@@ -296,6 +348,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 			userId: user._id,
 		})
 
+		const alreadyAccepted = interestUser?.status === "active"
+
 		return {
 			props: {
 				event: JSON.stringify(event.toJSON()),
@@ -303,6 +357,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 				user: JSON.stringify(user.toJSON()),
 				isValid: true,
 				error: null,
+				formattedDate,
+				alreadyAccepted,
 			},
 		}
 	} catch (error: any) {
@@ -314,6 +370,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 				user: null,
 				isValid: false,
 				error: error.message || "An error occurred",
+				formattedDate: undefined,
+				alreadyAccepted: false,
 			},
 		}
 	}

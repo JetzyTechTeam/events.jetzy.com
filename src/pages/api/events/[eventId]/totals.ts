@@ -11,6 +11,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!eventId)   return  res.status(400).json({ message:   "Event ID is required" });
 
     try {
+        // Ensure database connection is ready
+        const { dbconn } = await import("@/configs/database")
+        if (dbconn.readyState !== 1) {
+            console.log("[totals] Database not connected, attempting to connect...")
+            try {
+                await Promise.race([
+                    dbconn.asPromise(),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error("Connection timeout")), 30000)
+                    )
+                ])
+            } catch (connError: any) {
+                console.error("[totals] Database connection failed:", connError.message)
+                return res.status(500).json({ message: "Database connection failed" })
+            }
+        }
+
         // Get all bookings (including cancelled for separate count)
         const allBookings = await Bookings.find({ eventId: eventId, isDeleted: false });
         
