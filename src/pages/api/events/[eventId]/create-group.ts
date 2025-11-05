@@ -93,7 +93,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		console.log(`[create-group] Creating interest group for event ${eventId}`)
 
 		// Create InterestV2 group
-		let interestGroup
+		let interestGroup: any
 		try {
 			interestGroup = await InterestV2model.create({
 				name: event.name,
@@ -289,8 +289,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					}
 
 					// Generate acceptance link with token
-					const token = generateInviteToken(interestGroup._id.toString(), user._id.toString(), email)
-					const acceptLink = `${baseUrl}/events/${eventId}/group/accept?token=${token}&email=${encodeURIComponent(email)}&interestId=${interestGroup._id.toString()}`
+					const interestGroupId = interestGroup._id.toString()
+					const userId = user._id.toString()
+					const token = generateInviteToken(interestGroupId, userId, email)
+					const acceptLink = `${baseUrl}/events/${eventId}/group/accept?token=${token}&email=${encodeURIComponent(email)}&interestId=${interestGroupId}`
 
 					// Send different email based on source
 					let emailHtml = ""
