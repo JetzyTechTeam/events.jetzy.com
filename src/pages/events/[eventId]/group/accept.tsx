@@ -171,7 +171,7 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 							Join Interest Group
 						</Heading>
 						<Text fontSize="lg" color="gray.600" mb={6}>
-							You've been invited to join the interest group for:
+							You&apos;ve been invited to join the interest group for:
 						</Text>
 						<Box mb={6}>
 							<Heading size="md" color="orange.500" mb={2}>
