@@ -3,17 +3,18 @@ import { Disclosure, Menu, Transition } from "@headlessui/react"
 import { Bars3Icon, BellIcon, XMarkIcon } from "@heroicons/react/24/outline"
 import { classNames } from "@Jetzy/lib/utils"
 import { ConsoleNavbarProps, Pages, Roles } from "@Jetzy/types"
-import Logo from "@Jetzy/assets/logo/logo.png"
+import JetzyLogo from "@/assets/logo/jetzy_logo.png"
 import Image from "next/image"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { signOut, useSession } from "next-auth/react"
 import Link from "next/link"
 
 const navigation = [
-	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
-	{ name: Pages.Events, href: ROUTES.dashboard.events.index },
-	{ name: Pages.Bookings, href: ROUTES.dashboard.bookings.index },
-	{ name: "Create Event", href: ROUTES.dashboard.events.create },
+	{ name: "Events", href: "/", requiresAuth: false },
+	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index, requiresAuth: true },
+	{ name: "My Events", href: ROUTES.dashboard.events.index, requiresAuth: true },
+	{ name: Pages.Bookings, href: ROUTES.dashboard.bookings.index, requiresAuth: true },
+	{ name: "Create Event", href: ROUTES.dashboard.events.create, requiresAuth: true },
 ]
 
 export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
@@ -30,7 +31,20 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	// @ts-ignore
 	const userRole = session?.user?.role
 
-	const filteredNavigation = userRole === Roles.USER ? navigation.filter((item) => item.name === Pages.Dasshboard) : navigation
+	// Show all items for logged in users
+	const filteredNavigation = navigation
+
+	const isActive = (href: string) => {
+		if (href === "/") {
+			return page === "Events" || page === null
+		}
+		// Check if current page matches the navigation item
+		if (page === Pages.Dasshboard && href === ROUTES.dashboard.index) return true
+		if (page === Pages.Events && href === ROUTES.dashboard.events.index) return true
+		if (page === Pages.Bookings && href === ROUTES.dashboard.bookings.index) return true
+		if (page === "Create Event" && href === ROUTES.dashboard.events.create) return true
+		return false
+	}
 
 	return (
 		<Disclosure as="nav" className="bg-white border-b border-border-light shadow-sm">
@@ -39,20 +53,21 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 					<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 						<div className="flex h-16 items-center justify-between">
 							<div className="flex items-center">
-								<div className="flex-shrink-0">
-									<Image className="h-10 w-10" src={Logo} alt="Your Company" />
-								</div>
+								<Link href="/" className="flex items-center gap-2 flex-shrink-0">
+									<Image src={JetzyLogo} alt="Jetzy" width={32} height={32} className="object-contain" />
+									<span className="text-text-primary font-bold text-xl">Jetzy</span>
+								</Link>
 								<div className="hidden md:block">
-									<div className="ml-10 flex items-baseline space-x-4">
+									<div className="ml-10 flex items-baseline space-x-1">
 										{filteredNavigation.map((item) => (
 											<Link
 												key={item.name}
 												href={item.href}
 												className={classNames(
-													item.name === page ? "bg-primary-purple text-white" : "text-text-secondary hover:bg-background-gray hover:text-text-primary",
-													"rounded-md px-3 py-2 text-sm font-medium transition-colors",
+													isActive(item.href) ? "bg-primary-purple text-white" : "text-text-secondary hover:bg-background-gray hover:text-text-primary",
+													"rounded-md px-4 py-2 text-sm font-medium transition-colors",
 												)}
-												aria-current={item.name === page ? "page" : undefined}
+												aria-current={isActive(item.href) ? "page" : undefined}
 											>
 												{item.name}
 											</Link>
@@ -129,10 +144,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 									as="a"
 									href={item.href}
 									className={classNames(
-										item.name === page ? "bg-primary-purple text-white" : "text-text-secondary hover:bg-background-gray hover:text-text-primary",
+										isActive(item.href) ? "bg-primary-purple text-white" : "text-text-secondary hover:bg-background-gray hover:text-text-primary",
 										"block rounded-md px-3 py-2 text-base font-medium transition-colors",
 									)}
-									aria-current={item.name === page ? "page" : undefined}
+									aria-current={isActive(item.href) ? "page" : undefined}
 								>
 									{item.name}
 								</Disclosure.Button>

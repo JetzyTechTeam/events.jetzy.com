@@ -1,6 +1,7 @@
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { GetServerSideProps } from "next"
+import Head from "next/head"
 import dynamic from "next/dynamic"
 import React from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
@@ -13,16 +14,31 @@ type Props = {
 export default function EventDetailPage({ event }: Props) {
 	try {
 		const data = JSON.parse(event) as IEvent
-		
+
 		// Validate that the event has required fields
 		if (!data || !data._id || !data.name) {
 			throw new Error("Invalid event data")
 		}
 
 		return (
-			<ErrorBoundary>
-				<HostedEvents event={data} />
-			</ErrorBoundary>
+			<>
+				<Head>
+					<title>{data.name} - Jetzy Events</title>
+					<meta name="description" content={data.desc || `Join ${data.name} on Jetzy. Book your tickets now!`} />
+					<meta name="keywords" content={`${data.name}, event, tickets, booking, ${data.location}`} />
+					<meta property="og:title" content={`${data.name} - Jetzy Events`} />
+					<meta property="og:description" content={data.desc || `Join ${data.name} on Jetzy.`} />
+					{data.images && data.images.length > 0 && <meta property="og:image" content={data.images[0]} />}
+					<meta property="og:type" content="event" />
+					<meta name="twitter:card" content="summary_large_image" />
+					<meta name="twitter:title" content={`${data.name} - Jetzy Events`} />
+					<meta name="twitter:description" content={data.desc || `Join ${data.name} on Jetzy.`} />
+					{data.images && data.images.length > 0 && <meta name="twitter:image" content={data.images[0]} />}
+				</Head>
+				<ErrorBoundary>
+					<HostedEvents event={data} />
+				</ErrorBoundary>
+			</>
 		)
 	} catch (error) {
 		console.error("Error parsing event data:", error)
@@ -39,7 +55,7 @@ export default function EventDetailPage({ event }: Props) {
 						<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Event Not Found</h1>
 						<p className="text-gray-600 mb-6">We couldn&apos;t find the event you were looking for. Please try again or contact the event organizer for more information.</p>
 						<button
-							onClick={() => window.location.href = "/"}
+							onClick={() => (window.location.href = "/")}
 							className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
 						>
 							See All Events
@@ -64,7 +80,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 		// Get the event by slug
 		const event = await Events.findOne({ slug: slug as string, isDeleted: false })
-		
+
 		if (!event) {
 			return { notFound: true } // If the event is not found, return a 404
 		}
@@ -78,7 +94,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			},
 		}
 	} catch (error) {
-		console.error('Error in getServerSideProps:', error);
+		console.error("Error in getServerSideProps:", error)
 		return {
 			notFound: true,
 		}

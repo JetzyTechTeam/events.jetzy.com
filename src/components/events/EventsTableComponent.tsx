@@ -1,21 +1,5 @@
 import React from "react"
-import {
-	Table,
-	Thead,
-	Tbody,
-	Tfoot,
-	Tr,
-	Th,
-	Td,
-	TableCaption,
-	TableContainer,
-	Flex,
-	Button,
-	Text,
-	useDisclosure,
-	Box,
-	Spinner,
-} from "@chakra-ui/react"
+import { Table, Thead, Tbody, Tfoot, Tr, Th, Td, TableCaption, TableContainer, Flex, Button, Text, useDisclosure, Box, Spinner } from "@chakra-ui/react"
 import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline"
 import { Pagination } from "@/pages/console/events/index.old"
 import Image from "next/image"
@@ -29,6 +13,12 @@ import { useAppDispatch, useAppSelector } from "@/redux/stores"
 import { DeleteEventThunk, getEventState } from "@/redux/reducers/eventsSlice"
 import { useEdgeStore } from "@/lib/edgestore"
 import { useRouter } from "next/router"
+import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 type Props = {
 	rows: IEvent[]
@@ -58,7 +48,7 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 		})
 	}
 
-	const  onView = () => {
+	const onView = () => {
 		router.push(ROUTES.dashboard.events.edit.replace(":eventId", event._id.toString()))
 	}
 
@@ -79,54 +69,61 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 						</Tr>
 					</Thead>
 					<Tbody>
-						{tableData && tableData.map((row) => (
-							<Tr key={row._id.toString()}>
-								<Td fontWeight={"bold"}>
-									{/* image and event name */}
-									<Flex align="center" gap={2} justifyContent={"flex-start"} alignItems={"center"}>
-										<Box display={{ base: "none", md: "block" }}>
-											<Image src={row.images[0]} alt={row.name} width={50} height={50} />
-										</Box>
+						{tableData &&
+							tableData.map((row) => (
+								<Tr key={row._id.toString()}>
+									<Td fontWeight={"bold"}>
+										{/* image and event name */}
+										<Flex align="center" gap={2} justifyContent={"flex-start"} alignItems={"center"}>
+											<Box display={{ base: "none", md: "block" }}>
+												<Image src={row.images[0]} alt={row.name} width={50} height={50} />
+											</Box>
+											<Button
+												onClick={() => {
+													setEventData(row)
+													onOpen()
+												}}
+												variant="link"
+												color="white"
+												overflow="hidden"
+												whiteSpace="nowrap"
+												textOverflow="ellipsis"
+											>
+												{row.name}
+											</Button>
+										</Flex>
+									</Td>
+									<Td>
+										<Link href={ROUTES.dashboard.events.tickets.replace(":eventId", row._id.toString())}>
+											<Button variant="link">{row.tickets.length}</Button>
+										</Link>
+									</Td>
+									<Td>{new Date(row.createdAt).toDateString()}</Td>
+									<Td className="space-x-2">
 										<Button
-											onClick={() => {
-												setEventData(row)
-												onOpen()
-											}}
-											variant="link"
-											color='white'
-											overflow="hidden"
-											whiteSpace="nowrap"
-											textOverflow="ellipsis"
+											bg="#3E3E3E"
+											color="white"
+											size="sm"
+											leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+											onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))}
 										>
-											{row.name}
+											Edit
 										</Button>
-									</Flex>
-								</Td>
-								<Td>
-									<Link href={ROUTES.dashboard.events.tickets.replace(":eventId", row._id.toString())}>
-										<Button variant="link">
-											{row.tickets.length}
+										<Button
+											bg="#3E3E3E"
+											color="white"
+											size="sm"
+											leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+											onClick={() => router.push(ROUTES.dashboard.events.manage.replace(":eventId", row._id.toString()))}
+										>
+											Manage
 										</Button>
-									</Link>
-								</Td>
-								<Td>{new Date(row.createdAt).toDateString()}</Td>
-								<Td className="space-x-2">
-								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
-								 onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))}
-								>
-								Edit
-								</Button>
-								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
-								 onClick={() => router.push(ROUTES.dashboard.events.manage.replace(":eventId", row._id.toString()))}
-								>
-								Manage
-								</Button>
-								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
-								Delete
-								</Button>
-								</Td>
-							</Tr>
-						))}
+										<Button bg="#3E3E3E" color="white" size="sm" leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
+											Delete
+										</Button>
+									</Td>
+								</Tr>
+							))}
 					</Tbody>
 					<Tfoot>
 						<Tr>
@@ -165,15 +162,15 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 					<ModalCloseButton />
 					<ModalBody>
 						<div className="space-y-4">
-						<div className="">
-							{event.images && event.images.length > 0 ? (
-								<Image src={event.images[0]} alt={event.name} width={200} height={200} className="d-block m-auto" />
-							) : (
-								<Box width={200} height={200} display="flex" alignItems="center" justifyContent="center" bg="gray.100" color="gray.500">
-									No Image
-								</Box>
-							)}
-						</div>
+							<div className="">
+								{event.images && event.images.length > 0 ? (
+									<Image src={event.images[0]} alt={event.name} width={200} height={200} className="d-block m-auto" />
+								) : (
+									<Box width={200} height={200} display="flex" alignItems="center" justifyContent="center" bg="gray.100" color="gray.500">
+										No Image
+									</Box>
+								)}
+							</div>
 							<div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white shadow rounded-lg">
 								<div className="flex-1">
 									<p className="text-lg font-medium text-gray-900">{event.name}</p>
@@ -214,16 +211,32 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 							<div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white shadow rounded-lg">
 								<div className="flex-1">
 									<p className="text-md font-medium text-gray-900">
-										{new Date(event.startsOn?.toString())?.toDateString()} {new Date(event.startsOn?.toString())?.toLocaleTimeString()}
+										{(() => {
+											try {
+												const userTimeZone = event.timezone?.split(") ")[1] || event.timezone || "UTC"
+												const date = dayjs.utc(event.startsOn).tz(userTimeZone)
+												return date.format("MMM D, YYYY h:mm A")
+											} catch (error) {
+												return new Date(event.startsOn?.toString())?.toLocaleString()
+											}
+										})()}
 									</p>
-									<p className="text-sm text-gray-500">Start Date</p>
+									<p className="text-sm text-gray-500">Start Date {event.timezone && `(${event.timezone})`}</p>
 								</div>
 
 								<div className="flex-1">
 									<p className="text-md font-medium text-gray-900">
-										{new Date(event.endsOn?.toString())?.toDateString()} {new Date(event.endsOn?.toString())?.toLocaleTimeString()}
+										{(() => {
+											try {
+												const userTimeZone = event.timezone?.split(") ")[1] || event.timezone || "UTC"
+												const date = dayjs.utc(event.endsOn).tz(userTimeZone)
+												return date.format("MMM D, YYYY h:mm A")
+											} catch (error) {
+												return new Date(event.endsOn?.toString())?.toLocaleString()
+											}
+										})()}
 									</p>
-									<p className="text-sm text-gray-500">Start Date</p>
+									<p className="text-sm text-gray-500">End Date {event.timezone && `(${event.timezone})`}</p>
 								</div>
 							</div>
 						</div>
@@ -233,7 +246,9 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 						<Button colorScheme="blue" mr={3} onClick={onClose}>
 							Close
 						</Button>
-						<Button variant="ghost" onClick={onView}>View</Button>
+						<Button variant="ghost" onClick={onView}>
+							View
+						</Button>
 					</ModalFooter>
 				</ModalContent>
 			</Modal>

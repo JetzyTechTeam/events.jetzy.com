@@ -8,6 +8,7 @@ import { ListEventsThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlic
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { EventInterface, Pages } from "@Jetzy/types"
 import { GetServerSideProps } from "next"
+import Head from "next/head"
 import { useSession } from "next-auth/react"
 import Link from "next/link"
 import React from "react"
@@ -38,16 +39,23 @@ export default function ConsoleDashboard() {
 	}, [admin])
 
 	return (
-		<ConsoleLayout page={Pages.Dasshboard} component={admin ? <CreateEventButton /> : <></>}>
-			{!dataList?.length && !isFetching && (
-				<div className="text-center py-12">
-					<p className="text-text-muted text-lg">No events found.</p>
-				</div>
-			)}
+		<>
+			<Head>
+				<title>Dashboard - Jetzy Events</title>
+				<meta name="description" content="Manage your events, view bookings, and track your event performance on Jetzy." />
+				<meta name="robots" content="noindex, nofollow" />
+			</Head>
+			<ConsoleLayout page={Pages.Dasshboard} component={admin ? <CreateEventButton /> : <></>}>
+				{!dataList?.length && !isFetching && (
+					<div className="text-center py-12">
+						<p className="text-text-muted text-lg">No events found.</p>
+					</div>
+				)}
 
-			{/* Display the data listing  */}
-			{isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
-		</ConsoleLayout>
+				{/* Display the data listing  */}
+				{isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
+			</ConsoleLayout>
+		</>
 	)
 }
 

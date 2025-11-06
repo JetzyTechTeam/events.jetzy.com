@@ -1,6 +1,7 @@
 import React from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useSession } from "next-auth/react"
 import JetzyLogo from "@/assets/logo/jetzy_logo.png"
 import FacebookIcon from "@/assets/social/Facebook.png"
 import InstagramIcon from "@/assets/social/Instagram.png"
@@ -17,13 +18,6 @@ const Footer: React.FC = () => {
 		{ name: "X", icon: XIcon, url: "https://x.com/jetzy" },
 	]
 
-	const footerLinks = [
-		{ name: "Dashboard", href: "/console" },
-		{ name: "Events", href: "/" },
-		{ name: "Bookings", href: "/console/bookings" },
-		{ name: "Create Event", href: "/console/events/create" },
-	]
-
 	return (
 		<footer className="bg-white border-t border-border-light mt-12">
 			<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -32,15 +26,6 @@ const Footer: React.FC = () => {
 					<div className="flex items-center gap-3">
 						<Image src={JetzyLogo} alt="Jetzy" width={32} height={32} className="object-contain" />
 						<span className="text-text-primary font-semibold text-lg">Jetzy</span>
-					</div>
-
-					{/* Navigation Links */}
-					<div className="flex flex-wrap justify-center gap-6 text-sm">
-						{footerLinks.map((link) => (
-							<Link key={link.name} href={link.href} className="text-text-secondary hover:text-text-primary transition-colors">
-								{link.name}
-							</Link>
-						))}
 					</div>
 
 					{/* Social Icons */}

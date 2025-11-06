@@ -33,7 +33,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 			type="text"
 			placeholder={placeholder}
 			defaultValue={defaultValue}
-			className="bg-[#1D1F24] block w-[100px] h-10 rounded-md border-0 py-1.5 shadow-sm placeholder:text-gray-400 sm:text-sm sm:leading-6 p-3"
+			className="bg-white block w-full h-10 rounded-md border border-[#E5E7EB] py-1.5 px-3 text-[#1F2937] placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#8B5CF6] focus:outline-none focus:ring-1 focus:ring-[#8B5CF6] sm:text-sm sm:leading-6 transition-colors"
 		/>
 	)
 }

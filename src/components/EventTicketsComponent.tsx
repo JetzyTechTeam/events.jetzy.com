@@ -12,12 +12,15 @@ import axios from "axios"
 import { useSession } from "next-auth/react"
 import Linkify from "linkify-react"
 import { sendGAEvent } from "@next/third-parties/google"
+import { FiX } from "react-icons/fi"
 
 type Props = {
 	event: IEvent
+	isOpen: boolean
+	onClose: () => void
 }
 
-const EventTicketsComponent: React.FC<Props> = ({ event }) => {
+const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 	const eventId = event._id.toString()
 
 	const session = useSession()
@@ -108,142 +111,140 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
 	return (
 		<>
-			{/* Main Container */}
-			<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8" id="event-tickets">
-				{/* Content Section */}
-				<div className="p-6 sm:p-8">
-					{/* Header Section */}
-					<div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
-						<div className="text-center sm:text-left">
-							<h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
-							<p className="text-[#bbbbbb] text-sm sm:text-base">Select your tickets and proceed to checkout.</p>
+			{/* Ticket Selection Modal */}
+			{isOpen && (
+				<div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={onClose}>
+					{/* Modal Container */}
+					<div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden border border-border-light" onClick={(e) => e.stopPropagation()}>
+						{/* Modal Header */}
+						<div className="flex items-center justify-between p-6 border-b border-border-light sticky top-0 bg-white z-10">
+							<div>
+								<h2 className="text-2xl font-bold text-text-primary">Select Tickets</h2>
+								<p className="text-text-secondary text-sm mt-1">Choose your tickets and proceed to checkout</p>
+							</div>
+							<button onClick={onClose} className="text-text-muted hover:text-text-primary transition-colors p-2 rounded-lg hover:bg-background-gray">
+								<FiX className="text-2xl" />
+							</button>
 						</div>
-					</div>
 
-					{/* Ticket Section */}
-					<div className="space-y-6">
-						{tickets.map((ticket, index) => (
-							<div
-								key={ticket.id}
-								className={`relative bg-[#2b2b2b] p-4 rounded-lg cursor-pointer border-2 ${ticket.isSelected ? "border-jetzy" : "border-transparent"}`}
-								onClick={() => {
-									handleTicketSelection(ticket.id)
-									sendGAEvent({
-										category: "Event",
-										action: "Ticket Selected",
-										label: ticket.name,
-										eventName: event.name,
-									})
-								}}
-							>
-								{ticket.isSelected && (
-									<span className="absolute top-2 right-2">
-										<CheckmarkSVG />
-									</span>
-								)}
-								<div className="flex sm:flex-row justify-between items-center w-full">
-									<div className="md:text-left xs:text-center">
-										<h3 className="font-semibold text-lg">{ticket.name}</h3>
-										<p className="text-xs my-2">Select your tickets and proceed to checkout</p>
-										<p className="text-xs my-2">
-											<Linkify
-												options={{
-													target: "_blank",
-													className: "text-orange-600 underline hover:text-orange-800",
-												}}
-											>
-												{ticket.description}
-											</Linkify>
-										</p>
-										<div className="flex items-center justify-between w-full">
-											<p className="text-jetzy font-bold text-xl">
-												{staticTickets[index].price.toLocaleString("en-US", {
-													style: "currency",
-													currency: "usd",
-												})}
-											</p>
-											{event.isPaid && ticket.isSelected && (
-												<div className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800 absolute bottom-5 right-2" onClick={(e) => e.stopPropagation()}>
-													<button onClick={() => handleQuantityChange(ticket.id, -1)} className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center">
-														-
-													</button>
-													<p className="text-white text-lg font-semibold">{ticket.quantity}</p>
-													<button onClick={() => handleQuantityChange(ticket.id, 1)} className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center">
-														+
-													</button>
-												</div>
-											)}
+						{/* Modal Body - Scrollable */}
+						<div className="overflow-y-auto max-h-[calc(90vh-200px)] p-6">
+							{/* Ticket Section */}
+							<div className="space-y-4">
+								{tickets.map((ticket, index) => (
+									<div
+										key={ticket.id}
+										className={`relative bg-background-gray p-5 rounded-xl cursor-pointer border-2 transition-all duration-200 hover:shadow-md ${
+											ticket.isSelected ? "border-primary-purple bg-primary-purple/5" : "border-border-light hover:border-primary-purple/30"
+										}`}
+										onClick={() => {
+											handleTicketSelection(ticket.id)
+											sendGAEvent({
+												category: "Event",
+												action: "Ticket Selected",
+												label: ticket.name,
+												eventName: event.name,
+											})
+										}}
+									>
+										{ticket.isSelected && (
+											<span className="absolute top-3 right-3 w-6 h-6 bg-primary-purple rounded-full flex items-center justify-center">
+												<CheckmarkSVG />
+											</span>
+										)}
+										<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full gap-4">
+											<div className="flex-1">
+												<h3 className="font-semibold text-lg text-text-primary">{ticket.name}</h3>
+												<p className="text-xs text-text-muted mt-1">Select your tickets and proceed to checkout</p>
+												{ticket.description && (
+													<div className="text-sm text-text-secondary mt-2">
+														<Linkify
+															options={{
+																target: "_blank",
+																className: "text-primary-purple underline hover:text-primary-dark font-medium",
+															}}
+														>
+															{ticket.description}
+														</Linkify>
+													</div>
+												)}
+											</div>
+
+											<div className="flex items-center gap-4 sm:flex-row flex-col-reverse w-full sm:w-auto">
+												<p className="text-primary-purple font-bold text-2xl">
+													{staticTickets[index].price.toLocaleString("en-US", {
+														style: "currency",
+														currency: "usd",
+													})}
+												</p>
+												{event.isPaid && ticket.isSelected && (
+													<div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+														<button
+															onClick={() => handleQuantityChange(ticket.id, -1)}
+															className="w-9 h-9 bg-white border-2 border-primary-purple text-primary-purple rounded-full flex items-center justify-center hover:bg-primary-purple hover:text-white transition-colors font-semibold text-lg"
+															aria-label="Decrease quantity"
+														>
+															−
+														</button>
+														<span className="text-text-primary text-lg font-semibold min-w-[2rem] text-center">{ticket.quantity}</span>
+														<button
+															onClick={() => handleQuantityChange(ticket.id, 1)}
+															className="w-9 h-9 bg-primary-purple text-white rounded-full flex items-center justify-center hover:bg-primary-dark transition-colors font-semibold text-lg"
+															aria-label="Increase quantity"
+														>
+															+
+														</button>
+													</div>
+												)}
+											</div>
 										</div>
 									</div>
-								</div>
+								))}
 							</div>
-						))}
-					</div>
-
-					{/* Checkout Section */}
-					<div className="flex justify-between items-center my-4">
-						{/* Total Price to pay */}
-						<div className="text-center sm:text-right">
-							<h3 className="text-2xl font-semibold">
-								{tickets
-									.reduce((acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc), 0)
-									.toLocaleString("en-US", {
-										style: "currency",
-										currency: "usd",
-									})}
-							</h3>
 						</div>
 
-						<button
-							disabled={isLoading}
-							onClick={() => {
-								showCheckoutForm(true)
-								sendGAEvent({
-									category: "Event",
-									action: "Checkout Button Clicked",
-									label: event.name,
-								})
-							}}
-							className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50"
-						>
-							{isLoading ? <Spinner /> : "Checkout"}
-						</button>
+						{/* Modal Footer - Sticky */}
+						<div className="flex flex-col sm:flex-row justify-between items-center p-6 border-t border-border-light gap-4 sticky bottom-0 bg-white">
+							{/* Total Price */}
+							<div className="text-center sm:text-left">
+								<p className="text-sm text-text-muted uppercase tracking-wide mb-1">Total</p>
+								<h3 className="text-3xl font-bold text-text-primary">
+									{tickets
+										.reduce((acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc), 0)
+										.toLocaleString("en-US", {
+											style: "currency",
+											currency: "usd",
+										})}
+								</h3>
+							</div>
+
+							<button
+								disabled={isLoading}
+								onClick={() => {
+									showCheckoutForm(true)
+									sendGAEvent({
+										category: "Event",
+										action: "Checkout Button Clicked",
+										label: event.name,
+									})
+								}}
+								className="w-full sm:w-auto bg-primary-purple text-white font-semibold px-8 py-3.5 rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+							>
+								{isLoading ? (
+									<>
+										<Spinner />
+										<span>Processing...</span>
+									</>
+								) : (
+									"Checkout"
+								)}
+							</button>
+						</div>
 					</div>
 				</div>
-			</div>
+			)}
 
-			{/* map section  */}
-			{/* <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">
-        <div className="flex items-center justify-between">
-          <h1 className="font-bold text-xl">Event Location</h1>
-          <a
-            href={`https://www.google.com/maps?q=${encodeURIComponent(
-              event.location
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-jetzy p-2 rounded-xl"
-          >
-            <DirectionSVG />
-          </a>
-        </div>
-        <p className="text-xl">{event.location}</p>
-        <div className="mt-4 w-full h-64 rounded-xl overflow-hidden">
-          <iframe
-            width="100%"
-            height="100%"
-            style={{ border: 0 }}
-            loading="lazy"
-            allowFullScreen
-            referrerPolicy="no-referrer-when-downgrade"
-            src={`https://www.google.com/maps?q=${encodeURIComponent(
-              event.location
-            )}&output=embed`}
-          ></iframe>
-        </div>
-      </div> */}
-
-			{/* comments section  */}
+			{/* Comments Section - Keep as page element, not in modal */}
 			<CommentsSection eventId={eventId} currentUser={session?.data?.user as UserType} />
 		</>
 	)
@@ -324,11 +325,11 @@ const CommentItem: React.FC<CommentItemProps> = ({
 	}
 
 	return (
-		<div className="bg-[#060E1A] rounded-xl p-3">
+		<div className="bg-background-gray rounded-xl p-4 border border-border-light">
 			<div className="mb-2 flex justify-between items-start">
 				<div>
-					<h3 className="text-[15px] text-[#FBFBFB] font-medium">{comment.userId.email}</h3>
-					<p className="text-xs text-[#8F8F8F]">
+					<h3 className="text-[15px] text-text-primary font-medium">{comment.userId.email}</h3>
+					<p className="text-xs text-text-muted">
 						{new Date(comment.createdAt).toLocaleDateString("en-US", {
 							year: "numeric",
 							month: "long",
@@ -341,7 +342,8 @@ const CommentItem: React.FC<CommentItemProps> = ({
 						<Button
 							size="xs"
 							variant="ghost"
-							color="orange"
+							color="#8B5CF6"
+							_hover={{ bg: "#8B5CF6", color: "white" }}
 							onClick={() => {
 								if (isEditing) {
 									setEditCommentId(null)
@@ -358,7 +360,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
 						>
 							{isEditing ? "Cancel" : "Edit"}
 						</Button>
-						<Button size="xs" variant="ghost" color="red.400" onClick={handleDelete} isLoading={deleteMutation.isLoading}>
+						<Button size="xs" variant="ghost" color="red.500" _hover={{ bg: "red.500", color: "white" }} onClick={handleDelete} isLoading={deleteMutation.isLoading}>
 							Delete
 						</Button>
 					</div>
@@ -376,20 +378,22 @@ const CommentItem: React.FC<CommentItemProps> = ({
 								[comment._id]: e.target.value,
 							}))
 						}
-						bg="gray.800"
-						color="white"
-						borderColor="gray.600"
+						bg="white"
+						color="#1F2937"
+						borderColor="#E5E7EB"
+						_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
 						borderRadius="lg"
 					/>
 					<div className="flex gap-2 mt-2">
-						<Button size="xs" colorScheme="orange" onClick={handleEditSave} isLoading={editMutation.isLoading}>
+						<Button size="xs" bg="#8B5CF6" color="white" _hover={{ bg: "#7C3AED" }} onClick={handleEditSave} isLoading={editMutation.isLoading}>
 							Save
 						</Button>
 						<Button
 							size="xs"
 							variant="outline"
-							color="gray.300"
-							_hover={{ color: "white" }}
+							color="#6B7280"
+							borderColor="#E5E7EB"
+							_hover={{ color: "#1F2937", borderColor: "#D1D5DB" }}
 							onClick={() => {
 								setEditCommentId(null)
 								setEditTextMap((prev) => ({ ...prev, [comment._id]: "" }))
@@ -401,9 +405,17 @@ const CommentItem: React.FC<CommentItemProps> = ({
 				</>
 			) : (
 				<>
-					<p className="text-sm text-white">{comment.comment}</p>
+					<p className="text-sm text-text-secondary">{comment.comment}</p>
 
-					<Button variant="unstyled" size="xs" color="orange" mt="2" onClick={() => setReplyingTo(replyingTo === comment._id ? null : comment._id)}>
+					<Button
+						variant="unstyled"
+						size="xs"
+						color="#8B5CF6"
+						mt="2"
+						fontWeight="semibold"
+						_hover={{ color: "#7C3AED" }}
+						onClick={() => setReplyingTo(replyingTo === comment._id ? null : comment._id)}
+					>
 						Reply
 					</Button>
 
@@ -419,15 +431,18 @@ const CommentItem: React.FC<CommentItemProps> = ({
 										[comment._id]: e.target.value,
 									}))
 								}
-								bg="gray.800"
-								color="white"
-								borderColor="gray.600"
+								bg="white"
+								color="#1F2937"
+								borderColor="#E5E7EB"
+								_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
 								borderRadius="lg"
 							/>
 							<div className="flex gap-2">
 								<Button
 									size="xs"
-									colorScheme="orange"
+									bg="#8B5CF6"
+									color="white"
+									_hover={{ bg: "#7C3AED" }}
 									onClick={() => {
 										replyMutation.mutate({
 											commentId: comment._id,
@@ -441,8 +456,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
 								<Button
 									size="xs"
 									variant="outline"
-									color="gray.300"
-									_hover={{ color: "white" }}
+									color="#6B7280"
+									borderColor="#E5E7EB"
+									_hover={{ color: "#1F2937", borderColor: "#D1D5DB" }}
 									onClick={() => {
 										setReplyingTo(null)
 										setReplyTextMap((prev) => ({
@@ -460,7 +476,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
 			)}
 
 			{groupedComments[comment._id]?.length > 0 && (
-				<div className="pl-4 mt-3 space-y-3 border-l border-gray-700">
+				<div className="pl-4 mt-3 space-y-3 border-l-2 border-primary-purple/30">
 					{groupedComments[comment._id].map((reply) => (
 						<CommentItem
 							key={reply._id}
@@ -650,15 +666,15 @@ const CommentsSection = ({ eventId, currentUser }: { eventId: string; currentUse
 	}, [comments])
 
 	return (
-		<div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">
+		<div className="max-w-5xl mx-auto mt-5 bg-white border border-border-light rounded-2xl p-6 shadow-lg">
 			<div className="flex items-center justify-between">
-				<h1 className="font-bold text-xl">Comments</h1>
+				<h1 className="font-bold text-2xl text-text-primary">Comments</h1>
 				{session ? (
-					<p className="text-jetzy p-2 rounded-xl cursor-pointer" onClick={onOpen}>
+					<p className="text-primary-purple p-2 rounded-xl cursor-pointer font-semibold hover:text-primary-dark transition-colors" onClick={onOpen}>
 						Write a comment
 					</p>
 				) : (
-					<p className="text-gray-400 p-2 rounded-xl text-sm">Login to comment</p>
+					<p className="text-text-muted p-2 rounded-xl text-sm">Login to comment</p>
 				)}
 			</div>
 
@@ -667,7 +683,7 @@ const CommentsSection = ({ eventId, currentUser }: { eventId: string; currentUse
 					<Spinner />
 				</div>
 			) : (
-				<div className="space-y-5">
+				<div className="space-y-5 mt-6">
 					{groupedComments["root"]?.map((comment: CommentType) => (
 						<CommentItem
 							key={comment._id}
@@ -691,18 +707,26 @@ const CommentsSection = ({ eventId, currentUser }: { eventId: string; currentUse
 			)}
 
 			<Modal isCentered isOpen={isOpen} onClose={onClose}>
-				<ModalOverlay />
-				<ModalContent bg="#1E1E1E">
-					<ModalHeader>Write a Comment</ModalHeader>
+				<ModalOverlay backdropFilter="blur(4px)" />
+				<ModalContent bg="white">
+					<ModalHeader color="#1F2937">Write a Comment</ModalHeader>
 					<ModalBody>
-						<Textarea value={comment} placeholder="Enter your comment here..." onChange={(e) => setComment(e.target.value)} bg="#090C10" border="1px solid #444444" />
+						<Textarea
+							value={comment}
+							placeholder="Enter your comment here..."
+							onChange={(e) => setComment(e.target.value)}
+							bg="white"
+							color="#1F2937"
+							border="2px solid #E5E7EB"
+							_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+						/>
 					</ModalBody>
 
 					<ModalFooter display="flex" flexDirection="column" gap="3">
-						<Button colorScheme="orange" w="full" onClick={() => comment.trim() && commentMutation.mutate(comment)} isLoading={commentMutation.isPending}>
+						<Button bg="#8B5CF6" color="white" _hover={{ bg: "#7C3AED" }} w="full" onClick={() => comment.trim() && commentMutation.mutate(comment)} isLoading={commentMutation.isPending}>
 							Post
 						</Button>
-						<Button variant="unstyled" w="full" color="white" onClick={onClose}>
+						<Button variant="ghost" w="full" color="#6B7280" onClick={onClose}>
 							Cancel
 						</Button>
 					</ModalFooter>

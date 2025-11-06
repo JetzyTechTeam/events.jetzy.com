@@ -43,6 +43,7 @@ import axios from "axios"
 import { useQuery } from "@tanstack/react-query"
 import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icons"
 import { ShareIcon, CheckCircleIcon } from "@heroicons/react/20/solid"
+import Head from "next/head"
 import { useRouter } from "next/router"
 import { Roles } from "@/types"
 import { redirect } from "next/navigation"
@@ -62,6 +63,11 @@ export default function Manage({ event }: any) {
 
 	return (
 		<>
+			<Head>
+				<title>Manage {event.name} - Jetzy Events</title>
+				<meta name="description" content={`Manage attendees, messages, and settings for ${event.name}`} />
+				<meta name="robots" content="noindex, nofollow" />
+			</Head>
 			<ConsoleLayout
 				page={event.name}
 				backBtn="/console/events"
