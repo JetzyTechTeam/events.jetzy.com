@@ -527,6 +527,14 @@ const CreateEventPage = () => {
 									</FieldArray>
 								</Box>
 
+								{/* Images */}
+								<Box mb={6}>
+									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
+										Add Images
+									</FormLabel>
+									<ImageUploadBox uploadedImages={uploadedImages} onImageChange={handleImageUpload} isUploading={isUploading} uploadProgress={uploadProgress} handleImageDelete={handleImageDelete} />
+								</Box>
+
 								{/* Submit Button */}
 								<Button
 									type="submit"

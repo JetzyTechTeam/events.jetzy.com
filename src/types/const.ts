@@ -2,8 +2,9 @@ export enum Pages {
 	Dasshboard = "Dashboard",
 	Events = "Events",
 	Bookings = "Bookings",
-	Manage = 'Manage Event',
-	CreateEvent = 'Create Event',
+	Manage = "Manage Event",
+	CreateEvent = "Create Event",
+	UpdateEvent = "Update Event",
 }
 
 export enum Roles {

@@ -40,10 +40,12 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl" backBtn={`/console/events/${eventId}/manage`}>
-				<Container maxW="container.xl" py={8}>
-					<CheckInStats eventId={eventData._id.toString()} />
-					<CheckInPortal eventId={eventData._id.toString()} eventName={eventData.name} />
-				</Container>
+				<Box bg="#F5F5F7" minH="100vh" py={{ base: 4, md: 8 }}>
+					<Container maxW="container.xl">
+						<CheckInStats eventId={eventData._id.toString()} />
+						<CheckInPortal eventId={eventData._id.toString()} eventName={eventData.name} />
+					</Container>
+				</Box>
 			</ConsoleLayout>
 		</>
 	)

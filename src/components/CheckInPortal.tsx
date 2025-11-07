@@ -32,6 +32,7 @@ import {
 	useDisclosure,
 	Flex,
 	Heading,
+	SimpleGrid,
 } from "@chakra-ui/react"
 import { CheckCircleIcon, CloseIcon, SearchIcon } from "@chakra-ui/icons"
 import axios from "axios"
@@ -572,50 +573,94 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	}
 
 	return (
-		<Box maxW="600px" mx="auto" p={4}>
+		<Box maxW="800px" mx="auto" px={{ base: 4, md: 6 }} py={4}>
 			<VStack spacing={6} align="stretch">
 				{/* Header */}
-				<Box textAlign="center">
-					<Heading size="lg" mb={2} color="white">
-						Event Check-In Portal
+				<Box textAlign="center" mb={2}>
+					<Heading size="lg" mb={2} color="#1F2937" fontWeight="bold">
+						Check-In Portal
 					</Heading>
-					<Text color="gray.400" fontSize="sm">
+					<Text color="#6B7280" fontSize="md" fontWeight="medium">
 						{eventName}
 					</Text>
 				</Box>
 
-				{/* Search Input */}
-				<Card bg="#1E1E1E" border="1px solid #434343">
-					<CardBody>
-						<VStack spacing={4}>
-							<Text fontWeight="bold" alignSelf="flex-start" color="white">
-								Enter Email Address
-							</Text>
+				{/* Search Input Card */}
+				<Card bg="white" borderRadius="xl" boxShadow="lg" border="1px solid #E5E7EB" transition="all 0.2s">
+					<CardBody p={{ base: 5, md: 6 }}>
+						<VStack spacing={5}>
+							<HStack width="100%" justify="space-between" mb={1}>
+								<Text fontWeight="semibold" fontSize="md" color="#1F2937">
+									Find Booking
+								</Text>
+								{bookingInfo && (
+									<Badge colorScheme="green" fontSize="xs" px={2} py={1} borderRadius="md">
+										✓ Found
+									</Badge>
+								)}
+							</HStack>
+
 							<Input
-								placeholder="Email Address"
+								placeholder="Enter email address or booking reference"
 								value={identifier}
 								onChange={(e) => setIdentifier(e.target.value)}
 								onKeyPress={(e) => e.key === "Enter" && handleValidate()}
 								size="lg"
-								bg="#2A2A2A"
-								color="white"
-								border="1px solid #434343"
-								_focus={{ borderColor: "#F79432" }}
-								_placeholder={{ color: "gray.500" }}
+								fontSize="md"
+								bg="#F9FAFB"
+								color="#1F2937"
+								border="2px solid #E5E7EB"
+								borderRadius="lg"
+								_hover={{ borderColor: "#D1D5DB", bg: "white" }}
+								_focus={{
+									borderColor: "#8B5CF6",
+									boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+									bg: "white",
+								}}
+								_placeholder={{ color: "#9CA3AF" }}
+								height="56px"
+								px={4}
 							/>
 
-							<HStack width="100%" spacing={2}>
-								<Button leftIcon={<SearchIcon />} onClick={handleValidate} isLoading={isValidating} colorScheme="orange" flex={1} size="lg">
-									Validate
+							<SimpleGrid columns={{ base: 1, sm: 2 }} spacing={3} width="100%">
+								<Button
+									leftIcon={<SearchIcon />}
+									onClick={handleValidate}
+									isLoading={isValidating}
+									size="lg"
+									height="56px"
+									bg="#8B5CF6"
+									color="white"
+									fontSize="md"
+									fontWeight="semibold"
+									borderRadius="lg"
+									_hover={{ bg: "#7C3AED", transform: "translateY(-1px)", boxShadow: "md" }}
+									_active={{ transform: "translateY(0)" }}
+									transition="all 0.2s"
+								>
+									Validate Booking
 								</Button>
-								<Button onClick={startCamera} colorScheme="blue" size="lg">
-									📷 Scan
+								<Button
+									onClick={startCamera}
+									size="lg"
+									height="56px"
+									bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"
+									color="white"
+									fontSize="md"
+									fontWeight="semibold"
+									borderRadius="lg"
+									_hover={{ transform: "translateY(-1px)", boxShadow: "lg" }}
+									_active={{ transform: "translateY(0)" }}
+									transition="all 0.2s"
+									leftIcon={<Text fontSize="xl">📸</Text>}
+								>
+									Scan Ticket
 								</Button>
-							</HStack>
+							</SimpleGrid>
 
 							{bookingInfo && (
-								<Button onClick={handleReset} variant="ghost" size="sm" width="100%" color="white" _hover={{ bg: "#2A2A2A" }}>
-									Search Another Booking
+								<Button onClick={handleReset} variant="ghost" size="md" width="100%" color="#6B7280" fontWeight="medium" _hover={{ bg: "#F3F4F6", color: "#1F2937" }} borderRadius="lg">
+									← Search Another Booking
 								</Button>
 							)}
 						</VStack>
@@ -624,125 +669,179 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 
 				{/* Error Display */}
 				{error && (
-					<Alert status="error" bg="#3D1B1B" border="1px solid #E53E3E">
-						<AlertIcon />
-						<AlertDescription>{error}</AlertDescription>
+					<Alert status="error" bg="#FEE2E2" border="1px solid #FCA5A5" borderRadius="lg" py={4}>
+						<AlertIcon color="#DC2626" />
+						<AlertDescription color="#991B1B" fontWeight="medium">
+							{error}
+						</AlertDescription>
 					</Alert>
 				)}
 
 				{/* Booking Info Display */}
 				{bookingInfo && (
-					<Card bg="#1E1E1E" border="1px solid #434343">
-						<CardBody>
-							<VStack spacing={4} align="stretch">
-								<HStack justify="space-between">
-									<Text fontSize="xl" fontWeight="bold" color="white">
+					<Card bg="white" borderRadius="xl" boxShadow="lg" border="1px solid #E5E7EB">
+						<CardBody p={{ base: 5, md: 6 }}>
+							<VStack spacing={5} align="stretch">
+								<HStack justify="space-between" flexWrap="wrap" gap={2}>
+									<Text fontSize="xl" fontWeight="bold" color="#1F2937">
 										Booking Details
 									</Text>
-									<Badge colorScheme={bookingInfo.isFullyCheckedIn ? "green" : bookingInfo.checkedInCount > 0 ? "yellow" : "gray"} fontSize="sm" px={3} py={1}>
-										{bookingInfo.isFullyCheckedIn ? "Fully Checked In" : bookingInfo.checkedInCount > 0 ? "Partially Checked In" : "Not Checked In"}
+									<Badge
+										colorScheme={bookingInfo.isFullyCheckedIn ? "green" : bookingInfo.checkedInCount > 0 ? "purple" : "gray"}
+										fontSize="sm"
+										px={4}
+										py={2}
+										borderRadius="full"
+										fontWeight="semibold"
+									>
+										{bookingInfo.isFullyCheckedIn ? "✓ Fully Checked In" : bookingInfo.checkedInCount > 0 ? "⚡ Partial Check-In" : "⏳ Not Checked In"}
 									</Badge>
 								</HStack>
 
-								<Divider />
+								<Divider borderColor="#E5E7EB" />
 
-								<Box>
-									<Text fontSize="sm" color="gray.400">
-										Name
+								<SimpleGrid columns={{ base: 1, sm: 2 }} spacing={4}>
+									<Box p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB">
+										<Text fontSize="xs" color="#6B7280" fontWeight="semibold" textTransform="uppercase" letterSpacing="wide" mb={2}>
+											Guest Name
+										</Text>
+										<Text fontSize="lg" fontWeight="bold" color="#1F2937">
+											{bookingInfo.customerName}
+										</Text>
+									</Box>
+
+									<Box p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB">
+										<Text fontSize="xs" color="#6B7280" fontWeight="semibold" textTransform="uppercase" letterSpacing="wide" mb={2}>
+											Booking Reference
+										</Text>
+										<Text fontSize="lg" fontWeight="bold" color="#8B5CF6" fontFamily="mono">
+											{bookingInfo.bookingRef}
+										</Text>
+									</Box>
+								</SimpleGrid>
+
+								<Box p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB">
+									<Text fontSize="xs" color="#6B7280" fontWeight="semibold" textTransform="uppercase" letterSpacing="wide" mb={2}>
+										Contact Information
 									</Text>
-									<Text fontSize="lg" fontWeight="semibold" color="white">
-										{bookingInfo.customerName}
-									</Text>
+									<VStack align="flex-start" spacing={1}>
+										<Text color="#1F2937" fontSize="sm">
+											📧 {bookingInfo.customerEmail}
+										</Text>
+										<Text color="#1F2937" fontSize="sm">
+											📱 {bookingInfo.customerPhone}
+										</Text>
+									</VStack>
 								</Box>
 
-								<Box>
-									<Text fontSize="sm" color="gray.400">
-										Email
-									</Text>
-									<Text color="white">{bookingInfo.customerEmail}</Text>
-								</Box>
-
-								<Box>
-									<Text fontSize="sm" color="gray.400">
-										Booking Reference
-									</Text>
-									<Text fontFamily="mono" fontWeight="bold" color="#F79432">
-										{bookingInfo.bookingRef}
-									</Text>
-								</Box>
-
-								<Divider />
+								<Divider borderColor="#E5E7EB" />
 
 								{/* Ticket Status */}
-								<HStack justify="space-between" p={3} bg="#2A2A2A" borderRadius="md">
-									<VStack align="flex-start" spacing={0}>
-										<Text fontSize="sm" color="gray.400">
-											Total Tickets
-										</Text>
-										<Text fontSize="2xl" color="gray.300" fontWeight="bold">
-											{bookingInfo.totalTickets}
-										</Text>
-									</VStack>
-									<VStack align="flex-start" spacing={0}>
-										<Text fontSize="sm" color="gray.400">
-											Checked In
-										</Text>
-										<Text fontSize="2xl" fontWeight="bold" color="green.400">
-											{bookingInfo.checkedInCount}
-										</Text>
-									</VStack>
-									<VStack align="flex-start" spacing={0}>
-										<Text fontSize="sm" color="gray.400">
-											Remaining
-										</Text>
-										<Text fontSize="2xl" fontWeight="bold" color="orange.400">
-											{bookingInfo.remainingTickets}
-										</Text>
-									</VStack>
-								</HStack>
+								<Box p={5} bg="linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%)" borderRadius="xl" border="1px solid #E5E7EB">
+									<Text fontSize="sm" fontWeight="semibold" color="#6B7280" mb={4} textTransform="uppercase" letterSpacing="wide">
+										Ticket Status
+									</Text>
+									<SimpleGrid columns={3} spacing={4}>
+										<VStack spacing={1}>
+											<Box p={3} bg="white" borderRadius="lg" boxShadow="sm" width="100%" textAlign="center">
+												<Text fontSize="xs" color="#6B7280" fontWeight="medium" mb={1}>
+													Total
+												</Text>
+												<Text fontSize="3xl" color="#1F2937" fontWeight="bold">
+													{bookingInfo.totalTickets}
+												</Text>
+											</Box>
+										</VStack>
+										<VStack spacing={1}>
+											<Box p={3} bg="linear-gradient(135deg, #10B981 0%, #059669 100%)" borderRadius="lg" boxShadow="sm" width="100%" textAlign="center">
+												<Text fontSize="xs" color="white" fontWeight="medium" mb={1}>
+													Checked In
+												</Text>
+												<Text fontSize="3xl" fontWeight="bold" color="white">
+													{bookingInfo.checkedInCount}
+												</Text>
+											</Box>
+										</VStack>
+										<VStack spacing={1}>
+											<Box p={3} bg="linear-gradient(135deg, #F59E0B 0%, #D97706 100%)" borderRadius="lg" boxShadow="sm" width="100%" textAlign="center">
+												<Text fontSize="xs" color="white" fontWeight="medium" mb={1}>
+													Remaining
+												</Text>
+												<Text fontSize="3xl" fontWeight="bold" color="white">
+													{bookingInfo.remainingTickets}
+												</Text>
+											</Box>
+										</VStack>
+									</SimpleGrid>
+								</Box>
 
 								{/* Check-In Action */}
 								{!bookingInfo.isFullyCheckedIn && (
-									<Box p={4} bg="#2A2A2A" borderRadius="md">
-										<VStack spacing={4} align="stretch">
-											<Box>
-												<Text fontWeight="semibold" color="white" mb={2}>
-													Number of Guests Checking In
+									<Box p={5} bg="#F9FAFB" borderRadius="xl" border="2px solid #8B5CF6">
+										<VStack spacing={5} align="stretch">
+											<HStack>
+												<Box bg="#8B5CF6" p={2} borderRadius="lg">
+													<CheckCircleIcon color="white" boxSize={5} />
+												</Box>
+												<Text fontWeight="bold" fontSize="lg" color="#1F2937">
+													Check-In Guests
 												</Text>
-												<NumberInput value={guestCount} onChange={(valueString) => setGuestCount(Number(valueString))} min={1} max={bookingInfo.remainingTickets} size="lg" bg="#1E1E1E">
-													<NumberInputField color="white" borderColor="#434343" _focus={{ borderColor: "#F79432" }} />
+											</HStack>
+
+											<Box>
+												<Text fontWeight="semibold" color="#1F2937" mb={3} fontSize="sm">
+													Number of Guests Arriving
+												</Text>
+												<NumberInput value={guestCount} onChange={(valueString) => setGuestCount(Number(valueString))} min={1} max={bookingInfo.remainingTickets} size="lg">
+													<NumberInputField
+														color="#1F2937"
+														bg="white"
+														border="2px solid #E5E7EB"
+														borderRadius="lg"
+														height="56px"
+														fontSize="xl"
+														fontWeight="bold"
+														textAlign="center"
+														_hover={{ borderColor: "#D1D5DB" }}
+														_focus={{
+															borderColor: "#8B5CF6",
+															boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+														}}
+													/>
 													<NumberInputStepper>
-														<NumberIncrementStepper color="white" borderColor="#434343" />
-														<NumberDecrementStepper color="white" borderColor="#434343" />
+														<NumberIncrementStepper color="#8B5CF6" borderColor="#E5E7EB" _hover={{ bg: "#F3F4F6" }} />
+														<NumberDecrementStepper color="#8B5CF6" borderColor="#E5E7EB" _hover={{ bg: "#F3F4F6" }} />
 													</NumberInputStepper>
 												</NumberInput>
-												<Text fontSize="sm" color="gray.400" mt={2}>
-													Maximum: {bookingInfo.remainingTickets} guest{bookingInfo.remainingTickets > 1 ? "s" : ""}
-												</Text>
+												<HStack justify="space-between" mt={2}>
+													<Text fontSize="sm" color="#6B7280">
+														Maximum: {bookingInfo.remainingTickets} guest{bookingInfo.remainingTickets > 1 ? "s" : ""}
+													</Text>
+													<Text fontSize="sm" fontWeight="semibold" color="#8B5CF6">
+														{guestCount} selected
+													</Text>
+												</HStack>
 											</Box>
 
-											{/* Optional Guest Details Collection - Only show if more than 1 ticket */}
+											{/* Optional Guest Details Collection */}
 											{bookingInfo.totalTickets > 1 && (
-												<Box>
-													<HStack spacing={2} mb={2}>
+												<Box p={4} bg="white" borderRadius="lg" border="1px solid #E5E7EB">
+													<HStack spacing={3} mb={3}>
 														<input
 															type="checkbox"
 															checked={collectGuestDetails}
 															onChange={(e) => {
 																setCollectGuestDetails(e.target.checked)
 																if (e.target.checked) {
-																	// Initialize guest details array with first guest pre-filled
 																	setGuestDetails(
 																		Array.from({ length: guestCount }, (_, i) => {
 																			if (i === 0) {
-																				// First guest gets booking owner's info
 																				return {
 																					name: bookingInfo.customerName,
 																					email: bookingInfo.customerEmail,
 																					phone: bookingInfo.customerPhone,
 																				}
 																			}
-																			// Other guests start empty
 																			return {
 																				name: "",
 																				email: "",
@@ -754,28 +853,43 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 																	setGuestDetails([])
 																}
 															}}
-															style={{ cursor: "pointer" }}
+															style={{
+																cursor: "pointer",
+																width: "20px",
+																height: "20px",
+																accentColor: "#8B5CF6",
+															}}
 														/>
-														<Text color="white" fontSize="sm">
-															Collect guest details (optional)
-														</Text>
+														<VStack align="flex-start" spacing={0}>
+															<Text color="#1F2937" fontSize="sm" fontWeight="semibold">
+																Collect individual guest details
+															</Text>
+															<Text color="#6B7280" fontSize="xs">
+																Optional: Record name, email & phone for each guest
+															</Text>
+														</VStack>
 													</HStack>
 
 													{collectGuestDetails && (
-														<VStack spacing={3} align="stretch" mt={3}>
+														<VStack spacing={3} align="stretch" mt={4}>
 															{Array.from({ length: guestCount }).map((_, index) => (
-																<Box key={index} p={3} bg="#1E1E1E" borderRadius="md" border="1px solid #434343">
-																	<HStack justify="space-between" mb={2}>
-																		<Text fontSize="sm" fontWeight="bold" color="white">
-																			Guest {index + 1}
-																		</Text>
+																<Box key={index} p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB">
+																	<HStack justify="space-between" mb={3}>
+																		<HStack>
+																			<Box bg="#8B5CF6" color="white" fontWeight="bold" fontSize="sm" w={8} h={8} borderRadius="full" display="flex" alignItems="center" justifyContent="center">
+																				{index + 1}
+																			</Box>
+																			<Text fontSize="sm" fontWeight="semibold" color="#1F2937">
+																				Guest {index + 1}
+																			</Text>
+																		</HStack>
 																		{index === 0 && (
-																			<Badge colorScheme="blue" fontSize="xs">
+																			<Badge colorScheme="purple" fontSize="xs" borderRadius="md">
 																				Booking Owner
 																			</Badge>
 																		)}
 																	</HStack>
-																	<VStack spacing={2}>
+																	<VStack spacing={3}>
 																		<Input
 																			placeholder="Full Name"
 																			value={guestDetails[index]?.name || ""}
@@ -785,12 +899,17 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 																				newDetails[index].name = e.target.value
 																				setGuestDetails(newDetails)
 																			}}
-																			size="sm"
-																			bg="#2A2A2A"
-																			color="white"
-																			borderColor="#434343"
-																			_focus={{ borderColor: "#F79432" }}
-																			_placeholder={{ color: "gray.500" }}
+																			size="md"
+																			bg="white"
+																			color="#1F2937"
+																			border="1px solid #E5E7EB"
+																			borderRadius="lg"
+																			_hover={{ borderColor: "#D1D5DB" }}
+																			_focus={{
+																				borderColor: "#8B5CF6",
+																				boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+																			}}
+																			_placeholder={{ color: "#9CA3AF" }}
 																		/>
 																		<Input
 																			placeholder="Email Address"
@@ -802,12 +921,17 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 																				newDetails[index].email = e.target.value
 																				setGuestDetails(newDetails)
 																			}}
-																			size="sm"
-																			bg="#2A2A2A"
-																			color="white"
-																			borderColor="#434343"
-																			_focus={{ borderColor: "#F79432" }}
-																			_placeholder={{ color: "gray.500" }}
+																			size="md"
+																			bg="white"
+																			color="#1F2937"
+																			border="1px solid #E5E7EB"
+																			borderRadius="lg"
+																			_hover={{ borderColor: "#D1D5DB" }}
+																			_focus={{
+																				borderColor: "#8B5CF6",
+																				boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+																			}}
+																			_placeholder={{ color: "#9CA3AF" }}
 																		/>
 																		<Input
 																			placeholder="Phone Number"
@@ -819,12 +943,17 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 																				newDetails[index].phone = e.target.value
 																				setGuestDetails(newDetails)
 																			}}
-																			size="sm"
-																			bg="#2A2A2A"
-																			color="white"
-																			borderColor="#434343"
-																			_focus={{ borderColor: "#F79432" }}
-																			_placeholder={{ color: "gray.500" }}
+																			size="md"
+																			bg="white"
+																			color="#1F2937"
+																			border="1px solid #E5E7EB"
+																			borderRadius="lg"
+																			_hover={{ borderColor: "#D1D5DB" }}
+																			_focus={{
+																				borderColor: "#8B5CF6",
+																				boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+																			}}
+																			_placeholder={{ color: "#9CA3AF" }}
 																		/>
 																	</VStack>
 																</Box>
@@ -834,8 +963,23 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 												</Box>
 											)}
 
-											<Button leftIcon={<CheckCircleIcon />} onClick={handleCheckIn} isLoading={isCheckingIn} colorScheme="green" size="lg" width="100%">
-												Check In {guestCount} Guest{guestCount > 1 ? "s" : ""}
+											<Button
+												leftIcon={<CheckCircleIcon />}
+												onClick={handleCheckIn}
+												isLoading={isCheckingIn}
+												size="lg"
+												height="60px"
+												bg="linear-gradient(135deg, #10B981 0%, #059669 100%)"
+												color="white"
+												fontSize="lg"
+												fontWeight="bold"
+												borderRadius="lg"
+												width="100%"
+												_hover={{ transform: "translateY(-2px)", boxShadow: "xl" }}
+												_active={{ transform: "translateY(0)" }}
+												transition="all 0.2s"
+											>
+												✓ Check In {guestCount} Guest{guestCount > 1 ? "s" : ""}
 											</Button>
 										</VStack>
 									</Box>
@@ -844,20 +988,27 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 								{/* Check-In History */}
 								{bookingInfo.checkInHistory.length > 0 && (
 									<Box>
-										<Text fontWeight="semibold" mb={2} color="white">
+										<Text fontWeight="semibold" mb={3} color="#1F2937" fontSize="md">
 											Check-In History
 										</Text>
 										<VStack spacing={2} align="stretch">
 											{bookingInfo.checkInHistory.map((entry, index) => (
-												<Box key={index} p={2} bg="#2A2A2A" borderRadius="md" fontSize="sm">
-													<HStack justify="space-between">
-														<Text color="white">
-															<strong>{entry.count}</strong> guest{entry.count > 1 ? "s" : ""}
+												<Box key={index} p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB" transition="all 0.2s" _hover={{ bg: "#F3F4F6" }}>
+													<HStack justify="space-between" mb={1}>
+														<HStack>
+															<Box bg="#10B981" color="white" fontWeight="bold" fontSize="xs" px={2} py={1} borderRadius="md">
+																{entry.count}
+															</Box>
+															<Text color="#1F2937" fontWeight="medium" fontSize="sm">
+																guest{entry.count > 1 ? "s" : ""} checked in
+															</Text>
+														</HStack>
+														<Text color="#6B7280" fontSize="sm">
+															{dayjs(entry.timestamp).format("MMM DD, h:mm A")}
 														</Text>
-														<Text color="gray.400">{dayjs(entry.timestamp).format("MMM DD, h:mm A")}</Text>
 													</HStack>
-													<Text color="gray.500" fontSize="xs">
-														by {entry.adminName}
+													<Text color="#9CA3AF" fontSize="xs" mt={1}>
+														👤 by {entry.adminName}
 													</Text>
 												</Box>
 											))}
@@ -871,46 +1022,65 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 
 				{/* Guest List Section */}
 				{guestList.length > 0 && (
-					<Card bg="#1E1E1E" border="1px solid #434343">
-						<CardBody>
+					<Card bg="white" borderRadius="xl" boxShadow="lg" border="1px solid #E5E7EB">
+						<CardBody p={{ base: 5, md: 6 }}>
 							<VStack spacing={4} align="stretch">
-								<HStack justify="space-between">
-									<Text fontSize="xl" fontWeight="bold" color="white">
-										Checked-In Guests
-									</Text>
-									<Badge colorScheme="blue" fontSize="sm" px={3} py={1}>
+								<HStack justify="space-between" mb={2}>
+									<HStack>
+										<Box bg="#10B981" p={2} borderRadius="lg">
+											<CheckCircleIcon color="white" boxSize={5} />
+										</Box>
+										<Text fontSize="xl" fontWeight="bold" color="#1F2937">
+											Checked-In Guests
+										</Text>
+									</HStack>
+									<Badge bg="linear-gradient(135deg, #10B981 0%, #059669 100%)" color="white" fontSize="sm" px={4} py={2} borderRadius="full" fontWeight="semibold">
 										{guestList.length} Guest{guestList.length > 1 ? "s" : ""}
 									</Badge>
 								</HStack>
 
-								<Divider />
+								<Divider borderColor="#E5E7EB" />
 
 								{isLoadingGuests ? (
-									<HStack justify="center" py={4}>
-										<Spinner size="md" color="#F79432" />
-										<Text color="gray.400">Loading guests...</Text>
+									<HStack justify="center" py={8}>
+										<Spinner size="lg" color="#8B5CF6" thickness="4px" />
+										<Text color="#6B7280" fontWeight="medium">
+											Loading guests...
+										</Text>
 									</HStack>
 								) : (
-									<VStack spacing={2} align="stretch" maxH="400px" overflowY="auto">
-										{guestList.map((guest) => (
-											<Box key={guest.id} p={3} bg="#2A2A2A" borderRadius="md">
-												<HStack justify="space-between" mb={1}>
-													<Text fontWeight="semibold" color="white">
-														{guest.guestName}
-													</Text>
-													<Text fontSize="xs" color="gray.500">
+									<VStack spacing={3} align="stretch" maxH="500px" overflowY="auto" pr={2}>
+										{guestList.map((guest, idx) => (
+											<Box key={guest.id} p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB" transition="all 0.2s" _hover={{ bg: "#F3F4F6", transform: "translateX(4px)" }}>
+												<HStack justify="space-between" mb={2} flexWrap="wrap" gap={2}>
+													<HStack>
+														<Box bg="#10B981" color="white" fontWeight="bold" fontSize="xs" w={7} h={7} borderRadius="full" display="flex" alignItems="center" justifyContent="center">
+															{idx + 1}
+														</Box>
+														<Text fontWeight="bold" color="#1F2937" fontSize="md">
+															{guest.guestName}
+														</Text>
+													</HStack>
+													<Text fontSize="xs" color="#6B7280" fontWeight="medium">
 														{dayjs(guest.checkedInAt).format("MMM DD, h:mm A")}
 													</Text>
 												</HStack>
-												<Text fontSize="sm" color="gray.400">
-													📧 {guest.guestEmail}
-												</Text>
-												<Text fontSize="sm" color="gray.400">
-													📱 {guest.guestPhone}
-												</Text>
-												<Text fontSize="xs" color="gray.500" mt={1}>
-													Booking: {guest.bookingEmail} • By: {guest.checkedInBy}
-												</Text>
+												<VStack align="flex-start" spacing={1} ml={9}>
+													<Text fontSize="sm" color="#6B7280">
+														📧 {guest.guestEmail}
+													</Text>
+													<Text fontSize="sm" color="#6B7280">
+														📱 {guest.guestPhone}
+													</Text>
+													<HStack mt={1} flexWrap="wrap">
+														<Badge colorScheme="purple" fontSize="xs" borderRadius="md">
+															Booking: {guest.bookingEmail}
+														</Badge>
+														<Badge colorScheme="gray" fontSize="xs" borderRadius="md">
+															By: {guest.checkedInBy}
+														</Badge>
+													</HStack>
+												</VStack>
 											</Box>
 										))}
 									</VStack>
@@ -922,19 +1092,66 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 			</VStack>
 
 			{/* Camera Modal */}
-			<Modal isOpen={isOpen} onClose={stopCamera} size="full">
-				<ModalOverlay />
-				<ModalContent bg="#000">
-					<ModalHeader color="white">Scan Email Address</ModalHeader>
-					<ModalCloseButton color="white" />
-					<ModalBody display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={4}>
-						<VStack spacing={4} width="100%" maxW="600px">
-							<Box position="relative" width="100%" bg="#000" borderRadius="8px" border="2px solid #F79432" overflow="hidden">
+			<Modal isOpen={isOpen} onClose={stopCamera} size="full" isCentered>
+				<ModalOverlay bg="blackAlpha.900" backdropFilter="blur(10px)" />
+				<ModalContent bg="white" m={{ base: 0, md: 4 }} borderRadius={{ base: 0, md: "2xl" }} maxW={{ base: "100%", md: "600px" }}>
+					<ModalHeader bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)" color="white" borderTopRadius={{ base: 0, md: "2xl" }} py={5}>
+						<VStack spacing={1} align="flex-start">
+							<Text fontSize="xl" fontWeight="bold">
+								📸 Scan Ticket
+							</Text>
+							<Text fontSize="sm" fontWeight="normal" opacity={0.9}>
+								Position email address within camera view
+							</Text>
+						</VStack>
+					</ModalHeader>
+					<ModalCloseButton color="white" size="lg" _hover={{ bg: "whiteAlpha.200" }} borderRadius="full" />
+					<ModalBody display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={{ base: 4, md: 6 }} bg="#F9FAFB">
+						<VStack spacing={4} width="100%">
+							{/* Camera Status Indicator */}
+							{!isCameraActive && !isScanning && (
+								<Box p={4} bg="white" borderRadius="lg" border="2px solid #8B5CF6" width="100%" textAlign="center">
+									<Spinner size="lg" color="#8B5CF6" thickness="4px" mb={2} />
+									<Text color="#6B7280" fontWeight="medium">
+										Initializing camera...
+									</Text>
+								</Box>
+							)}
+
+							{/* Camera Preview */}
+							<Box position="relative" width="100%" bg="#1F2937" borderRadius="xl" border="4px solid #8B5CF6" overflow="hidden" boxShadow="2xl">
 								{!isCameraActive && (
 									<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2}>
-										<Spinner size="xl" color="#F79432" />
+										<Spinner size="xl" color="#8B5CF6" thickness="4px" />
 									</Box>
 								)}
+
+								{/* Scanning Overlay */}
+								{isScanning && (
+									<Box position="absolute" top={0} left={0} right={0} bottom={0} bg="blackAlpha.700" zIndex={3} display="flex" alignItems="center" justifyContent="center">
+										<VStack spacing={4}>
+											<Spinner size="xl" color="white" thickness="4px" />
+											<Text color="white" fontSize="lg" fontWeight="bold">
+												Scanning image...
+											</Text>
+											<Text color="whiteAlpha.800" fontSize="sm">
+												Extracting email address
+											</Text>
+										</VStack>
+									</Box>
+								)}
+
+								{/* Scan Guide Overlay */}
+								{isCameraActive && !isScanning && (
+									<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2} pointerEvents="none">
+										<Box width="280px" height="100px" border="3px dashed rgba(139, 92, 246, 0.8)" borderRadius="lg" bg="blackAlpha.300" display="flex" alignItems="center" justifyContent="center">
+											<Text color="white" fontWeight="bold" fontSize="sm" textAlign="center" textShadow="0 2px 4px rgba(0,0,0,0.5)">
+												Position email here
+											</Text>
+										</Box>
+									</Box>
+								)}
+
 								<video
 									ref={videoRef}
 									autoPlay
@@ -944,31 +1161,85 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 										display: "block",
 										width: "100%",
 										height: "auto",
-										minHeight: "250px",
-										maxHeight: "400px",
+										minHeight: "300px",
+										maxHeight: "500px",
 										objectFit: "cover",
-										aspectRatio: "4/3",
 									}}
 								/>
 								<canvas ref={canvasRef} style={{ display: "none" }} />
 							</Box>
-							<Text color="gray.400" textAlign="center">
-								Position the email address within the camera view
-							</Text>
-							{isCameraActive && (
-								<Text color="green.400" textAlign="center" fontSize="sm">
-									📹 Camera Active - Video dimensions: {videoRef.current?.videoWidth || 0} x {videoRef.current?.videoHeight || 0}
-								</Text>
+
+							{/* Camera Status Info */}
+							{isCameraActive && !isScanning && (
+								<HStack p={3} bg="white" borderRadius="lg" width="100%" justify="center" border="1px solid #E5E7EB">
+									<Box w={3} h={3} borderRadius="full" bg="#10B981" />
+									<Text color="#059669" fontWeight="semibold" fontSize="sm">
+										Camera Active
+									</Text>
+									<Text color="#6B7280" fontSize="xs">
+										{videoRef.current?.videoWidth || 0} × {videoRef.current?.videoHeight || 0}
+									</Text>
+								</HStack>
+							)}
+
+							{/* Instructions */}
+							{!isScanning && (
+								<Box p={4} bg="white" borderRadius="lg" width="100%" border="1px solid #E5E7EB">
+									<Text fontSize="sm" fontWeight="semibold" color="#1F2937" mb={2}>
+										📋 Quick Tips:
+									</Text>
+									<VStack align="flex-start" spacing={1}>
+										<Text fontSize="xs" color="#6B7280">
+											• Hold ticket steady within the frame
+										</Text>
+										<Text fontSize="xs" color="#6B7280">
+											• Ensure good lighting for best results
+										</Text>
+										<Text fontSize="xs" color="#6B7280">
+											• Email will be auto-validated after scan
+										</Text>
+									</VStack>
+								</Box>
 							)}
 						</VStack>
 					</ModalBody>
-					<ModalFooter>
-						<Button colorScheme="orange" mr={3} onClick={captureImage} isLoading={isScanning} loadingText="Scanning..." disabled={isScanning}>
-							Capture & Scan
-						</Button>
-						<Button variant="ghost" onClick={stopCamera} disabled={isScanning}>
-							Cancel
-						</Button>
+					<ModalFooter bg="white" borderBottomRadius={{ base: 0, md: "2xl" }} p={{ base: 4, md: 6 }}>
+						<HStack spacing={3} width="100%">
+							<Button
+								variant="outline"
+								onClick={stopCamera}
+								disabled={isScanning}
+								flex={1}
+								size="lg"
+								height="56px"
+								borderRadius="lg"
+								borderColor="#E5E7EB"
+								color="#6B7280"
+								_hover={{ bg: "#F3F4F6", borderColor: "#D1D5DB" }}
+							>
+								Cancel
+							</Button>
+							<Button
+								bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"
+								color="white"
+								onClick={captureImage}
+								isLoading={isScanning}
+								loadingText="Scanning..."
+								disabled={isScanning || !isCameraActive}
+								flex={2}
+								size="lg"
+								height="56px"
+								fontSize="md"
+								fontWeight="bold"
+								borderRadius="lg"
+								_hover={{ transform: "translateY(-2px)", boxShadow: "xl" }}
+								_active={{ transform: "translateY(0)" }}
+								transition="all 0.2s"
+								leftIcon={<Text fontSize="xl">📷</Text>}
+							>
+								Capture & Scan
+							</Button>
+						</HStack>
 					</ModalFooter>
 				</ModalContent>
 			</Modal>
