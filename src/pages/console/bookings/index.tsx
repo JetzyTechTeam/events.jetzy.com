@@ -103,6 +103,13 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const session = await authorizedOnly(context)
 	if (!session) return session
 
+	// Ensure database connection is ready
+	const { dbconn } = await import("@/configs/database")
+	if (dbconn.readyState !== 1) {
+		console.log("[console/bookings] Database not connected, attempting to connect...")
+		await dbconn.asPromise()
+	}
+
 	//pagination
 	//const limit = 5
 	const limit = 10

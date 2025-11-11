@@ -225,6 +225,13 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const session = await authorizedOnly(context)
 	if (!session) return session
 
+	// Ensure database connection is ready
+	const { dbconn } = await import("@/configs/database")
+	if (dbconn.readyState !== 1) {
+		console.log("[console/events/manage] Database not connected, attempting to connect...")
+		await dbconn.asPromise()
+	}
+
 	const eventId = context.query.eventId as string
 	if (!eventId) return { props: {} }
 

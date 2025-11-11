@@ -637,7 +637,7 @@ const CreateEventPage = () => {
 														_hover={{ bg: "#7C3AED" }}
 														mr={3}
 														onClick={() => {
-															if (editIndex === null && tempTicket.title && tempTicket.price) {
+															if (editIndex === null && tempTicket.title) {
 																push({
 																	...tempTicket,
 																	id: new Date().getTime().toString(),
@@ -648,8 +648,10 @@ const CreateEventPage = () => {
 																	description: "",
 																	price: 0,
 																})
+																setEditIndex(null)
 															} else if (editIndex !== null) {
 																replace(editIndex, tempTicket)
+																setEditIndex(null)
 															}
 															onClose()
 														}}
@@ -670,6 +672,7 @@ const CreateEventPage = () => {
 																description: "",
 																price: 0,
 															})
+															setEditIndex(null)
 															onClose()
 														}}
 													>

@@ -33,13 +33,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             <p>${message}</p>
 
             <div style="text-align: center; margin: 32px 0;">
-              <a href="${personalizedEventLink}" target="_blank" style="display: inline-block; background: #3182ce; color: #fff; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
+              <a href="${personalizedEventLink}" target="_blank" style="display: inline-block; background: #F79432; color: #000; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
                 View Event & RSVP
               </a>
             </div>
             <p style="font-size: 14px; color: #a0aec0; text-align: center;">
               If the button above does not work, copy and paste this link into your browser:<br/>
-              <a href="${personalizedEventLink}" target="_blank" style="color: #3182ce;">${personalizedEventLink}</a>
+              <a href="${personalizedEventLink}" target="_blank" style="color: #F79432;">${personalizedEventLink}</a>
             </p>
             <hr style="margin: 32px 0; border: none; border-top: 1px solid #e2e8f0;">
             <p style="font-size: 12px; color: #a0aec0; text-align: center;">

@@ -743,7 +743,7 @@ export default function UpdateEventPage({ event }: Props) {
 														_hover={{ bg: "#7C3AED" }}
 														mr={3}
 														onClick={() => {
-															if (editIndex === null && tempTicket.title && tempTicket.price) {
+															if (editIndex === null && tempTicket.title) {
 																push({
 																	...tempTicket,
 																	id: new Date().getTime().toString(),
@@ -754,8 +754,10 @@ export default function UpdateEventPage({ event }: Props) {
 																	description: "",
 																	price: 0,
 																})
+																setEditIndex(null)
 															} else if (editIndex !== null) {
 																replace(editIndex, tempTicket)
+																setEditIndex(null)
 															}
 															onClose()
 														}}
@@ -776,6 +778,7 @@ export default function UpdateEventPage({ event }: Props) {
 																description: "",
 																price: 0,
 															})
+															setEditIndex(null)
 															onClose()
 														}}
 													>
