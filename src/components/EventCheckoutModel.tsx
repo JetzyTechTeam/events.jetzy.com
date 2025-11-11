@@ -4,15 +4,20 @@ import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import React, { useState, useEffect, useCallback } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
+import { useSession } from "next-auth/react"
+import LoginModal from "./misc/LoginModal"
+import { FiArrowLeft, FiPlus, FiX } from "react-icons/fi"
 
 export default function EventCheckoutModel({ event }: { event: string }) {
-	// const [acceptTerms, setAcceptTerms] = useState(false)
+	const { data: session } = useSession()
 	const { showCheckout, tickets, isLoading } = useAppSelector(getCheckoutStore)
 	const dispatch = useAppDispatch()
 	const [phoneError, setPhoneError] = useState("")
+	const [emailErrors, setEmailErrors] = useState<string[]>([])
 	const [waitingListData, setWaitingListData] = useState<any>(null)
 	const [showWaitingList, setShowWaitingList] = useState(false)
 	const [waitingListRegistered, setWaitingListRegistered] = useState(false)
+	const [showLoginModal, setShowLoginModal] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -21,6 +26,27 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		email: "",
 		phone: "",
 	})
+
+	// Guest emails state (for logged-in users)
+	const [guestEmails, setGuestEmails] = useState<string[]>(["", ""])
+
+	// Pre-fill form data if user is logged in
+	useEffect(() => {
+		if (session?.user) {
+			// Split fullName into firstName and lastName
+			const fullName = (session.user as any).fullName || ""
+			const nameParts = fullName.trim().split(" ")
+			const firstName = nameParts[0] || ""
+			const lastName = nameParts.slice(1).join(" ") || ""
+
+			setFormData({
+				firstName: firstName,
+				lastName: lastName,
+				email: session.user.email || "",
+				phone: (session.user as any).phone || "", // Phone might not exist in session
+			})
+		}
+	}, [session])
 
 	// Handle form input changes
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,19 +65,57 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		}
 	}
 
+	// Handle guest email changes
+	const handleGuestEmailChange = (index: number, value: string) => {
+		const newGuestEmails = [...guestEmails]
+		newGuestEmails[index] = value
+		setGuestEmails(newGuestEmails)
+	}
+
+	// Add more guest email fields
+	const addGuestEmailField = () => {
+		setGuestEmails([...guestEmails, ""])
+	}
+
+	// Remove guest email field
+	const removeGuestEmailField = (index: number) => {
+		const newGuestEmails = guestEmails.filter((_, i) => i !== index)
+		setGuestEmails(newGuestEmails)
+	}
+
+	// Validate email format
+	const validateEmail = (email: string): boolean => {
+		const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+		return emailPattern.test(email)
+	}
+
 	// Handle form submission
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
-
-		// if (!acceptTerms) {
-		// 	Error("Terms Required", "Please accept the terms and conditions to continue.")
-		// 	return
-		// }
 
 		const hasFilledAllFields = Object.values(formData).every((value) => value)
 		if (!hasFilledAllFields) {
 			Error("Form Error", "Please fill in all fields.")
 			return
+		}
+
+		// Validate guest emails if provided
+		if (session?.user) {
+			const filledGuestEmails = guestEmails.filter((email) => email.trim() !== "")
+			const invalidEmails = filledGuestEmails.filter((email) => !validateEmail(email))
+
+			if (invalidEmails.length > 0) {
+				const errors = guestEmails.map((email) => {
+					if (email.trim() !== "" && !validateEmail(email)) {
+						return "Invalid email format"
+					}
+					return ""
+				})
+				setEmailErrors(errors)
+				Error("Invalid Email", "Please enter valid email addresses for all guests.")
+				return
+			}
+			setEmailErrors([])
 		}
 
 		sendGAEvent({
@@ -60,12 +124,18 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			label: event,
 		})
 
+		// Include guest emails in the submission
+		const submissionData = {
+			tickets: JSON.stringify(tickets),
+			user: JSON.stringify({
+				...formData,
+				guestEmails: session?.user ? guestEmails.filter((email) => email.trim() !== "") : [],
+			}),
+		}
+
 		dispatch(
 			CreateCheckoutSessionThunk({
-				data: {
-					tickets: JSON.stringify(tickets),
-					user: JSON.stringify(formData),
-				},
+				data: submissionData,
 			}),
 		).then((res: any) => {
 			if (res.payload?.status) {
@@ -85,10 +155,10 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	// Handle joining waiting list
 	const handleJoinWaitingList = useCallback(async () => {
 		try {
-			const response = await fetch('/api/waiting-list/add', {
-				method: 'POST',
+			const response = await fetch("/api/waiting-list/add", {
+				method: "POST",
 				headers: {
-					'Content-Type': 'application/json',
+					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
 					eventId: waitingListData.eventId,
@@ -102,13 +172,9 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			})
 
 			const result = await response.json()
-			
+
 			if (result.status) {
 				setWaitingListRegistered(true)
-				// Don't show error message if user is already on waiting list
-				if (result.message !== "Already on waiting list") {
-					// Only show success message for new registrations
-				}
 			} else {
 				Error("Error", result.message || "Failed to join waiting list")
 			}
@@ -125,121 +191,194 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		}
 	}, [showWaitingList, waitingListRegistered, formData.firstName, formData.lastName, formData.email, formData.phone, handleJoinWaitingList])
 
+	// Handle back button
+	const handleBack = () => {
+		if (showWaitingList) {
+			setShowWaitingList(false)
+			setWaitingListData(null)
+			setWaitingListRegistered(false)
+		} else {
+			dispatch(toggleCheckoutForm(false))
+			sendGAEvent({ category: "Event", action: "Back to Tickets", label: event })
+		}
+	}
+
 	return (
 		<>
 			{showCheckout && (
-				<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-					<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-md relative">
-						{/* Close Button */}
-						<button
-							onClick={() => {
-								dispatch(toggleCheckoutForm(false))
-								sendGAEvent({ category: "Event", action: "Checkout Modal Closed", label: event })	
-							}}
-							className="absolute top-2 right-2 bg-black text-white w-8 h-8 rounded-full flex items-center justify-center"
-						>
-							&times;
-						</button>
-						{/* <div className="bg-jetzy text-black p-3 rounded-t-2xl text-center font-semibold">This deal is reserved for Jetzy Users Only.</div> */}
+				<div
+					className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center p-4 z-50"
+					onClick={(e) => e.stopPropagation()} // Prevent click-outside close
+				>
+					<div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative border border-border-light" onClick={(e) => e.stopPropagation()}>
+						{/* Header with Back Button */}
+						<div className="flex items-center justify-between p-6 border-b border-border-light">
+							<button onClick={handleBack} className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors font-medium">
+								<FiArrowLeft className="text-lg" />
+								<span>Back</span>
+							</button>
+							<h2 className="text-xl font-bold text-text-primary">{showWaitingList ? "Waiting List" : "Register For Event"}</h2>
+							<div className="w-16"></div> {/* Spacer for center alignment */}
+						</div>
 
 						{/* Waiting List UI */}
 						{showWaitingList ? (
 							<div className="p-6 space-y-6">
 								<div className="text-center">
-									<div className="w-16 h-16 mx-auto mb-4 bg-[#F79432]/20 rounded-full flex items-center justify-center">
-										<svg className="w-8 h-8 text-[#F79432]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<div className="w-20 h-20 mx-auto mb-4 bg-primary-purple/20 rounded-full flex items-center justify-center">
+										<svg className="w-10 h-10 text-primary-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
 										</svg>
 									</div>
-									<div className="bg-[#F79432]/20 border border-[#F79432]/30 rounded-lg p-6 mb-6">
-										<p className="text-[#F79432] text-2xl font-bold text-center">
-											You are on the waitlist
-										</p>
+									<div className="bg-primary-purple/10 border border-primary-purple/30 rounded-xl p-6 mb-6">
+										<p className="text-primary-purple text-2xl font-bold text-center">You&apos;re on the waitlist</p>
 									</div>
-									<p className="text-white mb-6">
-										We appreciate your interest. Our event &quot;{waitingListData?.eventName}&quot; is currently at capacity. We will email you if spots open up and you get on the list.
+									<p className="text-text-secondary mb-6 leading-relaxed">
+										Thank you for your interest! &quot;{waitingListData?.eventName}&quot; is currently at capacity. We&apos;ll email you if spots become available.
 									</p>
-									<div className="mt-6">
-										<button
-											onClick={() => {
-												dispatch(toggleCheckoutForm(false))
-											}}
-											className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-										>
-											Close
-										</button>
-									</div>
+									<button
+										onClick={() => {
+											dispatch(toggleCheckoutForm(false))
+											setShowWaitingList(false)
+										}}
+										className="bg-primary-purple text-white px-8 py-3 rounded-lg hover:bg-primary-dark transition-colors font-semibold shadow-md hover:shadow-lg"
+									>
+										Close
+									</button>
 								</div>
 							</div>
 						) : (
-							/* Form */
-							<form onSubmit={handleSubmit} className="p-6 space-y-6">
-								<h2 className="text-2xl font-bold">Checkout</h2>
-							<div className="space-y-4">
-								<input
-									type="text"
-									name="firstName"
-									placeholder="First Name"
-									value={formData.firstName}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-								/>
-								<input
-									type="text"
-									name="lastName"
-									placeholder="Last Name"
-									value={formData.lastName}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-								/>
-								<input
-									type="email"
-									name="email"
-									placeholder="Email"
-									value={formData.email}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-								/>
-								<input
-									type="tel"
-									name="phone"
-									placeholder="Phone Number"
-									value={formData.phone}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-									pattern="^\+?[0-9]{7,15}$"
-									title="Enter a valid phone number (e.g., +1234567890)"
-								/>
-								{phoneError && (
-										<span className="text-red-500 text-sm">{phoneError}</span>
-									)}
+							/* Registration Form */
+							<form onSubmit={handleSubmit} className="p-6 space-y-5">
+								{/* User Information Section */}
+								<div className="space-y-4">
+									<div className="grid grid-cols-2 gap-3">
+										<div>
+											<label className="block text-sm font-medium text-text-primary mb-1.5">First Name</label>
+											<input
+												type="text"
+												name="firstName"
+												placeholder="John"
+												value={formData.firstName}
+												onChange={handleInputChange}
+												disabled={!!session?.user} // Disable if logged in
+												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
+												required={!session?.user} // Only required if not logged in
+											/>
+										</div>
+										<div>
+											<label className="block text-sm font-medium text-text-primary mb-1.5">Last Name</label>
+											<input
+												type="text"
+												name="lastName"
+												placeholder="Doe"
+												value={formData.lastName}
+												onChange={handleInputChange}
+												disabled={!!session?.user}
+												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
+												required={!session?.user}
+											/>
+										</div>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-text-primary mb-1.5">Email</label>
+										<input
+											type="email"
+											name="email"
+											placeholder="john.doe@example.com"
+											value={formData.email}
+											onChange={handleInputChange}
+											disabled={!!session?.user}
+											className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
+											required={!session?.user}
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-text-primary mb-1.5">Phone Number</label>
+										<input
+											type="tel"
+											name="phone"
+											placeholder="+1234567890"
+											value={formData.phone}
+											onChange={handleInputChange}
+											disabled={!!session?.user && !!(session.user as any).phone} // Only disable if phone exists in session
+											className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
+											required // Always required
+											pattern="^\+?[0-9]{7,15}$"
+											title="Enter a valid phone number (e.g., +1234567890)"
+										/>
+										{phoneError && <span className="text-red-500 text-sm mt-1 block">{phoneError}</span>}
+									</div>
 								</div>
-							{/* an info paragrph */}
-							{/* <p className="text-sm text-[#A5A5A5]">By signing up, you create a Jetzy account for exclusive deals. Existing accounts won&apos;t be duplicated.</p> */}
 
-							{/* Terms Checkbox */}
-							{/* <div className="flex items-start space-x-2">
-								<input type="checkbox" id="terms" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="mt-1" required />
-								<label htmlFor="terms" className="text-sm text-[#A5A5A5]">
-									I accept the Terms and Conditions and consent to creating a Jetzy account.
-								</label>
-							</div> */}
+								{/* Guest Emails Section (Only for logged-in users) */}
+								{session?.user && (
+									<div className="space-y-3 pt-4 border-t border-border-light">
+										<div className="flex items-center justify-between">
+											<label className="block text-sm font-semibold text-text-primary">Who else is attending this event?</label>
+											<button type="button" onClick={addGuestEmailField} className="flex items-center gap-1 text-primary-purple hover:text-primary-dark font-medium text-sm transition-colors">
+												<FiPlus className="text-base" />
+												<span>Add More</span>
+											</button>
+										</div>
+										<p className="text-xs text-text-muted">Add email addresses of other guests attending with you (optional)</p>
+										{guestEmails.map((email, index) => (
+											<div key={index} className="flex items-start gap-2">
+												<div className="flex-1">
+													<input
+														type="email"
+														placeholder={`Guest ${index + 1} email (optional)`}
+														value={email}
+														onChange={(e) => handleGuestEmailChange(index, e.target.value)}
+														className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+													/>
+													{emailErrors[index] && <span className="text-red-500 text-xs mt-1 block">{emailErrors[index]}</span>}
+												</div>
+												{guestEmails.length > 2 && (
+													<button type="button" onClick={() => removeGuestEmailField(index)} className="mt-3 text-text-muted hover:text-red-500 transition-colors">
+														<FiX className="text-lg" />
+													</button>
+												)}
+											</div>
+										))}
+									</div>
+								)}
+
+								{/* Login Link (Only for not-logged-in users) */}
+								{!session?.user && (
+									<div className="text-center pt-2">
+										<p className="text-sm text-text-secondary">
+											Already have an account?{" "}
+											<button type="button" onClick={() => setShowLoginModal(true)} className="text-primary-purple font-semibold hover:text-primary-dark transition-colors">
+												Login
+											</button>
+										</p>
+									</div>
+								)}
+
+								{/* Submit Button */}
 								<button
 									disabled={isLoading}
 									type="submit"
-									className="w-full bg-jetzy text-black font-bold  px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
+									className="w-full bg-primary-purple text-white font-semibold px-6 py-3.5 rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 								>
-									{isLoading ? <Spinner /> : "Submit"}
+									{isLoading ? (
+										<>
+											<Spinner />
+											<span>Processing...</span>
+										</>
+									) : (
+										"Continue to Payment"
+									)}
 								</button>
 							</form>
 						)}
 					</div>
 				</div>
 			)}
+
+			{/* Login Modal */}
+			{showLoginModal && <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />}
 		</>
 	)
 }

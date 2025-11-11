@@ -4,6 +4,7 @@ import CheckInPortal from "@/components/CheckInPortal"
 import CheckInStats from "@/components/CheckInStats"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
+import Head from "next/head"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
@@ -32,12 +33,21 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 	const eventData: IEvent = JSON.parse(event)
 
 	return (
-		<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl" backBtn={`/console/events/${eventId}/manage`}>
-			<Container maxW="container.xl" py={8}>
-				<CheckInStats eventId={eventData._id.toString()} />
-				<CheckInPortal eventId={eventData._id.toString()} eventName={eventData.name} />
-			</Container>
-		</ConsoleLayout>
+		<>
+			<Head>
+				<title>Check-In Portal - {eventData.name} | Jetzy Events</title>
+				<meta name="description" content={`Check-in attendees for ${eventData.name}`} />
+				<meta name="robots" content="noindex, nofollow" />
+			</Head>
+			<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl" backBtn={`/console/events/${eventId}/manage`}>
+				<Box bg="#F5F5F7" minH="100vh" py={{ base: 4, md: 8 }}>
+					<Container maxW="container.xl">
+						<CheckInStats eventId={eventData._id.toString()} />
+						<CheckInPortal eventId={eventData._id.toString()} eventName={eventData.name} />
+					</Container>
+				</Box>
+			</ConsoleLayout>
+		</>
 	)
 }
 

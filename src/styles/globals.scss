@@ -16,7 +16,8 @@ body {
 	scroll-behavior: smooth !important;
 	font-family: "Montserrat", sans-serif !important;
 	@include components.scrollStyle;
-
+	background-color: #f5f5f7 !important;
+	color: #1f2937 !important;
 	overflow-x: hidden !important;
 }
 

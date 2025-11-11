@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { SignUpFormData } from "@Jetzy/types"
 import { ErrorMessage, Field, Form, Formik } from "formik"
 import { GetServerSideProps } from "next"
+import Head from "next/head"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
@@ -27,17 +28,15 @@ export default function LoginPage() {
 	}
 
 	const handleSubmit = (values: SignUpFormData) => {
-		
 		const sanitized = {
 			...values,
 			email: values.email?.trim(),
 			firstName: values.firstName?.trim(),
 			lastName: values.lastName?.trim(),
-			password: values.password?.trim() ,
+			password: values.password?.trim(),
 			confirmPassword: values.confirmPassword?.trim(),
 			shouldBeAJetzyMember: values.shouldBeAJetzyMember,
-
-		};
+		}
 
 		dispatcher(CreateUserAccountThunk({ data: sanitized })).then((res: any) => {
 			if (res?.payload?.status) navigate.push(ROUTES.login)
@@ -46,6 +45,11 @@ export default function LoginPage() {
 
 	return (
 		<>
+			<Head>
+				<title>Sign Up - Jetzy Events</title>
+				<meta name="description" content="Create your Jetzy account to discover events, book tickets, and connect with amazing experiences." />
+				<meta name="robots" content="noindex, nofollow" />
+			</Head>
 			<div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
 				<div className="sm:mx-auto sm:w-full sm:max-w-sm">
 					<Image className="mx-auto h-20 w-auto" src={Logo} alt="Jetzy Life" />
@@ -157,8 +161,6 @@ export default function LoginPage() {
 
 								{/* Jetzy Member Checkbox */}
 								<div className="flex items-center gap-2 mt-4">
-
-
 									<Field
 										type="checkbox"
 										id="shouldBeAJetzyMember"
@@ -169,9 +171,6 @@ export default function LoginPage() {
 									<label htmlFor="shouldBeAJetzyMember" className="block text-sm text-white">
 										Sign me up as a Jetzy Member
 									</label>
-
-
-
 								</div>
 
 								<div>
