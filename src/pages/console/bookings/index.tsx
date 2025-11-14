@@ -110,6 +110,10 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		await dbconn.asPromise()
 	}
 
+	// Ensure database connection
+	const { connectDB } = await import("@/lib/connect-db")
+	await connectDB()
+
 	//pagination
 	//const limit = 5
 	const limit = 10

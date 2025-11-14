@@ -1,4 +1,4 @@
-import connectMongo from "@/lib/connect-db"
+import { connectDB } from "@/lib/connect-db"
 import { Users } from "@/models/userModal"
 
 const settings = {
@@ -28,30 +28,29 @@ const settings = {
 }
 
 export async function getEventParticipants(email: string, orderItems: any[]) {
-  const db = await connectMongo();
-  const userExists = await db.collection('users').findOne({ email });
-  let userId;
+	// Ensure database connection
+	await connectDB()
 
-  if (userExists) {
-    userId = userExists._id;
-  } else {
-    const newUserResult = await db.collection('users').insertOne({ email });
-    userId = newUserResult.insertedId;
-  }
+	const userExists = await Users.findOne({ email })
+	let userId
 
-  await db.collection("usersettings").findOneAndUpdate(
-    { user: userId },
-    { $set: settings },
-    { upsert: true }
-  );
+	if (userExists) {
+		userId = userExists._id
+	} else {
+		const newUser = await Users.create({
+			email,
+			settings,
+		})
+		userId = newUser._id
+	}
 
-  return {
-    userId,
-    eventId: orderItems[0]?.id,
-    tickets: orderItems.map((item) => ({
-      priceId: item.priceId,
-      price: item.price,
-      quantity: item.quantity
-    })),
-  }
+	return {
+		userId,
+		eventId: orderItems[0]?.id,
+		tickets: orderItems.map((item) => ({
+			priceId: item.priceId,
+			price: item.price,
+			quantity: item.quantity,
+		})),
+	}
 }

@@ -1,5 +1,7 @@
-'use server'
-import connectMongo from "@Jetzy/lib/connect-db"
+"use server"
+import { connectDB } from "@/lib/connect-db"
+import { Users } from "@/models/userModal"
+import bcrypt from "bcrypt"
 
 type UserData = {
 	firstName: string
@@ -42,8 +44,10 @@ const settings = {
 
 export async function createUserAction(userData: UserData) {
 	try {
-		const db = await connectMongo()
-		const userExists = await db.collection("users").findOne({ email: userData.email })
+		// Ensure database connection
+		await connectDB()
+
+		const userExists = await Users.findOne({ email: userData.email })
 
 		let currentUser
 		let userId
@@ -51,17 +55,26 @@ export async function createUserAction(userData: UserData) {
 		if (userExists) {
 			currentUser = userExists
 			userId = userExists._id
+			console.log("User already exists:", userData.email)
 		} else {
-			const newUser = await db.collection("users").insertOne(userData)
-			currentUser = newUser
-			userId = newUser.insertedId
-		}
+			// Generate a default password for users created via booking
+			// They will need to reset it to login
+			const defaultPassword = await bcrypt.hash(`temp_${Date.now()}`, 10)
 
-		await db.collection("usersettings").findOneAndUpdate({ user: userId }, { $set: settings }, { upsert: true })
+			const newUser = await Users.create({
+				...userData,
+				password: defaultPassword,
+				settings,
+			})
+			currentUser = newUser
+			userId = newUser._id
+			console.log("New user created:", userData.email, "with ID:", userId)
+		}
 
 		return currentUser
 	} catch (error: unknown) {
 		const errorMessage = error instanceof Error ? error.message : "Unknown Error"
-		console.error(errorMessage)
+		console.error("Error in createUserAction:", errorMessage)
+		throw error
 	}
 }

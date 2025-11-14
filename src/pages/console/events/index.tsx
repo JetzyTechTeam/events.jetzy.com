@@ -287,12 +287,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	// lets paginate the events
 	const limit = 10
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
-	// Ensure database connection is ready
-	const { dbconn } = await import("@/configs/database")
-	if (dbconn.readyState !== 1) {
-		console.log("[console/events] Database not connected, attempting to connect...")
-		await dbconn.asPromise()
-	}
+	// Ensure database connection
+	const { connectDB } = await import("@/lib/connect-db")
+	await connectDB()
 
 	const skip = (page - 1) * limit
 	// fetch events

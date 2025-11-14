@@ -1,28 +1,31 @@
-import { NextApiRequest, NextApiResponse } from "next";
-import sendgrid from "@sendgrid/mail";
-import { EventInvitation } from "@/models/events/event-invitations";
+import { NextApiRequest, NextApiResponse } from "next"
+import sendgrid from "@sendgrid/mail"
+import { EventInvitation } from "@/models/events/event-invitations"
+import { createBulkNotifications } from "@/lib/notification-helper"
+import { Users } from "@/models/userModal"
+import { Events } from "@/models/events"
 
-sendgrid.setApiKey(process.env.SENDGRID_API_KEY as string);
+sendgrid.setApiKey(process.env.SENDGRID_API_KEY as string)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method not allowed" });
-  }
-  try {
-    const { emails, subject, message, eventLink, eventId } = req.body;
+	if (req.method !== "POST") {
+		return res.status(405).json({ message: "Method not allowed" })
+	}
+	try {
+		const { emails, subject, message, eventLink, eventId } = req.body
 
-    if (!emails || !Array.isArray(emails) || emails.length === 0) {
-      return res.status(400).json({ message: "No emails provided" });
-    }
-    
-    for (const email of emails) {
-      const personalizedEventLink = `${eventLink}?email=${encodeURIComponent(email)}`;
+		if (!emails || !Array.isArray(emails) || emails.length === 0) {
+			return res.status(400).json({ message: "No emails provided" })
+		}
 
-      const msg = {
-        to: email, 
-        from: process.env.SENDGRID_EMAIL_SENDER as string,
-        subject: subject || "You're Invited!",
-        html: `
+		for (const email of emails) {
+			const personalizedEventLink = `${eventLink}?email=${encodeURIComponent(email)}`
+
+			const msg = {
+				to: email,
+				from: process.env.SENDGRID_EMAIL_SENDER as string,
+				subject: subject || "You're Invited!",
+				html: `
         <div style="font-family: Arial, sans-serif; background: #f9f9f9; padding: 40px 0;">
           <div style="max-width: 500px; margin: 0 auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 32px;">
             <h2 style="color: #2d3748; text-align: center;">${subject}</h2>
@@ -48,19 +51,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           </div>
         </div>
       `,
-      };
-      await sendgrid.send(msg);
-    }
+			}
+			await sendgrid.send(msg)
+		}
 
-    await EventInvitation.create([
-      ...emails.map((email: string) => ({
-        email,
-        eventId,
-      })),
-    ]);
+		await EventInvitation.create([
+			...emails.map((email: string) => ({
+				email,
+				eventId,
+			})),
+		])
 
-    return res.status(200).json({ message: "Invitations sent successfully" });
-  } catch (error) {
-    return res.status(500).json({ message: "Something went wrong" });
-  }
+		// Create notifications for invited users
+		try {
+			const event = await Events.findById(eventId)
+			if (event) {
+				// Find users by email
+				const users = await Users.find({ email: { $in: emails } })
+				const userIds = users.map((u) => u._id)
+
+				if (userIds.length > 0) {
+					await createBulkNotifications(userIds, {
+						type: "event_invitation",
+						title: "Event Invitation",
+						message: `You've been invited to ${event.name}`,
+						resourceId: eventId,
+						resourceType: "event",
+						metadata: { eventName: event.name },
+					})
+					console.log(`Created ${userIds.length} invitation notifications`)
+				}
+			}
+		} catch (notificationError) {
+			console.error("Failed to create invitation notifications:", notificationError)
+			// Don't fail the request if notifications fail
+		}
+
+		return res.status(200).json({ message: "Invitations sent successfully" })
+	} catch (error) {
+		return res.status(500).json({ message: "Something went wrong" })
+	}
 }

@@ -261,9 +261,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 												placeholder="John"
 												value={formData.firstName}
 												onChange={handleInputChange}
-												disabled={!!session?.user} // Disable if logged in
-												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
-												required={!session?.user} // Only required if not logged in
+												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+												required
 											/>
 										</div>
 										<div>
@@ -274,9 +273,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 												placeholder="Doe"
 												value={formData.lastName}
 												onChange={handleInputChange}
-												disabled={!!session?.user}
-												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
-												required={!session?.user}
+												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+												required
 											/>
 										</div>
 									</div>
@@ -288,9 +286,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 											placeholder="john.doe@example.com"
 											value={formData.email}
 											onChange={handleInputChange}
-											disabled={!!session?.user}
-											className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
-											required={!session?.user}
+											className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+											required
 										/>
 									</div>
 									<div>
@@ -301,9 +298,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 											placeholder="+1234567890"
 											value={formData.phone}
 											onChange={handleInputChange}
-											disabled={!!session?.user && !!(session.user as any).phone} // Only disable if phone exists in session
-											className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
-											required // Always required
+											className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+											required
 											pattern="^\+?[0-9]{7,15}$"
 											title="Enter a valid phone number (e.g., +1234567890)"
 										/>

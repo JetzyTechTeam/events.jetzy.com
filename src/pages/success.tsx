@@ -36,6 +36,7 @@ const CheckoutSuccessPage: React.FC = () => {
 	const [orderItems, setOrderItems] = React.useState<Array<OrderItem>>([])
 	const [sessionData, setSessionData] = React.useState<any>(null)
 	const [isLoading, setIsLoading] = React.useState(true)
+	const [isVerified, setVerification] = React.useState(false)
 	const [eventData, setEventData] = React.useState<IEvent | null>(null)
 
 	let { payload, session_id, event } = query
@@ -65,6 +66,10 @@ const CheckoutSuccessPage: React.FC = () => {
 	React.useEffect(() => {
 		const checkPaymentStatus = async () => {
 			if (session_id) {
+				// Track start time to ensure minimum loader display
+				const startTime = Date.now()
+				const minLoadingTime = 2000 // Minimum 2 seconds to show loader
+
 				try {
 					const response = await axios.get(`/api/checkout/confirm?session_id=${session_id}`)
 					const session = response.data
@@ -72,6 +77,8 @@ const CheckoutSuccessPage: React.FC = () => {
 
 					if (session.payment_status !== "paid") {
 						Error("Payment Error", "Your payment was not successful. Please try again.")
+						setVerification(true)
+						setIsLoading(false)
 						return
 					}
 
@@ -97,29 +104,77 @@ const CheckoutSuccessPage: React.FC = () => {
 							console.error("Error parsing session metadata:", error)
 						}
 					}
+
+					// Ensure loader shows for at least minimum time
+					const elapsedTime = Date.now() - startTime
+					const remainingTime = Math.max(0, minLoadingTime - elapsedTime)
+
+					setTimeout(() => {
+						setVerification(true)
+						setIsLoading(false)
+					}, remainingTime)
 				} catch (error) {
 					console.error("Error checking payment status:", error)
 					Error("Error", "Unable to verify payment. Please contact support.")
-				} finally {
 					setIsLoading(false)
+					setVerification(true)
 				}
 			} else {
 				setIsLoading(false)
+				setVerification(true)
 			}
 		}
 
-		checkPaymentStatus()
-	}, [session_id, payload])
+		if (!isVerified) {
+			checkPaymentStatus()
+		}
+	}, [session_id, payload, isLoading, isVerified])
 
 	// Show loading state
 	if (isLoading) {
 		return (
-			<div className="min-h-screen bg-background-light flex items-center justify-center">
-				<div className="text-center">
-					<div className="animate-spin rounded-full h-12 w-12 border-b-4 border-primary-purple mx-auto mb-4"></div>
-					<p className="text-text-primary font-medium">Verifying your payment...</p>
+			<>
+				<Head>
+					<title>Verifying Payment - Jetzy Events</title>
+					<meta name="robots" content="noindex, nofollow" />
+				</Head>
+				<LightNavbar />
+				<div className="min-h-screen bg-background-light flex items-center justify-center p-4">
+					<div className="bg-white rounded-2xl shadow-xl p-8 sm:p-12 max-w-md w-full text-center border border-border-light">
+						{/* Animated Loader */}
+						<div className="relative w-24 h-24 mx-auto mb-6">
+							{/* Outer spinning ring */}
+							<div className="absolute inset-0 border-4 border-primary-purple/20 rounded-full"></div>
+							<div className="absolute inset-0 border-4 border-transparent border-t-primary-purple rounded-full animate-spin"></div>
+
+							{/* Inner pulsing circle */}
+							<div className="absolute inset-3 bg-primary-purple/10 rounded-full animate-pulse"></div>
+
+							{/* Center icon */}
+							<div className="absolute inset-0 flex items-center justify-center">
+								<svg className="w-10 h-10 text-primary-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+								</svg>
+							</div>
+						</div>
+
+						{/* Loading Text */}
+						<h2 className="text-2xl font-bold text-text-primary mb-3">Verifying Payment</h2>
+						<p className="text-text-secondary mb-6">Please wait while we confirm your transaction...</p>
+
+						{/* Progress dots */}
+						<div className="flex justify-center gap-2">
+							<div className="w-2 h-2 bg-primary-purple rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+							<div className="w-2 h-2 bg-primary-purple rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
+							<div className="w-2 h-2 bg-primary-purple rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+						</div>
+
+						{/* Additional info */}
+						<p className="text-text-muted text-xs mt-6">This usually takes a few seconds</p>
+					</div>
 				</div>
-			</div>
+				<Footer />
+			</>
 		)
 	}
 

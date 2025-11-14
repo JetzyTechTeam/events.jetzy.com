@@ -1,27 +1,76 @@
-import { MongoClient, Db } from "mongodb"
+import { dbconn } from "@/configs/database"
 
-let cachedDb: Db | null = null
+/**
+ * Ensure database connection for use in getServerSideProps and API routes
+ * This function should be called before any database operations
+ *
+ * @example
+ * export const getServerSideProps = async (context) => {
+ *   await connectDB()
+ *   const events = await Events.find()
+ *   return { props: { events } }
+ * }
+ */
+export async function connectDB(timeoutMs: number = 10000): Promise<void> {
+	// readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
 
-const connectMongo = async (): Promise<Db> => {
-	if (!process.env.NEXT_EVENTS_DB_URL) {
-		throw new Error("Add the NEXT_EVENTS_DB_URL environment variable inside .env.local to use MongoDB")
+	// If already connected, return immediately
+	if (dbconn.readyState === 1) {
+		return
 	}
 
-	if (cachedDb) return cachedDb
+	// If connecting, wait for it
+	if (dbconn.readyState === 2) {
+		await new Promise<void>((resolve, reject) => {
+			const timeoutId = setTimeout(() => {
+				reject(new Error(`Database connection timeout after ${timeoutMs}ms`))
+			}, timeoutMs)
 
-	const client = new MongoClient(process.env.NEXT_EVENTS_DB_URL)
+			const onConnected = () => {
+				clearTimeout(timeoutId)
+				dbconn.removeListener("error", onError)
+				resolve()
+			}
 
-	try {
-		await client.connect()
-		console.log("Connected successfully to MongoDB")
+			const onError = (err: any) => {
+				clearTimeout(timeoutId)
+				dbconn.removeListener("connected", onConnected)
+				reject(err)
+			}
 
-		const db = client.db()
-		cachedDb = db // Cache the database instance for reuse
-		return db
-	} catch (e: any) {
-		console.error("MongoDB Client Error: " + e.message)
-		throw new Error("Failed to connect to MongoDB")
+			dbconn.once("connected", onConnected)
+			dbconn.once("error", onError)
+		})
+		return
+	}
+
+	// If disconnected, wait for connection using asPromise()
+	if (dbconn.readyState === 0) {
+		await Promise.race([dbconn.asPromise(), new Promise((_, reject) => setTimeout(() => reject(new Error(`Database connection timeout after ${timeoutMs}ms`)), timeoutMs))])
+		return
+	}
+
+	// Disconnecting state - wait a bit and retry
+	if (dbconn.readyState === 3) {
+		await new Promise((resolve) => setTimeout(resolve, 100))
+		return connectDB(timeoutMs - 100)
 	}
 }
 
-export default connectMongo
+/**
+ * Check if database is connected
+ */
+export function isConnected(): boolean {
+	return dbconn.readyState === 1
+}
+
+/**
+ * Get current connection state as string
+ */
+export function getConnectionState(): string {
+	const states = ["disconnected", "connected", "connecting", "disconnecting"]
+	return states[dbconn.readyState] || "unknown"
+}
+
+// Legacy export for backward compatibility
+export default connectDB

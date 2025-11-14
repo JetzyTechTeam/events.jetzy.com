@@ -232,6 +232,10 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		await dbconn.asPromise()
 	}
 
+	// Ensure database connection
+	const { connectDB } = await import("@/lib/connect-db")
+	await connectDB()
+
 	const eventId = context.query.eventId as string
 	if (!eventId) return { props: {} }
 

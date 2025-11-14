@@ -9,6 +9,8 @@ import Head from "next/head"
 import React, { useState, useMemo } from "react"
 import Link from "next/link"
 import { downloadExcel } from "react-export-table-to-excel"
+import { useQuery } from "@tanstack/react-query"
+import axios from "axios"
 
 type Props = {
 	bookings: Booking[]
@@ -347,17 +349,7 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 					)}
 
 					{/* Waiting List Tab */}
-					{activeTab === "waiting-list" && (
-						<div className="bg-white rounded-xl border border-border-light p-12 text-center">
-							<div className="w-16 h-16 mx-auto mb-4 bg-background-light rounded-full flex items-center justify-center">
-								<svg className="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-								</svg>
-							</div>
-							<h3 className="text-xl font-semibold text-text-primary mb-2">Waiting List</h3>
-							<p className="text-text-secondary">Waiting list feature coming soon.</p>
-						</div>
-					)}
+					{activeTab === "waiting-list" && <WaitingListTab eventId={event._id} eventName={event.name} />}
 
 					{/* Pagination */}
 					{activeTab === "bookings" && totalPages > 1 && (
@@ -400,6 +392,10 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 	const session = await authorizedOnly(ctx)
 	if (!session) return session
+
+	// Ensure database connection
+	const { connectDB } = await import("@/lib/connect-db")
+	await connectDB()
 
 	const { eventId } = ctx.params as { eventId: string }
 	const { status, date, search, amount, minTickets } = ctx.query
@@ -514,4 +510,198 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 			},
 		},
 	}
+}
+
+function WaitingListTab({ eventId, eventName }: { eventId: string; eventName: string }) {
+	const [loadingStates, setLoadingStates] = useState<{ [key: string]: "approving" | "removing" | null }>({})
+
+	const {
+		data: waitingList,
+		isLoading,
+		refetch,
+	} = useQuery({
+		queryKey: ["eventWaitingList", eventId],
+		queryFn: () => axios.get(`/api/waiting-list/${eventId}`),
+	})
+
+	const handleApprove = async (waitingListId: string) => {
+		setLoadingStates((prev) => ({ ...prev, [waitingListId]: "approving" }))
+		try {
+			const response = await axios.post("/api/waiting-list/approve", {
+				waitingListId,
+				eventName,
+			})
+
+			if (response.data.status) {
+				alert("User approved and notified successfully!")
+				refetch()
+			} else {
+				alert(`Failed to approve user: ${response.data.message || "Unknown error"}`)
+			}
+		} catch (error: any) {
+			console.error("Error approving user:", error)
+			const errorMessage = error.response?.data?.message || error.message || "Failed to approve user"
+			alert(`Error: ${errorMessage}`)
+		} finally {
+			setLoadingStates((prev) => ({ ...prev, [waitingListId]: null }))
+		}
+	}
+
+	const handleRemove = async (waitingListId: string) => {
+		if (!confirm("Are you sure you want to remove this user from the waiting list?")) {
+			return
+		}
+
+		setLoadingStates((prev) => ({ ...prev, [waitingListId]: "removing" }))
+		try {
+			const response = await axios.delete("/api/waiting-list/remove", {
+				data: { waitingListId },
+			})
+
+			if (response.data.status) {
+				alert("User removed from waiting list successfully!")
+				refetch()
+			} else {
+				alert(`Failed to remove user: ${response.data.message || "Unknown error"}`)
+			}
+		} catch (error: any) {
+			console.error("Error removing user:", error)
+			const errorMessage = error.response?.data?.message || error.message || "Failed to remove user"
+			alert(`Error: ${errorMessage}`)
+		} finally {
+			setLoadingStates((prev) => ({ ...prev, [waitingListId]: null }))
+		}
+	}
+
+	return (
+		<div>
+			<div className="flex items-center justify-between mb-6">
+				<h3 className="text-xl font-bold text-text-primary">Waiting List</h3>
+				{!isLoading && waitingList?.data?.data && (
+					<div className="text-sm">
+						<span className="font-semibold text-text-primary">
+							Total: <span className="px-2 py-1 bg-primary-purple/10 text-primary-purple rounded-md">{waitingList.data.data.length}</span> users
+						</span>
+					</div>
+				)}
+			</div>
+
+			{isLoading && (
+				<div className="bg-white rounded-xl border border-border-light p-12 text-center">
+					<div className="w-16 h-16 mx-auto mb-4 bg-background-light rounded-full flex items-center justify-center animate-pulse">
+						<svg className="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+					</div>
+					<p className="text-text-secondary">Loading waiting list...</p>
+				</div>
+			)}
+
+			{!isLoading && waitingList?.data?.data?.length === 0 && (
+				<div className="bg-white rounded-xl border border-border-light p-12 text-center">
+					<div className="w-16 h-16 mx-auto mb-4 bg-background-light rounded-full flex items-center justify-center">
+						<svg className="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+					</div>
+					<h3 className="text-xl font-semibold text-text-primary mb-2">No Users on Waiting List</h3>
+					<p className="text-text-secondary">There are no users currently waiting for this event.</p>
+				</div>
+			)}
+
+			{!isLoading && waitingList?.data?.data && Array.isArray(waitingList.data.data) && waitingList.data.data.length > 0 && (
+				<div className="space-y-4">
+					{waitingList.data.data.map((user: any) => (
+						<div key={user._id} className="bg-white rounded-xl border border-border-light p-6 hover:shadow-md transition-shadow">
+							<div className="flex justify-between items-start gap-4">
+								<div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
+									{/* Left Column */}
+									<div className="space-y-4">
+										<div>
+											<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Name</label>
+											<p className="text-base font-semibold text-text-primary">
+												{user.firstName} {user.lastName}
+											</p>
+										</div>
+										<div>
+											<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Email</label>
+											<p className="text-sm text-text-secondary">{user.email}</p>
+										</div>
+										<div>
+											<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Phone</label>
+											<p className="text-sm text-text-secondary">{user.phone}</p>
+										</div>
+										<div>
+											<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Joined Waiting List</label>
+											<p className="text-sm text-text-secondary">{new Date(user.createdAt).toLocaleString()}</p>
+										</div>
+									</div>
+
+									{/* Right Column */}
+									<div className="space-y-4">
+										<div>
+											<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Requested Tickets</label>
+											<div className="space-y-2 mt-2">
+												{user.tickets.map((ticket: any, index: number) => (
+													<div key={index} className="flex items-center justify-between bg-background-light rounded-lg px-3 py-2">
+														<span className="text-sm text-text-secondary">{ticket.name}</span>
+														<div className="flex items-center gap-2">
+															<span className="text-sm font-semibold text-text-primary">{ticket.quantity}x</span>
+															<span className="text-sm text-text-muted">${ticket.price}</span>
+														</div>
+													</div>
+												))}
+											</div>
+										</div>
+									</div>
+								</div>
+
+								{/* Action Buttons */}
+								<div className="flex flex-col gap-2">
+									<button
+										onClick={() => handleApprove(user._id)}
+										disabled={!!loadingStates[user._id]}
+										className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm hover:shadow-md whitespace-nowrap inline-flex items-center justify-center gap-2 min-w-[100px] ${
+											loadingStates[user._id] === "approving" ? "bg-green-400 text-white cursor-not-allowed" : "bg-green-600 text-white hover:bg-green-700"
+										} disabled:opacity-70 disabled:cursor-not-allowed`}
+									>
+										{loadingStates[user._id] === "approving" ? (
+											<>
+												<svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+													<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+													<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+												</svg>
+												<span>Approving...</span>
+											</>
+										) : (
+											"Approve"
+										)}
+									</button>
+									<button
+										onClick={() => handleRemove(user._id)}
+										disabled={!!loadingStates[user._id]}
+										className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm hover:shadow-md whitespace-nowrap inline-flex items-center justify-center gap-2 min-w-[100px] ${
+											loadingStates[user._id] === "removing" ? "bg-red-400 text-white cursor-not-allowed" : "bg-red-600 text-white hover:bg-red-700"
+										} disabled:opacity-70 disabled:cursor-not-allowed`}
+									>
+										{loadingStates[user._id] === "removing" ? (
+											<>
+												<svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+													<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+													<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+												</svg>
+												<span>Removing...</span>
+											</>
+										) : (
+											"Remove"
+										)}
+									</button>
+								</div>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</div>
+	)
 }

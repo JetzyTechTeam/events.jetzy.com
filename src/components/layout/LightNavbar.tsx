@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/router"
@@ -8,6 +8,8 @@ import { BellIcon, UserCircleIcon } from "@heroicons/react/24/outline"
 import { Menu } from "@headlessui/react"
 import SignupModal from "@/components/misc/SignupModal"
 import LoginModal from "@/components/misc/LoginModal"
+import axios from "axios"
+import { NotificationType } from "@/models/notification"
 
 // Navigation items with authentication requirements
 const navItems = [
@@ -24,6 +26,93 @@ const LightNavbar: React.FC = () => {
 	const user = session?.user
 	const [isSignupModalOpen, setIsSignupModalOpen] = useState(false)
 	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+	const [notifications, setNotifications] = useState<any[]>([])
+	const [unreadCount, setUnreadCount] = useState(0)
+	const [isLoadingNotifications, setIsLoadingNotifications] = useState(false)
+
+	// Fetch notifications on mount and when session changes
+	useEffect(() => {
+		if (session?.user) {
+			fetchNotifications()
+		}
+	}, [session])
+
+	// Fetch notifications from API
+	const fetchNotifications = async () => {
+		setIsLoadingNotifications(true)
+		try {
+			const response = await axios.get("/api/notifications")
+			if (response.data.status) {
+				setNotifications(response.data.data.notifications)
+				setUnreadCount(response.data.data.unreadCount)
+			}
+		} catch (error) {
+			console.error("Error fetching notifications:", error)
+		} finally {
+			setIsLoadingNotifications(false)
+		}
+	}
+
+	// Get notification route based on type
+	const getNotificationRoute = (notification: any): string => {
+		const type = notification.type as NotificationType
+		const resourceId = notification.resourceId
+
+		switch (type) {
+			case "event_invitation":
+			case "event_update":
+			case "event_reminder":
+				return resourceId ? `/${resourceId}` : "/"
+			case "waiting_list_approved":
+			case "booking_confirmation":
+				return "/console/bookings"
+			case "group_invitation":
+				return resourceId ? `/events/${resourceId}/group/accept` : "/console"
+			case "event_comment":
+				return resourceId ? `/${resourceId}#comments` : "/"
+			case "admin_alert":
+				return "/console"
+			default:
+				return "/"
+		}
+	}
+
+	// Handle notification click
+	const handleNotificationClick = async (notification: any) => {
+		try {
+			// Mark as read
+			if (!notification.isRead) {
+				await axios.post("/api/notifications/mark-read", {
+					notificationId: notification._id,
+				})
+				// Update local state
+				setNotifications((prev) => prev.map((n) => (n._id === notification._id ? { ...n, isRead: true } : n)))
+				setUnreadCount((prev) => Math.max(0, prev - 1))
+			}
+			// Navigate to the appropriate page
+			const route = getNotificationRoute(notification)
+			router.push(route)
+		} catch (error) {
+			console.error("Error marking notification as read:", error)
+			// Navigate anyway
+			const route = getNotificationRoute(notification)
+			router.push(route)
+		}
+	}
+
+	// Format time ago
+	const formatTimeAgo = (date: string): string => {
+		const now = new Date()
+		const notificationDate = new Date(date)
+		const diffInMs = now.getTime() - notificationDate.getTime()
+		const diffInMinutes = Math.floor(diffInMs / 60000)
+
+		if (diffInMinutes < 1) return "Just now"
+		if (diffInMinutes < 60) return `${diffInMinutes}m`
+		if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h`
+		if (diffInMinutes < 10080) return `${Math.floor(diffInMinutes / 1440)}d`
+		return `${Math.floor(diffInMinutes / 10080)}w`
+	}
 
 	const isActive = (href: string) => {
 		if (href === "/") {
@@ -73,11 +162,85 @@ const LightNavbar: React.FC = () => {
 					<div className="flex items-center gap-4">
 						{/* Notification Icon - Only show when logged in */}
 						{session && (
-							<button className="p-2 text-text-secondary hover:text-text-primary rounded-full hover:bg-background-gray transition-colors" aria-label="Notifications">
-								<BellIcon className="w-6 h-6" />
-							</button>
-						)}
+							<Menu as="div" className="relative">
+								<Menu.Button className="relative p-2 text-text-secondary hover:text-text-primary rounded-full hover:bg-background-gray transition-colors" aria-label="Notifications">
+									<BellIcon className="w-6 h-6" />
+									{unreadCount > 0 && (
+										<span className="absolute top-1 right-1 flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full">{unreadCount > 9 ? "9+" : unreadCount}</span>
+									)}
+								</Menu.Button>
 
+								<Menu.Items className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-border-light focus:outline-none overflow-hidden z-50">
+									{/* Header */}
+									<div className="px-4 py-3 border-b border-border-light flex items-center justify-between">
+										<h3 className="text-sm font-semibold text-text-primary">Notifications</h3>
+										{unreadCount > 0 && (
+											<button
+												onClick={async () => {
+													try {
+														await axios.post("/api/notifications/mark-all-read")
+														setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+														setUnreadCount(0)
+													} catch (error) {
+														console.error("Error marking all as read:", error)
+													}
+												}}
+												className="text-xs text-primary-purple hover:text-primary-dark font-medium"
+											>
+												Mark all read
+											</button>
+										)}
+									</div>
+
+									{/* Scrollable Notifications List */}
+									<div className="max-h-96 overflow-y-auto">
+										{isLoadingNotifications ? (
+											<div className="px-4 py-8 text-center text-text-muted text-sm">Loading notifications...</div>
+										) : notifications.length === 0 ? (
+											<div className="px-4 py-8 text-center text-text-muted text-sm">No notifications yet</div>
+										) : (
+											notifications.map((notification) => (
+												<Menu.Item key={notification._id}>
+													{({ active }) => (
+														<div
+															onClick={() => handleNotificationClick(notification)}
+															className={`px-4 py-3 border-b border-border-light last:border-b-0 cursor-pointer transition-colors ${active ? "bg-background-gray" : ""} ${
+																!notification.isRead ? "bg-primary-purple/5" : ""
+															}`}
+														>
+															<div className="flex gap-3">
+																<div className="flex-shrink-0">
+																	<div className="w-8 h-8 rounded-full bg-primary-purple/10 flex items-center justify-center">
+																		<BellIcon className="w-4 h-4 text-primary-purple" />
+																	</div>
+																</div>
+																<div className="flex-1 min-w-0">
+																	<p className="text-sm font-medium text-text-primary mb-1">{notification.title}</p>
+																	<p className="text-xs text-text-secondary line-clamp-2">{notification.message}</p>
+																	<div className="flex items-center gap-2 mt-1">
+																		<p className="text-xs text-text-muted">{formatTimeAgo(notification.createdAt)}</p>
+																		{!notification.isRead && <span className="w-2 h-2 rounded-full bg-red-500"></span>}
+																	</div>
+																</div>
+															</div>
+														</div>
+													)}
+												</Menu.Item>
+											))
+										)}
+									</div>
+
+									{/* Footer */}
+									{notifications.length > 0 && (
+										<div className="px-4 py-3 border-t border-border-light text-center">
+											<Link href="/console/notifications" className="text-sm font-medium text-primary-purple hover:text-primary-dark">
+												View all notifications
+											</Link>
+										</div>
+									)}
+								</Menu.Items>
+							</Menu>
+						)}
 						{/* User Menu */}
 						{session ? (
 							<Menu as="div" className="relative">
@@ -150,9 +313,84 @@ const LightNavbar: React.FC = () => {
 								<div className="text-base font-medium text-text-primary">{user?.name}</div>
 								<div className="text-sm font-medium text-text-secondary">{user?.email}</div>
 							</div>
-							<button className="ml-auto flex-shrink-0 rounded-full p-1 text-text-secondary hover:text-text-primary hover:bg-background-gray transition-colors" aria-label="Notifications">
-								<BellIcon className="w-6 h-6" />
-							</button>
+							<Menu as="div" className="relative ml-auto">
+								<Menu.Button className="relative flex-shrink-0 rounded-full p-1 text-text-secondary hover:text-text-primary hover:bg-background-gray transition-colors" aria-label="Notifications">
+									<BellIcon className="w-6 h-6" />
+									{unreadCount > 0 && (
+										<span className="absolute top-0 right-0 flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full">{unreadCount > 9 ? "9+" : unreadCount}</span>
+									)}
+								</Menu.Button>
+
+								<Menu.Items className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-border-light focus:outline-none overflow-hidden z-50">
+									{/* Header */}
+									<div className="px-4 py-3 border-b border-border-light flex items-center justify-between">
+										<h3 className="text-sm font-semibold text-text-primary">Notifications</h3>
+										{unreadCount > 0 && (
+											<button
+												onClick={async () => {
+													try {
+														await axios.post("/api/notifications/mark-all-read")
+														setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+														setUnreadCount(0)
+													} catch (error) {
+														console.error("Error marking all as read:", error)
+													}
+												}}
+												className="text-xs text-primary-purple hover:text-primary-dark font-medium"
+											>
+												Mark all read
+											</button>
+										)}
+									</div>
+
+									{/* Scrollable Notifications List */}
+									<div className="max-h-96 overflow-y-auto">
+										{isLoadingNotifications ? (
+											<div className="px-4 py-8 text-center text-text-muted text-sm">Loading notifications...</div>
+										) : notifications.length === 0 ? (
+											<div className="px-4 py-8 text-center text-text-muted text-sm">No notifications yet</div>
+										) : (
+											notifications.map((notification) => (
+												<Menu.Item key={notification._id}>
+													{({ active }) => (
+														<div
+															onClick={() => handleNotificationClick(notification)}
+															className={`px-4 py-3 border-b border-border-light last:border-b-0 cursor-pointer transition-colors ${active ? "bg-background-gray" : ""} ${
+																!notification.isRead ? "bg-primary-purple/5" : ""
+															}`}
+														>
+															<div className="flex gap-3">
+																<div className="flex-shrink-0">
+																	<div className="w-8 h-8 rounded-full bg-primary-purple/10 flex items-center justify-center">
+																		<BellIcon className="w-4 h-4 text-primary-purple" />
+																	</div>
+																</div>
+																<div className="flex-1 min-w-0">
+																	<p className="text-sm font-medium text-text-primary mb-1">{notification.title}</p>
+																	<p className="text-xs text-text-secondary line-clamp-2">{notification.message}</p>
+																	<div className="flex items-center gap-2 mt-1">
+																		<p className="text-xs text-text-muted">{formatTimeAgo(notification.createdAt)}</p>
+																		{!notification.isRead && <span className="w-2 h-2 rounded-full bg-red-500"></span>}
+																	</div>
+																</div>
+															</div>
+														</div>
+													)}
+												</Menu.Item>
+											))
+										)}
+									</div>
+
+									{/* Footer */}
+									{notifications.length > 0 && (
+										<div className="px-4 py-3 border-t border-border-light text-center">
+											<Link href="/console/notifications" className="text-sm font-medium text-primary-purple hover:text-primary-dark">
+												View all notifications
+											</Link>
+										</div>
+									)}
+								</Menu.Items>
+							</Menu>
 						</div>
 						<div className="mt-3 space-y-1 px-2">
 							<button

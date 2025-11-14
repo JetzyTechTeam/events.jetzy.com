@@ -7,6 +7,7 @@ import dynamic from "next/dynamic"
 import Head from "next/head"
 import React from "react"
 import { authOptions } from "./api/auth/[...nextauth]"
+import { connectDB } from "@/lib/connect-db"
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), {
 	ssr: false,
@@ -52,50 +53,63 @@ export default function Home({ events, pagination }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	const session = await getServerSession(context.req, context.res, authOptions)
+	try {
+		// Ensure database connection is ready
+		await connectDB()
 
-	// lets paginate the events
-	const limit = 20
-	const page = context.query.page ? parseInt(context.query.page as string) : 1
-	const skip = (page - 1) * limit
+		const session = await getServerSession(context.req, context.res, authOptions)
 
-	// Check if user is signed in
-	const isSignedIn = !!session
+		// lets paginate the events
+		const limit = 20
+		const page = context.query.page ? parseInt(context.query.page as string) : 1
+		const skip = (page - 1) * limit
 
-	// Define the query based on authentication status
-	let query: any = { isDeleted: false, privacy: "public" }
+		// Check if user is signed in
+		const isSignedIn = !!session
 
-	// If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
-	if (!isSignedIn) {
-		// query.name = "Chinese Mid-Autumn Rooftop Celebration";
-	}
+		// Define the query based on authentication status
+		let query: any = { isDeleted: false, privacy: "public" }
 
-	// Get events based on authentication status
-	const events = await Events.find(query).skip(skip).limit(limit).sort({ createdAt: -1 })
+		// If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
+		if (!isSignedIn) {
+			// query.name = "Chinese Mid-Autumn Rooftop Celebration";
+		}
 
-	if (!events) return { props: { events: null, pagination: null } }
+		// Get events based on authentication status
+		const events = await Events.find(query).skip(skip).limit(limit).sort({ createdAt: -1 })
 
-	// get total count of events based on authentication status
-	const total = await Events.countDocuments(query)
-	// serialize the events
-	const data = events.map((event) => event.toJSON())
+		if (!events) return { props: { events: null, pagination: null } }
 
-	// calculate page total and current page
-	const totalPages = Math.ceil(total / limit)
+		// get total count of events based on authentication status
+		const total = await Events.countDocuments(query)
+		// serialize the events
+		const data = events.map((event) => event.toJSON())
 
-	// pagination object
-	const pagination = {
-		total,
-		page,
-		showing: data.length,
-		limit,
-		totalPages,
-	}
+		// calculate page total and current page
+		const totalPages = Math.ceil(total / limit)
 
-	return {
-		props: {
-			events: JSON.stringify(data),
-			pagination,
-		},
+		// pagination object
+		const pagination = {
+			total,
+			page,
+			showing: data.length,
+			limit,
+			totalPages,
+		}
+
+		return {
+			props: {
+				events: JSON.stringify(data),
+				pagination,
+			},
+		}
+	} catch (error) {
+		console.error("[Home Page] Error fetching events:", error)
+		return {
+			props: {
+				events: null,
+				pagination: null,
+			},
+		}
 	}
 }

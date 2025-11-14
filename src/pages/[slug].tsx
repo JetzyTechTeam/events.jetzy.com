@@ -69,12 +69,9 @@ export default function EventDetailPage({ event }: Props) {
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
 	try {
-		// Ensure database connection is ready
-		const { dbconn } = await import("@/configs/database")
-		if (dbconn.readyState !== 1) {
-			console.log("[slug] Database not connected, attempting to connect...")
-			await dbconn.asPromise()
-		}
+		// Ensure database connection
+		const { connectDB } = await import("@/lib/connect-db")
+		await connectDB()
 
 		// let get the slug from the request params
 		const { slug } = context.params

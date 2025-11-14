@@ -119,9 +119,7 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 					<Heading color="red.500" mb={4}>
 						Invalid Invitation
 					</Heading>
-					<Text color="gray.600">
-						{serverError || "This invitation link is invalid or has expired. Please contact the event organizer."}
-					</Text>
+					<Text color="gray.600">{serverError || "This invitation link is invalid or has expired. Please contact the event organizer."}</Text>
 				</Box>
 			</ConsoleLayout>
 		)
@@ -137,10 +135,7 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 					<Text color="gray.700" mb={4}>
 						You have successfully joined the interest group <strong>{groupData.name}</strong>.
 					</Text>
-					<Button
-						colorScheme="blue"
-						onClick={() => router.push(`/${router.query.eventId}`)}
-					>
+					<Button colorScheme="blue" onClick={() => router.push(`/${router.query.eventId}`)}>
 						View Event
 					</Button>
 				</Box>
@@ -154,15 +149,7 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 				<Flex gap={6} direction={{ base: "column", md: "row" }}>
 					{/* Event Image */}
 					<Box w={{ base: "100%", md: "360px" }} flexShrink={0}>
-						{eventData.images && eventData.images.length > 0 && (
-							<Image
-								src={eventData.images[0]}
-								alt={eventData.name}
-								width={360}
-								height={480}
-								style={{ borderRadius: "8px", objectFit: "cover" }}
-							/>
-						)}
+						{eventData.images && eventData.images.length > 0 && <Image src={eventData.images[0]} alt={eventData.name} width={360} height={480} style={{ borderRadius: "8px", objectFit: "cover" }} />}
 					</Box>
 
 					{/* Content */}
@@ -188,11 +175,7 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 										Event Details:
 									</Text>
 									<Text color="gray.700">Location: {eventData.location}</Text>
-									{formattedDate && (
-										<Text color="gray.700">
-											Date: {formattedDate}
-										</Text>
-									)}
+									{formattedDate && <Text color="gray.700">Date: {formattedDate}</Text>}
 								</Box>
 							)}
 						</Box>
@@ -205,25 +188,11 @@ export default function GroupAcceptPage({ event: eventStr, group: groupStr, user
 
 						<Flex gap={4} mt={6}>
 							{isAccepted ? (
-								<Button
-									colorScheme="green"
-									color="white"
-									w="full"
-									size="lg"
-									disabled
-								>
+								<Button colorScheme="green" color="white" w="full" size="lg" disabled>
 									✓ Already Joined
 								</Button>
 							) : (
-								<Button
-									colorScheme="orange"
-									color="black"
-									w="full"
-									onClick={handleAccept}
-									isLoading={isLoading}
-									disabled={isLoading || isAccepted}
-									size="lg"
-								>
+								<Button colorScheme="orange" color="black" w="full" onClick={handleAccept} isLoading={isLoading} disabled={isLoading || isAccepted} size="lg">
 									{isLoading ? <Spinner size="sm" /> : "Accept & Join Group"}
 								</Button>
 							)}
@@ -253,12 +222,9 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 	}
 
 	try {
-		// Ensure database connection is ready
-		const { dbconn } = await import("@/configs/database")
-		if (dbconn.readyState !== 1) {
-			console.log("[GroupAccept] Database not connected, attempting to connect...")
-			await dbconn.asPromise()
-		}
+		// Ensure database connection
+		const { connectDB } = await import("@/lib/connect-db")
+		await connectDB()
 
 		// Get event
 		const event = await Events.findOne({
@@ -376,4 +342,3 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
 		}
 	}
 }
-

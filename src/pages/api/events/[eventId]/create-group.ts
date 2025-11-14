@@ -14,6 +14,7 @@ import { Roles } from "@/types"
 import bcrypt from "bcrypt"
 import sendgrid from "@sendgrid/mail"
 import crypto from "crypto"
+import { createGroupInvitationNotification } from "@/lib/notification-helper"
 
 sendgrid.setApiKey(process.env.SENDGRID_API_KEY as string)
 
@@ -105,13 +106,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.log(`[create-group] Interest group created: ${interestGroup._id}`)
 		} catch (groupError: any) {
 			console.error(`[create-group] Error creating interest group:`, groupError)
-			return sendResponse(
-				res,
-				null,
-				`Failed to create interest group: ${groupError.message || "Unknown error"}`,
-				false,
-				ResCode.INTERNAL_SERVER_ERROR
-			)
+			return sendResponse(res, null, `Failed to create interest group: ${groupError.message || "Unknown error"}`, false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
 		// Get all bookings for the event
@@ -138,7 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				{ created: 0, skipped: 0, fromBookings: 0, fromWaitingList: 0 },
 				"No bookings or waiting list entries found for this event. Cannot create interest group.",
 				false,
-				ResCode.BAD_REQUEST
+				ResCode.BAD_REQUEST,
 			)
 		}
 
@@ -162,14 +157,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Combine and deduplicate emails (bookings take priority if email exists in both)
 		const emailMap = new Map<string, { email: string; source: "booking" | "waitingList"; booking: any; waitingListEntry: any }>()
-		
+
 		// Add waiting list entries first
 		for (const item of waitingListEmails) {
 			if (!emailMap.has(item.email)) {
 				emailMap.set(item.email, item)
 			}
 		}
-		
+
 		// Add bookings (will overwrite waiting list if duplicate)
 		for (const item of bookingEmails) {
 			emailMap.set(item.email, item)
@@ -192,14 +187,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// For each email, find or create user account and create InterestUser entry
 		for (const item of uniqueEmails) {
 			const { email, source, booking, waitingListEntry } = item
-			
+
 			try {
 				// Find or create user account
 				let user = await Users.findOne({ email: email.toLowerCase() })
 
 				let isNewUser = false
 				let isFromWaitingList = source === "waitingList"
-				
+
 				if (!user) {
 					let firstName = "User"
 					let lastName = ""
@@ -309,17 +304,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 										Hello ${user.firstName || "there"},
 									</p>
 									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
-										We noticed you missed <strong>${event.name}</strong>, but that doesn't mean you have to miss out on the community! You're invited to join the interest group and connect with others who also missed this event.
+										We noticed you missed <strong>${
+											event.name
+										}</strong>, but that doesn't mean you have to miss out on the community! You're invited to join the interest group and connect with others who also missed this event.
 									</p>
 									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
 										This is a great opportunity to stay connected with like-minded people, share experiences, and be the first to know about future events!
 									</p>
-									${event.desc ? `
+									${
+										event.desc
+											? `
 										<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
 											Event Details: ${event.desc.substring(0, 200)}${event.desc.length > 200 ? "..." : ""}
 										</p>
-									` : ""}
-									${isNewUser ? `
+									`
+											: ""
+									}
+									${
+										isNewUser
+											? `
 										<div style="background: #f7fafc; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
 											<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Your Account Credentials:</p>
 											<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
@@ -327,7 +330,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 												<strong>Password:</strong> ${defaultPassword}
 											</p>
 										</div>
-									` : ""}
+									`
+											: ""
+									}
 									<div style="background: #fff5e6; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
 										<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Join the Community:</p>
 										<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
@@ -364,7 +369,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 									<p style="font-size: 16px; color: #4a5568; line-height: 1.6;">
 										${event.desc ? `Event Details: ${event.desc.substring(0, 200)}${event.desc.length > 200 ? "..." : ""}` : ""}
 									</p>
-									${isNewUser ? `
+									${
+										isNewUser
+											? `
 										<div style="background: #f7fafc; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
 											<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Your Account Credentials:</p>
 											<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
@@ -372,7 +379,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 												<strong>Password:</strong> ${defaultPassword}
 											</p>
 										</div>
-									` : ""}
+									`
+											: ""
+									}
 									<div style="background: #fff5e6; border-left: 4px solid #F79432; padding: 16px; margin: 24px 0; border-radius: 4px;">
 										<p style="font-size: 14px; color: #2d3748; margin: 0; font-weight: bold;">Join the Group:</p>
 										<p style="font-size: 14px; color: #4a5568; margin: 8px 0 0 0;">
@@ -426,7 +435,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const totalFromBookings = uniqueEmails.filter((item) => item.source === "booking").length
 		const totalFromWaitingList = uniqueEmails.filter((item) => item.source === "waitingList").length
 
-		console.log(`[create-group] Successfully created group ${interestGroup._id} with ${interestUserEntries.length} members (${fromBookingsCount} from bookings, ${fromWaitingListCount} from waiting list)`)
+		console.log(
+			`[create-group] Successfully created group ${interestGroup._id} with ${interestUserEntries.length} members (${fromBookingsCount} from bookings, ${fromWaitingListCount} from waiting list)`,
+		)
 
 		return sendResponse(
 			res,
@@ -442,13 +453,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				totalFromWaitingList,
 				errors: emailErrors.length > 0 ? emailErrors : undefined,
 			},
-			`Successfully created interest group "${interestGroup.name}" and sent invitations to ${interestUserEntries.length} user${interestUserEntries.length !== 1 ? "s" : ""} (${fromBookingsCount} from bookings, ${fromWaitingListCount} from waiting list)`,
+			`Successfully created interest group "${interestGroup.name}" and sent invitations to ${interestUserEntries.length} user${
+				interestUserEntries.length !== 1 ? "s" : ""
+			} (${fromBookingsCount} from bookings, ${fromWaitingListCount} from waiting list)`,
 			true,
-			ResCode.OK
+			ResCode.OK,
 		)
 	} catch (error: any) {
 		console.error("Error creating interest group:", error)
 		return sendResponse(res, null, error.message || "Failed to create interest group", false, ResCode.INTERNAL_SERVER_ERROR)
 	}
 }
-

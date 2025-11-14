@@ -10,9 +10,13 @@ import Stripe from "stripe"
 import { formatTextWithLineBreaks } from "@/lib/utils"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
-import dayjs from "dayjs";
-import utc from 'dayjs/plugin/utc'
-import timezone from 'dayjs/plugin/timezone'
+import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
+import { createBulkNotifications } from "@/lib/notification-helper"
+import { Bookings } from "@/models/events/bookings"
+import { EventInvitation } from "@/models/events/event-invitations"
+import { Users } from "@/models/userModal"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -44,7 +48,7 @@ const schema = zod.object({
 	),
 	isPaid: zod.boolean(),
 	desc: zod.string().nonempty(),
-	timezone: zod.string().nonempty()
+	timezone: zod.string().nonempty(),
 })
 
 // create stripe instance
@@ -71,9 +75,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy } = params
 
 		// construct datetime for start and end dates
-		const extractedTimeZone = timezone?.split(') ')[1]
-		const start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
-		const end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		const extractedTimeZone = timezone?.split(") ")[1]
+		const start = dayjs.tz(`${startDate} ${startTime}`, "YYYY-MM-DD HH:mm", extractedTimeZone).utc().toDate()
+		const end = dayjs.tz(`${endDate} ${endTime}`, "YYYY-MM-DD HH:mm", extractedTimeZone).utc().toDate()
 
 		// check if start date is greater than end date
 		if (start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
@@ -121,13 +125,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					})),
 					images: images.map((image) => image.file),
 					timezone: timezone,
-					privacy
+					privacy,
 				},
 			},
 			{ new: true },
 		)
 
 		if (!newEvent) return sendResponse(res, null, "Failed to update event.", false, ResCode.INTERNAL_SERVER_ERROR)
+
+		// Send update notifications to all attendees
+		try {
+			// Get all bookings and invitations for this event
+			const [bookings, invitations] = await Promise.all([Bookings.find({ eventId: eventId, status: "confirmed" }), EventInvitation.find({ eventId: eventId })])
+
+			// Collect all emails
+			const emails = new Set<string>()
+			bookings.forEach((b) => emails.add(b.customerEmail))
+			invitations.forEach((i) => emails.add(i.email))
+
+			if (emails.size > 0) {
+				// Find users by email
+				const users = await User.find({ email: { $in: Array.from(emails) } })
+				const userIds = users.map((u) => u._id)
+
+				if (userIds.length > 0) {
+					await createBulkNotifications(userIds, {
+						type: "event_update",
+						title: "Event Update",
+						message: `${name} has been updated`,
+						resourceId: eventId as string,
+						resourceType: "event",
+						metadata: { eventName: name, updateMessage: "Event details updated" },
+					})
+					console.log(`Created ${userIds.length} event update notifications`)
+				}
+			}
+		} catch (notificationError) {
+			console.error("Failed to create event update notifications:", notificationError)
+			// Don't fail the request if notifications fail
+		}
 
 		return sendResponse(res, newEvent, "Event updated successfully.", true, ResCode.OK)
 	} catch (error: any) {

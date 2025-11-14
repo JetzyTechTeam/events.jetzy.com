@@ -69,6 +69,10 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 		}
 	}
 
+	// Ensure database connection
+	const { connectDB } = await import("@/lib/connect-db")
+	await connectDB()
+
 	try {
 		// Fetch the event
 		const event = await Events.findById(eventId).lean()

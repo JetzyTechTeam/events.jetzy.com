@@ -936,6 +936,10 @@ export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = 
 	const session = await authorizedOnly(context)
 	if (!session) return session
 
+	// Ensure database connection
+	const { connectDB } = await import("@/lib/connect-db")
+	await connectDB()
+
 	const { eventId } = context.params as { eventId: string }
 
 	// using event id, fetch event tickets from the database
