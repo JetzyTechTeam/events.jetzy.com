@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "script:create-group": "ts-node --project scripts/tsconfig.json -r dotenv/config scripts/create-event-group-with-email.ts"
   },
   "dependencies": {
     "@chakra-ui/icons": "^2.2.4",
@@ -66,11 +67,13 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/react-slick": "^0.23.13",
+    "dotenv": "^16.4.5",
     "eslint": "^8",
     "eslint-config-next": "14.2.2",
     "postcss": "^8",
     "sass": "^1.75.0",
     "tailwindcss": "^3.4.1",
+    "ts-node": "^10.9.2",
     "typescript": "^5",
     "url": "^0.11.3"
   }

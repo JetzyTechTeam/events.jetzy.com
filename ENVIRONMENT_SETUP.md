@@ -40,8 +40,8 @@ SENDGRID_FROM_EMAIL=noreply@yourdomain.com
 ### EdgeStore Configuration (Optional - for file uploads)
 
 ```
-EDGESTORE_ACCESS_KEY=your_edgestore_access_key_here
-EDGESTORE_SECRET_KEY=your_edgestore_secret_key_here
+EDGE_STORE_ACCESS_KEY=your_edgestore_access_key_here
+EDGE_STORE_SECRET_KEY=your_edgestore_secret_key_here
 ```
 
 ### Google Analytics (Optional)

@@ -20,43 +20,43 @@ import { IEvent } from "@/models/events/types"
 import { EmailProps } from "@/actions/send-update-email-to-users.action"
 import axios from "axios"
 import {
-  Box,
-  Button,
-  Flex,
-  FormControl,
-  FormLabel,
-  Input,
-  Text,
-  Textarea,
-  InputGroup,
-  InputLeftElement,
-  useDisclosure,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalCloseButton,
-  ModalBody,
-  ModalFooter,
-  MenuList,
-  MenuItem,
-  Menu,
-  MenuButton,
-  IconButton,
-  Switch,
+	Box,
+	Button,
+	Flex,
+	FormControl,
+	FormLabel,
+	Input,
+	Text,
+	Textarea,
+	InputGroup,
+	InputLeftElement,
+	useDisclosure,
+	Modal,
+	ModalOverlay,
+	ModalContent,
+	ModalHeader,
+	ModalCloseButton,
+	ModalBody,
+	ModalFooter,
+	MenuList,
+	MenuItem,
+	Menu,
+	MenuButton,
+	IconButton,
+	Switch,
 	useToast
 } from "@chakra-ui/react";
 import {
-  DescriptionSVG,
-  DotSVG,
-  DottedLinesSVG,
-  LocationSVG,
-  LockSVG,
-  MultipleUsersSVG,
-  PlusSVG,
-  TicketSVG,
-  UserTickSVG,
-  VerticalDotsSVG,
+	DescriptionSVG,
+	DotSVG,
+	DottedLinesSVG,
+	LocationSVG,
+	LockSVG,
+	MultipleUsersSVG,
+	PlusSVG,
+	TicketSVG,
+	UserTickSVG,
+	VerticalDotsSVG,
 } from "@/assets/icons";
 import { usePlacesWidget } from "react-google-autocomplete";
 import ImageUploadBox from "../../../../components/image-upload-box"
@@ -276,7 +276,7 @@ export default function UpdateEventPage({ event }: Props) {
 			}
 		}
 	};
-	
+
 	const handleEndDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
 			if (date) {
@@ -325,7 +325,20 @@ export default function UpdateEventPage({ event }: Props) {
 
 	const handleImageDelete = async (imageUrl: string) => {
 		try {
-			await edgestore.publicFiles.delete({ url: imageUrl });
+			// Try to delete from EdgeStore (may fail if already deleted)
+			try {
+				await edgestore.publicFiles.delete({ url: imageUrl });
+				console.log("Successfully deleted from EdgeStore:", imageUrl);
+			} catch (edgestoreError: any) {
+				// Log but don't fail - file might already be deleted
+				console.warn("EdgeStore deletion failed (file may not exist):", edgestoreError.message);
+			}
+
+			// Delete from database
+			const dbResponse = await axios.post('/api/delete-image', { url: imageUrl });
+			console.log("Database deletion response:", dbResponse.data);
+
+			// Update local state
 			setUploadedImages((prevImages) =>
 				prevImages.filter((img) => img.file !== imageUrl)
 			);
@@ -336,13 +349,14 @@ export default function UpdateEventPage({ event }: Props) {
 	};
 
 
-  // @ts-ignore 
-  if (session?.user?.role === Roles.USER) router.push('/console')
+	// @ts-ignore 
+	if (session?.user?.role === Roles.USER) router.push('/console')
 
 	return (
 		<ConsoleLayout
 			page={Pages.CreateEvent}
-			backBtn={`/console/events/${eventDetails._id}/manage`}
+			backBtn={`/ console / events / ${eventDetails._id}/manage`
+			}
 			maxW="max-w-4xl"
 		>
 			<Formik
@@ -366,22 +380,22 @@ export default function UpdateEventPage({ event }: Props) {
 							<Box flex="1">
 								<FormControl mb={4}>
 									<Flex alignItems="center">
-									<Field
-                      as={Input}
-                      id="name"
-                      name="name"
-                      placeholder="Event Name"
-                      size="lg"
-                      color="white"
-                      border="none"
-                      h="20"
-                      fontSize="38"
-                      fontWeight="bold"
-                      p="0"
-                      _focus={{ border: "none", boxShadow: "none" }}
-                      _placeholder={{ color: "#FFFFFF52" }}
-                      value={values?.name}
-                    />
+										<Field
+											as={Input}
+											id="name"
+											name="name"
+											placeholder="Event Name"
+											size="lg"
+											color="white"
+											border="none"
+											h="20"
+											fontSize="38"
+											fontWeight="bold"
+											p="0"
+											_focus={{ border: "none", boxShadow: "none" }}
+											_placeholder={{ color: "#FFFFFF52" }}
+											value={values?.name}
+										/>
 										<TimezoneSelect />
 									</Flex>
 								</FormControl>
@@ -518,9 +532,9 @@ export default function UpdateEventPage({ event }: Props) {
 											</Text>
 										</Flex>
 										<Switch
-											 name="requireApproval"
-                       isChecked={values.requireApproval}
-                       colorScheme="orange"
+											name="requireApproval"
+											isChecked={values.requireApproval}
+											colorScheme="orange"
 											onChange={() =>
 												setFieldValue(
 													"requireApproval",
@@ -754,7 +768,7 @@ export default function UpdateEventPage({ event }: Props) {
 													>
 														{editIndex !== null ? "Save Changes" : "Add Ticket"}
 													</Button>
-													<Button variant="ghost" color='white' _hover={{ color: 'black', bg: 'orange'}} onClick={onClose}>
+													<Button variant="ghost" color='white' _hover={{ color: 'black', bg: 'orange' }} onClick={onClose}>
 														Cancel
 													</Button>
 												</ModalFooter>
@@ -766,20 +780,20 @@ export default function UpdateEventPage({ event }: Props) {
 
 							{/* Right Side: Image Upload */}
 							<Box id="images" mb={6}>
-                <FormLabel>Event Image</FormLabel>
-                <ImageUploadBox
-                  uploadedImages={uploadedImages} 
-                  onImageChange={handleImageUpload}
-                  isUploading={isUploading}
-                  uploadProgress={uploadProgress}
-                  handleImageDelete={handleImageDelete}
-                />
-              </Box>
+								<FormLabel>Event Image</FormLabel>
+								<ImageUploadBox
+									uploadedImages={uploadedImages}
+									onImageChange={handleImageUpload}
+									isUploading={isUploading}
+									uploadProgress={uploadProgress}
+									handleImageDelete={handleImageDelete}
+								/>
+							</Box>
 						</Flex>
 					</Form>
 				)}
 			</Formik>
-		</ConsoleLayout>
+		</ConsoleLayout >
 	);
 }
 

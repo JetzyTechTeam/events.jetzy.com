@@ -57,7 +57,7 @@ import { TicketData } from "@/components/events/TicketCard";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { useEdgeStore } from "@/lib/edgestore";
 import { uniqueId } from "@/lib/utils";
-import ImageUploadBox  from "../../../components/image-upload-box";
+import ImageUploadBox from "../../../components/image-upload-box";
 import TimezoneSelect from "../../../components/timezone-select";
 import { useSession } from "next-auth/react";
 import { z } from "zod";
@@ -92,7 +92,7 @@ const CreateEventPage = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const dispatcher = useAppDispatch();
   const navigation = useRouter();
-  const { edgestore } = useEdgeStore(); 
+  const { edgestore } = useEdgeStore();
   const { data: session } = useSession();
   const router = useRouter();
 
@@ -100,7 +100,7 @@ const CreateEventPage = () => {
 
   const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([]);
   const [uploadProgress, setUploadProgress] = React.useState(0)
-  const [isUploading, setIsUploading] = React.useState(false); 
+  const [isUploading, setIsUploading] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [editIndex, setEditIndex] = React.useState<number | null>(null);
   const [tempTicket, setTempTicket] = React.useState<TicketData>({
@@ -167,10 +167,10 @@ const CreateEventPage = () => {
 
     setIsSubmitting(true);
 
-    dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({...values, privacy: values.privacy}) } })).then((res: any) => {
-    	if (res?.payload?.status) {
-    		navigation.push(`/console/events/${res.payload.data._id}/manage`);
-    	}
+    dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) } })).then((res: any) => {
+      if (res?.payload?.status) {
+        navigation.push(`/console/events/${res.payload.data._id}/manage`);
+      }
     }).finally(() => {
       setIsSubmitting(false);
     });
@@ -229,20 +229,29 @@ const CreateEventPage = () => {
       Error("Error", "Failed to upload file");
     } finally {
       setIsUploading(false);
-      setUploadProgress(0); 
+      setUploadProgress(0);
     }
   };
 
   const handleImageDelete = async (imageUrl: string) => {
     try {
-      await edgestore.publicFiles.delete({ url: imageUrl });
+      // Try to delete from EdgeStore (may fail if already deleted)
+      try {
+        await edgestore.publicFiles.delete({ url: imageUrl });
+        console.log("Successfully deleted from EdgeStore:", imageUrl);
+      } catch (edgestoreError: any) {
+        // Log but don't fail - file might already be deleted
+        console.warn("EdgeStore deletion failed (file may not exist):", edgestoreError.message);
+      }
+
+      // Update local state
       setUploadedImages((prevImages) =>
         prevImages.filter((img) => img.file !== imageUrl)
       );
     } catch (error: any) {
       console.error("Error deleting image", error);
       Error("Error", "Failed to delete image");
-    } 
+    }
   };
 
   // @ts-ignore 
@@ -679,7 +688,7 @@ const CreateEventPage = () => {
               <Box id="images" mb={6}>
                 <FormLabel>Event Image</FormLabel>
                 <ImageUploadBox
-                  uploadedImages={uploadedImages} 
+                  uploadedImages={uploadedImages}
                   onImageChange={handleImageUpload}
                   isUploading={isUploading}
                   uploadProgress={uploadProgress}
