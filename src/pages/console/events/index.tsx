@@ -100,7 +100,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 				<div className="flex items-center justify-between bg-[#1E1E1E] rounded-xl p-5">
 					{/* CONTENT SECTION  */}
 					<div className="space-y-5">
-						<Link href={`/${event._id}`}>
+						<Link href={`/${event.slug}`}>
 							<Heading as="h3" fontSize={20} cursor="pointer" _hover={{ textDecoration: "underline" }}>
 								{event.name}
 							</Heading>
