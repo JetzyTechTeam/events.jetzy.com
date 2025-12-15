@@ -12,19 +12,25 @@ import Head from "next/head"
 import { useSession } from "next-auth/react"
 import Link from "next/link"
 import React from "react"
+import CreateEventModal from "@/components/events/CreateEventModal"
+import { useDisclosure } from "@chakra-ui/react"
 
-const CreateEventButton = () => {
+const CreateEventButton = ({ onClick }: { onClick: () => void }) => {
 	return (
 		<div className="md:w-full xs:w-fit flex justify-end">
-			<Link href={ROUTES.dashboard.events.create} className="px-6 py-2.5 font-semibold bg-primary-purple text-white rounded-lg hover:bg-primary-dark transition-colors shadow-sm">
+			<button 
+				onClick={onClick}
+				className="px-6 py-2.5 font-semibold bg-primary-purple text-white rounded-lg hover:bg-primary-dark transition-colors shadow-sm"
+			>
 				Create Event
-			</Link>
+			</button>
 		</div>
 	)
 }
 export default function ConsoleDashboard() {
 	const { isFetching, dataList } = useAppSelector(getEventState)
 	const dispatcher = useAppDispatch()
+	const { isOpen: isCreateModalOpen, onOpen: onCreateModalOpen, onClose: onCreateModalClose } = useDisclosure()
 
 	const { data: session } = useSession()
 
@@ -38,6 +44,12 @@ export default function ConsoleDashboard() {
 		}
 	}, [admin])
 
+	const handleEventCreated = () => {
+		// Refresh events list
+		dispatcher(ListEventsThunk())
+		onCreateModalClose()
+	}
+
 	return (
 		<>
 			<Head>
@@ -45,7 +57,7 @@ export default function ConsoleDashboard() {
 				<meta name="description" content="Manage your events, view bookings, and track your event performance on Jetzy." />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
-			<ConsoleLayout page={Pages.Dasshboard} component={admin ? <CreateEventButton /> : <></>}>
+			<ConsoleLayout page={Pages.Dasshboard} component={admin ? <CreateEventButton onClick={onCreateModalOpen} /> : <></>}>
 				{!dataList?.length && !isFetching && (
 					<div className="text-center py-12">
 						<p className="text-text-muted text-lg">No events found.</p>
@@ -55,6 +67,13 @@ export default function ConsoleDashboard() {
 				{/* Display the data listing  */}
 				{isFetching ? <EventListingLoader /> : <CardGroup items={dataList as EventInterface[]} />}
 			</ConsoleLayout>
+
+			{/* Create Event Modal */}
+			<CreateEventModal 
+				isOpen={isCreateModalOpen} 
+				onClose={onCreateModalClose} 
+				onEventCreated={handleEventCreated}
+			/>
 		</>
 	)
 }

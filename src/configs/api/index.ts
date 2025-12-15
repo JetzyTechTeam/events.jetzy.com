@@ -4,6 +4,7 @@ const BaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
 
 const HTTPClient = axios.create({
 	responseType: "json",
+	withCredentials: true, // Enable sending cookies with requests
 })
 
 // request interceptors

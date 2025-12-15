@@ -7,7 +7,9 @@ import { GetServerSideProps } from "next"
 import Head from "next/head"
 import React from "react"
 import BookingEventsList from "@/components/bookings/BookingEventsList"
-import Link from "next/link"
+import CreateEventModal from "@/components/events/CreateEventModal"
+import { useDisclosure } from "@chakra-ui/react"
+import { useRouter } from "next/router"
 
 type Props = {
 	events: IEvent[] | null
@@ -39,6 +41,14 @@ export type Exportable = {
 }
 
 export default function BookingsPage({ events, pagination }: Props) {
+	const router = useRouter()
+	const { isOpen: isCreateModalOpen, onOpen: onCreateModalOpen, onClose: onCreateModalClose } = useDisclosure()
+
+	const handleEventCreated = () => {
+		// Refresh the page to show the new event
+		router.reload()
+	}
+
 	// Empty State
 	if (!events || events.length === 0) {
 		return (
@@ -68,16 +78,23 @@ export default function BookingsPage({ events, pagination }: Props) {
 							<p className="text-text-secondary mb-8">You haven&apos;t created any events yet. Create your first event to start receiving bookings.</p>
 
 							{/* CTA Button */}
-							<Link href="/console/events/create">
-								<button className="px-6 py-3 bg-primary-purple text-white font-medium rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg inline-flex items-center gap-2">
-									<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-									</svg>
-									Create Your First Event
-								</button>
-							</Link>
+							<button 
+								onClick={onCreateModalOpen}
+								className="px-6 py-3 bg-primary-purple text-white font-medium rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg inline-flex items-center gap-2"
+							>
+								<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+								</svg>
+								Create Your First Event
+							</button>
 						</div>
 					</div>
+
+					<CreateEventModal 
+						isOpen={isCreateModalOpen} 
+						onClose={onCreateModalClose} 
+						onEventCreated={handleEventCreated}
+					/>
 				</ConsoleLayout>
 			</>
 		)

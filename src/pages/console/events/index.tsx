@@ -16,6 +16,7 @@ import Link from "next/link"
 import { useRouter } from "next/router"
 import React, { useRef, useState } from "react"
 import { toast } from "react-toastify"
+import CreateEventModal from "@/components/events/CreateEventModal"
 
 type Pagination = {
 	total: number
@@ -35,6 +36,7 @@ export default function EventsListing({ events, pagination }: Props) {
 	const [eventList, setEventList] = React.useState<IEvent[]>(initialData)
 	const { data: session } = useSession()
 	const router = useRouter()
+	const { isOpen: isCreateModalOpen, onOpen: onCreateModalOpen, onClose: onCreateModalClose } = useDisclosure()
 
 	const handleEventRemoved = (removedEventId: string) => {
 		setEventList((prevList) => prevList.filter((event) => event._id.toString() !== removedEventId))
@@ -45,6 +47,11 @@ export default function EventsListing({ events, pagination }: Props) {
 			pathname: router.pathname,
 			query: { ...router.query, page: newPage },
 		})
+	}
+
+	const handleEventCreated = () => {
+		// Refresh the page to show the new event
+		router.reload()
 	}
 
 	// @ts-ignore
@@ -58,8 +65,19 @@ export default function EventsListing({ events, pagination }: Props) {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout maxW="max-w-[800px]" className="px-0">
-				<div className="max-w-[800px] mx-auto mb-5 px-4 sm:px-0">
+				<div className="max-w-[800px] mx-auto mb-5 px-4 sm:px-0 flex items-center justify-between">
 					<h2 className="text-2xl sm:text-3xl font-bold text-text-primary">Events</h2>
+					<Button
+						onClick={onCreateModalOpen}
+						bg="#8B5CF6"
+						color="white"
+						size="md"
+						px={6}
+						_hover={{ bg: "#7C3AED" }}
+						fontWeight="600"
+					>
+						Create Event
+					</Button>
 				</div>
 
 				<div className="space-y-4 sm:space-y-5 max-w-[800px] mx-auto px-4 sm:px-0">
@@ -154,6 +172,13 @@ export default function EventsListing({ events, pagination }: Props) {
 					</div>
 				)}
 			</ConsoleLayout>
+
+			{/* Create Event Modal */}
+			<CreateEventModal 
+				isOpen={isCreateModalOpen} 
+				onClose={onCreateModalClose} 
+				onEventCreated={handleEventCreated}
+			/>
 		</>
 	)
 }

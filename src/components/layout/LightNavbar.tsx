@@ -8,6 +8,8 @@ import { BellIcon, UserCircleIcon } from "@heroicons/react/24/outline"
 import { Menu } from "@headlessui/react"
 import SignupModal from "@/components/misc/SignupModal"
 import LoginModal from "@/components/misc/LoginModal"
+import CreateEventModal from "@/components/events/CreateEventModal"
+import { useDisclosure } from "@chakra-ui/react"
 
 // Navigation items with authentication requirements
 const navItems = [
@@ -15,7 +17,7 @@ const navItems = [
 	{ name: "Dashboard", href: "/console", requiresAuth: true },
 	{ name: "My Events", href: "/console/events", requiresAuth: true },
 	{ name: "Bookings", href: "/console/bookings", requiresAuth: true },
-	{ name: "Create Event", href: "/console/events/create", requiresAuth: true },
+	{ name: "Create Event", href: "#", requiresAuth: true, isModal: true },
 ]
 
 const LightNavbar: React.FC = () => {
@@ -24,6 +26,12 @@ const LightNavbar: React.FC = () => {
 	const user = session?.user
 	const [isSignupModalOpen, setIsSignupModalOpen] = useState(false)
 	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+	const { isOpen: isCreateModalOpen, onOpen: onCreateModalOpen, onClose: onCreateModalClose } = useDisclosure()
+
+	const handleEventCreated = () => {
+		// Navigate to events page after creation
+		router.push("/console/events")
+	}
 
 	const isActive = (href: string) => {
 		if (href === "/") {
@@ -56,17 +64,30 @@ const LightNavbar: React.FC = () => {
 
 					{/* Navigation Links */}
 					<div className="hidden md:flex items-center space-x-1">
-						{visibleNavItems.map((item) => (
-							<Link
-								key={item.name}
-								href={item.href}
-								className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-									isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
-								}`}
-							>
-								{item.name}
-							</Link>
-						))}
+						{visibleNavItems.map((item) => {
+							if (item.isModal) {
+								return (
+									<button
+										key={item.name}
+										onClick={onCreateModalOpen}
+										className="px-4 py-2 rounded-md text-sm font-medium transition-colors text-text-secondary hover:text-text-primary hover:bg-background-gray"
+									>
+										{item.name}
+									</button>
+								)
+							}
+							return (
+								<Link
+									key={item.name}
+									href={item.href}
+									className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+										isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
+									}`}
+								>
+									{item.name}
+								</Link>
+							)
+						})}
 					</div>
 
 					{/* Right Section */}
@@ -126,17 +147,30 @@ const LightNavbar: React.FC = () => {
 			{/* Mobile Navigation */}
 			<div className="md:hidden border-t border-border-light">
 				<div className="px-2 pt-2 pb-3 space-y-1">
-					{visibleNavItems.map((item) => (
-						<Link
-							key={item.name}
-							href={item.href}
-							className={`block px-3 py-2 rounded-md text-base font-medium ${
-								isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
-							}`}
-						>
-							{item.name}
-						</Link>
-					))}
+					{visibleNavItems.map((item) => {
+						if (item.isModal) {
+							return (
+								<button
+									key={item.name}
+									onClick={onCreateModalOpen}
+									className="w-full text-left block px-3 py-2 rounded-md text-base font-medium text-text-secondary hover:text-text-primary hover:bg-background-gray"
+								>
+									{item.name}
+								</button>
+							)
+						}
+						return (
+							<Link
+								key={item.name}
+								href={item.href}
+								className={`block px-3 py-2 rounded-md text-base font-medium ${
+									isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
+								}`}
+							>
+								{item.name}
+							</Link>
+						)
+					})}
 				</div>
 
 				{/* Mobile User Section */}
@@ -196,6 +230,13 @@ const LightNavbar: React.FC = () => {
 					setIsSignupModalOpen(false)
 					setIsLoginModalOpen(true)
 				}}
+			/>
+
+			{/* Create Event Modal */}
+			<CreateEventModal 
+				isOpen={isCreateModalOpen} 
+				onClose={onCreateModalClose} 
+				onEventCreated={handleEventCreated}
 			/>
 		</nav>
 	)
