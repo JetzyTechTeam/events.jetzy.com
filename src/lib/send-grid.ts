@@ -52,6 +52,18 @@ type EventInvitationData = {
 	hostName: string
 }
 
+type BlastEmailData = {
+	email: string
+	eventName: string
+	eventSlug: string
+	eventDate: string
+	eventLocation: string
+	hostName: string
+	emailType: "invitation" | "reminder" | "update" | "announcement" | "custom"
+	subject: string
+	customMessage: string
+}
+
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets }: WaitingListApprovalData) => {
 	try {
 		const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
@@ -234,6 +246,98 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
 		console.log(`✅ Event invitation sent successfully to: ${email}`)
 	} catch (error) {
 		console.error("❌ Failed to send event invitation email:", error)
+		throw error
+	}
+}
+
+export const sendBlastEmail = async ({
+	email,
+	eventName,
+	eventSlug,
+	eventDate,
+	eventLocation,
+	hostName,
+	emailType,
+	subject,
+	customMessage,
+}: BlastEmailData) => {
+	const eventUrl = `${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/events/${eventSlug}`
+
+	// Dynamic button text and styling based on email type
+	const buttonConfig = {
+		invitation: { text: "View Event & RSVP", color: "#8B5CF6", emoji: "🎉" },
+		reminder: { text: "View Event Details", color: "#F59E0B", emoji: "⏰" },
+		update: { text: "See What Changed", color: "#3B82F6", emoji: "📢" },
+		announcement: { text: "Read More", color: "#10B981", emoji: "📣" },
+		custom: { text: "View Event", color: "#8B5CF6", emoji: "✉️" },
+	}
+
+	const config = buttonConfig[emailType]
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: {
+				email: process.env.SENDGRID_EMAIL_SENDER as string,
+				name: "Jetzy Events",
+			},
+			replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
+			subject,
+			text: `${eventName}\n\n${customMessage}\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event: ${eventUrl}\n\n--\nSent by ${hostName} via Jetzy Events`,
+			html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background: linear-gradient(135deg, ${config.color} 0%, ${config.color}dd 100%); padding: 40px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 700;">${config.emoji} ${subject}</h1>
+          </div>
+          
+          <div style="background-color: white; padding: 30px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+            <div style="margin-bottom: 25px;">
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6; margin: 0;">
+                Message from ${hostName}:
+              </p>
+            </div>
+
+            <div style="background: #F9FAFB; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid ${config.color};">
+              <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0; white-space: pre-wrap;">${customMessage}</p>
+            </div>
+
+            <div style="background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%); padding: 25px; border-radius: 12px; margin: 25px 0;">
+              <h2 style="color: #1F2937; margin: 0 0 20px 0; font-size: 24px; font-weight: 700;">${eventName}</h2>
+              
+              <div style="margin-bottom: 12px;">
+                <span style="color: #6B7280; font-size: 14px; font-weight: 600; text-transform: uppercase;">📅 Date & Time</span>
+                <p style="color: #1F2937; font-size: 16px; margin: 5px 0 0 0; font-weight: 500;">${eventDate}</p>
+              </div>
+              
+              <div style="margin-bottom: 0;">
+                <span style="color: #6B7280; font-size: 14px; font-weight: 600; text-transform: uppercase;">📍 Location</span>
+                <p style="color: #1F2937; font-size: 16px; margin: 5px 0 0 0; font-weight: 500;">${eventLocation}</p>
+              </div>
+            </div>
+
+            <div style="text-align: center; margin: 35px 0 25px 0;">
+              <a href="${eventUrl}" style="background: linear-gradient(135deg, ${config.color} 0%, ${config.color}dd 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2); transition: all 0.2s;">
+                ${config.text}
+              </a>
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
+              <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+                Sent by ${hostName} via Jetzy Events<br/>
+                <a href="${eventUrl}" style="color: ${config.color}; text-decoration: none;">View event</a> | 
+                <a href="${eventUrl}" style="color: ${config.color}; text-decoration: none;">Unsubscribe</a>
+              </p>
+              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
+                Jetzy Events, Inc.
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
+		})
+		console.log(`✅ Blast email sent successfully to: ${email}`)
+	} catch (error) {
+		console.error("❌ Failed to send blast email:", error)
 		throw error
 	}
 }
