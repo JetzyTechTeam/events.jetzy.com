@@ -3,6 +3,8 @@ import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
+import { EventInvitation } from "@/models/events/event-invitations"
+import { sendEventInvitation } from "@/lib/send-grid"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
@@ -67,7 +69,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants } = params
+		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants, invitedGuests } = params
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -136,6 +138,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Create event tracker
 		await newEvent.createEventTracker(capacity)
+
+		// Save invited guests to EventInvitation collection and send emails
+		if (invitedGuests && invitedGuests.length > 0) {
+			const invitations = invitedGuests.map((email: string) => ({
+				eventId: newEvent._id,
+				email: email.toLowerCase().trim(),
+				status: "pending",
+				invitedAt: new Date(),
+			}))
+			
+			try {
+				await EventInvitation.insertMany(invitations)
+				console.log(`✅ Created ${invitations.length} event invitations`)
+
+				// Send invitation emails
+				const eventTimezone = timezone?.split(') ')[1] || 'UTC'
+				const eventStart = dayjs.utc(start).tz(eventTimezone)
+				const eventEnd = dayjs.utc(end).tz(eventTimezone)
+				const eventDate = `${eventStart.format('ddd, MMM DD, YYYY')} at ${eventStart.format('h:mm A')} - ${eventEnd.format('h:mm A')} ${eventTimezone}`
+
+				const emailPromises = invitations.map(async (invitation) => {
+					try {
+						await sendEventInvitation({
+							email: invitation.email,
+							eventName: name,
+							eventSlug: newEvent.slug,
+							eventDate,
+							eventLocation: location,
+							hostName: session.user?.name || session.user?.email || "Event Host",
+						})
+						return { email: invitation.email, success: true }
+					} catch (error: any) {
+						console.error(`❌ Failed to send invitation to ${invitation.email}:`, error.message)
+						return { email: invitation.email, success: false }
+					}
+				})
+
+				const emailResults = await Promise.allSettled(emailPromises)
+				const successCount = emailResults.filter(
+					(r) => r.status === 'fulfilled' && r.value.success
+				).length
+				console.log(`📧 Sent ${successCount}/${invitations.length} invitation emails`)
+			} catch (inviteError: any) {
+				console.error("⚠️ Failed to create invitations:", inviteError.message)
+				// Don't fail the event creation if invitations fail
+			}
+		}
 
 		return sendResponse(res, newEvent, "Event created successfully.", true, ResCode.CREATED)
 	} catch (error: any) {

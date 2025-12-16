@@ -31,3 +31,7 @@ export const UpdateTicketApis = async (
 ): Promise<ServerResponse<EventInterface, any>> => {
 	return await PUT(eventEndPoints.tickets.update.replace(":eventId", params?.data?.params.eventId as string).replace(":ticketId", params?.data?.params.ticketId as string), params?.data?.payload)
 }
+
+export const SendInvitationsApis = async (params: RequestParams<{ eventId: string }>): Promise<ServerResponse<any, any>> => {
+	return await POST(eventEndPoints.sendInvitations, params?.data)
+}

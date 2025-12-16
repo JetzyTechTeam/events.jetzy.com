@@ -43,6 +43,15 @@ type WaitingListApprovalData = {
 	}>
 }
 
+type EventInvitationData = {
+	email: string
+	eventName: string
+	eventSlug: string
+	eventDate: string
+	eventLocation: string
+	hostName: string
+}
+
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets }: WaitingListApprovalData) => {
 	try {
 		const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
@@ -150,6 +159,81 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
 		})
 	} catch (error) {
 		console.error("Failed to send waiting list notification:", error)
+		throw error
+	}
+}
+
+export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDate, eventLocation, hostName }: EventInvitationData) => {
+	const eventUrl = `${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/events/${eventSlug}`
+	
+	try {
+		await sgMail.send({
+			to: email,
+			from: {
+				email: process.env.SENDGRID_EMAIL_SENDER as string,
+				name: 'Jetzy Events'
+			},
+			replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
+			subject: `${hostName} invited you to ${eventName}`,
+			text: `You're invited to ${eventName}!\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event details: ${eventUrl}\n\n--\nThis invitation was sent by ${hostName} via Jetzy Events`,
+			html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); padding: 40px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 700;">You're Invited!</h1>
+          </div>
+          
+          <div style="background-color: white; padding: 30px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+            <div style="margin-bottom: 25px;">
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6; margin: 0;">
+                ${hostName} has invited you to attend:
+              </p>
+            </div>
+
+            <div style="background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%); padding: 25px; border-radius: 12px; margin: 25px 0; border-left: 4px solid #8B5CF6;">
+              <h2 style="color: #1F2937; margin: 0 0 20px 0; font-size: 24px; font-weight: 700;">${eventName}</h2>
+              
+              <div style="margin-bottom: 12px;">
+                <span style="color: #6B7280; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">📅 Date & Time</span>
+                <p style="color: #1F2937; font-size: 16px; margin: 5px 0 0 0; font-weight: 500;">${eventDate}</p>
+              </div>
+              
+              <div style="margin-bottom: 0;">
+                <span style="color: #6B7280; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">📍 Location</span>
+                <p style="color: #1F2937; font-size: 16px; margin: 5px 0 0 0; font-weight: 500;">${eventLocation}</p>
+              </div>
+            </div>
+
+            <div style="text-align: center; margin: 35px 0 25px 0;">
+              <a href="${eventUrl}" style="background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); transition: all 0.2s;">
+                View Event Details & RSVP
+              </a>
+            </div>
+
+            <div style="background-color: #FEF3C7; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #F59E0B;">
+              <p style="color: #92400E; margin: 0; font-size: 14px; line-height: 1.6;">
+                <strong>👉 Don't forget to RSVP!</strong><br/>
+                Click the button above to confirm your attendance and get all the event details.
+              </p>
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
+              <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+                This invitation was sent by ${hostName} via Jetzy Events<br/>
+                <a href="${eventUrl}" style="color: #8B5CF6; text-decoration: none;">View event</a> | 
+                <a href="${eventUrl}" style="color: #8B5CF6; text-decoration: none;">Unsubscribe</a>
+              </p>
+              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
+                Jetzy Events, Inc.<br/>
+                If you don't want to receive these emails, you can unsubscribe above.
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
+		})
+		console.log(`✅ Event invitation sent successfully to: ${email}`)
+	} catch (error) {
+		console.error("❌ Failed to send event invitation email:", error)
 		throw error
 	}
 }

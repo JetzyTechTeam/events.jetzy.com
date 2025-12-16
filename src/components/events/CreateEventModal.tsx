@@ -72,6 +72,7 @@ const initialValues: CreateEventFormData = {
 	placeId: "",
 	isPaid: false,
 	showParticipants: true,
+	invitedGuests: [],
 }
 
 interface CreateEventModalProps {
@@ -96,6 +97,35 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 	const [tickets, setTickets] = React.useState<any[]>([])
 	const [invitedGuests, setInvitedGuests] = React.useState<string[]>([])
 	const [guestEmail, setGuestEmail] = React.useState("")
+
+	// Email validation helper
+	const isValidEmail = (email: string): boolean => {
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+		return emailRegex.test(email.trim())
+	}
+
+	// Add guest with validation
+	const handleAddGuest = () => {
+		const trimmedEmail = guestEmail.trim().toLowerCase()
+		
+		if (!trimmedEmail) {
+			Error("Validation Error", "Please enter an email address")
+			return
+		}
+		
+		if (!isValidEmail(trimmedEmail)) {
+			Error("Validation Error", "Please enter a valid email address")
+			return
+		}
+		
+		if (invitedGuests.includes(trimmedEmail)) {
+			Error("Duplicate Email", "This email has already been invited")
+			return
+		}
+		
+		setInvitedGuests([...invitedGuests, trimmedEmail])
+		setGuestEmail("")
+	}
 
 	// Load Google Maps Script
 	React.useEffect(() => {
@@ -290,6 +320,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 		values.images = uploadedImages
 		values.tickets = finalTickets
 		values.isPaid = finalTickets.some((t) => t.price > 0)
+		values.invitedGuests = invitedGuests
 
 		setIsSubmitting(true)
 
@@ -771,10 +802,9 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 														value={guestEmail}
 														onChange={(e) => setGuestEmail(e.target.value)}
 														onKeyPress={(e) => {
-															if (e.key === "Enter" && guestEmail && guestEmail.includes("@")) {
+															if (e.key === "Enter") {
 																e.preventDefault()
-																setInvitedGuests([...invitedGuests, guestEmail])
-																setGuestEmail("")
+																handleAddGuest()
 															}
 														}}
 													/>
@@ -783,13 +813,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 														bg="#8B5CF6"
 														color="white"
 														_hover={{ bg: "#7C3AED" }}
-														isDisabled={!guestEmail || !guestEmail.includes("@")}
-														onClick={() => {
-															if (guestEmail && guestEmail.includes("@")) {
-																setInvitedGuests([...invitedGuests, guestEmail])
-																setGuestEmail("")
-															}
-														}}
+														isDisabled={!guestEmail.trim()}
+														onClick={handleAddGuest}
 													>
 														Add
 													</Button>

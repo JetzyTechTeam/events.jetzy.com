@@ -36,6 +36,7 @@ export type CreateEventFormData = {
 	desc: string
 	privacy: 'public' | 'private'
 	timezone: string
+	invitedGuests?: string[]
 }
 
 export type CreateTicketFormData = {
