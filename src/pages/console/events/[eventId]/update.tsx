@@ -13,21 +13,14 @@ import {
 	InputGroup,
 	InputLeftElement,
 	useDisclosure,
-	Modal,
-	ModalOverlay,
-	ModalContent,
-	ModalHeader,
-	ModalCloseButton,
-	ModalBody,
-	ModalFooter,
-	MenuList,
-	MenuItem,
-	Menu,
-	MenuButton,
+	Grid,
+	GridItem,
 	IconButton,
-	Select,
+	Image,
+	Avatar,
+	Spinner,
 } from "@chakra-ui/react"
-import { Formik, Form, Field, FormikProps, FieldArray } from "formik"
+import { Formik, Form, Field, FormikProps } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
 import { z } from "zod"
@@ -35,17 +28,17 @@ import axios from "axios"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { CreateEventFormData, Pages, Roles } from "@/types"
 import { usePlacesWidget } from "react-google-autocomplete"
-import { LocationSVG, PlusSVG, VerticalDotsSVG } from "@/assets/icons"
+import { ChevronDownIcon } from "@chakra-ui/icons"
+import { FiPlus, FiX, FiMapPin, FiCalendar, FiClock, FiDollarSign, FiSettings } from "react-icons/fi"
 import TimePicker from "@/components/form/TimePicker"
 import DatePicker from "@/components/form/DatePicker"
-import { Error } from "@/lib/_toaster"
+import { Error, Success } from "@/lib/_toaster"
 import { UpdateEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
 import { TicketData } from "@/components/events/TicketCard"
 import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { useEdgeStore } from "@Jetzy/lib/edgestore"
 import { uniqueId } from "@/lib/utils"
-import ImageUploadBox from "../../../../components/image-upload-box"
 import TimezoneSelect from "../../../../components/timezone-select"
 import { useSession } from "next-auth/react"
 import { IEvent } from "@/models/events/types"
@@ -53,6 +46,8 @@ import { EmailProps } from "@/actions/send-update-email-to-users.action"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { Types } from "mongoose"
+import CollapsibleSection from "@/components/events/CollapsibleSection"
+import PrivacySelector from "@/components/events/PrivacySelector"
 
 type Props = {
 	event: string
@@ -71,8 +66,6 @@ const updateEventSchema = z.object({
 export default function UpdateEventPage({ event }: Props) {
 	const eventDetails = React.useMemo(() => JSON.parse(event) as IEvent, [event])
 
-	const { isOpen, onOpen, onClose } = useDisclosure()
-	const { isOpen: isInviteOpen, onOpen: onInviteOpen, onClose: onInviteClose } = useDisclosure()
 	const dispatcher = useAppDispatch()
 	const navigation = useRouter()
 	const { edgestore } = useEdgeStore()
@@ -85,13 +78,18 @@ export default function UpdateEventPage({ event }: Props) {
 	const [uploadProgress, setUploadProgress] = React.useState(0)
 	const [isUploading, setIsUploading] = React.useState(false)
 	const [isSubmitting, setIsSubmitting] = React.useState(false)
-	const [editIndex, setEditIndex] = React.useState<number | null>(null)
+	const [mainImageIndex, setMainImageIndex] = React.useState(0)
+	
+	// Ticket state (inline management)
 	const [tempTicket, setTempTicket] = React.useState<TicketData>({
 		id: "",
 		title: "",
 		description: "",
 		price: 0,
 	})
+	const [tickets, setTickets] = React.useState<TicketData[]>([])
+
+	// Guest invite state
 	const [invitedGuests, setInvitedGuests] = React.useState<string[]>([])
 	const [guestEmail, setGuestEmail] = React.useState("")
 
@@ -113,6 +111,7 @@ export default function UpdateEventPage({ event }: Props) {
 				price: Number(ticket.price),
 				description: ticket.desc,
 			}))
+			setTickets(newTickets)
 			// Set initial tickets in Formik state
 			if (formikRef.current) {
 				formikRef.current.setFieldValue("tickets", newTickets)
@@ -129,12 +128,7 @@ export default function UpdateEventPage({ event }: Props) {
 		requireApproval: eventDetails.requireApproval,
 		isPaid: eventDetails.isPaid,
 		images: uploadedImages,
-		tickets: eventDetails.tickets.map((ticket) => ({
-			id: ticket._id?.toString() || uniqueId(10),
-			title: ticket.name,
-			price: Number(ticket.price),
-			description: ticket.desc,
-		})),
+		tickets: tickets,
 		privacy: eventDetails.privacy,
 		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
 		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
@@ -187,7 +181,13 @@ export default function UpdateEventPage({ event }: Props) {
 			return
 		}
 
+		if (uploadedImages.length === 0) {
+			Error("Validation Error", "Please add at least one image")
+			return
+		}
+
 		values.images = uploadedImages
+		values.tickets = tickets
 
 		if (values.tickets.length > 0) values.isPaid = true
 		else values.isPaid = false
@@ -203,47 +203,15 @@ export default function UpdateEventPage({ event }: Props) {
 
 		const dateTimeChanged = startDateChanged || startTimeChanged || endDateChanged || endTimeChanged
 
-		// Fetch bookings for the event
-		const events = await axios
-			.post(`/api/get-bookings`, {
-				eventId: eventDetails._id,
-			})
-			.then((response) => response.data)
-			.catch((error) => {
-				console.error("Error fetching bookings:", error)
-				return []
-			})
-
-		// if (events.length > 0 && (nameChanged || locationChanged || dateTimeChanged)) {
-		// 	const updatePromises = events.map((event: any) =>
-		// 		sendEventUpdate({
-		// 			eventName: values.name,
-		// 			oldEventName: eventDetails.name,
-		// 			location: values.location,
-		// 			oldLocation: eventDetails.location,
-		// 			startDate: values.startDate,
-		// 			oldStartDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10),
-		// 			endDate: values.endDate,
-		// 			oldEndDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
-		// 			endTime: values.endTime,
-		// 			oldEndTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
-		// 			startTime: values.startTime,
-		// 			oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
-		// 			userEmail: event.customerEmail,
-		// 		}))
-		// 	Promise.all(updatePromises)
-		// 		.then((results) => {
-		// 			console.log('All event updates sent successfully:', results);
-		// 		})
-		// 		.catch((error) => {
-		// 			console.error('One or more event updates failed:', error);
-		// 		});
-		// }
-
+		// Fetch bookings logic (commented out in original, preserved here just in case)
+		
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: eventDetails._id.toString() }))
 			.then((res: any) => {
 				if (res?.payload?.status) {
+					Success("Success", "Event updated successfully!")
 					navigation.push(`/console/events`)
+				} else {
+					Error("Error", res?.payload?.message || "Failed to update event")
 				}
 			})
 			.finally(() => {
@@ -316,6 +284,27 @@ export default function UpdateEventPage({ event }: Props) {
 		}
 	}
 
+	const handleAddTicket = () => {
+		if (!tempTicket.title) {
+			Error("Validation Error", "Please enter a ticket name")
+			return
+		}
+		if (!tempTicket.description) {
+			Error("Validation Error", "Please enter a ticket description")
+			return
+		}
+		if (tempTicket.price < 0) {
+			Error("Validation Error", "Price cannot be negative")
+			return
+		}
+		setTickets([...tickets, { ...tempTicket, id: uniqueId(10) }])
+		setTempTicket({ id: "", title: "", description: "", price: 0 })
+	}
+
+	const handleRemoveTicket = (ticketId: string) => {
+		setTickets(tickets.filter((t) => t.id !== ticketId))
+	}
+
 	// @ts-ignore
 	if (session?.user?.role === Roles.USER) router.push("/console")
 
@@ -326,607 +315,591 @@ export default function UpdateEventPage({ event }: Props) {
 				<meta name="description" content={`Update details for ${eventDetails.name}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
-			<ConsoleLayout page={Pages.UpdateEvent} backBtn={`/console/events/${eventDetails._id}/manage`} maxW="max-w-3xl">
-				<Formik initialValues={initialValues as CreateEventFormData} onSubmit={onSubmit} innerRef={formikRef} enableReinitialize={true}>
-					{({ values, setFieldValue }) => (
-						<Form>
-							<Box maxW="700px" mx="auto" bg="#FFFFFF" borderRadius="xl" p={{ base: 6, md: 8 }} boxShadow="sm" border="1px" borderColor="#E5E7EB">
-								{/* Event Name and Timezone */}
-								<Box mb={6}>
-									<FormControl mb={1}>
-										<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
-											Event Name
-										</FormLabel>
-										<Field
-											as={Input}
-											id="name"
-											name="name"
-											placeholder="Enter event name"
-											size="lg"
-											bg="#FFFFFF"
-											border="1px"
-											borderColor="#E5E7EB"
-											color="#1F2937"
-											fontSize="md"
-											_hover={{ borderColor: "#D1D5DB" }}
-											_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-											_placeholder={{ color: "#9CA3AF" }}
-											value={values?.name}
-										/>
-									</FormControl>
-									<Box mt={4}>
-										<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
-											Time Zone
-										</FormLabel>
-										<TimezoneSelect />
-									</Box>
-								</Box>
-
-								{/* Description */}
-								<FormControl mb={6}>
-									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
-										Description
-									</FormLabel>
-									<Field
-										as={Textarea}
-										name="desc"
-										placeholder="Add description"
-										bg="#FFFFFF"
-										border="1px"
+			<ConsoleLayout page={Pages.UpdateEvent} backBtn={`/console/events/${eventDetails._id}/manage`} maxW="max-w-4xl">
+				<Box bg="#FFFFFF" borderRadius="xl" boxShadow="sm" border="1px" borderColor="#E5E7EB" overflow="hidden">
+					<Formik initialValues={initialValues as CreateEventFormData} onSubmit={onSubmit} innerRef={formikRef} enableReinitialize={true}>
+						{({ values, setFieldValue }) => (
+							<Form>
+								<Box>
+									{/* Image Upload Area */}
+									<Box
+										position="relative"
+										h="300px"
+										bg="#F3F4F6"
+										borderBottom="1px"
 										borderColor="#E5E7EB"
-										color="#1F2937"
-										fontSize="md"
-										rows={4}
-										_hover={{ borderColor: "#D1D5DB" }}
-										_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-										_placeholder={{ color: "#9CA3AF" }}
-										value={values.desc}
-									/>
-								</FormControl>
-
-								{/* Date and Time */}
-								<Box mb={6}>
-									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={3}>
-										Date & Time
-									</FormLabel>
-									<Flex gap={4} direction={{ base: "column", sm: "row" }}>
-										<Box flex="1">
-											<Text fontSize="xs" color="#6B7280" mb={2}>
-												Start Date
-											</Text>
-											<DatePicker onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" defaultDate={values.startDate} />
-										</Box>
-										<Box flex="1">
-											<Text fontSize="xs" color="#6B7280" mb={2}>
-												Start Time
-											</Text>
-											<TimePicker onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" defaultValue={values.startTime} />
-										</Box>
-									</Flex>
-									<Flex gap={4} direction={{ base: "column", sm: "row" }} mt={3}>
-										<Box flex="1">
-											<Text fontSize="xs" color="#6B7280" mb={2}>
-												End Date
-											</Text>
-											<DatePicker onChange={(date) => handleEndDateChange(date)} placeholder="End Date" defaultDate={values.endDate} />
-										</Box>
-										<Box flex="1">
-											<Text fontSize="xs" color="#6B7280" mb={2}>
-												End Time
-											</Text>
-											<TimePicker onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" defaultValue={values.endTime} />
-										</Box>
-									</Flex>
-								</Box>
-
-								{/* Location */}
-								<FormControl mb={6}>
-									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
-										Location
-									</FormLabel>
-									<InputGroup>
-										<InputLeftElement pointerEvents="none" color="#9CA3AF">
-											<LocationSVG />
-										</InputLeftElement>
-										<Field
-											ref={ref}
-											as={Input}
-											id="location"
-											name="location"
-											placeholder="Choose location"
-											bg="#FFFFFF"
-											border="1px"
-											borderColor="#E5E7EB"
-											color="#1F2937"
-											fontSize="md"
-											pl="10"
-											_hover={{ borderColor: "#D1D5DB" }}
-											_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-											_placeholder={{ color: "#9CA3AF" }}
-											value={values.location}
-										/>
-									</InputGroup>
-								</FormControl>
-
-								{/* Invite Guests */}
-								<Box mb={6}>
-									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
-										Invite Guests
-									</FormLabel>
-									<Flex gap={2} alignItems="center" flexWrap="wrap">
-										{/* Display invited guests */}
-										{invitedGuests.map((email, index) => (
-											<Box
-												key={index}
-												w="40px"
-												h="40px"
-												borderRadius="full"
-												bg="#8B5CF6"
-												border="2px"
-												borderColor="#FFFFFF"
-												display="flex"
-												alignItems="center"
-												justifyContent="center"
-												position="relative"
-												title={email}
-											>
-												<Text fontSize="xs" color="#FFFFFF" fontWeight="600">
-													{email.charAt(0).toUpperCase()}
+										cursor="pointer"
+										_hover={{ bg: "#E5E7EB" }}
+										onClick={() => document.getElementById("image-upload-input")?.click()}
+									>
+										{uploadedImages.length > 0 ? (
+											<Image
+												src={uploadedImages[mainImageIndex]?.file || uploadedImages[0]?.file}
+												alt="Event"
+												w="100%"
+												h="100%"
+												objectFit="cover"
+											/>
+										) : (
+											<Flex h="100%" alignItems="center" justifyContent="center" flexDirection="column" gap={2}>
+												<Text fontSize="40px">📸</Text>
+												<Text fontSize="sm" color="#6B7280">
+													Add photo
 												</Text>
-											</Box>
-										))}
-										{/* Placeholder avatar circles */}
-										{invitedGuests.length < 5 &&
-											Array.from({ length: Math.min(5 - invitedGuests.length, 5) }).map((_, i) => (
-												<Box key={i} w="40px" h="40px" borderRadius="full" bg="#F9FAFB" border="2px" borderColor="#FFFFFF" display="flex" alignItems="center" justifyContent="center">
-													<Text fontSize="xs" color="#9CA3AF">
-														👤
-													</Text>
+											</Flex>
+										)}
+										<Button
+											position="absolute"
+											bottom={4}
+											right={4}
+											size="sm"
+											bg="rgba(255,255,255,0.9)"
+											color="#1F2937"
+											leftIcon={<FiPlus />}
+											_hover={{ bg: "white" }}
+											onClick={(e) => {
+												e.stopPropagation()
+												document.getElementById("image-upload-input")?.click()
+											}}
+										>
+											Add
+										</Button>
+										<input
+											id="image-upload-input"
+											type="file"
+											accept="image/*"
+											multiple
+											style={{ display: "none" }}
+											onChange={(e) => handleImageUpload(e.target.files)}
+										/>
+									</Box>
+
+									{/* Uploaded Images Preview */}
+									{uploadedImages.length > 1 && (
+										<Flex gap={2} p={3} overflowX="auto" borderBottom="1px" borderColor="#E5E7EB">
+											{uploadedImages.map((img, idx) => (
+												<Box key={img.id} position="relative" flexShrink={0}>
+													<Image
+														src={img.file}
+														alt=""
+														w="60px"
+														h="60px"
+														objectFit="cover"
+														borderRadius="md"
+														border={idx === mainImageIndex ? "2px solid" : "1px solid"}
+														borderColor={idx === mainImageIndex ? "#8B5CF6" : "#E5E7EB"}
+														cursor="pointer"
+														onClick={() => setMainImageIndex(idx)}
+													/>
+													<IconButton
+														aria-label="Delete"
+														icon={<FiX />}
+														size="xs"
+														position="absolute"
+														top="-6px"
+														right="-6px"
+														borderRadius="full"
+														colorScheme="red"
+														onClick={(e) => {
+															e.stopPropagation()
+															handleImageDelete(img.file)
+														}}
+													/>
 												</Box>
 											))}
-										<Box
-											w="40px"
-											h="40px"
-											borderRadius="full"
-											bg="#FFFFFF"
-											border="2px"
-											borderColor="#E5E7EB"
-											display="flex"
-											alignItems="center"
-											justifyContent="center"
-											cursor="pointer"
-											transition="all 0.2s"
-											_hover={{ borderColor: "#8B5CF6", bg: "#F9FAFB" }}
-											onClick={onInviteOpen}
-										>
-											<Text fontSize="lg" color="#8B5CF6" fontWeight="600">
-												+
-											</Text>
-										</Box>
-									</Flex>
-								</Box>
+										</Flex>
+									)}
 
-								{/* Event Options */}
-								<Box mb={6}>
-									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={3}>
-										Event Options
-									</FormLabel>
-									<Flex gap={4} direction={{ base: "column", sm: "row" }} mb={3}>
-										<Box flex="1">
-											<Text fontSize="xs" color="#6B7280" mb={2}>
-												Privacy
-											</Text>
-											<Field
-												as={Select}
-												name="privacy"
-												bg="#FFFFFF"
-												border="1px"
-												borderColor="#E5E7EB"
-												color="#1F2937"
-												fontSize="sm"
-												value={values?.privacy}
-												_hover={{ borderColor: "#D1D5DB" }}
-												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-											>
-												<option value="private">Private</option>
-												<option value="public">Public</option>
-											</Field>
-										</Box>
-										<Box flex="1">
-											<Text fontSize="xs" color="#6B7280" mb={2}>
-												Capacity
-											</Text>
+									<Box p={{ base: 6, md: 8 }}>
+										{/* Host Profile Section */}
+										<Flex alignItems="center" gap={3} mb={6} pb={4} borderBottom="1px" borderColor="#E5E7EB">
+											<Avatar size="md" name={session?.user?.name || session?.user?.email || "Host"} />
+											<Box flex={1}>
+												<Text fontSize="16px" fontWeight="600" color="#1F2937">
+													{session?.user?.name || session?.user?.email || "Your Name"}
+												</Text>
+												<Text fontSize="14px" color="#6B7280">
+													Host — Your profile
+												</Text>
+											</Box>
+										</Flex>
+
+										{/* Event Name */}
+										<Box mb={6}>
 											<Field
 												as={Input}
-												name="capacity"
-												type="number"
-												min={0}
-												value={values.capacity || 0}
-												placeholder="Add capacity"
-												bg="#FFFFFF"
-												border="1px"
+												name="name"
+												placeholder="Event name"
+												size="lg"
+												border="none"
+												borderBottom="2px"
 												borderColor="#E5E7EB"
+												borderRadius={0}
+												px={0}
+												fontSize="24px"
+												fontWeight="600"
 												color="#1F2937"
-												fontSize="sm"
-												_hover={{ borderColor: "#D1D5DB" }}
-												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-												_placeholder={{ color: "#9CA3AF" }}
+												_placeholder={{ color: "#9CA3AF", fontWeight: "400" }}
+												_hover={{ borderColor: "#D1D5DB", bg: "#FAFAFA" }}
+												_focus={{ borderColor: "#8B5CF6", boxShadow: "none", bg: "white" }}
+												transition="all 0.2s"
 											/>
 										</Box>
-									</Flex>
-									<Flex alignItems="center" justifyContent="space-between" p={3} bg="#FFFFFF" borderRadius="md" border="1px" borderColor="#E5E7EB">
-										<Text fontSize="sm" color="#1F2937">
-											Require Approval
-										</Text>
-										<Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="purple" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
-									</Flex>
-								</Box>
 
-								{/* Tickets */}
-								<Box mb={6}>
-									<Flex alignItems="center" justifyContent="space-between" mb={3}>
-										<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={0}>
-											Tickets
-										</FormLabel>
-										<Button
-											size="sm"
-											bg="#FFFFFF"
-											color="#8B5CF6"
-											border="1px"
-											borderColor="#8B5CF6"
-											_hover={{ bg: "#F3F4F6" }}
-											onClick={() => {
-												setEditIndex(null)
-												setTempTicket({ id: "", title: "", description: "", price: 0 })
-												onOpen()
-											}}
-											leftIcon={<PlusSVG />}
-										>
-											Add Ticket
-										</Button>
-									</Flex>
-									<FieldArray name="tickets">
-										{({ remove }) => (
-											<>
-												{values.tickets.length === 0 ? (
-													<Box p={6} bg="#F5F5F7" borderRadius="md" border="1px" borderColor="#E5E7EB" textAlign="center">
-														<Text fontSize="sm" color="#9CA3AF">
-															No tickets added yet
-														</Text>
-													</Box>
-												) : (
-													<Flex gap={3} flexWrap="wrap">
-														{values.tickets.map((ticket, index) => (
-															<Box key={ticket.id || index} bg="#FFFFFF" border="1px" borderColor="#E5E7EB" rounded="lg" w="48" p="4" position="relative">
-																<Menu>
-																	<MenuButton as={IconButton} icon={<VerticalDotsSVG />} variant="ghost" size="sm" position="absolute" top="2" right="2" color="#9CA3AF" _hover={{ bg: "#F9FAFB" }} />
-																	<MenuList bg="#FFFFFF" border="1px" borderColor="#E5E7EB">
-																		<MenuItem
-																			onClick={() => {
-																				setEditIndex(index)
-																				setTempTicket(ticket)
-																				onOpen()
-																			}}
-																		>
-																			Edit
-																		</MenuItem>
-																		<MenuItem onClick={() => remove(index)} color="red.500">
-																			Delete
-																		</MenuItem>
-																	</MenuList>
-																</Menu>
-																<Text color="#1F2937" fontWeight="600" fontSize="sm" mb={1}>
-																	{ticket.title}
+										{/* Date & Time */}
+										<Box mb={6}>
+											<Grid templateColumns={{ base: "1fr", md: "repeat(3, 1fr)" }} gap={3} mb={3}>
+												<GridItem>
+													<Box
+														border="1px"
+														borderColor="#E5E7EB"
+														borderRadius="lg"
+														p={3}
+														_hover={{ borderColor: "#B0B0B0", bg: "#FAFAFA", boxShadow: "sm" }}
+														transition="all 0.2s"
+														cursor="pointer"
+													>
+														<Flex alignItems="center" gap={2}>
+															<FiCalendar color="#6B7280" size={18} />
+															<Box flex={1}>
+																<Text fontSize="11px" fontWeight="600" color="#6B7280" mb={1}>
+																	Start date
 																</Text>
-																<Text color="#6B7280" fontSize="xs" mb={2} noOfLines={2}>
-																	{ticket.description}
-																</Text>
-																<Text color="#8B5CF6" fontWeight="bold" fontSize="md">
-																	${ticket.price}
-																</Text>
+																<DatePicker
+																	onChange={(date) => handleStartDateChange(date)}
+																	placeholder="Date"
+																	defaultDate={values.startDate}
+																/>
 															</Box>
-														))}
+														</Flex>
+													</Box>
+												</GridItem>
+												<GridItem>
+													<Box
+														border="1px"
+														borderColor="#E5E7EB"
+														borderRadius="lg"
+														p={3}
+														_hover={{ borderColor: "#B0B0B0", bg: "#FAFAFA", boxShadow: "sm" }}
+														transition="all 0.2s"
+														cursor="pointer"
+													>
+														<Flex alignItems="center" gap={2}>
+															<FiClock color="#6B7280" size={18} />
+															<Box flex={1}>
+																<Text fontSize="11px" fontWeight="600" color="#6B7280" mb={1}>
+																	Start time
+																</Text>
+																<TimePicker
+																	onChange={(time) => handleStartDateChange(undefined, time)}
+																	placeholder="Time"
+																	defaultValue={values.startTime}
+																/>
+															</Box>
+														</Flex>
+													</Box>
+												</GridItem>
+												<GridItem>
+													<Box
+														border="1px"
+														borderColor="#E5E7EB"
+														borderRadius="lg"
+														p={3}
+														_hover={{ borderColor: "#B0B0B0", bg: "#FAFAFA", boxShadow: "sm" }}
+														transition="all 0.2s"
+														cursor="pointer"
+													>
+														<Text fontSize="11px" fontWeight="600" color="#6B7280" mb={2}>
+															Time zone
+														</Text>
+														<TimezoneSelect />
+													</Box>
+												</GridItem>
+											</Grid>
+
+											<Grid templateColumns={{ base: "1fr", md: "repeat(3, 1fr)" }} gap={3}>
+												<GridItem>
+													<Box
+														border="1px"
+														borderColor="#E5E7EB"
+														borderRadius="lg"
+														p={3}
+														_hover={{ borderColor: "#B0B0B0", bg: "#FAFAFA", boxShadow: "sm" }}
+														transition="all 0.2s"
+														cursor="pointer"
+													>
+														<Flex alignItems="center" gap={2}>
+															<FiCalendar color="#6B7280" size={18} />
+															<Box flex={1}>
+																<Text fontSize="11px" fontWeight="600" color="#6B7280" mb={1}>
+																	End date
+																</Text>
+																<DatePicker
+																	onChange={(date) => handleEndDateChange(date)}
+																	placeholder="Date"
+																	defaultDate={values.endDate}
+																/>
+															</Box>
+														</Flex>
+													</Box>
+												</GridItem>
+												<GridItem>
+													<Box
+														border="1px"
+														borderColor="#E5E7EB"
+														borderRadius="lg"
+														p={3}
+														_hover={{ borderColor: "#B0B0B0", bg: "#FAFAFA", boxShadow: "sm" }}
+														transition="all 0.2s"
+														cursor="pointer"
+													>
+														<Flex alignItems="center" gap={2}>
+															<FiClock color="#6B7280" size={18} />
+															<Box flex={1}>
+																<Text fontSize="11px" fontWeight="600" color="#6B7280" mb={1}>
+																	End time
+																</Text>
+																<TimePicker
+																	onChange={(time) => handleEndDateChange(undefined, time)}
+																	placeholder="Time"
+																	defaultValue={values.endTime}
+																/>
+															</Box>
+														</Flex>
+													</Box>
+												</GridItem>
+												<GridItem></GridItem>
+											</Grid>
+										</Box>
+
+										{/* Privacy Selector */}
+										<Box mb={6}>
+											<PrivacySelector
+												value={values.privacy as "public" | "private"}
+												onChange={(val) => setFieldValue("privacy", val)}
+											/>
+										</Box>
+
+										{/* Description */}
+										<Box mb={6}>
+											<Field
+												as={Textarea}
+												name="desc"
+												placeholder="What are the details?"
+												rows={6}
+												border="1px"
+												borderColor="#E5E7EB"
+												borderRadius="lg"
+												p={4}
+												fontSize="16px"
+												fontWeight="400"
+												color="#1F2937"
+												_placeholder={{ color: "#9CA3AF", fontWeight: "400" }}
+												_hover={{ borderColor: "#D1D5DB", bg: "#F9FAFB" }}
+												_focus={{ borderColor: "#8B5CF6", boxShadow: "none", bg: "white" }}
+											/>
+										</Box>
+
+										{/* Collapsible Sections */}
+										<CollapsibleSection icon={<FiMapPin size={20} />} title="Event location" defaultOpen={true}>
+											<Box>
+												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
+													Event Location
+												</Text>
+												<InputGroup>
+													<InputLeftElement pointerEvents="none" color="#9CA3AF">
+														<FiMapPin size={18} />
+													</InputLeftElement>
+													<Input
+														ref={ref}
+														id="location"
+														name="location"
+														placeholder="Search for a place or address"
+														defaultValue={values.location}
+														border="1px"
+														borderColor="#E5E7EB"
+														pl="40px"
+														autoComplete="off"
+														_hover={{ borderColor: "#D1D5DB" }}
+														_focus={{ borderColor: "#8B5CF6", boxShadow: "none" }}
+													/>
+												</InputGroup>
+											</Box>
+										</CollapsibleSection>
+
+										<CollapsibleSection icon={<FiDollarSign size={20} />} title="Tickets">
+											<Box>
+												{tickets.map((ticket) => (
+													<Flex
+														key={ticket.id}
+														bg="#F9FAFB"
+														p={3}
+														borderRadius="md"
+														mb={2}
+														alignItems="center"
+														justifyContent="space-between"
+													>
+														<Box>
+															<Text fontSize="14px" fontWeight="600" color="#1F2937">
+																{ticket.title}
+															</Text>
+															<Text fontSize="13px" color="#6B7280">
+																${ticket.price.toFixed(2)} - {ticket.description}
+															</Text>
+														</Box>
+														<IconButton
+															aria-label="Remove"
+															icon={<FiX />}
+															size="sm"
+															variant="ghost"
+															colorScheme="red"
+															onClick={() => handleRemoveTicket(ticket.id)}
+														/>
 													</Flex>
-												)}
-											</>
-										)}
-									</FieldArray>
-								</Box>
-
-								{/* Images */}
-								<Box mb={6}>
-									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
-										Event Images
-									</FormLabel>
-									<ImageUploadBox uploadedImages={uploadedImages} onImageChange={handleImageUpload} isUploading={isUploading} uploadProgress={uploadProgress} handleImageDelete={handleImageDelete} />
-								</Box>
-
-								{/* Submit Button */}
-								<Button
-									type="submit"
-									w="full"
-									bg="#8B5CF6"
-									color="white"
-									size="lg"
-									fontSize="md"
-									fontWeight="600"
-									_hover={{ bg: "#7C3AED" }}
-									isLoading={isSubmitting}
-									isDisabled={isSubmitting || isUploading}
-									loadingText="Updating Event..."
-								>
-									Update Event
-								</Button>
-							</Box>
-
-							{/* Tickets Modal */}
-							<FieldArray name="tickets">
-								{({ push, replace }) => (
-									<Modal isOpen={isOpen} onClose={onClose} isCentered>
-										<ModalOverlay />
-										<ModalContent bg="#FFFFFF" color="#1F2937">
-											<ModalHeader>{editIndex !== null ? "Edit Ticket" : "Add Ticket"}</ModalHeader>
-											<ModalCloseButton />
-											<ModalBody>
-												<FormControl mb={4}>
-													<FormLabel color="#1F2937">Ticket Name</FormLabel>
-													<Input
-														id="ticketTitle"
-														name="ticketTitle"
-														placeholder="Enter ticket name"
-														bg="#FFFFFF"
-														border="1px"
-														borderColor="#E5E7EB"
-														color="#1F2937"
-														_hover={{ borderColor: "#D1D5DB" }}
-														_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-														value={tempTicket.title}
-														onChange={(e) =>
-															setTempTicket({
-																...tempTicket,
-																title: e.target.value,
-															})
-														}
-													/>
-												</FormControl>
-												<FormControl mb={4}>
-													<FormLabel color="#1F2937">Description</FormLabel>
-													<Textarea
-														id="ticketDescription"
-														name="ticketDescription"
-														placeholder="Enter description"
-														bg="#FFFFFF"
-														border="1px"
-														borderColor="#E5E7EB"
-														color="#1F2937"
-														_hover={{ borderColor: "#D1D5DB" }}
-														_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-														value={tempTicket.description}
-														onChange={(e) =>
-															setTempTicket({
-																...tempTicket,
-																description: e.target.value,
-															})
-														}
-													/>
-												</FormControl>
-												<FormControl mb={4}>
-													<FormLabel color="#1F2937">Price</FormLabel>
-													<Input
-														id="ticketPrice"
-														name="ticketPrice"
-														type="number"
-														placeholder="Enter price"
-														bg="#FFFFFF"
-														border="1px"
-														borderColor="#E5E7EB"
-														color="#1F2937"
-														_hover={{ borderColor: "#D1D5DB" }}
-														_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-														value={tempTicket.price}
-														onChange={(e) =>
-															setTempTicket({
-																...tempTicket,
-																price: parseFloat(e.target.value),
-															})
-														}
-													/>
-												</FormControl>
-											</ModalBody>
-
-											<ModalFooter>
-												<Flex flexDirection="column" w="full" gap="3">
+												))}
+												<Box mt={3} p={4} border="1px" borderColor="#E5E7EB" borderRadius="md" bg="#FAFAFA">
+													<Text fontSize="14px" fontWeight="600" color="#1F2937" mb={3}>
+														Add Ticket
+													</Text>
+													<Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={3} mb={3}>
+														<Box>
+															<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
+																Ticket Name <Text as="span" color="red">*</Text>
+															</Text>
+															<Input
+																placeholder="e.g., General Admission"
+																size="sm"
+																bg="white"
+																value={tempTicket.title}
+																onChange={(e) => setTempTicket({ ...tempTicket, title: e.target.value })}
+															/>
+														</Box>
+														<Box>
+															<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
+																Price (USD)
+															</Text>
+															<InputGroup size="sm">
+																<InputLeftElement pointerEvents="none" color="#6B7280" fontSize="14px">
+																	$
+																</InputLeftElement>
+																<Input
+																	placeholder="0.00"
+																	type="number"
+																	step="0.01"
+																	min="0"
+																	bg="white"
+																	value={tempTicket.price}
+																	onChange={(e) =>
+																		setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) || 0 })
+																	}
+																/>
+															</InputGroup>
+														</Box>
+													</Grid>
+													<Box mb={3}>
+														<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
+															Description <Text as="span" color="red">*</Text>
+														</Text>
+														<Input
+															placeholder="e.g., Access to all event activities"
+															size="sm"
+															bg="white"
+															value={tempTicket.description}
+															onChange={(e) =>
+																setTempTicket({ ...tempTicket, description: e.target.value })
+															}
+														/>
+													</Box>
 													<Button
-														bg="#8B5CF6"
+														size="sm"
 														w="full"
+														bg="#8B5CF6"
 														color="white"
 														_hover={{ bg: "#7C3AED" }}
-														mr={3}
-														onClick={() => {
-															if (editIndex === null && tempTicket.title) {
-																push({
-																	...tempTicket,
-																	id: new Date().getTime().toString(),
-																})
-																setTempTicket({
-																	id: "",
-																	title: "",
-																	description: "",
-																	price: 0,
-																})
-																setEditIndex(null)
-															} else if (editIndex !== null) {
-																replace(editIndex, tempTicket)
-																setEditIndex(null)
-															}
-															onClose()
-														}}
+														onClick={handleAddTicket}
+														isDisabled={!tempTicket.title || !tempTicket.description}
 													>
-														{editIndex !== null ? "Update" : "Add"}
+														Add Ticket
 													</Button>
-													<Button
-														variant="outline"
-														border="1px"
-														borderColor="#E5E7EB"
-														color="#1F2937"
-														bg="#FFFFFF"
-														_hover={{ bg: "#F9FAFB" }}
-														onClick={() => {
-															setTempTicket({
-																id: "",
-																title: "",
-																description: "",
-																price: 0,
-															})
-															setEditIndex(null)
-															onClose()
-														}}
-													>
-														Cancel
-													</Button>
-												</Flex>
-											</ModalFooter>
-										</ModalContent>
-									</Modal>
-								)}
-							</FieldArray>
-
-							{/* Invite Guest Modal */}
-							<Modal isOpen={isInviteOpen} onClose={onInviteClose} isCentered size="md">
-								<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(10px)" />
-								<ModalContent bg="#FFFFFF" color="#1F2937" borderRadius="xl" boxShadow="2xl">
-									<ModalHeader borderBottom="1px" borderColor="#E5E7EB" pb={4}>
-										<Flex alignItems="center" gap={3}>
-											<Box w="40px" h="40px" borderRadius="lg" bg="#F3F4F6" display="flex" alignItems="center" justifyContent="center">
-												<Text fontSize="xl">✉️</Text>
-											</Box>
-											<Box>
-												<Text fontSize="lg" fontWeight="600" color="#1F2937">
-													Invite Guests
-												</Text>
-												<Text fontSize="sm" fontWeight="normal" color="#6B7280" mt={1}>
-													Send invitations to your event
-												</Text>
-											</Box>
-										</Flex>
-									</ModalHeader>
-									<ModalCloseButton color="#6B7280" _hover={{ bg: "#F9FAFB" }} />
-
-									<ModalBody py={6}>
-										{/* Email Input */}
-										<FormControl>
-											<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
-												Email Address
-											</FormLabel>
-											<Input
-												placeholder="Enter guest email address"
-												type="email"
-												value={guestEmail}
-												onChange={(e) => setGuestEmail(e.target.value)}
-												bg="#FFFFFF"
-												border="1px"
-												borderColor="#E5E7EB"
-												color="#1F2937"
-												fontSize="sm"
-												h="44px"
-												_placeholder={{ color: "#9CA3AF" }}
-												_hover={{ borderColor: "#D1D5DB" }}
-												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)" }}
-												onKeyPress={(e) => {
-													if (e.key === "Enter") {
-														e.preventDefault()
-														if (guestEmail && guestEmail.includes("@")) {
-															setInvitedGuests([...invitedGuests, guestEmail])
-															setGuestEmail("")
-														}
-													}
-												}}
-											/>
-											<Text fontSize="xs" color="#6B7280" mt={2}>
-												Press Enter or click Send to add email
-											</Text>
-										</FormControl>
-
-										{/* Invited Guests List */}
-										{invitedGuests.length > 0 && (
-											<Box mt={6}>
-												<Text fontSize="sm" fontWeight="600" color="#1F2937" mb={3}>
-													Invited Guests ({invitedGuests.length})
-												</Text>
-												<Box maxH="200px" overflowY="auto" border="1px" borderColor="#E5E7EB" borderRadius="lg" p={2}>
-													{invitedGuests.map((email, index) => (
-														<Flex key={index} alignItems="center" justifyContent="space-between" p={3} bg="#F9FAFB" borderRadius="md" mb={2} _last={{ mb: 0 }}>
-															<Flex alignItems="center" gap={3}>
-																<Box w="32px" h="32px" borderRadius="full" bg="#8B5CF6" display="flex" alignItems="center" justifyContent="center">
-																	<Text fontSize="sm" color="#FFFFFF" fontWeight="600">
-																		{email.charAt(0).toUpperCase()}
-																	</Text>
-																</Box>
-																<Text fontSize="sm" color="#1F2937" fontWeight="500">
-																	{email}
-																</Text>
-															</Flex>
-															<Button
-																size="sm"
-																variant="ghost"
-																color="#EF4444"
-																_hover={{ bg: "#FEE2E2" }}
-																onClick={() => {
-																	setInvitedGuests(invitedGuests.filter((_, i) => i !== index))
-																}}
-															>
-																Remove
-															</Button>
-														</Flex>
-													))}
 												</Box>
 											</Box>
-										)}
-									</ModalBody>
+										</CollapsibleSection>
 
-									<ModalFooter borderTop="1px" borderColor="#E5E7EB" pt={4}>
-										<Flex w="full" gap={3}>
-											<Button
-												flex={1}
-												variant="outline"
-												border="1px"
-												borderColor="#E5E7EB"
-												color="#1F2937"
-												bg="#FFFFFF"
-												h="44px"
-												_hover={{ bg: "#F9FAFB" }}
-												onClick={() => {
-													setGuestEmail("")
-													onInviteClose()
-												}}
-											>
-												Close
-											</Button>
-											<Button
-												flex={1}
-												bg="#8B5CF6"
-												color="white"
-												h="44px"
-												_hover={{ bg: "#7C3AED" }}
-												_disabled={{ bg: "#D1D5DB", cursor: "not-allowed" }}
-												isDisabled={!guestEmail || !guestEmail.includes("@")}
-												onClick={() => {
-													if (guestEmail && guestEmail.includes("@")) {
-														setInvitedGuests([...invitedGuests, guestEmail])
-														setGuestEmail("")
-													}
-												}}
-											>
-												Send Invite
-											</Button>
-										</Flex>
-									</ModalFooter>
-								</ModalContent>
-							</Modal>
-						</Form>
-					)}
-				</Formik>
+										<CollapsibleSection icon={<FiPlus size={20} />} title="Invite guests">
+											<Box>
+												<Text fontSize="13px" color="#6B7280" mb={2}>
+													Send event invitations to guests via email
+												</Text>
+												<Flex gap={2} mb={3}>
+													<Input
+														placeholder="Enter email address"
+														type="email"
+														size="sm"
+														value={guestEmail}
+														onChange={(e) => setGuestEmail(e.target.value)}
+														onKeyPress={(e) => {
+															if (e.key === "Enter" && guestEmail && guestEmail.includes("@")) {
+																e.preventDefault()
+																setInvitedGuests([...invitedGuests, guestEmail])
+																setGuestEmail("")
+															}
+														}}
+													/>
+													<Button
+														size="sm"
+														bg="#8B5CF6"
+														color="white"
+														_hover={{ bg: "#7C3AED" }}
+														isDisabled={!guestEmail || !guestEmail.includes("@")}
+														onClick={() => {
+															if (guestEmail && guestEmail.includes("@")) {
+																setInvitedGuests([...invitedGuests, guestEmail])
+																setGuestEmail("")
+															}
+														}}
+													>
+														Add
+													</Button>
+												</Flex>
+												{invitedGuests.length > 0 && (
+													<Box>
+														<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
+															Invited ({invitedGuests.length})
+														</Text>
+														<Box maxH="150px" overflowY="auto">
+															{invitedGuests.map((email, index) => (
+																<Flex
+																	key={index}
+																	bg="#F9FAFB"
+																	p={2}
+																	borderRadius="md"
+																	mb={1}
+																	alignItems="center"
+																	justifyContent="space-between"
+																>
+																	<Text fontSize="13px" color="#1F2937">
+																		{email}
+																	</Text>
+																	<IconButton
+																		aria-label="Remove"
+																		icon={<FiX />}
+																		size="xs"
+																		variant="ghost"
+																		colorScheme="red"
+																		onClick={() =>
+																			setInvitedGuests(invitedGuests.filter((_, i) => i !== index))
+																		}
+																	/>
+																</Flex>
+															))}
+														</Box>
+													</Box>
+												)}
+											</Box>
+										</CollapsibleSection>
+
+										<CollapsibleSection icon={<FiSettings size={20} />} title="Additional settings" borderBottom={false}>
+											<Box>
+												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={1}>
+													Event Capacity
+												</Text>
+												<Text fontSize="12px" color="#6B7280" mb={2}>
+													Set to 0 for unlimited capacity
+												</Text>
+												<Input
+													placeholder="Enter number (0 for unlimited)"
+													type="number"
+													size="sm"
+													mb={4}
+													min="0"
+													value={values.capacity}
+													onChange={(e) => setFieldValue("capacity", parseInt(e.target.value) || 0)}
+												/>
+												<Flex
+													alignItems="center"
+													justifyContent="space-between"
+													p={3}
+													bg="#F9FAFB"
+													borderRadius="md"
+												>
+													<Box>
+														<Text fontSize="14px" fontWeight="500" color="#1F2937">
+															Require approval
+														</Text>
+														<Text fontSize="12px" color="#6B7280" mt={0.5}>
+															Manually approve each guest
+														</Text>
+													</Box>
+													<Switch 
+														colorScheme="purple"
+														isChecked={values.requireApproval}
+														onChange={(e) => setFieldValue("requireApproval", e.target.checked)}
+													/>
+												</Flex>
+											</Box>
+										</CollapsibleSection>
+									</Box>
+
+									{/* Bottom Action Bar */}
+									<Box p={6} borderTop="1px" borderColor="#E5E7EB" bg="#F9FAFB">
+										<Button
+											type="submit"
+											w="full"
+											bg="#8B5CF6"
+											color="white"
+											size="lg"
+											fontSize="16px"
+											fontWeight="700"
+											_hover={isSubmitting || isUploading ? {} : { bg: "#7C3AED", transform: "translateY(-1px)", boxShadow: "md" }}
+											_active={isSubmitting || isUploading ? {} : { transform: "translateY(0)", boxShadow: "sm" }}
+											isLoading={isSubmitting || isUploading}
+											isDisabled={isSubmitting || isUploading}
+											loadingText="Updating Event..."
+											spinnerPlacement="start"
+											transition="all 0.2s"
+											opacity={isSubmitting || isUploading ? 0.8 : 1}
+										>
+											Update Event
+										</Button>
+									</Box>
+								</Box>
+							</Form>
+						)}
+					</Formik>
+				</Box>
 			</ConsoleLayout>
+			
+			{/* Full Screen Loading Overlay */}
+			{isSubmitting && (
+				<Box
+					position="fixed"
+					top={0}
+					left={0}
+					right={0}
+					bottom={0}
+					bg="rgba(0, 0, 0, 0.75)"
+					backdropFilter="blur(8px)"
+					zIndex={9999}
+					display="flex"
+					alignItems="center"
+					justifyContent="center"
+					animation="fadeIn 0.3s ease-in"
+				>
+					<Box textAlign="center">
+						<Spinner
+							thickness="4px"
+							speed="0.65s"
+							emptyColor="gray.200"
+							color="#8B5CF6"
+							size="xl"
+							mb={4}
+						/>
+						<Text fontSize="2xl" fontWeight="700" color="white">
+							Updating event...
+						</Text>
+					</Box>
+				</Box>
+			)}
 		</>
 	)
 }

@@ -9,10 +9,47 @@ import Head from "next/head"
 import React, { useState, useMemo } from "react"
 import Link from "next/link"
 import { downloadExcel } from "react-export-table-to-excel"
+import { 
+	ChevronLeftIcon, 
+	ArrowDownTrayIcon, 
+	MagnifyingGlassIcon, 
+	FunnelIcon, 
+	XCircleIcon,
+	CurrencyDollarIcon,
+	TicketIcon,
+	UserIcon,
+	CalendarIcon,
+	MapPinIcon,
+	ClockIcon,
+	CheckBadgeIcon,
+	EllipsisHorizontalIcon
+} from "@heroicons/react/24/outline"
+import { 
+	Box, 
+	Flex, 
+	Text, 
+	Button, 
+	Input, 
+	Select, 
+	Table, 
+	Thead, 
+	Tbody, 
+	Tr, 
+	Th, 
+	Td, 
+	Badge, 
+	Menu, 
+	MenuButton, 
+	MenuList, 
+	MenuItem, 
+	IconButton,
+	Avatar,
+	SimpleGrid
+} from "@chakra-ui/react"
 
 type Props = {
 	bookings: Booking[]
-	event: { _id: string; name: string; startsOn: string; endsOn: string }
+	event: { _id: string; name: string; startsOn: string; endsOn: string; location?: string }
 	filters: { status?: string; search?: string; date?: string; amount?: string; minTickets?: string }
 	exportable: any[]
 }
@@ -33,12 +70,15 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 
 		const uniqueActiveCustomers = new Set(activeBookings.map((b) => b.customerEmail)).size
 		const uniqueCanceledCustomers = new Set(canceledBookings.map((b) => b.customerEmail)).size
+		
+		const totalRevenue = activeBookings.reduce((sum, b) => sum + b.total, 0)
 
 		return {
 			activeTickets,
 			activeCustomers: uniqueActiveCustomers,
 			canceledTickets,
 			canceledCustomers: uniqueCanceledCustomers,
+			totalRevenue
 		}
 	}, [bookings])
 
@@ -74,6 +114,22 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 
 	const totalPages = Math.ceil(bookings.length / itemsPerPage)
 
+	const getStatusColor = (status: string) => {
+		switch (status) {
+			case "confirmed":
+			case "approved":
+				return "green"
+			case "pending":
+				return "yellow"
+			case "cancelled":
+				return "red"
+			case "refunded":
+				return "gray"
+			default:
+				return "gray"
+		}
+	}
+
 	return (
 		<>
 			<Head>
@@ -81,317 +137,307 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 				<meta name="description" content={`View and manage bookings for ${event.name}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
-			<ConsoleLayout page={Pages.Bookings}>
-				<div className="px-4 sm:px-6 lg:px-8">
-					{/* Back Button */}
-					<div className="mb-6">
-						<Link href="/console/bookings">
-							<button className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-text-primary bg-white border border-border-light rounded-lg hover:bg-background-gray transition-colors">
-								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-								</svg>
-								Back to Events
-							</button>
-						</Link>
-					</div>
+			<ConsoleLayout page={Pages.Bookings} bg="#F0F2F5">
+				<Box maxW="1400px" mx="auto" px={{ base: 4, sm: 6 }} py={8}>
+					{/* Header Section */}
+					<Flex direction={{ base: "column", sm: "row" }} justify="space-between" align={{ base: "start", sm: "center" }} gap={4} mb={8}>
+						<Flex align="center" gap={4}>
+							<Link href="/console/bookings">
+								<IconButton
+									aria-label="Back"
+									icon={<ChevronLeftIcon className="w-5 h-5" />}
+									variant="outline"
+									isRound
+									bg="white"
+									_hover={{ bg: "gray.50" }}
+								/>
+							</Link>
+							<Box>
+								<Text fontSize="2xl" fontWeight="bold" color="gray.900">{event.name}</Text>
+								<Flex align="center" gap={4} fontSize="sm" color="gray.500" mt={1}>
+									<Flex align="center" gap={1}>
+										<CalendarIcon className="w-4 h-4" />
+										<Text>{new Date(event.startsOn).toLocaleDateString()}</Text>
+									</Flex>
+									{event.location && (
+										<Flex align="center" gap={1}>
+											<MapPinIcon className="w-4 h-4" />
+											<Text noOfLines={1} maxW="300px">{event.location}</Text>
+										</Flex>
+									)}
+								</Flex>
+							</Box>
+						</Flex>
+						<Button
+							leftIcon={<ArrowDownTrayIcon className="w-4 h-4" />}
+							onClick={handleExport}
+							bg="white"
+							variant="outline"
+							_hover={{ bg: "gray.50" }}
+						>
+							Export CSV
+						</Button>
+					</Flex>
 
-					{/* Event Info Header */}
-					<div className="bg-white rounded-xl border border-border-light p-6 mb-6">
-						<h2 className="text-2xl font-bold text-text-primary mb-4">{event.name}</h2>
-						<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-							<div>
-								<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Date</label>
-								<p className="text-sm font-semibold text-text-primary">{new Date(event.startsOn).toLocaleDateString()}</p>
-							</div>
-							<div>
-								<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Time</label>
-								<p className="text-sm font-semibold text-text-primary">{new Date(event.startsOn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-							</div>
-							<div>
-								<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Number of Attendees</label>
-								<p className="text-sm font-semibold text-text-primary">{statistics.activeTickets}</p>
-							</div>
-							<div>
-								<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Reference ID</label>
-								<p className="text-sm font-semibold text-text-primary truncate">{event._id}</p>
-							</div>
-						</div>
+					{/* Stats Cards */}
+					<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={8}>
+						<Box bg="white" p={6} borderRadius="xl" shadow="sm" border="1px" borderColor="gray.200">
+							<Flex justify="space-between" align="start">
+								<Box>
+									<Text fontSize="sm" fontWeight="medium" color="gray.500" mb={1}>Total Revenue</Text>
+									<Text fontSize="2xl" fontWeight="bold" color="gray.900">
+										{statistics.totalRevenue.toLocaleString("en-US", { style: "currency", currency: "USD" })}
+									</Text>
+								</Box>
+								<Box p={3} bg="green.50" color="green.600" borderRadius="lg">
+									<CurrencyDollarIcon className="w-6 h-6" />
+								</Box>
+							</Flex>
+						</Box>
+						
+						<Box bg="white" p={6} borderRadius="xl" shadow="sm" border="1px" borderColor="gray.200">
+							<Flex justify="space-between" align="start">
+								<Box>
+									<Text fontSize="sm" fontWeight="medium" color="gray.500" mb={1}>Active Tickets</Text>
+									<Text fontSize="2xl" fontWeight="bold" color="gray.900">{statistics.activeTickets}</Text>
+								</Box>
+								<Box p={3} bg="blue.50" color="blue.600" borderRadius="lg">
+									<TicketIcon className="w-6 h-6" />
+								</Box>
+							</Flex>
+						</Box>
 
+						<Box bg="white" p={6} borderRadius="xl" shadow="sm" border="1px" borderColor="gray.200">
+							<Flex justify="space-between" align="start">
+								<Box>
+									<Text fontSize="sm" fontWeight="medium" color="gray.500" mb={1}>Active Customers</Text>
+									<Text fontSize="2xl" fontWeight="bold" color="gray.900">{statistics.activeCustomers}</Text>
+								</Box>
+								<Box p={3} bg="purple.50" color="purple.600" borderRadius="lg">
+									<UserIcon className="w-6 h-6" />
+								</Box>
+							</Flex>
+						</Box>
+
+						<Box bg="white" p={6} borderRadius="xl" shadow="sm" border="1px" borderColor="gray.200">
+							<Flex justify="space-between" align="start">
+								<Box>
+									<Text fontSize="sm" fontWeight="medium" color="gray.500" mb={1}>Cancelled</Text>
+									<Text fontSize="2xl" fontWeight="bold" color="gray.900">{statistics.canceledTickets}</Text>
+								</Box>
+								<Box p={3} bg="red.50" color="red.600" borderRadius="lg">
+									<XCircleIcon className="w-6 h-6" />
+								</Box>
+							</Flex>
+						</Box>
+					</SimpleGrid>
+
+					{/* Main Content Area */}
+					<Box bg="white" borderRadius="xl" shadow="sm" border="1px" borderColor="gray.200" overflow="hidden">
 						{/* Tabs */}
-						<div className="flex gap-3 mt-6 border-b border-border-light">
-							<button
+						<Flex borderBottom="1px" borderColor="gray.200">
+							<Button
+								variant="ghost"
 								onClick={() => setActiveTab("bookings")}
-								className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 ${
-									activeTab === "bookings" ? "border-primary-purple text-primary-purple" : "border-transparent text-text-muted hover:text-text-primary"
-								}`}
+								borderRadius="0"
+								borderBottom={activeTab === "bookings" ? "2px solid" : "2px solid transparent"}
+								borderColor={activeTab === "bookings" ? "purple.500" : "transparent"}
+								color={activeTab === "bookings" ? "purple.600" : "gray.500"}
+								_hover={{ bg: "gray.50" }}
+								px={6}
+								py={6}
 							>
 								Bookings
-							</button>
-							<button
+							</Button>
+							<Button
+								variant="ghost"
 								onClick={() => setActiveTab("waiting-list")}
-								className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 ${
-									activeTab === "waiting-list" ? "border-primary-purple text-primary-purple" : "border-transparent text-text-muted hover:text-text-primary"
-								}`}
+								borderRadius="0"
+								borderBottom={activeTab === "waiting-list" ? "2px solid" : "2px solid transparent"}
+								borderColor={activeTab === "waiting-list" ? "purple.500" : "transparent"}
+								color={activeTab === "waiting-list" ? "purple.600" : "gray.500"}
+								_hover={{ bg: "gray.50" }}
+								px={6}
+								py={6}
 							>
 								Waiting List
-							</button>
-						</div>
-					</div>
+							</Button>
+						</Flex>
 
-					{/* Statistics Cards */}
-					<div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-						<div className="bg-white rounded-xl border border-border-light p-6">
-							<p className="text-sm font-medium text-text-secondary mb-1">Active Tickets</p>
-							<p className="text-3xl font-bold text-green-600">{statistics.activeTickets}</p>
-						</div>
-						<div className="bg-white rounded-xl border border-border-light p-6">
-							<p className="text-sm font-medium text-text-secondary mb-1">Active Customers</p>
-							<p className="text-3xl font-bold text-green-600">{statistics.activeCustomers}</p>
-						</div>
-						<div className="bg-white rounded-xl border border-border-light p-6">
-							<p className="text-sm font-medium text-text-secondary mb-1">Canceled Tickets</p>
-							<p className="text-3xl font-bold text-red-600">{statistics.canceledTickets}</p>
-						</div>
-						<div className="bg-white rounded-xl border border-border-light p-6">
-							<p className="text-sm font-medium text-text-secondary mb-1">Canceled Customers</p>
-							<p className="text-3xl font-bold text-red-600">{statistics.canceledCustomers}</p>
-						</div>
-					</div>
-
-					{/* Filters and Export */}
-					<div className="bg-white rounded-xl border border-border-light p-6 mb-6">
-						<div className="flex flex-col lg:flex-row gap-4 items-end">
-							{/* Search */}
-							<div className="flex-1">
-								<label className="text-xs font-medium text-text-secondary mb-2 block">Search</label>
-								<input
-									type="text"
-									placeholder="Name or Email"
-									defaultValue={filters.search}
-									className="w-full px-4 py-2.5 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent"
-									onChange={(e) => setCurrentFilters({ ...currentFilters, search: e.target.value })}
-								/>
-							</div>
-
-							{/* Status */}
-							<div className="w-full lg:w-48">
-								<label className="text-xs font-medium text-text-secondary mb-2 block">Status</label>
-								<select
-									defaultValue={filters.status}
-									className="w-full px-4 py-2.5 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent"
-									onChange={(e) => setCurrentFilters({ ...currentFilters, status: e.target.value })}
-								>
-									<option value="">All Status</option>
-									<option value="confirmed">Confirmed</option>
-									<option value="pending">Pending</option>
-									<option value="approved">Approved</option>
-									<option value="cancelled">Cancelled</option>
-									<option value="refunded">Refunded</option>
-									<option value="failed">Failed</option>
-								</select>
-							</div>
-
-							{/* Min Amount */}
-							<div className="w-full lg:w-40">
-								<label className="text-xs font-medium text-text-secondary mb-2 block">Min Amount</label>
-								<input
-									type="number"
-									placeholder="$0"
-									defaultValue={filters.amount}
-									className="w-full px-4 py-2.5 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent"
-									onChange={(e) => setCurrentFilters({ ...currentFilters, amount: e.target.value })}
-								/>
-							</div>
-
-							{/* Min Tickets */}
-							<div className="w-full lg:w-40">
-								<label className="text-xs font-medium text-text-secondary mb-2 block">Min Tickets</label>
-								<input
-									type="number"
-									placeholder="0"
-									defaultValue={filters.minTickets}
-									className="w-full px-4 py-2.5 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent"
-									onChange={(e) => setCurrentFilters({ ...currentFilters, minTickets: e.target.value })}
-								/>
-							</div>
-
-							{/* Date */}
-							<div className="w-full lg:w-48">
-								<label className="text-xs font-medium text-text-secondary mb-2 block">Date</label>
-								<input
-									type="date"
-									defaultValue={filters.date}
-									className="w-full px-4 py-2.5 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent"
-									onChange={(e) => setCurrentFilters({ ...currentFilters, date: e.target.value })}
-								/>
-							</div>
-
-							{/* Apply Button */}
-							<button
-								onClick={() => {
-									const params = new URLSearchParams()
-									if (currentFilters.status) params.set("status", currentFilters.status)
-									if (currentFilters.search) params.set("search", currentFilters.search.trim())
-									if (currentFilters.date) params.set("date", currentFilters.date)
-									if (currentFilters.amount) params.set("amount", currentFilters.amount.trim())
-									if (currentFilters.minTickets) params.set("minTickets", currentFilters.minTickets.trim())
-									window.location.href = `/console/bookings/${event._id}?${params.toString()}`
-								}}
-								className="px-6 py-2.5 bg-primary-purple text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-colors whitespace-nowrap"
-							>
-								Apply Filters
-							</button>
-
-							{/* Export Button */}
-							<button
-								onClick={handleExport}
-								className="px-6 py-2.5 bg-white border border-border-light text-text-primary text-sm font-medium rounded-lg hover:bg-background-gray transition-colors whitespace-nowrap inline-flex items-center gap-2"
-							>
-								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path
-										strokeLinecap="round"
-										strokeLinejoin="round"
-										strokeWidth={2}
-										d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+						{/* Filters */}
+						<Box p={4} bg="gray.50" borderBottom="1px" borderColor="gray.200">
+							<Flex direction={{ base: "column", md: "row" }} gap={4}>
+								<Box position="relative" flex="1">
+									<Box position="absolute" left="3" top="50%" transform="translateY(-50%)" color="gray.400">
+										<MagnifyingGlassIcon className="w-5 h-5" />
+									</Box>
+									<Input
+										placeholder="Search by name, email or phone..."
+										defaultValue={filters.search}
+										pl="10"
+										bg="white"
+										onChange={(e) => setCurrentFilters({ ...currentFilters, search: e.target.value })}
 									/>
-								</svg>
-								Export
-							</button>
-						</div>
-					</div>
+								</Box>
+								
+								<Flex gap={2} overflowX="auto" pb={{ base: 2, md: 0 }}>
+									<Select
+										bg="white"
+										w="150px"
+										placeholder="All Status"
+										defaultValue={filters.status}
+										onChange={(e) => setCurrentFilters({ ...currentFilters, status: e.target.value })}
+									>
+										<option value="confirmed">Confirmed</option>
+										<option value="pending">Pending</option>
+										<option value="cancelled">Cancelled</option>
+									</Select>
 
-					{/* Bookings List */}
-					{activeTab === "bookings" && (
-						<div className="space-y-4 mb-6">
-							{paginatedBookings.length === 0 ? (
-								<div className="bg-white rounded-xl border border-border-light p-12 text-center">
-									<div className="w-16 h-16 mx-auto mb-4 bg-background-light rounded-full flex items-center justify-center">
-										<svg className="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path
-												strokeLinecap="round"
-												strokeLinejoin="round"
-												strokeWidth={2}
-												d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-											/>
-										</svg>
-									</div>
-									<h3 className="text-xl font-semibold text-text-primary mb-2">No Bookings Found</h3>
-									<p className="text-text-secondary">There are no bookings matching your criteria.</p>
-								</div>
-							) : (
-								paginatedBookings.map((booking) => (
-									<div key={booking._id} className="bg-white rounded-xl border border-border-light p-6 hover:shadow-md transition-shadow">
-										<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-											{/* Left Column */}
-											<div className="space-y-4">
-												<div>
-													<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Attendee</label>
-													<p className="text-base font-semibold text-text-primary">{booking.customerName}</p>
-												</div>
-												<div>
-													<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Email</label>
-													<p className="text-sm text-text-secondary">{booking.customerEmail}</p>
-												</div>
-												<div>
-													<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Phone Number</label>
-													<p className="text-sm text-text-secondary">{booking.customerPhone}</p>
-												</div>
-												<div>
-													<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Status</label>
-													<span
-														className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${
-															booking.status === "confirmed" || booking.status === "approved"
-																? "bg-green-100 text-green-800"
-																: booking.status === "pending"
-																? "bg-yellow-100 text-yellow-800"
-																: booking.status === "cancelled"
-																? "bg-red-100 text-red-800"
-																: "bg-gray-100 text-gray-800"
-														}`}
-													>
-														{booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-													</span>
-												</div>
-												<div>
-													<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Created</label>
-													<p className="text-sm text-text-secondary">{new Date(booking.createdAt).toLocaleString()}</p>
-												</div>
-												<div>
-													<label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1 block">Tickets</label>
-													<p className="text-sm font-semibold text-text-primary">Quantity: {booking.tickets.reduce((sum, t) => sum + t.quantity, 0)}</p>
-												</div>
-											</div>
+									<Input
+										type="date"
+										bg="white"
+										w="auto"
+										defaultValue={filters.date}
+										onChange={(e) => setCurrentFilters({ ...currentFilters, date: e.target.value })}
+									/>
 
-											{/* Right Column - Pricing */}
-											<div className="flex flex-col justify-between">
-												<div className="space-y-3">
-													<div className="flex justify-between items-center">
-														<span className="text-sm text-text-secondary">Subtotal</span>
-														<span className="text-sm font-medium text-text-primary">${booking.total.toFixed(2)}</span>
-													</div>
-													<div className="flex justify-between items-center">
-														<span className="text-sm text-text-secondary">Tax</span>
-														<span className="text-sm font-medium text-text-primary">$0</span>
-													</div>
-													<div className="border-t border-border-light pt-3 flex justify-between items-center">
-														<span className="text-base font-semibold text-text-primary">Total</span>
-														<span className="text-2xl font-bold text-text-primary">${booking.total.toFixed(2)}</span>
-													</div>
-												</div>
-											</div>
-										</div>
-									</div>
-								))
+									<Button
+										colorScheme="purple"
+										px={6}
+										onClick={() => {
+											const params = new URLSearchParams()
+											if (currentFilters.status) params.set("status", currentFilters.status)
+											if (currentFilters.search) params.set("search", currentFilters.search.trim())
+											if (currentFilters.date) params.set("date", currentFilters.date)
+											window.location.href = `/console/bookings/${event._id}?${params.toString()}`
+										}}
+									>
+										Apply
+									</Button>
+								</Flex>
+							</Flex>
+						</Box>
+
+						{/* Content */}
+						<Box overflowX="auto">
+							{activeTab === "bookings" && (
+								<>
+									{paginatedBookings.length === 0 ? (
+										<Flex direction="column" align="center" justify="center" py={16}>
+											<Box p={4} bg="gray.100" borderRadius="full" mb={4}>
+												<TicketIcon className="w-8 h-8 text-gray-400" />
+											</Box>
+											<Text fontSize="lg" fontWeight="medium" color="gray.900" mb={1}>No Bookings Found</Text>
+											<Text fontSize="sm" color="gray.500">Try adjusting your search or filters.</Text>
+										</Flex>
+									) : (
+										<Table variant="simple">
+											<Thead bg="gray.50">
+												<Tr>
+													<Th>Reference</Th>
+													<Th>Customer</Th>
+													<Th>Tickets</Th>
+													<Th>Total</Th>
+													<Th>Status</Th>
+													<Th>Date</Th>
+													<Th></Th>
+												</Tr>
+											</Thead>
+											<Tbody>
+												{paginatedBookings.map((booking) => (
+													<Tr key={booking._id} _hover={{ bg: "gray.50" }}>
+														<Td fontSize="sm" fontFamily="mono" color="gray.500">
+															{booking.bookingRef}
+														</Td>
+														<Td>
+															<Flex align="center" gap={3}>
+																<Avatar size="sm" name={booking.customerName} />
+																<Box>
+																	<Text fontWeight="medium" color="gray.900">{booking.customerName}</Text>
+																	<Text fontSize="xs" color="gray.500">{booking.customerEmail}</Text>
+																</Box>
+															</Flex>
+														</Td>
+														<Td>
+															<Flex direction="column" gap={1}>
+																{booking.tickets.map((t, idx) => (
+																	<Badge key={idx} variant="subtle" colorScheme="gray" fontSize="xs" w="fit-content">
+																		{t.quantity}x Ticket
+																	</Badge>
+																))}
+															</Flex>
+														</Td>
+														<Td fontWeight="medium">
+															${booking.total.toFixed(2)}
+														</Td>
+														<Td>
+															<Badge colorScheme={getStatusColor(booking.status)} borderRadius="full" px={2} py={0.5} textTransform="capitalize">
+																{booking.status}
+															</Badge>
+														</Td>
+														<Td fontSize="sm" color="gray.600">
+															<Text>{new Date(booking.createdAt).toLocaleDateString()}</Text>
+															<Text fontSize="xs" color="gray.400">{new Date(booking.createdAt).toLocaleTimeString()}</Text>
+														</Td>
+														<Td>
+															<Menu>
+																<MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-5 h-5" />} variant="ghost" size="sm" />
+																<MenuList>
+																	<MenuItem>View Details</MenuItem>
+																	<MenuItem>Resend Receipt</MenuItem>
+																	<MenuItem color="red.500">Cancel Booking</MenuItem>
+																</MenuList>
+															</Menu>
+														</Td>
+													</Tr>
+												))}
+											</Tbody>
+										</Table>
+									)}
+								</>
 							)}
-						</div>
-					)}
 
-					{/* Waiting List Tab */}
-					{activeTab === "waiting-list" && (
-						<div className="bg-white rounded-xl border border-border-light p-12 text-center">
-							<div className="w-16 h-16 mx-auto mb-4 bg-background-light rounded-full flex items-center justify-center">
-								<svg className="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-								</svg>
-							</div>
-							<h3 className="text-xl font-semibold text-text-primary mb-2">Waiting List</h3>
-							<p className="text-text-secondary">Waiting list feature coming soon.</p>
-						</div>
-					)}
+							{activeTab === "waiting-list" && (
+								<Flex direction="column" align="center" justify="center" py={16}>
+									<Box p={4} bg="gray.100" borderRadius="full" mb={4}>
+										<ClockIcon className="w-8 h-8 text-gray-400" />
+									</Box>
+									<Text fontSize="lg" fontWeight="medium" color="gray.900" mb={1}>Waiting List</Text>
+									<Text fontSize="sm" color="gray.500">Waiting list management coming soon.</Text>
+								</Flex>
+							)}
+						</Box>
 
-					{/* Pagination */}
-					{activeTab === "bookings" && totalPages > 1 && (
-						<div className="flex justify-center items-center gap-2 mt-6">
-							<button
-								onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-								disabled={currentPage === 1}
-								className="px-4 py-2 text-sm font-medium text-text-primary bg-white border border-border-light rounded-lg hover:bg-background-gray disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-							>
-								Previous
-							</button>
-
-							{Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-								<button
-									key={page}
-									onClick={() => setCurrentPage(page)}
-									className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-										page === currentPage ? "bg-primary-purple text-white" : "text-text-primary bg-white border border-border-light hover:bg-background-gray"
-									}`}
-								>
-									{page}
-								</button>
-							))}
-
-							<button
-								onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-								disabled={currentPage === totalPages}
-								className="px-4 py-2 text-sm font-medium text-text-primary bg-white border border-border-light rounded-lg hover:bg-background-gray disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-							>
-								Next
-							</button>
-						</div>
-					)}
-				</div>
+						{/* Pagination Footer */}
+						{activeTab === "bookings" && totalPages > 1 && (
+							<Flex px={6} py={4} bg="gray.50" borderTop="1px" borderColor="gray.200" justify="space-between" align="center">
+								<Text fontSize="sm" color="gray.500">
+									Page <Text as="span" fontWeight="medium">{currentPage}</Text> of <Text as="span" fontWeight="medium">{totalPages}</Text>
+								</Text>
+								<Flex gap={2}>
+									<Button
+										onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+										isDisabled={currentPage === 1}
+										size="sm"
+										variant="outline"
+										bg="white"
+									>
+										Previous
+									</Button>
+									<Button
+										onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+										isDisabled={currentPage === totalPages}
+										size="sm"
+										variant="outline"
+										bg="white"
+									>
+										Next
+									</Button>
+								</Flex>
+							</Flex>
+						)}
+					</Box>
+				</Box>
 			</ConsoleLayout>
 		</>
 	)
@@ -410,6 +456,7 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 		name: 1,
 		startsOn: 1,
 		endsOn: 1,
+		location: 1
 	}).lean()
 
 	if (!eventDoc) return { notFound: true }
@@ -504,7 +551,6 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 				})),
 			})),
 			exportable,
-			// exportable: JSON.stringify(exportable),
 			filters: {
 				status: (status as string) || "",
 				date: (date as string) || "",

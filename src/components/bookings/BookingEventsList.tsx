@@ -2,6 +2,8 @@ import React from "react"
 import { IEvent } from "@/models/events/types"
 import BookingEventCard from "./BookingEventCard"
 import { useRouter } from "next/router"
+import { Box, Flex, Text, Button, SimpleGrid, IconButton, Menu, MenuButton, MenuList, MenuItem } from "@chakra-ui/react"
+import { ChevronLeftIcon, ChevronRightIcon, FunnelIcon, ArrowsUpDownIcon } from "@heroicons/react/24/outline"
 
 type Pagination = {
 	total: number
@@ -41,106 +43,110 @@ const BookingEventsList: React.FC<Props> = ({ events, pagination }) => {
 		const { page, totalPages } = pagination
 
 		if (totalPages <= 7) {
-			// Show all pages if 7 or fewer
 			for (let i = 1; i <= totalPages; i++) {
 				pages.push(i)
 			}
 		} else {
-			// Always show first page
 			pages.push(1)
-
-			if (page > 3) {
-				pages.push("...")
-			}
-
-			// Show pages around current page
+			if (page > 3) pages.push("...")
 			for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
 				pages.push(i)
 			}
-
-			if (page < totalPages - 2) {
-				pages.push("...")
-			}
-
-			// Always show last page
+			if (page < totalPages - 2) pages.push("...")
 			pages.push(totalPages)
 		}
-
 		return pages
 	}
 
 	return (
-		<div className="space-y-6">
-			{/* Events List */}
-			<div className="space-y-4">
+		<Box>
+			{/* Toolbar */}
+			<Flex justifyContent="space-between" alignItems="center" mb={6}>
+				<Text fontSize="lg" fontWeight="bold" color="gray.700">
+					Select an Event to View Bookings
+				</Text>
+				<Flex gap={2}>
+					<Menu>
+						<MenuButton as={Button} size="sm" variant="outline" rightIcon={<ChevronLeftIcon className="w-4 h-4 rotate-270" />} leftIcon={<ArrowsUpDownIcon className="w-4 h-4" />}>
+							Sort By
+						</MenuButton>
+						<MenuList>
+							<MenuItem>Newest First</MenuItem>
+							<MenuItem>Oldest First</MenuItem>
+							<MenuItem>Name (A-Z)</MenuItem>
+						</MenuList>
+					</Menu>
+					<Button size="sm" variant="outline" leftIcon={<FunnelIcon className="w-4 h-4" />}>
+						Filter
+					</Button>
+				</Flex>
+			</Flex>
+
+			{/* Grid Layout */}
+			<SimpleGrid columns={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing={6}>
 				{events.map((event) => (
 					<BookingEventCard key={event._id.toString()} event={event} />
 				))}
-			</div>
+			</SimpleGrid>
 
 			{/* Pagination */}
 			{pagination.totalPages > 1 && (
-				<div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-border-light">
-					{/* Pagination Info */}
-					<div className="text-sm text-text-secondary">
-						Showing <span className="font-medium text-text-primary">{pagination.showing}</span> of <span className="font-medium text-text-primary">{pagination.total}</span> events
-					</div>
+				<Flex 
+					justifyContent="space-between" 
+					alignItems="center" 
+					mt={8} 
+					pt={6} 
+					borderTop="1px" 
+					borderColor="gray.200"
+					flexDirection={{ base: "column", sm: "row" }}
+					gap={4}
+				>
+					<Text fontSize="sm" color="gray.500">
+						Showing <Text as="span" fontWeight="semibold" color="gray.900">{pagination.showing}</Text> of <Text as="span" fontWeight="semibold" color="gray.900">{pagination.total}</Text> events
+					</Text>
 
-					{/* Pagination Controls */}
-					<div className="flex items-center gap-2">
-						{/* Previous Button */}
-						<button
+					<Flex gap={2} alignItems="center">
+						<Button
 							onClick={handlePrevPage}
-							disabled={pagination.page === 1}
-							className="px-3 py-2 text-sm font-medium text-text-primary bg-white border border-border-light rounded-lg hover:bg-background-gray disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							isDisabled={pagination.page === 1}
+							size="sm"
+							variant="outline"
+							leftIcon={<ChevronLeftIcon className="w-4 h-4" />}
 						>
 							Previous
-						</button>
+						</Button>
 
-						{/* Page Numbers */}
-						<div className="hidden sm:flex items-center gap-1">
-							{getPageNumbers().map((pageNum, index) => {
-								if (pageNum === "...") {
-									return (
-										<span key={`ellipsis-${index}`} className="px-3 py-2 text-text-muted">
-											...
-										</span>
-									)
-								}
-
-								const isActive = pageNum === pagination.page
-
-								return (
-									<button
-										key={pageNum}
-										onClick={() => goToPage(pageNum as number)}
-										className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-											isActive ? "bg-primary-purple text-white" : "text-text-primary bg-white border border-border-light hover:bg-background-gray"
-										}`}
+						<Flex display={{ base: "none", md: "flex" }} gap={1}>
+							{getPageNumbers().map((pageNum, index) => (
+								typeof pageNum === "number" ? (
+									<Button
+										key={index}
+										onClick={() => goToPage(pageNum)}
+										size="sm"
+										variant={pageNum === pagination.page ? "solid" : "ghost"}
+										colorScheme={pageNum === pagination.page ? "purple" : "gray"}
 									>
 										{pageNum}
-									</button>
+									</Button>
+								) : (
+									<Text key={index} px={2} color="gray.400" alignSelf="center">...</Text>
 								)
-							})}
-						</div>
+							))}
+						</Flex>
 
-						{/* Mobile: Current Page Display */}
-						<div className="sm:hidden px-3 py-2 text-sm font-medium text-text-primary bg-white border border-border-light rounded-lg">
-							{pagination.page} / {pagination.totalPages}
-						</div>
-
-						{/* Next Button */}
-						<button
+						<Button
 							onClick={handleNextPage}
-							disabled={pagination.page === pagination.totalPages}
-							className="px-3 py-2 text-sm font-medium text-text-primary bg-white border border-border-light rounded-lg hover:bg-background-gray disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							isDisabled={pagination.page === pagination.totalPages}
+							size="sm"
+							variant="outline"
+							rightIcon={<ChevronRightIcon className="w-4 h-4" />}
 						>
 							Next
-						</button>
-					</div>
-				</div>
+						</Button>
+					</Flex>
+				</Flex>
 			)}
-		</div>
+		</Box>
 	)
 }
 
