@@ -120,6 +120,21 @@ const eventsSchema = new Schema<IEvent>(
 			type: Boolean,
 			default: false,
 		},
+
+		showParticipants: {
+			type: Boolean,
+			default: true,
+		},
+
+		featuredGuests: {
+			type: [{
+				name: { type: String, required: true },
+				title: { type: String, required: true },
+				image: { type: String, required: false },
+			}],
+			required: false,
+			default: [],
+		},
 	},
 	{
 		timestamps: true,

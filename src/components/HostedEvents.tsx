@@ -1,6 +1,30 @@
-import React, { useMemo } from "react"
+import React, { useEffect, useMemo, useState } from "react"
+import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
+import { useWebShare } from "@Jetzy/hooks/useShare"
+import EventTicketsComponent from "@/components/EventTicketsComponent"
+import { IEvent } from "@/models/events/types"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
+import Link from "next/link"
+import { useSession } from "next-auth/react"
+import Linkify from "linkify-react"
+import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
+import Image from "next/image"
+import LightNavbar from "@/components/layout/LightNavbar"
+import Footer from "@/components/layout/Footer"
+import CommentsSection, { UserType } from "@/components/events/CommentsSection"
+import { 
+	CalendarIcon, 
+	MapPinIcon, 
+	UserGroupIcon, 
+	ShareIcon, 
+	EllipsisHorizontalIcon, 
+	TicketIcon,
+	QuestionMarkCircleIcon,
+	ChatBubbleLeftRightIcon
+} from "@heroicons/react/24/outline"
 import { 
 	Table, 
 	Thead, 
@@ -13,6 +37,7 @@ import {
 	Text, 
 	Spinner, 
 	Avatar,
+	AvatarGroup,
 	Flex,
 	IconButton,
 	Menu,
@@ -22,14 +47,474 @@ import {
 	Input,
 	InputGroup,
 	InputLeftElement,
-	Select
+	Select,
+	Button
 } from "@chakra-ui/react"
 import { 
 	MagnifyingGlassIcon, 
-	EllipsisHorizontalIcon,
+	EllipsisHorizontalIcon as EllipsisIcon,
 	FunnelIcon,
 	ArrowDownTrayIcon
 } from "@heroicons/react/24/outline"
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
+
+type Props = {
+	event: IEvent
+}
+
+// Hardcoded placeholder guests - shown when no featuredGuests in database
+const defaultFeaturedGuests = [
+	{ name: "Abhi", title: "Product Manager", image: null },
+	{ name: "Kanshima", title: "Marketing Lead", image: null },
+	{ name: "Michael", title: "Community Manager", image: null },
+	{ name: "Richard", title: "Tech Lead", image: null },
+]
+
+// Hardcoded hosts - shown as placeholder
+const defaultHosts = [
+	{ name: "Host 1", image: null },
+	{ name: "Host 2", image: null },
+	{ name: "Host 3", image: null },
+	{ name: "Host 4", image: null },
+	{ name: "Host 5", image: null },
+]
+
+export default function HostedEvents({ event }: Props) {
+	const [shareUrl, setShareUrl] = useState("")
+	const [activeTab, setActiveTab] = useState<"about" | "discussion">("about")
+	const [isTicketModalOpen, setIsTicketModalOpen] = useState(false)
+	const { data: session } = useSession()
+
+	// Validate event data early and safely
+	const isValidEvent = event && event._id && event.name
+
+	const clonedEvent = useMemo(() => {
+		if (!isValidEvent) return null
+		try { return structuredClone(event) } catch (error) { return null }
+	}, [event, isValidEvent])
+
+	const shareTitle = clonedEvent?.name || ""
+	const shareDesc = clonedEvent?.desc || ""
+
+	// Fetch totals to check for sold out / waiting list
+	const { data: totals } = useQuery({
+		queryKey: ["eventTotals", clonedEvent?._id],
+		queryFn: () => axios.get(`/api/events/${clonedEvent?._id}/totals`),
+		enabled: !!clonedEvent?._id
+	})
+
+	const totalSold = totals?.data?.totalTickets || 0
+	const isSoldOut = clonedEvent?.capacity > 0 && totalSold >= clonedEvent?.capacity
+
+	// @ts-ignore
+	const isAdmin = session?.user?.role === "admin"
+
+	useEffect(() => {
+		if (typeof window !== "undefined") {
+			setShareUrl(window.location.href)
+		}
+	}, [])
+
+	const sharer = useWebShare({
+		title: shareTitle,
+		text: shareDesc,
+		url: shareUrl,
+	})
+
+	const { formattedDate, formattedTime, formattedMonth, formattedDay } = useMemo(() => {
+		if (!clonedEvent?.startsOn) return { formattedDate: "", formattedTime: "", formattedMonth: "", formattedDay: "" }
+		try {
+			const userTimeZone = clonedEvent?.timezone?.split(") ")[1] || clonedEvent?.timezone || "UTC"
+			const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
+			return { 
+				formattedDate: date.format("dddd, MMMM D, YYYY"), 
+				formattedTime: date.format("h:mm A"),
+				formattedMonth: date.format("MMM").toUpperCase(),
+				formattedDay: date.format("D")
+			}
+		} catch (error) {
+			return { formattedDate: "", formattedTime: "", formattedMonth: "", formattedDay: "" }
+		}
+	}, [clonedEvent?.startsOn, clonedEvent?.timezone])
+
+	const hasEventEnded = useMemo(() => {
+		if (!clonedEvent?.endsOn) return false
+		return new Date() > new Date(clonedEvent.endsOn)
+	}, [clonedEvent?.endsOn])
+
+	if (!isValidEvent || !clonedEvent) {
+		return <div className="min-h-screen flex items-center justify-center">Event Not Found</div>
+	}
+
+	return (
+		<div className="min-h-screen bg-[#F0F2F5]">
+			<LightNavbar />
+			
+			{/* Cover Photo Area */}
+			<div className="bg-white shadow-sm border-b border-gray-300">
+				<div className="max-w-[1250px] mx-auto px-4 lg:px-0 pt-0 pb-4">
+					<div className="relative w-full h-[200px] md:h-[350px] lg:h-[400px] bg-gray-200 overflow-hidden rounded-b-xl mb-6">
+						{clonedEvent.images && clonedEvent.images.length > 0 ? (
+							<Image 
+								src={clonedEvent.images[0]} 
+								alt="Event Cover" 
+								fill 
+								className="object-cover" 
+								priority
+							/>
+						) : (
+							<div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
+								No Cover Photo
+							</div>
+						)}
+					</div>
+
+					{/* Header Info */}
+					<div className="flex flex-col md:flex-row gap-6 px-4">
+						{/* Date Box (Left) */}
+						<div className="hidden md:flex flex-col items-center p-3 bg-white rounded-xl shadow-sm border border-gray-200 h-fit w-20 flex-shrink-0">
+							<span className="text-red-500 font-bold uppercase text-sm">{formattedMonth}</span>
+							<span className="text-2xl font-bold text-gray-900">{formattedDay}</span>
+						</div>
+
+						<div className="flex-1">
+							<div className="mb-2">
+								<span className="text-red-500 font-bold uppercase text-sm mr-2">{formattedDate}</span>
+								<span className="text-gray-500 text-sm">AT {formattedTime}</span>
+							</div>
+							<h1 className="text-3xl md:text-4xl font-bold text-[#1C1E21] mb-2">{clonedEvent.name}</h1>
+							<p className="text-gray-600 font-medium mb-4">{clonedEvent.location}</p>
+
+							{/* Action Bar */}
+							<div className="flex flex-wrap gap-3 py-4 border-t border-gray-200 mt-4">
+								<div className="flex bg-gray-100 rounded-lg p-1">
+									<button 
+										className="px-6 py-2 bg-white rounded-md shadow-sm text-gray-900 font-semibold text-sm hover:bg-gray-50 transition-colors flex items-center gap-2"
+										onClick={() => {}}
+									>
+										<span className="text-yellow-500">★</span> Interested
+									</button>
+									<button className="px-6 py-2 text-gray-600 font-semibold text-sm hover:bg-gray-200 rounded-md transition-colors">
+										Going
+									</button>
+								</div>
+								
+								<button 
+									onClick={() => setIsTicketModalOpen(true)}
+									disabled={hasEventEnded}
+									className={`px-6 py-2 rounded-lg font-semibold text-sm text-white transition-colors shadow-sm flex items-center gap-2 ${
+										hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+									}`}
+								>
+									<TicketIcon className="w-5 h-5" />
+									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+								</button>
+								
+								<button 
+									onClick={() => sharer.share()}
+									className="px-4 py-2 bg-gray-200 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-2"
+								>
+									<ShareIcon className="w-5 h-5" />
+									Share
+								</button>
+								
+								<Menu>
+									<MenuButton 
+										as={IconButton}
+										aria-label="More options"
+										icon={<EllipsisHorizontalIcon className="w-6 h-6" />}
+										variant="ghost"
+										className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+										_hover={{ bg: "gray.300" }}
+										bg="gray.200"
+									/>
+									<MenuList>
+										<MenuItem icon={<TicketIcon className="w-4 h-4" />}>
+											Save Event
+										</MenuItem>
+										<MenuItem icon={<ShareIcon className="w-4 h-4" />}>
+											Copy Link
+										</MenuItem>
+										<MenuItem color="red.500" icon={<EllipsisHorizontalIcon className="w-4 h-4" />}>
+											Report Event
+										</MenuItem>
+									</MenuList>
+								</Menu>
+							</div>
+						</div>
+					</div>
+
+					{/* Navigation Tabs */}
+					<div className="flex gap-1 mt-6 border-t border-gray-300 pt-1 px-4">
+						<button 
+							onClick={() => setActiveTab("about")}
+							className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors ${activeTab === 'about' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-600 hover:bg-gray-100 rounded-t-lg'}`}
+						>
+							About
+						</button>
+						<button 
+							onClick={() => setActiveTab("discussion")}
+							className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors ${activeTab === 'discussion' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-600 hover:bg-gray-100 rounded-t-lg'}`}
+						>
+							Discussion
+						</button>
+					</div>
+				</div>
+			</div>
+
+			{/* Main Content Area */}
+			<div className="max-w-[1250px] mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+				{/* Left Column (Details / Discussion) */}
+				<div className="lg:col-span-2 space-y-4">
+					{activeTab === "about" ? (
+						<>
+							<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+								<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Details</h2>
+								
+								<div className="flex items-start gap-4 mb-4">
+									<UserGroupIcon className="w-6 h-6 text-gray-500 mt-1" />
+									<div>
+										<p className="text-[#1C1E21]">
+											{clonedEvent.privacy === 'private' ? 'Private' : 'Public'}  · Anyone on or off Jetzy
+										</p>
+									</div>
+								</div>
+
+								<div className="space-y-4 text-[#1C1E21]">
+									<EventDescription description={clonedEvent.desc} />
+								</div>
+							</div>
+
+                            {/* Featured Guests Section */}
+                            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+                                <h2 className="text-2xl font-bold text-[#1C1E21] mb-6">Featured Guests</h2>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    {(clonedEvent.featuredGuests && clonedEvent.featuredGuests.length > 0 
+                                        ? clonedEvent.featuredGuests 
+                                        : defaultFeaturedGuests
+                                    ).map((guest: any, index: number) => (
+                                        <div key={index} className="flex flex-col items-center text-center">
+                                            {guest.image ? (
+                                                <Avatar 
+                                                    size="2xl" 
+                                                    name={guest.name} 
+                                                    src={guest.image}
+                                                    mb={3}
+                                                />
+                                            ) : (
+                                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-md">
+                                                    {guest.name.charAt(0)}
+                                                </div>
+                                            )}
+                                            <Text fontWeight="bold" fontSize="md" color="#1C1E21" mb={1}>
+                                                {guest.name}
+                                            </Text>
+                                            <Text fontSize="sm" color="gray.600">
+                                                {guest.title}
+                                            </Text>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Guests List */}
+                            <EventGuests eventId={clonedEvent._id.toString()} showParticipants={clonedEvent.showParticipants} />
+
+							{/* Presented By */}
+							<div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+								<h2 className="text-2xl font-bold text-[#1C1E21] mb-4">Presented by</h2>
+								<Flex align="center" gap={4}>
+									<Box 
+										w="64px" 
+										h="64px" 
+										borderRadius="lg" 
+										bgGradient="linear(to-br, purple.400, purple.600)"
+										display="flex"
+										alignItems="center"
+										justifyContent="center"
+										color="white"
+										fontSize="xl"
+										fontWeight="bold"
+										boxShadow="md"
+									>
+										{defaultFeaturedGuests[0].name.charAt(0)}
+									</Box>
+									<Box>
+										<Text fontWeight="semibold" fontSize="lg" color="#1C1E21">
+											Jetzy Community
+										</Text>
+									</Box>
+								</Flex>
+							</div>
+
+							{/* Hosted By */}
+							<div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+								<h2 className="text-2xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
+								<Flex align="center" gap={2}>
+									{defaultHosts.map((host, index) => (
+										<Box
+											key={index}
+											w="48px"
+											h="48px"
+											borderRadius="full"
+											bgGradient="linear(to-br, purple.400, purple.600)"
+											display="flex"
+											alignItems="center"
+											justifyContent="center"
+											color="white"
+											fontWeight="semibold"
+											boxShadow="md"
+											border="2px solid white"
+											ml={index > 0 ? "-12px" : "0"}
+											zIndex={5 - index}
+											title={host.name}
+										>
+											{host.name.charAt(0)}
+										</Box>
+									))}
+								</Flex>
+							</div>
+
+                            {/* Questions Section */}
+                            <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+								<Flex justify="space-between" align="center" direction={{ base: "column", sm: "row" }} gap={4}>
+                                    <Box>
+                                        <h2 className="text-xl font-bold text-[#1C1E21] mb-2">Questions?</h2>
+                                        <Text color="gray.600" fontSize="sm">
+                                            If you have any questions about this event, please reach out to the organizers:
+                                        </Text>
+                                        <Text color="blue.600" fontWeight="medium" mt={1}>
+                                            <a href="mailto:events@jetzy.com">events@jetzy.com</a>
+                                        </Text>
+                                    </Box>
+                                    <Button 
+                                        leftIcon={<ChatBubbleLeftRightIcon className="w-5 h-5" />} 
+                                        colorScheme="gray" 
+                                        variant="outline"
+                                        onClick={() => setActiveTab("discussion")}
+                                    >
+                                        Ask the Host
+                                    </Button>
+                                </Flex>
+							</div>
+						</>
+					) : (
+						<CommentsSection eventId={clonedEvent._id.toString()} currentUser={session?.user as UserType} />
+					)}
+				</div>
+
+				{/* Right Column (Sidebar) */}
+				<div className="space-y-4">
+					{/* Location Card */}
+					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Location</h2>
+						<div className="mb-4">
+							<iframe
+								width="100%"
+								height="200"
+								frameBorder="0"
+								style={{ border: 0, borderRadius: '8px' }}
+								src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&q=${encodeURIComponent(clonedEvent.location)}`}
+								allowFullScreen
+							/>
+						</div>
+						<div className="flex items-start gap-3">
+							<MapPinIcon className="w-6 h-6 text-gray-500 flex-shrink-0" />
+							<div>
+								<p className="font-semibold text-[#1C1E21]">{clonedEvent.location}</p>
+							</div>
+						</div>
+					</div>
+
+					{/* Sticky Ticket Card (Desktop) */}
+					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200 sticky top-20">
+						<div className="text-center">
+							<p className="text-gray-500 text-sm mb-2">Tickets starting from</p>
+							<p className="text-3xl font-bold text-[#1C1E21] mb-4">
+								{clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map(t => t.price))}` : 'Free'}
+							</p>
+							<button 
+								onClick={() => setIsTicketModalOpen(true)}
+								disabled={hasEventEnded}
+								className={`w-full py-3 rounded-lg font-bold text-white transition-colors ${
+									hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-md"
+								}`}
+							>
+								{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<Footer />
+
+			{/* Ticket Modal */}
+			{clonedEvent && <EventTicketsComponent event={clonedEvent} isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)} />}
+			
+			{/* Checkout Modal */}
+			{clonedEvent?.name && <EventCheckoutModel event={clonedEvent.name} />}
+		</div>
+	)
+}
+
+function EventGuests({ eventId, showParticipants }: { eventId: string, showParticipants?: boolean }) {
+    if (!showParticipants) return null;
+
+    const { data: bookings, isLoading } = useQuery({
+        queryKey: ["eventGuests", eventId],
+        queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
+    })
+
+    const guests = useMemo(() => {
+        if (!bookings?.data) return []
+        // Extract unique guests
+        const unique = new Map();
+        bookings.data.forEach((b: any) => {
+            if (!unique.has(b.customerEmail)) {
+                unique.set(b.customerEmail, { name: b.customerName, email: b.customerEmail });
+            }
+        });
+        return Array.from(unique.values());
+    }, [bookings?.data]);
+
+    if (guests.length === 0) return null;
+
+    return (
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <h2 className="text-xl font-bold text-[#1C1E21] mb-4">Guests</h2>
+            <Flex align="center" gap={4}>
+                 <AvatarGroup size="md" max={5}>
+                    {guests.map((guest: any) => (
+                        <Avatar key={guest.email} name={guest.name} />
+                    ))}
+                 </AvatarGroup>
+                 <Text color="gray.600" fontSize="sm">{guests.length} going</Text>
+            </Flex>
+        </div>
+    )
+}
+
+function EventDescription({ description }: { description: string }) {
+	if (!description) return <p className="text-gray-500 italic">No description available</p>
+	const lines = description.split("\n")
+	const linkifyOptions = {
+		target: "_blank",
+		className: "text-blue-600 hover:underline",
+	}
+
+	return (
+		<div className="text-base text-gray-800 break-words leading-relaxed">
+			{lines.map((line, i) => (
+				<p key={i} className="mb-3">
+					<Linkify options={linkifyOptions}>{line}</Linkify>
+				</p>
+			))}
+		</div>
+	)
+}
 
 interface TicketInfo {
 	ticketId: string
@@ -206,7 +691,7 @@ function EventBookings({ eventId }: { eventId: string }) {
 												<MenuButton
 													as={IconButton}
 													aria-label="Options"
-													icon={<EllipsisHorizontalIcon style={{ width: 20, height: 20 }} />}
+													icon={<EllipsisIcon style={{ width: 20, height: 20 }} />}
 													variant="ghost"
 													size="sm"
 													color="gray.500"

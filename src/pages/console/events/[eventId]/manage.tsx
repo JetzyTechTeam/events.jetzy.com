@@ -28,14 +28,36 @@ import { SendBlastModal } from "@/components/console/SendBlastModal"
 import { InviteGuestsModal } from "@/components/console/InviteGuestsModal"
 import { ShareModal } from "@/components/console/ShareModal"
 import { GuestsList } from "@/components/console/GuestsList"
-import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge } from "@chakra-ui/react"
+import { WaitingList } from "@/components/console/WaitingList"
+import { EventBookings } from "@/components/HostedEvents"
+import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge, AvatarGroup } from "@chakra-ui/react"
+
+// Hardcoded placeholder guests - shown when no featuredGuests in database
+const defaultFeaturedGuests = [
+	{ name: "Abhi", title: "Product Manager", image: null },
+	{ name: "Kanshima", title: "Marketing Lead", image: null },
+	{ name: "Michael", title: "Community Manager", image: null },
+	{ name: "Richard", title: "Tech Lead", image: null },
+]
+
+// Hardcoded presenter - shown when no presentedBy in database
+const defaultPresenter = { name: "Jetzy Community", logo: null }
+
+// Hardcoded hosts - shown when no hostedBy in database
+const defaultHosts = [
+	{ name: "Host 1", image: null },
+	{ name: "Host 2", image: null },
+	{ name: "Host 3", image: null },
+	{ name: "Host 4", image: null },
+	{ name: "Host 5", image: null },
+]
 
 export default function Manage({ event }: any) {
 	const eventData = JSON.parse(event)
 	const [shareModal, setShareModal] = useState(false)
 	const [inviteGuestsModal, setInviteGuestsModal] = useState(false)
 	const [sendBlastModal, setSendBlastModal] = useState(false)
-	const [activeTab, setActiveTab] = useState<"about" | "guests" | "discussion">("about")
+	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "discussion">("about")
 	const router = useRouter()
 	const { data: session } = useSession()
 
@@ -162,21 +184,27 @@ export default function Manage({ event }: any) {
 							{/* Action Bar */}
 							<Flex justify="space-between" align="center" wrap="wrap" gap={4}>
 								<Flex gap={1} overflowX="auto" pb={1} sx={{ '::-webkit-scrollbar': { display: 'none' } }}>
-									{["About", "Guests", "Discussion"].map((tab) => (
+									{[
+										{ label: "About", value: "about" },
+										{ label: "Guests", value: "guests" },
+										{ label: "Bookings", value: "bookings" },
+										{ label: "Waiting List", value: "waitingList" },
+										{ label: "Discussion", value: "discussion" }
+									].map((tab) => (
 										<Button
-											key={tab}
+											key={tab.value}
 											variant="ghost"
-											color={activeTab === tab.toLowerCase() ? "#1877F2" : "#65676B"}
-											borderBottom={activeTab === tab.toLowerCase() ? "3px solid #1877F2" : "3px solid transparent"}
+											color={activeTab === tab.value ? "#1877F2" : "#65676B"}
+											borderBottom={activeTab === tab.value ? "3px solid #1877F2" : "3px solid transparent"}
 											borderRadius="0"
 											px={4}
 											h="50px"
 											_hover={{ bg: "#F0F2F5", borderRadius: "md", borderBottom: "3px solid transparent" }}
-											onClick={() => setActiveTab(tab.toLowerCase() as any)}
+											onClick={() => setActiveTab(tab.value as any)}
 											fontSize="md"
 											fontWeight="600"
 										>
-											{tab}
+											{tab.label}
 										</Button>
 									))}
 								</Flex>
@@ -213,6 +241,19 @@ export default function Manage({ event }: any) {
 									>
 										Share
 									</Button>
+									<Menu>
+										<MenuButton as={Button} size="sm" bg="#E4E6EB" color="#1C1E21" _hover={{ bg: "#D8DADF" }}>
+											<FiMoreHorizontal />
+										</MenuButton>
+										<MenuList zIndex={20}>
+											<MenuItem icon={<FiUserPlus />} onClick={() => router.push(`/api/events/${eventData._id}/create-users`)}>
+												Create Ticket Users
+											</MenuItem>
+											<MenuItem icon={<FiUsers />} onClick={() => router.push(`/api/events/${eventData._id}/create-group`)}>
+												Create Interest Group
+											</MenuItem>
+										</MenuList>
+									</Menu>
 								</Flex>
 							</Flex>
 						</Flex>
@@ -264,12 +305,137 @@ export default function Manage({ event }: any) {
 								</Box>
 							)}
 
+							{activeTab === "about" && (
+								<Box bg="white" borderRadius="lg" boxShadow="sm" p={6} mb={4}>
+									<Text fontSize="2xl" fontWeight="bold" mb={6} color="#1C1E21">Featured Guests</Text>
+									<Box 
+										display="grid" 
+										gridTemplateColumns={{ base: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }} 
+										gap={6}
+									>
+										{(eventData.featuredGuests && eventData.featuredGuests.length > 0 
+											? eventData.featuredGuests 
+											: defaultFeaturedGuests
+										).map((guest: any, index: number) => (
+											<Flex key={index} direction="column" align="center" textAlign="center">
+												{guest.image ? (
+													<Avatar 
+														name={guest.name} 
+														src={guest.image} 
+														size="2xl"
+														mb={3}
+													/>
+												) : (
+													<Box 
+														w="80px" 
+														h="80px" 
+														borderRadius="full" 
+														bgGradient="linear(to-br, purple.400, purple.600)"
+														display="flex"
+														alignItems="center"
+														justifyContent="center"
+														color="white"
+														fontSize="2xl"
+														fontWeight="bold"
+														mb={3}
+														boxShadow="md"
+													>
+														{guest.name.charAt(0)}
+													</Box>
+												)}
+												<Text fontWeight="bold" fontSize="md" color="#1C1E21" mb={1}>
+													{guest.name}
+												</Text>
+												<Text fontSize="sm" color="gray.600">
+													{guest.title}
+												</Text>
+											</Flex>
+										))}
+									</Box>
+								</Box>
+							)}
+
+							{activeTab === "about" && (
+								<Box bg="white" borderRadius="lg" boxShadow="sm" p={6} mb={4}>
+									<Text fontSize="2xl" fontWeight="bold" mb={4} color="#1C1E21">Presented by</Text>
+									<Flex align="center" gap={4}>
+										<Box 
+											w="64px" 
+											h="64px" 
+											borderRadius="lg" 
+											bgGradient="linear(to-br, purple.400, purple.600)"
+											display="flex"
+											alignItems="center"
+											justifyContent="center"
+											color="white"
+											fontSize="xl"
+											fontWeight="bold"
+											boxShadow="md"
+										>
+											{defaultPresenter.name.charAt(0)}
+										</Box>
+										<Box>
+											<Text fontWeight="semibold" fontSize="lg" color="#1C1E21">
+												{defaultPresenter.name}
+											</Text>
+										</Box>
+									</Flex>
+								</Box>
+							)}
+
+							{activeTab === "about" && (
+								<Box bg="white" borderRadius="lg" boxShadow="sm" p={6} mb={4}>
+									<Text fontSize="2xl" fontWeight="bold" mb={4} color="#1C1E21">Hosted by</Text>
+									<Flex align="center" gap={2}>
+										{defaultHosts.map((host, index) => (
+											<Box
+												key={index}
+												w="48px"
+												h="48px"
+												borderRadius="full"
+												bgGradient="linear(to-br, purple.400, purple.600)"
+												display="flex"
+												alignItems="center"
+												justifyContent="center"
+												color="white"
+												fontWeight="semibold"
+												boxShadow="md"
+												border="2px solid white"
+												ml={index > 0 ? "-12px" : "0"}
+												zIndex={defaultHosts.length - index}
+												title={host.name}
+											>
+												{host.name.charAt(0)}
+											</Box>
+										))}
+									</Flex>
+								</Box>
+							)}
+
 							{activeTab === "guests" && (
 								<Box bg="white" borderRadius="lg" boxShadow="sm" p={0} mb={4} overflow="hidden">
 									<Box p={4} borderBottom="1px solid #CED0D4">
 										<Text fontSize="xl" fontWeight="bold" color="#1C1E21">Guest List</Text>
 									</Box>
-									<GuestsList eventId={eventData._id} />
+									<Box p={4}>
+										<GuestsList eventId={eventData._id} />
+									</Box>
+								</Box>
+							)}
+
+							{activeTab === "bookings" && (
+								<Box mb={4}>
+									<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4}>
+										<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>Event Bookings</Text>
+									</Box>
+									<EventBookings eventId={eventData._id} />
+								</Box>
+							)}
+
+							{activeTab === "waitingList" && (
+								<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4}>
+									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>Waiting List</Text>
+									<WaitingList eventId={eventData._id} />
 								</Box>
 							)}
 							

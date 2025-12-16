@@ -10,11 +10,20 @@ export interface IEventTicket {
 	updatedAt: string
 	createdAt: string
 }
+
+export interface IFeaturedGuest {
+	name: string
+	title: string
+	image?: string
+	_id?: Types.ObjectId
+}
+
 export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
 	location: string
 	showParticipants: boolean
+	featuredGuests?: IFeaturedGuest[]
 	coordinates: {
 		long: number
 		lat: number
