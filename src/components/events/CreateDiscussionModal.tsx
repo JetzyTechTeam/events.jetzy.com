@@ -1,0 +1,552 @@
+import React, { useState, useRef } from "react"
+import {
+	Modal,
+	ModalOverlay,
+	ModalContent,
+	ModalHeader,
+	ModalBody,
+	ModalCloseButton,
+	Button,
+	Input,
+	Textarea,
+	FormControl,
+	FormLabel,
+	Stack,
+	useToast,
+	Flex,
+	Tag,
+	TagLabel,
+	TagCloseButton,
+	Text,
+	Box,
+	Divider,
+	Avatar,
+	Image,
+	IconButton,
+	useDisclosure,
+	SimpleGrid,
+	VStack,
+	HStack,
+	Icon,
+	Spinner,
+} from "@chakra-ui/react"
+import { useMutation } from "@tanstack/react-query"
+import { useSession } from "next-auth/react"
+import { CreateDiscussionPostApi } from "@/services/events/discussionApis"
+import { FiPlus, FiSmile, FiImage, FiHash, FiX, FiFile, FiVideo } from "react-icons/fi"
+import { useEdgeStore } from "@/lib/edgestore"
+
+interface CreateDiscussionModalProps {
+	isOpen: boolean
+	onClose: () => void
+	eventId: string
+	onSuccess: () => void
+}
+
+// Feelings/Activities data
+const FEELINGS = [
+	{ emoji: "😊", label: "happy" },
+	{ emoji: "😔", label: "sad" },
+	{ emoji: "😍", label: "loved" },
+	{ emoji: "😎", label: "cool" },
+	{ emoji: "😢", label: "crying" },
+	{ emoji: "😡", label: "angry" },
+	{ emoji: "🤗", label: "blessed" },
+	{ emoji: "😴", label: "tired" },
+	{ emoji: "🤩", label: "excited" },
+	{ emoji: "🥳", label: "celebrating" },
+	{ emoji: "😌", label: "grateful" },
+	{ emoji: "🤔", label: "thoughtful" },
+]
+
+const ACTIVITIES = [
+	{ emoji: "✈️", label: "traveling" },
+	{ emoji: "🍽️", label: "eating" },
+	{ emoji: "📖", label: "reading" },
+	{ emoji: "🎵", label: "listening to music" },
+	{ emoji: "🏋️", label: "working out" },
+	{ emoji: "🎮", label: "playing games" },
+	{ emoji: "📺", label: "watching" },
+	{ emoji: "🎨", label: "creating art" },
+	{ emoji: "💼", label: "working" },
+	{ emoji: "🛍️", label: "shopping" },
+	{ emoji: "🎉", label: "partying" },
+	{ emoji: "🧘", label: "relaxing" },
+]
+
+const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, onClose, eventId, onSuccess }) => {
+	const { data: session } = useSession()
+	const toast = useToast()
+	const { edgestore } = useEdgeStore()
+	const fileInputRef = useRef<HTMLInputElement>(null)
+
+	const [content, setContent] = useState("")
+	const [tags, setTags] = useState<string[]>([])
+	const [tagInput, setTagInput] = useState("")
+	const [images, setImages] = useState<string[]>([])
+	const [uploadingImages, setUploadingImages] = useState(false)
+	const [feeling, setFeeling] = useState<string>("")
+	const [activity, setActivity] = useState<string>("")
+
+	// Modals
+	const { isOpen: isTagModalOpen, onOpen: onTagModalOpen, onClose: onTagModalClose } = useDisclosure()
+	const { isOpen: isFeelingModalOpen, onOpen: onFeelingModalOpen, onClose: onFeelingModalClose } = useDisclosure()
+
+	const createMutation = useMutation({
+		mutationFn: async () => {
+			// Build content with feeling/activity
+			let finalContent = content
+			if (feeling || activity) {
+				const feelingText = feeling ? `feeling ${feeling}` : ""
+				const activityText = activity ? `${activity}` : ""
+				const separator = feeling && activity ? " · " : ""
+				finalContent = `${content}\n\n${feelingText}${separator}${activityText}`
+			}
+
+			// Generate title from first 50 characters of content
+			const autoTitle = finalContent.slice(0, 50).trim() + (finalContent.length > 50 ? "..." : "")
+
+			return await CreateDiscussionPostApi({
+				data: {
+					eventId,
+					title: autoTitle || "Post",
+					content: finalContent,
+					tags: tags.length > 0 ? tags : undefined,
+					images: images.length > 0 ? images : undefined,
+				},
+			})
+		},
+		onSuccess: () => {
+			toast({
+				title: "Post Created",
+				status: "success",
+				duration: 3000,
+				isClosable: true,
+			})
+			handleClose()
+			onSuccess()
+		},
+		onError: (error: any) => {
+			toast({
+				title: "Error",
+				description: error.response?.data?.message || "Failed to create post",
+				status: "error",
+				duration: 3000,
+				isClosable: true,
+			})
+		},
+	})
+
+	const handleClose = () => {
+		setContent("")
+		setTags([])
+		setTagInput("")
+		setImages([])
+		setFeeling("")
+		setActivity("")
+		onClose()
+	}
+
+	const handleAddTag = () => {
+		const trimmedTag = tagInput.trim().toLowerCase()
+		if (trimmedTag && !tags.includes(trimmedTag) && tags.length < 5) {
+			setTags([...tags, trimmedTag])
+			setTagInput("")
+		}
+	}
+
+	const handleRemoveTag = (tagToRemove: string) => {
+		setTags(tags.filter((tag) => tag !== tagToRemove))
+	}
+
+	const handleKeyPress = (e: React.KeyboardEvent) => {
+		if (e.key === "Enter") {
+			e.preventDefault()
+			handleAddTag()
+		}
+	}
+
+	const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = e.target.files
+		if (!files || files.length === 0) return
+
+		setUploadingImages(true)
+		try {
+			const uploadPromises = Array.from(files).map(async (file) => {
+				// Validate file type
+				if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+					throw new Error("Only images and videos are allowed")
+				}
+
+				// Validate file size (max 10MB)
+				if (file.size > 10 * 1024 * 1024) {
+					throw new Error("File size must be less than 10MB")
+				}
+
+				const res = await edgestore.publicFiles.upload({ file })
+				return res.url
+			})
+
+			const uploadedUrls = await Promise.all(uploadPromises)
+			setImages([...images, ...uploadedUrls])
+
+			toast({
+				title: "Images uploaded successfully",
+				status: "success",
+				duration: 2000,
+			})
+		} catch (error: any) {
+			toast({
+				title: "Upload failed",
+				description: error.message || "Failed to upload images",
+				status: "error",
+				duration: 3000,
+			})
+		} finally {
+			setUploadingImages(false)
+			if (fileInputRef.current) {
+				fileInputRef.current.value = ""
+			}
+		}
+	}
+
+	const handleRemoveImage = (index: number) => {
+		setImages(images.filter((_, i) => i !== index))
+	}
+
+	const handleSelectFeeling = (emoji: string, label: string) => {
+		setFeeling(`${emoji} ${label}`)
+		onFeelingModalClose()
+	}
+
+	const handleSelectActivity = (emoji: string, label: string) => {
+		setActivity(`${emoji} ${label}`)
+		onFeelingModalClose()
+	}
+
+	const handleSubmit = () => {
+		if (!content.trim()) {
+			toast({
+				description: "Please enter some content for your post",
+				status: "warning",
+				duration: 3000,
+				isClosable: true,
+			})
+			return
+		}
+
+		createMutation.mutate()
+	}
+
+	return (
+		<Modal isOpen={isOpen} onClose={handleClose} isCentered size="lg">
+			<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
+			<ModalContent
+				bg="white"
+				borderRadius="xl"
+				boxShadow="xl"
+				mx={{ base: 4, md: 0 }}
+			>
+				<ModalHeader 
+					textAlign="center" 
+					borderBottom="1px solid #E5E7EB" 
+					py={4} 
+					color="#1C1E21"
+					fontSize="xl"
+					fontWeight="bold"
+				>
+					Create Post
+				</ModalHeader>
+				<ModalCloseButton 
+					color="#65676B" 
+					bg="#E4E6EB" 
+					borderRadius="full" 
+					size="sm" 
+					top={3} 
+					right={3}
+					_hover={{ bg: "#D8DADF" }}
+				/>
+
+				<ModalBody py={4}>
+					<Stack spacing={4}>
+						{/* User Info */}
+						<Flex align="center" gap={3}>
+							<Avatar 
+								size="md" 
+								name={session?.user?.name || "User"} 
+								src={session?.user?.image || ""} 
+							/>
+							<Box>
+								<Text fontWeight="600" color="#1C1E21">
+									{session?.user?.name || "User"}
+								</Text>
+								<Flex align="center" gap={1}>
+									<Box bg="#E4E6EB" px={2} py="2px" borderRadius="md" fontSize="xs" fontWeight="600" color="#1C1E21">
+										Public
+									</Box>
+								</Flex>
+							</Box>
+						</Flex>
+
+						{/* Content Input */}
+						<Box>
+							<Textarea
+								placeholder={`What's on your mind, ${session?.user?.name?.split(' ')[0]}?`}
+								value={content}
+								onChange={(e) => setContent(e.target.value)}
+								variant="unstyled"
+								fontSize="xl"
+								minH="150px"
+								resize="none"
+								p={1}
+								_placeholder={{ color: "#65676B" }}
+							/>
+						</Box>
+
+						{/* Feeling/Activity Display */}
+						{(feeling || activity) && (
+							<Flex gap={2} flexWrap="wrap" align="center">
+								{feeling && (
+									<Tag size="md" borderRadius="full" bg="#FFF3CD" color="#856404">
+										<TagLabel>{feeling}</TagLabel>
+										<TagCloseButton onClick={() => setFeeling("")} />
+									</Tag>
+								)}
+								{activity && (
+									<Tag size="md" borderRadius="full" bg="#D1ECF1" color="#0C5460">
+										<TagLabel>{activity}</TagLabel>
+										<TagCloseButton onClick={() => setActivity("")} />
+									</Tag>
+								)}
+							</Flex>
+						)}
+
+						{/* Tags Display */}
+						{tags.length > 0 && (
+							<Flex gap={2} flexWrap="wrap">
+								{tags.map((tag) => (
+									<Tag key={tag} size="md" borderRadius="full" bg="#E7F3FF" color="#1877F2">
+										<TagLabel>#{tag}</TagLabel>
+										<TagCloseButton onClick={() => handleRemoveTag(tag)} />
+									</Tag>
+								))}
+							</Flex>
+						)}
+
+						{/* Images Preview */}
+						{images.length > 0 && (
+							<SimpleGrid columns={images.length === 1 ? 1 : 2} spacing={2}>
+								{images.map((url, index) => (
+									<Box key={index} position="relative" borderRadius="lg" overflow="hidden">
+										<Image src={url} alt={`Upload ${index + 1}`} w="full" h="200px" objectFit="cover" />
+										<IconButton
+											aria-label="Remove image"
+											icon={<FiX />}
+											size="sm"
+											position="absolute"
+											top={2}
+											right={2}
+											bg="blackAlpha.700"
+											color="white"
+											borderRadius="full"
+											_hover={{ bg: "blackAlpha.800" }}
+											onClick={() => handleRemoveImage(index)}
+										/>
+									</Box>
+								))}
+							</SimpleGrid>
+						)}
+
+						{/* Add to Your Post Box */}
+						<Flex 
+							justify="space-between" 
+							align="center" 
+							border="1px solid #CED0D4" 
+							borderRadius="lg" 
+							p={3}
+							mt={2}
+						>
+							<Text fontWeight="600" fontSize="sm" color="#1C1E21">Add to your post</Text>
+							<Flex gap={1}>
+								<Button 
+									size="sm" 
+									variant="ghost" 
+									borderRadius="full" 
+									color="#45BD62"
+									title="Photo/Video"
+									onClick={() => fileInputRef.current?.click()}
+									isLoading={uploadingImages}
+								>
+									<FiImage size={20} />
+								</Button>
+								<Button 
+									size="sm" 
+									variant="ghost" 
+									borderRadius="full" 
+									color="#F7B928"
+									title="Feeling/Activity"
+									onClick={onFeelingModalOpen}
+								>
+									<FiSmile size={20} />
+								</Button>
+								<Button 
+									size="sm" 
+									variant="ghost" 
+									borderRadius="full" 
+									color="#E41E3F"
+									onClick={onTagModalOpen}
+									title="Tag"
+								>
+									<FiHash size={20} />
+								</Button>
+							</Flex>
+						</Flex>
+
+						{/* Hidden File Input */}
+						<input
+							ref={fileInputRef}
+							type="file"
+							accept="image/*,video/*"
+							multiple
+							style={{ display: "none" }}
+							onChange={handleImageUpload}
+						/>
+
+						{/* Submit Button */}
+						<Button
+							onClick={handleSubmit}
+							isLoading={createMutation.isPending}
+							bg="#1877F2"
+							color="white"
+							size="lg"
+							_hover={{ bg: "#166FE5" }}
+							_active={{ transform: "scale(0.98)" }}
+							isDisabled={!content.trim()}
+							w="full"
+						>
+							Post
+						</Button>
+					</Stack>
+				</ModalBody>
+			</ModalContent>
+
+			{/* Tag Modal */}
+			<Modal isOpen={isTagModalOpen} onClose={onTagModalClose} isCentered size="md">
+				<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
+				<ModalContent borderRadius="xl">
+					<ModalHeader>Add Tags</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						<VStack spacing={4} align="stretch">
+							<Text fontSize="sm" color="#65676B">
+								Add up to 5 tags to help others find your post
+							</Text>
+							<HStack>
+								<Input
+									placeholder="Enter a tag..."
+									value={tagInput}
+									onChange={(e) => setTagInput(e.target.value)}
+									onKeyPress={handleKeyPress}
+									flex="1"
+								/>
+								<Button
+									onClick={handleAddTag}
+									colorScheme="blue"
+									isDisabled={!tagInput.trim() || tags.length >= 5}
+								>
+									Add
+								</Button>
+							</HStack>
+							
+							{tags.length > 0 && (
+								<Box>
+									<Text fontSize="sm" fontWeight="600" mb={2}>
+										Current Tags ({tags.length}/5)
+									</Text>
+									<Flex gap={2} flexWrap="wrap">
+										{tags.map((tag) => (
+											<Tag key={tag} size="md" borderRadius="full" bg="#E7F3FF" color="#1877F2">
+												<TagLabel>#{tag}</TagLabel>
+												<TagCloseButton onClick={() => handleRemoveTag(tag)} />
+											</Tag>
+										))}
+									</Flex>
+								</Box>
+							)}
+							
+							<Button onClick={onTagModalClose} w="full" mt={4}>
+								Done
+							</Button>
+						</VStack>
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+
+			{/* Feeling/Activity Modal */}
+			<Modal isOpen={isFeelingModalOpen} onClose={onFeelingModalClose} isCentered size="md" scrollBehavior="inside">
+				<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
+				<ModalContent borderRadius="xl" maxH="80vh">
+					<ModalHeader>How are you feeling?</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						<VStack spacing={6} align="stretch">
+							{/* Feelings Section */}
+							<Box>
+								<Text fontSize="md" fontWeight="600" mb={3} color="#1C1E21">
+									Feelings
+								</Text>
+								<SimpleGrid columns={3} spacing={2}>
+									{FEELINGS.map((item) => (
+										<Button
+											key={item.label}
+											variant="ghost"
+											justifyContent="flex-start"
+											onClick={() => handleSelectFeeling(item.emoji, item.label)}
+											_hover={{ bg: "#F0F2F5" }}
+											py={3}
+											h="auto"
+										>
+											<Flex align="center" gap={2}>
+												<Text fontSize="2xl">{item.emoji}</Text>
+												<Text fontSize="sm" textTransform="capitalize">{item.label}</Text>
+											</Flex>
+										</Button>
+									))}
+								</SimpleGrid>
+							</Box>
+
+							<Divider />
+
+							{/* Activities Section */}
+							<Box>
+								<Text fontSize="md" fontWeight="600" mb={3} color="#1C1E21">
+									What are you doing?
+								</Text>
+								<SimpleGrid columns={3} spacing={2}>
+									{ACTIVITIES.map((item) => (
+										<Button
+											key={item.label}
+											variant="ghost"
+											justifyContent="flex-start"
+											onClick={() => handleSelectActivity(item.emoji, item.label)}
+											_hover={{ bg: "#F0F2F5" }}
+											py={3}
+											h="auto"
+										>
+											<Flex align="center" gap={2}>
+												<Text fontSize="2xl">{item.emoji}</Text>
+												<Text fontSize="sm" textTransform="capitalize">{item.label}</Text>
+											</Flex>
+										</Button>
+									))}
+								</SimpleGrid>
+							</Box>
+						</VStack>
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+		</Modal>
+	)
+}
+
+export default CreateDiscussionModal

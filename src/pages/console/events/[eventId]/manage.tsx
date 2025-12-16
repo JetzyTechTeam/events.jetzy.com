@@ -30,6 +30,7 @@ import { ShareModal } from "@/components/console/ShareModal"
 import { GuestsList } from "@/components/console/GuestsList"
 import { WaitingList } from "@/components/console/WaitingList"
 import { EventBookings } from "@/components/HostedEvents"
+import DiscussionBoard from "@/components/events/DiscussionBoard"
 import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge, AvatarGroup } from "@chakra-ui/react"
 
 // Hardcoded placeholder guests - shown when no featuredGuests in database
@@ -439,11 +440,9 @@ export default function Manage({ event }: any) {
 								</Box>
 							)}
 							
-							{activeTab === "discussion" && (
-								<Box bg="white" borderRadius="lg" boxShadow="sm" p={8} mb={4} textAlign="center">
-									<Text color="#65676B">Discussion board coming soon...</Text>
-								</Box>
-							)}
+						{activeTab === "discussion" && (
+							<DiscussionBoard eventId={eventData._id} />
+						)}
 						</Box>
 
 						{/* RIGHT COLUMN (SIDEBAR) */}
