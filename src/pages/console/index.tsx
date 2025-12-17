@@ -45,7 +45,7 @@ export default function ConsoleDashboard() {
 				<meta name="description" content="Manage your events, view bookings, and track your event performance on Jetzy." />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
-			<ConsoleLayout page={Pages.Dasshboard} maxW="100%" bg="#F0F2F5">
+			<ConsoleLayout page={Pages.Dasshboard} maxW="100%">
 				<Box maxW="1200px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
 					<Flex gap={8} direction={{ base: "column", lg: "row" }}>
 						
@@ -58,7 +58,7 @@ export default function ConsoleDashboard() {
 										<Text fontSize="2xl" fontWeight="bold" color="#1C1E21">
 											Welcome back, {session?.user?.name?.split(" ")[0] || "User"}!
 										</Text>
-										<Text color="#65676B">Here's what's happening with your events today.</Text>
+										<Text color="#65676B">Here&apos;s what&apos;s happening with your events today.</Text>
 									</Box>
 									<Button
 										onClick={onCreateModalOpen}
@@ -126,7 +126,7 @@ export default function ConsoleDashboard() {
 								) : (
 									<Box display="flex" flexDirection="column" gap={4}>
 										{(dataList as EventInterface[]).slice(0, 5).map((event) => (
-											<DashboardEventCard key={event._id} event={event} />
+											<DashboardEventCard key={String(event._id)} event={event} />
 										))}
 									</Box>
 								)}

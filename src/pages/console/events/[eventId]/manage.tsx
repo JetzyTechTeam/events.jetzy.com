@@ -80,7 +80,7 @@ export default function Manage({ event }: any) {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			
-			<ConsoleLayout page="Event Details" backBtn="/console/events" maxW="100%" bg="#F0F2F5">
+			<ConsoleLayout page={undefined} backBtn="/console/events" maxW="100%">
 				{/* MODALS */}
 				<InviteGuestsModal inviteGuestsModal={inviteGuestsModal} setInviteGuestsModal={setInviteGuestsModal} event={eventData} />
 				<SendBlastModal sendBlastModal={sendBlastModal} setSendBlastModal={setSendBlastModal} event={eventData} />

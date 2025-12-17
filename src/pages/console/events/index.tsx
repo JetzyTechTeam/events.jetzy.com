@@ -6,7 +6,7 @@ import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
-import { Roles } from "@/types"
+import { Roles, Pages } from "@/types"
 import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, useDisclosure, Box, Flex, Text, SimpleGrid, Menu, MenuButton, MenuList, MenuItem, IconButton, Badge } from "@chakra-ui/react"
 import { GetServerSideProps } from "next"
 import Head from "next/head"
@@ -65,7 +65,7 @@ export default function EventsListing({ events, pagination }: Props) {
 				<meta name="description" content="Manage all your created events, edit details, and track performance." />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
-			<ConsoleLayout maxW="100%" bg="#F0F2F5" page="Events">
+			<ConsoleLayout maxW="100%" page={Pages.Events}>
 				<Box maxW="1200px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
 					<Flex justify="space-between" align="center" mb={6}>
 						<Text fontSize="2xl" fontWeight="bold" color="#1C1E21">Events</Text>
@@ -286,7 +286,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 					
 					<Flex justify="space-between" align="center" mt="auto">
 						<Text fontSize="sm" color="#65676B">
-							{event.guests?.length || 0} guests
+							{0} guests
 						</Text>
 						
 						{/* Actions Menu */}

@@ -112,6 +112,7 @@ interface DiscussionPostViewProps {
 	eventId: string
 	isModalView?: boolean
 	onClose?: () => void
+	openInEditMode?: boolean
 }
 
 interface CommentItemProps {
@@ -1912,7 +1913,6 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 								onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
 								onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
 								isLocked={post.isLocked}
-								hasTicket={canComment}
 								hasTicket={hasTicket}
 							/>
 						))}

@@ -256,7 +256,7 @@ export function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: Sen
 								className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm md:text-base transition-all focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500"
 							>
 								<option value="invitation">🎉 Invitation (Join us for this event)</option>
-								<option value="reminder">⏰ Reminder (Don't forget about this event)</option>
+								<option value="reminder">⏰ Reminder (Don&apos;t forget about this event)</option>
 								<option value="update">📢 Update (Important event information)</option>
 								<option value="announcement">📣 Announcement (General news)</option>
 								<option value="custom">✏️ Custom (Write your own)</option>

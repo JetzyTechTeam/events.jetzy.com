@@ -41,6 +41,7 @@ export interface IEvent extends IBaseModelProps {
 	privacy: 'public' | 'private';
 	eventUsersCreated?: boolean;
 	eventGroupCreated?: boolean;
+	createdBy?: Types.ObjectId;
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
 	getBookings(): Promise<IBookings[]>
 	deleteTracker(): Promise<void>

@@ -19,7 +19,7 @@ interface LoginModalProps {
 	onLoginSuccess?: () => void
 }
 
-const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSignup }) => {
+const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSignup, onLoginSuccess }) => {
 	const navigation = useRouter()
 	const [isLoading, setLoader] = useState(false)
 	const [showPassword, setShowPassword] = useState(false)

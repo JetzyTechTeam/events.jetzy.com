@@ -364,8 +364,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 	
 	console.log("Email details:", { timestamp, location, totalAmount, tickets })
 	
-	try {
-		await sgMail.send({
+	await sgMail.send({
 		  to: [email, "tech@jetzyapp.com"],
 			from: process.env.SENDGRID_EMAIL_SENDER as string,
 			subject: `Jetzy [Booking Confirmation] ${event.name}`,

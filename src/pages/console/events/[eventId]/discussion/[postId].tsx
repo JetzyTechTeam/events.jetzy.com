@@ -23,7 +23,7 @@ export default function DiscussionPostPage({ event }: any) {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 
-			<ConsoleLayout page="Discussion" backBtn={`/console/events/${eventData._id}/manage`} maxW="100%" bg="#F0F2F5">
+			<ConsoleLayout page={undefined} backBtn={`/console/events/${eventData._id}/manage`} maxW="100%">
 				<Box maxW="1250px" mx="auto" px={{ base: 4, md: 6 }}>
 					{/* Back Button */}
 					<Button

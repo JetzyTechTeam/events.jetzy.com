@@ -287,7 +287,7 @@ const FeedPostCard = ({
 												style={{ objectFit: "cover" }}
 											/>
 										)}
-										{idx === 3 && post.images.length > 4 && (
+										{idx === 3 && post.images && post.images.length > 4 && (
 											<Flex 
 												position="absolute" 
 												top={0} 
@@ -502,7 +502,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 								fontWeight="normal"
 								fontSize="md"
 							>
-								What's on your mind, {session.user?.name?.split(' ')[0]}?
+								What&apos;s on your mind, {session.user?.name?.split(' ')[0]}?
 							</Button>
 						</Flex>
 						<Divider my={3} />

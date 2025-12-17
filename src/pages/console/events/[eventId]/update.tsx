@@ -611,7 +611,7 @@ export default function UpdateEventPage({ event }: Props) {
 														<FiMapPin size={18} />
 													</InputLeftElement>
 													<Input
-														ref={ref}
+														ref={ref as any}
 														id="location"
 														name="location"
 														placeholder="Search for a place or address"
@@ -653,7 +653,7 @@ export default function UpdateEventPage({ event }: Props) {
 															size="sm"
 															variant="ghost"
 															colorScheme="red"
-															onClick={() => handleRemoveTicket(ticket.id)}
+															onClick={() => handleRemoveTicket(String(ticket.id))}
 														/>
 													</Flex>
 												))}

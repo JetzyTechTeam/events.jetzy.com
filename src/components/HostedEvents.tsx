@@ -106,7 +106,7 @@ export default function HostedEvents({ event }: Props) {
 	})
 
 	const totalSold = totals?.data?.totalTickets || 0
-	const isSoldOut = clonedEvent?.capacity > 0 && totalSold >= clonedEvent?.capacity
+	const isSoldOut = clonedEvent?.capacity && clonedEvent.capacity > 0 && totalSold >= clonedEvent.capacity
 
 	// @ts-ignore
 	const isAdmin = session?.user?.role === "admin"
@@ -347,11 +347,10 @@ export default function HostedEvents({ event }: Props) {
 }
 
 function EventGuests({ eventId, showParticipants }: { eventId: string, showParticipants?: boolean }) {
-    if (!showParticipants) return null;
-
     const { data: bookings, isLoading } = useQuery({
         queryKey: ["eventGuests", eventId],
         queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
+        enabled: !!showParticipants,
     })
 
     const guests = useMemo(() => {
@@ -366,6 +365,7 @@ function EventGuests({ eventId, showParticipants }: { eventId: string, showParti
         return Array.from(unique.values());
     }, [bookings?.data]);
 
+    if (!showParticipants) return null;
     if (guests.length === 0) return null;
 
     return (

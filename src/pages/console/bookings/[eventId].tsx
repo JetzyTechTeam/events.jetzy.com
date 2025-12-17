@@ -137,7 +137,7 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 				<meta name="description" content={`View and manage bookings for ${event.name}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
-			<ConsoleLayout page={Pages.Bookings} bg="#F0F2F5">
+			<ConsoleLayout page={Pages.Bookings}>
 				<Box maxW="1400px" mx="auto" px={{ base: 4, sm: 6 }} py={8}>
 					{/* Header Section */}
 					<Flex direction={{ base: "column", sm: "row" }} justify="space-between" align={{ base: "start", sm: "center" }} gap={4} mb={8}>
@@ -445,7 +445,7 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 
 export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 	const sessionResult = await adminOnly(ctx)
-	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult as any
 	const session = sessionResult.props.session
 
 	const { eventId } = ctx.params as { eventId: string }
