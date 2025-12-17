@@ -31,16 +31,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Comment not found", false, ResCode.NOT_FOUND)
 		}
 
-		// Check permission (must be author or event creator)
+		// Check permission (must be author or admin/super admin)
 		const userId = (session.user as any)?._id
+		const userRole = (session.user as any)?.role
 		const isAuthor = comment.userId.toString() === userId
+		const isAdmin = userRole === "admin" || userRole === "super admin"
 
-		const post = await DiscussionPosts.findById(comment.discussionPostId)
-		const event = await Events.findById(comment.eventId)
-		const isEventCreator = event?.createdBy?.toString() === userId
-
-		if (!isAuthor && !isEventCreator) {
-			return sendResponse(res, null, "You don't have permission to delete this comment", false, ResCode.FORBIDDEN)
+		if (!isAuthor && !isAdmin) {
+			return sendResponse(res, null, "You don't have permission to delete this comment. You can only delete your own comments.", false, ResCode.FORBIDDEN)
 		}
 
 		// Count replies to this comment

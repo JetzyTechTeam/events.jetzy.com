@@ -33,15 +33,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Discussion post not found", false, ResCode.NOT_FOUND)
 		}
 
-		// Check permission (must be author or event creator)
+		// Check permission (must be author only)
 		const userId = (session.user as any)?._id
 		const isAuthor = post.userId.toString() === userId
 
-		const event = await Events.findById(post.eventId)
-		const isEventCreator = event?.createdBy?.toString() === userId
-
-		if (!isAuthor && !isEventCreator) {
-			return sendResponse(res, null, "You don't have permission to edit this post", false, ResCode.FORBIDDEN)
+		if (!isAuthor) {
+			return sendResponse(res, null, "You don't have permission to edit this post. You can only edit your own posts.", false, ResCode.FORBIDDEN)
 		}
 
 		// Build update object

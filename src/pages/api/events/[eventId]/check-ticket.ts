@@ -37,9 +37,23 @@ export default async function handler(
 		}
 
 		const userEmail = (session.user as any).email
+		const userRole = (session.user as any)?.role
+		
+		// Super admin and admin can bypass ticket requirement
+		const isAdmin = userRole === "admin" || userRole === "super admin"
 
 		if (!userEmail) {
 			return res.status(200).json({ hasTicket: false, isAuthenticated: true })
+		}
+
+		// If user is super admin or admin, allow access without ticket
+		if (isAdmin) {
+			return res.status(200).json({
+				hasTicket: true,
+				isAuthenticated: true,
+				bookingId: null,
+				isAdmin: true,
+			})
 		}
 
 		// Check if user has a booking for this event

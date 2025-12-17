@@ -103,6 +103,11 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	})
 
 	const hasTicket = ticketCheck?.hasTicket || false
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+	// Super admin and admin can bypass ticket requirement
+	const canPost = hasTicket || isAdmin
 
 	const createMutation = useMutation({
 		mutationFn: async ({ postContent, postTags, postImages, postFeeling, postActivity }: {
@@ -279,7 +284,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			return
 		}
 
-		if (!hasTicket) {
+		if (!canPost) {
 			toast({
 				title: "Please buy a ticket first",
 				description: "You need to purchase a ticket to create posts and participate in discussions.",

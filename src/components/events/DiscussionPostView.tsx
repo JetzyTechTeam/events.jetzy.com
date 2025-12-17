@@ -148,6 +148,11 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 
 	const isAuthor = currentUserId === comment.userId._id
 	const hasLiked = comment.reactions.likes.includes(currentUserId || "")
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+	// Super admin and admin can bypass ticket requirement
+	const canReply = hasTicket || isAdmin
 
 	const handleReplyImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = e.target.files
@@ -185,7 +190,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 			})
 			return
 		}
-		if (!hasTicket) {
+		if (!canReply) {
 			toast({
 				title: "Please buy a ticket first",
 				description: "You need to purchase a ticket to reply to comments.",
@@ -925,23 +930,27 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 					)}
 				</Box>
 
-				{isAuthor && (
+				{(isAuthor || isAdmin) && (
 					<Menu>
 						<MenuButton as={IconButton} icon={<FiMoreHorizontal />} size="xs" variant="ghost" borderRadius="full" />
 						<MenuList>
-							<MenuItem 
-								icon={<FiEdit />} 
-								onClick={() => {
-									setEditText(comment.comment)
-									setEditImages(comment.images || [])
-									setEditFeeling("")
-									setEditActivity("")
-									setIsEditing(true)
-								}}
-							>
-								Edit
-							</MenuItem>
-							<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => onDelete(comment._id)}>Delete</MenuItem>
+							{isAuthor && (
+								<MenuItem 
+									icon={<FiEdit />} 
+									onClick={() => {
+										setEditText(comment.comment)
+										setEditImages(comment.images || [])
+										setEditFeeling("")
+										setEditActivity("")
+										setIsEditing(true)
+									}}
+								>
+									Edit
+								</MenuItem>
+							)}
+							{(isAuthor || isAdmin) && (
+								<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => onDelete(comment._id)}>Delete</MenuItem>
+							)}
 						</MenuList>
 					</Menu>
 				)}
@@ -1022,6 +1031,11 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	const comments: DiscussionCommentWithAuthor[] = commentsResponse?.data || []
 	const hasTicket = ticketCheck?.hasTicket || false
 	const isAuthenticated = ticketCheck?.isAuthenticated ?? (!!session)
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+	// Super admin and admin can bypass ticket requirement
+	const canComment = hasTicket || isAdmin
 
 	// Auto-enter edit mode if requested
 	useEffect(() => {
@@ -1270,7 +1284,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 					</Box>
 				</Flex>
 
-				{(isAuthor || currentUserId) && (
+				{(isAuthor || isAdmin) && (
 					<Menu>
 						<MenuButton as={IconButton} icon={<FiMoreHorizontal />} variant="ghost" />
 						<MenuList>
@@ -1289,15 +1303,21 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 									Edit Post
 								</MenuItem>
 							)}
-							<MenuItem icon={post.isPinned ? <BsPinAngle /> : <BsPinAngleFill />} onClick={() => pinPostMutation.mutate(!post.isPinned)}>
-								{post.isPinned ? "Unpin" : "Pin"} Post
-							</MenuItem>
-							<MenuItem icon={post.isLocked ? <FiUnlock /> : <FiLock />} onClick={() => lockPostMutation.mutate(!post.isLocked)}>
-								{post.isLocked ? "Unlock" : "Lock"} Discussion
-							</MenuItem>
-							<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => window.confirm("Delete this post?") && deletePostMutation.mutate()}>
-								Delete Post
-							</MenuItem>
+							{(isAuthor || isAdmin) && (
+								<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => window.confirm("Delete this post?") && deletePostMutation.mutate()}>
+									Delete Post
+								</MenuItem>
+							)}
+							{isAdmin && (
+								<>
+									<MenuItem icon={post.isPinned ? <BsPinAngle /> : <BsPinAngleFill />} onClick={() => pinPostMutation.mutate(!post.isPinned)}>
+										{post.isPinned ? "Unpin" : "Pin"} Post
+									</MenuItem>
+									<MenuItem icon={post.isLocked ? <FiUnlock /> : <FiLock />} onClick={() => lockPostMutation.mutate(!post.isLocked)}>
+										{post.isLocked ? "Unlock" : "Lock"} Discussion
+									</MenuItem>
+								</>
+							)}
 						</MenuList>
 					</Menu>
 				)}
@@ -1713,7 +1733,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 												})
 												return
 											}
-											if (!hasTicket) {
+											if (!canComment) {
 												toast({
 													title: "Please buy a ticket first",
 													description: "You need to purchase a ticket to comment on posts.",
@@ -1892,6 +1912,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 								onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
 								onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
 								isLocked={post.isLocked}
+								hasTicket={canComment}
 								hasTicket={hasTicket}
 							/>
 						))}

@@ -32,15 +32,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Discussion post not found", false, ResCode.NOT_FOUND)
 		}
 
-		// Check permission (must be author or event creator)
+		// Check permission (must be author or admin/super admin)
 		const userId = (session.user as any)?._id
+		const userRole = (session.user as any)?.role
 		const isAuthor = post.userId.toString() === userId
+		const isAdmin = userRole === "admin" || userRole === "super admin"
 
-		const event = await Events.findById(post.eventId)
-		const isEventCreator = event?.createdBy?.toString() === userId
-
-		if (!isAuthor && !isEventCreator) {
-			return sendResponse(res, null, "You don't have permission to delete this post", false, ResCode.FORBIDDEN)
+		if (!isAuthor && !isAdmin) {
+			return sendResponse(res, null, "You don't have permission to delete this post. You can only delete your own posts.", false, ResCode.FORBIDDEN)
 		}
 
 		// Delete all comments related to this post

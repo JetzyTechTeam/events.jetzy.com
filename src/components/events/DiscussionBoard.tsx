@@ -70,6 +70,9 @@ const FeedPostCard = ({
 	const currentUserId = (session?.user as any)?._id
 	const hasLiked = post.reactions.likes.includes(currentUserId || "")
 	const isAuthor = currentUserId === post.userId._id
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
 
 	const handlePostClick = async () => {
 		if (!session || !session.user) {
@@ -194,7 +197,7 @@ const FeedPostCard = ({
 							<Icon as={FiClock} />
 						</Flex>
 					</Box>
-					{isAuthor && (
+					{(isAuthor || isAdmin) && (
 						<Menu>
 							<MenuButton
 								as={IconButton}
@@ -206,29 +209,33 @@ const FeedPostCard = ({
 								aria-label="Post options"
 							/>
 							<MenuList onClick={(e) => e.stopPropagation()}>
-								<MenuItem 
-									icon={<FiEdit />}
-									onClick={(e) => {
-										e.stopPropagation()
-										// Open post in edit mode
-										onClick(post._id, true)
-									}}
-								>
-									Edit Post
-								</MenuItem>
-								<MenuItem 
-									icon={<FiTrash2 />} 
-									color="red.500"
-									onClick={(e) => {
-										e.stopPropagation()
-										if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
-											deleteMutation.mutate()
-										}
-									}}
-									isDisabled={deleteMutation.isPending}
-								>
-									Delete Post
-								</MenuItem>
+								{isAuthor && (
+									<MenuItem 
+										icon={<FiEdit />}
+										onClick={(e) => {
+											e.stopPropagation()
+											// Open post in edit mode
+											onClick(post._id, true)
+										}}
+									>
+										Edit Post
+									</MenuItem>
+								)}
+								{(isAuthor || isAdmin) && (
+									<MenuItem 
+										icon={<FiTrash2 />} 
+										color="red.500"
+										onClick={(e) => {
+											e.stopPropagation()
+											if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
+												deleteMutation.mutate()
+											}
+										}}
+										isDisabled={deleteMutation.isPending}
+									>
+										Delete Post
+									</MenuItem>
+								)}
 							</MenuList>
 						</Menu>
 					)}
@@ -424,6 +431,11 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const pagination = discussionData?.data?.pagination
 	const hasTicket = ticketCheck?.hasTicket || false
 	const isAuthenticated = ticketCheck?.isAuthenticated ?? (!!session)
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+	// Super admin and admin can bypass ticket requirement
+	const canPost = hasTicket || isAdmin
 
 	const handlePostClick = (postId: string, editMode: boolean = false) => {
 		setSelectedPostId(postId)
@@ -450,7 +462,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 			})
 			return
 		}
-		if (!hasTicket) {
+		if (!canPost) {
 			toast({
 				title: "Please buy a ticket first",
 				description: "You need to purchase a ticket to create posts and participate in discussions.",
