@@ -7,11 +7,9 @@ const __dirname = path.dirname(__filename)
 
 const nextConfig = {
 	reactStrictMode: true,
-	outputFileTracingRoot: __dirname,
 	sassOptions: {
-		includePaths: [path.join(__dirname, "styles")],
+		includePaths: [path.join(__dirname, "src", "styles")],
 	},
-  transpilePackages: ["antd", "@ant-design", "rc-util", "rc-pagination", "rc-picker", "rc-notification", "rc-tooltip", "rc-tree", "rc-table"],
 	images: {
 		remotePatterns: [
 			{
