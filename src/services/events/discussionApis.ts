@@ -13,7 +13,11 @@ import type {
 // ========== DISCUSSION POSTS ==========
 
 export const CreateDiscussionPostApi = async (params: RequestParams<CreateDiscussionPostData>): Promise<ServerResponse<DiscussionPostWithAuthor, any>> => {
-	return await POST(discussionEndpoints.posts.create, params?.data)
+	return await POST(discussionEndpoints.posts.create, params?.data, {
+		headers: {
+			"Content-Type": "application/json"
+		}
+	})
 }
 
 export const ListDiscussionPostsApi = async (params: RequestParams<{ eventId: string; sort?: string; tags?: string; page?: number; limit?: number; search?: string }>): Promise<ServerResponse<any, any>> => {
@@ -55,7 +59,11 @@ export const ReactToDiscussionPostApi = async (params: RequestParams<{ postId: s
 // ========== DISCUSSION COMMENTS ==========
 
 export const CreateDiscussionCommentApi = async (params: RequestParams<CreateDiscussionCommentData>): Promise<ServerResponse<DiscussionCommentWithAuthor, any>> => {
-	return await POST(discussionEndpoints.comments.create, params?.data)
+	return await POST(discussionEndpoints.comments.create, params?.data, {
+		headers: {
+			"Content-Type": "application/json"
+		}
+	})
 }
 
 export const GetDiscussionCommentsApi = async (params: RequestParams<{ postId: string }>): Promise<ServerResponse<DiscussionCommentWithAuthor[], any>> => {

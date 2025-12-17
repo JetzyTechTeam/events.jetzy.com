@@ -25,8 +25,13 @@ import {
 	ModalCloseButton,
 	SimpleGrid,
 	useToast,
+	Menu,
+	MenuButton,
+	MenuList,
+	MenuItem,
+	IconButton,
 } from "@chakra-ui/react"
-import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2 } from "react-icons/fi"
+import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2, FiMoreHorizontal, FiEdit, FiTrash2 } from "react-icons/fi"
 import { BsPinAngle } from "react-icons/bs"
 import Image from "next/image"
 import { ListDiscussionPostsApi, ReactToDiscussionPostApi } from "@/services/events/discussionApis"
@@ -37,6 +42,12 @@ import { useRouter } from "next/router"
 
 interface DiscussionBoardProps {
 	eventId: string
+}
+
+// Helper function to check if URL is a video
+const isVideoUrl = (url: string): boolean => {
+	const videoExtensions = [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v", ".3gp"]
+	return videoExtensions.some((ext) => url.toLowerCase().includes(ext))
 }
 
 // FeedPostCard Component
@@ -144,6 +155,21 @@ const FeedPostCard = ({ post, onClick, onLikeSuccess }: { post: DiscussionPostWi
 							<Icon as={FiClock} />
 						</Flex>
 					</Box>
+					<Menu>
+						<MenuButton
+							as={IconButton}
+							icon={<FiMoreHorizontal />}
+							variant="ghost"
+							size="sm"
+							borderRadius="full"
+							onClick={(e) => e.stopPropagation()}
+							aria-label="Post options"
+						/>
+						<MenuList onClick={(e) => e.stopPropagation()}>
+							<MenuItem icon={<FiEdit />}>Edit Post</MenuItem>
+							<MenuItem icon={<FiTrash2 />} color="red.500">Delete Post</MenuItem>
+						</MenuList>
+					</Menu>
 				</Flex>
 
 				{/* Post Content */}
@@ -153,28 +179,45 @@ const FeedPostCard = ({ post, onClick, onLikeSuccess }: { post: DiscussionPostWi
 					</Text>
 				</Box>
 
-				{/* Images */}
+				{/* Images/Videos */}
 				{post.images && post.images.length > 0 && (
 					<Box mb={3} borderRadius="lg" overflow="hidden">
 						{post.images.length === 1 ? (
-							<Box position="relative" w="full" h="400px">
-								<Image 
-									src={post.images[0]} 
-									alt="Post image" 
-									fill
-									style={{ objectFit: "cover" }}
-								/>
+							<Box position="relative" w="full">
+								{isVideoUrl(post.images[0]) ? (
+									<video 
+										src={post.images[0]} 
+										controls 
+										style={{ width: "100%", maxHeight: "500px", objectFit: "contain", backgroundColor: "#000" }}
+									/>
+								) : (
+									<Box position="relative" w="full" h="400px">
+										<Image 
+											src={post.images[0]} 
+											alt="Post image" 
+											fill
+											style={{ objectFit: "cover" }}
+										/>
+									</Box>
+								)}
 							</Box>
 						) : (
 							<SimpleGrid columns={2} spacing={1}>
 								{post.images.slice(0, 4).map((img: string, idx: number) => (
 									<Box key={idx} position="relative" w="full" h="200px">
-										<Image 
-											src={img} 
-											alt={`Post image ${idx + 1}`} 
-											fill
-											style={{ objectFit: "cover" }}
-										/>
+										{isVideoUrl(img) ? (
+											<video 
+												src={img} 
+												style={{ width: "100%", height: "100%", objectFit: "cover" }}
+											/>
+										) : (
+											<Image 
+												src={img} 
+												alt={`Post image ${idx + 1}`} 
+												fill
+												style={{ objectFit: "cover" }}
+											/>
+										)}
 										{idx === 3 && post.images.length > 4 && (
 											<Flex 
 												position="absolute" 
@@ -471,7 +514,8 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 							<DiscussionPostView 
 								postId={selectedPostId} 
 								eventId={eventId} 
-								isModalView={true} 
+								isModalView={true}
+								onClose={handleClosePostModal}
 							/>
 						)}
 					</ModalBody>

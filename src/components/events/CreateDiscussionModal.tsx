@@ -93,27 +93,37 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	const { isOpen: isFeelingModalOpen, onOpen: onFeelingModalOpen, onClose: onFeelingModalClose } = useDisclosure()
 
 	const createMutation = useMutation({
-		mutationFn: async () => {
+		mutationFn: async ({ postContent, postTags, postImages, postFeeling, postActivity }: {
+			postContent: string
+			postTags: string[]
+			postImages: string[]
+			postFeeling: string
+			postActivity: string
+		}) => {
 			// Build content with feeling/activity
-			let finalContent = content
-			if (feeling || activity) {
-				const feelingText = feeling ? `feeling ${feeling}` : ""
-				const activityText = activity ? `${activity}` : ""
-				const separator = feeling && activity ? " · " : ""
-				finalContent = `${content}\n\n${feelingText}${separator}${activityText}`
+			let finalContent = postContent
+			if (postFeeling || postActivity) {
+				const feelingText = postFeeling ? `feeling ${postFeeling}` : ""
+				const activityText = postActivity ? `${postActivity}` : ""
+				const separator = postFeeling && postActivity ? " · " : ""
+				finalContent = `${postContent}\n\n${feelingText}${separator}${activityText}`
 			}
 
 			// Generate title from first 50 characters of content
 			const autoTitle = finalContent.slice(0, 50).trim() + (finalContent.length > 50 ? "..." : "")
 
+			const postData = {
+				eventId,
+				title: autoTitle || "Post",
+				content: finalContent,
+				tags: postTags.length > 0 ? postTags : undefined,
+				images: postImages.length > 0 ? postImages : undefined,
+			}
+
+			console.log("[CreateDiscussionModal] Sending post data:", postData)
+
 			return await CreateDiscussionPostApi({
-				data: {
-					eventId,
-					title: autoTitle || "Post",
-					content: finalContent,
-					tags: tags.length > 0 ? tags : undefined,
-					images: images.length > 0 ? images : undefined,
-				},
+				data: postData,
 			})
 		},
 		onSuccess: () => {
@@ -168,11 +178,17 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 
 	const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = e.target.files
-		if (!files || files.length === 0) return
+		if (!files || files.length === 0) {
+			console.log("[CreateDiscussionModal] No files selected")
+			return
+		}
 
+		console.log("[CreateDiscussionModal] Starting upload for", files.length, "files")
 		setUploadingImages(true)
 		try {
 			const uploadPromises = Array.from(files).map(async (file) => {
+				console.log("[CreateDiscussionModal] Uploading file:", file.name, file.type, file.size)
+				
 				// Validate file type
 				if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
 					throw new Error("Only images and videos are allowed")
@@ -184,11 +200,16 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 				}
 
 				const res = await edgestore.publicFiles.upload({ file })
+				console.log("[CreateDiscussionModal] Upload complete:", res.url)
 				return res.url
 			})
 
 			const uploadedUrls = await Promise.all(uploadPromises)
-			setImages([...images, ...uploadedUrls])
+			console.log("[CreateDiscussionModal] All uploads complete:", uploadedUrls)
+			
+			const newImages = [...images, ...uploadedUrls]
+			setImages(newImages)
+			console.log("[CreateDiscussionModal] Images state updated:", newImages)
 
 			toast({
 				title: "Images uploaded successfully",
@@ -196,6 +217,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 				duration: 2000,
 			})
 		} catch (error: any) {
+			console.error("[CreateDiscussionModal] Upload error:", error)
 			toast({
 				title: "Upload failed",
 				description: error.message || "Failed to upload images",
@@ -225,6 +247,15 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	}
 
 	const handleSubmit = () => {
+		console.log("[CreateDiscussionModal] Submit clicked", {
+			contentLength: content.trim().length,
+			imagesCount: images.length,
+			images: images,
+			tags: tags,
+			feeling: feeling,
+			activity: activity,
+		})
+
 		if (!content.trim()) {
 			toast({
 				description: "Please enter some content for your post",
@@ -235,7 +266,14 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			return
 		}
 
-		createMutation.mutate()
+		// Pass current state values as parameters to avoid stale closure
+		createMutation.mutate({
+			postContent: content,
+			postTags: tags,
+			postImages: images,
+			postFeeling: feeling,
+			postActivity: activity,
+		})
 	}
 
 	return (

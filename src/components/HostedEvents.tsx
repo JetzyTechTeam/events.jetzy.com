@@ -15,6 +15,7 @@ import Image from "next/image"
 import LightNavbar from "@/components/layout/LightNavbar"
 import Footer from "@/components/layout/Footer"
 import CommentsSection, { UserType } from "@/components/events/CommentsSection"
+import DiscussionBoard from "@/components/events/DiscussionBoard"
 import { 
 	CalendarIcon, 
 	MapPinIcon, 
@@ -399,10 +400,10 @@ export default function HostedEvents({ event }: Props) {
                                     </Button>
                                 </Flex>
 							</div>
-						</>
-					) : (
-						<CommentsSection eventId={clonedEvent._id.toString()} currentUser={session?.user as UserType} />
-					)}
+					</>
+				) : (
+					<DiscussionBoard eventId={clonedEvent._id.toString()} />
+				)}
 				</div>
 
 				{/* Right Column (Sidebar) */}

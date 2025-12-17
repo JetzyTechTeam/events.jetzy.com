@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useRef } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
+import { useEdgeStore } from "@/lib/edgestore"
 import {
 	Box,
 	Button,
@@ -20,6 +21,15 @@ import {
 	Spinner as ChakraSpinner,
 	Divider,
 	SimpleGrid,
+	Modal,
+	ModalOverlay,
+	ModalContent,
+	ModalHeader,
+	ModalBody,
+	ModalCloseButton,
+	VStack,
+	HStack,
+	useDisclosure,
 } from "@chakra-ui/react"
 import Image from "next/image"
 import {
@@ -35,6 +45,9 @@ import {
 	FiMoreHorizontal,
 	FiShare2,
 	FiSend,
+	FiImage,
+	FiX,
+	FiSmile,
 } from "react-icons/fi"
 import { BsPinAngle, BsPinAngleFill } from "react-icons/bs"
 import { AiFillBulb, AiOutlineBulb } from "react-icons/ai"
@@ -55,10 +68,17 @@ import {
 import type { DiscussionPostWithAuthor, DiscussionCommentWithAuthor } from "@/types/discussion"
 import { useRouter } from "next/router"
 
+// Helper function to check if URL is a video
+const isVideoUrl = (url: string): boolean => {
+	const videoExtensions = [".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v", ".3gp"]
+	return videoExtensions.some((ext) => url.toLowerCase().includes(ext))
+}
+
 interface DiscussionPostViewProps {
 	postId: string
 	eventId: string
 	isModalView?: boolean
+	onClose?: () => void
 }
 
 interface CommentItemProps {
@@ -133,9 +153,56 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 								</Flex>
 							</Box>
 						) : (
-							<Text color="#1C1E21" fontSize="sm" whiteSpace="pre-wrap">
-								{comment.comment}
-							</Text>
+							<>
+								<Text color="#1C1E21" fontSize="sm" whiteSpace="pre-wrap">
+									{comment.comment}
+								</Text>
+								
+								{/* Comment Images */}
+								{comment.images && comment.images.length > 0 && (
+									<Box mt={2}>
+										{comment.images.length === 1 ? (
+											<Box position="relative" borderRadius="md" overflow="hidden" maxW="300px">
+												{isVideoUrl(comment.images[0]) ? (
+													<video 
+														src={comment.images[0]} 
+														controls 
+														style={{ width: "100%", maxHeight: "200px", objectFit: "contain" }}
+													/>
+												) : (
+													<Image 
+														src={comment.images[0]} 
+														alt="Comment image" 
+														width={300}
+														height={200}
+														style={{ objectFit: "cover", borderRadius: "8px" }}
+													/>
+												)}
+											</Box>
+										) : (
+											<SimpleGrid columns={2} spacing={1} maxW="300px">
+												{comment.images.slice(0, 4).map((img: string, idx: number) => (
+													<Box key={idx} position="relative" w="full" h="100px" borderRadius="md" overflow="hidden">
+														{isVideoUrl(img) ? (
+															<video 
+																src={img} 
+																style={{ width: "100%", height: "100%", objectFit: "cover" }}
+															/>
+														) : (
+															<Image 
+																src={img} 
+																alt={`Comment image ${idx + 1}`} 
+																fill
+																style={{ objectFit: "cover" }}
+															/>
+														)}
+													</Box>
+												))}
+											</SimpleGrid>
+										)}
+									</Box>
+								)}
+							</>
 						)}
 					</Box>
 
@@ -225,8 +292,36 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	const router = useRouter()
 	const toast = useToast()
 	const [newComment, setNewComment] = useState("")
+	const [commentImages, setCommentImages] = useState<string[]>([])
+	const [uploadingImages, setUploadingImages] = useState(false)
+	const [commentFeeling, setCommentFeeling] = useState<string>("")
+	const [commentActivity, setCommentActivity] = useState<string>("")
+	const commentFileInputRef = React.useRef<HTMLInputElement>(null)
+	const { edgestore } = useEdgeStore()
+	const { isOpen: isFeelingModalOpen, onOpen: onFeelingModalOpen, onClose: onFeelingModalClose } = useDisclosure()
 
 	const currentUserId = (session?.user as any)?._id
+	
+	// Feelings/Activities data
+	const FEELINGS = [
+		{ emoji: "😊", label: "happy" },
+		{ emoji: "😔", label: "sad" },
+		{ emoji: "😍", label: "loved" },
+		{ emoji: "😎", label: "cool" },
+		{ emoji: "😢", label: "crying" },
+		{ emoji: "😡", label: "angry" },
+		{ emoji: "🤗", label: "blessed" },
+		{ emoji: "😴", label: "tired" },
+	]
+	
+	const ACTIVITIES = [
+		{ emoji: "✈️", label: "traveling" },
+		{ emoji: "🍽️", label: "eating" },
+		{ emoji: "📖", label: "reading" },
+		{ emoji: "🎵", label: "listening to music" },
+		{ emoji: "🏋️", label: "working out" },
+		{ emoji: "🎮", label: "playing games" },
+	]
 
 	// Fetch post
 	const { data: postResponse, isLoading: isLoadingPost, refetch: refetchPost } = useQuery({
@@ -281,18 +376,63 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		mutationFn: () => DeleteDiscussionPostApi({ data: { postId } }),
 		onSuccess: () => {
 			toast({ title: "Post deleted", status: "success", duration: 2000 })
-			if (!isModalView) {
+			if (isModalView && onClose) {
+				onClose()
+			} else if (!isModalView) {
 				router.push(`/console/events/${eventId}/manage`)
 			}
 		},
 	})
 
+	const handleCommentImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = e.target.files
+		if (!files || files.length === 0) return
+
+		setUploadingImages(true)
+		try {
+			const uploadPromises = Array.from(files).map(async (file) => {
+				if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+					throw new Error("Only images and videos are allowed")
+				}
+				if (file.size > 10 * 1024 * 1024) {
+					throw new Error("File size must be less than 10MB")
+				}
+				const res = await edgestore.publicFiles.upload({ file })
+				return res.url
+			})
+
+			const uploadedUrls = await Promise.all(uploadPromises)
+			setCommentImages([...commentImages, ...uploadedUrls])
+			toast({ title: "Images uploaded", status: "success", duration: 2000 })
+		} catch (error: any) {
+			toast({ title: "Upload failed", description: error.message, status: "error", duration: 3000 })
+		} finally {
+			setUploadingImages(false)
+			if (commentFileInputRef.current) {
+				commentFileInputRef.current.value = ""
+			}
+		}
+	}
+
 	const createCommentMutation = useMutation({
-		mutationFn: (comment: string) => CreateDiscussionCommentApi({ data: { discussionPostId: postId, comment } }),
+		mutationFn: ({ comment, images }: { comment: string; images?: string[] }) => {
+			// Add feeling/activity to comment
+			let finalComment = comment
+			if (commentFeeling || commentActivity) {
+				const feelingText = commentFeeling ? `${commentFeeling}` : ""
+				const activityText = commentActivity ? `${commentActivity}` : ""
+				const separator = commentFeeling && commentActivity ? " · " : ""
+				finalComment = `${comment}\n${feelingText}${separator}${activityText}`
+			}
+			return CreateDiscussionCommentApi({ data: { discussionPostId: postId, comment: finalComment, images } })
+		},
 		onSuccess: () => {
 			refetchComments()
 			refetchPost()
 			setNewComment("")
+			setCommentImages([])
+			setCommentFeeling("")
+			setCommentActivity("")
 			toast({ title: "Comment added", status: "success", duration: 2000 })
 		},
 	})
@@ -349,6 +489,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	const hasMarkedHelpful = post.reactions.helpful.includes(currentUserId || "")
 
 	return (
+		<>
 		<Box 
 			bg="white" 
 			borderRadius={isModalView ? "none" : "2xl"} 
@@ -408,28 +549,46 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			</Text>
 		</Box>
 
-		{/* Images */}
+		{/* Images/Videos */}
 		{post.images && post.images.length > 0 && (
 			<Box mb={4} borderRadius="lg" overflow="hidden">
 				{post.images.length === 1 ? (
-					<Box position="relative" w="full" h="500px">
-						<Image 
-							src={post.images[0]} 
-							alt="Post image" 
-							fill
-							style={{ objectFit: "contain", backgroundColor: "#F0F2F5" }}
-						/>
+					<Box position="relative" w="full">
+						{isVideoUrl(post.images[0]) ? (
+							<video 
+								src={post.images[0]} 
+								controls 
+								style={{ width: "100%", maxHeight: "600px", objectFit: "contain", backgroundColor: "#000" }}
+							/>
+						) : (
+							<Box position="relative" w="full" h="500px">
+								<Image 
+									src={post.images[0]} 
+									alt="Post image" 
+									fill
+									style={{ objectFit: "contain", backgroundColor: "#F0F2F5" }}
+								/>
+							</Box>
+						)}
 					</Box>
 				) : (
 					<SimpleGrid columns={post.images.length === 2 ? 2 : 2} spacing={2}>
 						{post.images.map((img: string, idx: number) => (
 							<Box key={idx} position="relative" w="full" h="300px">
-								<Image 
-									src={img} 
-									alt={`Post image ${idx + 1}`} 
-									fill
-									style={{ objectFit: "cover" }}
-								/>
+								{isVideoUrl(img) ? (
+									<video 
+										src={img} 
+										controls
+										style={{ width: "100%", height: "100%", objectFit: "cover" }}
+									/>
+								) : (
+									<Image 
+										src={img} 
+										alt={`Post image ${idx + 1}`} 
+										fill
+										style={{ objectFit: "cover" }}
+									/>
+								)}
 							</Box>
 						))}
 					</SimpleGrid>
@@ -535,46 +694,158 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			<Box>
 				{/* New Comment Input */}
 				{session && !post.isLocked && (
-					<Flex gap={2} mb={4} align="flex-start">
-						<Avatar size="sm" name={session.user?.name || "User"} src={session.user?.image || ""} mt={1} />
-						<Box flex="1" position="relative">
-							<Textarea
-								id="commentInput"
-								placeholder="Write a comment..."
-								value={newComment}
-								onChange={(e) => setNewComment(e.target.value)}
-								bg="#F0F2F5"
-								border="none"
-								borderRadius="2xl"
-								_focus={{ bg: "#F0F2F5", boxShadow: "none" }}
-								minH="40px"
-								py={2}
-								resize="none"
-								fontSize="sm"
-								onKeyPress={(e) => {
-									if (e.key === 'Enter' && !e.shiftKey) {
-										e.preventDefault();
-										if (newComment.trim()) createCommentMutation.mutate(newComment);
-									}
-								}}
-								pr="40px"
+					<Box mb={4}>
+						<Flex gap={2} align="flex-start">
+							<Avatar size="sm" name={session.user?.name || "User"} src={session.user?.image || ""} mt={1} />
+							<Box flex="1" position="relative">
+								<Textarea
+									id="commentInput"
+									placeholder="Write a comment..."
+									value={newComment}
+									onChange={(e) => setNewComment(e.target.value)}
+									bg="#F0F2F5"
+									border="none"
+									borderRadius="2xl"
+									_focus={{ bg: "#F0F2F5", boxShadow: "none" }}
+									minH="40px"
+									py={2}
+									resize="none"
+									fontSize="sm"
+									onKeyPress={(e) => {
+										if (e.key === 'Enter' && !e.shiftKey) {
+											e.preventDefault();
+											if (newComment.trim()) createCommentMutation.mutate({ comment: newComment, images: commentImages });
+										}
+									}}
+									pr="80px"
+								/>
+								<Flex position="absolute" right={2} bottom={1.5} gap={1}>
+									<IconButton
+										aria-label="Add image"
+										icon={<FiImage />}
+										size="sm"
+										variant="ghost"
+										color="#65676B"
+										onClick={() => commentFileInputRef.current?.click()}
+										isLoading={uploadingImages}
+										borderRadius="full"
+										_hover={{ bg: "transparent", color: "#1877F2" }}
+									/>
+									<IconButton
+										aria-label="Send comment"
+										icon={<FiSend />}
+										size="sm"
+										variant="ghost"
+										color={newComment.trim() ? "#1877F2" : "#BEC3C9"}
+										onClick={() => newComment.trim() && createCommentMutation.mutate({ comment: newComment, images: commentImages })}
+										isDisabled={!newComment.trim() || createCommentMutation.isPending || uploadingImages}
+										borderRadius="full"
+										_hover={{ bg: "transparent" }}
+									/>
+								</Flex>
+							</Box>
+						</Flex>
+						
+						{/* Hidden File Input */}
+						<input
+							ref={commentFileInputRef}
+							type="file"
+							accept="image/*,video/*"
+							multiple
+							style={{ display: "none" }}
+							onChange={handleCommentImageUpload}
+						/>
+						
+						{/* Feeling/Activity Icons - Facebook Style */}
+						<Flex gap={1} mt={1} ml={10} align="center">
+							<IconButton
+								aria-label="Emoji"
+								icon={<Text fontSize="lg">😊</Text>}
+								size="xs"
+								variant="ghost"
+								color="#65676B"
+								borderRadius="full"
+								onClick={onFeelingModalOpen}
+								_hover={{ bg: "#F0F2F5" }}
+								minW="auto"
+								h="auto"
+								p={1}
 							/>
 							<IconButton
-								aria-label="Send comment"
-								icon={<FiSend />}
-								size="sm"
+								aria-label="Camera"
+								icon={<Text fontSize="lg">📷</Text>}
+								size="xs"
 								variant="ghost"
-								color={newComment.trim() ? "#1877F2" : "#BEC3C9"}
-								position="absolute"
-								right={2}
-								bottom={1.5}
-								onClick={() => newComment.trim() && createCommentMutation.mutate(newComment)}
-								isDisabled={!newComment.trim() || createCommentMutation.isPending}
+								color="#65676B"
 								borderRadius="full"
-								_hover={{ bg: "transparent" }}
+								onClick={() => commentFileInputRef.current?.click()}
+								_hover={{ bg: "#F0F2F5" }}
+								minW="auto"
+								h="auto"
+								p={1}
 							/>
-						</Box>
-					</Flex>
+							<IconButton
+								aria-label="GIF"
+								icon={<Text fontSize="xs" fontWeight="bold">GIF</Text>}
+								size="xs"
+								variant="ghost"
+								color="#65676B"
+								borderRadius="full"
+								_hover={{ bg: "#F0F2F5" }}
+								minW="auto"
+								h="auto"
+								p={1}
+							/>
+							<IconButton
+								aria-label="Sticker"
+								icon={<Text fontSize="lg">🎨</Text>}
+								size="xs"
+								variant="ghost"
+								color="#65676B"
+								borderRadius="full"
+								onClick={onFeelingModalOpen}
+								_hover={{ bg: "#F0F2F5" }}
+								minW="auto"
+								h="auto"
+								p={1}
+							/>
+							{(commentFeeling || commentActivity) && (
+								<Text fontSize="xs" color="#65676B" ml={2}>
+									{commentFeeling && <Text as="span" mr={1}>{commentFeeling}</Text>}
+									{commentActivity && <Text as="span">{commentActivity}</Text>}
+								</Text>
+							)}
+						</Flex>
+						
+						{/* Image Preview */}
+						{commentImages.length > 0 && (
+							<Flex gap={2} mt={2} ml={10} flexWrap="wrap">
+								{commentImages.map((url, index) => (
+									<Box key={index} position="relative" w="80px" h="80px" borderRadius="md" overflow="hidden">
+										<Image 
+											src={url} 
+											alt={`Upload ${index + 1}`} 
+											fill
+											style={{ objectFit: "cover" }}
+										/>
+										<IconButton
+											aria-label="Remove image"
+											icon={<FiX />}
+											size="xs"
+											position="absolute"
+											top={1}
+											right={1}
+											bg="blackAlpha.700"
+											color="white"
+											borderRadius="full"
+											_hover={{ bg: "blackAlpha.800" }}
+											onClick={() => setCommentImages(commentImages.filter((_, i) => i !== index))}
+										/>
+									</Box>
+								))}
+							</Flex>
+						)}
+					</Box>
 				)}
 
 				{post.isLocked && (
@@ -617,6 +888,77 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				)}
 			</Box>
 		</Box>
+		
+		{/* Feeling/Activity Modal for Comments */}
+		<Modal isOpen={isFeelingModalOpen} onClose={onFeelingModalClose} isCentered size="md" scrollBehavior="inside">
+			<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
+			<ModalContent borderRadius="xl" maxH="70vh">
+				<ModalHeader>How are you feeling?</ModalHeader>
+				<ModalCloseButton />
+				<ModalBody pb={6}>
+					<VStack spacing={4} align="stretch">
+						{/* Feelings Section */}
+						<Box>
+							<Text fontSize="md" fontWeight="600" mb={2} color="#1C1E21">
+								Feelings
+							</Text>
+							<SimpleGrid columns={2} spacing={2}>
+								{FEELINGS.map((item) => (
+									<Button
+										key={item.label}
+										variant="ghost"
+										justifyContent="flex-start"
+										onClick={() => {
+											setCommentFeeling(`${item.emoji} ${item.label}`)
+											onFeelingModalClose()
+										}}
+										_hover={{ bg: "#F0F2F5" }}
+										py={2}
+										h="auto"
+									>
+										<Flex align="center" gap={2}>
+											<Text fontSize="xl">{item.emoji}</Text>
+											<Text fontSize="sm" textTransform="capitalize">{item.label}</Text>
+										</Flex>
+									</Button>
+								))}
+							</SimpleGrid>
+						</Box>
+						
+						<Divider />
+						
+						{/* Activities Section */}
+						<Box>
+							<Text fontSize="md" fontWeight="600" mb={2} color="#1C1E21">
+								What are you doing?
+							</Text>
+							<SimpleGrid columns={2} spacing={2}>
+								{ACTIVITIES.map((item) => (
+									<Button
+										key={item.label}
+										variant="ghost"
+										justifyContent="flex-start"
+										onClick={() => {
+											setCommentActivity(`${item.emoji} ${item.label}`)
+											onFeelingModalClose()
+										}}
+										_hover={{ bg: "#F0F2F5" }}
+										py={2}
+										h="auto"
+									>
+										<Flex align="center" gap={2}>
+											<Text fontSize="xl">{item.emoji}</Text>
+											<Text fontSize="sm" textTransform="capitalize">{item.label}</Text>
+										</Flex>
+									</Button>
+								))}
+							</SimpleGrid>
+						</Box>
+					</VStack>
+				</ModalBody>
+			</ModalContent>
+		</Modal>
+		</>
 	)
 }
 

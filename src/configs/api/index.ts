@@ -60,7 +60,8 @@ HTTPClient.interceptors.request.use((configs: any) => {
 				configs.headers["Content-Type"] = "multipart/form-data"
 			}
 		} else {
-			if (typeof configs?.headers != "undefined") {
+			// Only set default content-type if not already specified
+			if (typeof configs?.headers != "undefined" && !configs.headers["Content-Type"]) {
 				configs.headers["Content-Type"] = "application/x-www-form-urlencoded"
 			}
 		}

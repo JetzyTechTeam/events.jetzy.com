@@ -31,7 +31,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const { eventId, title, content, images, tags } = req.body
 
-		console.log("[discussions/create] Request data:", { eventId, title, userId: (session.user as any)?._id })
+		console.log("[discussions/create] Request data:", { 
+			eventId, 
+			title, 
+			userId: (session.user as any)?._id,
+			images: images,
+			imagesCount: images?.length || 0,
+			tags: tags
+		})
 
 		if (!eventId || !title?.trim() || !content?.trim()) {
 			return sendResponse(res, null, "Event ID, title, and content are required", false, ResCode.BAD_REQUEST)
