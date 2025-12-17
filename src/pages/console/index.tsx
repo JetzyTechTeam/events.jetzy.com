@@ -1,6 +1,6 @@
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { EventListingLoader } from "@Jetzy/components/placeholders/loader"
-import { authorizedOnly } from "@Jetzy/lib/authSession"
+import { adminOnly } from "@Jetzy/lib/authSession"
 import { ListEventsThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { EventInterface, Pages } from "@Jetzy/types"
@@ -285,5 +285,13 @@ const DashboardEventCard = ({ event }: { event: EventInterface }) => {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	return authorizedOnly(context, { fetchEvents: true })
+	// Check if user is admin/super admin
+	const sessionResult = await adminOnly(context)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	
+	return {
+		props: {
+			session: sessionResult.props.session,
+		},
+	}
 }

@@ -49,8 +49,17 @@ const LightNavbar: React.FC = () => {
 		return router.pathname.startsWith(href)
 	}
 
-	// Filter navigation items based on authentication status
-	const visibleNavItems = navItems.filter((item) => !item.requiresAuth || session)
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+
+	// Filter navigation items based on authentication status and role
+	const visibleNavItems = navItems.filter((item) => {
+		// Always show public items
+		if (!item.requiresAuth) return true
+		// Only show admin pages to logged-in admins/super admins
+		return session && isAdmin
+	})
 
 	return (
 		<nav className="bg-white border-b border-border-light sticky top-0 z-50">

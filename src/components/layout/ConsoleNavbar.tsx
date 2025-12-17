@@ -30,9 +30,15 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 
 	// @ts-ignore
 	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
 
-	// Show all items for logged in users
-	const filteredNavigation = navigation
+	// Filter navigation: only show admin pages to admins/super admins
+	const filteredNavigation = navigation.filter((item) => {
+		// Always show "Events" (public)
+		if (item.name === "Events") return true
+		// Only show admin pages to admins/super admins
+		return isAdmin
+	})
 
 	const isActive = (href: string) => {
 		if (href === "/") {

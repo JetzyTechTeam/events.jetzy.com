@@ -47,6 +47,8 @@ import ImageUploadBox from "../../../components/image-upload-box"
 import TimezoneSelect from "../../../components/timezone-select"
 import { useSession } from "next-auth/react"
 import { z } from "zod"
+import { GetServerSideProps } from "next"
+import { adminOnly } from "@/lib/authSession"
 
 const initialValues = {
 	name: "",
@@ -826,3 +828,15 @@ const CreateEventPage = () => {
 }
 
 export default CreateEventPage
+
+export const getServerSideProps: GetServerSideProps = async (context) => {
+	// Check if user is admin/super admin
+	const sessionResult = await adminOnly(context)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	
+	return {
+		props: {
+			session: sessionResult.props.session,
+		},
+	}
+}

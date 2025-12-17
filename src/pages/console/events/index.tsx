@@ -1,6 +1,6 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
-import { authorizedOnly } from "@/lib/authSession"
+import { adminOnly } from "@/lib/authSession"
 import { useEdgeStore } from "@/lib/edgestore"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
@@ -56,8 +56,7 @@ export default function EventsListing({ events, pagination }: Props) {
 		router.reload()
 	}
 
-	// @ts-ignore
-	if (session?.user?.role === Roles.USER) router.push("/console")
+	// Role check is now handled server-side in getServerSideProps via adminOnly middleware
 
 	return (
 		<>
@@ -353,9 +352,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	// check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	// check if user is admin/super admin
+	const sessionResult = await adminOnly(context)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+
+	const session = sessionResult.props.session
 
 	// lets paginate the events
 	const limit = 10
@@ -368,7 +369,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}
 
 	const skip = (page - 1) * limit
-	// fetch events
+	// fetch events - admins can see all events (public and private)
 	const events = await Events.find({ isDeleted: false }).limit(limit).skip(skip).sort({ createdAt: -1 })
 	if (!events) return { props: { events: [] } }
 
@@ -393,6 +394,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		props: {
 			events: JSON?.stringify(data),
 			pagination,
+			session,
 		},
 	}
 }

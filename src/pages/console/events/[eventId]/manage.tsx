@@ -1,6 +1,6 @@
 "use client"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
-import { authorizedOnly } from "@/lib/authSession"
+import { adminOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { GetServerSideProps } from "next"
 import React, { useState } from "react"
@@ -499,8 +499,9 @@ export default function Manage({ event }: any) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	const sessionResult = await adminOnly(context)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	const session = sessionResult.props.session
 
 	// Ensure database connection is ready
 	const { dbconn } = await import("@/configs/database")

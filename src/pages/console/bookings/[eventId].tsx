@@ -4,7 +4,7 @@ import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
 import { Pages } from "@/types"
 import { Booking } from "."
-import { authorizedOnly } from "@/lib/authSession"
+import { adminOnly } from "@/lib/authSession"
 import Head from "next/head"
 import React, { useState, useMemo } from "react"
 import Link from "next/link"
@@ -444,8 +444,9 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 }
 
 export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
-	const session = await authorizedOnly(ctx)
-	if (!session) return session
+	const sessionResult = await adminOnly(ctx)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	const session = sessionResult.props.session
 
 	const { eventId } = ctx.params as { eventId: string }
 	const { status, date, search, amount, minTickets } = ctx.query

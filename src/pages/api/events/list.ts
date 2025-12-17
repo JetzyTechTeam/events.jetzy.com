@@ -15,9 +15,11 @@ const validationSchema = z.object({
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
-		// Check authentication status
+		// Check authentication status and role
 		const session = await getServerSession(req, res, authOptions);
 		const isSignedIn = !!session;
+		const userRole = (session?.user as any)?.role;
+		const isAdmin = userRole === "admin" || userRole === "super admin";
 		
 		// run validation
 		const validation = validationSchema.safeParse({
@@ -34,8 +36,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// calculate the skip value
 		const skip = (page - 1) * limit
 
-		// Define the query based on authentication status
+		// Define the query based on authentication status and role
 		let query: any = { isDeleted: false, location: { $regex: locFilter, $options: "i" } };
+		
+		// If user is not admin or super admin, only show public events
+		if (!isAdmin) {
+			query.privacy = "public";
+		}
 		
 		// If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
 		if (!isSignedIn) {

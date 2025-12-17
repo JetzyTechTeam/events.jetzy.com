@@ -59,11 +59,18 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * limit
 
-	// Check if user is signed in
+	// Check if user is signed in and their role
 	const isSignedIn = !!session
+	const userRole = (session?.user as any)?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
 
-	// Define the query based on authentication status
-	let query: any = { isDeleted: false, privacy: "public" }
+	// Define the query based on authentication status and role
+	let query: any = { isDeleted: false }
+	
+	// If user is not admin or super admin, only show public events
+	if (!isAdmin) {
+		query.privacy = "public"
+	}
 
 	// If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
 	if (!isSignedIn) {

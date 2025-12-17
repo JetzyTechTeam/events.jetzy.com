@@ -5,7 +5,7 @@ import CheckInStats from "@/components/CheckInStats"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
 import Head from "next/head"
-import { authorizedOnly } from "@/lib/authSession"
+import { adminOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { Box, Container, Heading, Text, Alert, AlertIcon } from "@chakra-ui/react"
@@ -52,10 +52,9 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 }
 
 export const getServerSideProps: GetServerSideProps = async (context) => {
-	// Check if user is authorized
-	const authResult = await authorizedOnly(context)
-	// @ts-ignore
-	if (authResult.redirect) {
+	// Check if user is admin/super admin
+	const authResult = await adminOnly(context)
+	if (!authResult || "redirect" in authResult) {
 		return authResult
 	}
 
@@ -87,6 +86,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 					...event,
 					_id: event._id.toString(),
 				}),
+				session: authResult.props.session,
 			},
 		}
 	} catch (error) {

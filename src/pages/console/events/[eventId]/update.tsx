@@ -43,7 +43,7 @@ import TimezoneSelect from "../../../../components/timezone-select"
 import { useSession } from "next-auth/react"
 import { IEvent } from "@/models/events/types"
 import { EmailProps } from "@/actions/send-update-email-to-users.action"
-import { authorizedOnly } from "@/lib/authSession"
+import { adminOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { Types } from "mongoose"
 import CollapsibleSection from "@/components/events/CollapsibleSection"
@@ -905,9 +905,10 @@ export default function UpdateEventPage({ event }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = async (context) => {
-	// check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	// check if user is admin/super admin
+	const sessionResult = await adminOnly(context)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	const session = sessionResult.props.session
 
 	const { eventId } = context.params as { eventId: string }
 

@@ -1,5 +1,5 @@
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
-import { authorizedOnly } from "@/lib/authSession"
+import { adminOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { IBookings, IEvent } from "@/models/events/types"
 import { Pages } from "@/types"
@@ -116,9 +116,10 @@ export default function BookingsPage({ events, pagination }: Props) {
 	)
 }
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	//check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	//check if user is admin/super admin
+	const sessionResult = await adminOnly(context)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	const session = sessionResult.props.session
 
 	// Ensure database connection is ready
 	const { dbconn } = await import("@/configs/database")

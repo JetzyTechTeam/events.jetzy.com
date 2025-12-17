@@ -1,6 +1,8 @@
 import { ROUTES } from "@Jetzy/configs/routes"
 import { AuthorizedOptions } from "@Jetzy/types"
 import { getSession } from "next-auth/react"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 
 export const authorizedOnly = async (context: any, options?: AuthorizedOptions) => {
 	const { resolvedUrl } = context
@@ -18,6 +20,41 @@ export const authorizedOnly = async (context: any, options?: AuthorizedOptions) 
 	return {
 		props: {
 			session: _session,
+		},
+	}
+}
+
+/**
+ * Middleware to restrict access to admin and super admin only
+ * Regular users will be redirected to the dashboard
+ */
+export const adminOnly = async (context: any) => {
+	const session = await getServerSession(context.req, context.res, authOptions)
+	
+	if (!session) {
+		return {
+			redirect: {
+				destination: ROUTES.login,
+				permanent: false,
+			},
+		}
+	}
+
+	const userRole = (session.user as any)?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+
+	if (!isAdmin) {
+		return {
+			redirect: {
+				destination: ROUTES.dashboard.index || "/",
+				permanent: false,
+			},
+		}
+	}
+
+	return {
+		props: {
+			session,
 		},
 	}
 }

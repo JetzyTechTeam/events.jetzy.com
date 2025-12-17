@@ -1,6 +1,6 @@
 import EventTicketTable, { TicketsRowData } from "@/components/events/EventTicketTable"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
-import { authorizedOnly } from "@/lib/authSession"
+import { adminOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { IEventTicket } from "@/models/events/types"
 import { Pages } from "@/types"
@@ -43,9 +43,10 @@ type Params = {
 	eventId: string
 }
 export const getServerSideProps: GetServerSideProps<any, Params> = async (context) => {
-	// check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	// check if user is admin/super admin
+	const sessionResult = await adminOnly(context)
+	if (!sessionResult || "redirect" in sessionResult) return sessionResult
+	const session = sessionResult.props.session
 
 	const { eventId } = context.params as Params
 
