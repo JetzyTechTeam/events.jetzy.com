@@ -197,6 +197,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			mode: "payment",
 			success_url: successUrl,
 			cancel_url: cancelUrl,
+			locale: "en", // Explicitly set locale to prevent locale loading errors
 			metadata: {
 				firstName: user.firstName,
 				lastName: user.lastName,

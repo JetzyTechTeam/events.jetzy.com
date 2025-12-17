@@ -16,6 +16,7 @@ interface LoginModalProps {
 	isOpen: boolean
 	onClose: () => void
 	onSwitchToSignup?: () => void
+	onLoginSuccess?: () => void
 }
 
 const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSignup }) => {
@@ -57,15 +58,22 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSign
 		// turn off loader
 		setLoader(false)
 
-		// Close modal and redirect
+		// Close modal
 		onClose()
-		navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+
+		// If there's a login success callback (e.g., from checkout), call it
+		if (onLoginSuccess) {
+			onLoginSuccess()
+		} else {
+			// Otherwise, redirect normally
+			navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+		}
 	}
 
 	return (
 		<>
 		<Transition appear show={isOpen}>
-			<Dialog as="div" className="relative z-50" onClose={onClose}>
+			<Dialog as="div" className="relative z-[60]" onClose={onClose}>
 				<Transition.Child
 					as="div"
 					className="fixed inset-0 bg-black/40 backdrop-blur-sm"

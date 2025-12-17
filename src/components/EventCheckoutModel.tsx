@@ -6,7 +6,7 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { useSession } from "next-auth/react"
 import LoginModal from "./misc/LoginModal"
-import { FiArrowLeft, FiPlus, FiX } from "react-icons/fi"
+import { FiArrowLeft, FiPlus, FiX, FiEye, FiEyeOff } from "react-icons/fi"
 
 export default function EventCheckoutModel({ event }: { event: string }) {
 	const { data: session } = useSession()
@@ -18,6 +18,10 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	const [showWaitingList, setShowWaitingList] = useState(false)
 	const [waitingListRegistered, setWaitingListRegistered] = useState(false)
 	const [showLoginModal, setShowLoginModal] = useState(false)
+	const [showPassword, setShowPassword] = useState(false)
+	const [isCheckingUser, setIsCheckingUser] = useState(false)
+	const [pendingCheckoutData, setPendingCheckoutData] = useState<{ formData: typeof formData; tickets: typeof tickets } | null>(null)
+	const [shouldStopCheckout, setShouldStopCheckout] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -92,7 +96,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	}
 
 	// Handle form submission
-	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
 
 		// Check required fields (password only required if not logged in)
@@ -110,7 +114,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			return
 		}
 		
-		// Validate password length if provided
+		// Validate password length if provided (only for new users)
 		if (!session?.user && formData.password.length < 6) {
 			Error("Password Error", "Password must be at least 6 characters long.")
 			return
@@ -135,6 +139,65 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			setEmailErrors([])
 		}
 
+		// Check if user already exists (only for non-logged-in users)
+		if (!session?.user) {
+			setIsCheckingUser(true)
+			let userExists = false
+			
+			try {
+				const checkUserResponse = await fetch("/api/auth/check-user", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						email: formData.email.trim(),
+						isJetzyMember: false, // You can add a checkbox for this if needed
+					}),
+				})
+
+				const checkUserResult = await checkUserResponse.json()
+				console.log("[EventCheckout] User check result:", checkUserResult)
+
+				// Check if user exists with password
+				if (checkUserResult?.status === true && checkUserResult?.data?.exists === true && checkUserResult?.data?.hasPassword === true) {
+					console.log("[EventCheckout] User exists with password, stopping checkout and opening login modal")
+					// User already exists with password, redirect to login
+					userExists = true
+					setIsCheckingUser(false)
+					// Store checkout data to continue after login
+					setPendingCheckoutData({
+						formData: { ...formData },
+						tickets: [...tickets],
+					})
+					// Show login modal first
+					setShowLoginModal(true)
+					// Show error message after a brief delay to ensure modal is visible
+					setTimeout(() => {
+						Error("Account Exists", "An account with this email already exists. Please login to continue.")
+					}, 300)
+					// IMPORTANT: Return early to stop checkout process - this prevents payment flow
+					console.log("[EventCheckout] Returning early - checkout stopped")
+					return
+				}
+			} catch (error) {
+				console.error("[EventCheckout] Error checking user:", error)
+				setIsCheckingUser(false)
+				// If check fails, show error and stop checkout
+				Error("Error", "Unable to verify account. Please try again.")
+				return
+			}
+			
+			setIsCheckingUser(false)
+			
+			// Double-check: if user exists, don't proceed
+			if (userExists) {
+				console.log("[EventCheckout] User exists flag is true, stopping checkout")
+				return
+			}
+		}
+
+		console.log("[EventCheckout] User check passed, proceeding with checkout")
 		sendGAEvent({
 			category: "Event",
 			action: "Checkout Form Submitted",
@@ -168,6 +231,51 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			}
 		})
 	}
+
+	// Continue checkout after login
+	const handleContinueCheckout = useCallback(async (checkoutFormData: typeof formData, checkoutTickets: typeof tickets) => {
+		// Use session data if available (user just logged in), otherwise use stored form data
+		const finalFormData = session?.user ? {
+			firstName: (session.user as any).fullName?.split(" ")[0] || checkoutFormData.firstName,
+			lastName: (session.user as any).fullName?.split(" ").slice(1).join(" ") || checkoutFormData.lastName,
+			email: session.user.email || checkoutFormData.email,
+			phone: (session.user as any).phone || checkoutFormData.phone,
+			password: "", // No password needed for logged-in users
+		} : checkoutFormData
+		
+		sendGAEvent({
+			category: "Event",
+			action: "Checkout Form Submitted (After Login)",
+			label: event,
+		})
+
+		// Include guest emails in the submission (empty for logged-in users who just logged in)
+		const submissionData = {
+			tickets: JSON.stringify(checkoutTickets),
+			user: JSON.stringify({
+				...finalFormData,
+				guestEmails: [], // Logged-in users can add guests separately
+			}),
+		}
+
+		dispatch(
+			CreateCheckoutSessionThunk({
+				data: submissionData,
+			}),
+		).then((res: any) => {
+			if (res.payload?.status) {
+				// Check if event is at capacity
+				if (res.payload?.data?.atCapacity) {
+					setWaitingListData(res.payload.data)
+					setShowWaitingList(true)
+				} else {
+					// redirect user to payment page
+					dispatch(toggleCheckoutForm(false))
+					window.location.href = res?.payload?.data?.url
+				}
+			}
+		})
+	}, [event, dispatch, session])
 
 	// Handle joining waiting list
 	const handleJoinWaitingList = useCallback(async () => {
@@ -330,17 +438,28 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 									{!session?.user && (
 										<div>
 											<label className="block text-sm font-medium text-text-primary mb-1.5">Password</label>
-											<input
-												type="password"
-												name="password"
-												placeholder="Create a password"
-												value={formData.password}
-												onChange={handleInputChange}
-												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
-												required
-												minLength={6}
-												title="Password must be at least 6 characters"
-											/>
+											<div className="relative">
+												<input
+													type={showPassword ? "text" : "password"}
+													name="password"
+													placeholder="Create a password"
+													value={formData.password}
+													onChange={handleInputChange}
+													className="w-full p-3 pr-10 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+													required
+													minLength={6}
+													title="Password must be at least 6 characters"
+													autoComplete="new-password"
+												/>
+												<button
+													type="button"
+													onClick={() => setShowPassword(!showPassword)}
+													className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary transition-colors"
+													aria-label={showPassword ? "Hide password" : "Show password"}
+												>
+													{showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
+												</button>
+											</div>
 											<p className="text-xs text-text-muted mt-1">Minimum 6 characters</p>
 										</div>
 									)}
@@ -393,14 +512,14 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 
 								{/* Submit Button */}
 								<button
-									disabled={isLoading}
+									disabled={isLoading || isCheckingUser}
 									type="submit"
 									className="w-full bg-primary-purple text-white font-semibold px-6 py-3.5 rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 								>
-									{isLoading ? (
+									{isLoading || isCheckingUser ? (
 										<>
 											<Spinner />
-											<span>Processing...</span>
+											<span>{isCheckingUser ? "Checking..." : "Processing..."}</span>
 										</>
 									) : (
 										"Continue to Payment"
@@ -413,7 +532,25 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			)}
 
 			{/* Login Modal */}
-			{showLoginModal && <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />}
+			{showLoginModal && (
+				<LoginModal 
+					isOpen={showLoginModal} 
+					onClose={() => {
+						setShowLoginModal(false)
+						setPendingCheckoutData(null)
+					}}
+					onLoginSuccess={async () => {
+						// After successful login, wait a moment for session to update, then continue with checkout
+						if (pendingCheckoutData) {
+							// Wait for session to update
+							await new Promise(resolve => setTimeout(resolve, 500))
+							// Refresh session by triggering a re-render
+							handleContinueCheckout(pendingCheckoutData.formData, pendingCheckoutData.tickets)
+							setPendingCheckoutData(null)
+						}
+					}}
+				/>
+			)}
 		</>
 	)
 }
