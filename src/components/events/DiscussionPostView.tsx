@@ -75,6 +75,7 @@ import {
 	EditDiscussionCommentApi,
 	DeleteDiscussionCommentApi,
 	ReactToDiscussionCommentApi,
+	CheckEventTicketApi,
 } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor, DiscussionCommentWithAuthor } from "@/types/discussion"
 import { useRouter } from "next/router"
@@ -122,9 +123,10 @@ interface CommentItemProps {
 	onDelete: (commentId: string) => void
 	onReact: (commentId: string) => void
 	isLocked: boolean
+	hasTicket?: boolean
 }
 
-const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, isLocked }) => {
+const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, isLocked, hasTicket = false }) => {
 	const [replyText, setReplyText] = useState("")
 	const [editText, setEditText] = useState(comment.comment)
 	const [showReply, setShowReply] = useState(false)
@@ -170,7 +172,29 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 		}
 	}
 
+	const toast = useToast()
+
 	const handleReplySubmit = () => {
+		if (!session || !session.user) {
+			toast({
+				title: "Please login or signup first",
+				description: "You need to be logged in to reply to comments.",
+				status: "warning",
+				duration: 3000,
+				isClosable: true,
+			})
+			return
+		}
+		if (!hasTicket) {
+			toast({
+				title: "Please buy a ticket first",
+				description: "You need to purchase a ticket to reply to comments.",
+				status: "warning",
+				duration: 4000,
+				isClosable: true,
+			})
+			return
+		}
 		if (replyText.trim() || replyImages.length > 0 || replyFeeling || replyActivity) {
 			let finalReply = replyText
 			if (replyFeeling || replyActivity) {
@@ -984,8 +1008,20 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		enabled: !!postId,
 	})
 
+	// Check if user has purchased a ticket
+	const { data: ticketCheck } = useQuery({
+		queryKey: ["checkTicket", eventId],
+		queryFn: async () => {
+			const response = await CheckEventTicketApi({ data: { eventId } })
+			return response.data
+		},
+		enabled: !!eventId && !!session,
+	})
+
 	const post: DiscussionPostWithAuthor | null = postResponse?.data || null
 	const comments: DiscussionCommentWithAuthor[] = commentsResponse?.data || []
+	const hasTicket = ticketCheck?.hasTicket || false
+	const isAuthenticated = ticketCheck?.isAuthenticated ?? (!!session)
 
 	// Auto-enter edit mode if requested
 	useEffect(() => {
@@ -1631,6 +1667,26 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 											onKeyPress={(e) => {
 												if (e.key === 'Enter' && !e.shiftKey) {
 													e.preventDefault();
+													if (!session || !session.user) {
+														toast({
+															title: "Please login or signup first",
+															description: "You need to be logged in to comment.",
+															status: "warning",
+															duration: 3000,
+															isClosable: true,
+														})
+														return
+													}
+													if (!hasTicket) {
+														toast({
+															title: "Please buy a ticket first",
+															description: "You need to purchase a ticket to comment on posts.",
+															status: "warning",
+															duration: 4000,
+															isClosable: true,
+														})
+														return
+													}
 													if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
 														createCommentMutation.mutate({ comment: newComment, images: commentImages });
 													}
@@ -1647,6 +1703,26 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										variant="ghost"
 										color={(newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) ? "#1877F2" : "#BEC3C9"}
 										onClick={() => {
+											if (!session || !session.user) {
+												toast({
+													title: "Please login or signup first",
+													description: "You need to be logged in to comment.",
+													status: "warning",
+													duration: 3000,
+													isClosable: true,
+												})
+												return
+											}
+											if (!hasTicket) {
+												toast({
+													title: "Please buy a ticket first",
+													description: "You need to purchase a ticket to comment on posts.",
+													status: "warning",
+													duration: 4000,
+													isClosable: true,
+												})
+												return
+											}
 											if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
 												createCommentMutation.mutate({ comment: newComment, images: commentImages });
 											}
@@ -1816,6 +1892,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 								onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
 								onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
 								isLocked={post.isLocked}
+								hasTicket={hasTicket}
 							/>
 						))}
 					</Stack>

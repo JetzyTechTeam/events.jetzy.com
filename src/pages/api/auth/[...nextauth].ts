@@ -25,11 +25,13 @@ export const authOptions: NextAuthOptions = {
 
         if (!email || !password) throw new Error("Please provide your credentials.");
 
+        // Normalize email to lowercase for consistent lookup
+        const normalizedEmail = email.toLowerCase().trim();
         
         const userModel = isJetzyMember ==="true" ? EventUsers : Users
 
         //const user = await Users.findOne({ email }).select('+password');
-        const user = await userModel.findOne({email}).select('+password')
+        const user = await userModel.findOne({ email: normalizedEmail }).select('+password')
 
         if (!user) throw new Error("User was not found.");
 

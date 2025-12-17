@@ -12,11 +12,15 @@ import Head from "next/head"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
+import React from "react"
+import { FiEye, FiEyeOff } from "react-icons/fi"
 
 export default function LoginPage() {
 	const dispatcher = useAppDispatch()
 	const { isLoading } = useAppSelector(getAuthState)
 	const navigate = useRouter()
+	const [showPassword, setShowPassword] = React.useState(false)
+	const [showConfirmPassword, setShowConfirmPassword] = React.useState(false)
 
 	const formData: SignUpFormData = {
 		email: "",
@@ -124,16 +128,24 @@ export default function LoginPage() {
 											Password
 										</label>
 									</div>
-									<div className="mt-2">
+									<div className="mt-2 relative">
 										<Field
 											id="password"
 											name="password"
 											value={values?.password}
 											onChange={handleChange}
-											type="password"
-											autoComplete="current-password"
-											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											type={showPassword ? "text" : "password"}
+											autoComplete="new-password"
+											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3 pr-10"
 										/>
+										<button
+											type="button"
+											onClick={() => setShowPassword(!showPassword)}
+											className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+											aria-label={showPassword ? "Hide password" : "Show password"}
+										>
+											{showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
+										</button>
 										<ErrorMessage name="password" component="span" className="text-red-500 block mt-1" />
 									</div>
 								</div>
@@ -145,16 +157,24 @@ export default function LoginPage() {
 											Confirm Password
 										</label>
 									</div>
-									<div className="mt-2">
+									<div className="mt-2 relative">
 										<Field
 											id="confirmPassword"
 											name="confirmPassword"
 											value={values?.confirmPassword}
 											onChange={handleChange}
-											type="password"
-											autoComplete="current-password"
-											className="bg-[#1E1E1E] block w-full text-white rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											type={showConfirmPassword ? "text" : "password"}
+											autoComplete="new-password"
+											className="bg-[#1E1E1E] block w-full text-white rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3 pr-10"
 										/>
+										<button
+											type="button"
+											onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+											className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+											aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+										>
+											{showConfirmPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
+										</button>
 										<ErrorMessage name="confirmPassword" component="span" className="text-red-500 block mt-1" />
 									</div>
 								</div>

@@ -4,52 +4,78 @@ import { XMarkIcon } from "@heroicons/react/24/outline"
 import { ErrorMessage, Field, Form, Formik } from "formik"
 import { useRouter } from "next/router"
 import { ROUTES } from "@Jetzy/configs/routes"
-import { signupValidation } from "@Jetzy/lib/validator/authValidtor"
-import { CreateUserAccountThunk, getAuthState } from "@Jetzy/redux/reducers/authSlice"
-import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import { SignUpFormData } from "@Jetzy/types"
+import { changePasswordValidatorScheme } from "@Jetzy/lib/validator/authValidtor"
+import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 import { FiEye, FiEyeOff } from "react-icons/fi"
 import Spinner from "./Spinner"
+import axios from "axios"
 
-interface SignupModalProps {
+interface ForgotPasswordModalProps {
 	isOpen: boolean
 	onClose: () => void
 	onSwitchToLogin?: () => void
 }
 
-const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLogin }) => {
-	const dispatcher = useAppDispatch()
-	const { isLoading } = useAppSelector(getAuthState)
-	const navigate = useRouter()
+type ForgotPasswordFormData = {
+	email: string
+	newPassword: string
+	confirm_password: string
+	isJetzyMember: boolean
+}
+
+const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen, onClose, onSwitchToLogin }) => {
+	const navigation = useRouter()
+	const [isLoading, setLoader] = useState(false)
 	const [showPassword, setShowPassword] = useState(false)
 	const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
-	const formData: SignUpFormData = {
+	const formData: ForgotPasswordFormData = {
 		email: "",
-		password: "",
-		confirmPassword: "",
-		firstName: "",
-		lastName: "",
-		shouldBeAJetzyMember: false,
+		newPassword: "",
+		confirm_password: "",
+		isJetzyMember: false,
 	}
 
-	const handleSubmit = (values: SignUpFormData) => {
-		const sanitized = {
-			...values,
-			email: values.email?.trim(),
-			firstName: values.firstName?.trim(),
-			lastName: values.lastName?.trim(),
-			password: values.password?.trim(),
-			confirmPassword: values.confirmPassword?.trim(),
-			shouldBeAJetzyMember: values.shouldBeAJetzyMember,
-		}
+	const handleSubmit = async (values: ForgotPasswordFormData) => {
+		setLoader(true)
 
-		dispatcher(CreateUserAccountThunk({ data: sanitized })).then((res: any) => {
-			if (res?.payload?.status) {
+		try {
+			console.log("Submitting forgot password form (modal):", { email: values.email, isJetzyMember: values.isJetzyMember })
+			
+			const response = await axios.post("/api/auth/forgot-password", {
+				email: values.email.trim(),
+				password: values.newPassword.trim(),
+				confirmPassword: values.confirm_password.trim(),
+				isJetzyMember: values.isJetzyMember,
+			})
+
+			console.log("Forgot password response (modal):", response.data)
+
+			if (response.data?.status === true) {
+				Success(response.data?.message || "Password reset successfully! Redirecting to login...")
+				setLoader(false)
 				onClose()
-				navigate.push(ROUTES.login)
+				// Optionally switch to login modal or redirect
+				if (onSwitchToLogin) {
+					setTimeout(() => {
+						onSwitchToLogin()
+					}, 1000)
+				} else {
+					setTimeout(() => {
+						navigation.push(ROUTES.login)
+					}, 1000)
+				}
+			} else {
+				const errorMsg = response.data?.message || "Failed to reset password. Please try again."
+				ServerErrors("Error", { message: errorMsg })
+				setLoader(false)
 			}
-		})
+		} catch (error: any) {
+			console.error("Forgot password error (modal):", error)
+			const errorMessage = error.response?.data?.message || error.message || "Failed to reset password. Please try again."
+			ServerErrors("Error", { message: errorMessage })
+			setLoader(false)
+		}
 	}
 
 	return (
@@ -85,50 +111,14 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 								</button>
 
 								{/* Header */}
-								<Dialog.Title as="h3" className="text-3xl font-bold text-text-primary text-center mb-6">
-									Sign Up
+								<Dialog.Title as="h3" className="text-3xl font-bold text-text-primary text-center mb-2">
+									Reset Password
 								</Dialog.Title>
+								<p className="text-sm text-text-secondary text-center mb-6">Enter your email and new password</p>
 
-								<Formik initialValues={formData} onSubmit={handleSubmit} validationSchema={signupValidation}>
+								<Formik initialValues={formData} onSubmit={handleSubmit} validationSchema={changePasswordValidatorScheme}>
 									{({ values, handleChange }) => (
-										<Form className="space-y-4">
-											{/* First Name & Last Name - Side by Side */}
-											<div className="grid grid-cols-2 gap-4">
-												<div>
-													<label htmlFor="firstName" className="block text-sm font-medium text-text-primary mb-1">
-														First Name
-													</label>
-													<Field
-														id="firstName"
-														name="firstName"
-														value={values?.firstName}
-														onChange={handleChange}
-														type="text"
-														placeholder="Enter first name"
-														autoComplete="given-name"
-														className="w-full px-4 py-2.5 bg-white/90 border border-border-gray rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent transition-all"
-													/>
-													<ErrorMessage name="firstName" component="span" className="text-red-500 text-xs block mt-1" />
-												</div>
-
-												<div>
-													<label htmlFor="lastName" className="block text-sm font-medium text-text-primary mb-1">
-														Last Name
-													</label>
-													<Field
-														id="lastName"
-														name="lastName"
-														value={values?.lastName}
-														onChange={handleChange}
-														type="text"
-														placeholder="Enter last name"
-														autoComplete="family-name"
-														className="w-full px-4 py-2.5 bg-white/90 border border-border-gray rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent transition-all"
-													/>
-													<ErrorMessage name="lastName" component="span" className="text-red-500 text-xs block mt-1" />
-												</div>
-											</div>
-
+										<Form className="space-y-5">
 											{/* Email */}
 											<div>
 												<label htmlFor="email" className="block text-sm font-medium text-text-primary mb-1">
@@ -140,27 +130,29 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 													value={values?.email}
 													onChange={handleChange}
 													type="email"
-													placeholder="Enter email"
+													placeholder="Enter your email"
 													autoComplete="email"
+													required
 													className="w-full px-4 py-2.5 bg-white/90 border border-border-gray rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent transition-all"
 												/>
 												<ErrorMessage name="email" component="span" className="text-red-500 text-xs block mt-1" />
 											</div>
 
-											{/* Password */}
+											{/* New Password */}
 											<div>
-												<label htmlFor="password" className="block text-sm font-medium text-text-primary mb-1">
-													Password
+												<label htmlFor="newPassword" className="block text-sm font-medium text-text-primary mb-1">
+													New Password
 												</label>
 												<div className="relative">
 													<Field
-														id="password"
-														name="password"
-														value={values?.password}
+														id="newPassword"
+														name="newPassword"
+														value={values?.newPassword}
 														onChange={handleChange}
 														type={showPassword ? "text" : "password"}
-														placeholder="Enter password"
+														placeholder="Enter new password"
 														autoComplete="new-password"
+														required
 														className="w-full px-4 py-2.5 pr-10 bg-white/90 border border-border-gray rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent transition-all"
 													/>
 													<button
@@ -172,23 +164,24 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 														{showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
 													</button>
 												</div>
-												<ErrorMessage name="password" component="span" className="text-red-500 text-xs block mt-1" />
+												<ErrorMessage name="newPassword" component="span" className="text-red-500 text-xs block mt-1" />
 											</div>
 
 											{/* Confirm Password */}
 											<div>
-												<label htmlFor="confirmPassword" className="block text-sm font-medium text-text-primary mb-1">
+												<label htmlFor="confirm_password" className="block text-sm font-medium text-text-primary mb-1">
 													Confirm Password
 												</label>
 												<div className="relative">
 													<Field
-														id="confirmPassword"
-														name="confirmPassword"
-														value={values?.confirmPassword}
+														id="confirm_password"
+														name="confirm_password"
+														value={values?.confirm_password}
 														onChange={handleChange}
 														type={showConfirmPassword ? "text" : "password"}
-														placeholder="Enter password"
+														placeholder="Confirm new password"
 														autoComplete="new-password"
+														required
 														className="w-full px-4 py-2.5 pr-10 bg-white/90 border border-border-gray rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent transition-all"
 													/>
 													<button
@@ -200,53 +193,45 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 														{showConfirmPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
 													</button>
 												</div>
-												<ErrorMessage name="confirmPassword" component="span" className="text-red-500 text-xs block mt-1" />
+												<ErrorMessage name="confirm_password" component="span" className="text-red-500 text-xs block mt-1" />
 											</div>
 
 											{/* Jetzy Member Checkbox */}
 											<div className="flex items-center gap-2">
-												<Field
-													type="checkbox"
-													id="shouldBeAJetzyMember"
-													name="shouldBeAJetzyMember"
-													className="h-4 w-4 text-primary-purple focus:ring-primary-purple border-border-gray rounded"
-													checked={values?.shouldBeAJetzyMember}
-												/>
-												<label htmlFor="shouldBeAJetzyMember" className="block text-sm text-text-secondary">
-													Sign me up as a Jetzy Member
+												<Field id="isJetzyMember" name="isJetzyMember" type="checkbox" className="h-4 w-4 text-primary-purple focus:ring-primary-purple border-border-gray rounded" />
+												<label htmlFor="isJetzyMember" className="text-sm text-text-secondary">
+													I am a Jetzy member
 												</label>
 											</div>
 
-											{/* Sign up button */}
+											{/* Reset Password button */}
 											<div className="pt-2">
 												<button
-													disabled={isLoading}
 													type="submit"
+													disabled={isLoading}
 													className="w-full py-3 px-4 bg-primary-purple hover:bg-primary-dark disabled:bg-primary-purple/50 text-white font-semibold rounded-lg transition-colors shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-primary-purple focus:ring-offset-2"
 												>
-													{isLoading ? <Spinner /> : "Create Account"}
+													{isLoading ? <Spinner /> : "Reset Password"}
 												</button>
 											</div>
 
-											{/* Login link */}
-											<div className="text-center pt-2">
-												<p className="text-sm text-text-secondary">
-													Already have an account?{" "}
+											{/* Back to login link */}
+											<div className="text-sm text-center">
+												<span className="text-text-secondary">
+													Remember your password?{" "}
 													<button
 														type="button"
 														onClick={() => {
 															onClose()
 															if (onSwitchToLogin) {
 																onSwitchToLogin()
-															} else {
-																navigate.push(ROUTES.login)
 															}
 														}}
 														className="font-semibold text-primary-purple hover:text-primary-dark transition-colors"
 													>
 														Login
 													</button>
-												</p>
+												</span>
 											</div>
 										</Form>
 									)}
@@ -260,4 +245,4 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 	)
 }
 
-export default SignupModal
+export default ForgotPasswordModal

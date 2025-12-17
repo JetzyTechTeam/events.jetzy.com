@@ -25,6 +25,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		lastName: "",
 		email: "",
 		phone: "",
+		password: "",
 	})
 
 	// Guest emails state (for logged-in users)
@@ -44,6 +45,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 				lastName: lastName,
 				email: session.user.email || "",
 				phone: (session.user as any).phone || "", // Phone might not exist in session
+				password: "", // Don't pre-fill password for logged-in users
 			})
 		}
 	}, [session])
@@ -93,9 +95,24 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
 
-		const hasFilledAllFields = Object.values(formData).every((value) => value)
-		if (!hasFilledAllFields) {
-			Error("Form Error", "Please fill in all fields.")
+		// Check required fields (password only required if not logged in)
+		const requiredFields = session?.user 
+			? ['firstName', 'lastName', 'email', 'phone']
+			: ['firstName', 'lastName', 'email', 'phone', 'password']
+		
+		const hasFilledAllRequiredFields = requiredFields.every((field) => {
+			const value = formData[field as keyof typeof formData]
+			return value && value.trim() !== ""
+		})
+		
+		if (!hasFilledAllRequiredFields) {
+			Error("Form Error", "Please fill in all required fields.")
+			return
+		}
+		
+		// Validate password length if provided
+		if (!session?.user && formData.password.length < 6) {
+			Error("Password Error", "Password must be at least 6 characters long.")
 			return
 		}
 
@@ -309,6 +326,24 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 										/>
 										{phoneError && <span className="text-red-500 text-sm mt-1 block">{phoneError}</span>}
 									</div>
+									{/* Password Field - Only for non-logged-in users */}
+									{!session?.user && (
+										<div>
+											<label className="block text-sm font-medium text-text-primary mb-1.5">Password</label>
+											<input
+												type="password"
+												name="password"
+												placeholder="Create a password"
+												value={formData.password}
+												onChange={handleInputChange}
+												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+												required
+												minLength={6}
+												title="Password must be at least 6 characters"
+											/>
+											<p className="text-xs text-text-muted mt-1">Minimum 6 characters</p>
+										</div>
+									)}
 								</div>
 
 								{/* Guest Emails Section (Only for logged-in users) */}

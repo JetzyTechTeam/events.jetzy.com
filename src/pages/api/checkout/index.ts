@@ -6,6 +6,8 @@ import { uniqueId } from "@Jetzy/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+import bcrypt from "bcrypt"
+import { Users } from "@/models/userModal"
 
 type BodyParams = {
 	tickets: Array<{
@@ -23,6 +25,7 @@ type BodyParams = {
 		lastName: string
 		email: string
 		phone: string
+		password?: string
 	}
 }
 // initialize stripe
@@ -63,6 +66,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// create jetzy user
 		try {
+			// If password is provided, create/update user with password using Users model
+			if (user.password && user.password.trim() !== "") {
+				const hashedPassword = await bcrypt.hash(user.password, 10)
+				const existingUser = await Users.findOne({ email: user.email.toLowerCase() })
+				
+				if (existingUser) {
+					// If user exists but has no password, update it
+					if (!existingUser.password || existingUser.password === "") {
+						existingUser.password = hashedPassword
+						await existingUser.save({ validateModifiedOnly: true })
+					}
+				} else {
+					// Create new user with password
+					try {
+						await Users.create({
+							firstName: user.firstName,
+							lastName: user.lastName,
+							email: user.email.toLowerCase(),
+							phone: user.phone,
+							password: hashedPassword,
+							role: "user",
+						})
+					} catch (createError: any) {
+						// If user already exists (race condition), try to update password
+						if (createError.code === 11000 || createError.message?.includes("duplicate")) {
+							const userToUpdate = await Users.findOne({ email: user.email.toLowerCase() })
+							if (userToUpdate && (!userToUpdate.password || userToUpdate.password === "")) {
+								userToUpdate.password = hashedPassword
+								await userToUpdate.save({ validateModifiedOnly: true })
+							}
+						} else {
+							throw createError
+						}
+					}
+				}
+			}
+			
+			// Always call createUserAction to ensure user settings are created/updated
 			await createUserAction({
 				firstName: user.firstName,
 				lastName: user.lastName,
@@ -72,7 +113,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			})
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
-			console.error("Error:", errorMessage)
+			console.error("Error creating user:", errorMessage)
+			// Don't fail the checkout if user creation fails - user might already exist
 		}
 
 		// using price api from stripe create price for the tickets selected

@@ -30,9 +30,9 @@ import {
 	Icon,
 	Spinner,
 } from "@chakra-ui/react"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
-import { CreateDiscussionPostApi } from "@/services/events/discussionApis"
+import { CreateDiscussionPostApi, CheckEventTicketApi } from "@/services/events/discussionApis"
 import { FiPlus, FiSmile, FiImage, FiHash, FiX, FiFile, FiVideo } from "react-icons/fi"
 import { useEdgeStore } from "@/lib/edgestore"
 
@@ -91,6 +91,18 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	// Modals
 	const { isOpen: isTagModalOpen, onOpen: onTagModalOpen, onClose: onTagModalClose } = useDisclosure()
 	const { isOpen: isFeelingModalOpen, onOpen: onFeelingModalOpen, onClose: onFeelingModalClose } = useDisclosure()
+
+	// Check if user has purchased a ticket
+	const { data: ticketCheck } = useQuery({
+		queryKey: ["checkTicket", eventId],
+		queryFn: async () => {
+			const response = await CheckEventTicketApi({ data: { eventId } })
+			return response.data
+		},
+		enabled: !!eventId && !!session,
+	})
+
+	const hasTicket = ticketCheck?.hasTicket || false
 
 	const createMutation = useMutation({
 		mutationFn: async ({ postContent, postTags, postImages, postFeeling, postActivity }: {
@@ -255,6 +267,28 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			feeling: feeling,
 			activity: activity,
 		})
+
+		if (!session || !session.user) {
+			toast({
+				title: "Please login or signup first",
+				description: "You need to be logged in to create a post.",
+				status: "warning",
+				duration: 3000,
+				isClosable: true,
+			})
+			return
+		}
+
+		if (!hasTicket) {
+			toast({
+				title: "Please buy a ticket first",
+				description: "You need to purchase a ticket to create posts and participate in discussions.",
+				status: "warning",
+				duration: 4000,
+				isClosable: true,
+			})
+			return
+		}
 
 		if (!content.trim()) {
 			toast({

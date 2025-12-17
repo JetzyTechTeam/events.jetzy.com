@@ -13,10 +13,12 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
 import React from "react"
+import { FiEye, FiEyeOff } from "react-icons/fi"
 
 export default function LoginPage() {
 	const navigation = useRouter()
 	const [isLoading, setLoader] = React.useState(false)
+	const [showPassword, setShowPassword] = React.useState(false)
 	// The url callback to redirect user to after login
 	const { _cb } = navigation?.query
 
@@ -96,20 +98,35 @@ export default function LoginPage() {
 
 									{/* Password */}
 									<div>
-										<label htmlFor="password" className="block text-sm font-medium text-text-primary mb-1">
-											Password
-										</label>
-										<Field
-											id="password"
-											name="password"
-											value={values?.password}
-											onChange={handleChange}
-											type="password"
-											placeholder="Enter password"
-											autoComplete="current-password"
-											required
-											className="w-full px-4 py-2.5 bg-white/80 border border-border-gray rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent transition-all"
-										/>
+										<div className="flex items-center justify-between mb-1">
+											<label htmlFor="password" className="block text-sm font-medium text-text-primary">
+												Password
+											</label>
+											<Link href="/forgot-password" className="text-sm font-medium text-primary-purple hover:text-primary-dark transition-colors">
+												Forgot password?
+											</Link>
+										</div>
+										<div className="relative">
+											<Field
+												id="password"
+												name="password"
+												value={values?.password}
+												onChange={handleChange}
+												type={showPassword ? "text" : "password"}
+												placeholder="Enter password"
+												autoComplete="current-password"
+												required
+												className="w-full px-4 py-2.5 pr-10 bg-white/80 border border-border-gray rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-transparent transition-all"
+											/>
+											<button
+												type="button"
+												onClick={() => setShowPassword(!showPassword)}
+												className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary transition-colors"
+												aria-label={showPassword ? "Hide password" : "Show password"}
+											>
+												{showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
+											</button>
+										</div>
 										<ErrorMessage name="password" component="span" className="text-red-500 text-xs block mt-1" />
 									</div>
 

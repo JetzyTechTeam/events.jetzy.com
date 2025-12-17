@@ -34,7 +34,7 @@ import {
 import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2, FiMoreHorizontal, FiEdit, FiTrash2 } from "react-icons/fi"
 import { BsPinAngle, BsHandThumbsUpFill } from "react-icons/bs"
 import Image from "next/image"
-import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi } from "@/services/events/discussionApis"
+import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi, CheckEventTicketApi } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor } from "@/types/discussion"
 import CreateDiscussionModal from "./CreateDiscussionModal"
 import DiscussionPostView from "./DiscussionPostView"
@@ -55,12 +55,14 @@ const FeedPostCard = ({
 	post, 
 	onClick, 
 	onLikeSuccess, 
-	onDeleteSuccess 
+	onDeleteSuccess,
+	eventId
 }: { 
 	post: DiscussionPostWithAuthor, 
 	onClick: (id: string, editMode?: boolean) => void, 
 	onLikeSuccess: () => void,
-	onDeleteSuccess: () => void
+	onDeleteSuccess: () => void,
+	eventId: string
 }) => {
 	const { data: session } = useSession()
 	const toast = useToast()
@@ -68,6 +70,20 @@ const FeedPostCard = ({
 	const currentUserId = (session?.user as any)?._id
 	const hasLiked = post.reactions.likes.includes(currentUserId || "")
 	const isAuthor = currentUserId === post.userId._id
+
+	const handlePostClick = async () => {
+		if (!session || !session.user) {
+			toast({
+				title: "Please login or signup first",
+				description: "You need to be logged in to view post details.",
+				status: "warning",
+				duration: 3000,
+				isClosable: true,
+			})
+			return
+		}
+		onClick(post._id)
+	}
 
 	const reactMutation = useMutation({
 		mutationFn: () => ReactToDiscussionPostApi({ data: { postId: post._id, reactionType: "like" } }),
@@ -149,7 +165,7 @@ const FeedPostCard = ({
 			boxShadow="sm"
 			overflow="hidden"
 			cursor="pointer"
-			onClick={() => onClick(post._id)}
+			onClick={handlePostClick}
 			_hover={{ boxShadow: "md" }}
 			transition="all 0.2s"
 		>
@@ -394,8 +410,20 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 		enabled: !!eventId,
 	})
 
+	// Check if user has purchased a ticket
+	const { data: ticketCheck } = useQuery({
+		queryKey: ["checkTicket", eventId],
+		queryFn: async () => {
+			const response = await CheckEventTicketApi({ data: { eventId } })
+			return response.data
+		},
+		enabled: !!eventId && !!session,
+	})
+
 	const posts = discussionData?.data?.posts || []
 	const pagination = discussionData?.data?.pagination
+	const hasTicket = ticketCheck?.hasTicket || false
+	const isAuthenticated = ticketCheck?.isAuthenticated ?? (!!session)
 
 	const handlePostClick = (postId: string, editMode: boolean = false) => {
 		setSelectedPostId(postId)
@@ -407,6 +435,32 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 		setOpenInEditMode(false)
 		// Refetch to update comment counts/likes if changed in modal
 		refetch()
+	}
+
+	const toast = useToast()
+
+	const handleCreatePostClick = () => {
+		if (!session || !session.user) {
+			toast({
+				title: "Please login or signup first",
+				description: "You need to be logged in to create a post.",
+				status: "warning",
+				duration: 3000,
+				isClosable: true,
+			})
+			return
+		}
+		if (!hasTicket) {
+			toast({
+				title: "Please buy a ticket first",
+				description: "You need to purchase a ticket to create posts and participate in discussions.",
+				status: "warning",
+				duration: 4000,
+				isClosable: true,
+			})
+			return
+		}
+		onOpen()
 	}
 
 	return (
@@ -432,7 +486,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 								pl={4}
 								h="40px"
 								_hover={{ bg: "#E4E6EB" }}
-								onClick={onOpen}
+								onClick={handleCreatePostClick}
 								fontWeight="normal"
 								fontSize="md"
 							>
@@ -447,7 +501,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 								leftIcon={<Icon as={FiPlus} color="#E41E3F" boxSize={6} />}
 								color="#65676B"
 								_hover={{ bg: "#F0F2F5" }}
-								onClick={onOpen}
+								onClick={handleCreatePostClick}
 							>
 								Create Post
 							</Button>
@@ -513,6 +567,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 								onClick={handlePostClick} 
 								onLikeSuccess={refetch}
 								onDeleteSuccess={refetch}
+								eventId={eventId}
 							/>
 						))}
 					</Stack>
@@ -547,7 +602,18 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 			</Box>
 
 			{/* Create Discussion Modal */}
-			<CreateDiscussionModal isOpen={isOpen} onClose={onClose} eventId={eventId} onSuccess={() => refetch()} />
+			<CreateDiscussionModal 
+				isOpen={isOpen} 
+				onClose={onClose} 
+				eventId={eventId} 
+				onSuccess={() => {
+					refetch()
+					// Refetch ticket check after successful post creation
+					if (session) {
+						// The ticket check will be refetched automatically when needed
+					}
+				}} 
+			/>
 
 			{/* Post Detail Modal */}
 			<Modal isOpen={!!selectedPostId} onClose={handleClosePostModal} size="2xl" isCentered scrollBehavior="inside">

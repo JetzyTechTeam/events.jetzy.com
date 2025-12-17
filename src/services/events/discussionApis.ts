@@ -93,3 +93,9 @@ export const DeleteDiscussionCommentApi = async (params: RequestParams<{ comment
 export const ReactToDiscussionCommentApi = async (params: RequestParams<{ commentId: string }>): Promise<ServerResponse<DiscussionCommentWithAuthor, any>> => {
 	return await POST(discussionEndpoints.comments.react, params?.data)
 }
+
+// ========== TICKET CHECK ==========
+
+export const CheckEventTicketApi = async (params: RequestParams<{ eventId: string }>): Promise<ServerResponse<{ hasTicket: boolean; isAuthenticated: boolean; bookingId?: string | null }, any>> => {
+	return await GET(`/api/events/${params?.data?.eventId}/check-ticket`)
+}

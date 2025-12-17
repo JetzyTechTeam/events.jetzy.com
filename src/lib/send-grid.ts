@@ -22,6 +22,7 @@ type TicketEmailData = {
 		desc: string
 	}>
 	orderNumber: string
+	isNewUser?: boolean
 }
 
 type WaitingListEmailData = {
@@ -342,17 +343,20 @@ export const sendBlastEmail = async ({
 	}
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber }: TicketEmailData) => {
-	console.log("sendTicketConfirmation called with:", { email, orderNumber, eventName: event.name })
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false }: TicketEmailData) => {
+	console.log("[sendTicketConfirmation] Called with:", { email, orderNumber, eventName: event.name, isNewUser, ticketCount: tickets.length })
+	console.log("[sendTicketConfirmation] API Key set:", !!process.env.SENDGRID_API_KEY)
+	console.log("[sendTicketConfirmation] Sender email:", process.env.SENDGRID_EMAIL_SENDER)
 	
-	// format event start and end time
-	const eventTimezone = event.timezone.split(') ')[1]
+	try {
+		// format event start and end time
+		const eventTimezone = event.timezone.split(') ')[1]
 
-	const start = dayjs.utc(event.startsOn).tz(eventTimezone)
-	const end = dayjs.utc(event.endsOn).tz(eventTimezone)
+		const start = dayjs.utc(event.startsOn).tz(eventTimezone)
+		const end = dayjs.utc(event.endsOn).tz(eventTimezone)
 
-	const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
-	const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
+		const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
+		const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
 
 	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
 	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
@@ -409,15 +413,54 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </p>
           </div>
 
+          ${isNewUser ? `
+          <div style="background-color: #E7F3FF; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #1877F2;">
+            <h2 style="color: #1877F2; margin-bottom: 15px;">Your Account Has Been Created!</h2>
+            <p style="color: #1C1E21; margin-bottom: 10px;">
+              Great news! We've created your Jetzy account. You can now:
+            </p>
+            <ul style="color: #1C1E21; margin: 10px 0; padding-left: 20px;">
+              <li>Access event discussions and interact with other attendees</li>
+              <li>Manage your bookings and tickets</li>
+              <li>Receive updates about events you're interested in</li>
+            </ul>
+            <div style="text-align: center; margin-top: 20px;">
+              <a href="${process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
+                Login to Your Account
+              </a>
+            </div>
+            <p style="color: #65676B; font-size: 14px; margin-top: 15px; text-align: center;">
+              Use your email <strong>${email}</strong> and the password you created to login.
+            </p>
+          </div>
+          ` : `
+          <div style="text-align: center; margin-top: 20px;">
+            <a href="${process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
+              Login to Your Account
+            </a>
+          </div>
+          `}
+
           <p style="margin-top: 30px; text-align: center; color: #666;">
             Welcome to Jetzy! You now have access to exclusive membership benefits.
           </p>
+          
+          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
+            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+              Questions? Contact us at <a href="mailto:events@jetzy.com" style="color: #1877F2; text-decoration: none;">events@jetzy.com</a>
+            </p>
+            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
+              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+            </p>
+          </div>
         </div>
       `,
 		})
-		console.log("Ticket confirmation email sent successfully to:", email)
-	} catch (error) {
-		console.error("Failed to send ticket confirmation email:", error)
+		console.log("[sendTicketConfirmation] Email sent successfully to:", email)
+		return { success: true, message: "Email sent successfully" }
+	} catch (error: any) {
+		console.error("[sendTicketConfirmation] Failed to send email:", error.message || error)
+		console.error("[sendTicketConfirmation] Error details:", JSON.stringify(error, null, 2))
 		throw error
 	}
 }

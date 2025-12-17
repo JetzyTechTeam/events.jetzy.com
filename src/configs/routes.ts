@@ -2,6 +2,7 @@ export const ROUTES = {
 	// ----------------- Auth Routes -----------------
 	create: `/signup`,
 	login: `/login`,
+	forgotPassword: `/forgot-password`,
 
 	// ----------------- Dashboard  Routes -----------------
 	dashboard: {
