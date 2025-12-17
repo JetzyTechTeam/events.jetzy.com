@@ -84,7 +84,6 @@ const defaultHosts = [
 
 export default function HostedEvents({ event }: Props) {
 	const [shareUrl, setShareUrl] = useState("")
-	const [activeTab, setActiveTab] = useState<"about" | "discussion">("about")
 	const [isTicketModalOpen, setIsTicketModalOpen] = useState(false)
 	const { data: session } = useSession()
 
@@ -190,18 +189,6 @@ export default function HostedEvents({ event }: Props) {
 
 							{/* Action Bar */}
 							<div className="flex flex-wrap gap-3 py-4 border-t border-gray-200 mt-4">
-								<div className="flex bg-gray-100 rounded-lg p-1">
-									<button 
-										className="px-6 py-2 bg-white rounded-md shadow-sm text-gray-900 font-semibold text-sm hover:bg-gray-50 transition-colors flex items-center gap-2"
-										onClick={() => {}}
-									>
-										<span className="text-yellow-500">★</span> Interested
-									</button>
-									<button className="px-6 py-2 text-gray-600 font-semibold text-sm hover:bg-gray-200 rounded-md transition-colors">
-										Going
-									</button>
-								</div>
-								
 								<button 
 									onClick={() => setIsTicketModalOpen(true)}
 									disabled={hasEventEnded}
@@ -246,164 +233,14 @@ export default function HostedEvents({ event }: Props) {
 							</div>
 						</div>
 					</div>
-
-					{/* Navigation Tabs */}
-					<div className="flex gap-1 mt-6 border-t border-gray-300 pt-1 px-4">
-						<button 
-							onClick={() => setActiveTab("about")}
-							className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors ${activeTab === 'about' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-600 hover:bg-gray-100 rounded-t-lg'}`}
-						>
-							About
-						</button>
-						<button 
-							onClick={() => setActiveTab("discussion")}
-							className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors ${activeTab === 'discussion' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-600 hover:bg-gray-100 rounded-t-lg'}`}
-						>
-							Discussion
-						</button>
-					</div>
 				</div>
 			</div>
 
 			{/* Main Content Area */}
 			<div className="max-w-[1250px] mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-				{/* Left Column (Details / Discussion) */}
+				{/* Left Column (Discussion) */}
 				<div className="lg:col-span-2 space-y-4">
-					{activeTab === "about" ? (
-						<>
-							<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-								<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Details</h2>
-								
-								<div className="flex items-start gap-4 mb-4">
-									<UserGroupIcon className="w-6 h-6 text-gray-500 mt-1" />
-									<div>
-										<p className="text-[#1C1E21]">
-											{clonedEvent.privacy === 'private' ? 'Private' : 'Public'}  · Anyone on or off Jetzy
-										</p>
-									</div>
-								</div>
-
-								<div className="space-y-4 text-[#1C1E21]">
-									<EventDescription description={clonedEvent.desc} />
-								</div>
-							</div>
-
-                            {/* Featured Guests Section */}
-                            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-                                <h2 className="text-2xl font-bold text-[#1C1E21] mb-6">Featured Guests</h2>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                                    {(clonedEvent.featuredGuests && clonedEvent.featuredGuests.length > 0 
-                                        ? clonedEvent.featuredGuests 
-                                        : defaultFeaturedGuests
-                                    ).map((guest: any, index: number) => (
-                                        <div key={index} className="flex flex-col items-center text-center">
-                                            {guest.image ? (
-                                                <Avatar 
-                                                    size="2xl" 
-                                                    name={guest.name} 
-                                                    src={guest.image}
-                                                    mb={3}
-                                                />
-                                            ) : (
-                                                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-md">
-                                                    {guest.name.charAt(0)}
-                                                </div>
-                                            )}
-                                            <Text fontWeight="bold" fontSize="md" color="#1C1E21" mb={1}>
-                                                {guest.name}
-                                            </Text>
-                                            <Text fontSize="sm" color="gray.600">
-                                                {guest.title}
-                                            </Text>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Guests List */}
-                            <EventGuests eventId={clonedEvent._id.toString()} showParticipants={clonedEvent.showParticipants} />
-
-							{/* Presented By */}
-							<div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-								<h2 className="text-2xl font-bold text-[#1C1E21] mb-4">Presented by</h2>
-								<Flex align="center" gap={4}>
-									<Box 
-										w="64px" 
-										h="64px" 
-										borderRadius="lg" 
-										bgGradient="linear(to-br, purple.400, purple.600)"
-										display="flex"
-										alignItems="center"
-										justifyContent="center"
-										color="white"
-										fontSize="xl"
-										fontWeight="bold"
-										boxShadow="md"
-									>
-										{defaultFeaturedGuests[0].name.charAt(0)}
-									</Box>
-									<Box>
-										<Text fontWeight="semibold" fontSize="lg" color="#1C1E21">
-											Jetzy Community
-										</Text>
-									</Box>
-								</Flex>
-							</div>
-
-							{/* Hosted By */}
-							<div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
-								<h2 className="text-2xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
-								<Flex align="center" gap={2}>
-									{defaultHosts.map((host, index) => (
-										<Box
-											key={index}
-											w="48px"
-											h="48px"
-											borderRadius="full"
-											bgGradient="linear(to-br, purple.400, purple.600)"
-											display="flex"
-											alignItems="center"
-											justifyContent="center"
-											color="white"
-											fontWeight="semibold"
-											boxShadow="md"
-											border="2px solid white"
-											ml={index > 0 ? "-12px" : "0"}
-											zIndex={5 - index}
-											title={host.name}
-										>
-											{host.name.charAt(0)}
-										</Box>
-									))}
-								</Flex>
-							</div>
-
-                            {/* Questions Section */}
-                            <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-								<Flex justify="space-between" align="center" direction={{ base: "column", sm: "row" }} gap={4}>
-                                    <Box>
-                                        <h2 className="text-xl font-bold text-[#1C1E21] mb-2">Questions?</h2>
-                                        <Text color="gray.600" fontSize="sm">
-                                            If you have any questions about this event, please reach out to the organizers:
-                                        </Text>
-                                        <Text color="blue.600" fontWeight="medium" mt={1}>
-                                            <a href="mailto:events@jetzy.com">events@jetzy.com</a>
-                                        </Text>
-                                    </Box>
-                                    <Button 
-                                        leftIcon={<ChatBubbleLeftRightIcon className="w-5 h-5" />} 
-                                        colorScheme="gray" 
-                                        variant="outline"
-                                        onClick={() => setActiveTab("discussion")}
-                                    >
-                                        Ask the Host
-                                    </Button>
-                                </Flex>
-							</div>
-					</>
-				) : (
 					<DiscussionBoard eventId={clonedEvent._id.toString()} />
-				)}
 				</div>
 
 				{/* Right Column (Sidebar) */}
@@ -447,6 +284,54 @@ export default function HostedEvents({ event }: Props) {
 							</button>
 						</div>
 					</div>
+
+					{/* About Details (Description) */}
+					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">About</h2>
+						<div className="flex items-start gap-4 mb-4">
+							<UserGroupIcon className="w-6 h-6 text-gray-500 mt-1" />
+							<div>
+								<p className="text-[#1C1E21]">
+									{clonedEvent.privacy === 'private' ? 'Private' : 'Public'}  · Anyone on or off Jetzy
+								</p>
+							</div>
+						</div>
+						<div className="space-y-4 text-[#1C1E21]">
+							<EventDescription description={clonedEvent.desc} />
+						</div>
+					</div>
+
+					{/* Hosted By */}
+					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
+						<Flex align="center" gap={3}>
+							{defaultHosts.slice(0, 3).map((host, index) => (
+								<Box
+									key={index}
+									w="40px"
+									h="40px"
+									borderRadius="full"
+									bgGradient="linear(to-br, purple.400, purple.600)"
+									display="flex"
+									alignItems="center"
+									justifyContent="center"
+									color="white"
+									fontWeight="semibold"
+									boxShadow="md"
+									border="2px solid white"
+									ml={index > 0 ? "-12px" : "0"}
+									zIndex={5 - index}
+									title={host.name}
+								>
+									{host.name.charAt(0)}
+								</Box>
+							))}
+							<Text fontSize="sm" color="gray.600" ml={2}>and {defaultHosts.length - 3} others</Text>
+						</Flex>
+					</div>
+
+					{/* Guests Section */}
+					<EventGuests eventId={clonedEvent._id.toString()} showParticipants={clonedEvent.showParticipants} />
 				</div>
 			</div>
 

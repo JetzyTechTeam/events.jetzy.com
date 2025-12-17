@@ -413,11 +413,6 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 		<Box bg="#F0F2F5" minH="500px" p={{ base: 2, md: 4 }}>
 			{/* Header with Create Post */}
 			<Box maxW="680px" mx="auto" mb={6}>
-				<Flex justify="space-between" align="center" mb={4}>
-					<Heading size="md" color="#1C1E21">
-						Discussion
-					</Heading>
-				</Flex>
 				
 				{/* Facebook-style Create Post Input */}
 				{session && (
