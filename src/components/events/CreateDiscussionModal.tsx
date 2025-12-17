@@ -6,6 +6,7 @@ import {
 	ModalHeader,
 	ModalBody,
 	ModalCloseButton,
+	ModalFooter,
 	Button,
 	Input,
 	Textarea,
@@ -29,12 +30,22 @@ import {
 	HStack,
 	Icon,
 	Spinner,
+	Tabs,
+	TabList,
+	TabPanels,
+	Tab,
+	TabPanel,
+	Badge,
 } from "@chakra-ui/react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { CreateDiscussionPostApi, CheckEventTicketApi } from "@/services/events/discussionApis"
 import { FiPlus, FiSmile, FiImage, FiHash, FiX, FiFile, FiVideo } from "react-icons/fi"
 import { useEdgeStore } from "@/lib/edgestore"
+import dynamic from "next/dynamic"
+
+// Dynamic import for EmojiPicker to avoid SSR issues
+const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false })
 
 interface CreateDiscussionModalProps {
 	isOpen: boolean
@@ -92,22 +103,8 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	const { isOpen: isTagModalOpen, onOpen: onTagModalOpen, onClose: onTagModalClose } = useDisclosure()
 	const { isOpen: isFeelingModalOpen, onOpen: onFeelingModalOpen, onClose: onFeelingModalClose } = useDisclosure()
 
-	// Check if user has purchased a ticket
-	const { data: ticketCheck } = useQuery({
-		queryKey: ["checkTicket", eventId],
-		queryFn: async () => {
-			const response = await CheckEventTicketApi({ data: { eventId } })
-			return response.data
-		},
-		enabled: !!eventId && !!session,
-	})
-
-	const hasTicket = ticketCheck?.hasTicket || false
-	// @ts-ignore
-	const userRole = session?.user?.role
-	const isAdmin = userRole === "admin" || userRole === "super admin"
-	// Super admin and admin can bypass ticket requirement
-	const canPost = hasTicket || isAdmin
+	// Check if user is logged in (ticket requirement removed)
+	const canPost = !!session && !!session.user
 
 	const createMutation = useMutation({
 		mutationFn: async ({ postContent, postTags, postImages, postFeeling, postActivity }: {
@@ -255,12 +252,15 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 
 	const handleSelectFeeling = (emoji: string, label: string) => {
 		setFeeling(`${emoji} ${label}`)
-		onFeelingModalClose()
 	}
 
 	const handleSelectActivity = (emoji: string, label: string) => {
 		setActivity(`${emoji} ${label}`)
-		onFeelingModalClose()
+	}
+
+	const handleEmojiClick = (emojiData: any) => {
+		// Add emoji to feeling
+		setFeeling((prev) => prev ? `${prev} ${emojiData.emoji}` : emojiData.emoji)
 	}
 
 	const handleSubmit = () => {
@@ -286,8 +286,8 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 
 		if (!canPost) {
 			toast({
-				title: "Please buy a ticket first",
-				description: "You need to purchase a ticket to create posts and participate in discussions.",
+				title: "Please login first",
+				description: "You need to be logged in to create posts.",
 				status: "warning",
 				duration: 4000,
 				isClosable: true,
@@ -368,7 +368,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 						{/* Content Input */}
 						<Box>
 							<Textarea
-								placeholder={`What's on your mind, ${session?.user?.name?.split(' ')[0]}?`}
+								placeholder="What's on your mind?"
 								value={content}
 								onChange={(e) => setContent(e.target.value)}
 								variant="unstyled"
@@ -559,67 +559,143 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 				</ModalContent>
 			</Modal>
 
-			{/* Feeling/Activity Modal */}
-			<Modal isOpen={isFeelingModalOpen} onClose={onFeelingModalClose} isCentered size="md" scrollBehavior="inside">
+			{/* Feeling/Activity/Emoji Picker Modal */}
+			<Modal isOpen={isFeelingModalOpen} onClose={onFeelingModalClose} isCentered size="lg">
 				<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
-				<ModalContent borderRadius="xl" maxH="80vh">
-					<ModalHeader>How are you feeling?</ModalHeader>
-					<ModalCloseButton />
-					<ModalBody pb={6}>
-						<VStack spacing={6} align="stretch">
-							{/* Feelings Section */}
-							<Box>
-								<Text fontSize="md" fontWeight="600" mb={3} color="#1C1E21">
-									Feelings
+				<ModalContent borderRadius="xl">
+					<ModalHeader borderBottom="1px solid" borderColor="gray.100" pb={4}>
+						<Text fontSize="lg" fontWeight="bold">Add Expression</Text>
+					</ModalHeader>
+					<ModalCloseButton mt={1.5} />
+					<ModalBody py={4}>
+						{/* Current Selection Display */}
+						{(feeling || activity) && (
+							<Box p={3} bg="#E7F3FF" borderRadius="lg" border="1px solid #1877F2" mb={4}>
+								<Text fontSize="sm" fontWeight="600" color="#1877F2" mb={2}>
+									Selected:
 								</Text>
-								<SimpleGrid columns={3} spacing={2}>
-									{FEELINGS.map((item) => (
-										<Button
-											key={item.label}
-											variant="ghost"
-											justifyContent="flex-start"
-											onClick={() => handleSelectFeeling(item.emoji, item.label)}
-											_hover={{ bg: "#F0F2F5" }}
-											py={3}
-											h="auto"
-										>
-											<Flex align="center" gap={2}>
-												<Text fontSize="2xl">{item.emoji}</Text>
-												<Text fontSize="sm" textTransform="capitalize">{item.label}</Text>
-											</Flex>
-										</Button>
-									))}
-								</SimpleGrid>
+								<Flex gap={2} flexWrap="wrap">
+									{feeling && (
+										<Badge colorScheme="blue" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
+											{feeling}
+											<IconButton
+												aria-label="Remove feeling"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="blue.600"
+												onClick={() => setFeeling("")}
+												ml={1}
+												h="18px"
+												minW="18px"
+											/>
+										</Badge>
+									)}
+									{activity && (
+										<Badge colorScheme="green" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
+											{activity}
+											<IconButton
+												aria-label="Remove activity"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="green.600"
+												onClick={() => setActivity("")}
+												ml={1}
+												h="18px"
+												minW="18px"
+											/>
+										</Badge>
+									)}
+								</Flex>
 							</Box>
-
-							<Divider />
-
-							{/* Activities Section */}
-							<Box>
-								<Text fontSize="md" fontWeight="600" mb={3} color="#1C1E21">
-									What are you doing?
-								</Text>
-								<SimpleGrid columns={3} spacing={2}>
-									{ACTIVITIES.map((item) => (
-										<Button
-											key={item.label}
-											variant="ghost"
-											justifyContent="flex-start"
-											onClick={() => handleSelectActivity(item.emoji, item.label)}
-											_hover={{ bg: "#F0F2F5" }}
-											py={3}
-											h="auto"
-										>
-											<Flex align="center" gap={2}>
-												<Text fontSize="2xl">{item.emoji}</Text>
-												<Text fontSize="sm" textTransform="capitalize">{item.label}</Text>
-											</Flex>
-										</Button>
-									))}
-								</SimpleGrid>
-							</Box>
-						</VStack>
+						)}
+						
+						<Tabs colorScheme="blue" variant="soft-rounded" isFitted>
+							<TabList mb={4} p={1} bg="gray.50" borderRadius="full">
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">😊 Emojis</Tab>
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">💭 Feelings</Tab>
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">🎯 Activities</Tab>
+							</TabList>
+							
+							<TabPanels>
+								{/* Emoji Picker Tab */}
+								<TabPanel p={0}>
+									<Box display="flex" justifyContent="center">
+										<EmojiPicker
+											onEmojiClick={handleEmojiClick}
+											width="100%"
+											height="350px"
+											searchDisabled={false}
+											skinTonesDisabled
+										/>
+									</Box>
+								</TabPanel>
+								
+								{/* Feelings Tab */}
+								<TabPanel p={0} maxH="350px" overflowY="auto">
+									<SimpleGrid columns={2} spacing={2}>
+										{FEELINGS.map((item) => (
+											<Button
+												key={item.label}
+												variant="ghost"
+												justifyContent="flex-start"
+												onClick={() => handleSelectFeeling(item.emoji, item.label)}
+												bg={feeling?.includes(item.label) ? "#E7F3FF" : "transparent"}
+												_hover={{ bg: "#F0F2F5" }}
+												py={6}
+												h="auto"
+												border="1px solid"
+												borderColor={feeling?.includes(item.label) ? "blue.200" : "transparent"}
+											>
+												<Flex align="center" gap={3}>
+													<Text fontSize="3xl">{item.emoji}</Text>
+													<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
+												</Flex>
+											</Button>
+										))}
+									</SimpleGrid>
+								</TabPanel>
+								
+								{/* Activities Tab */}
+								<TabPanel p={0} maxH="350px" overflowY="auto">
+									<SimpleGrid columns={2} spacing={2}>
+										{ACTIVITIES.map((item) => (
+											<Button
+												key={item.label}
+												variant="ghost"
+												justifyContent="flex-start"
+												onClick={() => handleSelectActivity(item.emoji, item.label)}
+												bg={activity?.includes(item.label) ? "#D4EDDA" : "transparent"}
+												_hover={{ bg: "#F0F2F5" }}
+												py={6}
+												h="auto"
+												border="1px solid"
+												borderColor={activity?.includes(item.label) ? "green.200" : "transparent"}
+											>
+												<Flex align="center" gap={3}>
+													<Text fontSize="3xl">{item.emoji}</Text>
+													<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
+												</Flex>
+											</Button>
+										))}
+									</SimpleGrid>
+								</TabPanel>
+							</TabPanels>
+						</Tabs>
 					</ModalBody>
+					<ModalFooter borderTop="1px solid" borderColor="gray.100">
+						<Button variant="ghost" mr={3} onClick={onFeelingModalClose}>
+							Cancel
+						</Button>
+						<Button
+							colorScheme="blue"
+							onClick={onFeelingModalClose}
+							px={8}
+						>
+							Done
+						</Button>
+					</ModalFooter>
 				</ModalContent>
 			</Modal>
 		</Modal>

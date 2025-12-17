@@ -192,11 +192,11 @@ export default function HostedEvents({ event }: Props) {
 								<button 
 									onClick={() => setIsTicketModalOpen(true)}
 									disabled={hasEventEnded}
-									className={`px-6 py-2 rounded-lg font-semibold text-sm text-white transition-colors shadow-sm flex items-center gap-2 ${
+									className={`px-8 py-3 rounded-lg font-bold text-base text-white transition-colors shadow-md flex items-center gap-2 ${
 										hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
 									}`}
 								>
-									<TicketIcon className="w-5 h-5" />
+									<TicketIcon className="w-6 h-6" />
 									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
 								</button>
 								
@@ -238,8 +238,8 @@ export default function HostedEvents({ event }: Props) {
 
 			{/* Main Content Area */}
 			<div className="max-w-[1250px] mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-				{/* Left Column (Discussion) */}
-				<div className="lg:col-span-2 space-y-4">
+				{/* Left Column (Discussion) - Moved below to focus on Get Ticket */}
+				<div className="lg:col-span-2 space-y-4 mt-8">
 					<DiscussionBoard eventId={clonedEvent._id.toString()} />
 				</div>
 
@@ -276,7 +276,7 @@ export default function HostedEvents({ event }: Props) {
 							<button 
 								onClick={() => setIsTicketModalOpen(true)}
 								disabled={hasEventEnded}
-								className={`w-full py-3 rounded-lg font-bold text-white transition-colors ${
+								className={`w-full py-4 px-6 rounded-lg font-bold text-lg text-white transition-colors ${
 									hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-md"
 								}`}
 							>

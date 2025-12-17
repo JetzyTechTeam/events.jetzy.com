@@ -698,7 +698,7 @@ const CreateEventPage = () => {
 													/>
 												</FormControl>
 												<FormControl mb={4}>
-													<FormLabel color="#1F2937">Description</FormLabel>
+													<FormLabel color="#1F2937">Description (Optional)</FormLabel>
 													<Textarea
 														id="ticketDescription"
 														name="ticketDescription"

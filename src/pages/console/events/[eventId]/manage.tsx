@@ -303,6 +303,37 @@ export default function Manage({ event }: any) {
 									<Text fontSize="md" color="#1C1E21" whiteSpace="pre-wrap" lineHeight="1.6">
 										{eventData.desc || "No description provided."}
 									</Text>
+
+									{/* Host Information */}
+									{eventData.host && eventData.host.name && (
+										<Box mt={6} pt={6} borderTop="1px" borderColor="gray.200">
+											<Text fontSize="lg" fontWeight="semibold" color="#1C1E21" mb={4}>Host Information</Text>
+											<Flex align="center" gap={4}>
+												{eventData.host.image ? (
+													<Avatar src={eventData.host.image} name={eventData.host.name} size="md" />
+												) : (
+													<Avatar name={eventData.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
+												)}
+												<Box>
+													<Text fontSize="md" fontWeight="semibold" color="#1C1E21">{eventData.host.name}</Text>
+													{eventData.host.email && (
+														<Text fontSize="sm" color="#65676B" mt={1}>
+															<a href={`mailto:${eventData.host.email}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+																{eventData.host.email}
+															</a>
+														</Text>
+													)}
+													{eventData.host.phone && (
+														<Text fontSize="sm" color="#65676B" mt={1}>
+															<a href={`tel:${eventData.host.phone}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+																{eventData.host.phone}
+															</a>
+														</Text>
+													)}
+												</Box>
+											</Flex>
+										</Box>
+									)}
 								</Box>
 							)}
 

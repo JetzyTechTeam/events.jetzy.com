@@ -305,10 +305,7 @@ export default function UpdateEventPage({ event }: Props) {
 			Error("Validation Error", "Please enter a ticket name")
 			return
 		}
-		if (!tempTicket.description) {
-			Error("Validation Error", "Please enter a ticket description")
-			return
-		}
+		// Ticket description is now optional
 		if (tempTicket.price < 0) {
 			Error("Validation Error", "Price cannot be negative")
 			return
@@ -883,10 +880,10 @@ export default function UpdateEventPage({ event }: Props) {
 													</Grid>
 													<Box mb={3}>
 														<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
-															Description <Text as="span" color="red">*</Text>
+															Description (Optional)
 														</Text>
 														<Input
-															placeholder="e.g., Access to all event activities"
+															placeholder="e.g., Access to all event activities (optional)"
 															size="sm"
 															bg="white"
 															value={tempTicket.description}
@@ -902,7 +899,7 @@ export default function UpdateEventPage({ event }: Props) {
 														color="white"
 														_hover={{ bg: "#7C3AED" }}
 														onClick={handleAddTicket}
-														isDisabled={!tempTicket.title || !tempTicket.description}
+														isDisabled={!tempTicket.title}
 													>
 														Add Ticket
 													</Button>

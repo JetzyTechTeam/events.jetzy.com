@@ -376,10 +376,6 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			Error("Validation Error", "Please enter a ticket name")
 			return
 		}
-		if (!tempTicket.description) {
-			Error("Validation Error", "Please enter a ticket description")
-			return
-		}
 		if (tempTicket.price < 0) {
 			Error("Validation Error", "Price cannot be negative")
 			return
@@ -804,7 +800,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 										<CollapsibleSection icon={<FiSettings size={20} />} title="Host Information (Optional)">
 											<Box>
 												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
-													Host Name <Text as="span" color="red">*</Text>
+													Host Name
 												</Text>
 												<Input
 													placeholder="Enter host name"
@@ -994,10 +990,10 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 														onChange={(e) => setTempTicket({ ...tempTicket, title: e.target.value })}
 													/>
 													<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={1}>
-														Description <Text as="span" color="red">*</Text>
+														Description (Optional)
 													</Text>
 													<Input
-														placeholder="e.g., Access to all event activities"
+														placeholder="e.g., Access to all event activities (optional)"
 														size="sm"
 														mb={3}
 														value={tempTicket.description}
@@ -1030,7 +1026,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 														color="white"
 														_hover={{ bg: "#7C3AED" }}
 														onClick={handleAddTicket}
-														isDisabled={!tempTicket.title || !tempTicket.description}
+														isDisabled={!tempTicket.title}
 													>
 														Add Ticket
 													</Button>
