@@ -20,6 +20,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const { postId, title, content, images, tags } = req.body
 
+		console.log("📥 Update post request:", { postId, title, content, imagesCount: images?.length, tags })
+		console.log("📸 Images received:", images)
+
 		if (!postId) {
 			return sendResponse(res, null, "Post ID is required", false, ResCode.BAD_REQUEST)
 		}

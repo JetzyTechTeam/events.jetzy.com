@@ -37,7 +37,11 @@ export const GetDiscussionPostApi = async (params: RequestParams<{ postId: strin
 }
 
 export const UpdateDiscussionPostApi = async (params: RequestParams<UpdateDiscussionPostData>): Promise<ServerResponse<DiscussionPostWithAuthor, any>> => {
-	return await PUT(discussionEndpoints.posts.update, params?.data)
+	return await PUT(discussionEndpoints.posts.update, params?.data, {
+		headers: {
+			"Content-Type": "application/json"
+		}
+	})
 }
 
 export const DeleteDiscussionPostApi = async (params: RequestParams<{ postId: string }>): Promise<ServerResponse<any, any>> => {
@@ -75,7 +79,11 @@ export const ReplyToDiscussionCommentApi = async (params: RequestParams<ReplyToC
 }
 
 export const EditDiscussionCommentApi = async (params: RequestParams<{ commentId: string; newComment: string; images?: string[] }>): Promise<ServerResponse<DiscussionCommentWithAuthor, any>> => {
-	return await PUT(discussionEndpoints.comments.edit, params?.data)
+	return await PUT(discussionEndpoints.comments.edit, params?.data, {
+		headers: {
+			"Content-Type": "application/json"
+		}
+	})
 }
 
 export const DeleteDiscussionCommentApi = async (params: RequestParams<{ commentId: string }>): Promise<ServerResponse<any, any>> => {

@@ -34,7 +34,7 @@ import {
 import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2, FiMoreHorizontal, FiEdit, FiTrash2 } from "react-icons/fi"
 import { BsPinAngle } from "react-icons/bs"
 import Image from "next/image"
-import { ListDiscussionPostsApi, ReactToDiscussionPostApi } from "@/services/events/discussionApis"
+import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor } from "@/types/discussion"
 import CreateDiscussionModal from "./CreateDiscussionModal"
 import DiscussionPostView from "./DiscussionPostView"
@@ -51,16 +51,39 @@ const isVideoUrl = (url: string): boolean => {
 }
 
 // FeedPostCard Component
-const FeedPostCard = ({ post, onClick, onLikeSuccess }: { post: DiscussionPostWithAuthor, onClick: (id: string) => void, onLikeSuccess: () => void }) => {
+const FeedPostCard = ({ 
+	post, 
+	onClick, 
+	onLikeSuccess, 
+	onDeleteSuccess 
+}: { 
+	post: DiscussionPostWithAuthor, 
+	onClick: (id: string, editMode?: boolean) => void, 
+	onLikeSuccess: () => void,
+	onDeleteSuccess: () => void
+}) => {
 	const { data: session } = useSession()
 	const toast = useToast()
+	const router = useRouter()
 	const currentUserId = (session?.user as any)?._id
 	const hasLiked = post.reactions.likes.includes(currentUserId || "")
+	const isAuthor = currentUserId === post.userId._id
 
 	const reactMutation = useMutation({
 		mutationFn: () => ReactToDiscussionPostApi({ data: { postId: post._id, reactionType: "like" } }),
 		onSuccess: () => {
 			onLikeSuccess()
+		},
+	})
+
+	const deleteMutation = useMutation({
+		mutationFn: () => DeleteDiscussionPostApi({ data: { postId: post._id } }),
+		onSuccess: () => {
+			toast({ title: "Post deleted", status: "success", duration: 2000 })
+			onDeleteSuccess()
+		},
+		onError: (error: any) => {
+			toast({ title: "Delete failed", description: error.message, status: "error", duration: 3000 })
 		},
 	})
 
@@ -155,21 +178,44 @@ const FeedPostCard = ({ post, onClick, onLikeSuccess }: { post: DiscussionPostWi
 							<Icon as={FiClock} />
 						</Flex>
 					</Box>
-					<Menu>
-						<MenuButton
-							as={IconButton}
-							icon={<FiMoreHorizontal />}
-							variant="ghost"
-							size="sm"
-							borderRadius="full"
-							onClick={(e) => e.stopPropagation()}
-							aria-label="Post options"
-						/>
-						<MenuList onClick={(e) => e.stopPropagation()}>
-							<MenuItem icon={<FiEdit />}>Edit Post</MenuItem>
-							<MenuItem icon={<FiTrash2 />} color="red.500">Delete Post</MenuItem>
-						</MenuList>
-					</Menu>
+					{isAuthor && (
+						<Menu>
+							<MenuButton
+								as={IconButton}
+								icon={<FiMoreHorizontal />}
+								variant="ghost"
+								size="sm"
+								borderRadius="full"
+								onClick={(e) => e.stopPropagation()}
+								aria-label="Post options"
+							/>
+							<MenuList onClick={(e) => e.stopPropagation()}>
+								<MenuItem 
+									icon={<FiEdit />}
+									onClick={(e) => {
+										e.stopPropagation()
+										// Open post in edit mode
+										onClick(post._id, true)
+									}}
+								>
+									Edit Post
+								</MenuItem>
+								<MenuItem 
+									icon={<FiTrash2 />} 
+									color="red.500"
+									onClick={(e) => {
+										e.stopPropagation()
+										if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
+											deleteMutation.mutate()
+										}
+									}}
+									isDisabled={deleteMutation.isPending}
+								>
+									Delete Post
+								</MenuItem>
+							</MenuList>
+						</Menu>
+					)}
 				</Flex>
 
 				{/* Post Content */}
@@ -321,6 +367,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const router = useRouter()
 	const { isOpen, onOpen, onClose } = useDisclosure()
 	const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
+	const [openInEditMode, setOpenInEditMode] = useState(false)
 
 	const [sortBy, setSortBy] = useState<string>("recent")
 	const [searchQuery, setSearchQuery] = useState("")
@@ -350,12 +397,14 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const posts = discussionData?.data?.posts || []
 	const pagination = discussionData?.data?.pagination
 
-	const handlePostClick = (postId: string) => {
+	const handlePostClick = (postId: string, editMode: boolean = false) => {
 		setSelectedPostId(postId)
+		setOpenInEditMode(editMode)
 	}
 
 	const handleClosePostModal = () => {
 		setSelectedPostId(null)
+		setOpenInEditMode(false)
 		// Refetch to update comment counts/likes if changed in modal
 		refetch()
 	}
@@ -468,6 +517,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 								post={post} 
 								onClick={handlePostClick} 
 								onLikeSuccess={refetch}
+								onDeleteSuccess={refetch}
 							/>
 						))}
 					</Stack>
@@ -516,6 +566,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 								eventId={eventId} 
 								isModalView={true}
 								onClose={handleClosePostModal}
+								openInEditMode={openInEditMode}
 							/>
 						)}
 					</ModalBody>

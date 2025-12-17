@@ -19,6 +19,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const { commentId, newComment, images } = req.body
 
+		console.log("📥 Edit comment request:", { commentId, newComment, imagesCount: images?.length })
+		console.log("📸 Images received:", images)
+
 		if (!commentId || !newComment?.trim()) {
 			return sendResponse(res, null, "Comment ID and new comment text are required", false, ResCode.BAD_REQUEST)
 		}
