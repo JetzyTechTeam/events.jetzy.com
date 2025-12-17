@@ -32,7 +32,7 @@ import {
 	IconButton,
 } from "@chakra-ui/react"
 import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2, FiMoreHorizontal, FiEdit, FiTrash2 } from "react-icons/fi"
-import { BsPinAngle } from "react-icons/bs"
+import { BsPinAngle, BsHandThumbsUpFill } from "react-icons/bs"
 import Image from "next/image"
 import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor } from "@/types/discussion"
@@ -303,8 +303,8 @@ const FeedPostCard = ({
 					<Flex align="center" gap={1}>
 						{post.reactions.likes.length > 0 && (
 							<Flex align="center" gap={1}>
-								<Box bg="#1877F2" borderRadius="full" p="2px">
-									<Icon as={FiThumbsUp} color="white" boxSize="10px" />
+								<Box bg="#1877F2" borderRadius="full" p="3px" display="flex" alignItems="center" justifyContent="center">
+									<Icon as={BsHandThumbsUpFill} color="white" boxSize="10px" />
 								</Box>
 								<Text>{post.reactions.likes.length}</Text>
 							</Flex>

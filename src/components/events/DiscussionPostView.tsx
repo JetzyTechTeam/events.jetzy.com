@@ -59,7 +59,7 @@ import {
 
 // Dynamic import for EmojiPicker to avoid SSR issues
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), { ssr: false })
-import { BsPinAngle, BsPinAngleFill } from "react-icons/bs"
+import { BsPinAngle, BsPinAngleFill, BsHandThumbsUpFill } from "react-icons/bs"
 import { AiFillBulb, AiOutlineBulb } from "react-icons/ai"
 import { Avatar, Input } from "@chakra-ui/react"
 import {
@@ -1204,6 +1204,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			borderRadius={isModalView ? "none" : "2xl"} 
 			border={isModalView ? "none" : "1px solid #E5E7EB"} 
 			p={isModalView ? { base: 4, md: 6 } : { base: 4, md: 6 }}
+			pt={isModalView ? 12 : { base: 4, md: 6 }}
 			boxShadow={isModalView ? "none" : "sm"}
 		>
 			{/* Post Header */}
@@ -1511,19 +1512,19 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				</Flex>
 			)}
 
-			{/* Engagement Stats */}
-			<Flex justify="space-between" align="center" py={2} borderBottom="1px solid #CED0D4" fontSize="sm" color="#65676B">
-				<Flex align="center" gap={1}>
-					{post.reactions.likes.length > 0 && (
-						<Flex align="center" gap={1}>
-							<Box bg="#1877F2" borderRadius="full" p="2px">
-								<Icon as={FiThumbsUp} color="white" boxSize="12px" />
-							</Box>
-							<Text>{post.reactions.likes.length}</Text>
-						</Flex>
-					)}
-				</Flex>
-				<Flex gap={3}>
+				{/* Engagement Stats */}
+				<Flex justify="space-between" align="center" py={2} borderBottom="1px solid #CED0D4" fontSize="sm" color="#65676B">
+					<Flex align="center" gap={1}>
+						{post.reactions.likes.length > 0 && (
+							<Flex align="center" gap={1}>
+								<Box bg="#1877F2" borderRadius="full" p="3px" display="flex" alignItems="center" justifyContent="center">
+									<Icon as={BsHandThumbsUpFill} color="white" boxSize="10px" />
+								</Box>
+								<Text>{post.reactions.likes.length}</Text>
+							</Flex>
+						)}
+					</Flex>
+					<Flex gap={3}>
 					<Text>{post.commentCount} Comments</Text>
 					<Text>{post.viewCount} Views</Text>
 				</Flex>
