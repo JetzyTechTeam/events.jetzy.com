@@ -358,13 +358,11 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 		const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
 		const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
 
-	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
-	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
-	const location = event.location
-	
-	console.log("Email details:", { timestamp, location, totalAmount, tickets })
-	
-	try {
+		const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
+		const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
+		const location = event.location
+		
+		console.log("Email details:", { timestamp, location, totalAmount, tickets })
 		await sgMail.send({
 		  to: [email, "tech@jetzyapp.com"],
 			from: process.env.SENDGRID_EMAIL_SENDER as string,

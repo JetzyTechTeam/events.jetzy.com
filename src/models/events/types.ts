@@ -39,6 +39,14 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	interest?: string;
+	subInterest?: string;
+	host?: {
+		name: string;
+		image?: string;
+		phone?: string;
+		email?: string;
+	};
 	eventUsersCreated?: boolean;
 	eventGroupCreated?: boolean;
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>

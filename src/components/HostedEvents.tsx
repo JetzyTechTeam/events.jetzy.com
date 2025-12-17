@@ -299,36 +299,69 @@ export default function HostedEvents({ event }: Props) {
 						<div className="space-y-4 text-[#1C1E21]">
 							<EventDescription description={clonedEvent.desc} />
 						</div>
+
+						{/* Host Information */}
+						{clonedEvent.host && clonedEvent.host.name && (
+							<div className="mt-6 pt-6 border-t border-gray-200">
+								<h3 className="text-lg font-semibold text-[#1C1E21] mb-4">Host Information</h3>
+								<Flex align="center" gap={4} mb={3}>
+									{clonedEvent.host.image ? (
+										<Avatar src={clonedEvent.host.image} name={clonedEvent.host.name} size="md" />
+									) : (
+										<Avatar name={clonedEvent.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
+									)}
+									<Box>
+										<Text fontSize="md" fontWeight="semibold" color="#1C1E21">{clonedEvent.host.name}</Text>
+										{clonedEvent.host.email && (
+											<Text fontSize="sm" color="#65676B" mt={1}>
+												<a href={`mailto:${clonedEvent.host.email}`} className="text-blue-600 hover:underline">
+													{clonedEvent.host.email}
+												</a>
+											</Text>
+										)}
+										{clonedEvent.host.phone && (
+											<Text fontSize="sm" color="#65676B" mt={1}>
+												<a href={`tel:${clonedEvent.host.phone}`} className="text-blue-600 hover:underline">
+													{clonedEvent.host.phone}
+												</a>
+											</Text>
+										)}
+									</Box>
+								</Flex>
+							</div>
+						)}
 					</div>
 
-					{/* Hosted By */}
-					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
-						<Flex align="center" gap={3}>
-							{defaultHosts.slice(0, 3).map((host, index) => (
-								<Box
-									key={index}
-									w="40px"
-									h="40px"
-									borderRadius="full"
-									bgGradient="linear(to-br, purple.400, purple.600)"
-									display="flex"
-									alignItems="center"
-									justifyContent="center"
-									color="white"
-									fontWeight="semibold"
-									boxShadow="md"
-									border="2px solid white"
-									ml={index > 0 ? "-12px" : "0"}
-									zIndex={5 - index}
-									title={host.name}
-								>
-									{host.name.charAt(0)}
-								</Box>
-							))}
-							<Text fontSize="sm" color="gray.600" ml={2}>and {defaultHosts.length - 3} others</Text>
-						</Flex>
-					</div>
+					{/* Hosted By - Show only if no host info in about section */}
+					{(!clonedEvent.host || !clonedEvent.host.name) && (
+						<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+							<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
+							<Flex align="center" gap={3}>
+								{defaultHosts.slice(0, 3).map((host, index) => (
+									<Box
+										key={index}
+										w="40px"
+										h="40px"
+										borderRadius="full"
+										bgGradient="linear(to-br, purple.400, purple.600)"
+										display="flex"
+										alignItems="center"
+										justifyContent="center"
+										color="white"
+										fontWeight="semibold"
+										boxShadow="md"
+										border="2px solid white"
+										ml={index > 0 ? "-12px" : "0"}
+										zIndex={5 - index}
+										title={host.name}
+									>
+										{host.name.charAt(0)}
+									</Box>
+								))}
+								<Text fontSize="sm" color="gray.600" ml={2}>and {defaultHosts.length - 3} others</Text>
+							</Flex>
+						</div>
+					)}
 
 					{/* Guests Section */}
 					<EventGuests eventId={clonedEvent._id.toString()} showParticipants={clonedEvent.showParticipants} />
