@@ -6,14 +6,13 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { useSession } from "next-auth/react"
 import LoginModal from "./misc/LoginModal"
-import { FiArrowLeft, FiPlus, FiX, FiEye, FiEyeOff } from "react-icons/fi"
+import { FiArrowLeft, FiEye, FiEyeOff } from "react-icons/fi"
 
 export default function EventCheckoutModel({ event }: { event: string }) {
 	const { data: session } = useSession()
 	const { showCheckout, tickets, isLoading } = useAppSelector(getCheckoutStore)
 	const dispatch = useAppDispatch()
 	const [phoneError, setPhoneError] = useState("")
-	const [emailErrors, setEmailErrors] = useState<string[]>([])
 	const [waitingListData, setWaitingListData] = useState<any>(null)
 	const [showWaitingList, setShowWaitingList] = useState(false)
 	const [waitingListRegistered, setWaitingListRegistered] = useState(false)
@@ -32,8 +31,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		password: "",
 	})
 
-	// Guest emails state (for logged-in users)
-	const [guestEmails, setGuestEmails] = useState<string[]>(["", ""])
+	// Guest emails are now handled in ticket selection modal based on quantity
+	// We just load them from localStorage to pass to checkout API
 
 	// Pre-fill form data if user is logged in
 	useEffect(() => {
@@ -71,23 +70,6 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		}
 	}
 
-	// Handle guest email changes
-	const handleGuestEmailChange = (index: number, value: string) => {
-		const newGuestEmails = [...guestEmails]
-		newGuestEmails[index] = value
-		setGuestEmails(newGuestEmails)
-	}
-
-	// Add more guest email fields
-	const addGuestEmailField = () => {
-		setGuestEmails([...guestEmails, ""])
-	}
-
-	// Remove guest email field
-	const removeGuestEmailField = (index: number) => {
-		const newGuestEmails = guestEmails.filter((_, i) => i !== index)
-		setGuestEmails(newGuestEmails)
-	}
 
 	// Validate email format
 	const validateEmail = (email: string): boolean => {
@@ -120,24 +102,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			return
 		}
 
-		// Validate guest emails if provided
-		if (session?.user) {
-			const filledGuestEmails = guestEmails.filter((email) => email.trim() !== "")
-			const invalidEmails = filledGuestEmails.filter((email) => !validateEmail(email))
-
-			if (invalidEmails.length > 0) {
-				const errors = guestEmails.map((email) => {
-					if (email.trim() !== "" && !validateEmail(email)) {
-						return "Invalid email format"
-					}
-					return ""
-				})
-				setEmailErrors(errors)
-				Error("Invalid Email", "Please enter valid email addresses for all guests.")
-				return
-			}
-			setEmailErrors([])
-		}
+		// Guest emails are validated in ticket selection modal, no need to validate here
 
 		// Check if user already exists (only for non-logged-in users)
 		if (!session?.user) {
@@ -204,12 +169,28 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			label: event,
 		})
 
+		// Get guest emails from localStorage (set in ticket selection modal based on quantity)
+		let finalGuestEmails: string[] = []
+		if (typeof window !== 'undefined') {
+			const stored = localStorage.getItem("eventGuestEmails")
+			if (stored) {
+				try {
+					const parsed = JSON.parse(stored)
+					if (Array.isArray(parsed)) {
+						finalGuestEmails = parsed.filter((email: string) => email && email.trim() !== "")
+					}
+				} catch {
+					// Ignore parse errors
+				}
+			}
+		}
+
 		// Include guest emails in the submission
 		const submissionData = {
 			tickets: JSON.stringify(tickets),
 			user: JSON.stringify({
 				...formData,
-				guestEmails: session?.user ? guestEmails.filter((email) => email.trim() !== "") : [],
+				guestEmails: finalGuestEmails,
 			}),
 		}
 
@@ -224,6 +205,10 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 					setWaitingListData(res.payload.data)
 					setShowWaitingList(true)
 				} else {
+					// Clear localStorage after successful checkout initiation
+					if (typeof window !== 'undefined') {
+						localStorage.removeItem("eventGuestEmails")
+					}
 					// redirect user to payment page
 					dispatch(toggleCheckoutForm(false))
 					window.location.href = res?.payload?.data?.url
@@ -249,12 +234,28 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			label: event,
 		})
 
-		// Include guest emails in the submission (empty for logged-in users who just logged in)
+		// Get guest emails from localStorage (set in ticket selection)
+		let finalGuestEmails: string[] = []
+		if (typeof window !== 'undefined') {
+			const stored = localStorage.getItem("eventGuestEmails")
+			if (stored) {
+				try {
+					const parsed = JSON.parse(stored)
+					if (Array.isArray(parsed)) {
+						finalGuestEmails = parsed.filter((email: string) => email && email.trim() !== "")
+					}
+				} catch {
+					// Ignore parse errors
+				}
+			}
+		}
+
+		// Include guest emails in the submission
 		const submissionData = {
 			tickets: JSON.stringify(checkoutTickets),
 			user: JSON.stringify({
 				...finalFormData,
-				guestEmails: [], // Logged-in users can add guests separately
+				guestEmails: finalGuestEmails,
 			}),
 		}
 
@@ -269,6 +270,10 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 					setWaitingListData(res.payload.data)
 					setShowWaitingList(true)
 				} else {
+					// Clear localStorage after successful checkout initiation
+					if (typeof window !== 'undefined') {
+						localStorage.removeItem("eventGuestEmails")
+					}
 					// redirect user to payment page
 					dispatch(toggleCheckoutForm(false))
 					window.location.href = res?.payload?.data?.url
@@ -465,38 +470,6 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 									)}
 								</div>
 
-								{/* Guest Emails Section (Only for logged-in users) */}
-								{session?.user && (
-									<div className="space-y-3 pt-4 border-t border-border-light">
-										<div className="flex items-center justify-between">
-											<label className="block text-sm font-semibold text-text-primary">Who else is attending this event?</label>
-											<button type="button" onClick={addGuestEmailField} className="flex items-center gap-1 text-primary-purple hover:text-primary-dark font-medium text-sm transition-colors">
-												<FiPlus className="text-base" />
-												<span>Add More</span>
-											</button>
-										</div>
-										<p className="text-xs text-text-muted">Add email addresses of other guests attending with you (optional)</p>
-										{guestEmails.map((email, index) => (
-											<div key={index} className="flex items-start gap-2">
-												<div className="flex-1">
-													<input
-														type="email"
-														placeholder={`Guest ${index + 1} email (optional)`}
-														value={email}
-														onChange={(e) => handleGuestEmailChange(index, e.target.value)}
-														className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
-													/>
-													{emailErrors[index] && <span className="text-red-500 text-xs mt-1 block">{emailErrors[index]}</span>}
-												</div>
-												{guestEmails.length > 2 && (
-													<button type="button" onClick={() => removeGuestEmailField(index)} className="mt-3 text-text-muted hover:text-red-500 transition-colors">
-														<FiX className="text-lg" />
-													</button>
-												)}
-											</div>
-										))}
-									</div>
-								)}
 
 								{/* Login Link (Only for not-logged-in users) */}
 								{!session?.user && (

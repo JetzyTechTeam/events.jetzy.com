@@ -66,6 +66,17 @@ const bookingSchema = new Schema<IBookings>(
 			type: Boolean,
 			default: false,
 		},
+		qrCodeToken: {
+			type: String,
+			required: false,
+			unique: true,
+			sparse: true,
+			index: true,
+		},
+		qrCodeImageUrl: {
+			type: String,
+			required: false,
+		},
 	},
 	{
 		timestamps: true,

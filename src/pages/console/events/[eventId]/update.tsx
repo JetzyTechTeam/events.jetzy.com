@@ -19,6 +19,10 @@ import {
 	Image,
 	Avatar,
 	Spinner,
+	Menu,
+	MenuButton,
+	MenuList,
+	MenuItem,
 } from "@chakra-ui/react"
 import { Formik, Form, Field, FormikProps } from "formik"
 import { GetServerSideProps } from "next"
@@ -88,6 +92,7 @@ export default function UpdateEventPage({ event }: Props) {
 		price: 0,
 	})
 	const [tickets, setTickets] = React.useState<TicketData[]>([])
+	const [hostImageUploading, setHostImageUploading] = React.useState(false)
 
 	// Guest invite state
 	const [invitedGuests, setInvitedGuests] = React.useState<string[]>([])
@@ -130,6 +135,7 @@ export default function UpdateEventPage({ event }: Props) {
 		images: uploadedImages,
 		tickets: tickets,
 		privacy: eventDetails.privacy,
+		interest: eventDetails.interest || "",
 		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
 		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
 		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
@@ -137,6 +143,16 @@ export default function UpdateEventPage({ event }: Props) {
 		timezone: eventDetails?.timezone || "",
 		showParticipants: eventDetails.showParticipants || false,
 	}
+
+	// Available interests/categories
+	const INTERESTS = [
+		"Dining",
+		"Nightlife",
+		"Lifestyle",
+		"Travels",
+		"Entertainment",
+		"Activities",
+	]
 
 	const { ref } = usePlacesWidget({
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
@@ -289,10 +305,7 @@ export default function UpdateEventPage({ event }: Props) {
 			Error("Validation Error", "Please enter a ticket name")
 			return
 		}
-		if (!tempTicket.description) {
-			Error("Validation Error", "Please enter a ticket description")
-			return
-		}
+		// Ticket description is now optional
 		if (tempTicket.price < 0) {
 			Error("Validation Error", "Price cannot be negative")
 			return
@@ -580,12 +593,60 @@ export default function UpdateEventPage({ event }: Props) {
 											/>
 										</Box>
 
+										{/* Interest Selector */}
+										<Box mb={6}>
+											<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
+												Interest / Category
+											</Text>
+											<Menu>
+												<MenuButton
+													as={Box}
+													cursor="pointer"
+													border="1px"
+													borderColor="#E5E7EB"
+													borderRadius="lg"
+													px={4}
+													py={3}
+													bg="#FFFFFF"
+													_hover={{ borderColor: "#B0B0B0", bg: "#FAFAFA", boxShadow: "sm" }}
+													transition="all 0.2s"
+												>
+													<Flex alignItems="center" justifyContent="space-between">
+														<Text fontSize="15px" fontWeight="500" color={values.interest ? "#1F2937" : "#9CA3AF"}>
+															{values.interest || "Select interest (optional)"}
+														</Text>
+														<ChevronDownIcon w={5} h={5} color="#6B7280" />
+													</Flex>
+												</MenuButton>
+												<MenuList bg="#FFFFFF" border="1px" borderColor="#E5E7EB" borderRadius="lg" boxShadow="lg" maxH="300px" overflowY="auto">
+													<MenuItem
+														onClick={() => setFieldValue("interest", "")}
+														_hover={{ bg: "#F3F4F6" }}
+														bg={!values.interest ? "#F3F4F6" : "transparent"}
+													>
+														<Text fontSize="14px" color="#1F2937">None</Text>
+													</MenuItem>
+													{INTERESTS.map((interest) => (
+														<MenuItem
+															key={interest}
+															onClick={() => setFieldValue("interest", interest)}
+															_hover={{ bg: "#F3F4F6" }}
+															bg={values.interest === interest ? "#F3F4F6" : "transparent"}
+														>
+															<Text fontSize="14px" color="#1F2937">{interest}</Text>
+														</MenuItem>
+													))}
+												</MenuList>
+											</Menu>
+										</Box>
+
 										{/* Description */}
 										<Box mb={6}>
 											<Field
 												as={Textarea}
 												name="desc"
 												placeholder="What are the details?"
+												value={values.desc && values.desc !== "undefined" ? values.desc : ""}
 												rows={6}
 												border="1px"
 												borderColor="#E5E7EB"
@@ -599,6 +660,127 @@ export default function UpdateEventPage({ event }: Props) {
 												_focus={{ borderColor: "#8B5CF6", boxShadow: "none", bg: "white" }}
 											/>
 										</Box>
+
+										{/* Host Information */}
+										<CollapsibleSection icon={<FiSettings size={20} />} title="Host Information (Optional)">
+											<Box>
+												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
+													Host Name
+												</Text>
+												<Input
+													placeholder="Enter host name"
+													value={values.host?.name || ""}
+													onChange={(e) => setFieldValue("host", { ...values.host, name: e.target.value })}
+													border="1px"
+													borderColor="#E5E7EB"
+													mb={3}
+													_hover={{ borderColor: "#D1D5DB" }}
+													_focus={{ borderColor: "#8B5CF6", boxShadow: "none" }}
+												/>
+
+												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
+													Host Email
+												</Text>
+												<Input
+													type="email"
+													placeholder="host@example.com"
+													value={values.host?.email || ""}
+													onChange={(e) => setFieldValue("host", { ...values.host, email: e.target.value })}
+													border="1px"
+													borderColor="#E5E7EB"
+													mb={3}
+													_hover={{ borderColor: "#D1D5DB" }}
+													_focus={{ borderColor: "#8B5CF6", boxShadow: "none" }}
+												/>
+
+												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
+													Host Phone
+												</Text>
+												<Input
+													type="tel"
+													placeholder="+1 (555) 123-4567"
+													value={values.host?.phone || ""}
+													onChange={(e) => setFieldValue("host", { ...values.host, phone: e.target.value })}
+													border="1px"
+													borderColor="#E5E7EB"
+													mb={3}
+													_hover={{ borderColor: "#D1D5DB" }}
+													_focus={{ borderColor: "#8B5CF6", boxShadow: "none" }}
+												/>
+
+												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
+													Host Image
+												</Text>
+												<Box mb={3}>
+													{values.host?.image ? (
+														<Box position="relative" mb={2}>
+															<Image src={values.host.image} alt="Host" width={100} height={100} borderRadius="md" objectFit="cover" />
+															<IconButton
+																aria-label="Remove host image"
+																icon={<FiX />}
+																size="sm"
+																position="absolute"
+																top={-2}
+																right={-2}
+																bg="red.500"
+																color="white"
+																_hover={{ bg: "red.600" }}
+																onClick={async () => {
+																	if (values.host?.image) {
+																		try {
+																			await edgestore.publicFiles.delete({ url: values.host.image })
+																		} catch (error) {
+																			console.error("Error deleting host image:", error)
+																		}
+																	}
+																	setFieldValue("host", { ...values.host, image: "" })
+																}}
+															/>
+														</Box>
+													) : (
+														<Box
+															border="2px dashed"
+															borderColor="#D1D5DB"
+															borderRadius="lg"
+															p={4}
+															textAlign="center"
+															cursor="pointer"
+															_hover={{ borderColor: "#8B5CF6", bg: "#F9FAFB" }}
+															onClick={() => {
+																const input = document.createElement("input")
+																input.type = "file"
+																input.accept = "image/*"
+																input.onchange = async (e: any) => {
+																	const file = e.target.files?.[0]
+																	if (file) {
+																		setHostImageUploading(true)
+																		try {
+																			const res = await edgestore.publicFiles.upload({ file })
+																			setFieldValue("host", { ...values.host, image: res.url })
+																		} catch (error) {
+																			console.error("Error uploading host image:", error)
+																			Error("Error", "Failed to upload host image")
+																		} finally {
+																			setHostImageUploading(false)
+																		}
+																	}
+																}
+																input.click()
+															}}
+														>
+															{hostImageUploading ? (
+																<Spinner size="md" />
+															) : (
+																<>
+																	<FiPlus size={24} color="#9CA3AF" style={{ margin: "0 auto 8px" }} />
+																	<Text fontSize="13px" color="#9CA3AF">Click to upload host image</Text>
+																</>
+															)}
+														</Box>
+													)}
+												</Box>
+											</Box>
+										</CollapsibleSection>
 
 										{/* Collapsible Sections */}
 										<CollapsibleSection icon={<FiMapPin size={20} />} title="Event location" defaultOpen={true}>
@@ -698,10 +880,10 @@ export default function UpdateEventPage({ event }: Props) {
 													</Grid>
 													<Box mb={3}>
 														<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
-															Description <Text as="span" color="red">*</Text>
+															Description (Optional)
 														</Text>
 														<Input
-															placeholder="e.g., Access to all event activities"
+															placeholder="e.g., Access to all event activities (optional)"
 															size="sm"
 															bg="white"
 															value={tempTicket.description}
@@ -717,7 +899,7 @@ export default function UpdateEventPage({ event }: Props) {
 														color="white"
 														_hover={{ bg: "#7C3AED" }}
 														onClick={handleAddTicket}
-														isDisabled={!tempTicket.title || !tempTicket.description}
+														isDisabled={!tempTicket.title}
 													>
 														Add Ticket
 													</Button>

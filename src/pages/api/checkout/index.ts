@@ -26,6 +26,7 @@ type BodyParams = {
 		email: string
 		phone: string
 		password?: string
+		guestEmails?: string[]
 	}
 }
 // initialize stripe
@@ -48,19 +49,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Get request params
 		if (!req.body?.tickets || !req.body?.user) {
+			console.error("[checkout/index] Missing parameters:", { hasTickets: !!req.body?.tickets, hasUser: !!req.body?.user, bodyKeys: Object.keys(req.body || {}) })
 			return sendResponse(res, null, "Missing required parameters: tickets and user", false, ResCode.BAD_REQUEST)
 		}
 
-		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
-		const user = JSON.parse(req.body?.user) as BodyParams["user"]
+		let tickets: BodyParams["tickets"]
+		let user: BodyParams["user"]
+		let guestEmails: string[] = []
+		
+		try {
+			// Handle both string and object formats
+			tickets = typeof req.body.tickets === 'string' 
+				? JSON.parse(req.body.tickets) 
+				: req.body.tickets as BodyParams["tickets"]
+			user = typeof req.body.user === 'string'
+				? JSON.parse(req.body.user)
+				: req.body.user as BodyParams["user"]
+			
+			// Extract guest emails if provided
+			if (user.guestEmails && Array.isArray(user.guestEmails)) {
+				guestEmails = user.guestEmails.filter((email: string) => email && email.trim() !== "")
+			}
+		} catch (parseError: any) {
+			console.error("[checkout/index] JSON parse error:", parseError)
+			return sendResponse(res, null, `Invalid data format: ${parseError.message}`, false, ResCode.BAD_REQUEST)
+		}
 
 		// Validate tickets array
 		if (!Array.isArray(tickets) || tickets.length === 0) {
+			console.error("[checkout/index] Invalid tickets:", tickets)
 			return sendResponse(res, null, "Invalid tickets data", false, ResCode.BAD_REQUEST)
+		}
+
+		// Validate that all tickets have priceId
+		const ticketsWithoutPriceId = tickets.filter(ticket => !ticket.priceId)
+		if (ticketsWithoutPriceId.length > 0) {
+			console.error("[checkout/index] Tickets missing priceId:", ticketsWithoutPriceId)
+			return sendResponse(res, null, "Some tickets are missing price information. Please refresh and try again.", false, ResCode.BAD_REQUEST)
 		}
 
 		// Validate user data
 		if (!user.email || !user.firstName || !user.lastName) {
+			console.error("[checkout/index] Invalid user data:", user)
 			return sendResponse(res, null, "Invalid user data", false, ResCode.BAD_REQUEST)
 		}
 
@@ -118,12 +148,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// using price api from stripe create price for the tickets selected
-		const prices = tickets.map((ticket) => {
-			return {
-				price: ticket.priceId,
-				quantity: ticket.quantity,
-			}
-		})
+		const prices = tickets
+			.filter((ticket) => ticket.priceId) // Filter out tickets without priceId
+			.map((ticket) => {
+				return {
+					price: ticket.priceId,
+					quantity: ticket.quantity,
+				}
+			})
+
+		if (prices.length === 0) {
+			console.error("[checkout/index] No valid prices found after filtering")
+			return sendResponse(res, null, "No valid ticket prices found. Please refresh and try again.", false, ResCode.BAD_REQUEST)
+		}
 
 		// generate a reference id
 		const reference = uniqueId(20)
@@ -168,17 +205,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			slug: event?.slug,
 		}
 
-		// Validate and log URLs
-		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"
-		console.log("NEXT_PUBLIC_URL:", baseUrl)
+		// Use NEXT_PUBLIC_URL from environment (already validated above)
+		const baseUrl = process.env.NEXT_PUBLIC_URL
+		
+		console.log("[checkout/index] Using baseUrl:", baseUrl)
 		
 		// Ensure URL is properly formatted
 		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
 		const successUrl = `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
 		
-		console.log("Success URL:", successUrl)
-		console.log("Cancel URL:", cancelUrl)
+		console.log("[checkout/index] Success URL:", successUrl)
+		console.log("[checkout/index] Cancel URL:", cancelUrl)
 
 		// Validate URLs
 		try {
@@ -187,6 +225,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		} catch (urlError: any) {
 			console.error("Invalid URL format:", urlError)
 			throw new Error(`Invalid URL format: ${urlError.message || urlError}`)
+		}
+
+		// Prepare metadata object
+		const metadata: Record<string, string> = {
+			firstName: user.firstName,
+			lastName: user.lastName,
+			email: user.email,
+			phone: user.phone,
+			tickets: req.body.tickets,
+			eventId: tickets[0]?.eventId || "",
+			eventDetails: JSON.stringify(eventDetails),
+		}
+		
+		// Add guest emails to metadata if available
+		if (guestEmails.length > 0) {
+			metadata.guestEmails = JSON.stringify(guestEmails)
 		}
 
 		// create a checkout session
@@ -198,15 +252,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			success_url: successUrl,
 			cancel_url: cancelUrl,
 			locale: "en", // Explicitly set locale to prevent locale loading errors
-			metadata: {
-				firstName: user.firstName,
-				lastName: user.lastName,
-				email: user.email,
-				phone: user.phone,
-				tickets: req.body.tickets,
-				eventId: tickets[0]?.eventId || "",
-				eventDetails: JSON.stringify(eventDetails),
-			},
+			metadata,
 			customer_email: user.email,
 		}).catch((stripeError) => {
 			console.error("Stripe session creation failed:", stripeError)
@@ -219,7 +265,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		return sendResponse(res, null, "Couldn't complete checkout.", false, ResCode.BAD_REQUEST)
 	} catch (error: any) {
-		console.log("Error:", error.message)
-		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)
+		console.error("[checkout/index] Error details:", {
+			message: error.message,
+			stack: error.stack,
+			name: error.name,
+			code: error.code,
+		})
+		console.log("[checkout/index] Error:", error.message)
+		return sendResponse(res, null, error.message || "An error occurred during checkout", false, ResCode.INTERNAL_SERVER_ERROR)
 	}
 }

@@ -192,12 +192,22 @@ export default function HostedEvents({ event }: Props) {
 								<button 
 									onClick={() => setIsTicketModalOpen(true)}
 									disabled={hasEventEnded}
-									className={`px-6 py-2 rounded-lg font-semibold text-sm text-white transition-colors shadow-sm flex items-center gap-2 ${
-										hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+									className={`relative px-10 py-4 rounded-xl font-bold text-lg text-white transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${
+										hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 animate-pulse"
 									}`}
+									style={{
+										animation: hasEventEnded ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+									}}
 								>
-									<TicketIcon className="w-5 h-5" />
-									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+									<TicketIcon className="w-7 h-7" />
+									<span className="font-extrabold text-xl">
+										{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+									</span>
+									{!hasEventEnded && (
+										<span className="absolute -top-2 -right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full animate-bounce">
+											🎟️
+										</span>
+									)}
 								</button>
 								
 								<button 
@@ -238,8 +248,8 @@ export default function HostedEvents({ event }: Props) {
 
 			{/* Main Content Area */}
 			<div className="max-w-[1250px] mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-				{/* Left Column (Discussion) */}
-				<div className="lg:col-span-2 space-y-4">
+				{/* Left Column (Discussion) - Moved below to focus on Get Ticket */}
+				<div className="lg:col-span-2 space-y-4 mt-8">
 					<DiscussionBoard eventId={clonedEvent._id.toString()} />
 				</div>
 
@@ -267,21 +277,37 @@ export default function HostedEvents({ event }: Props) {
 					</div>
 
 					{/* Sticky Ticket Card (Desktop) */}
-					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200 sticky top-20">
+					<div className="bg-white rounded-lg shadow-lg p-6 border-2 border-blue-200 sticky top-20 transform transition-all duration-300 hover:shadow-2xl">
 						<div className="text-center">
-							<p className="text-gray-500 text-sm mb-2">Tickets starting from</p>
-							<p className="text-3xl font-bold text-[#1C1E21] mb-4">
+							<p className="text-gray-500 text-sm mb-2 font-semibold">Tickets starting from</p>
+							<p className="text-4xl font-extrabold text-[#1C1E21] mb-6">
 								{clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map(t => t.price))}` : 'Free'}
 							</p>
 							<button 
 								onClick={() => setIsTicketModalOpen(true)}
 								disabled={hasEventEnded}
-								className={`w-full py-3 rounded-lg font-bold text-white transition-colors ${
-									hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-md"
+								className={`relative w-full py-5 px-6 rounded-xl font-extrabold text-xl text-white transition-all duration-300 shadow-xl hover:shadow-2xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${
+									hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900"
 								}`}
+								style={{
+									animation: hasEventEnded ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+								}}
 							>
-								{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+								<TicketIcon className="w-8 h-8" />
+								<span>
+									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets Now")}
+								</span>
+								{!hasEventEnded && (
+									<span className="absolute -top-3 -right-3 bg-yellow-400 text-yellow-900 text-sm font-bold px-3 py-1.5 rounded-full animate-bounce shadow-lg">
+										🎟️
+									</span>
+								)}
 							</button>
+							{!hasEventEnded && (
+								<p className="text-xs text-gray-500 mt-3 font-medium">
+									⚡ Limited availability - Secure your spot!
+								</p>
+							)}
 						</div>
 					</div>
 
@@ -299,36 +325,69 @@ export default function HostedEvents({ event }: Props) {
 						<div className="space-y-4 text-[#1C1E21]">
 							<EventDescription description={clonedEvent.desc} />
 						</div>
+
+						{/* Host Information */}
+						{clonedEvent.host && clonedEvent.host.name && (
+							<div className="mt-6 pt-6 border-t border-gray-200">
+								<h3 className="text-lg font-semibold text-[#1C1E21] mb-4">Host Information</h3>
+								<Flex align="center" gap={4} mb={3}>
+									{clonedEvent.host.image ? (
+										<Avatar src={clonedEvent.host.image} name={clonedEvent.host.name} size="md" />
+									) : (
+										<Avatar name={clonedEvent.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
+									)}
+									<Box>
+										<Text fontSize="md" fontWeight="semibold" color="#1C1E21">{clonedEvent.host.name}</Text>
+										{clonedEvent.host.email && (
+											<Text fontSize="sm" color="#65676B" mt={1}>
+												<a href={`mailto:${clonedEvent.host.email}`} className="text-blue-600 hover:underline">
+													{clonedEvent.host.email}
+												</a>
+											</Text>
+										)}
+										{clonedEvent.host.phone && (
+											<Text fontSize="sm" color="#65676B" mt={1}>
+												<a href={`tel:${clonedEvent.host.phone}`} className="text-blue-600 hover:underline">
+													{clonedEvent.host.phone}
+												</a>
+											</Text>
+										)}
+									</Box>
+								</Flex>
+							</div>
+						)}
 					</div>
 
-					{/* Hosted By */}
-					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
-						<Flex align="center" gap={3}>
-							{defaultHosts.slice(0, 3).map((host, index) => (
-								<Box
-									key={index}
-									w="40px"
-									h="40px"
-									borderRadius="full"
-									bgGradient="linear(to-br, purple.400, purple.600)"
-									display="flex"
-									alignItems="center"
-									justifyContent="center"
-									color="white"
-									fontWeight="semibold"
-									boxShadow="md"
-									border="2px solid white"
-									ml={index > 0 ? "-12px" : "0"}
-									zIndex={5 - index}
-									title={host.name}
-								>
-									{host.name.charAt(0)}
-								</Box>
-							))}
-							<Text fontSize="sm" color="gray.600" ml={2}>and {defaultHosts.length - 3} others</Text>
-						</Flex>
-					</div>
+					{/* Hosted By - Show only if no host info in about section */}
+					{(!clonedEvent.host || !clonedEvent.host.name) && (
+						<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+							<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
+							<Flex align="center" gap={3}>
+								{defaultHosts.slice(0, 3).map((host, index) => (
+									<Box
+										key={index}
+										w="40px"
+										h="40px"
+										borderRadius="full"
+										bgGradient="linear(to-br, purple.400, purple.600)"
+										display="flex"
+										alignItems="center"
+										justifyContent="center"
+										color="white"
+										fontWeight="semibold"
+										boxShadow="md"
+										border="2px solid white"
+										ml={index > 0 ? "-12px" : "0"}
+										zIndex={5 - index}
+										title={host.name}
+									>
+										{host.name.charAt(0)}
+									</Box>
+								))}
+								<Text fontSize="sm" color="gray.600" ml={2}>and {defaultHosts.length - 3} others</Text>
+							</Flex>
+						</div>
+					)}
 
 					{/* Guests Section */}
 					<EventGuests eventId={clonedEvent._id.toString()} showParticipants={clonedEvent.showParticipants} />

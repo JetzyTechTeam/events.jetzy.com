@@ -81,6 +81,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Update waiting list status to approved
 		await WaitingList.findByIdAndUpdate(waitingListId, { status: 'approved' })
 
+		// Generate QR code for the booking
+		let qrCodeImageUrl: string | undefined
+		try {
+			console.log("Generating QR code for booking...")
+			const { generateQRCodeForBooking } = await import("@/lib/qr-generator")
+			const qrCode = await generateQRCodeForBooking(
+				booking._id.toString(),
+				waitingListEntry.eventId.toString()
+			)
+			
+			// Update booking with QR code data
+			booking.qrCodeToken = qrCode.token
+			booking.qrCodeImageUrl = qrCode.imageUrl
+			await booking.save()
+			qrCodeImageUrl = qrCode.imageUrl
+			console.log("QR code generated and saved to booking")
+		} catch (qrError: any) {
+			console.error("Failed to generate QR code:", qrError.message)
+			// Continue without QR code
+		}
+
 		// Send booking confirmation email
 		try {
 			console.log("Sending booking confirmation email to:", waitingListEntry.email)
@@ -97,6 +118,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					desc: ''
 				})),
 				orderNumber: bookingRef,
+				qrCodeImageUrl,
 			})
 			console.log("Booking confirmation email sent successfully")
 		} catch (emailError) {

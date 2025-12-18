@@ -67,6 +67,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	// Define the query based on authentication status and role
 	let query: any = { isDeleted: false }
 	
+	// Interest filter from query params
+	const interestFilter = context.query.interestFilter as string | undefined
+	if (interestFilter && interestFilter !== "All" && interestFilter !== "") {
+		query.interest = interestFilter
+	}
+	
 	// If user is not admin or super admin, only show public events
 	if (!isAdmin) {
 		query.privacy = "public"

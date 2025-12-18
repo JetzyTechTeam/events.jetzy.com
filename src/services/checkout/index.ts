@@ -7,5 +7,9 @@ const endpoints = {
 }
 
 export const CreateCheckoutSessionApi = async (params: RequestParams<CheckoutFormData>): Promise<ServerResponse<Stripe.Response<Stripe.Checkout.Session>, any>> => {
-	return await POST(endpoints.create, params?.data)
+	return await POST(endpoints.create, params?.data, {
+		headers: {
+			"Content-Type": "application/json"
+		}
+	})
 }

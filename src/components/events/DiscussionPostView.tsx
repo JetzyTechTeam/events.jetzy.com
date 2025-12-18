@@ -79,6 +79,7 @@ import {
 } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor, DiscussionCommentWithAuthor } from "@/types/discussion"
 import { useRouter } from "next/router"
+import LoginModal from "@/components/misc/LoginModal"
 
 // Helper function to check if URL is a video
 const isVideoUrl = (url: string): boolean => {
@@ -112,7 +113,6 @@ interface DiscussionPostViewProps {
 	eventId: string
 	isModalView?: boolean
 	onClose?: () => void
-	openInEditMode?: boolean
 }
 
 interface CommentItemProps {
@@ -124,10 +124,10 @@ interface CommentItemProps {
 	onDelete: (commentId: string) => void
 	onReact: (commentId: string) => void
 	isLocked: boolean
-	hasTicket?: boolean
+	onLoginRequired?: () => void
 }
 
-const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, isLocked, hasTicket = false }) => {
+const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, isLocked, onLoginRequired }) => {
 	const [replyText, setReplyText] = useState("")
 	const [editText, setEditText] = useState(comment.comment)
 	const [showReply, setShowReply] = useState(false)
@@ -149,11 +149,8 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 
 	const isAuthor = currentUserId === comment.userId._id
 	const hasLiked = comment.reactions.likes.includes(currentUserId || "")
-	// @ts-ignore
-	const userRole = session?.user?.role
-	const isAdmin = userRole === "admin" || userRole === "super admin"
-	// Super admin and admin can bypass ticket requirement
-	const canReply = hasTicket || isAdmin
+	// Check if user is logged in (ticket requirement removed)
+	const canReply = !!session && !!session.user
 
 	const handleReplyImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = e.target.files
@@ -192,13 +189,9 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 			return
 		}
 		if (!canReply) {
-			toast({
-				title: "Please buy a ticket first",
-				description: "You need to purchase a ticket to reply to comments.",
-				status: "warning",
-				duration: 4000,
-				isClosable: true,
-			})
+			if (onLoginRequired) {
+				onLoginRequired()
+			}
 			return
 		}
 		if (replyText.trim() || replyImages.length > 0 || replyFeeling || replyActivity) {
@@ -996,6 +989,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	const [editPostFeeling, setEditPostFeeling] = useState<string>("")
 	const [editPostActivity, setEditPostActivity] = useState<string>("")
 	const [uploadingEditImages, setUploadingEditImages] = useState(false)
+	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
 	const commentFileInputRef = React.useRef<HTMLInputElement>(null)
 	const editPostFileInputRef = React.useRef<HTMLInputElement>(null)
 	const { isOpen: isEditPostFeelingModalOpen, onOpen: onEditPostFeelingModalOpen, onClose: onEditPostFeelingModalClose } = useDisclosure()
@@ -1003,6 +997,9 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	const { isOpen: isFeelingModalOpen, onOpen: onFeelingModalOpen, onClose: onFeelingModalClose } = useDisclosure()
 
 	const currentUserId = (session?.user as any)?._id
+	// Check if user is admin or super admin
+	// @ts-ignore
+	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
 	
 	// Fetch post
 	const { data: postResponse, isLoading: isLoadingPost, refetch: refetchPost } = useQuery({
@@ -1018,25 +1015,10 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		enabled: !!postId,
 	})
 
-	// Check if user has purchased a ticket
-	const { data: ticketCheck } = useQuery({
-		queryKey: ["checkTicket", eventId],
-		queryFn: async () => {
-			const response = await CheckEventTicketApi({ data: { eventId } })
-			return response.data
-		},
-		enabled: !!eventId && !!session,
-	})
-
 	const post: DiscussionPostWithAuthor | null = postResponse?.data || null
 	const comments: DiscussionCommentWithAuthor[] = commentsResponse?.data || []
-	const hasTicket = ticketCheck?.hasTicket || false
-	const isAuthenticated = ticketCheck?.isAuthenticated ?? (!!session)
-	// @ts-ignore
-	const userRole = session?.user?.role
-	const isAdmin = userRole === "admin" || userRole === "super admin"
-	// Super admin and admin can bypass ticket requirement
-	const canComment = hasTicket || isAdmin
+	// Check if user is logged in (ticket requirement removed)
+	const canComment = !!session && !!session.user
 
 	// Auto-enter edit mode if requested
 	useEffect(() => {
@@ -1663,19 +1645,34 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 
 			{/* Comments Section */}
 			<Box>
-				{/* New Comment Input */}
-				{session && !post.isLocked && (
+				{/* New Comment Input - Always visible */}
+				{!post.isLocked && (
 					<Box mb={4}>
 						<Flex gap={2} align="flex-start">
-							<Avatar size="sm" name={session.user?.name || "User"} src={session.user?.image || ""} mt={1} />
+							{session && session.user ? (
+								<Avatar size="sm" name={session.user?.name || "User"} src={session.user?.image || ""} mt={1} />
+							) : (
+								<Avatar size="sm" name="Guest" mt={1} bg="gray.300" />
+							)}
 							<Box flex="1">
 								<Flex gap={2} align="center">
 									<Box flex="1" position="relative">
 										<Textarea
 											id="commentInput"
-											placeholder="Write a comment..."
+											placeholder={session && session.user ? "Write a comment..." : "Login to write a comment..."}
 											value={newComment}
-											onChange={(e) => setNewComment(e.target.value)}
+											onChange={(e) => {
+												if (!session || !session.user) {
+													setIsLoginModalOpen(true)
+													return
+												}
+												setNewComment(e.target.value)
+											}}
+											onClick={() => {
+												if (!session || !session.user) {
+													setIsLoginModalOpen(true)
+												}
+											}}
 											bg="#F0F2F5"
 											border="none"
 											borderRadius="2xl"
@@ -1689,28 +1686,17 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 												if (e.key === 'Enter' && !e.shiftKey) {
 													e.preventDefault();
 													if (!session || !session.user) {
-														toast({
-															title: "Please login or signup first",
-															description: "You need to be logged in to comment.",
-															status: "warning",
-															duration: 3000,
-															isClosable: true,
-														})
-														return
-													}
-													if (!hasTicket) {
-														toast({
-															title: "Please buy a ticket first",
-															description: "You need to purchase a ticket to comment on posts.",
-															status: "warning",
-															duration: 4000,
-															isClosable: true,
-														})
+														setIsLoginModalOpen(true)
 														return
 													}
 													if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
 														createCommentMutation.mutate({ comment: newComment, images: commentImages });
 													}
+												}
+											}}
+											onFocus={() => {
+												if (!session || !session.user) {
+													// Don't prevent focus, but show login modal if they try to type
 												}
 											}}
 										/>
@@ -1725,23 +1711,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										color={(newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) ? "#1877F2" : "#BEC3C9"}
 										onClick={() => {
 											if (!session || !session.user) {
-												toast({
-													title: "Please login or signup first",
-													description: "You need to be logged in to comment.",
-													status: "warning",
-													duration: 3000,
-													isClosable: true,
-												})
-												return
-											}
-											if (!canComment) {
-												toast({
-													title: "Please buy a ticket first",
-													description: "You need to purchase a ticket to comment on posts.",
-													status: "warning",
-													duration: 4000,
-													isClosable: true,
-												})
+												setIsLoginModalOpen(true)
 												return
 											}
 											if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
@@ -1763,7 +1733,13 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										variant="ghost"
 										color={commentFeeling || commentActivity ? "#1877F2" : "#65676B"}
 										borderRadius="full"
-										onClick={onFeelingModalOpen}
+										onClick={() => {
+											if (!session || !session.user) {
+												setIsLoginModalOpen(true)
+												return
+											}
+											onFeelingModalOpen()
+										}}
 										_hover={{ bg: "#E4E6EB" }}
 										minW="auto"
 										h="auto"
@@ -1775,7 +1751,13 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										size="xs"
 										variant="ghost"
 										color={commentImages.length > 0 ? "#1877F2" : "#65676B"}
-										onClick={() => commentFileInputRef.current?.click()}
+										onClick={() => {
+											if (!session || !session.user) {
+												setIsLoginModalOpen(true)
+												return
+											}
+											commentFileInputRef.current?.click()
+										}}
 										isLoading={uploadingImages}
 										borderRadius="full"
 										_hover={{ bg: "#E4E6EB" }}
@@ -1913,7 +1895,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 								onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
 								onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
 								isLocked={post.isLocked}
-								hasTicket={hasTicket}
+								onLoginRequired={() => setIsLoginModalOpen(true)}
 							/>
 						))}
 					</Stack>
@@ -2210,6 +2192,11 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				</ModalFooter>
 			</ModalContent>
 		</Modal>
+			{/* Login Modal */}
+			<LoginModal
+				isOpen={isLoginModalOpen}
+				onClose={() => setIsLoginModalOpen(false)}
+			/>
 		</>
 	)
 }

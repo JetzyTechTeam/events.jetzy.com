@@ -1,12 +1,12 @@
 import { setSelectedTickets, toggleCheckoutForm } from "@Jetzy/redux/reducers/checkoutSlice"
 import { useAppDispatch } from "@Jetzy/redux/stores"
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { waitUntil } from "@Jetzy/lib/utils"
 import Spinner from "./misc/Spinner"
 import { Error } from "@Jetzy/lib/_toaster"
 import { IEvent } from "@/models/events/types"
 import { CheckmarkSVG } from "@/assets/icons"
-import { FiX } from "react-icons/fi"
+import { FiX, FiPlus, FiUser } from "react-icons/fi"
 import { sendGAEvent } from "@next/third-parties/google"
 import Linkify from "linkify-react"
 import { useSession } from "next-auth/react"
@@ -47,6 +47,47 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 
 	// State for checkout modal
 	const dispatcher = useAppDispatch()
+
+	// State for guest emails
+	const [guestEmails, setGuestEmails] = useState<string[]>([])
+
+	// Calculate total selected ticket quantity
+	const totalSelectedQuantity = tickets
+		.filter((ticket) => ticket.isSelected)
+		.reduce((sum, ticket) => sum + ticket.quantity, 0)
+
+	// Calculate number of guest slots (total quantity - 1 for the buyer)
+	const guestSlots = Math.max(0, totalSelectedQuantity - 1)
+
+	// Update guest emails array when quantity changes
+	useEffect(() => {
+		if (guestSlots > 0) {
+			// Ensure we have the right number of guest email fields
+			setGuestEmails((prevEmails) => {
+				if (prevEmails.length < guestSlots) {
+					return [...prevEmails, ...Array(guestSlots - prevEmails.length).fill("")]
+				} else if (prevEmails.length > guestSlots) {
+					return prevEmails.slice(0, guestSlots)
+				}
+				return prevEmails
+			})
+		} else {
+			setGuestEmails([])
+		}
+	}, [guestSlots])
+
+	// Handle guest email changes
+	const handleGuestEmailChange = (index: number, value: string) => {
+		const newGuestEmails = [...guestEmails]
+		newGuestEmails[index] = value
+		setGuestEmails(newGuestEmails)
+	}
+
+	// Validate email format
+	const validateEmail = (email: string): boolean => {
+		const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+		return emailPattern.test(email)
+	}
 
 	// Handle increment/decrement for tickets
 	const handleQuantityChange = (id: string, delta: number) => {
@@ -97,6 +138,23 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 				eventId: ticket.eventId,
 			}))
 			.filter((ticket) => ticket.isSelected)
+
+		// Validate guest emails if provided
+		const filledGuestEmails = guestEmails.filter((email: string) => email.trim() !== "")
+		const invalidEmails = filledGuestEmails.filter((email: string) => !validateEmail(email))
+
+		if (invalidEmails.length > 0) {
+			Error("Invalid Email", "Please enter valid email addresses for your guests.")
+			setLoader(false)
+			return
+		}
+
+		// Store guest emails in localStorage to pass to checkout form
+		if (filledGuestEmails.length > 0) {
+			localStorage.setItem("eventGuestEmails", JSON.stringify(filledGuestEmails))
+		} else {
+			localStorage.removeItem("eventGuestEmails")
+		}
 
 		dispatcher(setSelectedTickets(ticketsSelected))
 
@@ -198,6 +256,49 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 									</div>
 								))}
 							</div>
+
+							{/* Guest Invitation Section */}
+							{totalSelectedQuantity > 1 && (
+								<div className="mt-6 pt-6 border-t border-border-light">
+									<div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-5 border-2 border-blue-200">
+										<div className="flex items-start gap-3 mb-4">
+											<div className="bg-blue-100 p-2 rounded-lg">
+												<FiUser className="w-5 h-5 text-blue-600" />
+											</div>
+											<div className="flex-1">
+												<h3 className="font-bold text-lg text-text-primary mb-1">
+													👥 Invite Your Guests
+												</h3>
+												<p className="text-sm text-text-secondary">
+													You've selected <strong className="text-primary-purple">{totalSelectedQuantity} ticket{totalSelectedQuantity > 1 ? 's' : ''}</strong>. 
+													You can invite <strong className="text-primary-purple">{guestSlots} guest{guestSlots !== 1 ? 's' : ''}</strong> to join you at this event.
+												</p>
+												<p className="text-xs text-text-muted mt-2">
+													💡 Your guests will receive an invitation email with event details. This is optional - you can skip if you prefer.
+												</p>
+											</div>
+										</div>
+
+										{guestSlots > 0 && (
+											<div className="space-y-3 mt-4">
+												{guestEmails.slice(0, guestSlots).map((email: string, index: number) => (
+													<div key={index} className="flex items-center gap-2">
+														<div className="flex-1">
+															<input
+																type="email"
+																placeholder={`Guest ${index + 1} email address (optional)`}
+																value={email}
+																onChange={(e) => handleGuestEmailChange(index, e.target.value)}
+																className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+															/>
+														</div>
+													</div>
+												))}
+											</div>
+										)}
+									</div>
+								</div>
+							)}
 						</div>
 
 						{/* Modal Footer - Sticky */}
@@ -225,7 +326,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 										label: event.name,
 									})
 								}}
-								className="w-full sm:w-auto bg-primary-purple text-white font-semibold px-8 py-3.5 rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+								className="relative w-full sm:w-auto bg-gradient-to-r from-primary-purple via-purple-600 to-primary-dark text-white font-extrabold px-10 py-4 rounded-xl hover:from-purple-600 hover:via-purple-700 hover:to-primary-dark transition-all duration-300 shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 text-lg"
+								style={{
+									animation: isLoading ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+								}}
 							>
 								{isLoading ? (
 									<>
@@ -233,7 +337,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 										<span>Processing...</span>
 									</>
 								) : (
-									"Checkout"
+									<>
+										<span className="text-xl">🎫</span>
+										<span>Proceed to Checkout</span>
+										<span className="absolute -top-2 -right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full animate-bounce">
+											⚡
+										</span>
+									</>
 								)}
 							</button>
 						</div>
