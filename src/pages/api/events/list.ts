@@ -11,6 +11,7 @@ const validationSchema = z.object({
 	limit: z.number().int().positive().optional(),
 	page: z.number().int().positive().optional(),
 	locFilter: z.string().optional(),
+	interestFilter: z.string().optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -26,18 +27,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
 			page: req.query.page ? parseInt(req.query.page as string) : undefined,
 			locFilter: req.query.locFilter ? (req.query.locFilter as string) : undefined,
+			interestFilter: req.query.interestFilter ? (req.query.interestFilter as string) : undefined,
 		})
 		if (!validation.success) {
 			return sendResponse(res, null, "Invalid query parameters", false, ResCode.BAD_REQUEST)
 		}
 
-		const { limit = 10, page = 1, locFilter = "" } = validation.data
+		const { limit = 10, page = 1, locFilter = "", interestFilter = "" } = validation.data
 
 		// calculate the skip value
 		const skip = (page - 1) * limit
 
 		// Define the query based on authentication status and role
-		let query: any = { isDeleted: false, location: { $regex: locFilter, $options: "i" } };
+		let query: any = { isDeleted: false };
+		
+		// Location filter
+		if (locFilter) {
+			query.location = { $regex: locFilter, $options: "i" };
+		}
+		
+		// Interest filter
+		if (interestFilter && interestFilter !== "All") {
+			query.interest = interestFilter;
+		}
 		
 		// If user is not admin or super admin, only show public events
 		if (!isAdmin) {

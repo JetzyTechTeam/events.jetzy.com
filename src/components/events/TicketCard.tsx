@@ -83,7 +83,7 @@ const TicketCard: React.FC<TicketCardProps> = ({ onDelete, onSave, initialData }
 
       <div>
         <label htmlFor="ticket-description" className="block font-bold mb-1">
-          Description
+          Description (Optional)
         </label>
         <textarea
           id="ticket-description"

@@ -8,7 +8,7 @@ import zod from "zod"
 
 const schema = zod.object({
 	title: zod.string().nonempty(),
-	description: zod.string().nonempty(),
+	description: zod.string().optional(),
 })
 
 // create stripe instance
@@ -33,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			{
 				$set: {
 					"tickets.$.name": data.data.title,
-					"tickets.$.desc": data.data.description,
+					"tickets.$.desc": data.data.description || "",
 				},
 			},
 			{ new: true },

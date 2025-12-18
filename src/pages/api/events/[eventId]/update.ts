@@ -39,7 +39,7 @@ const schema = zod.object({
 			id: zod.string().nonempty(),
 			title: zod.string().nonempty(),
 			price: zod.number().nonnegative(),
-			description: zod.string().nonempty(),
+			description: zod.string().optional(),
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -68,7 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy } = params
+		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy, interest, subInterest, host } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1]
@@ -115,13 +115,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					requireApproval,
 					tickets: tickets.map((ticket, index) => ({
 						name: ticket.title,
-						desc: ticket.description,
+						desc: ticket.description || "",
 						price: ticket.price.toFixed(2),
 						stripeProductId: stripeProducts[index].id,
 					})),
 					images: images.map((image) => image.file),
 					timezone: timezone,
-					privacy
+					privacy,
+					interest: interest || undefined,
+					subInterest: subInterest || undefined,
+					host: host && host.name?.trim() ? host : undefined,
 				},
 			},
 			{ new: true },

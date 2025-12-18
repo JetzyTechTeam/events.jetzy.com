@@ -107,10 +107,27 @@ type EventListProps = {
 const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	const router = useRouter()
 	const [selectedLocation, setSelectedLocation] = useState("New York, NY")
-	const [activeCategory, setActiveCategory] = useState("All")
+	
+	// Get active category from query params or default to "All"
+	const activeCategory = (router.query.interestFilter as string) || "All"
 
 	const handleEventClick = (event: IEvent): void => {
 		router.push(ROUTES.eventDetails.replace("[slug]", event.slug))
+	}
+
+	const handleCategoryChange = (category: string) => {
+		const newQuery = { ...router.query }
+		if (category === "All") {
+			delete newQuery.interestFilter
+		} else {
+			newQuery.interestFilter = category
+		}
+		// Reset to page 1 when changing filter
+		delete newQuery.page
+		router.push({
+			pathname: router.pathname,
+			query: newQuery,
+		}, undefined, { shallow: false })
 	}
 
 	return (
@@ -154,7 +171,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 						<h3 className="font-semibold text-lg text-[#1C1E21] mb-2">Categories</h3>
 						<div className="space-y-1">
 							<button 
-								onClick={() => setActiveCategory("All")}
+								onClick={() => handleCategoryChange("All")}
 								className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors ${activeCategory === 'All' ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-200'}`}
 							>
 								<div className={`w-9 h-9 rounded-full flex items-center justify-center ${activeCategory === 'All' ? 'bg-blue-100' : 'bg-gray-200'}`}>
@@ -165,7 +182,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 							{categories.map((category) => (
 								<button 
 									key={category.name}
-									onClick={() => setActiveCategory(category.name)}
+									onClick={() => handleCategoryChange(category.name)}
 									className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors ${activeCategory === category.name ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-200'}`}
 								>
 									<div className={`w-9 h-9 rounded-full flex items-center justify-center ${activeCategory === category.name ? 'bg-blue-100' : 'bg-gray-200'}`}>

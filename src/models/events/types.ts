@@ -39,6 +39,14 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	interest?: string;
+	subInterest?: string;
+	host?: {
+		name: string;
+		image?: string;
+		phone?: string;
+		email?: string;
+	};
 	eventUsersCreated?: boolean;
 	eventGroupCreated?: boolean;
 	createdBy?: Types.ObjectId;
@@ -70,6 +78,8 @@ export interface IBookings extends IBaseModelProps {
 	subTotal: number
 	tax: number
 	total: number
+	qrCodeToken?: string
+	qrCodeImageUrl?: string
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }

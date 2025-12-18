@@ -39,6 +39,7 @@ import type { DiscussionPostWithAuthor } from "@/types/discussion"
 import CreateDiscussionModal from "./CreateDiscussionModal"
 import DiscussionPostView from "./DiscussionPostView"
 import { useRouter } from "next/router"
+import LoginModal from "@/components/misc/LoginModal"
 
 interface DiscussionBoardProps {
 	eventId: string
@@ -287,7 +288,7 @@ const FeedPostCard = ({
 												style={{ objectFit: "cover" }}
 											/>
 										)}
-										{idx === 3 && post.images && post.images.length > 4 && (
+										{idx === 3 && post.images.length > 4 && (
 											<Flex 
 												position="absolute" 
 												top={0} 
@@ -362,6 +363,16 @@ const FeedPostCard = ({
 						_hover={{ bg: "#F0F2F5" }}
 						onClick={(e) => {
 							e.stopPropagation()
+							if (!session || !session.user) {
+								toast({
+									title: "Please login or signup first",
+									description: "You need to be logged in to view post details and comment.",
+									status: "warning",
+									duration: 3000,
+									isClosable: true,
+								})
+								return
+							}
 							onClick(post._id)
 						}}
 					>
@@ -391,6 +402,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const { isOpen, onOpen, onClose } = useDisclosure()
 	const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
 	const [openInEditMode, setOpenInEditMode] = useState(false)
+	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
 
 	const [sortBy, setSortBy] = useState<string>("recent")
 	const [searchQuery, setSearchQuery] = useState("")
@@ -417,25 +429,10 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 		enabled: !!eventId,
 	})
 
-	// Check if user has purchased a ticket
-	const { data: ticketCheck } = useQuery({
-		queryKey: ["checkTicket", eventId],
-		queryFn: async () => {
-			const response = await CheckEventTicketApi({ data: { eventId } })
-			return response.data
-		},
-		enabled: !!eventId && !!session,
-	})
-
 	const posts = discussionData?.data?.posts || []
 	const pagination = discussionData?.data?.pagination
-	const hasTicket = ticketCheck?.hasTicket || false
-	const isAuthenticated = ticketCheck?.isAuthenticated ?? (!!session)
-	// @ts-ignore
-	const userRole = session?.user?.role
-	const isAdmin = userRole === "admin" || userRole === "super admin"
-	// Super admin and admin can bypass ticket requirement
-	const canPost = hasTicket || isAdmin
+	// Check if user is logged in (ticket requirement removed)
+	const canPost = !!session && !!session.user
 
 	const handlePostClick = (postId: string, editMode: boolean = false) => {
 		setSelectedPostId(postId)
@@ -453,23 +450,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 
 	const handleCreatePostClick = () => {
 		if (!session || !session.user) {
-			toast({
-				title: "Please login or signup first",
-				description: "You need to be logged in to create a post.",
-				status: "warning",
-				duration: 3000,
-				isClosable: true,
-			})
-			return
-		}
-		if (!canPost) {
-			toast({
-				title: "Please buy a ticket first",
-				description: "You need to purchase a ticket to create posts and participate in discussions.",
-				status: "warning",
-				duration: 4000,
-				isClosable: true,
-			})
+			setIsLoginModalOpen(true)
 			return
 		}
 		onOpen()
@@ -480,46 +461,48 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 			{/* Header with Create Post */}
 			<Box maxW="680px" mx="auto" mb={6}>
 				
-				{/* Facebook-style Create Post Input */}
-				{session && (
-					<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4}>
-						<Flex gap={3} align="center">
-							<Avatar 
-								size="md" 
-								name={session.user?.name || "User"} 
-								src={session.user?.image || ""} 
-							/>
-							<Button
-								flex="1"
-								bg="#F0F2F5"
-								color="#65676B"
-								borderRadius="full"
-								justifyContent="flex-start"
-								pl={4}
-								h="40px"
-								_hover={{ bg: "#E4E6EB" }}
-								onClick={handleCreatePostClick}
-								fontWeight="normal"
-								fontSize="md"
-							>
-								What&apos;s on your mind, {session.user?.name?.split(' ')[0]}?
-							</Button>
-						</Flex>
-						<Divider my={3} />
-						<Flex justify="space-between" px={2}>
-							<Button 
-								flex="1" 
-								variant="ghost" 
-								leftIcon={<Icon as={FiPlus} color="#E41E3F" boxSize={6} />}
-								color="#65676B"
-								_hover={{ bg: "#F0F2F5" }}
-								onClick={handleCreatePostClick}
-							>
-								Create Post
-							</Button>
-						</Flex>
-					</Box>
-				)}
+				{/* Facebook-style Create Post Input - Always visible */}
+				<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4}>
+					{session && session.user ? (
+						<>
+							<Flex gap={3} align="center">
+								<Avatar 
+									size="md" 
+									name={session.user?.name || "User"} 
+									src={session.user?.image || ""} 
+								/>
+								<Button
+									flex="1"
+									bg="#F0F2F5"
+									color="#65676B"
+									borderRadius="full"
+									justifyContent="flex-start"
+									pl={4}
+									h="40px"
+									_hover={{ bg: "#E4E6EB" }}
+									onClick={handleCreatePostClick}
+									fontWeight="normal"
+									fontSize="md"
+								>
+									What's on your mind, {session.user?.name?.split(' ')[0]}?
+								</Button>
+							</Flex>
+							<Divider my={3} />
+						</>
+					) : null}
+					<Flex justify="space-between" px={2}>
+						<Button 
+							flex="1" 
+							variant="ghost" 
+							leftIcon={<Icon as={FiPlus} color="#E41E3F" boxSize={6} />}
+							color="#65676B"
+							_hover={{ bg: "#F0F2F5" }}
+							onClick={handleCreatePostClick}
+						>
+							Create Post
+						</Button>
+					</Flex>
+				</Box>
 
 				{/* Search and Sort */}
 				<Box bg="white" borderRadius="lg" boxShadow="sm" p={3} mb={4}>
@@ -645,6 +628,12 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 					</ModalBody>
 				</ModalContent>
 			</Modal>
+
+			{/* Login Modal */}
+			<LoginModal
+				isOpen={isLoginModalOpen}
+				onClose={() => setIsLoginModalOpen(false)}
+			/>
 		</Box>
 	)
 }

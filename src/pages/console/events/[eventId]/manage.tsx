@@ -33,14 +33,6 @@ import { EventBookings } from "@/components/HostedEvents"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
 import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge, AvatarGroup } from "@chakra-ui/react"
 
-// Hardcoded placeholder guests - shown when no featuredGuests in database
-const defaultFeaturedGuests = [
-	{ name: "Abhi", title: "Product Manager", image: null },
-	{ name: "Kanshima", title: "Marketing Lead", image: null },
-	{ name: "Michael", title: "Community Manager", image: null },
-	{ name: "Richard", title: "Tech Lead", image: null },
-]
-
 // Hardcoded presenter - shown when no presentedBy in database
 const defaultPresenter = { name: "Jetzy Community", logo: null }
 
@@ -303,56 +295,37 @@ export default function Manage({ event }: any) {
 									<Text fontSize="md" color="#1C1E21" whiteSpace="pre-wrap" lineHeight="1.6">
 										{eventData.desc || "No description provided."}
 									</Text>
-								</Box>
-							)}
 
-							{activeTab === "about" && (
-								<Box bg="white" borderRadius="lg" boxShadow="sm" p={6} mb={4}>
-									<Text fontSize="2xl" fontWeight="bold" mb={6} color="#1C1E21">Featured Guests</Text>
-									<Box 
-										display="grid" 
-										gridTemplateColumns={{ base: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }} 
-										gap={6}
-									>
-										{(eventData.featuredGuests && eventData.featuredGuests.length > 0 
-											? eventData.featuredGuests 
-											: defaultFeaturedGuests
-										).map((guest: any, index: number) => (
-											<Flex key={index} direction="column" align="center" textAlign="center">
-												{guest.image ? (
-													<Avatar 
-														name={guest.name} 
-														src={guest.image} 
-														size="2xl"
-														mb={3}
-													/>
+									{/* Host Information */}
+									{eventData.host && eventData.host.name && (
+										<Box mt={6} pt={6} borderTop="1px" borderColor="gray.200">
+											<Text fontSize="lg" fontWeight="semibold" color="#1C1E21" mb={4}>Host Information</Text>
+											<Flex align="center" gap={4}>
+												{eventData.host.image ? (
+													<Avatar src={eventData.host.image} name={eventData.host.name} size="md" />
 												) : (
-													<Box 
-														w="80px" 
-														h="80px" 
-														borderRadius="full" 
-														bgGradient="linear(to-br, purple.400, purple.600)"
-														display="flex"
-														alignItems="center"
-														justifyContent="center"
-														color="white"
-														fontSize="2xl"
-														fontWeight="bold"
-														mb={3}
-														boxShadow="md"
-													>
-														{guest.name.charAt(0)}
-													</Box>
+													<Avatar name={eventData.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
 												)}
-												<Text fontWeight="bold" fontSize="md" color="#1C1E21" mb={1}>
-													{guest.name}
-												</Text>
-												<Text fontSize="sm" color="gray.600">
-													{guest.title}
-												</Text>
+												<Box>
+													<Text fontSize="md" fontWeight="semibold" color="#1C1E21">{eventData.host.name}</Text>
+													{eventData.host.email && (
+														<Text fontSize="sm" color="#65676B" mt={1}>
+															<a href={`mailto:${eventData.host.email}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+																{eventData.host.email}
+															</a>
+														</Text>
+													)}
+													{eventData.host.phone && (
+														<Text fontSize="sm" color="#65676B" mt={1}>
+															<a href={`tel:${eventData.host.phone}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+																{eventData.host.phone}
+															</a>
+														</Text>
+													)}
+												</Box>
 											</Flex>
-										))}
-									</Box>
+										</Box>
+									)}
 								</Box>
 							)}
 

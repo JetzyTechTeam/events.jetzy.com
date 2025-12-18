@@ -16,7 +16,7 @@ const eventTciketsSchema = new Schema<IEventTicket>(
 		},
 		desc: {
 			type: String,
-			required: true,
+			required: false,
 		},
 		stripeProductId: {
 			type: String,
@@ -124,6 +124,27 @@ const eventsSchema = new Schema<IEvent>(
 		showParticipants: {
 			type: Boolean,
 			default: true,
+		},
+
+		interest: {
+			type: String,
+			required: false,
+			index: true,
+		},
+
+		subInterest: {
+			type: String,
+			required: false,
+		},
+
+		host: {
+			type: {
+				name: { type: String, required: true },
+				image: { type: String, required: false },
+				phone: { type: String, required: false },
+				email: { type: String, required: false },
+			},
+			required: false,
 		},
 
 		featuredGuests: {

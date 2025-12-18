@@ -64,7 +64,25 @@ const initialValues = {
 	timezone: "",
 	capacity: 0,
 	privacy: "public",
+	interest: "",
+	subInterest: "",
+	host: {
+		name: "",
+		image: "",
+		phone: "",
+		email: "",
+	},
 }
+
+// Available interests/categories
+const INTERESTS = [
+	"Dining",
+	"Nightlife",
+	"Lifestyle",
+	"Travels",
+	"Entertainment",
+	"Activities",
+]
 
 const createEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
@@ -149,6 +167,11 @@ const CreateEventPage = () => {
 
 		if (values.tickets.length > 0) values.isPaid = true
 		else values.isPaid = false
+
+		// Clean up host object - if all fields are empty, set to undefined
+		if (values.host && (!values.host.name?.trim() && !values.host.email?.trim() && !values.host.phone?.trim() && !values.host.image?.trim())) {
+			values.host = undefined
+		}
 
 		setIsSubmitting(true)
 
@@ -288,11 +311,83 @@ const CreateEventPage = () => {
 										color="#1F2937"
 										fontSize="md"
 										rows={4}
+										value={values.desc && values.desc !== "undefined" ? values.desc : ""}
 										_hover={{ borderColor: "#D1D5DB" }}
 										_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
 										_placeholder={{ color: "#9CA3AF" }}
 									/>
 								</FormControl>
+
+								{/* Host Information */}
+								<Box mb={6}>
+									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={3}>
+										Host Information (Optional)
+									</FormLabel>
+									<Box bg="#F9FAFB" p={4} borderRadius="md" border="1px" borderColor="#E5E7EB">
+										<FormControl mb={3}>
+											<FormLabel fontSize="xs" color="#6B7280" mb={1}>
+												Host Name
+											</FormLabel>
+											<Input
+												placeholder="Enter host name"
+												value={values.host?.name || ""}
+												onChange={(e) => setFieldValue("host", { ...values.host, name: e.target.value })}
+												bg="#FFFFFF"
+												border="1px"
+												borderColor="#E5E7EB"
+												_hover={{ borderColor: "#D1D5DB" }}
+												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+											/>
+										</FormControl>
+										<FormControl mb={3}>
+											<FormLabel fontSize="xs" color="#6B7280" mb={1}>
+												Host Email
+											</FormLabel>
+											<Input
+												type="email"
+												placeholder="host@example.com"
+												value={values.host?.email || ""}
+												onChange={(e) => setFieldValue("host", { ...values.host, email: e.target.value })}
+												bg="#FFFFFF"
+												border="1px"
+												borderColor="#E5E7EB"
+												_hover={{ borderColor: "#D1D5DB" }}
+												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+											/>
+										</FormControl>
+										<FormControl mb={3}>
+											<FormLabel fontSize="xs" color="#6B7280" mb={1}>
+												Host Phone
+											</FormLabel>
+											<Input
+												type="tel"
+												placeholder="+1 (555) 123-4567"
+												value={values.host?.phone || ""}
+												onChange={(e) => setFieldValue("host", { ...values.host, phone: e.target.value })}
+												bg="#FFFFFF"
+												border="1px"
+												borderColor="#E5E7EB"
+												_hover={{ borderColor: "#D1D5DB" }}
+												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+											/>
+										</FormControl>
+										<FormControl>
+											<FormLabel fontSize="xs" color="#6B7280" mb={1}>
+												Host Image URL
+											</FormLabel>
+											<Input
+												placeholder="https://example.com/image.jpg"
+												value={values.host?.image || ""}
+												onChange={(e) => setFieldValue("host", { ...values.host, image: e.target.value })}
+												bg="#FFFFFF"
+												border="1px"
+												borderColor="#E5E7EB"
+												_hover={{ borderColor: "#D1D5DB" }}
+												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+											/>
+										</FormControl>
+									</Box>
+								</Box>
 
 								{/* Date and Time */}
 								<Box mb={6}>
@@ -443,6 +538,28 @@ const CreateEventPage = () => {
 										</Box>
 										<Box flex="1">
 											<Text fontSize="xs" color="#6B7280" mb={2}>
+												Interest / Category
+											</Text>
+											<Field
+												as={Select}
+												name="interest"
+												bg="#FFFFFF"
+												border="1px"
+												borderColor="#E5E7EB"
+												color="#1F2937"
+												fontSize="sm"
+												value={values?.interest || ""}
+												_hover={{ borderColor: "#D1D5DB" }}
+												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+											>
+												<option value="">None (Optional)</option>
+												{INTERESTS.map((interest) => (
+													<option key={interest} value={interest}>{interest}</option>
+												))}
+											</Field>
+										</Box>
+										<Box flex="1">
+											<Text fontSize="xs" color="#6B7280" mb={2}>
 												Capacity
 											</Text>
 											<Field
@@ -586,7 +703,7 @@ const CreateEventPage = () => {
 													/>
 												</FormControl>
 												<FormControl mb={4}>
-													<FormLabel color="#1F2937">Description</FormLabel>
+													<FormLabel color="#1F2937">Description (Optional)</FormLabel>
 													<Textarea
 														id="ticketDescription"
 														name="ticketDescription"
