@@ -295,9 +295,10 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			return
 		}
 
-		if (!content.trim()) {
+		// Allow posting if there's content, images, feeling, or activity
+		if (!content.trim() && images.length === 0 && !feeling && !activity) {
 			toast({
-				description: "Please enter some content for your post",
+				description: "Please enter some content, add images, or select a feeling/activity for your post",
 				status: "warning",
 				duration: 3000,
 				isClosable: true,
@@ -377,6 +378,12 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 								resize="none"
 								p={1}
 								_placeholder={{ color: "#65676B" }}
+								onKeyDown={(e) => {
+									if (e.key === 'Enter' && !e.shiftKey) {
+										e.preventDefault()
+										handleSubmit()
+									}
+								}}
 							/>
 						</Box>
 
