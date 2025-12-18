@@ -225,7 +225,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 										label: event.name,
 									})
 								}}
-								className="w-full sm:w-auto bg-primary-purple text-white font-semibold px-8 py-3.5 rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+								className="relative w-full sm:w-auto bg-gradient-to-r from-primary-purple via-purple-600 to-primary-dark text-white font-extrabold px-10 py-4 rounded-xl hover:from-purple-600 hover:via-purple-700 hover:to-primary-dark transition-all duration-300 shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 text-lg"
+								style={{
+									animation: isLoading ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+								}}
 							>
 								{isLoading ? (
 									<>
@@ -233,7 +236,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 										<span>Processing...</span>
 									</>
 								) : (
-									"Checkout"
+									<>
+										<span className="text-xl">🎫</span>
+										<span>Proceed to Checkout</span>
+										<span className="absolute -top-2 -right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full animate-bounce">
+											⚡
+										</span>
+									</>
 								)}
 							</button>
 						</div>

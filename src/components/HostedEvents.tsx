@@ -192,12 +192,22 @@ export default function HostedEvents({ event }: Props) {
 								<button 
 									onClick={() => setIsTicketModalOpen(true)}
 									disabled={hasEventEnded}
-									className={`px-8 py-3 rounded-lg font-bold text-base text-white transition-colors shadow-md flex items-center gap-2 ${
-										hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+									className={`relative px-10 py-4 rounded-xl font-bold text-lg text-white transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${
+										hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 animate-pulse"
 									}`}
+									style={{
+										animation: hasEventEnded ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+									}}
 								>
-									<TicketIcon className="w-6 h-6" />
-									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+									<TicketIcon className="w-7 h-7" />
+									<span className="font-extrabold text-xl">
+										{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+									</span>
+									{!hasEventEnded && (
+										<span className="absolute -top-2 -right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full animate-bounce">
+											🎟️
+										</span>
+									)}
 								</button>
 								
 								<button 
@@ -267,21 +277,37 @@ export default function HostedEvents({ event }: Props) {
 					</div>
 
 					{/* Sticky Ticket Card (Desktop) */}
-					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200 sticky top-20">
+					<div className="bg-white rounded-lg shadow-lg p-6 border-2 border-blue-200 sticky top-20 transform transition-all duration-300 hover:shadow-2xl">
 						<div className="text-center">
-							<p className="text-gray-500 text-sm mb-2">Tickets starting from</p>
-							<p className="text-3xl font-bold text-[#1C1E21] mb-4">
+							<p className="text-gray-500 text-sm mb-2 font-semibold">Tickets starting from</p>
+							<p className="text-4xl font-extrabold text-[#1C1E21] mb-6">
 								{clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map(t => t.price))}` : 'Free'}
 							</p>
 							<button 
 								onClick={() => setIsTicketModalOpen(true)}
 								disabled={hasEventEnded}
-								className={`w-full py-4 px-6 rounded-lg font-bold text-lg text-white transition-colors ${
-									hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 shadow-md"
+								className={`relative w-full py-5 px-6 rounded-xl font-extrabold text-xl text-white transition-all duration-300 shadow-xl hover:shadow-2xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${
+									hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900"
 								}`}
+								style={{
+									animation: hasEventEnded ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+								}}
 							>
-								{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets")}
+								<TicketIcon className="w-8 h-8" />
+								<span>
+									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets Now")}
+								</span>
+								{!hasEventEnded && (
+									<span className="absolute -top-3 -right-3 bg-yellow-400 text-yellow-900 text-sm font-bold px-3 py-1.5 rounded-full animate-bounce shadow-lg">
+										🎟️
+									</span>
+								)}
 							</button>
+							{!hasEventEnded && (
+								<p className="text-xs text-gray-500 mt-3 font-medium">
+									⚡ Limited availability - Secure your spot!
+								</p>
+							)}
 						</div>
 					</div>
 
