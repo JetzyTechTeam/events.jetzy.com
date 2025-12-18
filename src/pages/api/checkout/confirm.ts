@@ -1,11 +1,20 @@
-import { sendTicketConfirmation } from "@/lib/send-grid"
+import { sendTicketConfirmation, sendEventInvitation } from "@/lib/send-grid"
 import { uniqueId } from "@/lib/utils"
+import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
 import { Users } from "@/models/userModal"
+import { EventInvitation } from "@/models/events/event-invitations"
+import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
+import mongoose from "mongoose"
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
@@ -16,6 +25,7 @@ type SessionMetadata = {
 	email: string
 	phone: string
 	tickets: string // JSON stringified array of ticket objects
+	guestEmails?: string // JSON stringified array of guest emails
 }
 
 type TicketsProps = Array<{
@@ -74,8 +84,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// get the session metadata
 		const metadata = session.metadata as SessionMetadata
 
+		if (!metadata || !metadata.tickets) {
+			console.error("[checkout/confirm] Missing metadata or tickets in session")
+			return res.status(400).json({ message: "Invalid session metadata" })
+		}
+
 		// get the tickets from the metadata
-		const tickets = JSON.parse(metadata.tickets) as TicketsProps
+		let tickets: TicketsProps
+		try {
+			tickets = JSON.parse(metadata.tickets) as TicketsProps
+		} catch (parseError: any) {
+			console.error("[checkout/confirm] Error parsing tickets from metadata:", parseError)
+			return res.status(400).json({ message: "Invalid tickets data in session" })
+		}
+		
+		// get guest emails from metadata if available
+		let guestEmails: string[] = []
+		if (metadata.guestEmails) {
+			try {
+				guestEmails = JSON.parse(metadata.guestEmails) as string[]
+			} catch (e) {
+				console.error("[checkout/confirm] Error parsing guest emails:", e)
+			}
+		}
 
 		// Create a booking record if the payment was successful
 		if (session.payment_status === "paid") {
@@ -95,6 +126,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				total: session.amount_total ? session.amount_total / 100 : 0,
 			})
 			console.log("[checkout/confirm] Booking created:", booking.bookingRef)
+
+			// Generate QR code for the booking
+			let qrCodeToken: string | undefined
+			let qrCodeImageUrl: string | undefined
+			try {
+				console.log("[checkout/confirm] Generating QR code for booking...")
+				console.log("[checkout/confirm] Booking ID:", booking._id.toString())
+				console.log("[checkout/confirm] Event ID:", metadata.eventId)
+				
+				// Determine base URL for QR code
+				// NEXT_PUBLIC_URL must be set in environment
+				if (!process.env.NEXT_PUBLIC_URL) {
+					console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping QR code generation")
+					throw new Error("NEXT_PUBLIC_URL environment variable is required for QR code generation")
+				}
+				const baseUrl = process.env.NEXT_PUBLIC_URL
+				
+				console.log("[checkout/confirm] Using base URL for QR code:", baseUrl)
+				
+				const qrCode = await generateQRCodeForBooking(
+					booking._id.toString(),
+					metadata.eventId,
+					baseUrl
+				)
+				qrCodeToken = qrCode.token
+				qrCodeImageUrl = qrCode.imageUrl
+				
+				console.log("[checkout/confirm] QR code token generated:", qrCodeToken?.substring(0, 50) + '...')
+				console.log("[checkout/confirm] QR code image URL length:", qrCodeImageUrl?.length)
+				console.log("[checkout/confirm] QR code image URL starts with:", qrCodeImageUrl?.substring(0, 50))
+				
+				// Update booking with QR code data
+				booking.qrCodeToken = qrCodeToken
+				booking.qrCodeImageUrl = qrCodeImageUrl
+				await booking.save()
+				
+				// Verify the QR code was saved
+				const savedBooking = await Bookings.findById(booking._id)
+				console.log("[checkout/confirm] QR code token saved to DB:", savedBooking?.qrCodeToken ? savedBooking.qrCodeToken.substring(0, 50) + '...' : 'NOT SAVED')
+				console.log("[checkout/confirm] QR code image URL saved to DB:", savedBooking?.qrCodeImageUrl ? 'YES (length: ' + savedBooking.qrCodeImageUrl.length + ')' : 'NOT SAVED')
+				
+				console.log("[checkout/confirm] QR code generated and saved to booking successfully")
+			} catch (qrError: any) {
+				console.error("[checkout/confirm] Failed to generate QR code:", qrError.message)
+				console.error("[checkout/confirm] QR code error stack:", qrError.stack)
+				console.error("[checkout/confirm] QR code error details:", JSON.stringify(qrError, Object.getOwnPropertyNames(qrError)))
+				// Continue without QR code - don't fail the booking
+				// QR code is optional, booking should still be created
+			}
 
 			// update the event tracker
 			console.log("[checkout/confirm] Updating event tracker...")
@@ -141,9 +221,132 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Continue with email sending even if user check fails
 			}
 
+			// Save guest emails to EventInvitation collection and send invitation emails
+			if (guestEmails.length > 0) {
+				try {
+					console.log("[checkout/confirm] Processing guest emails:", guestEmails)
+					
+					// Format event date for invitation email
+					const eventTimezone = event.timezone?.split(') ')[1] || 'UTC'
+					const eventStart = dayjs.utc(event.startsOn).tz(eventTimezone)
+					const eventEnd = dayjs.utc(event.endsOn).tz(eventTimezone)
+					const eventDate = `${eventStart.format('ddd, MMM DD, YYYY')} at ${eventStart.format('h:mm A')} - ${eventEnd.format('h:mm A')} ${eventTimezone}`
+					
+					// Create EventInvitation records for each guest
+					const eventObjectId = new mongoose.Types.ObjectId(metadata.eventId)
+					
+					// Check which invitations already exist
+					const existingInvitations = await EventInvitation.find({
+						eventId: eventObjectId,
+						email: { $in: guestEmails.map((e: string) => e.toLowerCase().trim()) }
+					})
+					
+					const existingEmails = new Set(existingInvitations.map((inv: any) => inv.email.toLowerCase()))
+					
+					// Update existing invitations to include customerEmail if missing
+					const customerEmailLower = metadata.email.toLowerCase().trim()
+					for (const existingInv of existingInvitations) {
+						if (!existingInv.customerEmail || existingInv.customerEmail !== customerEmailLower) {
+							existingInv.customerEmail = customerEmailLower
+							await existingInv.save()
+							console.log(`[checkout/confirm] Updated customerEmail for existing invitation: ${existingInv.email}`)
+						}
+					}
+					
+					// Only create invitations for emails that don't already exist
+					const newInvitations = guestEmails
+						.filter((email: string) => !existingEmails.has(email.toLowerCase().trim()))
+						.map((email: string) => ({
+							eventId: eventObjectId,
+							email: email.toLowerCase().trim(),
+							customerEmail: customerEmailLower, // Link to the booking customer
+							status: "pending" as const,
+							invitedAt: new Date(),
+						}))
+					
+					// Insert new invitations
+					if (newInvitations.length > 0) {
+						try {
+							await EventInvitation.insertMany(newInvitations)
+							console.log(`[checkout/confirm] Created ${newInvitations.length} new event invitations`)
+						} catch (insertError: any) {
+							console.error("[checkout/confirm] Error creating invitations:", insertError.message || insertError)
+							// Try creating individually if bulk insert fails
+							for (const invitation of newInvitations) {
+								try {
+									await EventInvitation.create(invitation)
+									console.log(`[checkout/confirm] Created invitation for: ${invitation.email}`)
+								} catch (individualError: any) {
+									if (individualError.code !== 11000) { // Ignore duplicate key errors
+										console.error(`[checkout/confirm] Failed to create invitation for ${invitation.email}:`, individualError.message)
+									}
+								}
+							}
+						}
+					} else {
+						console.log("[checkout/confirm] All guest emails already have invitations")
+					}
+					
+					// Log total count and verify saved invitations
+					const totalInvitations = await EventInvitation.countDocuments({ eventId: eventObjectId })
+					const savedInvitations = await EventInvitation.find({ eventId: eventObjectId })
+					console.log(`[checkout/confirm] Total invitations for this event: ${totalInvitations}`)
+					console.log(`[checkout/confirm] Saved invitation emails:`, savedInvitations.map((inv: any) => inv.email))
+					
+					// Verify all guest emails are saved
+					const savedEmails = new Set(savedInvitations.map((inv: any) => inv.email.toLowerCase()))
+					const missingEmails = guestEmails.filter((email: string) => !savedEmails.has(email.toLowerCase().trim()))
+					if (missingEmails.length > 0) {
+						console.warn(`[checkout/confirm] WARNING: Some guest emails were not saved:`, missingEmails)
+					} else {
+						console.log(`[checkout/confirm] ✅ All ${guestEmails.length} guest emails are saved in database`)
+					}
+					
+					// Send invitation emails to guests
+					if (!process.env.NEXT_PUBLIC_URL) {
+						console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping guest invitation emails")
+					} else {
+						const hostName = `${metadata.firstName} ${metadata.lastName}`
+						const emailPromises = guestEmails.map(async (guestEmail: string) => {
+							try {
+								await sendEventInvitation({
+									email: guestEmail,
+									eventName: event.name,
+									eventSlug: event.slug,
+									eventDate,
+									eventLocation: event.location,
+									hostName,
+								})
+								console.log(`[checkout/confirm] Invitation email sent to: ${guestEmail}`)
+								return { email: guestEmail, success: true }
+							} catch (error: any) {
+								console.error(`[checkout/confirm] Failed to send invitation to ${guestEmail}:`, error.message)
+								return { email: guestEmail, success: false }
+							}
+						})
+						
+						const emailResults = await Promise.allSettled(emailPromises)
+						const successCount = emailResults.filter(
+							(r) => r.status === 'fulfilled' && r.value.success
+						).length
+						console.log(`[checkout/confirm] Sent ${successCount}/${guestEmails.length} invitation emails`)
+					}
+				} catch (guestError) {
+					console.error("[checkout/confirm] Error processing guest emails:", guestError)
+					// Don't fail the booking if guest processing fails
+				}
+			}
+
 			// send email to the customer
 			try {
-				console.log("Sending ticket confirmation email to:", metadata.email, "isNewUser:", isNewUser)
+				console.log("[checkout/confirm] Sending ticket confirmation email to:", metadata.email, "isNewUser:", isNewUser, "guestEmails:", guestEmails.length)
+				
+				// Check if NEXT_PUBLIC_URL is set before sending email
+				if (!process.env.NEXT_PUBLIC_URL) {
+					console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping email sending")
+					throw new Error("NEXT_PUBLIC_URL environment variable is required for sending emails")
+				}
+				
 				await sendTicketConfirmation({
 					event,
 					firstName: metadata.firstName,
@@ -158,10 +361,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					})),
 					orderNumber: `JZ-${session.client_reference_id}`,
 					isNewUser,
+					qrCodeImageUrl, // Pass QR code image to email
+					guestEmails, // Pass guest emails to email
 				})
-				console.log("Ticket confirmation email sent successfully")
-			} catch (emailError) {
-				console.error("Failed to send ticket confirmation email:", emailError)
+				console.log("[checkout/confirm] Ticket confirmation email sent successfully")
+			} catch (emailError: any) {
+				console.error("[checkout/confirm] Failed to send ticket confirmation email:", emailError.message || emailError)
+				console.error("[checkout/confirm] Email error details:", JSON.stringify(emailError, null, 2))
 				// Don't fail the request if email fails
 			}
 		}

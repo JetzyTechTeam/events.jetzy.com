@@ -4,6 +4,7 @@ import { Model, Schema } from "mongoose";
 interface IEventInvitations {
   eventId: Schema.Types.ObjectId;
   email: string;
+  customerEmail?: string; // Email of the customer who invited this guest
   status: "pending" | "accepted" | "declined";
   invitedAt: Date;
   acceptedAt?: Date;
@@ -24,6 +25,11 @@ const eventInvitationSchema = new Schema({
   email: {
     type: String,
     required: true,
+  },
+  customerEmail: {
+    type: String,
+    required: false,
+    index: true,
   },
   status: {
     type: String,

@@ -33,11 +33,17 @@ import {
 	Flex,
 	Heading,
 	SimpleGrid,
+	Tabs,
+	TabList,
+	TabPanels,
+	Tab,
+	TabPanel,
 } from "@chakra-ui/react"
 import { CheckCircleIcon, CloseIcon, SearchIcon } from "@chakra-ui/icons"
 import axios from "axios"
 import dayjs from "dayjs"
 import Tesseract from "tesseract.js"
+import { Html5Qrcode } from "html5-qrcode"
 
 interface BookingInfo {
 	bookingId: string
@@ -89,6 +95,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	const [error, setError] = useState("")
 	const [isCameraActive, setIsCameraActive] = useState(false)
 	const [isScanning, setIsScanning] = useState(false)
+	const [scanMode, setScanMode] = useState<"qr" | "ocr">("qr") // QR or OCR scanning
 	const [collectGuestDetails, setCollectGuestDetails] = useState(false)
 	const [guestDetails, setGuestDetails] = useState<GuestDetail[]>([])
 	const [guestList, setGuestList] = useState<EventGuest[]>([])
@@ -98,6 +105,8 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	const { isOpen, onOpen, onClose } = useDisclosure()
 	const videoRef = useRef<HTMLVideoElement>(null)
 	const canvasRef = useRef<HTMLCanvasElement>(null)
+	const qrCodeScannerRef = useRef<Html5Qrcode | null>(null)
+	const qrCodeReaderRef = useRef<HTMLDivElement>(null)
 
 	const fetchGuestList = useCallback(async () => {
 		setIsLoadingGuests(true)
@@ -293,6 +302,18 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	}
 
 	const startCamera = async () => {
+		onOpen()
+		setScanMode("qr") // Default to QR scanning
+		setIsCameraActive(false)
+		setIsScanning(false)
+
+		// Start QR scanner by default
+		setTimeout(() => {
+			startQRScanner()
+		}, 100)
+	}
+
+	const startVideoCamera = async () => {
 		try {
 			console.log("Requesting camera access...")
 
@@ -331,10 +352,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 			console.log("Camera settings:", settings)
 			console.log("Facing mode:", settings.facingMode || "unknown")
 
-			// Open modal first to ensure video element is in DOM
-			onOpen()
-
-			// Wait a bit for modal to render
+			// Wait a bit for modal to render (modal should already be open)
 			await new Promise((resolve) => setTimeout(resolve, 100))
 
 			if (videoRef.current) {
@@ -406,6 +424,20 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	}
 
 	const stopCamera = () => {
+		// Stop QR scanner if active
+		if (qrCodeScannerRef.current) {
+			qrCodeScannerRef.current
+				.stop()
+				.then(() => {
+					console.log("QR scanner stopped")
+					qrCodeScannerRef.current = null
+				})
+				.catch((err: any) => {
+					console.error("Error stopping QR scanner:", err)
+				})
+		}
+
+		// Stop video stream if active
 		if (videoRef.current && videoRef.current.srcObject) {
 			const stream = videoRef.current.srcObject as MediaStream
 			stream.getTracks().forEach((track) => track.stop())
@@ -413,6 +445,117 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		}
 		setIsCameraActive(false)
 		onClose()
+	}
+
+	// Start QR code scanner
+	const startQRScanner = async () => {
+		// Wait for modal to render
+		await new Promise((resolve) => setTimeout(resolve, 200))
+		
+		if (!qrCodeReaderRef.current) {
+			console.error("QR reader ref not available")
+			return
+		}
+
+		try {
+			// Clear any existing scanner
+			if (qrCodeScannerRef.current) {
+				try {
+					await qrCodeScannerRef.current.stop()
+				} catch (e) {
+					// Ignore stop errors
+				}
+				qrCodeScannerRef.current = null
+			}
+
+			const qrCode = new Html5Qrcode("qr-reader")
+			qrCodeScannerRef.current = qrCode
+
+			await qrCode.start(
+				{ facingMode: "environment" },
+				{
+					fps: 10,
+					qrbox: { width: 250, height: 250 },
+				},
+				(qrMessage: string) => {
+					// QR code detected
+					console.log("QR code detected:", qrMessage)
+					handleQRCodeDetected(qrMessage)
+				},
+				(errorMessage: string) => {
+					// Ignore scanning errors (they're frequent during scanning)
+					// Only log if it's not a "NotFoundException" (normal during scanning)
+					if (!errorMessage.includes("NotFoundException")) {
+						console.debug("QR scan error:", errorMessage)
+					}
+				}
+			)
+
+			setIsCameraActive(true)
+		} catch (err: any) {
+			console.error("QR scanner error:", err)
+			toast({
+				title: "QR Scanner Error",
+				description: err.message || "Failed to start QR scanner",
+				status: "error",
+				duration: 5000,
+			})
+		}
+	}
+
+	// Handle QR code detection
+	const handleQRCodeDetected = async (qrPayload: string) => {
+		if (isScanning) return // Prevent multiple simultaneous scans
+
+		setIsScanning(true)
+		stopCamera() // Stop scanner after detection
+
+		const scanningToast = toast({
+			title: "Verifying QR Code...",
+			description: "Processing ticket information",
+			status: "loading",
+			duration: null,
+			isClosable: false,
+		})
+
+		try {
+			// Verify QR code via API
+			const response = await axios.post("/api/check-in/verify-qr", {
+				qrPayload,
+				eventId,
+			})
+
+			toast.close(scanningToast)
+
+			if (response.data.status) {
+				const bookingData = response.data.data
+				// Use the validateBooking function to populate booking info
+				await validateBooking(bookingData.bookingRef || bookingData.customerEmail)
+				toast({
+					title: "QR Code Verified",
+					description: "Ticket information loaded successfully",
+					status: "success",
+					duration: 3000,
+				})
+			} else {
+				toast({
+					title: "Invalid QR Code",
+					description: response.data.message || "This QR code is not valid for this event",
+					status: "error",
+					duration: 5000,
+				})
+			}
+		} catch (err: any) {
+			toast.close(scanningToast)
+			toast({
+				title: "Verification Failed",
+				description: err.response?.data?.message || err.message || "Failed to verify QR code",
+				status: "error",
+				duration: 5000,
+			})
+		} finally {
+			setIsScanning(false)
+		}
 	}
 
 	const captureImage = async () => {
@@ -1101,107 +1244,178 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 								📸 Scan Ticket
 							</Text>
 							<Text fontSize="sm" fontWeight="normal" opacity={0.9}>
-								Position email address within camera view
+								Choose scanning method
 							</Text>
 						</VStack>
 					</ModalHeader>
 					<ModalCloseButton color="white" size="lg" _hover={{ bg: "whiteAlpha.200" }} borderRadius="full" />
 					<ModalBody display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={{ base: 4, md: 6 }} bg="#F9FAFB">
-						<VStack spacing={4} width="100%">
-							{/* Camera Status Indicator */}
-							{!isCameraActive && !isScanning && (
-								<Box p={4} bg="white" borderRadius="lg" border="2px solid #8B5CF6" width="100%" textAlign="center">
-									<Spinner size="lg" color="#8B5CF6" thickness="4px" mb={2} />
-									<Text color="#6B7280" fontWeight="medium">
-										Initializing camera...
-									</Text>
-								</Box>
-							)}
-
-							{/* Camera Preview */}
-							<Box position="relative" width="100%" bg="#1F2937" borderRadius="xl" border="4px solid #8B5CF6" overflow="hidden" boxShadow="2xl">
-								{!isCameraActive && (
-									<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2}>
-										<Spinner size="xl" color="#8B5CF6" thickness="4px" />
-									</Box>
-								)}
-
-								{/* Scanning Overlay */}
-								{isScanning && (
-									<Box position="absolute" top={0} left={0} right={0} bottom={0} bg="blackAlpha.700" zIndex={3} display="flex" alignItems="center" justifyContent="center">
-										<VStack spacing={4}>
-											<Spinner size="xl" color="white" thickness="4px" />
-											<Text color="white" fontSize="lg" fontWeight="bold">
-												Scanning image...
-											</Text>
-											<Text color="whiteAlpha.800" fontSize="sm">
-												Extracting email address
-											</Text>
-										</VStack>
-									</Box>
-								)}
-
-								{/* Scan Guide Overlay */}
-								{isCameraActive && !isScanning && (
-									<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2} pointerEvents="none">
-										<Box width="280px" height="100px" border="3px dashed rgba(139, 92, 246, 0.8)" borderRadius="lg" bg="blackAlpha.300" display="flex" alignItems="center" justifyContent="center">
-											<Text color="white" fontWeight="bold" fontSize="sm" textAlign="center" textShadow="0 2px 4px rgba(0,0,0,0.5)">
-												Position email here
-											</Text>
+						<Tabs
+							index={scanMode === "qr" ? 0 : 1}
+								onChange={(index) => {
+								const newMode = index === 0 ? "qr" : "ocr"
+								setScanMode(newMode)
+								stopCamera() // Stop current scanner
+								setTimeout(() => {
+									if (newMode === "qr") {
+										startQRScanner()
+									} else {
+										startVideoCamera()
+									}
+								}, 100)
+							}}
+							colorScheme="purple"
+							width="100%"
+						>
+							<TabList mb={4}>
+								<Tab>QR Code</Tab>
+								<Tab>OCR (Email)</Tab>
+							</TabList>
+							<TabPanels>
+								{/* QR Code Scanner Tab */}
+								<TabPanel p={0}>
+									<VStack spacing={4} width="100%">
+										{/* QR Scanner Container */}
+										<Box position="relative" width="100%" bg="#1F2937" borderRadius="xl" border="4px solid #8B5CF6" overflow="hidden" boxShadow="2xl" minH="400px">
+											{isScanning && (
+												<Box position="absolute" top={0} left={0} right={0} bottom={0} bg="blackAlpha.700" zIndex={3} display="flex" alignItems="center" justifyContent="center">
+													<VStack spacing={4}>
+														<Spinner size="xl" color="white" thickness="4px" />
+														<Text color="white" fontSize="lg" fontWeight="bold">
+															Verifying QR Code...
+														</Text>
+													</VStack>
+												</Box>
+											)}
+											<div
+												id="qr-reader"
+												ref={qrCodeReaderRef}
+												style={{
+													width: "100%",
+													minHeight: "400px",
+												}}
+											/>
 										</Box>
-									</Box>
-								)}
-
-								<video
-									ref={videoRef}
-									autoPlay
-									playsInline
-									muted
-									style={{
-										display: "block",
-										width: "100%",
-										height: "auto",
-										minHeight: "300px",
-										maxHeight: "500px",
-										objectFit: "cover",
-									}}
-								/>
-								<canvas ref={canvasRef} style={{ display: "none" }} />
-							</Box>
-
-							{/* Camera Status Info */}
-							{isCameraActive && !isScanning && (
-								<HStack p={3} bg="white" borderRadius="lg" width="100%" justify="center" border="1px solid #E5E7EB">
-									<Box w={3} h={3} borderRadius="full" bg="#10B981" />
-									<Text color="#059669" fontWeight="semibold" fontSize="sm">
-										Camera Active
-									</Text>
-									<Text color="#6B7280" fontSize="xs">
-										{videoRef.current?.videoWidth || 0} × {videoRef.current?.videoHeight || 0}
-									</Text>
-								</HStack>
-							)}
-
-							{/* Instructions */}
-							{!isScanning && (
-								<Box p={4} bg="white" borderRadius="lg" width="100%" border="1px solid #E5E7EB">
-									<Text fontSize="sm" fontWeight="semibold" color="#1F2937" mb={2}>
-										📋 Quick Tips:
-									</Text>
-									<VStack align="flex-start" spacing={1}>
-										<Text fontSize="xs" color="#6B7280">
-											• Hold ticket steady within the frame
-										</Text>
-										<Text fontSize="xs" color="#6B7280">
-											• Ensure good lighting for best results
-										</Text>
-										<Text fontSize="xs" color="#6B7280">
-											• Email will be auto-validated after scan
-										</Text>
+										{/* Instructions */}
+										<Box p={4} bg="white" borderRadius="lg" width="100%" border="1px solid #E5E7EB">
+											<Text fontSize="sm" fontWeight="semibold" color="#1F2937" mb={2}>
+												📋 QR Code Tips:
+											</Text>
+											<VStack align="flex-start" spacing={1}>
+												<Text fontSize="xs" color="#6B7280">
+													• Point camera at the QR code in the email
+												</Text>
+												<Text fontSize="xs" color="#6B7280">
+													• Ensure QR code is clearly visible
+												</Text>
+												<Text fontSize="xs" color="#6B7280">
+													• QR code will be automatically verified
+												</Text>
+											</VStack>
+										</Box>
 									</VStack>
-								</Box>
-							)}
-						</VStack>
+								</TabPanel>
+
+								{/* OCR Scanner Tab */}
+								<TabPanel p={0}>
+									<VStack spacing={4} width="100%">
+										{/* Camera Status Indicator */}
+										{!isCameraActive && !isScanning && (
+											<Box p={4} bg="white" borderRadius="lg" border="2px solid #8B5CF6" width="100%" textAlign="center">
+												<Spinner size="lg" color="#8B5CF6" thickness="4px" mb={2} />
+												<Text color="#6B7280" fontWeight="medium">
+													Initializing camera...
+												</Text>
+											</Box>
+										)}
+
+										{/* Camera Preview */}
+										<Box position="relative" width="100%" bg="#1F2937" borderRadius="xl" border="4px solid #8B5CF6" overflow="hidden" boxShadow="2xl">
+											{!isCameraActive && (
+												<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2}>
+													<Spinner size="xl" color="#8B5CF6" thickness="4px" />
+												</Box>
+											)}
+
+											{/* Scanning Overlay */}
+											{isScanning && (
+												<Box position="absolute" top={0} left={0} right={0} bottom={0} bg="blackAlpha.700" zIndex={3} display="flex" alignItems="center" justifyContent="center">
+													<VStack spacing={4}>
+														<Spinner size="xl" color="white" thickness="4px" />
+														<Text color="white" fontSize="lg" fontWeight="bold">
+															Scanning image...
+														</Text>
+														<Text color="whiteAlpha.800" fontSize="sm">
+															Extracting email address
+														</Text>
+													</VStack>
+												</Box>
+											)}
+
+											{/* Scan Guide Overlay */}
+											{isCameraActive && !isScanning && (
+												<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2} pointerEvents="none">
+													<Box width="280px" height="100px" border="3px dashed rgba(139, 92, 246, 0.8)" borderRadius="lg" bg="blackAlpha.300" display="flex" alignItems="center" justifyContent="center">
+														<Text color="white" fontWeight="bold" fontSize="sm" textAlign="center" textShadow="0 2px 4px rgba(0,0,0,0.5)">
+															Position email here
+														</Text>
+													</Box>
+												</Box>
+											)}
+
+											<video
+												ref={videoRef}
+												autoPlay
+												playsInline
+												muted
+												style={{
+													display: "block",
+													width: "100%",
+													height: "auto",
+													minHeight: "300px",
+													maxHeight: "500px",
+													objectFit: "cover",
+												}}
+											/>
+											<canvas ref={canvasRef} style={{ display: "none" }} />
+										</Box>
+
+										{/* Camera Status Info */}
+										{isCameraActive && !isScanning && (
+											<HStack p={3} bg="white" borderRadius="lg" width="100%" justify="center" border="1px solid #E5E7EB">
+												<Box w={3} h={3} borderRadius="full" bg="#10B981" />
+												<Text color="#059669" fontWeight="semibold" fontSize="sm">
+													Camera Active
+												</Text>
+												<Text color="#6B7280" fontSize="xs">
+													{videoRef.current?.videoWidth || 0} × {videoRef.current?.videoHeight || 0}
+												</Text>
+											</HStack>
+										)}
+
+										{/* Instructions */}
+										{!isScanning && (
+											<Box p={4} bg="white" borderRadius="lg" width="100%" border="1px solid #E5E7EB">
+												<Text fontSize="sm" fontWeight="semibold" color="#1F2937" mb={2}>
+													📋 Quick Tips:
+												</Text>
+												<VStack align="flex-start" spacing={1}>
+													<Text fontSize="xs" color="#6B7280">
+														• Hold ticket steady within the frame
+													</Text>
+													<Text fontSize="xs" color="#6B7280">
+														• Ensure good lighting for best results
+													</Text>
+													<Text fontSize="xs" color="#6B7280">
+														• Email will be auto-validated after scan
+													</Text>
+												</VStack>
+											</Box>
+										)}
+									</VStack>
+								</TabPanel>
+							</TabPanels>
+						</Tabs>
 					</ModalBody>
 					<ModalFooter bg="white" borderBottomRadius={{ base: 0, md: "2xl" }} p={{ base: 4, md: 6 }}>
 						<HStack spacing={3} width="100%">
@@ -1219,26 +1433,28 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 							>
 								Cancel
 							</Button>
-							<Button
-								bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"
-								color="white"
-								onClick={captureImage}
-								isLoading={isScanning}
-								loadingText="Scanning..."
-								disabled={isScanning || !isCameraActive}
-								flex={2}
-								size="lg"
-								height="56px"
-								fontSize="md"
-								fontWeight="bold"
-								borderRadius="lg"
-								_hover={{ transform: "translateY(-2px)", boxShadow: "xl" }}
-								_active={{ transform: "translateY(0)" }}
-								transition="all 0.2s"
-								leftIcon={<Text fontSize="xl">📷</Text>}
-							>
-								Capture & Scan
-							</Button>
+							{scanMode === "ocr" && (
+								<Button
+									bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"
+									color="white"
+									onClick={captureImage}
+									isLoading={isScanning}
+									loadingText="Scanning..."
+									disabled={isScanning || !isCameraActive}
+									flex={2}
+									size="lg"
+									height="56px"
+									fontSize="md"
+									fontWeight="bold"
+									borderRadius="lg"
+									_hover={{ transform: "translateY(-2px)", boxShadow: "xl" }}
+									_active={{ transform: "translateY(0)" }}
+									transition="all 0.2s"
+									leftIcon={<Text fontSize="xl">📷</Text>}
+								>
+									Capture & Scan
+								</Button>
+							)}
 						</HStack>
 					</ModalFooter>
 				</ModalContent>

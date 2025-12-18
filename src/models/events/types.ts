@@ -77,6 +77,8 @@ export interface IBookings extends IBaseModelProps {
 	subTotal: number
 	tax: number
 	total: number
+	qrCodeToken?: string
+	qrCodeImageUrl?: string
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }

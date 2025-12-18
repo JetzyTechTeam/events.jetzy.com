@@ -23,6 +23,8 @@ type TicketEmailData = {
 	}>
 	orderNumber: string
 	isNewUser?: boolean
+	qrCodeImageUrl?: string
+	guestEmails?: string[] // Array of guest email addresses
 }
 
 type WaitingListEmailData = {
@@ -177,7 +179,10 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
 }
 
 export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDate, eventLocation, hostName }: EventInvitationData) => {
-	const eventUrl = `${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/events/${eventSlug}`
+	if (!process.env.NEXT_PUBLIC_URL) {
+		throw new Error("NEXT_PUBLIC_URL environment variable is required")
+	}
+	const eventUrl = `${process.env.NEXT_PUBLIC_URL}/events/${eventSlug}`
 	
 	try {
 		await sgMail.send({
@@ -262,7 +267,10 @@ export const sendBlastEmail = async ({
 	subject,
 	customMessage,
 }: BlastEmailData) => {
-	const eventUrl = `${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/events/${eventSlug}`
+	if (!process.env.NEXT_PUBLIC_URL) {
+		throw new Error("NEXT_PUBLIC_URL environment variable is required")
+	}
+	const eventUrl = `${process.env.NEXT_PUBLIC_URL}/events/${eventSlug}`
 
 	// Dynamic button text and styling based on email type
 	const buttonConfig = {
@@ -343,7 +351,10 @@ export const sendBlastEmail = async ({
 	}
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [] }: TicketEmailData) => {
+	if (!process.env.NEXT_PUBLIC_URL) {
+		throw new Error("NEXT_PUBLIC_URL environment variable is required")
+	}
 	console.log("[sendTicketConfirmation] Called with:", { email, orderNumber, eventName: event.name, isNewUser, ticketCount: tickets.length })
 	console.log("[sendTicketConfirmation] API Key set:", !!process.env.SENDGRID_API_KEY)
 	console.log("[sendTicketConfirmation] Sender email:", process.env.SENDGRID_EMAIL_SENDER)
@@ -362,11 +373,65 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 		const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
 		const location = event.location
 		
-		console.log("Email details:", { timestamp, location, totalAmount, tickets })
-		await sgMail.send({
-		  to: [email, "tech@jetzyapp.com"],
+		console.log("Email details:", { timestamp, location, totalAmount, tickets, guestEmails })
+		
+		// Prepare attachments for QR code - use attachment method as PRIMARY
+		// Many email clients block data URIs, so inline attachments are more reliable
+		const attachments: any[] = []
+		let qrCodeValid = false
+		let hasAttachment = false
+		
+		if (qrCodeImageUrl) {
+			try {
+				// Validate QR code image URL
+				if (!qrCodeImageUrl || !qrCodeImageUrl.startsWith('data:image/')) {
+					console.error("[sendTicketConfirmation] Invalid QR code image URL format")
+					qrCodeValid = false
+				} else {
+					// Extract base64 data from data URI
+					const base64Data = qrCodeImageUrl.replace(/^data:image\/\w+;base64,/, '')
+					
+					if (!base64Data || base64Data.length === 0) {
+						console.error("[sendTicketConfirmation] Empty base64 data after extraction")
+						qrCodeValid = false
+					} else {
+						console.log("[sendTicketConfirmation] QR code base64 data length:", base64Data.length)
+						
+						// Create attachment as PRIMARY method (most email clients support this)
+						try {
+							attachments.push({
+								filename: 'qr-code.png',
+								content: base64Data, // SendGrid expects base64 string directly
+								type: 'image/png',
+								disposition: 'inline',
+								content_id: 'qrCode' // SendGrid uses content_id for inline images
+							})
+							hasAttachment = true
+							qrCodeValid = true
+							console.log("[sendTicketConfirmation] QR code attachment prepared successfully")
+						} catch (attachError: any) {
+							console.error("[sendTicketConfirmation] Failed to create attachment:", attachError.message)
+							qrCodeValid = false
+						}
+					}
+				}
+			} catch (error: any) {
+				console.error("[sendTicketConfirmation] Error processing QR code:", error.message)
+				console.error("[sendTicketConfirmation] QR code image URL:", qrCodeImageUrl ? qrCodeImageUrl.substring(0, 100) + '...' : 'null')
+				qrCodeValid = false
+			}
+		} else {
+			console.warn("[sendTicketConfirmation] No QR code image URL provided")
+			qrCodeValid = false
+		}
+		
+		let emailPayload
+		try {
+			emailPayload = {
+			to: [email, "tech@jetzyapp.com"],
 			from: process.env.SENDGRID_EMAIL_SENDER as string,
 			subject: `Jetzy [Booking Confirmation] ${event.name}`,
+			...(attachments.length > 0 ? { attachments } : {}),
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>
@@ -391,10 +456,11 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 							.map(
 								(ticket) => `
               <div style="background-color: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="color: #333; margin: 0 0 10px 0;">${ticket.name}</h3>
-                <p><strong>Quantity: </strong> ${ticket.quantity}</p>
-                <p><strong>Price per ticket: </strong> $${ticket.price}</p>
-                <p><strong>Description: </strong> ${ticket.desc || ''}</p>
+                <h3 style="color: #333; margin: 0 0 10px 0; font-size: 18px;">${ticket.name}</h3>
+                <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
+                <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
+                <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
               </div>
             `,
 							)
@@ -405,11 +471,50 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <h3 style="color: #333; margin: 0;">Total Amount: $${totalAmount}</h3>
           </div>
           
+          ${qrCodeImageUrl && qrCodeValid ? `
+          <div style="background-color: #f8f8f8; padding: 30px; border-radius: 8px; margin: 20px 0; text-align: center;">
+            <h2 style="color: #333; margin-bottom: 20px;">Your Ticket QR Code</h2>
+            <div style="background-color: white; padding: 25px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+              ${hasAttachment ? `
+                <!-- Use inline attachment (cid) - most reliable for email clients -->
+                <img src="cid:qrCode" alt="Ticket QR Code" style="max-width: 400px; width: 100%; height: auto; display: block; margin: 0 auto; border: 3px solid #e2e8f0;" />
+              ` : `
+                <!-- Fallback to data URI if attachment fails -->
+                <img src="${qrCodeImageUrl}" alt="Ticket QR Code" style="max-width: 400px; width: 100%; height: auto; display: block; margin: 0 auto; border: 3px solid #e2e8f0;" />
+              `}
+            </div>
+            <p style="color: #666; margin-top: 20px; font-size: 14px; font-weight: 500;">
+              📱 Scan this QR code at the event entrance for quick check-in
+            </p>
+            <p style="color: #999; margin-top: 10px; font-size: 12px;">
+              💡 Tip: Make sure your screen brightness is high for best scanning results
+            </p>
+            <p style="color: #999; margin-top: 5px; font-size: 12px;">
+              If the QR code doesn't scan, please show this email at the entrance
+            </p>
+          </div>
+          ` : `
           <div style="background-color: #ffe6e6; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center;">
             <p style="color: #cc0000; font-weight: bold; margin: 0;">
               Please show this email at the entrance for entry
             </p>
           </div>
+          `}
+          
+          ${guestEmails && guestEmails.length > 0 ? `
+          <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #1877F2;">
+            <h2 style="color: #1877F2; margin-bottom: 15px;">Invited Guests</h2>
+            <p style="color: #1C1E21; margin-bottom: 10px;">
+              You have invited the following guests to this event:
+            </p>
+            <ul style="color: #1C1E21; margin: 10px 0; padding-left: 20px;">
+              ${guestEmails.map((guestEmail) => `<li style="margin-bottom: 5px;">${guestEmail}</li>`).join('')}
+            </ul>
+            <p style="color: #65676B; font-size: 14px; margin-top: 15px;">
+              Invitation emails have been sent to your guests with event details.
+            </p>
+          </div>
+          ` : ''}
 
           ${isNewUser ? `
           <div style="background-color: #E7F3FF; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #1877F2;">
@@ -423,7 +528,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
               <li>Receive updates about events you're interested in</li>
             </ul>
             <div style="text-align: center; margin-top: 20px;">
-              <a href="${process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
+              <a href="${process.env.NEXT_PUBLIC_URL}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
                 Login to Your Account
               </a>
             </div>
@@ -433,7 +538,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
           ` : `
           <div style="text-align: center; margin-top: 20px;">
-            <a href="${process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
+            <a href="${process.env.NEXT_PUBLIC_URL}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
               Login to Your Account
             </a>
           </div>
@@ -453,12 +558,30 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
         </div>
       `,
+			}
+		} catch (templateError: any) {
+			console.error("[sendTicketConfirmation] Error creating email template:", templateError.message)
+			console.error("[sendTicketConfirmation] Template error stack:", templateError.stack)
+			throw new Error(`Failed to create email template: ${templateError.message}`)
+		}
+		
+		console.log("[sendTicketConfirmation] Sending email with payload:", {
+			to: emailPayload.to,
+			from: emailPayload.from,
+			subject: emailPayload.subject,
+			hasAttachments: attachments.length > 0,
+			hasGuestEmails: guestEmails.length > 0,
 		})
+		
+		await sgMail.send(emailPayload as any)
 		console.log("[sendTicketConfirmation] Email sent successfully to:", email)
 		return { success: true, message: "Email sent successfully" }
 	} catch (error: any) {
 		console.error("[sendTicketConfirmation] Failed to send email:", error.message || error)
 		console.error("[sendTicketConfirmation] Error details:", JSON.stringify(error, null, 2))
+		if (error.response) {
+			console.error("[sendTicketConfirmation] SendGrid response:", JSON.stringify(error.response.body, null, 2))
+		}
 		throw error
 	}
 }
