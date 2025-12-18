@@ -168,6 +168,11 @@ const CreateEventPage = () => {
 		if (values.tickets.length > 0) values.isPaid = true
 		else values.isPaid = false
 
+		// Clean up host object - if all fields are empty, set to undefined
+		if (values.host && (!values.host.name?.trim() && !values.host.email?.trim() && !values.host.phone?.trim() && !values.host.image?.trim())) {
+			values.host = undefined
+		}
+
 		setIsSubmitting(true)
 
 		dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) } }))

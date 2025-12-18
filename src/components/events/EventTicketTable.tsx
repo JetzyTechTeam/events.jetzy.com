@@ -141,7 +141,7 @@ const EventTicketTable: React.FC<Props> = ({ rows, eventName, eventId }) => {
 							{/* Description Input */}
 							<div>
 								<label htmlFor="ticket-description" className="block text-gray-700 font-bold mb-1">
-									Description
+									Description (Optional)
 								</label>
 								<textarea
 									id="ticket-description"
