@@ -3,7 +3,9 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Bookings } from "@/models/events/bookings"
 import { extractTokenFromQRPayload } from "@/lib/qr-generator"
-import { sendResponse, ResCode } from "@/lib/utils"
+import { sendResponse } from "@/lib/helpers"
+import { ResCode } from "@/lib/responseCodes"
+import { BookingStatus } from "@/models/events/types"
 import { Types } from "mongoose"
 import { Events } from "@/models/events"
 import { EventInvitation } from "@/models/events/event-invitations"
@@ -46,8 +48,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Extract token from QR payload
 		console.log("[verify-qr] Received QR payload:", qrPayload?.substring(0, 100) + (qrPayload?.length > 100 ? '...' : ''))
 		const token = extractTokenFromQRPayload(qrPayload)
-		console.log("[verify-qr] Extracted token:", token?.substring(0, 50) + (token?.length > 50 ? '...' : ''))
-		
+		console.log("[verify-qr] Extracted token:", token?.substring(0, 50) + ((token?.length || 0) > 50 ? '...' : ''))
+
 		if (!token) {
 			console.error("[verify-qr] Failed to extract token from payload:", qrPayload)
 			return sendResponse(
@@ -66,7 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			eventId: new Types.ObjectId(eventId),
 			isDeleted: false,
 		}).populate("eventId", "name location startsOn endsOn timezone")
-		
+
 		console.log("[verify-qr] Booking found:", booking ? `Yes (${booking.bookingRef})` : "No")
 
 		// Get event details with full ticket information
@@ -83,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Check if booking is confirmed
-		if (booking.status !== "CONFIRMED") {
+		if (booking.status !== BookingStatus.CONFIRMED) {
 			return sendResponse(
 				res,
 				{
@@ -98,7 +100,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Calculate total tickets and get detailed ticket information
 		const totalTickets = booking.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-		
+
 		// Get detailed ticket information
 		const ticketDetails = booking.tickets.map((bookingTicket: any) => {
 			const eventTicket = event?.tickets?.find((t: any) => t._id.toString() === bookingTicket.ticketId.toString())

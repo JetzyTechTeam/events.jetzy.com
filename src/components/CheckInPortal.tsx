@@ -159,8 +159,8 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		}
 	}, [])
 
-	const handleValidate = async () => {
-		if (!identifier.trim()) {
+	const validateBooking = async (id: string) => {
+		if (!id) {
 			setError("Please enter an email or booking reference")
 			return
 		}
@@ -172,13 +172,16 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		try {
 			const response = await axios.post("/api/check-in/validate", {
 				eventId,
-				identifier: identifier.trim(),
+				identifier: id,
 			})
 
 			if (response.data.status) {
 				setBookingInfo(response.data.data)
+				// Return true for success
+				return true
 			} else {
 				setError(response.data.message)
+				return false
 			}
 		} catch (err: any) {
 			const errorMsg = err.response?.data?.message || "Failed to validate booking"
@@ -190,9 +193,14 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				duration: 5000,
 				isClosable: true,
 			})
+			return false
 		} finally {
 			setIsValidating(false)
 		}
+	}
+
+	const handleValidate = async () => {
+		await validateBooking(identifier.trim())
 	}
 
 	const handleCheckIn = async () => {
@@ -451,7 +459,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	const startQRScanner = async () => {
 		// Wait for modal to render
 		await new Promise((resolve) => setTimeout(resolve, 200))
-		
+
 		if (!qrCodeReaderRef.current) {
 			console.error("QR reader ref not available")
 			return
@@ -1252,7 +1260,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					<ModalBody display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={{ base: 4, md: 6 }} bg="#F9FAFB">
 						<Tabs
 							index={scanMode === "qr" ? 0 : 1}
-								onChange={(index) => {
+							onChange={(index) => {
 								const newMode = index === 0 ? "qr" : "ocr"
 								setScanMode(newMode)
 								stopCamera() // Stop current scanner

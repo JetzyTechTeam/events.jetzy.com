@@ -52,15 +52,15 @@ const isVideoUrl = (url: string): boolean => {
 }
 
 // FeedPostCard Component
-const FeedPostCard = ({ 
-	post, 
-	onClick, 
-	onLikeSuccess, 
+const FeedPostCard = ({
+	post,
+	onClick,
+	onLikeSuccess,
 	onDeleteSuccess,
 	eventId
-}: { 
-	post: DiscussionPostWithAuthor, 
-	onClick: (id: string, editMode?: boolean) => void, 
+}: {
+	post: DiscussionPostWithAuthor,
+	onClick: (id: string, editMode?: boolean) => void,
 	onLikeSuccess: () => void,
 	onDeleteSuccess: () => void,
 	eventId: string
@@ -114,9 +114,9 @@ const FeedPostCard = ({
 
 	const handleShare = async (e: React.MouseEvent) => {
 		e.stopPropagation()
-		
+
 		const postUrl = `${window.location.origin}/console/events/${post.eventId}/discussion/${post._id}`
-		
+
 		try {
 			if (navigator.share) {
 				// Use native share if available (mobile devices)
@@ -176,8 +176,8 @@ const FeedPostCard = ({
 			<Box p={4}>
 				{/* Post Header */}
 				<Flex align="center" gap={3} mb={3}>
-					<Avatar 
-						size="md" 
+					<Avatar
+						size="md"
 						name={`${post.userId.firstName} ${post.userId.lastName}`}
 						src=""
 					/>
@@ -211,7 +211,7 @@ const FeedPostCard = ({
 							/>
 							<MenuList onClick={(e) => e.stopPropagation()}>
 								{isAuthor && (
-									<MenuItem 
+									<MenuItem
 										icon={<FiEdit />}
 										onClick={(e) => {
 											e.stopPropagation()
@@ -223,8 +223,8 @@ const FeedPostCard = ({
 									</MenuItem>
 								)}
 								{(isAuthor || isAdmin) && (
-									<MenuItem 
-										icon={<FiTrash2 />} 
+									<MenuItem
+										icon={<FiTrash2 />}
 										color="red.500"
 										onClick={(e) => {
 											e.stopPropagation()
@@ -255,16 +255,16 @@ const FeedPostCard = ({
 						{post.images.length === 1 ? (
 							<Box position="relative" w="full">
 								{isVideoUrl(post.images[0]) ? (
-									<video 
-										src={post.images[0]} 
-										controls 
+									<video
+										src={post.images[0]}
+										controls
 										style={{ width: "100%", maxHeight: "500px", objectFit: "contain", backgroundColor: "#000" }}
 									/>
 								) : (
 									<Box position="relative" w="full" h="400px">
-										<Image 
-											src={post.images[0]} 
-											alt="Post image" 
+										<Image
+											src={post.images[0]}
+											alt="Post image"
 											fill
 											style={{ objectFit: "cover" }}
 										/>
@@ -276,31 +276,31 @@ const FeedPostCard = ({
 								{post.images.slice(0, 4).map((img: string, idx: number) => (
 									<Box key={idx} position="relative" w="full" h="200px">
 										{isVideoUrl(img) ? (
-											<video 
-												src={img} 
+											<video
+												src={img}
 												style={{ width: "100%", height: "100%", objectFit: "cover" }}
 											/>
 										) : (
-											<Image 
-												src={img} 
-												alt={`Post image ${idx + 1}`} 
+											<Image
+												src={img}
+												alt={`Post image ${idx + 1}`}
 												fill
 												style={{ objectFit: "cover" }}
 											/>
 										)}
-										{idx === 3 && post.images.length > 4 && (
-											<Flex 
-												position="absolute" 
-												top={0} 
-												left={0} 
-												right={0} 
-												bottom={0} 
-												bg="blackAlpha.600" 
-												align="center" 
+										{idx === 3 && (post.images?.length || 0) > 4 && (
+											<Flex
+												position="absolute"
+												top={0}
+												left={0}
+												right={0}
+												bottom={0}
+												bg="blackAlpha.600"
+												align="center"
 												justify="center"
 											>
 												<Text color="white" fontSize="2xl" fontWeight="bold">
-													+{post.images.length - 4}
+													+{(post.images?.length || 0) - 4}
 												</Text>
 											</Flex>
 										)}
@@ -460,16 +460,16 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 		<Box bg="#F0F2F5" minH="500px" p={{ base: 2, md: 4 }}>
 			{/* Header with Create Post */}
 			<Box maxW="680px" mx="auto" mb={6}>
-				
+
 				{/* Facebook-style Create Post Input - Always visible */}
 				<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4}>
 					{session && session.user ? (
 						<>
 							<Flex gap={3} align="center">
-								<Avatar 
-									size="md" 
-									name={session.user?.name || "User"} 
-									src={session.user?.image || ""} 
+								<Avatar
+									size="md"
+									name={session.user?.name || "User"}
+									src={session.user?.image || ""}
 								/>
 								<Button
 									flex="1"
@@ -491,9 +491,9 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 						</>
 					) : null}
 					<Flex justify="space-between" px={2}>
-						<Button 
-							flex="1" 
-							variant="ghost" 
+						<Button
+							flex="1"
+							variant="ghost"
 							leftIcon={<Icon as={FiPlus} color="#E41E3F" boxSize={6} />}
 							color="#65676B"
 							_hover={{ bg: "#F0F2F5" }}
@@ -556,10 +556,10 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				) : (
 					<Stack spacing={4}>
 						{posts.map((post: DiscussionPostWithAuthor) => (
-							<FeedPostCard 
-								key={post._id} 
-								post={post} 
-								onClick={handlePostClick} 
+							<FeedPostCard
+								key={post._id}
+								post={post}
+								onClick={handlePostClick}
 								onLikeSuccess={refetch}
 								onDeleteSuccess={refetch}
 								eventId={eventId}
@@ -597,17 +597,17 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 			</Box>
 
 			{/* Create Discussion Modal */}
-			<CreateDiscussionModal 
-				isOpen={isOpen} 
-				onClose={onClose} 
-				eventId={eventId} 
+			<CreateDiscussionModal
+				isOpen={isOpen}
+				onClose={onClose}
+				eventId={eventId}
 				onSuccess={() => {
 					refetch()
 					// Refetch ticket check after successful post creation
 					if (session) {
 						// The ticket check will be refetched automatically when needed
 					}
-				}} 
+				}}
 			/>
 
 			{/* Post Detail Modal */}
@@ -617,9 +617,9 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 					<ModalCloseButton zIndex={10} />
 					<ModalBody p={0}>
 						{selectedPostId && (
-							<DiscussionPostView 
-								postId={selectedPostId} 
-								eventId={eventId} 
+							<DiscussionPostView
+								postId={selectedPostId}
+								eventId={eventId}
 								isModalView={true}
 								onClose={handleClosePostModal}
 								openInEditMode={openInEditMode}

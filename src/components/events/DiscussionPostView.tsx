@@ -113,6 +113,7 @@ interface DiscussionPostViewProps {
 	eventId: string
 	isModalView?: boolean
 	onClose?: () => void
+	openInEditMode?: boolean
 }
 
 interface CommentItemProps {
@@ -151,6 +152,9 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	const hasLiked = comment.reactions.likes.includes(currentUserId || "")
 	// Check if user is logged in (ticket requirement removed)
 	const canReply = !!session && !!session.user
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
 
 	const handleReplyImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = e.target.files
@@ -265,13 +269,13 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 		<Box mb={2}>
 			<Flex gap={2} align="start">
 				<Avatar size="sm" name={`${comment.userId.firstName} ${comment.userId.lastName}`} src="" />
-				
+
 				<Box flex="1">
 					<Box bg="#F0F2F5" borderRadius="2xl" px={3} py={2} width="fit-content" mb={1} maxW="100%">
 						<Text fontWeight="600" fontSize="sm" color="#1C1E21">
 							{comment.userId.firstName} {comment.userId.lastName}
 						</Text>
-						
+
 						{isEditing ? (
 							<Box mt={2} minW="300px" bg="#F8F9FA" p={3} borderRadius="lg" border="1px solid" borderColor="gray.200">
 								<Textarea
@@ -283,7 +287,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 									minH="80px"
 									_focus={{ borderColor: "blue.500" }}
 								/>
-								
+
 								{/* Edit Actions */}
 								<Flex gap={2} mb={2} align="center">
 									<IconButton
@@ -306,7 +310,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 										_hover={{ bg: "#E4E6EB" }}
 									/>
 								</Flex>
-								
+
 								{/* Hidden File Input */}
 								<input
 									ref={editFileInputRef}
@@ -316,7 +320,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 									style={{ display: "none" }}
 									onChange={handleEditImageUpload}
 								/>
-								
+
 								{/* Selected Feeling/Activity Display */}
 								{(editFeeling || editActivity) && (
 									<Flex mb={2} gap={1} flexWrap="wrap">
@@ -352,15 +356,15 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 										)}
 									</Flex>
 								)}
-								
+
 								{/* Image Preview */}
 								{editImages.length > 0 && (
 									<Flex gap={1} mb={2} flexWrap="wrap">
 										{editImages.map((url, index) => (
 											<Box key={index} position="relative" w="60px" h="60px" borderRadius="md" overflow="hidden" border="1px solid #E4E6EB">
-												<Image 
-													src={url} 
-													alt={`Edit ${index + 1}`} 
+												<Image
+													src={url}
+													alt={`Edit ${index + 1}`}
 													fill
 													style={{ objectFit: "cover" }}
 												/>
@@ -383,12 +387,12 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 										))}
 									</Flex>
 								)}
-								
+
 								<Flex gap={2}>
 									<Button size="xs" colorScheme="blue" onClick={handleEditSubmit} isLoading={uploadingEditImages}>Save</Button>
-									<Button 
-										size="xs" 
-										variant="ghost" 
+									<Button
+										size="xs"
+										variant="ghost"
 										onClick={() => {
 											setIsEditing(false)
 											setEditImages([])
@@ -399,7 +403,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 										Cancel
 									</Button>
 								</Flex>
-								
+
 								{/* Feeling/Activity Modal for Edit Comment */}
 								<Modal isOpen={isEditFeelingModalOpen} onClose={onEditFeelingModalClose} isCentered size="md">
 									<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
@@ -448,14 +452,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 													</Flex>
 												</Box>
 											)}
-											
+
 											<Tabs colorScheme="blue" variant="soft-rounded" size="sm" isFitted>
 												<TabList mb={2} p={0.5} bg="gray.50" borderRadius="full">
 													<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontSize="xs">😊 Emojis</Tab>
 													<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontSize="xs">💭 Feelings</Tab>
 													<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontSize="xs">🎯 Activities</Tab>
 												</TabList>
-												
+
 												<TabPanels>
 													<TabPanel p={0}>
 														<Box display="flex" justifyContent="center">
@@ -470,7 +474,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 															/>
 														</Box>
 													</TabPanel>
-													
+
 													<TabPanel p={0} maxH="250px" overflowY="auto">
 														<SimpleGrid columns={2} spacing={1}>
 															{FEELINGS.map((item) => (
@@ -493,7 +497,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 															))}
 														</SimpleGrid>
 													</TabPanel>
-													
+
 													<TabPanel p={0} maxH="250px" overflowY="auto">
 														<SimpleGrid columns={2} spacing={1}>
 															{ACTIVITIES.map((item) => (
@@ -531,22 +535,22 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 								<Text color="#1C1E21" fontSize="sm" whiteSpace="pre-wrap">
 									{comment.comment}
 								</Text>
-								
+
 								{/* Comment Images */}
 								{comment.images && comment.images.length > 0 && (
 									<Box mt={2}>
 										{comment.images.length === 1 ? (
 											<Box position="relative" borderRadius="md" overflow="hidden" maxW="300px">
 												{isVideoUrl(comment.images[0]) ? (
-													<video 
-														src={comment.images[0]} 
-														controls 
+													<video
+														src={comment.images[0]}
+														controls
 														style={{ width: "100%", maxHeight: "200px", objectFit: "contain" }}
 													/>
 												) : (
-													<Image 
-														src={comment.images[0]} 
-														alt="Comment image" 
+													<Image
+														src={comment.images[0]}
+														alt="Comment image"
 														width={300}
 														height={200}
 														style={{ objectFit: "cover", borderRadius: "8px" }}
@@ -558,14 +562,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 												{comment.images.slice(0, 4).map((img: string, idx: number) => (
 													<Box key={idx} position="relative" w="full" h="100px" borderRadius="md" overflow="hidden">
 														{isVideoUrl(img) ? (
-															<video 
-																src={img} 
+															<video
+																src={img}
 																style={{ width: "100%", height: "100%", objectFit: "cover" }}
 															/>
 														) : (
-															<Image 
-																src={img} 
-																alt={`Comment image ${idx + 1}`} 
+															<Image
+																src={img}
+																alt={`Comment image ${idx + 1}`}
 																fill
 																style={{ objectFit: "cover" }}
 															/>
@@ -582,9 +586,9 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 
 					{/* Interaction Actions */}
 					<Flex gap={3} fontSize="xs" color="#65676B" fontWeight="600" px={2} mb={2} align="center">
-						<Text 
-							cursor="pointer" 
-							_hover={{ textDecoration: "underline" }} 
+						<Text
+							cursor="pointer"
+							_hover={{ textDecoration: "underline" }}
 							color={hasLiked ? "#1877F2" : "inherit"}
 							onClick={() => onReact(comment._id)}
 						>
@@ -636,7 +640,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 												}}
 											/>
 										</Box>
-										
+
 										{/* Send Button */}
 										<IconButton
 											aria-label="Send reply"
@@ -650,7 +654,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 											_hover={{ bg: "#E4E6EB" }}
 										/>
 									</Flex>
-									
+
 									{/* Icons Row - BELOW the input */}
 									<Flex gap={2} mt={1} align="center" pl={2}>
 										<IconButton
@@ -681,7 +685,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 											p={1}
 										/>
 									</Flex>
-									
+
 									{/* Hidden File Input */}
 									<input
 										ref={replyFileInputRef}
@@ -691,19 +695,19 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 										style={{ display: "none" }}
 										onChange={handleReplyImageUpload}
 									/>
-									
+
 									{/* Selected Feeling/Activity Display */}
 									{(replyFeeling || replyActivity) && (
 										<Flex mt={2} align="center" gap={2} flexWrap="wrap" pl={2}>
 											{replyFeeling && (
-												<Badge 
-													colorScheme="blue" 
-													fontSize="xs" 
-													px={2} 
-													py={1} 
-													borderRadius="full" 
-													display="flex" 
-													alignItems="center" 
+												<Badge
+													colorScheme="blue"
+													fontSize="xs"
+													px={2}
+													py={1}
+													borderRadius="full"
+													display="flex"
+													alignItems="center"
 													gap={1}
 												>
 													{replyFeeling}
@@ -721,14 +725,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 												</Badge>
 											)}
 											{replyActivity && (
-												<Badge 
-													colorScheme="green" 
-													fontSize="xs" 
-													px={2} 
-													py={1} 
-													borderRadius="full" 
-													display="flex" 
-													alignItems="center" 
+												<Badge
+													colorScheme="green"
+													fontSize="xs"
+													px={2}
+													py={1}
+													borderRadius="full"
+													display="flex"
+													alignItems="center"
 													gap={1}
 												>
 													{replyActivity}
@@ -747,15 +751,15 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 											)}
 										</Flex>
 									)}
-									
+
 									{/* Image Preview */}
 									{replyImages.length > 0 && (
 										<Flex gap={2} mt={2} flexWrap="wrap" pl={2}>
 											{replyImages.map((url, index) => (
 												<Box key={index} position="relative" w="80px" h="80px" borderRadius="lg" overflow="hidden" border="1px solid #E4E6EB">
-													<Image 
-														src={url} 
-														alt={`Reply image ${index + 1}`} 
+													<Image
+														src={url}
+														alt={`Reply image ${index + 1}`}
 														fill
 														style={{ objectFit: "cover" }}
 													/>
@@ -778,7 +782,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 									)}
 								</Box>
 							</Flex>
-							
+
 							{/* Feeling/Activity Modal for Reply */}
 							<Modal isOpen={isReplyFeelingModalOpen} onClose={onReplyFeelingModalClose} isCentered size="lg">
 								<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
@@ -830,14 +834,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 												</Flex>
 											</Box>
 										)}
-										
+
 										<Tabs colorScheme="blue" variant="soft-rounded" isFitted>
 											<TabList mb={4} p={1} bg="gray.50" borderRadius="full">
 												<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">😊 Emojis</Tab>
 												<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">💭 Feelings</Tab>
 												<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">🎯 Activities</Tab>
 											</TabList>
-											
+
 											<TabPanels>
 												{/* Emoji Picker Tab */}
 												<TabPanel p={0}>
@@ -853,7 +857,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 														/>
 													</Box>
 												</TabPanel>
-												
+
 												{/* Feelings Tab */}
 												<TabPanel p={0} maxH="350px" overflowY="auto">
 													<SimpleGrid columns={2} spacing={2}>
@@ -878,7 +882,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 														))}
 													</SimpleGrid>
 												</TabPanel>
-												
+
 												{/* Activities Tab */}
 												<TabPanel p={0} maxH="350px" overflowY="auto">
 													<SimpleGrid columns={2} spacing={2}>
@@ -929,8 +933,8 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 						<MenuButton as={IconButton} icon={<FiMoreHorizontal />} size="xs" variant="ghost" borderRadius="full" />
 						<MenuList>
 							{isAuthor && (
-								<MenuItem 
-									icon={<FiEdit />} 
+								<MenuItem
+									icon={<FiEdit />}
 									onClick={() => {
 										setEditText(comment.comment)
 										setEditImages(comment.images || [])
@@ -1000,7 +1004,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	// Check if user is admin or super admin
 	// @ts-ignore
 	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
-	
+
 	// Fetch post
 	const { data: postResponse, isLoading: isLoadingPost, refetch: refetchPost } = useQuery({
 		queryKey: ["discussionPost", postId],
@@ -1232,324 +1236,324 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 
 	return (
 		<>
-		<Box 
-			bg="white" 
-			borderRadius={isModalView ? "none" : "2xl"} 
-			border={isModalView ? "none" : "1px solid #E5E7EB"} 
-			p={isModalView ? { base: 4, md: 6 } : { base: 4, md: 6 }}
-			pt={isModalView ? 12 : { base: 4, md: 6 }}
-			boxShadow={isModalView ? "none" : "sm"}
-		>
-			{/* Post Header */}
-			<Flex justify="space-between" align="start" mb={4}>
-				<Flex align="center" gap={3}>
-					<Avatar name={`${post.userId.firstName} ${post.userId.lastName}`} src="" size="md" />
-					<Box>
-						<Heading size="md" color="#1C1E21">
-							{post.userId.firstName} {post.userId.lastName}
-						</Heading>
-						<Flex align="center" gap={2} fontSize="sm" color="#65676B">
-							<Text>{new Date(post.createdAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })}</Text>
-							{post.isPinned && (
-								<>
-									<Text>·</Text>
-									<Icon as={BsPinAngleFill} color="#1877F2" />
-									<Text color="#1877F2" fontWeight="600">Pinned</Text>
-								</>
-							)}
-							{post.isLocked && (
-								<>
-									<Text>·</Text>
-									<Icon as={FiLock} color="#E41E3F" />
-								</>
-							)}
-						</Flex>
-					</Box>
+			<Box
+				bg="white"
+				borderRadius={isModalView ? "none" : "2xl"}
+				border={isModalView ? "none" : "1px solid #E5E7EB"}
+				p={isModalView ? { base: 4, md: 6 } : { base: 4, md: 6 }}
+				pt={isModalView ? 12 : { base: 4, md: 6 }}
+				boxShadow={isModalView ? "none" : "sm"}
+			>
+				{/* Post Header */}
+				<Flex justify="space-between" align="start" mb={4}>
+					<Flex align="center" gap={3}>
+						<Avatar name={`${post.userId.firstName} ${post.userId.lastName}`} src="" size="md" />
+						<Box>
+							<Heading size="md" color="#1C1E21">
+								{post.userId.firstName} {post.userId.lastName}
+							</Heading>
+							<Flex align="center" gap={2} fontSize="sm" color="#65676B">
+								<Text>{new Date(post.createdAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })}</Text>
+								{post.isPinned && (
+									<>
+										<Text>·</Text>
+										<Icon as={BsPinAngleFill} color="#1877F2" />
+										<Text color="#1877F2" fontWeight="600">Pinned</Text>
+									</>
+								)}
+								{post.isLocked && (
+									<>
+										<Text>·</Text>
+										<Icon as={FiLock} color="#E41E3F" />
+									</>
+								)}
+							</Flex>
+						</Box>
+					</Flex>
+
+					{(isAuthor || isAdmin) && (
+						<Menu>
+							<MenuButton as={IconButton} icon={<FiMoreHorizontal />} variant="ghost" />
+							<MenuList>
+								{isAuthor && (
+									<MenuItem
+										icon={<FiEdit />}
+										onClick={() => {
+											setEditPostContent(post.content)
+											setEditPostImages(post.images || [])
+											// Extract feeling/activity from content if exists
+											setEditPostFeeling("")
+											setEditPostActivity("")
+											setIsEditingPost(true)
+										}}
+									>
+										Edit Post
+									</MenuItem>
+								)}
+								{(isAuthor || isAdmin) && (
+									<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => window.confirm("Delete this post?") && deletePostMutation.mutate()}>
+										Delete Post
+									</MenuItem>
+								)}
+								{isAdmin && (
+									<>
+										<MenuItem icon={post.isPinned ? <BsPinAngle /> : <BsPinAngleFill />} onClick={() => pinPostMutation.mutate(!post.isPinned)}>
+											{post.isPinned ? "Unpin" : "Pin"} Post
+										</MenuItem>
+										<MenuItem icon={post.isLocked ? <FiUnlock /> : <FiLock />} onClick={() => lockPostMutation.mutate(!post.isLocked)}>
+											{post.isLocked ? "Unlock" : "Lock"} Discussion
+										</MenuItem>
+									</>
+								)}
+							</MenuList>
+						</Menu>
+					)}
 				</Flex>
 
-				{(isAuthor || isAdmin) && (
-					<Menu>
-						<MenuButton as={IconButton} icon={<FiMoreHorizontal />} variant="ghost" />
-						<MenuList>
-							{isAuthor && (
-								<MenuItem 
-									icon={<FiEdit />} 
+				{/* Post Content */}
+				<Box mb={4}>
+					{isEditingPost ? (
+						<Box bg="#F8F9FA" p={4} borderRadius="lg" border="1px solid" borderColor="gray.200">
+							<Textarea
+								value={editPostContent}
+								onChange={(e) => setEditPostContent(e.target.value)}
+								bg="white"
+								border="1px solid"
+								borderColor="gray.300"
+								borderRadius="lg"
+								minH="150px"
+								fontSize="md"
+								mb={3}
+								_focus={{ borderColor: "blue.500", boxShadow: "0 0 0 1px #1877F2" }}
+								placeholder="What's on your mind?"
+							/>
+
+							{/* Edit Actions Icons */}
+							<Flex gap={2} mb={3} align="center">
+								<IconButton
+									aria-label="Add images"
+									icon={<Text fontSize="lg">📷</Text>}
+									size="sm"
+									variant="ghost"
+									color={editPostImages.length > 0 ? "#1877F2" : "#65676B"}
+									onClick={() => editPostFileInputRef.current?.click()}
+									isLoading={uploadingEditImages}
+									_hover={{ bg: "#E4E6EB" }}
+								/>
+								<IconButton
+									aria-label="Add feeling/activity"
+									icon={<Text fontSize="lg">😊</Text>}
+									size="sm"
+									variant="ghost"
+									color={editPostFeeling || editPostActivity ? "#1877F2" : "#65676B"}
+									onClick={onEditPostFeelingModalOpen}
+									_hover={{ bg: "#E4E6EB" }}
+								/>
+								<Text fontSize="xs" color="gray.500" ml={2}>
+									{editPostImages.length > 0 && `${editPostImages.length} image(s)`}
+								</Text>
+							</Flex>
+
+							{/* Hidden File Input */}
+							<input
+								ref={editPostFileInputRef}
+								type="file"
+								accept="image/*,video/*"
+								multiple
+								style={{ display: "none" }}
+								onChange={handleEditPostImageUpload}
+							/>
+
+							{/* Selected Feeling/Activity Display */}
+							{(editPostFeeling || editPostActivity) && (
+								<Flex mb={3} gap={2} flexWrap="wrap">
+									{editPostFeeling && (
+										<Badge
+											colorScheme="blue"
+											fontSize="sm"
+											px={3}
+											py={1.5}
+											borderRadius="full"
+											display="flex"
+											alignItems="center"
+											gap={1}
+										>
+											{editPostFeeling}
+											<IconButton
+												aria-label="Remove feeling"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="blue.600"
+												onClick={() => setEditPostFeeling("")}
+												h="16px"
+												minW="16px"
+												ml={1}
+											/>
+										</Badge>
+									)}
+									{editPostActivity && (
+										<Badge
+											colorScheme="green"
+											fontSize="sm"
+											px={3}
+											py={1.5}
+											borderRadius="full"
+											display="flex"
+											alignItems="center"
+											gap={1}
+										>
+											{editPostActivity}
+											<IconButton
+												aria-label="Remove activity"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="green.600"
+												onClick={() => setEditPostActivity("")}
+												h="16px"
+												minW="16px"
+												ml={1}
+											/>
+										</Badge>
+									)}
+								</Flex>
+							)}
+
+							{/* Image Preview */}
+							{editPostImages.length > 0 && (
+								<SimpleGrid columns={editPostImages.length === 1 ? 1 : 2} spacing={2} mb={3}>
+									{editPostImages.map((url, index) => (
+										<Box key={index} position="relative" w="full" h="200px" borderRadius="lg" overflow="hidden" border="1px solid #E4E6EB">
+											{isVideoUrl(url) ? (
+												<video
+													src={url}
+													style={{ width: "100%", height: "100%", objectFit: "cover" }}
+												/>
+											) : (
+												<Image
+													src={url}
+													alt={`Edit image ${index + 1}`}
+													fill
+													style={{ objectFit: "cover" }}
+												/>
+											)}
+											<IconButton
+												aria-label="Remove image"
+												icon={<FiX />}
+												size="sm"
+												position="absolute"
+												top={2}
+												right={2}
+												bg="blackAlpha.700"
+												color="white"
+												borderRadius="full"
+												_hover={{ bg: "blackAlpha.800" }}
+												onClick={() => setEditPostImages(editPostImages.filter((_, i) => i !== index))}
+											/>
+										</Box>
+									))}
+								</SimpleGrid>
+							)}
+
+							<Flex gap={2}>
+								<Button
+									size="sm"
+									colorScheme="blue"
 									onClick={() => {
-										setEditPostContent(post.content)
-										setEditPostImages(post.images || [])
-										// Extract feeling/activity from content if exists
+										let finalContent = editPostContent
+										if (editPostFeeling || editPostActivity) {
+											const feelingText = editPostFeeling ? `${editPostFeeling}` : ""
+											const activityText = editPostActivity ? `${editPostActivity}` : ""
+											const separator = editPostFeeling && editPostActivity ? " · " : ""
+											finalContent = `${editPostContent}\n${feelingText}${separator}${activityText}`
+										}
+										updatePostMutation.mutate({ content: finalContent, images: editPostImages })
+									}}
+									isLoading={updatePostMutation.isPending}
+									isDisabled={!editPostContent.trim()}
+								>
+									Save Changes
+								</Button>
+								<Button
+									size="sm"
+									variant="ghost"
+									onClick={() => {
+										setIsEditingPost(false)
+										setEditPostContent("")
+										setEditPostImages([])
 										setEditPostFeeling("")
 										setEditPostActivity("")
-										setIsEditingPost(true)
 									}}
 								>
-									Edit Post
-								</MenuItem>
-							)}
-							{(isAuthor || isAdmin) && (
-								<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => window.confirm("Delete this post?") && deletePostMutation.mutate()}>
-									Delete Post
-								</MenuItem>
-							)}
-							{isAdmin && (
-								<>
-									<MenuItem icon={post.isPinned ? <BsPinAngle /> : <BsPinAngleFill />} onClick={() => pinPostMutation.mutate(!post.isPinned)}>
-										{post.isPinned ? "Unpin" : "Pin"} Post
-									</MenuItem>
-									<MenuItem icon={post.isLocked ? <FiUnlock /> : <FiLock />} onClick={() => lockPostMutation.mutate(!post.isLocked)}>
-										{post.isLocked ? "Unlock" : "Lock"} Discussion
-									</MenuItem>
-								</>
-							)}
-						</MenuList>
-					</Menu>
-				)}
-			</Flex>
-
-		{/* Post Content */}
-		<Box mb={4}>
-			{isEditingPost ? (
-				<Box bg="#F8F9FA" p={4} borderRadius="lg" border="1px solid" borderColor="gray.200">
-					<Textarea
-						value={editPostContent}
-						onChange={(e) => setEditPostContent(e.target.value)}
-						bg="white"
-						border="1px solid"
-						borderColor="gray.300"
-						borderRadius="lg"
-						minH="150px"
-						fontSize="md"
-						mb={3}
-						_focus={{ borderColor: "blue.500", boxShadow: "0 0 0 1px #1877F2" }}
-						placeholder="What's on your mind?"
-					/>
-					
-					{/* Edit Actions Icons */}
-					<Flex gap={2} mb={3} align="center">
-						<IconButton
-							aria-label="Add images"
-							icon={<Text fontSize="lg">📷</Text>}
-							size="sm"
-							variant="ghost"
-							color={editPostImages.length > 0 ? "#1877F2" : "#65676B"}
-							onClick={() => editPostFileInputRef.current?.click()}
-							isLoading={uploadingEditImages}
-							_hover={{ bg: "#E4E6EB" }}
-						/>
-						<IconButton
-							aria-label="Add feeling/activity"
-							icon={<Text fontSize="lg">😊</Text>}
-							size="sm"
-							variant="ghost"
-							color={editPostFeeling || editPostActivity ? "#1877F2" : "#65676B"}
-							onClick={onEditPostFeelingModalOpen}
-							_hover={{ bg: "#E4E6EB" }}
-						/>
-						<Text fontSize="xs" color="gray.500" ml={2}>
-							{editPostImages.length > 0 && `${editPostImages.length} image(s)`}
+									Cancel
+								</Button>
+							</Flex>
+						</Box>
+					) : (
+						<Text color="#1C1E21" fontSize="md" whiteSpace="pre-wrap">
+							{post.content}
 						</Text>
-					</Flex>
-					
-					{/* Hidden File Input */}
-					<input
-						ref={editPostFileInputRef}
-						type="file"
-						accept="image/*,video/*"
-						multiple
-						style={{ display: "none" }}
-						onChange={handleEditPostImageUpload}
-					/>
-					
-					{/* Selected Feeling/Activity Display */}
-					{(editPostFeeling || editPostActivity) && (
-						<Flex mb={3} gap={2} flexWrap="wrap">
-							{editPostFeeling && (
-								<Badge 
-									colorScheme="blue" 
-									fontSize="sm" 
-									px={3} 
-									py={1.5} 
-									borderRadius="full" 
-									display="flex" 
-									alignItems="center" 
-									gap={1}
-								>
-									{editPostFeeling}
-									<IconButton
-										aria-label="Remove feeling"
-										icon={<FiX />}
-										size="xs"
-										variant="ghost"
-										color="blue.600"
-										onClick={() => setEditPostFeeling("")}
-										h="16px"
-										minW="16px"
-										ml={1}
-									/>
-								</Badge>
-							)}
-							{editPostActivity && (
-								<Badge 
-									colorScheme="green" 
-									fontSize="sm" 
-									px={3} 
-									py={1.5} 
-									borderRadius="full" 
-									display="flex" 
-									alignItems="center" 
-									gap={1}
-								>
-									{editPostActivity}
-									<IconButton
-										aria-label="Remove activity"
-										icon={<FiX />}
-										size="xs"
-										variant="ghost"
-										color="green.600"
-										onClick={() => setEditPostActivity("")}
-										h="16px"
-										minW="16px"
-										ml={1}
-									/>
-								</Badge>
-							)}
-						</Flex>
 					)}
-					
-					{/* Image Preview */}
-					{editPostImages.length > 0 && (
-						<SimpleGrid columns={editPostImages.length === 1 ? 1 : 2} spacing={2} mb={3}>
-							{editPostImages.map((url, index) => (
-								<Box key={index} position="relative" w="full" h="200px" borderRadius="lg" overflow="hidden" border="1px solid #E4E6EB">
-									{isVideoUrl(url) ? (
-										<video 
-											src={url} 
-											style={{ width: "100%", height: "100%", objectFit: "cover" }}
-										/>
-									) : (
-										<Image 
-											src={url} 
-											alt={`Edit image ${index + 1}`} 
-											fill
-											style={{ objectFit: "cover" }}
-										/>
-									)}
-									<IconButton
-										aria-label="Remove image"
-										icon={<FiX />}
-										size="sm"
-										position="absolute"
-										top={2}
-										right={2}
-										bg="blackAlpha.700"
-										color="white"
-										borderRadius="full"
-										_hover={{ bg: "blackAlpha.800" }}
-										onClick={() => setEditPostImages(editPostImages.filter((_, i) => i !== index))}
-									/>
-								</Box>
-							))}
-						</SimpleGrid>
-					)}
-					
-					<Flex gap={2}>
-						<Button
-							size="sm"
-							colorScheme="blue"
-							onClick={() => {
-								let finalContent = editPostContent
-								if (editPostFeeling || editPostActivity) {
-									const feelingText = editPostFeeling ? `${editPostFeeling}` : ""
-									const activityText = editPostActivity ? `${editPostActivity}` : ""
-									const separator = editPostFeeling && editPostActivity ? " · " : ""
-									finalContent = `${editPostContent}\n${feelingText}${separator}${activityText}`
-								}
-								updatePostMutation.mutate({ content: finalContent, images: editPostImages })
-							}}
-							isLoading={updatePostMutation.isPending}
-							isDisabled={!editPostContent.trim()}
-						>
-							Save Changes
-						</Button>
-						<Button
-							size="sm"
-							variant="ghost"
-							onClick={() => {
-								setIsEditingPost(false)
-								setEditPostContent("")
-								setEditPostImages([])
-								setEditPostFeeling("")
-								setEditPostActivity("")
-							}}
-						>
-							Cancel
-						</Button>
-					</Flex>
 				</Box>
-			) : (
-				<Text color="#1C1E21" fontSize="md" whiteSpace="pre-wrap">
-					{post.content}
-				</Text>
-			)}
-		</Box>
 
-		{/* Images/Videos */}
-		{post.images && post.images.length > 0 && (
-			<Box mb={4} borderRadius="lg" overflow="hidden">
-				{post.images.length === 1 ? (
-					<Box position="relative" w="full">
-						{isVideoUrl(post.images[0]) ? (
-							<video 
-								src={post.images[0]} 
-								controls 
-								style={{ width: "100%", maxHeight: "600px", objectFit: "contain", backgroundColor: "#000" }}
-							/>
-						) : (
-							<Box position="relative" w="full" h="500px">
-								<Image 
-									src={post.images[0]} 
-									alt="Post image" 
-									fill
-									style={{ objectFit: "contain", backgroundColor: "#F0F2F5" }}
-								/>
-							</Box>
-						)}
-					</Box>
-				) : (
-					<SimpleGrid columns={post.images.length === 2 ? 2 : 2} spacing={2}>
-						{post.images.map((img: string, idx: number) => (
-							<Box key={idx} position="relative" w="full" h="300px">
-								{isVideoUrl(img) ? (
-									<video 
-										src={img} 
+				{/* Images/Videos */}
+				{post.images && post.images.length > 0 && (
+					<Box mb={4} borderRadius="lg" overflow="hidden">
+						{post.images.length === 1 ? (
+							<Box position="relative" w="full">
+								{isVideoUrl(post.images[0]) ? (
+									<video
+										src={post.images[0]}
 										controls
-										style={{ width: "100%", height: "100%", objectFit: "cover" }}
+										style={{ width: "100%", maxHeight: "600px", objectFit: "contain", backgroundColor: "#000" }}
 									/>
 								) : (
-									<Image 
-										src={img} 
-										alt={`Post image ${idx + 1}`} 
-										fill
-										style={{ objectFit: "cover" }}
-									/>
+									<Box position="relative" w="full" h="500px">
+										<Image
+											src={post.images[0]}
+											alt="Post image"
+											fill
+											style={{ objectFit: "contain", backgroundColor: "#F0F2F5" }}
+										/>
+									</Box>
 								)}
 							</Box>
-						))}
-					</SimpleGrid>
+						) : (
+							<SimpleGrid columns={post.images.length === 2 ? 2 : 2} spacing={2}>
+								{post.images.map((img: string, idx: number) => (
+									<Box key={idx} position="relative" w="full" h="300px">
+										{isVideoUrl(img) ? (
+											<video
+												src={img}
+												controls
+												style={{ width: "100%", height: "100%", objectFit: "cover" }}
+											/>
+										) : (
+											<Image
+												src={img}
+												alt={`Post image ${idx + 1}`}
+												fill
+												style={{ objectFit: "cover" }}
+											/>
+										)}
+									</Box>
+								))}
+							</SimpleGrid>
+						)}
+					</Box>
 				)}
-			</Box>
-		)}
 
-		{/* Tags */}
-			{post.tags && post.tags.length > 0 && (
-				<Flex gap={2} mb={4}>
-					{post.tags.map((tag, idx) => (
-						<Text key={idx} color="#1877F2" fontSize="sm" fontWeight="medium">
-							#{tag}
-						</Text>
-					))}
-				</Flex>
-			)}
+				{/* Tags */}
+				{post.tags && post.tags.length > 0 && (
+					<Flex gap={2} mb={4}>
+						{post.tags.map((tag, idx) => (
+							<Text key={idx} color="#1877F2" fontSize="sm" fontWeight="medium">
+								#{tag}
+							</Text>
+						))}
+					</Flex>
+				)}
 
 				{/* Engagement Stats */}
 				<Flex justify="space-between" align="center" py={2} borderBottom="1px solid #CED0D4" fontSize="sm" color="#65676B">
@@ -1564,634 +1568,634 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 						)}
 					</Flex>
 					<Flex gap={3}>
-					<Text>{post.commentCount} Comments</Text>
-					<Text>{post.viewCount} Views</Text>
+						<Text>{post.commentCount} Comments</Text>
+						<Text>{post.viewCount} Views</Text>
+					</Flex>
 				</Flex>
-			</Flex>
 
-			{/* Action Buttons - Facebook Style */}
-			<Flex py={1} borderBottom="1px solid #CED0D4" mb={4} justify="space-between">
-				<Button
-					flex="1"
-					variant="ghost"
-					leftIcon={hasLiked ? <Icon as={FiThumbsUp} fill="#1877F2" color="#1877F2" /> : <FiThumbsUp />}
-					color={hasLiked ? "#1877F2" : "#65676B"}
-					fontWeight="600"
-					onClick={() => reactToPostMutation.mutate("like")}
-					_hover={{ bg: "#F0F2F5" }}
-					height="36px"
-					fontSize="md"
-					borderRadius="md"
-				>
-					Like
-				</Button>
-				<Button
-					flex="1"
-					variant="ghost"
-					leftIcon={<FiMessageCircle />}
-					color="#65676B"
-					fontWeight="600"
-					_hover={{ bg: "#F0F2F5" }}
-					onClick={() => document.getElementById("commentInput")?.focus()}
-					height="36px"
-					fontSize="md"
-					borderRadius="md"
-				>
-					Comment
-				</Button>
-				<Button
-					flex="1"
-					variant="ghost"
-					leftIcon={<FiShare2 />}
-					color="#65676B"
-					fontWeight="600"
-					_hover={{ bg: "#F0F2F5" }}
-					onClick={async () => {
-						const postUrl = `${window.location.origin}/console/events/${eventId}/discussion/${postId}`
-						try {
-							if (navigator.share) {
-								await navigator.share({
-									title: post.title,
-									text: post.content.slice(0, 100) + "...",
-									url: postUrl,
-								})
-							} else {
-								await navigator.clipboard.writeText(postUrl)
+				{/* Action Buttons - Facebook Style */}
+				<Flex py={1} borderBottom="1px solid #CED0D4" mb={4} justify="space-between">
+					<Button
+						flex="1"
+						variant="ghost"
+						leftIcon={hasLiked ? <Icon as={FiThumbsUp} fill="#1877F2" color="#1877F2" /> : <FiThumbsUp />}
+						color={hasLiked ? "#1877F2" : "#65676B"}
+						fontWeight="600"
+						onClick={() => reactToPostMutation.mutate("like")}
+						_hover={{ bg: "#F0F2F5" }}
+						height="36px"
+						fontSize="md"
+						borderRadius="md"
+					>
+						Like
+					</Button>
+					<Button
+						flex="1"
+						variant="ghost"
+						leftIcon={<FiMessageCircle />}
+						color="#65676B"
+						fontWeight="600"
+						_hover={{ bg: "#F0F2F5" }}
+						onClick={() => document.getElementById("commentInput")?.focus()}
+						height="36px"
+						fontSize="md"
+						borderRadius="md"
+					>
+						Comment
+					</Button>
+					<Button
+						flex="1"
+						variant="ghost"
+						leftIcon={<FiShare2 />}
+						color="#65676B"
+						fontWeight="600"
+						_hover={{ bg: "#F0F2F5" }}
+						onClick={async () => {
+							const postUrl = `${window.location.origin}/console/events/${eventId}/discussion/${postId}`
+							try {
+								if (navigator.share) {
+									await navigator.share({
+										title: post.title,
+										text: post.content.slice(0, 100) + "...",
+										url: postUrl,
+									})
+								} else {
+									await navigator.clipboard.writeText(postUrl)
+									toast({
+										title: "Link copied!",
+										description: "Post link has been copied to clipboard",
+										status: "success",
+										duration: 2000,
+										isClosable: true,
+									})
+								}
+							} catch (error) {
 								toast({
-									title: "Link copied!",
-									description: "Post link has been copied to clipboard",
-									status: "success",
-									duration: 2000,
+									title: "Share Post",
+									description: postUrl,
+									status: "info",
+									duration: 5000,
 									isClosable: true,
 								})
 							}
-						} catch (error) {
-							toast({
-								title: "Share Post",
-								description: postUrl,
-								status: "info",
-								duration: 5000,
-								isClosable: true,
-							})
-						}
-					}}
-					height="36px"
-					fontSize="md"
-					borderRadius="md"
-				>
-					Share
-				</Button>
-			</Flex>
+						}}
+						height="36px"
+						fontSize="md"
+						borderRadius="md"
+					>
+						Share
+					</Button>
+				</Flex>
 
-			{/* Comments Section */}
-			<Box>
-				{/* New Comment Input - Always visible */}
-				{!post.isLocked && (
-					<Box mb={4}>
-						<Flex gap={2} align="flex-start">
-							{session && session.user ? (
-								<Avatar size="sm" name={session.user?.name || "User"} src={session.user?.image || ""} mt={1} />
-							) : (
-								<Avatar size="sm" name="Guest" mt={1} bg="gray.300" />
-							)}
-							<Box flex="1">
-								<Flex gap={2} align="center">
-									<Box flex="1" position="relative">
-										<Textarea
-											id="commentInput"
-											placeholder={session && session.user ? "Write a comment..." : "Login to write a comment..."}
-											value={newComment}
-											onChange={(e) => {
-												if (!session || !session.user) {
-													setIsLoginModalOpen(true)
-													return
-												}
-												setNewComment(e.target.value)
-											}}
-											onClick={() => {
-												if (!session || !session.user) {
-													setIsLoginModalOpen(true)
-												}
-											}}
-											bg="#F0F2F5"
-											border="none"
-											borderRadius="2xl"
-											_focus={{ bg: "#F0F2F5", boxShadow: "none" }}
-											minH="40px"
-											py={2}
-											px={3}
-											resize="none"
-											fontSize="sm"
-											onKeyPress={(e) => {
-												if (e.key === 'Enter' && !e.shiftKey) {
-													e.preventDefault();
+				{/* Comments Section */}
+				<Box>
+					{/* New Comment Input - Always visible */}
+					{!post.isLocked && (
+						<Box mb={4}>
+							<Flex gap={2} align="flex-start">
+								{session && session.user ? (
+									<Avatar size="sm" name={session.user?.name || "User"} src={session.user?.image || ""} mt={1} />
+								) : (
+									<Avatar size="sm" name="Guest" mt={1} bg="gray.300" />
+								)}
+								<Box flex="1">
+									<Flex gap={2} align="center">
+										<Box flex="1" position="relative">
+											<Textarea
+												id="commentInput"
+												placeholder={session && session.user ? "Write a comment..." : "Login to write a comment..."}
+												value={newComment}
+												onChange={(e) => {
 													if (!session || !session.user) {
 														setIsLoginModalOpen(true)
 														return
 													}
-													if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
-														createCommentMutation.mutate({ comment: newComment, images: commentImages });
+													setNewComment(e.target.value)
+												}}
+												onClick={() => {
+													if (!session || !session.user) {
+														setIsLoginModalOpen(true)
 													}
-												}
-											}}
-											onFocus={() => {
+												}}
+												bg="#F0F2F5"
+												border="none"
+												borderRadius="2xl"
+												_focus={{ bg: "#F0F2F5", boxShadow: "none" }}
+												minH="40px"
+												py={2}
+												px={3}
+												resize="none"
+												fontSize="sm"
+												onKeyPress={(e) => {
+													if (e.key === 'Enter' && !e.shiftKey) {
+														e.preventDefault();
+														if (!session || !session.user) {
+															setIsLoginModalOpen(true)
+															return
+														}
+														if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
+															createCommentMutation.mutate({ comment: newComment, images: commentImages });
+														}
+													}
+												}}
+												onFocus={() => {
+													if (!session || !session.user) {
+														// Don't prevent focus, but show login modal if they try to type
+													}
+												}}
+											/>
+										</Box>
+
+										{/* Send Button - Always visible on the right */}
+										<IconButton
+											aria-label="Send comment"
+											icon={<FiSend />}
+											size="md"
+											variant="ghost"
+											color={(newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) ? "#1877F2" : "#BEC3C9"}
+											onClick={() => {
 												if (!session || !session.user) {
-													// Don't prevent focus, but show login modal if they try to type
+													setIsLoginModalOpen(true)
+													return
+												}
+												if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
+													createCommentMutation.mutate({ comment: newComment, images: commentImages });
 												}
 											}}
+											isDisabled={(!newComment.trim() && commentImages.length === 0 && !commentFeeling && !commentActivity) || createCommentMutation.isPending || uploadingImages}
+											borderRadius="full"
+											_hover={{ bg: "#E4E6EB" }}
 										/>
-									</Box>
-									
-									{/* Send Button - Always visible on the right */}
-									<IconButton
-										aria-label="Send comment"
-										icon={<FiSend />}
-										size="md"
-										variant="ghost"
-										color={(newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) ? "#1877F2" : "#BEC3C9"}
-										onClick={() => {
-											if (!session || !session.user) {
-												setIsLoginModalOpen(true)
-												return
-											}
-											if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
-												createCommentMutation.mutate({ comment: newComment, images: commentImages });
-											}
-										}}
-										isDisabled={(!newComment.trim() && commentImages.length === 0 && !commentFeeling && !commentActivity) || createCommentMutation.isPending || uploadingImages}
-										borderRadius="full"
-										_hover={{ bg: "#E4E6EB" }}
-									/>
+									</Flex>
+
+									{/* Icons Row - BELOW the input (Facebook style) */}
+									<Flex gap={2} mt={1} align="center" pl={2}>
+										<IconButton
+											aria-label="Feeling/Activity"
+											icon={<Text fontSize="lg">😊</Text>}
+											size="xs"
+											variant="ghost"
+											color={commentFeeling || commentActivity ? "#1877F2" : "#65676B"}
+											borderRadius="full"
+											onClick={() => {
+												if (!session || !session.user) {
+													setIsLoginModalOpen(true)
+													return
+												}
+												onFeelingModalOpen()
+											}}
+											_hover={{ bg: "#E4E6EB" }}
+											minW="auto"
+											h="auto"
+											p={1}
+										/>
+										<IconButton
+											aria-label="Add image"
+											icon={<Text fontSize="lg">📷</Text>}
+											size="xs"
+											variant="ghost"
+											color={commentImages.length > 0 ? "#1877F2" : "#65676B"}
+											onClick={() => {
+												if (!session || !session.user) {
+													setIsLoginModalOpen(true)
+													return
+												}
+												commentFileInputRef.current?.click()
+											}}
+											isLoading={uploadingImages}
+											borderRadius="full"
+											_hover={{ bg: "#E4E6EB" }}
+											minW="auto"
+											h="auto"
+											p={1}
+										/>
+									</Flex>
+								</Box>
+							</Flex>
+
+							{/* Hidden File Input */}
+							<input
+								ref={commentFileInputRef}
+								type="file"
+								accept="image/*,video/*"
+								multiple
+								style={{ display: "none" }}
+								onChange={handleCommentImageUpload}
+							/>
+
+							{/* Selected Feeling/Activity Display */}
+							{(commentFeeling || commentActivity) && (
+								<Flex ml={10} mt={2} align="center" gap={2} flexWrap="wrap">
+									{commentFeeling && (
+										<Badge
+											colorScheme="blue"
+											fontSize="xs"
+											px={3}
+											py={1.5}
+											borderRadius="full"
+											display="flex"
+											alignItems="center"
+											gap={1}
+										>
+											{commentFeeling}
+											<IconButton
+												aria-label="Remove feeling"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="blue.600"
+												onClick={() => setCommentFeeling("")}
+												h="16px"
+												minW="16px"
+												ml={1}
+											/>
+										</Badge>
+									)}
+									{commentActivity && (
+										<Badge
+											colorScheme="green"
+											fontSize="xs"
+											px={3}
+											py={1.5}
+											borderRadius="full"
+											display="flex"
+											alignItems="center"
+											gap={1}
+										>
+											{commentActivity}
+											<IconButton
+												aria-label="Remove activity"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="green.600"
+												onClick={() => setCommentActivity("")}
+												h="16px"
+												minW="16px"
+												ml={1}
+											/>
+										</Badge>
+									)}
 								</Flex>
-								
-								{/* Icons Row - BELOW the input (Facebook style) */}
-								<Flex gap={2} mt={1} align="center" pl={2}>
-									<IconButton
-										aria-label="Feeling/Activity"
-										icon={<Text fontSize="lg">😊</Text>}
-										size="xs"
-										variant="ghost"
-										color={commentFeeling || commentActivity ? "#1877F2" : "#65676B"}
-										borderRadius="full"
-										onClick={() => {
-											if (!session || !session.user) {
-												setIsLoginModalOpen(true)
-												return
-											}
-											onFeelingModalOpen()
-										}}
-										_hover={{ bg: "#E4E6EB" }}
-										minW="auto"
-										h="auto"
-										p={1}
-									/>
-									<IconButton
-										aria-label="Add image"
-										icon={<Text fontSize="lg">📷</Text>}
-										size="xs"
-										variant="ghost"
-										color={commentImages.length > 0 ? "#1877F2" : "#65676B"}
-										onClick={() => {
-											if (!session || !session.user) {
-												setIsLoginModalOpen(true)
-												return
-											}
-											commentFileInputRef.current?.click()
-										}}
-										isLoading={uploadingImages}
-										borderRadius="full"
-										_hover={{ bg: "#E4E6EB" }}
-										minW="auto"
-										h="auto"
-										p={1}
-									/>
+							)}
+
+							{/* Image Preview */}
+							{commentImages.length > 0 && (
+								<Flex gap={2} mt={2} ml={10} flexWrap="wrap">
+									{commentImages.map((url, index) => (
+										<Box key={index} position="relative" w="100px" h="100px" borderRadius="lg" overflow="hidden" border="1px solid #E4E6EB">
+											<Image
+												src={url}
+												alt={`Upload ${index + 1}`}
+												fill
+												style={{ objectFit: "cover" }}
+											/>
+											<IconButton
+												aria-label="Remove image"
+												icon={<FiX />}
+												size="xs"
+												position="absolute"
+												top={1}
+												right={1}
+												bg="blackAlpha.700"
+												color="white"
+												borderRadius="full"
+												_hover={{ bg: "blackAlpha.800" }}
+												onClick={() => setCommentImages(commentImages.filter((_, i) => i !== index))}
+											/>
+										</Box>
+									))}
+								</Flex>
+							)}
+						</Box>
+					)}
+
+					{post.isLocked && (
+						<Box p={3} bg="#F0F2F5" borderRadius="lg" mb={4}>
+							<Flex align="center" gap={2}>
+								<Icon as={FiLock} color="#65676B" />
+								<Text color="#65676B" fontWeight="medium" fontSize="sm">
+									This discussion is locked. No new comments can be added.
+								</Text>
+							</Flex>
+						</Box>
+					)}
+
+					{/* Comments List */}
+					{isLoadingComments ? (
+						<Flex justify="center" py={8}>
+							<ChakraSpinner color="#1877F2" />
+						</Flex>
+					) : groupedComments["root"]?.length > 0 ? (
+						<Stack spacing={2}>
+							{groupedComments["root"].map((comment) => (
+								<CommentItem
+									key={comment._id}
+									comment={comment}
+									groupedComments={groupedComments}
+									currentUserId={currentUserId}
+									onReply={(commentId, text) => replyToCommentMutation.mutate({ commentId, reply: text })}
+									onEdit={(commentId, text, images) => editCommentMutation.mutate({ commentId, newComment: text, images })}
+									onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
+									onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
+									isLocked={post.isLocked}
+									onLoginRequired={() => setIsLoginModalOpen(true)}
+								/>
+							))}
+						</Stack>
+					) : (
+						<Box py={8} textAlign="center" color="#9CA3AF">
+							<Icon as={FiMessageCircle} boxSize={10} mb={2} />
+							<Text>No comments yet.</Text>
+						</Box>
+					)}
+				</Box>
+			</Box>
+
+			{/* Feeling/Activity/Emoji Picker Modal for Comments */}
+			<Modal isOpen={isFeelingModalOpen} onClose={onFeelingModalClose} isCentered size="lg">
+				<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
+				<ModalContent borderRadius="xl">
+					<ModalHeader borderBottom="1px solid" borderColor="gray.100" pb={4}>
+						<Text fontSize="lg" fontWeight="bold">Add Expression</Text>
+					</ModalHeader>
+					<ModalCloseButton mt={1.5} />
+					<ModalBody py={4}>
+						{/* Current Selection Display */}
+						{(commentFeeling || commentActivity) && (
+							<Box p={3} bg="#E7F3FF" borderRadius="lg" border="1px solid #1877F2" mb={4}>
+								<Text fontSize="sm" fontWeight="600" color="#1877F2" mb={2}>
+									Selected:
+								</Text>
+								<Flex gap={2} flexWrap="wrap">
+									{commentFeeling && (
+										<Badge colorScheme="blue" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
+											{commentFeeling}
+											<IconButton
+												aria-label="Remove feeling"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="blue.600"
+												onClick={() => setCommentFeeling("")}
+												ml={1}
+												h="18px"
+												minW="18px"
+											/>
+										</Badge>
+									)}
+									{commentActivity && (
+										<Badge colorScheme="green" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
+											{commentActivity}
+											<IconButton
+												aria-label="Remove activity"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="green.600"
+												onClick={() => setCommentActivity("")}
+												ml={1}
+												h="18px"
+												minW="18px"
+											/>
+										</Badge>
+									)}
 								</Flex>
 							</Box>
-						</Flex>
-						
-						{/* Hidden File Input */}
-						<input
-							ref={commentFileInputRef}
-							type="file"
-							accept="image/*,video/*"
-							multiple
-							style={{ display: "none" }}
-							onChange={handleCommentImageUpload}
-						/>
-						
-						{/* Selected Feeling/Activity Display */}
-						{(commentFeeling || commentActivity) && (
-							<Flex ml={10} mt={2} align="center" gap={2} flexWrap="wrap">
-								{commentFeeling && (
-									<Badge 
-										colorScheme="blue" 
-										fontSize="xs" 
-										px={3} 
-										py={1.5} 
-										borderRadius="full" 
-										display="flex" 
-										alignItems="center" 
-										gap={1}
-									>
-										{commentFeeling}
-										<IconButton
-											aria-label="Remove feeling"
-											icon={<FiX />}
-											size="xs"
-											variant="ghost"
-											color="blue.600"
-											onClick={() => setCommentFeeling("")}
-											h="16px"
-											minW="16px"
-											ml={1}
-										/>
-									</Badge>
-								)}
-								{commentActivity && (
-									<Badge 
-										colorScheme="green" 
-										fontSize="xs" 
-										px={3} 
-										py={1.5} 
-										borderRadius="full" 
-										display="flex" 
-										alignItems="center" 
-										gap={1}
-									>
-										{commentActivity}
-										<IconButton
-											aria-label="Remove activity"
-											icon={<FiX />}
-											size="xs"
-											variant="ghost"
-											color="green.600"
-											onClick={() => setCommentActivity("")}
-											h="16px"
-											minW="16px"
-											ml={1}
-										/>
-									</Badge>
-								)}
-							</Flex>
 						)}
-						
-						{/* Image Preview */}
-						{commentImages.length > 0 && (
-							<Flex gap={2} mt={2} ml={10} flexWrap="wrap">
-								{commentImages.map((url, index) => (
-									<Box key={index} position="relative" w="100px" h="100px" borderRadius="lg" overflow="hidden" border="1px solid #E4E6EB">
-										<Image 
-											src={url} 
-											alt={`Upload ${index + 1}`} 
-											fill
-											style={{ objectFit: "cover" }}
-										/>
-										<IconButton
-											aria-label="Remove image"
-											icon={<FiX />}
-											size="xs"
-											position="absolute"
-											top={1}
-											right={1}
-											bg="blackAlpha.700"
-											color="white"
-											borderRadius="full"
-											_hover={{ bg: "blackAlpha.800" }}
-											onClick={() => setCommentImages(commentImages.filter((_, i) => i !== index))}
+
+						<Tabs colorScheme="blue" variant="soft-rounded" isFitted>
+							<TabList mb={4} p={1} bg="gray.50" borderRadius="full">
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">😊 Emojis</Tab>
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">💭 Feelings</Tab>
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">🎯 Activities</Tab>
+							</TabList>
+
+							<TabPanels>
+								{/* Emoji Picker Tab */}
+								<TabPanel p={0}>
+									<Box display="flex" justifyContent="center">
+										<EmojiPicker
+											onEmojiClick={(emojiData: any) => {
+												// Add emoji to comment feeling
+												setCommentFeeling((prev) => prev ? `${prev} ${emojiData.emoji}` : emojiData.emoji)
+											}}
+											width="100%"
+											height="350px"
+											searchDisabled={false}
+											skinTonesDisabled
 										/>
 									</Box>
-								))}
-							</Flex>
+								</TabPanel>
+
+								{/* Feelings Tab */}
+								<TabPanel p={0} maxH="350px" overflowY="auto">
+									<SimpleGrid columns={2} spacing={2}>
+										{FEELINGS.map((item) => (
+											<Button
+												key={item.label}
+												variant="ghost"
+												justifyContent="flex-start"
+												onClick={() => setCommentFeeling(`${item.emoji} ${item.label}`)}
+												bg={commentFeeling?.includes(item.label) ? "#E7F3FF" : "transparent"}
+												_hover={{ bg: "#F0F2F5" }}
+												py={6}
+												h="auto"
+												border="1px solid"
+												borderColor={commentFeeling?.includes(item.label) ? "blue.200" : "transparent"}
+											>
+												<Flex align="center" gap={3}>
+													<Text fontSize="3xl">{item.emoji}</Text>
+													<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
+												</Flex>
+											</Button>
+										))}
+									</SimpleGrid>
+								</TabPanel>
+
+								{/* Activities Tab */}
+								<TabPanel p={0} maxH="350px" overflowY="auto">
+									<SimpleGrid columns={2} spacing={2}>
+										{ACTIVITIES.map((item) => (
+											<Button
+												key={item.label}
+												variant="ghost"
+												justifyContent="flex-start"
+												onClick={() => setCommentActivity(`${item.emoji} ${item.label}`)}
+												bg={commentActivity?.includes(item.label) ? "#D4EDDA" : "transparent"}
+												_hover={{ bg: "#F0F2F5" }}
+												py={6}
+												h="auto"
+												border="1px solid"
+												borderColor={commentActivity?.includes(item.label) ? "green.200" : "transparent"}
+											>
+												<Flex align="center" gap={3}>
+													<Text fontSize="3xl">{item.emoji}</Text>
+													<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
+												</Flex>
+											</Button>
+										))}
+									</SimpleGrid>
+								</TabPanel>
+							</TabPanels>
+						</Tabs>
+					</ModalBody>
+					<ModalFooter borderTop="1px solid" borderColor="gray.100">
+						<Button variant="ghost" mr={3} onClick={onFeelingModalClose}>
+							Cancel
+						</Button>
+						<Button
+							colorScheme="blue"
+							onClick={onFeelingModalClose}
+							px={8}
+						>
+							Done
+						</Button>
+					</ModalFooter>
+				</ModalContent>
+			</Modal>
+
+			{/* Feeling/Activity/Emoji Picker Modal for Edit Post */}
+			<Modal isOpen={isEditPostFeelingModalOpen} onClose={onEditPostFeelingModalClose} isCentered size="lg">
+				<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
+				<ModalContent borderRadius="xl">
+					<ModalHeader borderBottom="1px solid" borderColor="gray.100" pb={4}>
+						<Text fontSize="lg" fontWeight="bold">Add Expression</Text>
+					</ModalHeader>
+					<ModalCloseButton mt={1.5} />
+					<ModalBody py={4}>
+						{/* Current Selection Display */}
+						{(editPostFeeling || editPostActivity) && (
+							<Box p={3} bg="#E7F3FF" borderRadius="lg" border="1px solid #1877F2" mb={4}>
+								<Text fontSize="sm" fontWeight="600" color="#1877F2" mb={2}>
+									Selected:
+								</Text>
+								<Flex gap={2} flexWrap="wrap">
+									{editPostFeeling && (
+										<Badge colorScheme="blue" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
+											{editPostFeeling}
+											<IconButton
+												aria-label="Remove feeling"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="blue.600"
+												onClick={() => setEditPostFeeling("")}
+												ml={1}
+												h="18px"
+												minW="18px"
+											/>
+										</Badge>
+									)}
+									{editPostActivity && (
+										<Badge colorScheme="green" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
+											{editPostActivity}
+											<IconButton
+												aria-label="Remove activity"
+												icon={<FiX />}
+												size="xs"
+												variant="ghost"
+												color="green.600"
+												onClick={() => setEditPostActivity("")}
+												ml={1}
+												h="18px"
+												minW="18px"
+											/>
+										</Badge>
+									)}
+								</Flex>
+							</Box>
 						)}
-					</Box>
-				)}
 
-				{post.isLocked && (
-					<Box p={3} bg="#F0F2F5" borderRadius="lg" mb={4}>
-						<Flex align="center" gap={2}>
-							<Icon as={FiLock} color="#65676B" />
-							<Text color="#65676B" fontWeight="medium" fontSize="sm">
-								This discussion is locked. No new comments can be added.
-							</Text>
-						</Flex>
-					</Box>
-				)}
+						<Tabs colorScheme="blue" variant="soft-rounded" isFitted>
+							<TabList mb={4} p={1} bg="gray.50" borderRadius="full">
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">😊 Emojis</Tab>
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">💭 Feelings</Tab>
+								<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">🎯 Activities</Tab>
+							</TabList>
 
-				{/* Comments List */}
-				{isLoadingComments ? (
-					<Flex justify="center" py={8}>
-						<ChakraSpinner color="#1877F2" />
-					</Flex>
-				) : groupedComments["root"]?.length > 0 ? (
-					<Stack spacing={2}>
-						{groupedComments["root"].map((comment) => (
-							<CommentItem
-								key={comment._id}
-								comment={comment}
-								groupedComments={groupedComments}
-								currentUserId={currentUserId}
-								onReply={(commentId, text) => replyToCommentMutation.mutate({ commentId, reply: text })}
-								onEdit={(commentId, text, images) => editCommentMutation.mutate({ commentId, newComment: text, images })}
-								onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
-								onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
-								isLocked={post.isLocked}
-								onLoginRequired={() => setIsLoginModalOpen(true)}
-							/>
-						))}
-					</Stack>
-				) : (
-					<Box py={8} textAlign="center" color="#9CA3AF">
-						<Icon as={FiMessageCircle} boxSize={10} mb={2} />
-						<Text>No comments yet.</Text>
-					</Box>
-				)}
-			</Box>
-		</Box>
-		
-		{/* Feeling/Activity/Emoji Picker Modal for Comments */}
-		<Modal isOpen={isFeelingModalOpen} onClose={onFeelingModalClose} isCentered size="lg">
-			<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
-			<ModalContent borderRadius="xl">
-				<ModalHeader borderBottom="1px solid" borderColor="gray.100" pb={4}>
-					<Text fontSize="lg" fontWeight="bold">Add Expression</Text>
-				</ModalHeader>
-				<ModalCloseButton mt={1.5} />
-				<ModalBody py={4}>
-					{/* Current Selection Display */}
-					{(commentFeeling || commentActivity) && (
-						<Box p={3} bg="#E7F3FF" borderRadius="lg" border="1px solid #1877F2" mb={4}>
-							<Text fontSize="sm" fontWeight="600" color="#1877F2" mb={2}>
-								Selected:
-							</Text>
-							<Flex gap={2} flexWrap="wrap">
-								{commentFeeling && (
-									<Badge colorScheme="blue" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
-										{commentFeeling}
-										<IconButton
-											aria-label="Remove feeling"
-											icon={<FiX />}
-											size="xs"
-											variant="ghost"
-											color="blue.600"
-											onClick={() => setCommentFeeling("")}
-											ml={1}
-											h="18px"
-											minW="18px"
+							<TabPanels>
+								{/* Emoji Picker Tab */}
+								<TabPanel p={0}>
+									<Box display="flex" justifyContent="center">
+										<EmojiPicker
+											onEmojiClick={(emojiData: any) => {
+												setEditPostFeeling((prev) => prev ? `${prev} ${emojiData.emoji}` : emojiData.emoji)
+											}}
+											width="100%"
+											height="350px"
+											searchDisabled={false}
+											skinTonesDisabled
 										/>
-									</Badge>
-								)}
-								{commentActivity && (
-									<Badge colorScheme="green" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
-										{commentActivity}
-										<IconButton
-											aria-label="Remove activity"
-											icon={<FiX />}
-											size="xs"
-											variant="ghost"
-											color="green.600"
-											onClick={() => setCommentActivity("")}
-											ml={1}
-											h="18px"
-											minW="18px"
-										/>
-									</Badge>
-								)}
-							</Flex>
-						</Box>
-					)}
-					
-					<Tabs colorScheme="blue" variant="soft-rounded" isFitted>
-						<TabList mb={4} p={1} bg="gray.50" borderRadius="full">
-							<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">😊 Emojis</Tab>
-							<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">💭 Feelings</Tab>
-							<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">🎯 Activities</Tab>
-						</TabList>
-						
-						<TabPanels>
-							{/* Emoji Picker Tab */}
-							<TabPanel p={0}>
-								<Box display="flex" justifyContent="center">
-									<EmojiPicker
-										onEmojiClick={(emojiData: any) => {
-											// Add emoji to comment feeling
-											setCommentFeeling((prev) => prev ? `${prev} ${emojiData.emoji}` : emojiData.emoji)
-										}}
-										width="100%"
-										height="350px"
-										searchDisabled={false}
-										skinTonesDisabled
-									/>
-								</Box>
-							</TabPanel>
-							
-							{/* Feelings Tab */}
-							<TabPanel p={0} maxH="350px" overflowY="auto">
-								<SimpleGrid columns={2} spacing={2}>
-									{FEELINGS.map((item) => (
-										<Button
-											key={item.label}
-											variant="ghost"
-											justifyContent="flex-start"
-											onClick={() => setCommentFeeling(`${item.emoji} ${item.label}`)}
-											bg={commentFeeling?.includes(item.label) ? "#E7F3FF" : "transparent"}
-											_hover={{ bg: "#F0F2F5" }}
-											py={6}
-											h="auto"
-											border="1px solid"
-											borderColor={commentFeeling?.includes(item.label) ? "blue.200" : "transparent"}
-										>
-											<Flex align="center" gap={3}>
-												<Text fontSize="3xl">{item.emoji}</Text>
-												<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
-											</Flex>
-										</Button>
-									))}
-								</SimpleGrid>
-							</TabPanel>
-							
-							{/* Activities Tab */}
-							<TabPanel p={0} maxH="350px" overflowY="auto">
-								<SimpleGrid columns={2} spacing={2}>
-									{ACTIVITIES.map((item) => (
-										<Button
-											key={item.label}
-											variant="ghost"
-											justifyContent="flex-start"
-											onClick={() => setCommentActivity(`${item.emoji} ${item.label}`)}
-											bg={commentActivity?.includes(item.label) ? "#D4EDDA" : "transparent"}
-											_hover={{ bg: "#F0F2F5" }}
-											py={6}
-											h="auto"
-											border="1px solid"
-											borderColor={commentActivity?.includes(item.label) ? "green.200" : "transparent"}
-										>
-											<Flex align="center" gap={3}>
-												<Text fontSize="3xl">{item.emoji}</Text>
-												<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
-											</Flex>
-										</Button>
-									))}
-								</SimpleGrid>
-							</TabPanel>
-						</TabPanels>
-					</Tabs>
-				</ModalBody>
-				<ModalFooter borderTop="1px solid" borderColor="gray.100">
-					<Button variant="ghost" mr={3} onClick={onFeelingModalClose}>
-						Cancel
-					</Button>
-					<Button
-						colorScheme="blue"
-						onClick={onFeelingModalClose}
-						px={8}
-					>
-						Done
-					</Button>
-				</ModalFooter>
-			</ModalContent>
-		</Modal>
-		
-		{/* Feeling/Activity/Emoji Picker Modal for Edit Post */}
-		<Modal isOpen={isEditPostFeelingModalOpen} onClose={onEditPostFeelingModalClose} isCentered size="lg">
-			<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
-			<ModalContent borderRadius="xl">
-				<ModalHeader borderBottom="1px solid" borderColor="gray.100" pb={4}>
-					<Text fontSize="lg" fontWeight="bold">Add Expression</Text>
-				</ModalHeader>
-				<ModalCloseButton mt={1.5} />
-				<ModalBody py={4}>
-					{/* Current Selection Display */}
-					{(editPostFeeling || editPostActivity) && (
-						<Box p={3} bg="#E7F3FF" borderRadius="lg" border="1px solid #1877F2" mb={4}>
-							<Text fontSize="sm" fontWeight="600" color="#1877F2" mb={2}>
-								Selected:
-							</Text>
-							<Flex gap={2} flexWrap="wrap">
-								{editPostFeeling && (
-									<Badge colorScheme="blue" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
-										{editPostFeeling}
-										<IconButton
-											aria-label="Remove feeling"
-											icon={<FiX />}
-											size="xs"
-											variant="ghost"
-											color="blue.600"
-											onClick={() => setEditPostFeeling("")}
-											ml={1}
-											h="18px"
-											minW="18px"
-										/>
-									</Badge>
-								)}
-								{editPostActivity && (
-									<Badge colorScheme="green" fontSize="sm" px={3} py={1.5} borderRadius="full" display="flex" alignItems="center" gap={1}>
-										{editPostActivity}
-										<IconButton
-											aria-label="Remove activity"
-											icon={<FiX />}
-											size="xs"
-											variant="ghost"
-											color="green.600"
-											onClick={() => setEditPostActivity("")}
-											ml={1}
-											h="18px"
-											minW="18px"
-										/>
-									</Badge>
-								)}
-							</Flex>
-						</Box>
-					)}
-					
-					<Tabs colorScheme="blue" variant="soft-rounded" isFitted>
-						<TabList mb={4} p={1} bg="gray.50" borderRadius="full">
-							<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">😊 Emojis</Tab>
-							<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">💭 Feelings</Tab>
-							<Tab _selected={{ color: "white", bg: "blue.500" }} borderRadius="full" fontWeight="600">🎯 Activities</Tab>
-						</TabList>
-						
-						<TabPanels>
-							{/* Emoji Picker Tab */}
-							<TabPanel p={0}>
-								<Box display="flex" justifyContent="center">
-									<EmojiPicker
-										onEmojiClick={(emojiData: any) => {
-											setEditPostFeeling((prev) => prev ? `${prev} ${emojiData.emoji}` : emojiData.emoji)
-										}}
-										width="100%"
-										height="350px"
-										searchDisabled={false}
-										skinTonesDisabled
-									/>
-								</Box>
-							</TabPanel>
-							
-							{/* Feelings Tab */}
-							<TabPanel p={0} maxH="350px" overflowY="auto">
-								<SimpleGrid columns={2} spacing={2}>
-									{FEELINGS.map((item) => (
-										<Button
-											key={item.label}
-											variant="ghost"
-											justifyContent="flex-start"
-											onClick={() => setEditPostFeeling(`${item.emoji} ${item.label}`)}
-											bg={editPostFeeling?.includes(item.label) ? "#E7F3FF" : "transparent"}
-											_hover={{ bg: "#F0F2F5" }}
-											py={6}
-											h="auto"
-											border="1px solid"
-											borderColor={editPostFeeling?.includes(item.label) ? "blue.200" : "transparent"}
-										>
-											<Flex align="center" gap={3}>
-												<Text fontSize="3xl">{item.emoji}</Text>
-												<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
-											</Flex>
-										</Button>
-									))}
-								</SimpleGrid>
-							</TabPanel>
-							
-							{/* Activities Tab */}
-							<TabPanel p={0} maxH="350px" overflowY="auto">
-								<SimpleGrid columns={2} spacing={2}>
-									{ACTIVITIES.map((item) => (
-										<Button
-											key={item.label}
-											variant="ghost"
-											justifyContent="flex-start"
-											onClick={() => setEditPostActivity(`${item.emoji} ${item.label}`)}
-											bg={editPostActivity?.includes(item.label) ? "#D4EDDA" : "transparent"}
-											_hover={{ bg: "#F0F2F5" }}
-											py={6}
-											h="auto"
-											border="1px solid"
-											borderColor={editPostActivity?.includes(item.label) ? "green.200" : "transparent"}
-										>
-											<Flex align="center" gap={3}>
-												<Text fontSize="3xl">{item.emoji}</Text>
-												<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
-											</Flex>
-										</Button>
-									))}
-								</SimpleGrid>
-							</TabPanel>
-						</TabPanels>
-					</Tabs>
-				</ModalBody>
-				<ModalFooter borderTop="1px solid" borderColor="gray.100">
-					<Button variant="ghost" mr={3} onClick={onEditPostFeelingModalClose}>
-						Cancel
-					</Button>
-					<Button
-						colorScheme="blue"
-						onClick={onEditPostFeelingModalClose}
-						px={8}
-					>
-						Done
-					</Button>
-				</ModalFooter>
-			</ModalContent>
-		</Modal>
+									</Box>
+								</TabPanel>
+
+								{/* Feelings Tab */}
+								<TabPanel p={0} maxH="350px" overflowY="auto">
+									<SimpleGrid columns={2} spacing={2}>
+										{FEELINGS.map((item) => (
+											<Button
+												key={item.label}
+												variant="ghost"
+												justifyContent="flex-start"
+												onClick={() => setEditPostFeeling(`${item.emoji} ${item.label}`)}
+												bg={editPostFeeling?.includes(item.label) ? "#E7F3FF" : "transparent"}
+												_hover={{ bg: "#F0F2F5" }}
+												py={6}
+												h="auto"
+												border="1px solid"
+												borderColor={editPostFeeling?.includes(item.label) ? "blue.200" : "transparent"}
+											>
+												<Flex align="center" gap={3}>
+													<Text fontSize="3xl">{item.emoji}</Text>
+													<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
+												</Flex>
+											</Button>
+										))}
+									</SimpleGrid>
+								</TabPanel>
+
+								{/* Activities Tab */}
+								<TabPanel p={0} maxH="350px" overflowY="auto">
+									<SimpleGrid columns={2} spacing={2}>
+										{ACTIVITIES.map((item) => (
+											<Button
+												key={item.label}
+												variant="ghost"
+												justifyContent="flex-start"
+												onClick={() => setEditPostActivity(`${item.emoji} ${item.label}`)}
+												bg={editPostActivity?.includes(item.label) ? "#D4EDDA" : "transparent"}
+												_hover={{ bg: "#F0F2F5" }}
+												py={6}
+												h="auto"
+												border="1px solid"
+												borderColor={editPostActivity?.includes(item.label) ? "green.200" : "transparent"}
+											>
+												<Flex align="center" gap={3}>
+													<Text fontSize="3xl">{item.emoji}</Text>
+													<Text fontSize="md" textTransform="capitalize" fontWeight="500">{item.label}</Text>
+												</Flex>
+											</Button>
+										))}
+									</SimpleGrid>
+								</TabPanel>
+							</TabPanels>
+						</Tabs>
+					</ModalBody>
+					<ModalFooter borderTop="1px solid" borderColor="gray.100">
+						<Button variant="ghost" mr={3} onClick={onEditPostFeelingModalClose}>
+							Cancel
+						</Button>
+						<Button
+							colorScheme="blue"
+							onClick={onEditPostFeelingModalClose}
+							px={8}
+						>
+							Done
+						</Button>
+					</ModalFooter>
+				</ModalContent>
+			</Modal>
 			{/* Login Modal */}
 			<LoginModal
 				isOpen={isLoginModalOpen}
