@@ -65,14 +65,6 @@ type Props = {
 	event: IEvent
 }
 
-// Hardcoded placeholder guests - shown when no featuredGuests in database
-const defaultFeaturedGuests = [
-	{ name: "Abhi", title: "Product Manager", image: null },
-	{ name: "Kanshima", title: "Marketing Lead", image: null },
-	{ name: "Michael", title: "Community Manager", image: null },
-	{ name: "Richard", title: "Tech Lead", image: null },
-]
-
 // Hardcoded hosts - shown as placeholder
 const defaultHosts = [
 	{ name: "Host 1", image: null },
