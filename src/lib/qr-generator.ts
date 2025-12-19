@@ -26,7 +26,6 @@ export async function generateQRCodeDataUrl(token: string, baseUrl?: string): Pr
 		// Create a URL to the ticket details page
 		// This allows scanning to directly show all ticket information
 		const appUrl = baseUrl || process.env.NEXT_PUBLIC_URL
-		
 		if (!appUrl) {
 			throw new Error("NEXT_PUBLIC_URL environment variable is required for QR code generation")
 		}
@@ -98,7 +97,7 @@ export async function generateQRCodeForBooking(
 /**
  * Extract token from QR code payload
  * Handles formats like:
- * - URL: "{baseUrl}/ticket/token" (e.g., "https://events.jetzy.com/ticket/token" or "http://localhost:3000/ticket/token")
+ * - URL: "{baseUrl}/ticket/token" (where baseUrl comes from NEXT_PUBLIC_URL environment variable)
  * - Direct: "JETZY:token" or just "token"
  */
 export function extractTokenFromQRPayload(qrPayload: string): string | null {

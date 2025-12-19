@@ -42,7 +42,6 @@ export const adminOnly = async (context: any) => {
 
 	const userRole = (session.user as any)?.role
 	const isAdmin = userRole === "admin" || userRole === "super admin"
-
 	if (!isAdmin) {
 		return {
 			redirect: {

@@ -7,6 +7,7 @@ import { EventGuest } from "@/models/eventGuest"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
+import { BookingStatus } from "@/models/events/types"
 
 /**
  * API endpoint to record check-in
@@ -30,8 +31,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Unauthorized. Please login.", false, ResCode.UNAUTHORIZED)
 		}
 
+		// Verify admin access - Check-in recording is admin only
 		// @ts-ignore
-		if (session.user?.role !== "admin") {
+		if (session.user?.role !== "admin" && session.user?.role !== "super admin") {
 			return sendResponse(res, null, "Access denied. Admin only.", false, ResCode.FORBIDDEN)
 		}
 
@@ -155,6 +157,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				await checkIn.save()
 				checkInRecords.push(checkIn)
+
+				// Update booking status to CHECKED_IN only when fully checked in
+				if (booking.status === BookingStatus.CONFIRMED && checkIn.isFullyCheckedIn) {
+					booking.status = BookingStatus.CHECKED_IN
+					await booking.save()
+				}
 
 				// Save guest details if provided
 				if (guestDetails && Array.isArray(guestDetails) && guestDetails.length > 0) {

@@ -3,10 +3,13 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Bookings } from "@/models/events/bookings"
 import { extractTokenFromQRPayload } from "@/lib/qr-generator"
-import { sendResponse, ResCode } from "@/lib/utils"
+import { sendResponse } from "@/lib/helpers"
+import { ResCode } from "@/lib/responseCodes"
 import { Types } from "mongoose"
 import { Events } from "@/models/events"
 import { EventInvitation } from "@/models/events/event-invitations"
+import { CheckIn } from "@/models/checkIn"
+import { BookingStatus } from "@/models/events/types"
 
 /**
  * POST /api/check-in/verify-qr
@@ -25,6 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Unauthorized. Please login.", false, ResCode.UNAUTHORIZED)
 		}
 
+		// Verify admin access - QR scanning is admin only
 		// @ts-ignore
 		if (session.user?.role !== "admin" && session.user?.role !== "super admin") {
 			return sendResponse(res, null, "Access denied. Admin only.", false, ResCode.FORBIDDEN)
@@ -96,8 +100,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			)
 		}
 
-		// Check if booking is confirmed - only confirmed bookings can be checked in
-		if (booking.status !== "CONFIRMED") {
+		// Check if booking is confirmed or already checked in
+		if (booking.status !== BookingStatus.CONFIRMED && booking.status !== BookingStatus.CHECKED_IN) {
 			return sendResponse(
 				res,
 				{
@@ -110,8 +114,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			)
 		}
 
+		// Check if booking is already fully checked in
+		const checkInRecord = await CheckIn.findOne({ bookingId: booking._id }).lean()
+		// Only consider fully checked in if all tickets are checked in
+		const isAlreadyCheckedIn = checkInRecord && checkInRecord.isFullyCheckedIn === true
+		
 		// Calculate total tickets and get detailed ticket information
 		const totalTickets = booking.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+		
+		// Get check-in information if exists
+		let checkedInCount = 0
+		let remainingTickets = totalTickets
+		let firstCheckInAt: string | null = null
+		let lastCheckInAt: string | null = null
+		let checkInHistory: any[] = []
+		
+		if (checkInRecord) {
+			checkedInCount = checkInRecord.checkedInCount || 0
+			remainingTickets = totalTickets - checkedInCount
+			firstCheckInAt = checkInRecord.firstCheckInAt ? checkInRecord.firstCheckInAt.toISOString() : null
+			lastCheckInAt = checkInRecord.lastCheckInAt ? checkInRecord.lastCheckInAt.toISOString() : null
+			checkInHistory = checkInRecord.checkInHistory || []
+		}
 		
 		// Get detailed ticket information
 		const ticketDetails = booking.tickets.map((bookingTicket: any) => {
@@ -146,6 +170,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				subTotal: booking.subTotal,
 				total: booking.total,
 				status: booking.status,
+				isAlreadyCheckedIn,
+				checkedInCount,
+				remainingTickets,
+				isFullyCheckedIn: isAlreadyCheckedIn && remainingTickets === 0,
+				firstCheckInAt,
+				lastCheckInAt,
+				checkInHistory,
 				event: {
 					_id: event?._id.toString(),
 					name: event?.name,
@@ -160,7 +191,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					status: inv.status,
 				})),
 			},
-			"QR code verified successfully",
+			isAlreadyCheckedIn 
+				? "This booking has already been checked in." 
+				: "QR code verified successfully. Ready for check-in.",
 			true,
 			ResCode.OK
 		)

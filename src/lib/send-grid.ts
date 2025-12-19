@@ -195,10 +195,11 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
 }
 
 export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDate, eventLocation, hostName }: EventInvitationData) => {
-	if (!process.env.NEXT_PUBLIC_URL) {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (!baseUrl) {
 		throw new Error("NEXT_PUBLIC_URL environment variable is required")
 	}
-	const eventUrl = `${process.env.NEXT_PUBLIC_URL}/events/${eventSlug}`
+	const eventUrl = `${baseUrl}/events/${eventSlug}`
 	
 	try {
 		await sgMail.send({
@@ -283,10 +284,11 @@ export const sendBlastEmail = async ({
 	subject,
 	customMessage,
 }: BlastEmailData) => {
-	if (!process.env.NEXT_PUBLIC_URL) {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (!baseUrl) {
 		throw new Error("NEXT_PUBLIC_URL environment variable is required")
 	}
-	const eventUrl = `${process.env.NEXT_PUBLIC_URL}/events/${eventSlug}`
+	const eventUrl = `${baseUrl}/events/${eventSlug}`
 
 	// Dynamic button text and styling based on email type
 	const buttonConfig = {
@@ -368,12 +370,36 @@ export const sendBlastEmail = async ({
 }
 
 export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [] }: TicketEmailData) => {
-	if (!process.env.NEXT_PUBLIC_URL) {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	
+	if (!baseUrl) {
 		throw new Error("NEXT_PUBLIC_URL environment variable is required")
 	}
+	
+	// Skip email sending in localhost to avoid sending test emails
+	if (baseUrl.includes('localhost')) {
+		console.log("[LOCALHOST MODE] Email sending skipped - would send to:", email)
+		console.log("[LOCALHOST MODE] Order Number:", orderNumber)
+		console.log("[LOCALHOST MODE] Event:", event.name)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
 	console.log("[sendTicketConfirmation] Called with:", { email, orderNumber, eventName: event.name, isNewUser, ticketCount: tickets.length })
-	console.log("[sendTicketConfirmation] API Key set:", !!process.env.SENDGRID_API_KEY)
-	console.log("[sendTicketConfirmation] Sender email:", process.env.SENDGRID_EMAIL_SENDER)
+	
+	// Validate SendGrid configuration
+	if (!process.env.SENDGRID_API_KEY) {
+		const errorMsg = "SENDGRID_API_KEY is not set in environment variables"
+		console.error("[sendTicketConfirmation] ❌", errorMsg)
+		throw new Error(errorMsg)
+	}
+	
+	if (!process.env.SENDGRID_EMAIL_SENDER) {
+		const errorMsg = "SENDGRID_EMAIL_SENDER is not set in environment variables"
+		console.error("[sendTicketConfirmation] ❌", errorMsg)
+		throw new Error(errorMsg)
+	}
+	
+	console.log("[sendTicketConfirmation] ✅ API Key set:", !!process.env.SENDGRID_API_KEY)
+	console.log("[sendTicketConfirmation] ✅ Sender email:", process.env.SENDGRID_EMAIL_SENDER)
 	
 	try {
 		// format event start and end time
@@ -408,7 +434,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 							filename: 'qr-code.png',
 							type: `image/${base64Match[1]}`,
 							content: base64Data,
-							contentId: 'qrCode',
+							content_id: 'qrCode', // SendGrid requires snake_case, not camelCase
 							disposition: 'inline',
 						})
 						hasAttachment = true
@@ -534,7 +560,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
               <li>Receive updates about events you're interested in</li>
             </ul>
             <div style="text-align: center; margin-top: 20px;">
-              <a href="${process.env.NEXT_PUBLIC_URL}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
+              <a href="${baseUrl}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
                 Login to Your Account
               </a>
             </div>
@@ -544,7 +570,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
           ` : `
           <div style="text-align: center; margin-top: 20px;">
-            <a href="${process.env.NEXT_PUBLIC_URL}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
+            <a href="${baseUrl}/login" style="display: inline-block; background: #1877F2; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">
               Login to Your Account
             </a>
           </div>
@@ -588,7 +614,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 }
 
 export const sendBookingCancellation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, totalAmount }: BookingCancellationData) => {
-	if (!process.env.NEXT_PUBLIC_URL) {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (!baseUrl) {
 		throw new Error("NEXT_PUBLIC_URL environment variable is required")
 	}
 	console.log("[sendBookingCancellation] Called with:", { email, orderNumber, eventName: event.name, ticketCount: tickets.length })

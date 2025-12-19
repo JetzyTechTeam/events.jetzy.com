@@ -33,17 +33,13 @@ import {
 	Flex,
 	Heading,
 	SimpleGrid,
-	Tabs,
-	TabList,
-	TabPanels,
-	Tab,
-	TabPanel,
 } from "@chakra-ui/react"
 import { CheckCircleIcon, CloseIcon, SearchIcon } from "@chakra-ui/icons"
 import axios from "axios"
 import dayjs from "dayjs"
 import Tesseract from "tesseract.js"
 import { Html5Qrcode } from "html5-qrcode"
+import { useSession } from "next-auth/react"
 
 interface BookingInfo {
 	bookingId: string
@@ -87,6 +83,7 @@ interface EventGuest {
 }
 
 const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => {
+	const { data: session } = useSession()
 	const [identifier, setIdentifier] = useState("")
 	const [bookingInfo, setBookingInfo] = useState<BookingInfo | null>(null)
 	const [guestCount, setGuestCount] = useState(1)
@@ -95,11 +92,13 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	const [error, setError] = useState("")
 	const [isCameraActive, setIsCameraActive] = useState(false)
 	const [isScanning, setIsScanning] = useState(false)
-	const [scanMode, setScanMode] = useState<"qr" | "ocr">("qr") // QR or OCR scanning
+	// Removed OCR scanning - only QR code scanning is used
 	const [collectGuestDetails, setCollectGuestDetails] = useState(false)
 	const [guestDetails, setGuestDetails] = useState<GuestDetail[]>([])
 	const [guestList, setGuestList] = useState<EventGuest[]>([])
 	const [isLoadingGuests, setIsLoadingGuests] = useState(false)
+	const [qrScanResult, setQrScanResult] = useState<any>(null)
+	const [isQrModalOpen, setIsQrModalOpen] = useState(false)
 
 	const toast = useToast()
 	const { isOpen, onOpen, onClose } = useDisclosure()
@@ -109,6 +108,16 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	const qrCodeReaderRef = useRef<HTMLDivElement>(null)
 
 	const fetchGuestList = useCallback(async () => {
+		// Only fetch guest list for admin users
+		// @ts-ignore
+		const userRole = session?.user?.role
+		const isAdmin = userRole === "admin" || userRole === "super admin"
+		
+		if (!isAdmin) {
+			// Non-admin users don't have access to guest list
+			return
+		}
+
 		setIsLoadingGuests(true)
 		try {
 			const response = await axios.get(`/api/check-in/guests?eventId=${eventId}`)
@@ -116,16 +125,23 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				setGuestList(response.data.data.guests || [])
 			}
 		} catch (err: any) {
-			console.error("Failed to fetch guest list:", err)
+			// Handle 403 errors gracefully (non-admin users)
+			if (err.response?.status === 403) {
+				console.log("Guest list access denied (admin only)")
+			} else {
+				console.error("Failed to fetch guest list:", err)
+			}
 		} finally {
 			setIsLoadingGuests(false)
 		}
-	}, [eventId])
+	}, [eventId, session])
 
-	// Fetch guest list on mount
+	// Fetch guest list on mount (only for admins)
 	useEffect(() => {
-		fetchGuestList()
-	}, [fetchGuestList])
+		if (session) {
+			fetchGuestList()
+		}
+	}, [fetchGuestList, session])
 
 	// Update guest details array when count changes
 	useEffect(() => {
@@ -301,13 +317,49 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		setGuestDetails([])
 	}
 
+	// Validate booking by identifier (email or booking ref)
+	const validateBooking = async (identifier: string) => {
+		if (!identifier.trim()) {
+			setError("Please provide an email or booking reference")
+			return
+		}
+
+		setIsValidating(true)
+		setError("")
+		setBookingInfo(null)
+
+		try {
+			const response = await axios.post("/api/check-in/validate", {
+				eventId,
+				identifier: identifier.trim(),
+			})
+
+			if (response.data.status) {
+				setBookingInfo(response.data.data)
+			} else {
+				setError(response.data.message)
+			}
+		} catch (err: any) {
+			const errorMsg = err.response?.data?.message || "Failed to validate booking"
+			setError(errorMsg)
+			toast({
+				title: "Validation Error",
+				description: errorMsg,
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
+		} finally {
+			setIsValidating(false)
+		}
+	}
+
 	const startCamera = async () => {
 		onOpen()
-		setScanMode("qr") // Default to QR scanning
 		setIsCameraActive(false)
 		setIsScanning(false)
 
-		// Start QR scanner by default
+		// Start QR scanner
 		setTimeout(() => {
 			startQRScanner()
 		}, 100)
@@ -447,35 +499,163 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		onClose()
 	}
 
+	// Check camera permissions
+	const checkCameraPermissions = async (): Promise<boolean> => {
+		try {
+			// Check if permissions API is available
+			if (navigator.permissions) {
+				const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName })
+				console.log("Camera permission status:", permissionStatus.state)
+				
+				if (permissionStatus.state === 'denied') {
+					return false
+				}
+			}
+			
+			// Try to access camera to trigger permission prompt
+			try {
+				const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+				// If successful, stop the stream immediately (we just needed permission)
+				stream.getTracks().forEach(track => track.stop())
+				return true
+			} catch (err: any) {
+				if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+					return false
+				}
+				// Other errors might be temporary, allow to proceed
+				return true
+			}
+		} catch (err) {
+			console.warn("Could not check camera permissions:", err)
+			// If permission API not available, try anyway
+			return true
+		}
+	}
+
 	// Start QR code scanner
 	const startQRScanner = async () => {
-		// Wait for modal to render
-		await new Promise((resolve) => setTimeout(resolve, 200))
-		
-		if (!qrCodeReaderRef.current) {
-			console.error("QR reader ref not available")
-			return
-		}
-
 		try {
+			// Wait for modal and element to render
+			let retries = 0
+			const maxRetries = 10
+			while (retries < maxRetries) {
+				const element = document.getElementById("qr-reader")
+				if (element && qrCodeReaderRef.current) {
+					break
+				}
+				await new Promise((resolve) => setTimeout(resolve, 100))
+				retries++
+			}
+			
+			const element = document.getElementById("qr-reader")
+			if (!element) {
+				throw new Error("QR scanner element not found. Please try again.")
+			}
+			
+			if (!qrCodeReaderRef.current) {
+				throw new Error("QR reader container not available. Please refresh the page.")
+			}
+
 			// Clear any existing scanner
 			if (qrCodeScannerRef.current) {
 				try {
 					await qrCodeScannerRef.current.stop()
 				} catch (e) {
 					// Ignore stop errors
+					console.debug("Error stopping previous scanner:", e)
 				}
 				qrCodeScannerRef.current = null
 			}
 
+			// Check camera permissions first
+			const hasPermission = await checkCameraPermissions()
+			if (!hasPermission) {
+				// Don't throw error, just show user-friendly message
+				setIsCameraActive(false)
+				toast({
+					title: "Camera Permission Denied",
+					description: "Please allow camera access to use the QR scanner.",
+					status: "error",
+					duration: 10000,
+					isClosable: true,
+				})
+				
+				// Show additional help toast
+				setTimeout(() => {
+					toast({
+						title: "How to Fix Camera Permission",
+						description: "1. Look for camera icon in browser address bar\n2. Click it and select 'Allow'\n3. Or go to browser Settings → Privacy → Camera\n4. Allow access for this site\n5. Refresh page and try again",
+						status: "info",
+						duration: 15000,
+						isClosable: true,
+					})
+				}, 500)
+				return // Exit early, don't throw error
+			}
+
+			// Check if camera is available
+			let devices
+			try {
+				devices = await Html5Qrcode.getCameras()
+			} catch (err: any) {
+				if (err.name === 'NotAllowedError' || err.message?.includes('permission') || err.message?.includes('Permission denied')) {
+					// Don't throw error, just show user-friendly message
+					setIsCameraActive(false)
+					toast({
+						title: "Camera Permission Denied",
+						description: "Please allow camera access to use the QR scanner.",
+						status: "error",
+						duration: 10000,
+						isClosable: true,
+					})
+					
+					setTimeout(() => {
+						toast({
+							title: "How to Fix Camera Permission",
+							description: "1. Look for camera icon in browser address bar\n2. Click it and select 'Allow'\n3. Or go to browser Settings → Privacy → Camera\n4. Allow access for this site\n5. Refresh page and try again",
+							status: "info",
+							duration: 15000,
+							isClosable: true,
+						})
+					}, 500)
+					return // Exit early, don't throw error
+				}
+				throw err // Re-throw other errors
+			}
+			
+			if (!devices || devices.length === 0) {
+				throw new Error("No camera found. Please connect a camera and try again.")
+			}
+
+			console.log("Available cameras:", devices.length)
+
 			const qrCode = new Html5Qrcode("qr-reader")
 			qrCodeScannerRef.current = qrCode
 
+			// Try to start with environment camera (back camera), fallback to any camera
+			let cameraId: string | { facingMode: string } = { facingMode: "environment" }
+			
+			// Try to find back camera first
+			const backCamera = devices.find((device: any) => 
+				device.label?.toLowerCase().includes("back") || 
+				device.label?.toLowerCase().includes("rear") ||
+				device.label?.toLowerCase().includes("environment")
+			)
+			
+			if (backCamera) {
+				cameraId = backCamera.id
+				console.log("Using back camera:", backCamera.label)
+			} else if (devices.length > 0) {
+				cameraId = devices[0].id
+				console.log("Using camera:", devices[0].label || devices[0].id)
+			}
+
 			await qrCode.start(
-				{ facingMode: "environment" },
+				cameraId,
 				{
 					fps: 10,
 					qrbox: { width: 250, height: 250 },
+					aspectRatio: 1.0,
 				},
 				(qrMessage: string) => {
 					// QR code detected
@@ -485,21 +665,67 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				(errorMessage: string) => {
 					// Ignore scanning errors (they're frequent during scanning)
 					// Only log if it's not a "NotFoundException" (normal during scanning)
-					if (!errorMessage.includes("NotFoundException")) {
+					if (!errorMessage.includes("NotFoundException") && 
+					    !errorMessage.includes("No MultiFormat Readers")) {
 						console.debug("QR scan error:", errorMessage)
 					}
 				}
 			)
 
 			setIsCameraActive(true)
+			console.log("QR scanner started successfully")
 		} catch (err: any) {
 			console.error("QR scanner error:", err)
-			toast({
-				title: "QR Scanner Error",
-				description: err.message || "Failed to start QR scanner",
-				status: "error",
-				duration: 5000,
-			})
+			
+			// Provide more helpful error messages
+			let errorMessage = "Failed to start QR scanner"
+			let showPermissionHelp = false
+			
+			if (err.message === "PERMISSION_DENIED" || 
+			    err.name === "NotAllowedError" || 
+			    err.message?.includes("permission") ||
+			    err.message?.includes("Permission denied")) {
+				errorMessage = "Camera permission denied"
+				showPermissionHelp = true
+			} else if (err.name === "NotFoundError" || err.message?.includes("camera")) {
+				errorMessage = "No camera found. Please connect a camera and try again."
+			} else if (err.message?.includes("element")) {
+				errorMessage = "Scanner element not found. Please refresh the page and try again."
+			} else if (err.message) {
+				errorMessage = err.message
+			}
+			
+			if (showPermissionHelp) {
+				// Show detailed permission help
+				toast({
+					title: "Camera Permission Denied",
+					description: "Please allow camera access to use the QR scanner.",
+					status: "error",
+					duration: 10000,
+					isClosable: true,
+				})
+				
+				// Show additional help toast
+				setTimeout(() => {
+					toast({
+						title: "How to Fix Camera Permission",
+						description: "1. Look for camera icon in browser address bar\n2. Click it and select 'Allow'\n3. Or go to browser Settings → Privacy → Camera\n4. Allow access for this site\n5. Refresh page and try again",
+						status: "info",
+						duration: 15000,
+						isClosable: true,
+					})
+				}, 500)
+			} else {
+				toast({
+					title: "QR Scanner Error",
+					description: errorMessage,
+					status: "error",
+					duration: 7000,
+					isClosable: true,
+				})
+			}
+			
+			setIsCameraActive(false)
 		}
 	}
 
@@ -529,8 +755,32 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 
 			if (response.data.status) {
 				const bookingData = response.data.data
-				// Use the validateBooking function to populate booking info
-				await validateBooking(bookingData.bookingRef || bookingData.customerEmail)
+				// Set QR scan result and show popup modal
+				setQrScanResult(bookingData)
+				setIsQrModalOpen(true)
+				
+				// Reset guest count and details for new scan
+				setGuestCount(1)
+				setCollectGuestDetails(false)
+				setGuestDetails([])
+				
+				// Set booking info directly from QR scan result (no need for additional validation)
+				setBookingInfo({
+					bookingId: bookingData.bookingId,
+					bookingRef: bookingData.bookingRef,
+					customerName: bookingData.customerName,
+					customerEmail: bookingData.customerEmail,
+					customerPhone: bookingData.customerPhone,
+					totalTickets: bookingData.totalTickets,
+					checkedInCount: bookingData.checkedInCount || 0,
+					remainingTickets: bookingData.remainingTickets || bookingData.totalTickets,
+					isFullyCheckedIn: bookingData.isFullyCheckedIn || false,
+					firstCheckInAt: bookingData.firstCheckInAt,
+					lastCheckInAt: bookingData.lastCheckInAt,
+					checkInHistory: bookingData.checkInHistory || [],
+					bookingStatus: bookingData.status,
+				})
+				
 				toast({
 					title: "QR Code Verified",
 					description: "Ticket information loaded successfully",
@@ -555,6 +805,114 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 			})
 		} finally {
 			setIsScanning(false)
+		}
+	}
+
+	// Handle check-in from QR modal
+	const handleQRCheckIn = async () => {
+		if (!qrScanResult) return
+
+		// Validate guest count
+		if (guestCount < 1) {
+			toast({
+				title: "Invalid Guest Count",
+				description: "Please enter at least 1 guest",
+				status: "warning",
+				duration: 3000,
+			})
+			return
+		}
+
+		if (guestCount > qrScanResult.remainingTickets) {
+			toast({
+				title: "Invalid Guest Count",
+				description: `Cannot check in more than ${qrScanResult.remainingTickets} remaining guest${qrScanResult.remainingTickets > 1 ? "s" : ""}`,
+				status: "warning",
+				duration: 3000,
+			})
+			return
+		}
+
+		// Validate guest details if collection is enabled
+		if (collectGuestDetails) {
+			const validGuestDetails = guestDetails.filter((g) => g.name && g.email && g.phone)
+			if (validGuestDetails.length > 0 && validGuestDetails.length !== guestCount) {
+				toast({
+					title: "Incomplete Guest Details",
+					description: `Please provide details for all ${guestCount} guests or uncheck the option`,
+					status: "warning",
+					duration: 3000,
+				})
+				return
+			}
+		}
+
+		setIsCheckingIn(true)
+
+		try {
+			const payload: any = {
+				bookingId: qrScanResult.bookingId,
+				eventId,
+				count: guestCount,
+			}
+
+			// Include guest details if provided
+			if (collectGuestDetails && guestDetails.length > 0) {
+				const validGuestDetails = guestDetails.filter((g) => g.name && g.email && g.phone)
+				if (validGuestDetails.length > 0) {
+					payload.guestDetails = validGuestDetails
+				}
+			}
+
+			const response = await axios.post("/api/check-in/record", payload)
+
+			if (response.data.status) {
+				toast({
+					title: "Check-In Successful ✓",
+					description: `${guestCount} guest${guestCount > 1 ? "s" : ""} checked in successfully`,
+					status: "success",
+					duration: 5000,
+					isClosable: true,
+				})
+
+				// Update QR scan result with new data
+				setQrScanResult({
+					...qrScanResult,
+					...response.data.data,
+					isAlreadyCheckedIn: response.data.data.isFullyCheckedIn || false,
+					status: response.data.data.isFullyCheckedIn ? "checked_in" : qrScanResult.status,
+				})
+
+				// Update booking info
+				setBookingInfo(response.data.data)
+				
+				// Reset states
+				setGuestCount(1)
+				setCollectGuestDetails(false)
+				setGuestDetails([])
+				
+				// Refresh guest list
+				fetchGuestList()
+			} else {
+				toast({
+					title: "Check-In Failed",
+					description: response.data.message,
+					status: "error",
+					duration: 5000,
+					isClosable: true,
+				})
+			}
+		} catch (err: any) {
+			const errorMsg = err.response?.data?.message || "Failed to record check-in"
+			toast({
+				title: "Check-In Error",
+				description: errorMsg,
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
+		} finally {
+			setIsCheckingIn(false)
 		}
 	}
 
@@ -734,7 +1092,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 						<VStack spacing={5}>
 							<HStack width="100%" justify="space-between" mb={1}>
 								<Text fontWeight="semibold" fontSize="md" color="#1F2937">
-									Find Booking
+									Scan QR Code
 								</Text>
 								{bookingInfo && (
 									<Badge colorScheme="green" fontSize="xs" px={2} py={1} borderRadius="md">
@@ -743,63 +1101,24 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 								)}
 							</HStack>
 
-							<Input
-								placeholder="Enter email address or booking reference"
-								value={identifier}
-								onChange={(e) => setIdentifier(e.target.value)}
-								onKeyPress={(e) => e.key === "Enter" && handleValidate()}
+							{/* Manual email/booking validation removed - only QR scanning is available */}
+							<Button
+								onClick={startCamera}
 								size="lg"
-								fontSize="md"
-								bg="#F9FAFB"
-								color="#1F2937"
-								border="2px solid #E5E7EB"
-								borderRadius="lg"
-								_hover={{ borderColor: "#D1D5DB", bg: "white" }}
-								_focus={{
-									borderColor: "#8B5CF6",
-									boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
-									bg: "white",
-								}}
-								_placeholder={{ color: "#9CA3AF" }}
 								height="56px"
-								px={4}
-							/>
-
-							<SimpleGrid columns={{ base: 1, sm: 2 }} spacing={3} width="100%">
-								<Button
-									leftIcon={<SearchIcon />}
-									onClick={handleValidate}
-									isLoading={isValidating}
-									size="lg"
-									height="56px"
-									bg="#8B5CF6"
-									color="white"
-									fontSize="md"
-									fontWeight="semibold"
-									borderRadius="lg"
-									_hover={{ bg: "#7C3AED", transform: "translateY(-1px)", boxShadow: "md" }}
-									_active={{ transform: "translateY(0)" }}
-									transition="all 0.2s"
-								>
-									Validate Booking
-								</Button>
-								<Button
-									onClick={startCamera}
-									size="lg"
-									height="56px"
-									bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"
-									color="white"
-									fontSize="md"
-									fontWeight="semibold"
-									borderRadius="lg"
-									_hover={{ transform: "translateY(-1px)", boxShadow: "lg" }}
-									_active={{ transform: "translateY(0)" }}
-									transition="all 0.2s"
-									leftIcon={<Text fontSize="xl">📸</Text>}
-								>
-									Scan Ticket
-								</Button>
-							</SimpleGrid>
+								width="100%"
+								bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"
+								color="white"
+								fontSize="md"
+								fontWeight="semibold"
+								borderRadius="lg"
+								_hover={{ bg: "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)", transform: "translateY(-1px)", boxShadow: "md" }}
+								_active={{ transform: "translateY(0)" }}
+								transition="all 0.2s"
+								leftIcon={<Text fontSize="xl">📸</Text>}
+							>
+								Scan QR Code
+							</Button>
 
 							{bookingInfo && (
 								<Button onClick={handleReset} variant="ghost" size="md" width="100%" color="#6B7280" fontWeight="medium" _hover={{ bg: "#F3F4F6", color: "#1F2937" }} borderRadius="lg">
@@ -1244,178 +1563,53 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 								📸 Scan Ticket
 							</Text>
 							<Text fontSize="sm" fontWeight="normal" opacity={0.9}>
-								Choose scanning method
+								Scan QR code to check in
 							</Text>
 						</VStack>
 					</ModalHeader>
 					<ModalCloseButton color="white" size="lg" _hover={{ bg: "whiteAlpha.200" }} borderRadius="full" />
 					<ModalBody display="flex" flexDirection="column" alignItems="center" justifyContent="center" p={{ base: 4, md: 6 }} bg="#F9FAFB">
-						<Tabs
-							index={scanMode === "qr" ? 0 : 1}
-								onChange={(index) => {
-								const newMode = index === 0 ? "qr" : "ocr"
-								setScanMode(newMode)
-								stopCamera() // Stop current scanner
-								setTimeout(() => {
-									if (newMode === "qr") {
-										startQRScanner()
-									} else {
-										startVideoCamera()
-									}
-								}, 100)
-							}}
-							colorScheme="purple"
-							width="100%"
-						>
-							<TabList mb={4}>
-								<Tab>QR Code</Tab>
-								<Tab>OCR (Email)</Tab>
-							</TabList>
-							<TabPanels>
-								{/* QR Code Scanner Tab */}
-								<TabPanel p={0}>
-									<VStack spacing={4} width="100%">
-										{/* QR Scanner Container */}
-										<Box position="relative" width="100%" bg="#1F2937" borderRadius="xl" border="4px solid #8B5CF6" overflow="hidden" boxShadow="2xl" minH="400px">
-											{isScanning && (
-												<Box position="absolute" top={0} left={0} right={0} bottom={0} bg="blackAlpha.700" zIndex={3} display="flex" alignItems="center" justifyContent="center">
-													<VStack spacing={4}>
-														<Spinner size="xl" color="white" thickness="4px" />
-														<Text color="white" fontSize="lg" fontWeight="bold">
-															Verifying QR Code...
-														</Text>
-													</VStack>
-												</Box>
-											)}
-											<div
-												id="qr-reader"
-												ref={qrCodeReaderRef}
-												style={{
-													width: "100%",
-													minHeight: "400px",
-												}}
-											/>
-										</Box>
-										{/* Instructions */}
-										<Box p={4} bg="white" borderRadius="lg" width="100%" border="1px solid #E5E7EB">
-											<Text fontSize="sm" fontWeight="semibold" color="#1F2937" mb={2}>
-												📋 QR Code Tips:
+						{/* QR Code Scanner */}
+						<VStack spacing={4} width="100%">
+							{/* QR Scanner Container */}
+							<Box position="relative" width="100%" bg="#1F2937" borderRadius="xl" border="4px solid #8B5CF6" overflow="hidden" boxShadow="2xl" minH="400px">
+								{isScanning && (
+									<Box position="absolute" top={0} left={0} right={0} bottom={0} bg="blackAlpha.700" zIndex={3} display="flex" alignItems="center" justifyContent="center">
+										<VStack spacing={4}>
+											<Spinner size="xl" color="white" thickness="4px" />
+											<Text color="white" fontSize="lg" fontWeight="bold">
+												Verifying QR Code...
 											</Text>
-											<VStack align="flex-start" spacing={1}>
-												<Text fontSize="xs" color="#6B7280">
-													• Point camera at the QR code in the email
-												</Text>
-												<Text fontSize="xs" color="#6B7280">
-													• Ensure QR code is clearly visible
-												</Text>
-												<Text fontSize="xs" color="#6B7280">
-													• QR code will be automatically verified
-												</Text>
-											</VStack>
-										</Box>
-									</VStack>
-								</TabPanel>
-
-								{/* OCR Scanner Tab */}
-								<TabPanel p={0}>
-									<VStack spacing={4} width="100%">
-										{/* Camera Status Indicator */}
-										{!isCameraActive && !isScanning && (
-											<Box p={4} bg="white" borderRadius="lg" border="2px solid #8B5CF6" width="100%" textAlign="center">
-												<Spinner size="lg" color="#8B5CF6" thickness="4px" mb={2} />
-												<Text color="#6B7280" fontWeight="medium">
-													Initializing camera...
-												</Text>
-											</Box>
-										)}
-
-										{/* Camera Preview */}
-										<Box position="relative" width="100%" bg="#1F2937" borderRadius="xl" border="4px solid #8B5CF6" overflow="hidden" boxShadow="2xl">
-											{!isCameraActive && (
-												<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2}>
-													<Spinner size="xl" color="#8B5CF6" thickness="4px" />
-												</Box>
-											)}
-
-											{/* Scanning Overlay */}
-											{isScanning && (
-												<Box position="absolute" top={0} left={0} right={0} bottom={0} bg="blackAlpha.700" zIndex={3} display="flex" alignItems="center" justifyContent="center">
-													<VStack spacing={4}>
-														<Spinner size="xl" color="white" thickness="4px" />
-														<Text color="white" fontSize="lg" fontWeight="bold">
-															Scanning image...
-														</Text>
-														<Text color="whiteAlpha.800" fontSize="sm">
-															Extracting email address
-														</Text>
-													</VStack>
-												</Box>
-											)}
-
-											{/* Scan Guide Overlay */}
-											{isCameraActive && !isScanning && (
-												<Box position="absolute" top="50%" left="50%" transform="translate(-50%, -50%)" zIndex={2} pointerEvents="none">
-													<Box width="280px" height="100px" border="3px dashed rgba(139, 92, 246, 0.8)" borderRadius="lg" bg="blackAlpha.300" display="flex" alignItems="center" justifyContent="center">
-														<Text color="white" fontWeight="bold" fontSize="sm" textAlign="center" textShadow="0 2px 4px rgba(0,0,0,0.5)">
-															Position email here
-														</Text>
-													</Box>
-												</Box>
-											)}
-
-											<video
-												ref={videoRef}
-												autoPlay
-												playsInline
-												muted
-												style={{
-													display: "block",
-													width: "100%",
-													height: "auto",
-													minHeight: "300px",
-													maxHeight: "500px",
-													objectFit: "cover",
-												}}
-											/>
-											<canvas ref={canvasRef} style={{ display: "none" }} />
-										</Box>
-
-										{/* Camera Status Info */}
-										{isCameraActive && !isScanning && (
-											<HStack p={3} bg="white" borderRadius="lg" width="100%" justify="center" border="1px solid #E5E7EB">
-												<Box w={3} h={3} borderRadius="full" bg="#10B981" />
-												<Text color="#059669" fontWeight="semibold" fontSize="sm">
-													Camera Active
-												</Text>
-												<Text color="#6B7280" fontSize="xs">
-													{videoRef.current?.videoWidth || 0} × {videoRef.current?.videoHeight || 0}
-												</Text>
-											</HStack>
-										)}
-
-										{/* Instructions */}
-										{!isScanning && (
-											<Box p={4} bg="white" borderRadius="lg" width="100%" border="1px solid #E5E7EB">
-												<Text fontSize="sm" fontWeight="semibold" color="#1F2937" mb={2}>
-													📋 Quick Tips:
-												</Text>
-												<VStack align="flex-start" spacing={1}>
-													<Text fontSize="xs" color="#6B7280">
-														• Hold ticket steady within the frame
-													</Text>
-													<Text fontSize="xs" color="#6B7280">
-														• Ensure good lighting for best results
-													</Text>
-													<Text fontSize="xs" color="#6B7280">
-														• Email will be auto-validated after scan
-													</Text>
-												</VStack>
-											</Box>
-										)}
-									</VStack>
-								</TabPanel>
-							</TabPanels>
-						</Tabs>
+										</VStack>
+									</Box>
+								)}
+								<div
+									id="qr-reader"
+									ref={qrCodeReaderRef}
+									style={{
+										width: "100%",
+										minHeight: "400px",
+									}}
+								/>
+							</Box>
+							{/* Instructions */}
+							<Box p={4} bg="white" borderRadius="lg" width="100%" border="1px solid #E5E7EB">
+								<Text fontSize="sm" fontWeight="semibold" color="#1F2937" mb={2}>
+									📋 QR Code Tips:
+								</Text>
+								<VStack align="flex-start" spacing={1}>
+									<Text fontSize="xs" color="#6B7280">
+										• Point camera at the QR code in the email
+									</Text>
+									<Text fontSize="xs" color="#6B7280">
+										• Ensure QR code is clearly visible
+									</Text>
+									<Text fontSize="xs" color="#6B7280">
+										• QR code will be automatically verified
+									</Text>
+								</VStack>
+							</Box>
+						</VStack>
 					</ModalBody>
 					<ModalFooter bg="white" borderBottomRadius={{ base: 0, md: "2xl" }} p={{ base: 4, md: 6 }}>
 						<HStack spacing={3} width="100%">
@@ -1433,29 +1627,392 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 							>
 								Cancel
 							</Button>
-							{scanMode === "ocr" && (
-								<Button
-									bg="linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"
-									color="white"
-									onClick={captureImage}
-									isLoading={isScanning}
-									loadingText="Scanning..."
-									disabled={isScanning || !isCameraActive}
-									flex={2}
-									size="lg"
-									height="56px"
-									fontSize="md"
-									fontWeight="bold"
-									borderRadius="lg"
-									_hover={{ transform: "translateY(-2px)", boxShadow: "xl" }}
-									_active={{ transform: "translateY(0)" }}
-									transition="all 0.2s"
-									leftIcon={<Text fontSize="xl">📷</Text>}
-								>
-									Capture & Scan
-								</Button>
-							)}
 						</HStack>
+					</ModalFooter>
+				</ModalContent>
+			</Modal>
+
+			{/* QR Scan Result Modal */}
+			<Modal isOpen={isQrModalOpen} onClose={() => setIsQrModalOpen(false)} size="lg" isCentered>
+				<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+				<ModalContent bg="white" borderRadius="2xl" maxW="600px" mx={4}>
+					<ModalHeader
+						bg={qrScanResult?.isAlreadyCheckedIn ? "linear-gradient(135deg, #10B981 0%, #059669 100%)" : "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"}
+						color="white"
+						borderTopRadius="2xl"
+						py={5}
+					>
+						<VStack spacing={1} align="flex-start">
+							<Text fontSize="xl" fontWeight="bold">
+								{qrScanResult?.isAlreadyCheckedIn ? "✓ Already Checked In" : "🎫 Ticket Details"}
+							</Text>
+							<Text fontSize="sm" fontWeight="normal" opacity={0.9}>
+								{qrScanResult?.isAlreadyCheckedIn ? "This booking has been checked in" : "Ready for check-in"}
+							</Text>
+						</VStack>
+					</ModalHeader>
+					<ModalCloseButton color="white" size="lg" _hover={{ bg: "whiteAlpha.200" }} borderRadius="full" />
+					<ModalBody p={6}>
+						{qrScanResult && (
+							<VStack spacing={5} align="stretch">
+								{/* Already Fully Checked In Message */}
+								{qrScanResult.isAlreadyCheckedIn && (
+									<Alert status="success" borderRadius="lg" bg="#D1FAE5" border="2px solid #10B981">
+										<AlertIcon color="#059669" />
+										<VStack align="flex-start" spacing={1}>
+											<AlertTitle color="#065F46" fontWeight="bold" fontSize="md">
+												✓ Check-In Complete
+											</AlertTitle>
+											<AlertDescription color="#047857" fontSize="sm">
+												All guests for this booking have been checked in.
+												{qrScanResult.lastCheckInAt && (
+													<Text mt={1} fontWeight="semibold">
+														Last checked in: {dayjs(qrScanResult.lastCheckInAt).format("MMM DD, YYYY h:mm A")}
+													</Text>
+												)}
+											</AlertDescription>
+										</VStack>
+									</Alert>
+								)}
+
+								{/* Partial Check-In Message */}
+								{!qrScanResult.isAlreadyCheckedIn && qrScanResult.checkedInCount > 0 && (
+									<Alert status="info" borderRadius="lg" bg="#DBEAFE" border="2px solid #3B82F6">
+										<AlertIcon color="#2563EB" />
+										<VStack align="flex-start" spacing={1}>
+											<AlertTitle color="#1E40AF" fontWeight="bold" fontSize="md">
+												⚡ Partial Check-In
+											</AlertTitle>
+											<AlertDescription color="#1E3A8A" fontSize="sm">
+												{qrScanResult.checkedInCount} of {qrScanResult.totalTickets} guest{qrScanResult.totalTickets > 1 ? "s" : ""} checked in. {qrScanResult.remainingTickets} remaining.
+												{qrScanResult.lastCheckInAt && (
+													<Text mt={1} fontWeight="semibold">
+														Last checked in: {dayjs(qrScanResult.lastCheckInAt).format("MMM DD, YYYY h:mm A")}
+													</Text>
+												)}
+											</AlertDescription>
+										</VStack>
+									</Alert>
+								)}
+
+								{/* Booking Details */}
+								<Box p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB">
+									<Text fontSize="sm" fontWeight="semibold" color="#6B7280" mb={3} textTransform="uppercase" letterSpacing="wide">
+										Booking Information
+									</Text>
+									<SimpleGrid columns={2} spacing={3}>
+										<Box>
+											<Text fontSize="xs" color="#6B7280" fontWeight="medium" mb={1}>
+												Guest Name
+											</Text>
+											<Text fontSize="md" fontWeight="bold" color="#1F2937">
+												{qrScanResult.customerName}
+											</Text>
+										</Box>
+										<Box>
+											<Text fontSize="xs" color="#6B7280" fontWeight="medium" mb={1}>
+												Booking Reference
+											</Text>
+											<Text fontSize="md" fontWeight="bold" color="#8B5CF6" fontFamily="mono">
+												{qrScanResult.bookingRef}
+											</Text>
+										</Box>
+									</SimpleGrid>
+									<Divider my={3} borderColor="#E5E7EB" />
+									<VStack align="flex-start" spacing={2}>
+										<Text fontSize="sm" color="#1F2937">
+											📧 {qrScanResult.customerEmail}
+										</Text>
+										<Text fontSize="sm" color="#1F2937">
+											📱 {qrScanResult.customerPhone}
+										</Text>
+									</VStack>
+								</Box>
+
+								{/* Ticket Status */}
+								<Box p={4} bg="linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%)" borderRadius="xl" border="1px solid #E5E7EB">
+									<Text fontSize="sm" fontWeight="semibold" color="#6B7280" mb={3} textTransform="uppercase" letterSpacing="wide">
+										Ticket Status
+									</Text>
+									<SimpleGrid columns={3} spacing={3}>
+										<VStack spacing={1}>
+											<Box p={3} bg="white" borderRadius="lg" boxShadow="sm" width="100%" textAlign="center">
+												<Text fontSize="xs" color="#6B7280" fontWeight="medium" mb={1}>
+													Total
+												</Text>
+												<Text fontSize="2xl" color="#1F2937" fontWeight="bold">
+													{qrScanResult.totalTickets}
+												</Text>
+											</Box>
+										</VStack>
+										<VStack spacing={1}>
+											<Box
+												p={3}
+												bg={qrScanResult.isAlreadyCheckedIn ? "linear-gradient(135deg, #10B981 0%, #059669 100%)" : "linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)"}
+												borderRadius="lg"
+												boxShadow="sm"
+												width="100%"
+												textAlign="center"
+											>
+												<Text fontSize="xs" color="white" fontWeight="medium" mb={1}>
+													Checked In
+												</Text>
+												<Text fontSize="2xl" fontWeight="bold" color="white">
+													{qrScanResult.checkedInCount || 0}
+												</Text>
+											</Box>
+										</VStack>
+										<VStack spacing={1}>
+											<Box p={3} bg="linear-gradient(135deg, #F59E0B 0%, #D97706 100%)" borderRadius="lg" boxShadow="sm" width="100%" textAlign="center">
+												<Text fontSize="xs" color="white" fontWeight="medium" mb={1}>
+													Remaining
+												</Text>
+												<Text fontSize="2xl" fontWeight="bold" color="white">
+													{qrScanResult.remainingTickets || qrScanResult.totalTickets}
+												</Text>
+											</Box>
+										</VStack>
+									</SimpleGrid>
+								</Box>
+
+								{/* Check-In Form (only if not already fully checked in and has remaining tickets) */}
+								{!qrScanResult.isAlreadyCheckedIn && qrScanResult.remainingTickets > 0 && (
+									<Box p={5} bg="#F9FAFB" borderRadius="xl" border="2px solid #8B5CF6">
+										<VStack spacing={5} align="stretch">
+											<HStack>
+												<Box bg="#8B5CF6" p={2} borderRadius="lg">
+													<CheckCircleIcon color="white" boxSize={5} />
+												</Box>
+												<Text fontWeight="bold" fontSize="lg" color="#1F2937">
+													Check-In Guests
+												</Text>
+											</HStack>
+
+											<Box>
+												<Text fontWeight="semibold" color="#1F2937" mb={3} fontSize="sm">
+													Number of Guests Arriving
+												</Text>
+												<NumberInput
+													value={guestCount}
+													onChange={(valueString) => setGuestCount(Number(valueString))}
+													min={1}
+													max={qrScanResult.remainingTickets}
+													size="lg"
+												>
+													<NumberInputField
+														color="#1F2937"
+														bg="white"
+														border="2px solid #E5E7EB"
+														borderRadius="lg"
+														height="56px"
+														fontSize="xl"
+														fontWeight="bold"
+														textAlign="center"
+														_hover={{ borderColor: "#D1D5DB" }}
+														_focus={{
+															borderColor: "#8B5CF6",
+															boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+														}}
+													/>
+													<NumberInputStepper>
+														<NumberIncrementStepper color="#8B5CF6" borderColor="#E5E7EB" _hover={{ bg: "#F3F4F6" }} />
+														<NumberDecrementStepper color="#8B5CF6" borderColor="#E5E7EB" _hover={{ bg: "#F3F4F6" }} />
+													</NumberInputStepper>
+												</NumberInput>
+												<HStack justify="space-between" mt={2}>
+													<Text fontSize="sm" color="#6B7280">
+														Maximum: {qrScanResult.remainingTickets} guest{qrScanResult.remainingTickets > 1 ? "s" : ""}
+													</Text>
+													<Text fontSize="sm" fontWeight="semibold" color="#8B5CF6">
+														{guestCount} selected
+													</Text>
+												</HStack>
+											</Box>
+
+											{/* Optional Guest Details Collection */}
+											{qrScanResult.totalTickets > 1 && (
+												<Box p={4} bg="white" borderRadius="lg" border="1px solid #E5E7EB">
+													<HStack spacing={3} mb={3}>
+														<input
+															type="checkbox"
+															checked={collectGuestDetails}
+															onChange={(e) => {
+																setCollectGuestDetails(e.target.checked)
+																if (e.target.checked) {
+																	setGuestDetails(
+																		Array.from({ length: guestCount }, (_, i) => {
+																			if (i === 0) {
+																				return {
+																					name: qrScanResult.customerName,
+																					email: qrScanResult.customerEmail,
+																					phone: qrScanResult.customerPhone,
+																				}
+																			}
+																			return {
+																				name: "",
+																				email: "",
+																				phone: "",
+																			}
+																		}),
+																	)
+																} else {
+																	setGuestDetails([])
+																}
+															}}
+															style={{
+																cursor: "pointer",
+																width: "20px",
+																height: "20px",
+																accentColor: "#8B5CF6",
+															}}
+														/>
+														<VStack align="flex-start" spacing={0}>
+															<Text color="#1F2937" fontSize="sm" fontWeight="semibold">
+																Collect individual guest details
+															</Text>
+															<Text color="#6B7280" fontSize="xs">
+																Optional: Record name, email & phone for each guest
+															</Text>
+														</VStack>
+													</HStack>
+
+													{collectGuestDetails && (
+														<VStack spacing={3} align="stretch" mt={4}>
+															{Array.from({ length: guestCount }).map((_, index) => (
+																<Box key={index} p={4} bg="#F9FAFB" borderRadius="lg" border="1px solid #E5E7EB">
+																	<HStack justify="space-between" mb={3}>
+																		<HStack>
+																			<Box bg="#8B5CF6" color="white" fontWeight="bold" fontSize="sm" w={8} h={8} borderRadius="full" display="flex" alignItems="center" justifyContent="center">
+																				{index + 1}
+																			</Box>
+																			<Text fontSize="sm" fontWeight="semibold" color="#1F2937">
+																				Guest {index + 1}
+																			</Text>
+																		</HStack>
+																		{index === 0 && (
+																			<Badge colorScheme="purple" fontSize="xs" borderRadius="md">
+																				Booking Owner
+																			</Badge>
+																		)}
+																	</HStack>
+																	<VStack spacing={3}>
+																		<Input
+																			placeholder="Full Name"
+																			value={guestDetails[index]?.name || ""}
+																			onChange={(e) => {
+																				const newDetails = [...guestDetails]
+																				if (!newDetails[index]) newDetails[index] = { name: "", email: "", phone: "" }
+																				newDetails[index].name = e.target.value
+																				setGuestDetails(newDetails)
+																			}}
+																			size="md"
+																			bg="white"
+																			color="#1F2937"
+																			border="1px solid #E5E7EB"
+																			borderRadius="lg"
+																			_hover={{ borderColor: "#D1D5DB" }}
+																			_focus={{
+																				borderColor: "#8B5CF6",
+																				boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+																			}}
+																			_placeholder={{ color: "#9CA3AF" }}
+																		/>
+																		<Input
+																			placeholder="Email Address"
+																			type="email"
+																			value={guestDetails[index]?.email || ""}
+																			onChange={(e) => {
+																				const newDetails = [...guestDetails]
+																				if (!newDetails[index]) newDetails[index] = { name: "", email: "", phone: "" }
+																				newDetails[index].email = e.target.value
+																				setGuestDetails(newDetails)
+																			}}
+																			size="md"
+																			bg="white"
+																			color="#1F2937"
+																			border="1px solid #E5E7EB"
+																			borderRadius="lg"
+																			_hover={{ borderColor: "#D1D5DB" }}
+																			_focus={{
+																				borderColor: "#8B5CF6",
+																				boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+																			}}
+																			_placeholder={{ color: "#9CA3AF" }}
+																		/>
+																		<Input
+																			placeholder="Phone Number"
+																			type="tel"
+																			value={guestDetails[index]?.phone || ""}
+																			onChange={(e) => {
+																				const newDetails = [...guestDetails]
+																				if (!newDetails[index]) newDetails[index] = { name: "", email: "", phone: "" }
+																				newDetails[index].phone = e.target.value
+																				setGuestDetails(newDetails)
+																			}}
+																			size="md"
+																			bg="white"
+																			color="#1F2937"
+																			border="1px solid #E5E7EB"
+																			borderRadius="lg"
+																			_hover={{ borderColor: "#D1D5DB" }}
+																			_focus={{
+																				borderColor: "#8B5CF6",
+																				boxShadow: "0 0 0 3px rgba(139, 92, 246, 0.1)",
+																			}}
+																			_placeholder={{ color: "#9CA3AF" }}
+																		/>
+																	</VStack>
+																</Box>
+															))}
+														</VStack>
+													)}
+												</Box>
+											)}
+
+											<Button
+												leftIcon={<CheckCircleIcon />}
+												onClick={handleQRCheckIn}
+												isLoading={isCheckingIn}
+												size="lg"
+												height="60px"
+												bg="linear-gradient(135deg, #10B981 0%, #059669 100%)"
+												color="white"
+												fontSize="lg"
+												fontWeight="bold"
+												borderRadius="lg"
+												width="100%"
+												_hover={{ transform: "translateY(-2px)", boxShadow: "xl" }}
+												_active={{ transform: "translateY(0)" }}
+												transition="all 0.2s"
+											>
+												✓ Check In {guestCount} Guest{guestCount > 1 ? "s" : ""}
+											</Button>
+										</VStack>
+									</Box>
+								)}
+							</VStack>
+						)}
+					</ModalBody>
+					<ModalFooter bg="white" borderBottomRadius="2xl" p={6}>
+						<Button
+							variant="outline"
+							onClick={() => {
+								setIsQrModalOpen(false)
+								setQrScanResult(null)
+								setGuestCount(1)
+								setCollectGuestDetails(false)
+								setGuestDetails([])
+							}}
+							flex={1}
+							size="lg"
+							height="56px"
+							borderRadius="lg"
+							borderColor="#E5E7EB"
+							color="#6B7280"
+							_hover={{ bg: "#F3F4F6", borderColor: "#D1D5DB" }}
+						>
+							Close
+						</Button>
 					</ModalFooter>
 				</ModalContent>
 			</Modal>
