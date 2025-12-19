@@ -41,18 +41,18 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (
   const limit = 20;
   const page = context.query.page ? parseInt(context.query.page as string) : 1;
   const skip = (page - 1) * limit;
-  
+
   // Check if user is signed in
   const isSignedIn = !!session;
-  
+
   // Define the query based on authentication status
   let query: any = { isDeleted: false, privacy: "public" };
-  
-  // If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
+
+  // If user is not signed in, only show events that have not ended
   if (!isSignedIn) {
-    query.name = "Chinese Mid-Autumn Rooftop Celebration";
+    query.endsOn = { $gte: new Date() };
   }
-  
+
   // Get events based on authentication status
   const events = await Events.find(query)
     .skip(skip)
