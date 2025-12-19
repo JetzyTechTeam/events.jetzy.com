@@ -76,9 +76,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const session = await stripe.checkout.sessions.retrieve(session_id)
 		console.log("[checkout/confirm] Stripe session retrieved. Payment status:", session.payment_status)
 		
-		if (!session) {
-			console.log("[checkout/confirm] Session not found")
-			return res.status(404).json({ message: "Session not found" })
+		if (session.payment_status !== "paid") {
+			return res.status(400).json({ 
+				message: "Payment not completed",
+				payment_status: session.payment_status
+			})
 		}
 
 		// get the session metadata
@@ -136,14 +138,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				console.log("[checkout/confirm] Event ID:", metadata.eventId)
 				
 				// Determine base URL for QR code
-				// NEXT_PUBLIC_URL must be set in environment
-				if (!process.env.NEXT_PUBLIC_URL) {
+				const baseUrl = process.env.NEXT_PUBLIC_URL
+				if (!baseUrl) {
 					console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping QR code generation")
 					throw new Error("NEXT_PUBLIC_URL environment variable is required for QR code generation")
 				}
-				const baseUrl = process.env.NEXT_PUBLIC_URL
-				
-				console.log("[checkout/confirm] Using base URL for QR code:", baseUrl)
 				
 				const qrCode = await generateQRCodeForBooking(
 					booking._id.toString(),
@@ -341,12 +340,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			try {
 				console.log("[checkout/confirm] Sending ticket confirmation email to:", metadata.email, "isNewUser:", isNewUser, "guestEmails:", guestEmails.length)
 				
-				// Check if NEXT_PUBLIC_URL is set before sending email
-				if (!process.env.NEXT_PUBLIC_URL) {
-					console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping email sending")
-					throw new Error("NEXT_PUBLIC_URL environment variable is required for sending emails")
-				}
-				
+				// Send email
 				await sendTicketConfirmation({
 					event,
 					firstName: metadata.firstName,

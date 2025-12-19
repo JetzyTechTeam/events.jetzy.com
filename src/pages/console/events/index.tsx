@@ -369,7 +369,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}
 
 	const skip = (page - 1) * limit
-	// fetch events - admins can see all events (public and private)
+	// Fetch events - admins can see all events (public and private)
 	const events = await Events.find({ isDeleted: false }).limit(limit).skip(skip).sort({ createdAt: -1 })
 	if (!events) return { props: { events: [] } }
 

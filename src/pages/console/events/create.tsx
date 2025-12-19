@@ -251,6 +251,7 @@ const CreateEventPage = () => {
 	}
 
 	// @ts-ignore
+	// @ts-ignore
 	if (session?.user?.role === Roles.USER) router.push("/console")
 
 	return (

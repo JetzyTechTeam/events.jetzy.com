@@ -23,8 +23,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Unauthorized. Please login.", false, ResCode.UNAUTHORIZED)
 		}
 
+		// Verify admin access - Check-in validation is admin only
 		// @ts-ignore
-		if (session.user?.role !== "admin") {
+		if (session.user?.role !== "admin" && session.user?.role !== "super admin") {
 			return sendResponse(res, null, "Access denied. Admin only.", false, ResCode.FORBIDDEN)
 		}
 

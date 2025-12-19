@@ -185,7 +185,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const createdUsers: any[] = []
 		const interestUserEntries: any[] = []
 		const emailErrors: any[] = []
-		const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000"
+		const baseUrl = process.env.NEXT_PUBLIC_URL
+		if (!baseUrl) {
+			throw new Error("NEXT_PUBLIC_URL environment variable is required")
+		}
 		let fromBookingsCount = 0
 		let fromWaitingListCount = 0
 

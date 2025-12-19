@@ -261,7 +261,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 									You can login using these credentials at any time. We hope to see you at our next event!
 								</p>
 								<div style="text-align: center; margin: 32px 0;">
-									<a href="${process.env.NEXT_PUBLIC_URL || "http://localhost:3000"}/login" style="display: inline-block; background: #F79432; color: #000; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
+									<a href="${process.env.NEXT_PUBLIC_URL}/login" style="display: inline-block; background: #F79432; color: #000; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
 										Login to Your Account
 									</a>
 								</div>
@@ -298,7 +298,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 									You can login using these credentials at any time. Please keep this information safe.
 								</p>
 								<div style="text-align: center; margin: 32px 0;">
-									<a href="${process.env.NEXT_PUBLIC_URL || "http://localhost:3000"}/login" style="display: inline-block; background: #F79432; color: #000; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
+									<a href="${process.env.NEXT_PUBLIC_URL}/login" style="display: inline-block; background: #F79432; color: #000; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-size: 18px; font-weight: bold;">
 										Login to Your Account
 									</a>
 								</div>

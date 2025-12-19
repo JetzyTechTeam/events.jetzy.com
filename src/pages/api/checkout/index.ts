@@ -205,10 +205,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			slug: event?.slug,
 		}
 
-		// Use NEXT_PUBLIC_URL from environment (already validated above)
+		// Use NEXT_PUBLIC_URL for redirect URLs
 		const baseUrl = process.env.NEXT_PUBLIC_URL
-		
-		console.log("[checkout/index] Using baseUrl:", baseUrl)
+		if (!baseUrl) {
+			return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
+		}
 		
 		// Ensure URL is properly formatted
 		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash

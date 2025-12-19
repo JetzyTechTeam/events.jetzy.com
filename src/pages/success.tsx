@@ -97,7 +97,7 @@ const CheckoutSuccessPage: React.FC = () => {
 							console.error("Error parsing session metadata:", error)
 						}
 					}
-				} catch (error) {
+				} catch (error: any) {
 					console.error("Error checking payment status:", error)
 					Error("Error", "Unable to verify payment. Please contact support.")
 				} finally {
@@ -125,6 +125,32 @@ const CheckoutSuccessPage: React.FC = () => {
 
 	// Show error if no session_id and no payload
 	if (!session_id && !payload) {
+		return (
+			<div className="min-h-screen bg-background-light flex items-center justify-center p-4">
+				<div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md">
+					<div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+						<svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+					</div>
+					<h1 className="text-2xl font-bold text-text-primary mb-4">Invalid Request</h1>
+					<p className="text-text-secondary mb-4">No session ID or payment data found.</p>
+						<div className="text-left bg-gray-50 p-4 rounded-lg mb-6 text-sm">
+							<p className="mb-2"><strong>Option 1:</strong> Create test booking via API:</p>
+							<code className="block bg-gray-200 p-2 rounded mb-4 text-xs break-all">
+								POST /api/test/create-test-booking
+							</code>
+							<p className="mb-2"><strong>Option 2:</strong> Complete a purchase to get session_id</p>
+							<p className="mb-2"><strong>Option 3:</strong> Use existing booking with session_id in URL</p>
+						</div>
+						<button onClick={() => router.push("/")} className="bg-primary-purple text-white px-8 py-3 rounded-lg hover:bg-primary-dark transition-colors font-semibold shadow-md">
+							Go to Home
+						</button>
+					</div>
+				</div>
+			)
+		}
+		
 		return (
 			<div className="min-h-screen bg-background-light flex items-center justify-center p-4">
 				<div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md">

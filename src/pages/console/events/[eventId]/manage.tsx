@@ -483,8 +483,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		await dbconn.asPromise()
 	}
 
-	const eventId = context.query.eventId as string
-	if (!eventId) return { props: {} }
+	// Get eventId from params (dynamic route) not query
+	const eventId = (context.params?.eventId || context.query.eventId) as string
+	if (!eventId) {
+		console.error("[console/events/manage] No eventId found in params or query")
+		return { props: {} }
+	}
 
 	const event = await Events.findOne({ _id: eventId, isDeleted: false })
 

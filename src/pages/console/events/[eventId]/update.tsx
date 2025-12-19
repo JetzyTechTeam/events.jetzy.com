@@ -324,6 +324,7 @@ export default function UpdateEventPage({ event }: Props) {
 	}
 
 	// @ts-ignore
+	// @ts-ignore
 	if (session?.user?.role === Roles.USER) router.push("/console")
 
 	return (
@@ -1092,7 +1093,7 @@ export default function UpdateEventPage({ event }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = async (context) => {
-	// check if user is admin/super admin
+	// Check if user is admin/super admin
 	const sessionResult = await adminOnly(context)
 	if (!sessionResult || "redirect" in sessionResult) return sessionResult
 	const session = sessionResult.props.session

@@ -9,6 +9,8 @@ import Head from "next/head"
 import React, { useState, useMemo } from "react"
 import Link from "next/link"
 import { downloadExcel } from "react-export-table-to-excel"
+import axios from "axios"
+import { useRouter } from "next/router"
 import { 
 	ChevronLeftIcon, 
 	ArrowDownTrayIcon, 
@@ -44,7 +46,20 @@ import {
 	MenuItem, 
 	IconButton,
 	Avatar,
-	SimpleGrid
+	SimpleGrid,
+	Modal,
+	ModalOverlay,
+	ModalContent,
+	ModalHeader,
+	ModalBody,
+	ModalFooter,
+	ModalCloseButton,
+	useToast,
+	useDisclosure,
+	Divider,
+	Stack,
+	Heading,
+	Spinner
 } from "@chakra-ui/react"
 
 type Props = {
@@ -55,6 +70,23 @@ type Props = {
 }
 
 export default function BookingsEventPage({ bookings, event, filters, exportable }: Props) {
+	const router = useRouter()
+	const toast = useToast()
+	const { isOpen: isDetailsOpen, onOpen: onDetailsOpen, onClose: onDetailsClose } = useDisclosure()
+	const { isOpen: isCancelOpen, onOpen: onCancelOpen, onClose: onCancelClose } = useDisclosure()
+	const { isOpen: isResendOpen, onOpen: onResendOpen, onClose: onResendClose } = useDisclosure()
+	
+	const handleDetailsClose = () => {
+		setInvitedGuests([])
+		setSelectedBooking(null)
+		onDetailsClose()
+	}
+	const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+	const [isCancelling, setIsCancelling] = useState(false)
+	const [isResending, setIsResending] = useState(false)
+	const [eventDetails, setEventDetails] = useState<any>(null)
+	const [invitedGuests, setInvitedGuests] = useState<any[]>([])
+	const [loadingGuests, setLoadingGuests] = useState(false)
 	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list">("bookings")
 	const [currentFilters, setCurrentFilters] = useState(filters)
 	const [currentPage, setCurrentPage] = useState(1)
@@ -127,6 +159,115 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 				return "gray"
 			default:
 				return "gray"
+		}
+	}
+
+	const handleViewDetails = async (booking: Booking) => {
+		setSelectedBooking(booking)
+		onDetailsOpen()
+		
+		// Fetch event details if not already loaded
+		if (!eventDetails) {
+			try {
+				const response = await axios.get(`/api/events/${event._id}`)
+				if (response.data.status) {
+					setEventDetails(response.data.data)
+				}
+			} catch (error) {
+				console.error("Error fetching event details:", error)
+				toast({
+					title: "Warning",
+					description: "Could not load full event details, but booking information is available.",
+					status: "warning",
+					duration: 3000,
+					isClosable: true,
+				})
+			}
+		}
+
+		// Fetch invited guests for this booking
+		setLoadingGuests(true)
+		try {
+			const response = await axios.get(`/api/bookings/${booking._id}/invited-guests`)
+			if (response.data.status) {
+				setInvitedGuests(response.data.data || [])
+			}
+		} catch (error) {
+			console.error("Error fetching invited guests:", error)
+			setInvitedGuests([])
+		} finally {
+			setLoadingGuests(false)
+		}
+	}
+
+	const handleCancelBooking = async () => {
+		if (!selectedBooking) return
+
+		setIsCancelling(true)
+		try {
+			const response = await axios.post(`/api/bookings/${selectedBooking._id}/cancel`)
+			if (response.data.status) {
+				toast({
+					title: "Success",
+					description: "Booking cancelled successfully",
+					status: "success",
+					duration: 3000,
+					isClosable: true,
+				})
+				onCancelClose()
+				setSelectedBooking(null)
+				// Refresh the page to show updated data
+				router.reload()
+			} else {
+				throw new Error(response.data.message || "Failed to cancel booking")
+			}
+		} catch (error: any) {
+			toast({
+				title: "Error",
+				description: error.response?.data?.message || error.message || "Failed to cancel booking",
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
+		} finally {
+			setIsCancelling(false)
+		}
+	}
+
+	const handleResendReceipt = (booking: Booking) => {
+		setSelectedBooking(booking)
+		onResendOpen()
+	}
+
+	const confirmResendReceipt = async () => {
+		if (!selectedBooking) return
+
+		setIsResending(true)
+		try {
+			const response = await axios.post(`/api/bookings/${selectedBooking._id}/resend-receipt`)
+			if (response.data.status) {
+				toast({
+					title: "Success",
+					description: `Receipt sent successfully to ${selectedBooking.customerEmail}`,
+					status: "success",
+					duration: 3000,
+					isClosable: true,
+				})
+				onResendClose()
+				setSelectedBooking(null)
+			} else {
+				throw new Error(response.data.message || "Failed to resend receipt")
+			}
+		} catch (error: any) {
+			toast({
+				title: "Error",
+				description: error.response?.data?.message || error.message || "Failed to resend receipt",
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
+		} finally {
+			setIsResending(false)
 		}
 	}
 
@@ -383,9 +524,23 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 															<Menu>
 																<MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-5 h-5" />} variant="ghost" size="sm" />
 																<MenuList>
-																	<MenuItem>View Details</MenuItem>
-																	<MenuItem>Resend Receipt</MenuItem>
-																	<MenuItem color="red.500">Cancel Booking</MenuItem>
+																	<MenuItem onClick={() => handleViewDetails(booking)}>View Details</MenuItem>
+																	<MenuItem 
+																		onClick={() => handleResendReceipt(booking)}
+																		isDisabled={booking.status === "cancelled"}
+																	>
+																		Resend Receipt
+																	</MenuItem>
+																	<MenuItem 
+																		color="red.500" 
+																		onClick={() => {
+																			setSelectedBooking(booking)
+																			onCancelOpen()
+																		}}
+																		isDisabled={booking.status === "cancelled"}
+																	>
+																		Cancel Booking
+																	</MenuItem>
 																</MenuList>
 															</Menu>
 														</Td>
@@ -438,6 +593,203 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 						)}
 					</Box>
 				</Box>
+
+				{/* View Details Modal */}
+				<Modal isOpen={isDetailsOpen} onClose={handleDetailsClose} size="xl">
+					<ModalOverlay />
+					<ModalContent>
+						<ModalHeader>Booking Details</ModalHeader>
+						<ModalCloseButton />
+						<ModalBody>
+							{selectedBooking ? (
+								<Stack spacing={4}>
+									<Box>
+										<Heading size="sm" mb={3}>Customer Information</Heading>
+										<Stack spacing={2}>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Name:</Text>
+												<Text>{selectedBooking.customerName}</Text>
+											</Flex>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Email:</Text>
+												<Text>{selectedBooking.customerEmail}</Text>
+											</Flex>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Phone:</Text>
+												<Text>{selectedBooking.customerPhone}</Text>
+											</Flex>
+										</Stack>
+									</Box>
+
+									<Divider />
+
+									<Box>
+										<Heading size="sm" mb={3}>Booking Information</Heading>
+										<Stack spacing={2}>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Booking Reference:</Text>
+												<Text fontFamily="mono" fontSize="sm">{selectedBooking.bookingRef}</Text>
+											</Flex>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Status:</Text>
+												<Badge colorScheme={getStatusColor(selectedBooking.status)}>
+													{selectedBooking.status}
+												</Badge>
+											</Flex>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Booking Date:</Text>
+												<Text>{new Date(selectedBooking.createdAt).toLocaleString()}</Text>
+											</Flex>
+										</Stack>
+									</Box>
+
+									<Divider />
+
+									<Box>
+										<Heading size="sm" mb={3}>Event Information</Heading>
+										<Stack spacing={2}>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Event Name:</Text>
+												<Text>{event.name}</Text>
+											</Flex>
+											{event.location && (
+												<Flex justify="space-between">
+													<Text fontWeight="semibold">Location:</Text>
+													<Text>{event.location}</Text>
+												</Flex>
+											)}
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Date:</Text>
+												<Text>{new Date(event.startsOn).toLocaleDateString()}</Text>
+											</Flex>
+										</Stack>
+									</Box>
+
+									<Divider />
+
+									<Box>
+										<Heading size="sm" mb={3}>Ticket Details</Heading>
+										<Stack spacing={2}>
+											{selectedBooking.tickets.map((ticket, idx) => (
+												<Box key={idx} p={3} bg="gray.50" borderRadius="md">
+													<Flex justify="space-between" mb={1}>
+														<Text fontWeight="semibold">Ticket {idx + 1}</Text>
+														<Text>Qty: {ticket.quantity}</Text>
+													</Flex>
+													<Text fontSize="sm" color="gray.600">
+														Ticket ID: {ticket.ticketId.toString().substring(0, 8)}...
+													</Text>
+												</Box>
+											))}
+										</Stack>
+									</Box>
+
+									<Divider />
+
+									<Box>
+										<Heading size="sm" mb={3}>Payment Summary</Heading>
+										<Stack spacing={2}>
+											<Flex justify="space-between">
+												<Text fontWeight="semibold">Total:</Text>
+												<Text fontWeight="bold" fontSize="lg">${selectedBooking.total.toFixed(2)}</Text>
+											</Flex>
+										</Stack>
+									</Box>
+
+									{/* Invited Guests Section */}
+									{(loadingGuests || invitedGuests.length > 0) && (
+										<>
+											<Divider />
+											<Box>
+												<Heading size="sm" mb={3}>Invited Guests</Heading>
+												{loadingGuests ? (
+													<Flex justify="center" align="center" py={4}>
+														<Spinner size="sm" />
+														<Text ml={3} fontSize="sm" color="gray.500">Loading guests...</Text>
+													</Flex>
+												) : invitedGuests.length > 0 ? (
+													<Stack spacing={2}>
+														{invitedGuests.map((guest, idx) => (
+															<Text key={idx} fontSize="sm" color="gray.700">
+																{guest.email}
+															</Text>
+														))}
+													</Stack>
+												) : (
+													<Text fontSize="sm" color="gray.500" fontStyle="italic">No invited guests for this booking</Text>
+												)}
+											</Box>
+										</>
+									)}
+								</Stack>
+							) : (
+								<Text>No booking selected</Text>
+							)}
+						</ModalBody>
+						<ModalFooter>
+							<Button onClick={handleDetailsClose}>Close</Button>
+						</ModalFooter>
+					</ModalContent>
+				</Modal>
+
+				{/* Cancel Booking Confirmation Modal */}
+				<Modal isOpen={isCancelOpen} onClose={onCancelClose}>
+					<ModalOverlay />
+					<ModalContent>
+						<ModalHeader>Cancel Booking</ModalHeader>
+						<ModalCloseButton />
+						<ModalBody>
+							<Text mb={4}>
+								Are you sure you want to cancel this booking? This action cannot be undone and will free up the tickets.
+							</Text>
+							{selectedBooking && (
+								<Box p={3} bg="gray.50" borderRadius="md">
+									<Text fontSize="sm"><strong>Booking:</strong> {selectedBooking.bookingRef}</Text>
+									<Text fontSize="sm"><strong>Customer:</strong> {selectedBooking.customerName}</Text>
+									<Text fontSize="sm"><strong>Amount:</strong> ${selectedBooking.total.toFixed(2)}</Text>
+								</Box>
+							)}
+						</ModalBody>
+						<ModalFooter>
+							<Button variant="ghost" mr={3} onClick={onCancelClose} isDisabled={isCancelling}>
+								No, Keep Booking
+							</Button>
+							<Button colorScheme="red" onClick={handleCancelBooking} isLoading={isCancelling}>
+								Yes, Cancel Booking
+							</Button>
+						</ModalFooter>
+					</ModalContent>
+				</Modal>
+
+				{/* Resend Receipt Confirmation Modal */}
+				<Modal isOpen={isResendOpen} onClose={onResendClose}>
+					<ModalOverlay />
+					<ModalContent>
+						<ModalHeader>Resend Receipt</ModalHeader>
+						<ModalCloseButton />
+						<ModalBody>
+							<Text mb={4}>
+								Are you sure you want to resend the receipt email to this customer?
+							</Text>
+							{selectedBooking && (
+								<Box p={3} bg="gray.50" borderRadius="md">
+									<Text fontSize="sm"><strong>Booking:</strong> {selectedBooking.bookingRef}</Text>
+									<Text fontSize="sm"><strong>Customer:</strong> {selectedBooking.customerName}</Text>
+									<Text fontSize="sm"><strong>Email:</strong> {selectedBooking.customerEmail}</Text>
+									<Text fontSize="sm"><strong>Amount:</strong> ${selectedBooking.total.toFixed(2)}</Text>
+								</Box>
+							)}
+						</ModalBody>
+						<ModalFooter>
+							<Button variant="ghost" mr={3} onClick={onResendClose} isDisabled={isResending}>
+								Cancel
+							</Button>
+							<Button colorScheme="blue" onClick={confirmResendReceipt} isLoading={isResending}>
+								{isResending ? "Sending..." : "Yes, Send Receipt"}
+							</Button>
+						</ModalFooter>
+					</ModalContent>
+				</Modal>
 			</ConsoleLayout>
 		</>
 	)

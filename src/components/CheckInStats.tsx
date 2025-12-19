@@ -3,12 +3,20 @@ import { Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Card, CardB
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import { CheckCircleIcon, TimeIcon, WarningIcon } from "@chakra-ui/icons"
+import { useSession } from "next-auth/react"
 
 interface CheckInStatsProps {
 	eventId: string
 }
 
 const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
+	const { data: session } = useSession()
+	
+	// Check if user is admin
+	// @ts-ignore
+	const userRole = session?.user?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["checkInStats", eventId],
 		queryFn: async () => {
@@ -16,6 +24,8 @@ const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
 			return response.data.data
 		},
 		refetchInterval: 30000, // Refresh every 30 seconds
+		enabled: isAdmin, // Only fetch if user is admin
+		retry: false, // Don't retry on 403 errors
 	})
 
 	if (isLoading) {
@@ -29,7 +39,8 @@ const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
 		)
 	}
 
-	if (error) {
+	// Don't show error for non-admin users (they don't have access)
+	if (error && isAdmin) {
 		return (
 			<Box textAlign="center" py={10} bg="white" borderRadius="xl" boxShadow="sm">
 				<Icon as={WarningIcon} boxSize={8} color="#EF4444" mb={2} />
@@ -38,6 +49,11 @@ const CheckInStats: React.FC<CheckInStatsProps> = ({ eventId }) => {
 				</Text>
 			</Box>
 		)
+	}
+
+	// Hide stats for non-admin users
+	if (!isAdmin) {
+		return null
 	}
 
 	const checkInPercentage = data?.checkInPercentage || 0
