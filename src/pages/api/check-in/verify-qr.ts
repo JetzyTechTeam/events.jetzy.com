@@ -82,7 +82,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			)
 		}
 
-		// Check if booking is confirmed
+		// Check if booking is cancelled - explicitly reject cancelled bookings
+		if (booking.status === "CANCELLED") {
+			return sendResponse(
+				res,
+				{
+					booking: booking,
+					message: "This booking has been cancelled. Cancelled tickets cannot be used for entry.",
+				},
+				"Booking is cancelled",
+				false,
+				ResCode.BAD_REQUEST
+			)
+		}
+
+		// Check if booking is confirmed - only confirmed bookings can be checked in
 		if (booking.status !== "CONFIRMED") {
 			return sendResponse(
 				res,

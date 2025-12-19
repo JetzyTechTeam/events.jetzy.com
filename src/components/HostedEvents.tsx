@@ -3,7 +3,7 @@ import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { IEvent } from "@/models/events/types"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
@@ -49,7 +49,19 @@ import {
 	InputGroup,
 	InputLeftElement,
 	Select,
-	Button
+	Button,
+	Modal,
+	ModalOverlay,
+	ModalContent,
+	ModalHeader,
+	ModalBody,
+	ModalFooter,
+	ModalCloseButton,
+	useToast,
+	useDisclosure,
+	Divider,
+	Stack,
+	Heading
 } from "@chakra-ui/react"
 import { 
 	MagnifyingGlassIcon, 
@@ -471,12 +483,31 @@ interface Booking {
 	tax: number
 	total: number
 	createdAt: string
+	qrCodeToken?: string
 }
 
 function EventBookings({ eventId }: { eventId: string }) {
+	const toast = useToast()
+	const { isOpen: isDetailsOpen, onOpen: onDetailsOpen, onClose: onDetailsClose } = useDisclosure()
+	const { isOpen: isCancelOpen, onOpen: onCancelOpen, onClose: onCancelClose } = useDisclosure()
+	const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+	const [isCancelling, setIsCancelling] = useState(false)
+	const [isResending, setIsResending] = useState(false)
+	const queryClient = useQueryClient()
+
 	const { data: bookings, isLoading } = useQuery({
 		queryKey: ["eventBookings", eventId],
 		queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
+	})
+
+	const { data: eventData } = useQuery({
+		queryKey: ["event", eventId],
+		queryFn: async () => {
+			const response = await axios.get(`/api/events/${eventId}`)
+			console.log("Event data response:", response.data)
+			return response
+		},
+		enabled: !!eventId && !!selectedBooking,
 	})
 
 	const { data: totals, isLoading: totalsLoading } = useQuery({
@@ -494,6 +525,68 @@ function EventBookings({ eventId }: { eventId: string }) {
 			cancelledGuests: totals.data.cancelledGuests || 0,
 		}
 	}, [totals?.data])
+
+	const handleCancelBooking = async () => {
+		if (!selectedBooking) return
+
+		setIsCancelling(true)
+		try {
+			const response = await axios.post(`/api/bookings/${selectedBooking._id}/cancel`)
+			if (response.data.status) {
+				toast({
+					title: "Success",
+					description: "Booking cancelled successfully",
+					status: "success",
+					duration: 3000,
+					isClosable: true,
+				})
+				queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+				queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
+				onCancelClose()
+				setSelectedBooking(null)
+			} else {
+				throw new Error(response.data.message || "Failed to cancel booking")
+			}
+		} catch (error: any) {
+			toast({
+				title: "Error",
+				description: error.response?.data?.message || error.message || "Failed to cancel booking",
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
+		} finally {
+			setIsCancelling(false)
+		}
+	}
+
+	const handleResendReceipt = async (bookingId: string) => {
+		setIsResending(true)
+		try {
+			const response = await axios.post(`/api/bookings/${bookingId}/resend-receipt`)
+			if (response.data.status) {
+				toast({
+					title: "Success",
+					description: "Receipt sent successfully",
+					status: "success",
+					duration: 3000,
+					isClosable: true,
+				})
+			} else {
+				throw new Error(response.data.message || "Failed to resend receipt")
+			}
+		} catch (error: any) {
+			toast({
+				title: "Error",
+				description: error.response?.data?.message || error.message || "Failed to resend receipt",
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
+		} finally {
+			setIsResending(false)
+		}
+	}
 
 	if (isLoading) {
 		return (
@@ -624,7 +717,7 @@ function EventBookings({ eventId }: { eventId: string }) {
 											</Badge>
 										</Td>
 										<Td py={4} textAlign="right">
-											<Menu>
+											<Menu closeOnSelect={false}>
 												<MenuButton
 													as={IconButton}
 													aria-label="Options"
@@ -634,9 +727,33 @@ function EventBookings({ eventId }: { eventId: string }) {
 													color="gray.500"
 												/>
 												<MenuList fontSize="sm">
-													<MenuItem>View Details</MenuItem>
-													<MenuItem>Email Customer</MenuItem>
-													<MenuItem color="red.500">Cancel Booking</MenuItem>
+													<MenuItem onClick={(e) => {
+														e.preventDefault()
+														e.stopPropagation()
+														console.log("View Details clicked for booking:", booking._id)
+														setSelectedBooking(booking)
+														onDetailsOpen()
+													}}>View Details</MenuItem>
+													<MenuItem onClick={async (e) => {
+														e.preventDefault()
+														e.stopPropagation()
+														setSelectedBooking(booking)
+														await handleResendReceipt(booking._id)
+													}} isDisabled={isResending || booking.status === "cancelled"}>
+														{isResending ? "Sending..." : "Resend Receipt"}
+													</MenuItem>
+													<MenuItem 
+														color="red.500" 
+														onClick={(e) => {
+															e.preventDefault()
+															e.stopPropagation()
+															setSelectedBooking(booking)
+															onCancelOpen()
+														}}
+														isDisabled={booking.status === "cancelled"}
+													>
+														Cancel Booking
+													</MenuItem>
 												</MenuList>
 											</Menu>
 										</Td>
@@ -647,6 +764,173 @@ function EventBookings({ eventId }: { eventId: string }) {
 					</Table>
 				</Box>
 			</Box>
+
+			{/* View Details Modal */}
+			<Modal isOpen={isDetailsOpen} onClose={onDetailsClose} size="xl">
+				<ModalOverlay />
+				<ModalContent>
+					<ModalHeader>Booking Details</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody>
+						{!selectedBooking ? (
+							<Text>No booking selected</Text>
+						) : (
+							<Stack spacing={4}>
+								<Box>
+									<Heading size="sm" mb={3}>Customer Information</Heading>
+									<Stack spacing={2}>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Name:</Text>
+											<Text>{selectedBooking.customerName}</Text>
+										</Flex>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Email:</Text>
+											<Text>{selectedBooking.customerEmail}</Text>
+										</Flex>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Phone:</Text>
+											<Text>{selectedBooking.customerPhone}</Text>
+										</Flex>
+									</Stack>
+								</Box>
+
+								<Divider />
+
+								<Box>
+									<Heading size="sm" mb={3}>Booking Information</Heading>
+									<Stack spacing={2}>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Booking Reference:</Text>
+											<Text fontFamily="mono" fontSize="sm">{selectedBooking.bookingRef}</Text>
+										</Flex>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Status:</Text>
+											<Badge
+												colorScheme={
+													selectedBooking.status === "confirmed" || selectedBooking.status === "approved" ? "green" :
+													selectedBooking.status === "pending" ? "yellow" : "red"
+												}
+											>
+												{selectedBooking.status}
+											</Badge>
+										</Flex>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Booking Date:</Text>
+											<Text>{new Date(selectedBooking.createdAt).toLocaleString()}</Text>
+										</Flex>
+									</Stack>
+								</Box>
+
+								{eventData?.data?.data ? (
+									<>
+										<Divider />
+
+										<Box>
+											<Heading size="sm" mb={3}>Event Information</Heading>
+											<Stack spacing={2}>
+												<Flex justify="space-between">
+													<Text fontWeight="semibold">Event Name:</Text>
+													<Text>{eventData.data.data.name}</Text>
+												</Flex>
+												<Flex justify="space-between">
+													<Text fontWeight="semibold">Location:</Text>
+													<Text>{eventData.data.data.location}</Text>
+												</Flex>
+												<Flex justify="space-between">
+													<Text fontWeight="semibold">Date:</Text>
+													<Text>{new Date(eventData.data.data.startsOn).toLocaleDateString()}</Text>
+												</Flex>
+											</Stack>
+										</Box>
+
+										<Divider />
+
+										<Box>
+											<Heading size="sm" mb={3}>Ticket Details</Heading>
+											<Stack spacing={2}>
+												{selectedBooking.tickets.map((ticket, idx) => {
+													const eventTicket = eventData.data.data.tickets?.find((t: any) => t._id.toString() === ticket.ticketId.toString())
+													return (
+														<Box key={idx} p={3} bg="gray.50" borderRadius="md">
+															<Flex justify="space-between" mb={1}>
+																<Text fontWeight="semibold">{eventTicket?.name || "Unknown Ticket"}</Text>
+																<Text>Qty: {ticket.quantity}</Text>
+															</Flex>
+															{eventTicket && (
+																<Text fontSize="sm" color="gray.600">
+																	${parseFloat(eventTicket.price || "0").toFixed(2)} each
+																</Text>
+															)}
+														</Box>
+													)
+												})}
+											</Stack>
+										</Box>
+									</>
+								) : (
+									<Flex justify="center" align="center" py={4}>
+										<Spinner size="sm" />
+										<Text ml={3} fontSize="sm" color="gray.500">Loading event details...</Text>
+									</Flex>
+								)}
+
+								<Divider />
+
+								<Box>
+									<Heading size="sm" mb={3}>Payment Summary</Heading>
+									<Stack spacing={2}>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Subtotal:</Text>
+											<Text>${selectedBooking.subTotal.toFixed(2)}</Text>
+										</Flex>
+										<Flex justify="space-between">
+											<Text fontWeight="semibold">Tax:</Text>
+											<Text>${selectedBooking.tax.toFixed(2)}</Text>
+										</Flex>
+										<Divider />
+										<Flex justify="space-between">
+											<Text fontWeight="bold" fontSize="lg">Total:</Text>
+											<Text fontWeight="bold" fontSize="lg">${selectedBooking.total.toFixed(2)}</Text>
+										</Flex>
+									</Stack>
+								</Box>
+							</Stack>
+						)}
+					</ModalBody>
+					<ModalFooter>
+						<Button onClick={onDetailsClose}>Close</Button>
+					</ModalFooter>
+				</ModalContent>
+			</Modal>
+
+			{/* Cancel Booking Confirmation Modal */}
+			<Modal isOpen={isCancelOpen} onClose={onCancelClose}>
+				<ModalOverlay />
+				<ModalContent>
+					<ModalHeader>Cancel Booking</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody>
+						<Text mb={4}>
+							Are you sure you want to cancel this booking? This action cannot be undone and will free up the tickets.
+						</Text>
+						{selectedBooking && (
+							<Box p={3} bg="gray.50" borderRadius="md">
+								<Text fontSize="sm"><strong>Booking:</strong> {selectedBooking.bookingRef}</Text>
+								<Text fontSize="sm"><strong>Customer:</strong> {selectedBooking.customerName}</Text>
+								<Text fontSize="sm"><strong>Amount:</strong> ${selectedBooking.total.toFixed(2)}</Text>
+							</Box>
+						)}
+					</ModalBody>
+					<ModalFooter>
+						<Button variant="ghost" mr={3} onClick={onCancelClose} isDisabled={isCancelling}>
+							No, Keep Booking
+						</Button>
+						<Button colorScheme="red" onClick={handleCancelBooking} isLoading={isCancelling}>
+							Yes, Cancel Booking
+						</Button>
+					</ModalFooter>
+				</ModalContent>
+			</Modal>
 		</Box>
 	)
 }

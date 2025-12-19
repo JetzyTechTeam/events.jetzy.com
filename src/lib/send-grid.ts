@@ -27,6 +27,22 @@ type TicketEmailData = {
 	guestEmails?: string[] // Array of guest email addresses
 }
 
+type BookingCancellationData = {
+	event: IEvent
+	firstName: string
+	lastName: string
+	email: string
+	phone: string
+	tickets: Array<{
+		name: string
+		quantity: number
+		price: number
+		desc: string
+	}>
+	orderNumber: string
+	totalAmount: number
+}
+
 type WaitingListEmailData = {
 	firstName: string
 	lastName: string
@@ -369,70 +385,60 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 		const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
 		const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
 
-		const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
-		const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
-		const location = event.location
-		
-		console.log("Email details:", { timestamp, location, totalAmount, tickets, guestEmails })
-		
-		// Prepare attachments for QR code - use attachment method as PRIMARY
-		// Many email clients block data URIs, so inline attachments are more reliable
-		const attachments: any[] = []
-		let qrCodeValid = false
-		let hasAttachment = false
-		
-		if (qrCodeImageUrl) {
-			try {
-				// Validate QR code image URL
-				if (!qrCodeImageUrl || !qrCodeImageUrl.startsWith('data:image/')) {
-					console.error("[sendTicketConfirmation] Invalid QR code image URL format")
-					qrCodeValid = false
-				} else {
-					// Extract base64 data from data URI
-					const base64Data = qrCodeImageUrl.replace(/^data:image\/\w+;base64,/, '')
-					
-					if (!base64Data || base64Data.length === 0) {
-						console.error("[sendTicketConfirmation] Empty base64 data after extraction")
-						qrCodeValid = false
-					} else {
-						console.log("[sendTicketConfirmation] QR code base64 data length:", base64Data.length)
-						
-						// Create attachment as PRIMARY method (most email clients support this)
-						try {
-							attachments.push({
-								filename: 'qr-code.png',
-								content: base64Data, // SendGrid expects base64 string directly
-								type: 'image/png',
-								disposition: 'inline',
-								content_id: 'qrCode' // SendGrid uses content_id for inline images
-							})
-							hasAttachment = true
-							qrCodeValid = true
-							console.log("[sendTicketConfirmation] QR code attachment prepared successfully")
-						} catch (attachError: any) {
-							console.error("[sendTicketConfirmation] Failed to create attachment:", attachError.message)
-							qrCodeValid = false
-						}
-					}
-				}
-			} catch (error: any) {
-				console.error("[sendTicketConfirmation] Error processing QR code:", error.message)
-				console.error("[sendTicketConfirmation] QR code image URL:", qrCodeImageUrl ? qrCodeImageUrl.substring(0, 100) + '...' : 'null')
-				qrCodeValid = false
-			}
-		} else {
-			console.warn("[sendTicketConfirmation] No QR code image URL provided")
-			qrCodeValid = false
-		}
-		
-		let emailPayload
+	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
+	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
+	const location = event.location
+	
+	console.log("Email details:", { timestamp, location, totalAmount, tickets })
+	
+	// Process QR code image for attachment
+	const attachments: any[] = []
+	let qrCodeValid = false
+	let hasAttachment = false
+	
+	if (qrCodeImageUrl) {
 		try {
-			emailPayload = {
-			to: [email, "tech@jetzyapp.com"],
-			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `Jetzy [Booking Confirmation] ${event.name}`,
-			...(attachments.length > 0 ? { attachments } : {}),
-			html: `
+			// Check if it's a data URI (base64)
+			if (qrCodeImageUrl.startsWith('data:image')) {
+				const base64Match = qrCodeImageUrl.match(/^data:image\/(\w+);base64,(.+)$/)
+				if (base64Match && base64Match[2]) {
+					const base64Data = base64Match[2]
+					if (base64Data.length > 0) {
+						attachments.push({
+							filename: 'qr-code.png',
+							type: `image/${base64Match[1]}`,
+							content: base64Data,
+							contentId: 'qrCode',
+							disposition: 'inline',
+						})
+						hasAttachment = true
+						qrCodeValid = true
+						console.log("[sendTicketConfirmation] QR code attachment prepared successfully")
+					} else {
+						console.error("[sendTicketConfirmation] Empty base64 data after extraction")
+					}
+				} else {
+					console.error("[sendTicketConfirmation] Invalid QR code image URL format")
+				}
+			} else {
+				// If it's a URL, we'll use it directly in the HTML
+				qrCodeValid = true
+			}
+		} catch (attachError: any) {
+			console.error("[sendTicketConfirmation] Error processing QR code:", attachError.message)
+			console.error("[sendTicketConfirmation] QR code image URL:", qrCodeImageUrl ? qrCodeImageUrl.substring(0, 100) + '...' : 'null')
+		}
+	} else {
+		console.warn("[sendTicketConfirmation] No QR code image URL provided")
+	}
+	
+	// Build email payload
+	const emailPayload = {
+		to: [email, "tech@jetzyapp.com"],
+		from: process.env.SENDGRID_EMAIL_SENDER as string,
+		subject: `Jetzy [Booking Confirmation] ${event.name}`,
+		...(attachments.length > 0 ? { attachments } : {}),
+		html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>
           
@@ -558,29 +564,126 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
         </div>
       `,
-			}
-		} catch (templateError: any) {
-			console.error("[sendTicketConfirmation] Error creating email template:", templateError.message)
-			console.error("[sendTicketConfirmation] Template error stack:", templateError.stack)
-			throw new Error(`Failed to create email template: ${templateError.message}`)
-		}
-		
-		console.log("[sendTicketConfirmation] Sending email with payload:", {
-			to: emailPayload.to,
-			from: emailPayload.from,
-			subject: emailPayload.subject,
-			hasAttachments: attachments.length > 0,
-			hasGuestEmails: guestEmails.length > 0,
-		})
-		
-		await sgMail.send(emailPayload as any)
-		console.log("[sendTicketConfirmation] Email sent successfully to:", email)
-		return { success: true, message: "Email sent successfully" }
+	}
+	
+	console.log("[sendTicketConfirmation] Sending email with payload:", {
+		to: emailPayload.to,
+		from: emailPayload.from,
+		subject: emailPayload.subject,
+		hasAttachments: attachments.length > 0,
+		hasGuestEmails: guestEmails.length > 0,
+	})
+	
+	await sgMail.send(emailPayload as any)
+	console.log("[sendTicketConfirmation] Email sent successfully to:", email)
+	return { success: true, message: "Email sent successfully" }
 	} catch (error: any) {
 		console.error("[sendTicketConfirmation] Failed to send email:", error.message || error)
 		console.error("[sendTicketConfirmation] Error details:", JSON.stringify(error, null, 2))
 		if (error.response) {
 			console.error("[sendTicketConfirmation] SendGrid response:", JSON.stringify(error.response.body, null, 2))
+		}
+		throw error
+	}
+}
+
+export const sendBookingCancellation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, totalAmount }: BookingCancellationData) => {
+	if (!process.env.NEXT_PUBLIC_URL) {
+		throw new Error("NEXT_PUBLIC_URL environment variable is required")
+	}
+	console.log("[sendBookingCancellation] Called with:", { email, orderNumber, eventName: event.name, ticketCount: tickets.length })
+	
+	try {
+		// Format event start and end time
+		const eventTimezone = event.timezone.split(') ')[1]
+		const start = dayjs.utc(event.startsOn).tz(eventTimezone)
+		const end = dayjs.utc(event.endsOn).tz(eventTimezone)
+		const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
+		const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
+		const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
+		const location = event.location
+
+		await sgMail.send({
+			to: [email, "tech@jetzyapp.com"],
+			from: process.env.SENDGRID_EMAIL_SENDER as string,
+			subject: `Jetzy [Booking Cancelled] ${event.name}`,
+			html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">Booking Cancellation Confirmation</h1>
+          
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+            <h2 style="color: #856404; margin-bottom: 15px;">Your Booking Has Been Cancelled</h2>
+            <p style="color: #856404; margin: 0;">
+              We're sorry to inform you that your booking for "${event.name}" has been cancelled.
+            </p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
+            <p><strong>Event Name:</strong> ${event.name}</p>
+            <p><strong>Date and Time:</strong> ${timestamp}</p>
+            <p><strong>Venue:</strong> ${location}</p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">Customer Information</h2>
+            <p><strong>Name:</strong> ${firstName} ${lastName}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            ${phone ? `<p><strong>Phone:</strong> ${phone}</p>` : ""}
+            <p><strong>Order Number:</strong> ${orderNumber}</p>
+          </div>
+
+          <div style="margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">Cancelled Tickets</h2>
+            ${tickets
+							.map(
+								(ticket) => `
+              <div style="background-color: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="color: #333; margin: 0 0 10px 0; font-size: 18px;">${ticket.name}</h3>
+                <p style="margin: 8px 0;"><strong>Quantity:</strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
+                <p style="margin: 8px 0;"><strong>Price per ticket:</strong> $${ticket.price.toFixed(2)}</p>
+                <p style="margin: 8px 0;"><strong>Subtotal:</strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description:</strong> ${ticket.desc}</p>` : ''}
+              </div>
+            `,
+							)
+							.join("")}
+          </div>
+          
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #333; margin: 0;">Total Amount Refunded: $${totalAmount.toFixed(2)}</h3>
+          </div>
+
+          <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #1877F2;">
+            <h2 style="color: #1877F2; margin-bottom: 15px;">Important Information</h2>
+            <p style="color: #1C1E21; margin-bottom: 10px;">
+              Your tickets have been released and are now available for other attendees. 
+              If you were charged for this booking, a refund will be processed according to our refund policy.
+            </p>
+            <p style="color: #1C1E21; margin-top: 10px;">
+              If you have any questions about this cancellation or need assistance, please don't hesitate to contact us.
+            </p>
+          </div>
+          
+          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
+            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+              Questions? Contact us at <a href="mailto:events@jetzy.com" style="color: #1877F2; text-decoration: none;">events@jetzy.com</a>
+            </p>
+            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
+              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+            </p>
+          </div>
+        </div>
+      `,
+		})
+		
+		console.log("[sendBookingCancellation] Email sent successfully to:", email)
+		return { success: true, message: "Cancellation email sent successfully" }
+	} catch (error: any) {
+		console.error("[sendBookingCancellation] Failed to send email:", error.message || error)
+		console.error("[sendBookingCancellation] Error details:", JSON.stringify(error, null, 2))
+		if (error.response) {
+			console.error("[sendBookingCancellation] SendGrid response:", JSON.stringify(error.response.body, null, 2))
 		}
 		throw error
 	}
