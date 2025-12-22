@@ -77,6 +77,15 @@ const bookingSchema = new Schema<IBookings>(
 			type: String,
 			required: false,
 		},
+		referralCode: {
+			type: String,
+			required: false,
+			index: true,
+		},
+		discountAmount: {
+			type: Number,
+			default: 0,
+		},
 	},
 	{
 		timestamps: true,

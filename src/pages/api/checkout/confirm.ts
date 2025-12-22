@@ -26,6 +26,8 @@ type SessionMetadata = {
 	phone: string
 	tickets: string // JSON stringified array of ticket objects
 	guestEmails?: string // JSON stringified array of guest emails
+	referralCode?: string
+	discountPercentage?: string
 }
 
 type TicketsProps = Array<{
@@ -110,9 +112,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
+		// Handle referral code tracking
+		let discountAmount = 0
+		if (metadata.referralCode && metadata.discountPercentage) {
+			try {
+				const { ReferralCodes } = await import("@/models/events/referral-codes")
+				const referralCode = await ReferralCodes.findOne({
+					code: metadata.referralCode.toUpperCase(),
+					isDeleted: false,
+				})
+
+				if (referralCode) {
+					// Calculate discount amount from original subtotal
+					const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
+					const discountPercent = parseFloat(metadata.discountPercentage)
+					// Round to 2 decimal places with Number.EPSILON to prevent floating-point edge cases
+					discountAmount = Math.round((subtotal * (discountPercent / 100) + Number.EPSILON) * 100) / 100
+
+					// Increment usage count
+					referralCode.usageCount += 1
+					await referralCode.save()
+					console.log("[checkout/confirm] Referral code usage incremented:", metadata.referralCode)
+				}
+			} catch (referralError: any) {
+				console.error("[checkout/confirm] Error processing referral code:", referralError)
+				// Continue without failing the booking
+			}
+		}
+
 		// Create a booking record if the payment was successful
 		if (session.payment_status === "paid") {
 			console.log("[checkout/confirm] Payment successful, creating booking...")
+			const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
 			const booking = await Bookings.create({
 				status: BookingStatus.CONFIRMED,
 				eventId: metadata.eventId,
@@ -124,8 +155,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					ticketId: ticket.id,
 					quantity: ticket.quantity,
 				})),
-				subTotal: tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0),
+				subTotal: subtotal,
 				total: session.amount_total ? session.amount_total / 100 : 0,
+				referralCode: metadata.referralCode || undefined,
+				discountAmount: discountAmount,
 			})
 			console.log("[checkout/confirm] Booking created:", booking.bookingRef)
 
@@ -340,6 +373,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			try {
 				console.log("[checkout/confirm] Sending ticket confirmation email to:", metadata.email, "isNewUser:", isNewUser, "guestEmails:", guestEmails.length)
 				
+				// Extract referral code and discount information from metadata or booking
+				const referralCodeForEmail = metadata.referralCode || booking.referralCode || undefined
+				const discountAmountForEmail = discountAmount > 0 ? discountAmount : (booking.discountAmount || undefined)
+				const discountPercentageForEmail = metadata.discountPercentage ? parseFloat(metadata.discountPercentage) : undefined
+				
 				// Send email
 				await sendTicketConfirmation({
 					event,
@@ -357,6 +395,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					isNewUser,
 					qrCodeImageUrl, // Pass QR code image to email
 					guestEmails, // Pass guest emails to email
+					referralCode: referralCodeForEmail,
+					discountAmount: discountAmountForEmail,
+					discountPercentage: discountPercentageForEmail,
 				})
 				console.log("[checkout/confirm] Ticket confirmation email sent successfully")
 			} catch (emailError: any) {

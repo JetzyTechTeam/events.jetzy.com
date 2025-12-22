@@ -79,6 +79,8 @@ export interface IBookings extends IBaseModelProps {
 	subTotal: number
 	tax: number
 	total: number
+	referralCode?: string
+	discountAmount?: number
 	qrCodeToken?: string
 	qrCodeImageUrl?: string
 	updateEventTracker: () => Promise<void>
@@ -89,4 +91,14 @@ export interface IEventTracker extends IBaseModelProps {
 	eventId: Types.ObjectId
 	bookedTickets: number
 	eventCapacity: number
+}
+
+export interface IReferralCode extends IBaseModelProps {
+	eventId: Types.ObjectId
+	code: string
+	discountPercentage: number // 0-100
+	isActive: boolean
+	usageCount: number
+	maxUses?: number | null // null means unlimited
+	createdBy?: Types.ObjectId
 }

@@ -25,6 +25,9 @@ type TicketEmailData = {
 	isNewUser?: boolean
 	qrCodeImageUrl?: string
 	guestEmails?: string[] // Array of guest email addresses
+	referralCode?: string
+	discountAmount?: number
+	discountPercentage?: number
 }
 
 type BookingCancellationData = {
@@ -369,7 +372,7 @@ export const sendBlastEmail = async ({
 	}
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [] }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage }: TicketEmailData) => {
 	const baseUrl = process.env.NEXT_PUBLIC_URL
 	
 	if (!baseUrl) {
@@ -411,11 +414,12 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 		const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
 		const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
 
-	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
+	const subtotal = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
+	const finalTotal = discountAmount && discountAmount > 0 ? subtotal - discountAmount : subtotal
 	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
 	const location = event.location
 	
-	console.log("Email details:", { timestamp, location, totalAmount, tickets })
+	console.log("Email details:", { timestamp, location, subtotal, finalTotal, referralCode, discountAmount, tickets })
 	
 	// Process QR code image for attachment
 	const attachments: any[] = []
@@ -500,7 +504,26 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
           
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="color: #333; margin: 0;">Total Amount: $${totalAmount}</h3>
+            ${referralCode && discountAmount && discountAmount > 0 ? `
+              <div style="margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                  <span style="color: #333; font-weight: 500;">Subtotal:</span>
+                  <span style="color: #333; font-weight: 600;">$${subtotal.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; background-color: #d4edda; padding: 12px; border-radius: 6px; border-left: 4px solid #28a745; margin-bottom: 10px;">
+                  <div>
+                    <span style="color: #155724; font-weight: 600;">Referral Code: </span>
+                    <span style="color: #155724; font-weight: bold; font-size: 16px;">${referralCode}</span>
+                    ${discountPercentage ? `<span style="color: #28a745; font-size: 14px; margin-left: 8px;">(${discountPercentage}% off)</span>` : ''}
+                  </div>
+                  <span style="color: #155724; font-weight: bold;">-$${discountAmount.toFixed(2)}</span>
+                </div>
+              </div>
+            ` : ''}
+            <div style="display: flex; justify-content: space-between; padding-top: 15px; border-top: 2px solid #ddd;">
+              <span style="color: #333; font-weight: bold; font-size: 18px;">Total Amount:</span>
+              <span style="color: #333; font-weight: bold; font-size: 20px;">$${finalTotal.toFixed(2)}</span>
+            </div>
           </div>
           
           ${qrCodeImageUrl && qrCodeValid ? `

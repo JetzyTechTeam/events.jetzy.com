@@ -28,6 +28,7 @@ type BodyParams = {
 		password?: string
 		guestEmails?: string[]
 	}
+	referralCode?: string
 }
 // initialize stripe
 if (!process.env.NEXT_STRIPE_SECRET_KEY) {
@@ -55,6 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		let tickets: BodyParams["tickets"]
 		let user: BodyParams["user"]
+		let referralCode: string | undefined = undefined
 		let guestEmails: string[] = []
 		
 		try {
@@ -65,6 +67,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			user = typeof req.body.user === 'string'
 				? JSON.parse(req.body.user)
 				: req.body.user as BodyParams["user"]
+			
+			// Extract referral code if provided
+			if (req.body.referralCode && typeof req.body.referralCode === 'string') {
+				referralCode = req.body.referralCode.trim().toUpperCase()
+			} else if (req.body.referralCode) {
+				referralCode = req.body.referralCode as string
+			}
 			
 			// Extract guest emails if provided
 			if (user.guestEmails && Array.isArray(user.guestEmails)) {
@@ -145,6 +154,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
 			console.error("Error creating user:", errorMessage)
 			// Don't fail the checkout if user creation fails - user might already exist
+		}
+
+		// Validate and get referral code if provided
+		let referralCodeData: { code: string; discountPercentage: number } | null = null
+		if (referralCode) {
+			try {
+				const { ReferralCodes } = await import("@/models/events/referral-codes")
+				const { Types } = await import("mongoose")
+				
+				const codeRecord = await ReferralCodes.findOne({
+					eventId: new Types.ObjectId(tickets[0]?.eventId),
+					code: referralCode.toUpperCase(),
+					isDeleted: false,
+					isActive: true,
+				})
+
+				if (!codeRecord) {
+					return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
+				}
+
+				// Check if code has reached max uses
+				if (codeRecord.maxUses !== null && codeRecord.maxUses !== undefined && codeRecord.usageCount >= codeRecord.maxUses) {
+					return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
+				}
+
+				referralCodeData = {
+					code: codeRecord.code,
+					discountPercentage: codeRecord.discountPercentage,
+				}
+			} catch (referralError: any) {
+				console.error("[checkout/index] Error validating referral code:", referralError)
+				return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
+			}
 		}
 
 		// using price api from stripe create price for the tickets selected
@@ -244,8 +286,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata.guestEmails = JSON.stringify(guestEmails)
 		}
 
+		// Add referral code to metadata if available
+		if (referralCodeData) {
+			metadata.referralCode = referralCodeData.code
+			metadata.discountPercentage = referralCodeData.discountPercentage.toString()
+		}
+
+		// Create Stripe coupon for referral code discount if applicable
+		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
+		if (referralCodeData) {
+			try {
+				// Create a coupon for this discount (reusable or one-time)
+				const coupon = await stripe.coupons.create({
+					percent_off: referralCodeData.discountPercentage,
+					duration: 'once',
+					name: `Referral: ${referralCodeData.code}`,
+				})
+
+				discountConfig = [{
+					coupon: coupon.id,
+				}]
+			} catch (couponError: any) {
+				console.error("[checkout/index] Error creating Stripe coupon:", couponError)
+				// Continue without discount if coupon creation fails
+			}
+		}
+
 		// create a checkout session
-		const session = await stripe.checkout.sessions.create({
+		const sessionParams: Stripe.Checkout.SessionCreateParams = {
 			client_reference_id: reference,
 			payment_method_types: ["card"],
 			line_items: prices,
@@ -255,7 +323,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			locale: "en", // Explicitly set locale to prevent locale loading errors
 			metadata,
 			customer_email: user.email,
-		}).catch((stripeError) => {
+		}
+
+		// Add discounts if referral code is valid
+		if (discountConfig) {
+			sessionParams.discounts = discountConfig
+		}
+
+		const session = await stripe.checkout.sessions.create(sessionParams).catch((stripeError) => {
 			console.error("Stripe session creation failed:", stripeError)
 			throw new Error(`Stripe error: ${stripeError.message}`)
 		})

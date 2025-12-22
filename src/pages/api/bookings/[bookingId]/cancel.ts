@@ -59,12 +59,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Get ticket details from event
 				const ticketDetails = booking.tickets.map((bookingTicket) => {
 					const eventTicket = event.tickets.find((t: any) => t._id.toString() === bookingTicket.ticketId.toString())
-					return {
-						name: eventTicket?.name || "Unknown Ticket",
-						price: parseFloat(eventTicket?.price || "0"),
-						quantity: bookingTicket.quantity,
-						desc: eventTicket?.desc || "",
-					}
+								return {
+									name: eventTicket?.name || "Unknown Ticket", 
+									price: typeof eventTicket?.price === "number" ? eventTicket.price : parseFloat(String(eventTicket?.price || "0")),
+									quantity: bookingTicket.quantity,
+									desc: eventTicket?.desc || "",
+								}
 				})
 
 				// Parse customer name (assuming format "FirstName LastName")

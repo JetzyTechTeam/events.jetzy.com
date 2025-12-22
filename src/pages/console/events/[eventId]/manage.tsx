@@ -31,6 +31,7 @@ import { GuestsList } from "@/components/console/GuestsList"
 import { WaitingList } from "@/components/console/WaitingList"
 import { EventBookings } from "@/components/HostedEvents"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
+import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge, AvatarGroup } from "@chakra-ui/react"
 
 // Hardcoded presenter - shown when no presentedBy in database
@@ -50,7 +51,7 @@ export default function Manage({ event }: any) {
 	const [shareModal, setShareModal] = useState(false)
 	const [inviteGuestsModal, setInviteGuestsModal] = useState(false)
 	const [sendBlastModal, setSendBlastModal] = useState(false)
-	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "discussion">("about")
+	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion">("about")
 	const router = useRouter()
 	const { data: session } = useSession()
 
@@ -182,6 +183,7 @@ export default function Manage({ event }: any) {
 										{ label: "Guests", value: "guests" },
 										{ label: "Bookings", value: "bookings" },
 										{ label: "Waiting List", value: "waitingList" },
+										{ label: "Referral Codes", value: "referralCodes" },
 										{ label: "Discussion", value: "discussion" }
 									].map((tab) => (
 										<Button
@@ -411,6 +413,10 @@ export default function Manage({ event }: any) {
 									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>Waiting List</Text>
 									<WaitingList eventId={eventData._id} />
 								</Box>
+							)}
+
+							{activeTab === "referralCodes" && (
+								<ReferralCodesManager eventId={eventData._id} />
 							)}
 							
 						{activeTab === "discussion" && (

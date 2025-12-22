@@ -29,7 +29,12 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		email: "",
 		phone: "",
 		password: "",
+		referralCode: "",
 	})
+	const [referralCodeValid, setReferralCodeValid] = useState<boolean | null>(null)
+	const [referralCodeDiscount, setReferralCodeDiscount] = useState<number | null>(null)
+	const [validatingReferralCode, setValidatingReferralCode] = useState(false)
+	const referralCodeValidationTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 
 	// Guest emails are now handled in ticket selection modal based on quantity
 	// We just load them from localStorage to pass to checkout API
@@ -49,6 +54,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 				email: session.user.email || "",
 				phone: (session.user as any).phone || "", // Phone might not exist in session
 				password: "", // Don't pre-fill password for logged-in users
+				referralCode: "", // Initialize referral code as empty
 			})
 		}
 	}, [session])
@@ -68,8 +74,56 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 				setPhoneError("")
 			}
 		}
+		if (name === "referralCode") {
+			// Reset validation state when code changes
+			setReferralCodeValid(null)
+			setReferralCodeDiscount(null)
+		}
 	}
 
+	// Validate referral code
+	const handleValidateReferralCode = async (code: string) => {
+		if (!code || code.trim() === "") {
+			setReferralCodeValid(null)
+			setReferralCodeDiscount(null)
+			return
+		}
+
+		// Get eventId from tickets (tickets have eventId but TypeScript type doesn't include it)
+		const eventId = (tickets[0] as any)?.eventId
+		if (!eventId) {
+			return
+		}
+
+		setValidatingReferralCode(true)
+		try {
+			const response = await fetch(`/api/events/${eventId}/referral-codes/validate`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					eventId,
+					code: code.toUpperCase().trim(),
+				}),
+			})
+
+			const result = await response.json()
+			if (result.status && result.data) {
+				setReferralCodeValid(true)
+				setReferralCodeDiscount(result.data.discountPercentage)
+			} else {
+				setReferralCodeValid(false)
+				setReferralCodeDiscount(null)
+			}
+		} catch (error) {
+			console.error("Error validating referral code:", error)
+			setReferralCodeValid(false)
+			setReferralCodeDiscount(null)
+		} finally {
+			setValidatingReferralCode(false)
+		}
+	}
 
 	// Validate email format
 	const validateEmail = (email: string): boolean => {
@@ -185,13 +239,14 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			}
 		}
 
-		// Include guest emails in the submission
+		// Include guest emails and referral code in the submission
 		const submissionData = {
 			tickets: JSON.stringify(tickets),
 			user: JSON.stringify({
 				...formData,
 				guestEmails: finalGuestEmails,
 			}),
+			referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
 		}
 
 		dispatch(
@@ -226,6 +281,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			email: session.user.email || checkoutFormData.email,
 			phone: (session.user as any).phone || checkoutFormData.phone,
 			password: "", // No password needed for logged-in users
+			referralCode: checkoutFormData.referralCode || "", // Preserve referral code from form
 		} : checkoutFormData
 		
 		sendGAEvent({
@@ -250,13 +306,14 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			}
 		}
 
-		// Include guest emails in the submission
+		// Include guest emails and referral code in the submission
 		const submissionData = {
 			tickets: JSON.stringify(checkoutTickets),
 			user: JSON.stringify({
 				...finalFormData,
 				guestEmails: finalGuestEmails,
 			}),
+			referralCode: finalFormData.referralCode?.trim().toUpperCase() || undefined,
 		}
 
 		dispatch(
@@ -468,6 +525,62 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 											<p className="text-xs text-text-muted mt-1">Minimum 6 characters</p>
 										</div>
 									)}
+									{/* Referral Code Field */}
+									<div>
+										<label className="block text-sm font-medium text-text-primary mb-1.5">
+											Referral Code <span className="text-text-muted font-normal">(Optional)</span>
+										</label>
+										<div className="relative">
+											<input
+												type="text"
+												name="referralCode"
+												placeholder="Enter referral code"
+												value={formData.referralCode}
+												onChange={(e) => {
+													handleInputChange(e)
+													// Clear previous timeout
+													if (referralCodeValidationTimeoutRef.current) {
+														clearTimeout(referralCodeValidationTimeoutRef.current)
+													}
+													// Validate after user stops typing (debounce)
+													const value = e.target.value.toUpperCase().trim()
+													if (value) {
+														referralCodeValidationTimeoutRef.current = setTimeout(() => {
+															handleValidateReferralCode(value)
+														}, 500)
+													} else {
+														setReferralCodeValid(null)
+														setReferralCodeDiscount(null)
+													}
+												}}
+												onBlur={() => {
+													if (referralCodeValidationTimeoutRef.current) {
+														clearTimeout(referralCodeValidationTimeoutRef.current)
+													}
+													if (formData.referralCode.trim()) {
+														handleValidateReferralCode(formData.referralCode)
+													}
+												}}
+												className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all uppercase"
+												style={{ textTransform: "uppercase" }}
+											/>
+											{validatingReferralCode && (
+												<div className="absolute right-3 top-1/2 -translate-y-1/2">
+													<Spinner />
+												</div>
+											)}
+										</div>
+										{referralCodeValid === true && referralCodeDiscount !== null && (
+											<p className="text-sm text-green-600 mt-1.5 font-medium">
+												✓ Valid! You&apos;ll get {referralCodeDiscount}% off your order
+											</p>
+										)}
+										{referralCodeValid === false && (
+											<p className="text-sm text-red-500 mt-1.5">
+												Invalid or inactive referral code
+											</p>
+										)}
+									</div>
 								</div>
 
 

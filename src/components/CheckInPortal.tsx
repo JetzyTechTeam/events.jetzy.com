@@ -1740,6 +1740,59 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 									</SimpleGrid>
 								</Box>
 
+								{/* Payment & Referral Code Information */}
+								{(qrScanResult.referralCode || (qrScanResult.discountAmount && qrScanResult.discountAmount > 0)) && (
+									<Box p={4} bg="#F9FAFB" borderRadius="xl" border="1px solid #E5E7EB">
+										<Text fontSize="sm" fontWeight="semibold" color="#6B7280" mb={3} textTransform="uppercase" letterSpacing="wide">
+											Payment Information
+										</Text>
+										<VStack spacing={3} align="stretch">
+											{qrScanResult.subTotal !== undefined && (
+												<HStack justify="space-between">
+													<Text fontSize="sm" color="#6B7280" fontWeight="medium">
+														Subtotal:
+													</Text>
+													<Text fontSize="md" color="#1F2937" fontWeight="semibold">
+														${qrScanResult.subTotal?.toFixed(2)}
+													</Text>
+												</HStack>
+											)}
+											{qrScanResult.referralCode && qrScanResult.discountAmount && qrScanResult.discountAmount > 0 && (
+												<Box p={3} bg="#D1FAE5" borderRadius="lg" border="2px solid #10B981">
+													<HStack justify="space-between" align="center">
+														<VStack align="flex-start" spacing={0}>
+															<Text fontSize="xs" color="#065F46" fontWeight="medium" mb={1}>
+																Referral Code Applied
+															</Text>
+															<HStack>
+																<Text fontSize="md" color="#047857" fontWeight="bold">
+																	{qrScanResult.referralCode}
+																</Text>
+															</HStack>
+														</VStack>
+														<Text fontSize="lg" color="#059669" fontWeight="bold">
+															-${qrScanResult.discountAmount.toFixed(2)}
+														</Text>
+													</HStack>
+												</Box>
+											)}
+											{qrScanResult.total !== undefined && (
+												<>
+													<Divider borderColor="#E5E7EB" />
+													<HStack justify="space-between">
+														<Text fontSize="md" color="#1F2937" fontWeight="bold">
+															Total Paid:
+														</Text>
+														<Text fontSize="xl" color="#8B5CF6" fontWeight="bold">
+															${qrScanResult.total?.toFixed(2)}
+														</Text>
+													</HStack>
+												</>
+											)}
+										</VStack>
+									</Box>
+								)}
+
 								{/* Check-In Form (only if not already fully checked in and has remaining tickets) */}
 								{!qrScanResult.isAlreadyCheckedIn && qrScanResult.remainingTickets > 0 && (
 									<Box p={5} bg="#F9FAFB" borderRadius="xl" border="2px solid #8B5CF6">

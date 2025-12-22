@@ -37,22 +37,36 @@ const CheckoutSuccessPage: React.FC = () => {
 	const [sessionData, setSessionData] = React.useState<any>(null)
 	const [isLoading, setIsLoading] = React.useState(true)
 	const [eventData, setEventData] = React.useState<IEvent | null>(null)
+	const [referralCode, setReferralCode] = React.useState<string | null>(null)
+	const [discountAmount, setDiscountAmount] = React.useState<number>(0)
+	const [discountPercentage, setDiscountPercentage] = React.useState<number | null>(null)
 
 	let { payload, session_id, event } = query
 
 	const parsedEvent: IEvent | null = event ? JSON.parse(event as string) : null
 
+	// Use eventData if parsedEvent is not available (when coming from session_id)
+	const eventForFormatting = parsedEvent || eventData
+
 	const { formattedDate, formattedTime } = useMemo(() => {
-		if (!parsedEvent?.startsOn) return { formattedDate: "", formattedTime: "" }
+		if (!eventForFormatting?.startsOn) return { formattedDate: "", formattedTime: "" }
 
-		const userTimeZone = parsedEvent.timezone?.split(") ")[1]
-		const date = dayjs.utc(parsedEvent.startsOn).tz(userTimeZone)
-
-		const formattedDate = date.format("MMMM DD, YYYY")
-		const formattedTime = date.format("hh:mm A")
-
-		return { formattedDate, formattedTime }
-	}, [parsedEvent])
+		const timezoneStr = eventForFormatting.timezone || ""
+		// Extract timezone from format like "(UTC-05:00) America/New_York" or just "America/New_York"
+		const userTimeZone = timezoneStr.includes(") ") 
+			? timezoneStr.split(") ")[1] 
+			: timezoneStr || "UTC"
+		
+		try {
+			const date = dayjs.utc(eventForFormatting.startsOn).tz(userTimeZone)
+			const formattedDate = date.format("MMMM DD, YYYY")
+			const formattedTime = date.format("hh:mm A")
+			return { formattedDate, formattedTime }
+		} catch (error) {
+			console.error("Error formatting date:", error)
+			return { formattedDate: "", formattedTime: "" }
+		}
+	}, [eventForFormatting])
 
 	React.useEffect(() => {
 		if (payload) {
@@ -75,6 +89,15 @@ const CheckoutSuccessPage: React.FC = () => {
 						return
 					}
 
+					// Extract referral code and discount from session metadata
+					if (session.metadata?.referralCode) {
+						setReferralCode(session.metadata.referralCode)
+						if (session.metadata.discountPercentage) {
+							const discountPercent = parseFloat(session.metadata.discountPercentage)
+							setDiscountPercentage(discountPercent)
+						}
+					}
+
 					// If we have session data but no payload, fetch the booking details
 					if (!payload && session.metadata) {
 						try {
@@ -93,9 +116,23 @@ const CheckoutSuccessPage: React.FC = () => {
 
 							setOrderItems(items)
 							setEventData(eventDetails)
+
+							// Calculate discount amount from subtotal if we have referral code
+							if (session.metadata.referralCode && session.metadata.discountPercentage) {
+								const subtotal = items.reduce((acc: number, item: any) => acc + item.price * item.quantity, 0)
+								const discountPercent = parseFloat(session.metadata.discountPercentage)
+								const discount = Math.round((subtotal * (discountPercent / 100) + Number.EPSILON) * 100) / 100
+								setDiscountAmount(discount)
+							}
 						} catch (error) {
 							console.error("Error parsing session metadata:", error)
 						}
+					} else if (session.metadata?.referralCode && session.metadata?.discountPercentage && orderItems.length > 0) {
+						// Calculate discount amount from current order items if we have payload
+						const subtotal = orderItems.reduce((acc: number, item: OrderItem) => acc + item.price * item.quantity, 0)
+						const discountPercent = parseFloat(session.metadata.discountPercentage)
+						const discount = Math.round((subtotal * (discountPercent / 100) + Number.EPSILON) * 100) / 100
+						setDiscountAmount(discount)
 					}
 				} catch (error: any) {
 					console.error("Error checking payment status:", error)
@@ -110,6 +147,14 @@ const CheckoutSuccessPage: React.FC = () => {
 
 		checkPaymentStatus()
 	}, [session_id, payload])
+
+	// calculate the subtotal and total of the order (must be before conditional returns)
+	const subtotal = React.useMemo(() => {
+		return orderItems.reduce((acc, item) => {
+			return acc + item.price * item.quantity
+		}, 0)
+	}, [orderItems])
+	const finalTotal = discountAmount > 0 ? subtotal - discountAmount : subtotal
 
 	// Show loading state
 	if (isLoading) {
@@ -150,28 +195,6 @@ const CheckoutSuccessPage: React.FC = () => {
 				</div>
 			)
 		}
-		
-		return (
-			<div className="min-h-screen bg-background-light flex items-center justify-center p-4">
-				<div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md">
-					<div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-						<svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-						</svg>
-					</div>
-					<h1 className="text-2xl font-bold text-text-primary mb-4">Invalid Access</h1>
-					<p className="text-text-secondary mb-6">This page can only be accessed after a successful payment.</p>
-					<button onClick={() => router.push("/")} className="bg-primary-purple text-white px-8 py-3 rounded-lg hover:bg-primary-dark transition-colors font-semibold shadow-md">
-						Go to Home
-					</button>
-				</div>
-			</div>
-		)
-	}
-	// calculate the total of the order
-	const total = orderItems.reduce((acc, item) => {
-		return acc + item.price * item.quantity
-	}, 0)
 
 	return (
 		<>
@@ -230,15 +253,21 @@ const CheckoutSuccessPage: React.FC = () => {
 										</div>
 										<div className="flex items-start gap-3">
 											<span className="text-text-muted text-sm font-medium min-w-[80px]">Date:</span>
-											<span className="text-text-primary flex-1">{formattedDate}</span>
+											<span className="text-text-primary flex-1">{formattedDate || "—"}</span>
 										</div>
-										<div className="flex items-start gap-3">
-											<span className="text-text-muted text-sm font-medium min-w-[80px]">Time:</span>
-											<span className="text-text-primary flex-1">
-												{formattedTime}
-												{parsedEvent?.timezone || eventData?.timezone ? <span className="text-text-muted text-sm ml-2">({parsedEvent?.timezone || eventData?.timezone})</span> : ""}
-											</span>
-										</div>
+											<div className="flex items-start gap-3">
+												<span className="text-text-muted text-sm font-medium min-w-[80px]">Time:</span>
+												<span className="text-text-primary flex-1">
+													{formattedTime || "—"}
+													{eventForFormatting?.timezone && formattedTime ? (
+														<span className="text-text-muted text-sm ml-2">
+															({eventForFormatting.timezone.includes(") ") 
+																? eventForFormatting.timezone.split(") ")[1] 
+																: eventForFormatting.timezone})
+														</span>
+													) : ""}
+												</span>
+											</div>
 									</div>
 								</div>
 							)}
@@ -270,10 +299,30 @@ const CheckoutSuccessPage: React.FC = () => {
 									))}
 								</div>
 
+								{/* Discount Information */}
+								{referralCode && discountAmount > 0 && (
+									<div className="space-y-2 pt-4 border-t border-border-light">
+										<div className="flex justify-between items-center">
+											<span className="text-text-primary font-medium">Subtotal</span>
+											<span className="text-text-primary font-semibold">${subtotal.toFixed(2)}</span>
+										</div>
+										<div className="flex justify-between items-center bg-green-50 p-3 rounded-lg border border-green-200">
+											<div>
+												<span className="text-green-700 font-medium">Referral Code: </span>
+												<span className="text-green-900 font-bold">{referralCode}</span>
+												{discountPercentage && (
+													<span className="text-green-600 text-sm ml-2">({discountPercentage}% off)</span>
+												)}
+											</div>
+											<span className="text-green-700 font-bold">-${discountAmount.toFixed(2)}</span>
+										</div>
+									</div>
+								)}
+
 								{/* Total */}
 								<div className="flex justify-between items-center pt-4 border-t-2 border-primary-purple/30">
 									<span className="text-text-primary font-bold text-lg">Total Amount</span>
-									<span className="text-primary-purple font-bold text-2xl">${total?.toFixed(2)}</span>
+									<span className="text-primary-purple font-bold text-2xl">${finalTotal.toFixed(2)}</span>
 								</div>
 							</div>
 

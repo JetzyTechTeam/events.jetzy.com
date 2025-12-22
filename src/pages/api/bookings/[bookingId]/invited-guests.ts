@@ -46,7 +46,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// If no guests found with customerEmail, try time-based fallback for old bookings
 		if (invitedGuests.length === 0) {
-			const bookingCreatedAt = booking.createdAt || new Date()
+			const bookingCreatedAt = booking.createdAt ? new Date(booking.createdAt) : new Date()
 			const fiveMinutesBefore = new Date(bookingCreatedAt.getTime() - 5 * 60 * 1000)
 			const fiveMinutesAfter = new Date(bookingCreatedAt.getTime() + 5 * 60 * 1000)
 			

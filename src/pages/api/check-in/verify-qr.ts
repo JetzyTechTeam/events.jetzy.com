@@ -177,6 +177,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				firstCheckInAt,
 				lastCheckInAt,
 				checkInHistory,
+				referralCode: booking.referralCode || undefined,
+				discountAmount: booking.discountAmount || undefined,
 				event: {
 					_id: event?._id.toString(),
 					name: event?.name,

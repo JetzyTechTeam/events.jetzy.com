@@ -270,7 +270,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 													👥 Invite Your Guests
 												</h3>
 												<p className="text-sm text-text-secondary">
-													You've selected <strong className="text-primary-purple">{totalSelectedQuantity} ticket{totalSelectedQuantity > 1 ? 's' : ''}</strong>. 
+													You&apos;ve selected <strong className="text-primary-purple">{totalSelectedQuantity} ticket{totalSelectedQuantity > 1 ? 's' : ''}</strong>. 
 													You can invite <strong className="text-primary-purple">{guestSlots} guest{guestSlots !== 1 ? 's' : ''}</strong> to join you at this event.
 												</p>
 												<p className="text-xs text-text-muted mt-2">
