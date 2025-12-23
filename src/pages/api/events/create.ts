@@ -69,7 +69,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants, interest, subInterest, host, invitedGuests } = params
+		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants, interestCategory, interestSubCategory, host, invitedGuests } = params
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -126,8 +126,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			requireApproval,
 			showParticipants,
 			timezone,
-			interest: interest || undefined,
-			subInterest: subInterest || undefined,
+			interestCategory: interestCategory || undefined,
+			interestSubCategory: interestSubCategory || undefined,
 			host: host && host.name?.trim() ? host : undefined,
 			tickets: tickets.map((ticket, index) => ({
 				name: ticket.title,

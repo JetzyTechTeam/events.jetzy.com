@@ -49,6 +49,9 @@ import { useSession } from "next-auth/react"
 import { z } from "zod"
 import { GetServerSideProps } from "next"
 import { adminOnly } from "@/lib/authSession"
+import { useQuery } from "@tanstack/react-query"
+import axios from "axios"
+import { ChevronDownIcon } from "@chakra-ui/icons"
 
 const initialValues = {
 	name: "",
@@ -64,8 +67,8 @@ const initialValues = {
 	timezone: "",
 	capacity: 0,
 	privacy: "public",
-	interest: "",
-	subInterest: "",
+	interestCategory: "",
+	interestSubCategory: "",
 	host: {
 		name: "",
 		image: "",
@@ -74,15 +77,6 @@ const initialValues = {
 	},
 }
 
-// Available interests/categories
-const INTERESTS = [
-	"Dining",
-	"Nightlife",
-	"Lifestyle",
-	"Travels",
-	"Entertainment",
-	"Activities",
-]
 
 const createEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
@@ -118,6 +112,26 @@ const CreateEventPage = () => {
 	})
 	const [invitedGuests, setInvitedGuests] = React.useState<string[]>([])
 	const [guestEmail, setGuestEmail] = React.useState("")
+
+	// Fetch interest categories from API
+	const { data: categoriesData, isLoading: categoriesLoading, error: categoriesError } = useQuery({
+		queryKey: ["interest-categories"],
+		queryFn: async () => {
+			try {
+				const response = await axios.get("/api/interest-categories/list")
+				console.log("[CreateEventPage] Categories API response:", response.data)
+				const data = response.data?.data || []
+				console.log("[CreateEventPage] Parsed categories:", data.length)
+				return data
+			} catch (error: any) {
+				console.error("[CreateEventPage] Error fetching categories:", error)
+				return []
+			}
+		},
+	})
+
+	const categories = categoriesData || []
+	console.log("[CreateEventPage] Categories for dropdown:", categories.length)
 
 	const { ref } = usePlacesWidget({
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
@@ -539,26 +553,111 @@ const CreateEventPage = () => {
 										</Box>
 										<Box flex="1">
 											<Text fontSize="xs" color="#6B7280" mb={2}>
-												Interest / Category
+												Interest Category
 											</Text>
-											<Field
-												as={Select}
-												name="interest"
-												bg="#FFFFFF"
-												border="1px"
-												borderColor="#E5E7EB"
-												color="#1F2937"
-												fontSize="sm"
-												value={values?.interest || ""}
-												_hover={{ borderColor: "#D1D5DB" }}
-												_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-											>
-												<option value="">None (Optional)</option>
-												{INTERESTS.map((interest) => (
-													<option key={interest} value={interest}>{interest}</option>
-												))}
-											</Field>
+											<Menu>
+												<MenuButton
+													as={Box}
+													cursor="pointer"
+													border="1px"
+													borderColor="#E5E7EB"
+													borderRadius="lg"
+													px={4}
+													py={2}
+													bg="#FFFFFF"
+													_hover={{ borderColor: "#D1D5DB" }}
+													_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+													w="100%"
+												>
+													<Flex alignItems="center" justifyContent="space-between">
+														<Text fontSize="sm" color={values.interestCategory ? "#1F2937" : "#9CA3AF"}>
+															{values.interestCategory || "Select category (optional)"}
+														</Text>
+														<ChevronDownIcon w={4} h={4} color="#6B7280" />
+													</Flex>
+												</MenuButton>
+												<MenuList bg="#FFFFFF" border="1px" borderColor="#E5E7EB" borderRadius="lg" boxShadow="lg" maxH="300px" overflowY="auto">
+													<MenuItem
+														onClick={() => {
+															setFieldValue("interestCategory", "")
+															setFieldValue("interestSubCategory", "")
+														}}
+														_hover={{ bg: "#F3F4F6" }}
+														bg={!values.interestCategory ? "#F3F4F6" : "transparent"}
+													>
+														<Text fontSize="sm" color="#1F2937">None</Text>
+													</MenuItem>
+													{categories.map((category: any) => (
+														<MenuItem
+															key={category._id}
+															onClick={() => {
+																setFieldValue("interestCategory", category.name)
+																setFieldValue("interestSubCategory", "")
+															}}
+															_hover={{ bg: "#F3F4F6" }}
+															bg={values.interestCategory === category.name ? "#F3F4F6" : "transparent"}
+														>
+															<Text fontSize="sm" color="#1F2937">{category.name}</Text>
+														</MenuItem>
+													))}
+												</MenuList>
+											</Menu>
 										</Box>
+										{(() => {
+											const selectedCategory = categories.find((cat: any) => cat.name === values.interestCategory)
+											const subcategories = selectedCategory?.subcategories || []
+											if (selectedCategory && subcategories.length > 0) {
+												return (
+													<Box flex="1">
+														<Text fontSize="xs" color="#6B7280" mb={2}>
+															Interest SubCategory
+														</Text>
+														<Menu>
+															<MenuButton
+																as={Box}
+																cursor="pointer"
+																border="1px"
+																borderColor="#E5E7EB"
+																borderRadius="lg"
+																px={4}
+																py={2}
+																bg="#FFFFFF"
+																_hover={{ borderColor: "#D1D5DB" }}
+																_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+																w="100%"
+															>
+																<Flex alignItems="center" justifyContent="space-between">
+																	<Text fontSize="sm" color={values.interestSubCategory ? "#1F2937" : "#9CA3AF"}>
+																		{values.interestSubCategory || "Select subcategory (optional)"}
+																	</Text>
+																	<ChevronDownIcon w={4} h={4} color="#6B7280" />
+																</Flex>
+															</MenuButton>
+															<MenuList bg="#FFFFFF" border="1px" borderColor="#E5E7EB" borderRadius="lg" boxShadow="lg" maxH="300px" overflowY="auto">
+																<MenuItem
+																	onClick={() => setFieldValue("interestSubCategory", "")}
+																	_hover={{ bg: "#F3F4F6" }}
+																	bg={!values.interestSubCategory ? "#F3F4F6" : "transparent"}
+																>
+																	<Text fontSize="sm" color="#1F2937">None</Text>
+																</MenuItem>
+																{subcategories.map((subcategory: any) => (
+																	<MenuItem
+																		key={subcategory._id}
+																		onClick={() => setFieldValue("interestSubCategory", subcategory.name)}
+																		_hover={{ bg: "#F3F4F6" }}
+																		bg={values.interestSubCategory === subcategory.name ? "#F3F4F6" : "transparent"}
+																	>
+																		<Text fontSize="sm" color="#1F2937">{subcategory.name}</Text>
+																	</MenuItem>
+																))}
+															</MenuList>
+														</Menu>
+													</Box>
+												)
+											}
+											return null
+										})()}
 										<Box flex="1">
 											<Text fontSize="xs" color="#6B7280" mb={2}>
 												Capacity

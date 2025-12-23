@@ -126,13 +126,13 @@ const eventsSchema = new Schema<IEvent>(
 			default: true,
 		},
 
-		interest: {
+		interestCategory: {
 			type: String,
 			required: false,
 			index: true,
 		},
 
-		subInterest: {
+		interestSubCategory: {
 			type: String,
 			required: false,
 		},

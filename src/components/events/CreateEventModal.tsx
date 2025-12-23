@@ -74,8 +74,8 @@ const initialValues: CreateEventFormData = {
 	placeId: "",
 	isPaid: false,
 	showParticipants: true,
-	interest: "",
-	subInterest: "",
+	interestCategory: "",
+	interestSubCategory: "",
 	host: {
 		name: "",
 		image: "",
@@ -109,19 +109,43 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 	const [guestEmail, setGuestEmail] = React.useState("")
 	const [hostImageUploading, setHostImageUploading] = React.useState(false)
 
-	// Fetch interests from API
-	const { data: interestsData } = useQuery({
-		queryKey: ["interests"],
+	// Fetch interest categories from API
+	const { data: categoriesData, isLoading: categoriesLoading, error: categoriesError } = useQuery({
+		queryKey: ["interest-categories"],
 		queryFn: async () => {
-			const response = await axios.get("/api/interests/list")
-			return response.data?.data || []
+			try {
+				const response = await axios.get("/api/interest-categories/list")
+				console.log("[CreateEventModal] Full API response:", response)
+				console.log("[CreateEventModal] Response.data:", response.data)
+				console.log("[CreateEventModal] Response.data.data:", response.data?.data)
+				console.log("[CreateEventModal] Response.data.status:", response.data?.status)
+				const data = response.data?.data || []
+				console.log("[CreateEventModal] Parsed categories array length:", data.length)
+				console.log("[CreateEventModal] Parsed categories:", data)
+				return data
+			} catch (error: any) {
+				console.error("[CreateEventModal] Error fetching categories:", error)
+				console.error("[CreateEventModal] Error response:", error.response)
+				return []
+			}
 		},
 		enabled: isOpen,
 	})
 
-	const interests = interestsData || []
-	const selectedInterest = interests.find((i: any) => i.name === formikRef.current?.values.interest)
-	const subInterests = selectedInterest?.subInterests || []
+	const categories = categoriesData || []
+	console.log("[CreateEventModal] Categories for dropdown:", categories.length, categories)
+	
+	// Log if categories is empty but we expected data
+	if (categories.length === 0 && !categoriesLoading && !categoriesError) {
+		console.warn("[CreateEventModal] No categories found but query succeeded")
+	}
+	
+	if (categoriesError) {
+		console.error("[CreateEventModal] Categories error:", categoriesError)
+	}
+	
+	const selectedCategory = categories.find((cat: any) => cat.name === formikRef.current?.values.interestCategory)
+	const subcategories = selectedCategory?.subcategories || []
 
 	// Email validation helper
 	const isValidEmail = (email: string): boolean => {
@@ -424,9 +448,14 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 
 				<ModalBody p={0}>
 					<Formik initialValues={initialValues} onSubmit={onSubmit} innerRef={formikRef}>
-						{({ values, setFieldValue }) => (
-							<Form>
-								<Box>
+						{({ values, setFieldValue }) => {
+							// Get selected category and subcategories reactively based on current form values
+							const selectedCategory = categories.find((cat: any) => cat.name === values.interestCategory)
+							const subcategories = selectedCategory?.subcategories || []
+							
+							return (
+								<Form>
+									<Box>
 									{/* Image Upload Area */}
 									<Box
 										position="relative"
@@ -678,10 +707,10 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 											onChange={(val) => setFieldValue("privacy", val)}
 										/>
 
-										{/* Interest Selector */}
+										{/* Interest Category Selector */}
 										<Box mb={4}>
 											<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
-												Interest
+												Interest Category
 											</Text>
 											<Menu>
 												<MenuButton
@@ -697,8 +726,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 													transition="all 0.2s"
 												>
 													<Flex alignItems="center" justifyContent="space-between">
-														<Text fontSize="15px" fontWeight="500" color={values.interest ? "#1F2937" : "#9CA3AF"}>
-															{values.interest || "Select interest (optional)"}
+														<Text fontSize="15px" fontWeight="500" color={values.interestCategory ? "#1F2937" : "#9CA3AF"}>
+															{values.interestCategory || "Select category (optional)"}
 														</Text>
 														<ChevronDownIcon w={5} h={5} color="#6B7280" />
 													</Flex>
@@ -706,36 +735,36 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 												<MenuList bg="#FFFFFF" border="1px" borderColor="#E5E7EB" borderRadius="lg" boxShadow="lg" maxH="300px" overflowY="auto">
 													<MenuItem
 														onClick={() => {
-															setFieldValue("interest", "")
-															setFieldValue("subInterest", "")
+															setFieldValue("interestCategory", "")
+															setFieldValue("interestSubCategory", "")
 														}}
 														_hover={{ bg: "#F3F4F6" }}
-														bg={!values.interest ? "#F3F4F6" : "transparent"}
+														bg={!values.interestCategory ? "#F3F4F6" : "transparent"}
 													>
 														<Text fontSize="14px" color="#1F2937">None</Text>
 													</MenuItem>
-													{interests.map((interest: any) => (
+													{categories.map((category: any) => (
 														<MenuItem
-															key={interest._id}
+															key={category._id}
 															onClick={() => {
-																setFieldValue("interest", interest.name)
-																setFieldValue("subInterest", "")
+																setFieldValue("interestCategory", category.name)
+																setFieldValue("interestSubCategory", "")
 															}}
 															_hover={{ bg: "#F3F4F6" }}
-															bg={values.interest === interest.name ? "#F3F4F6" : "transparent"}
+															bg={values.interestCategory === category.name ? "#F3F4F6" : "transparent"}
 														>
-															<Text fontSize="14px" color="#1F2937">{interest.name}</Text>
+															<Text fontSize="14px" color="#1F2937">{category.name}</Text>
 														</MenuItem>
 													))}
 												</MenuList>
 											</Menu>
 										</Box>
 
-										{/* SubInterest Selector */}
-										{selectedInterest && subInterests.length > 0 && (
+										{/* Interest SubCategory Selector */}
+										{values.interestCategory && selectedCategory && subcategories.length > 0 && (
 											<Box mb={4}>
 												<Text fontSize="13px" fontWeight="500" color="#1F2937" mb={2}>
-													Sub Interest
+													Interest SubCategory
 												</Text>
 												<Menu>
 													<MenuButton
@@ -751,28 +780,28 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 														transition="all 0.2s"
 													>
 														<Flex alignItems="center" justifyContent="space-between">
-															<Text fontSize="15px" fontWeight="500" color={values.subInterest ? "#1F2937" : "#9CA3AF"}>
-																{values.subInterest || "Select sub interest (optional)"}
+															<Text fontSize="15px" fontWeight="500" color={values.interestSubCategory ? "#1F2937" : "#9CA3AF"}>
+																{values.interestSubCategory || "Select subcategory (optional)"}
 															</Text>
 															<ChevronDownIcon w={5} h={5} color="#6B7280" />
 														</Flex>
 													</MenuButton>
 													<MenuList bg="#FFFFFF" border="1px" borderColor="#E5E7EB" borderRadius="lg" boxShadow="lg" maxH="300px" overflowY="auto">
 														<MenuItem
-															onClick={() => setFieldValue("subInterest", "")}
+															onClick={() => setFieldValue("interestSubCategory", "")}
 															_hover={{ bg: "#F3F4F6" }}
-															bg={!values.subInterest ? "#F3F4F6" : "transparent"}
+															bg={!values.interestSubCategory ? "#F3F4F6" : "transparent"}
 														>
 															<Text fontSize="14px" color="#1F2937">None</Text>
 														</MenuItem>
-														{subInterests.map((subInterest: any) => (
+														{subcategories.map((subcategory: any) => (
 															<MenuItem
-																key={subInterest._id}
-																onClick={() => setFieldValue("subInterest", subInterest.name)}
+																key={subcategory._id}
+																onClick={() => setFieldValue("interestSubCategory", subcategory.name)}
 																_hover={{ bg: "#F3F4F6" }}
-																bg={values.subInterest === subInterest.name ? "#F3F4F6" : "transparent"}
+																bg={values.interestSubCategory === subcategory.name ? "#F3F4F6" : "transparent"}
 															>
-																<Text fontSize="14px" color="#1F2937">{subInterest.name}</Text>
+																<Text fontSize="14px" color="#1F2937">{subcategory.name}</Text>
 															</MenuItem>
 														))}
 													</MenuList>
@@ -1173,7 +1202,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 								</Button>
 								</Box>
 							</Form>
-						)}
+							)
+						}}
 					</Formik>
 				</ModalBody>
 			</ModalContent>

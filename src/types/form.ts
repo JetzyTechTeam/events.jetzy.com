@@ -36,8 +36,8 @@ export type CreateEventFormData = {
 	desc: string
 	privacy: 'public' | 'private'
 	timezone: string
-	interest?: string
-	subInterest?: string
+	interestCategory?: string
+	interestSubCategory?: string
 	host?: {
 		name: string
 		image?: string

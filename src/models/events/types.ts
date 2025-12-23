@@ -39,8 +39,8 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
-	interest?: string;
-	subInterest?: string;
+	interestCategory?: string;
+	interestSubCategory?: string;
 	host?: {
 		name: string;
 		image?: string;

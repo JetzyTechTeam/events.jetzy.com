@@ -84,14 +84,19 @@ interface Category {
 	color: string
 }
 
-const categories: Category[] = [
-	{ name: "Dining", count: 127, icon: <SparklesIcon className="w-5 h-5" />, color: "text-category-dining" },
-	{ name: "Nightlife", count: 47, icon: <MusicalNoteIcon className="w-5 h-5" />, color: "text-category-nightlife" },
-	{ name: "Lifestyle", count: 92, icon: <HeartIcon className="w-5 h-5" />, color: "text-category-lifestyle" },
-	{ name: "Travels", count: 88, icon: <GlobeAltIcon className="w-5 h-5" />, color: "text-category-travels" },
-	{ name: "Entertainment", count: 26, icon: <FireIcon className="w-5 h-5" />, color: "text-category-entertainment" },
-	{ name: "Activities", count: 105, icon: <SunIcon className="w-5 h-5" />, color: "text-category-activities" },
-]
+// Icon mapping for categories (fallback if no icon provided)
+const categoryIconMap: Record<string, React.ReactNode> = {
+	"Dining": <SparklesIcon className="w-5 h-5" />,
+	"Nightlife": <MusicalNoteIcon className="w-5 h-5" />,
+	"Lifestyle": <HeartIcon className="w-5 h-5" />,
+	"Travels": <GlobeAltIcon className="w-5 h-5" />,
+	"Entertainment": <FireIcon className="w-5 h-5" />,
+	"Activities": <SunIcon className="w-5 h-5" />,
+}
+
+const getCategoryIcon = (categoryName: string) => {
+	return categoryIconMap[categoryName] || <SparklesIcon className="w-5 h-5" />
+}
 
 type EventListProps = {
 	items: IEvent[]
@@ -108,8 +113,43 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	const router = useRouter()
 	const [selectedLocation, setSelectedLocation] = useState("New York, NY")
 	
-	// Get active category from query params or default to "All"
-	const activeCategory = (router.query.interestFilter as string) || "All"
+	// Fetch interest categories from API
+	const { data: categoriesData, isLoading: categoriesLoading, error: categoriesError } = useQuery({
+		queryKey: ["interest-categories"],
+		queryFn: async () => {
+			try {
+				const response = await axios.get("/api/interest-categories/list")
+				console.log("[EventsListing] Categories API response:", response.data)
+				const data = response.data?.data || []
+				console.log("[EventsListing] Parsed categories:", data.length)
+				return data
+			} catch (error: any) {
+				console.error("[EventsListing] Error fetching categories:", error)
+				return []
+			}
+		},
+	})
+
+	// Transform categories from API to match Category interface
+	const categories: Category[] = useMemo(() => {
+		if (!categoriesData || categoriesData.length === 0) {
+			console.log("[EventsListing] No categories data available")
+			return []
+		}
+		const transformed = categoriesData.map((cat: any) => ({
+			name: cat.name,
+			count: 0, // TODO: Calculate actual count from events if needed
+			icon: getCategoryIcon(cat.name),
+			color: `text-category-${cat.name.toLowerCase()}`,
+		}))
+		console.log("[EventsListing] Transformed categories:", transformed.length)
+		return transformed
+	}, [categoriesData])
+	
+	// Get active category and subcategory from query params or default to "All"
+	const activeCategory = (router.query.interestCategory as string) || "All"
+	const activeSubCategory = (router.query.interestSubCategory as string) || ""
+	
 
 	const handleEventClick = (event: IEvent): void => {
 		router.push(ROUTES.eventDetails.replace("[slug]", event.slug))
@@ -118,9 +158,27 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	const handleCategoryChange = (category: string) => {
 		const newQuery = { ...router.query }
 		if (category === "All") {
-			delete newQuery.interestFilter
+			delete newQuery.interestCategory
+			delete newQuery.interestSubCategory
 		} else {
-			newQuery.interestFilter = category
+			newQuery.interestCategory = category
+			// Reset subcategory when category changes
+			delete newQuery.interestSubCategory
+		}
+		// Reset to page 1 when changing filter
+		delete newQuery.page
+		router.push({
+			pathname: router.pathname,
+			query: newQuery,
+		}, undefined, { shallow: false })
+	}
+
+	const handleSubCategoryChange = (subCategory: string) => {
+		const newQuery = { ...router.query }
+		if (subCategory === "") {
+			delete newQuery.interestSubCategory
+		} else {
+			newQuery.interestSubCategory = subCategory
 		}
 		// Reset to page 1 when changing filter
 		delete newQuery.page
@@ -179,18 +237,46 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 								</div>
 								<span className="font-medium text-sm">All Events</span>
 							</button>
-							{categories.map((category) => (
-								<button 
-									key={category.name}
-									onClick={() => handleCategoryChange(category.name)}
-									className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors ${activeCategory === category.name ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-200'}`}
-								>
-									<div className={`w-9 h-9 rounded-full flex items-center justify-center ${activeCategory === category.name ? 'bg-blue-100' : 'bg-gray-200'}`}>
-										{category.icon}
+							{categoriesData?.map((category: any) => {
+								const categorySubcategories = category.subcategories || []
+								const isCategoryActive = activeCategory === category.name
+								const showSubcategories = isCategoryActive && categorySubcategories.length > 0
+								
+								return (
+									<div key={category._id || category.name}>
+										<button 
+											onClick={() => handleCategoryChange(category.name)}
+											className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors ${isCategoryActive ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-200'}`}
+										>
+											<div className={`w-9 h-9 rounded-full flex items-center justify-center ${isCategoryActive ? 'bg-blue-100' : 'bg-gray-200'}`}>
+												{getCategoryIcon(category.name)}
+											</div>
+											<span className="font-medium text-sm">{category.name}</span>
+										</button>
+										
+										{/* Subcategories nested under category */}
+										{showSubcategories && (
+											<div className="ml-4 mt-1 space-y-1 pl-2 border-l-2 border-gray-200">
+												<button 
+													onClick={() => handleSubCategoryChange("")}
+													className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors text-left ${activeSubCategory === '' ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100'}`}
+												>
+													<span className="font-medium text-xs">All {category.name}</span>
+												</button>
+												{categorySubcategories.map((subcategory: any) => (
+													<button 
+														key={subcategory._id}
+														onClick={() => handleSubCategoryChange(subcategory.name)}
+														className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors text-left ${activeSubCategory === subcategory.name ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100'}`}
+													>
+														<span className="font-medium text-xs ml-2">{subcategory.name}</span>
+													</button>
+												))}
+											</div>
+										)}
 									</div>
-									<span className="font-medium text-sm">{category.name}</span>
-								</button>
-							))}
+								)
+							})}
 						</div>
 					</div>
 				</aside>
