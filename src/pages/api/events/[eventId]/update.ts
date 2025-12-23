@@ -44,7 +44,9 @@ const schema = zod.object({
 	),
 	isPaid: zod.boolean(),
 	desc: zod.string().nonempty(),
-	timezone: zod.string().nonempty()
+	timezone: zod.string().nonempty(),
+	interestCategory: zod.string().optional(),
+	interestSubCategory: zod.string().optional(),
 })
 
 // create stripe instance

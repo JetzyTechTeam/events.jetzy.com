@@ -112,6 +112,8 @@ type EventListProps = {
 const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	const router = useRouter()
 	const [selectedLocation, setSelectedLocation] = useState("New York, NY")
+	const [searchQuery, setSearchQuery] = useState("")
+	const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
 	
 	// Fetch interest categories from API
 	const { data: categoriesData, isLoading: categoriesLoading, error: categoriesError } = useQuery({
@@ -149,6 +151,25 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	// Get active category and subcategory from query params or default to "All"
 	const activeCategory = (router.query.interestCategory as string) || "All"
 	const activeSubCategory = (router.query.interestSubCategory as string) || ""
+	
+	// Initialize search query from URL
+	React.useEffect(() => {
+		const searchParam = router.query.search as string
+		if (searchParam) {
+			setSearchQuery(searchParam)
+		} else {
+			setSearchQuery("")
+		}
+	}, [router.query.search])
+	
+	// Cleanup timeout on unmount
+	React.useEffect(() => {
+		return () => {
+			if (searchTimeoutRef.current) {
+				clearTimeout(searchTimeoutRef.current)
+			}
+		}
+	}, [])
 	
 
 	const handleEventClick = (event: IEvent): void => {
@@ -204,19 +225,41 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 							<input 
 								type="text" 
 								placeholder="Search events" 
+								value={searchQuery}
+								onChange={(e) => {
+									setSearchQuery(e.target.value)
+									// Update URL with search query
+									const newQuery = { ...router.query }
+									if (e.target.value.trim()) {
+										newQuery.search = e.target.value.trim()
+									} else {
+										delete newQuery.search
+									}
+									delete newQuery.page // Reset to page 1 when searching
+									router.push({
+										pathname: router.pathname,
+										query: newQuery,
+									}, undefined, { shallow: false })
+								}}
 								className="w-full pl-10 pr-4 py-2.5 bg-[#F0F2F5] border-none rounded-full focus:ring-0 text-sm"
 							/>
 						</div>
 
 						{/* Menu Items */}
 						<div className="space-y-1">
-							<button className="w-full flex items-center gap-3 px-2 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition-colors">
+							<button 
+								onClick={() => router.push("/")}
+								className="w-full flex items-center gap-3 px-2 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition-colors"
+							>
 								<div className="w-9 h-9 rounded-full bg-blue-500 flex items-center justify-center text-white">
 									<CalendarIcon className="w-5 h-5" />
 								</div>
 								<span className="font-semibold text-[#1C1E21]">Browse Events</span>
 							</button>
-							<button className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-200 transition-colors">
+							<button 
+								onClick={() => router.push("/my-events")}
+								className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-200 transition-colors"
+							>
 								<div className="w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-gray-700">
 									<UserGroupIcon className="w-5 h-5" />
 								</div>

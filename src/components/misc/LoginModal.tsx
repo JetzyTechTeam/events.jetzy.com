@@ -6,7 +6,7 @@ import { useRouter } from "next/router"
 import { signIn } from "next-auth/react"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { loginValidatorScheme } from "@Jetzy/lib/validator/authValidtor"
-import { ServerErrors } from "@Jetzy/lib/_toaster"
+import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 import { SignInFormData } from "@Jetzy/types"
 import { FiEye, FiEyeOff } from "react-icons/fi"
 import Spinner from "./Spinner"
@@ -50,9 +50,14 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSign
 			// format an error message
 			const error = { message: res?.error }
 
-			ServerErrors("Sorry", error)
+			ServerErrors("Login Failed", error)
 
 			return
+		}
+
+		// Success - show success toast (if no error, login was successful)
+		if (res?.ok) {
+			Success("Login Successful", "You have been logged in successfully!")
 		}
 
 		// turn off loader

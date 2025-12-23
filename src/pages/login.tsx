@@ -1,7 +1,7 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { ROUTES } from "@Jetzy/configs/routes"
-import { ServerErrors } from "@Jetzy/lib/_toaster"
+import { ServerErrors, Success } from "@Jetzy/lib/_toaster"
 import { unauthorizedOnly } from "@Jetzy/lib/authSession"
 import { loginValidatorScheme } from "@Jetzy/lib/validator/authValidtor"
 import { SignInFormData } from "@Jetzy/types"
@@ -46,9 +46,14 @@ export default function LoginPage() {
 			// format an error message
 			const error = { message: res?.error }
 
-			ServerErrors("Sorry", error)
+			ServerErrors("Login Failed", error)
 
 			return
+		}
+
+		// Success - show success toast
+		if (res?.ok) {
+			Success("Login Successful", "You have been logged in successfully!")
 		}
 
 		// turn off loader

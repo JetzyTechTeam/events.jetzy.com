@@ -6,6 +6,7 @@ import { IEvent } from "@/models/events/types"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import Link from "next/link"
+import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
 import Linkify from "linkify-react"
 import dayjs from "dayjs"
@@ -87,6 +88,7 @@ const defaultHosts = [
 ]
 
 export default function HostedEvents({ event }: Props) {
+	const router = useRouter()
 	const [shareUrl, setShareUrl] = useState("")
 	const [isTicketModalOpen, setIsTicketModalOpen] = useState(false)
 	const { data: session } = useSession()
@@ -155,6 +157,29 @@ export default function HostedEvents({ event }: Props) {
 	return (
 		<div className="min-h-screen bg-[#F0F2F5]">
 			<LightNavbar />
+			
+			{/* Back Button */}
+			<div className="max-w-[1250px] mx-auto px-4 lg:px-0 pt-4">
+				<button
+					onClick={() => router.back()}
+					className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors font-medium mb-4"
+				>
+					<svg 
+						xmlns="http://www.w3.org/2000/svg" 
+						viewBox="0 0 24 24" 
+						fill="none" 
+						stroke="currentColor" 
+						strokeWidth="2" 
+						strokeLinecap="round" 
+						strokeLinejoin="round" 
+						className="w-5 h-5"
+					>
+						<path d="m12 19-7-7 7-7"/>
+						<path d="M19 12H5"/>
+					</svg>
+					<span>Back</span>
+				</button>
+			</div>
 			
 			{/* Cover Photo Area */}
 			<div className="bg-white shadow-sm border-b border-gray-300">

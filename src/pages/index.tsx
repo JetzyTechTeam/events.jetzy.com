@@ -79,6 +79,16 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		query.interestSubCategory = interestSubCategory
 	}
 	
+	// Search filter from query params
+	const search = context.query.search as string | undefined
+	if (search && search.trim() !== "") {
+		query.$or = [
+			{ name: { $regex: search.trim(), $options: "i" } },
+			{ location: { $regex: search.trim(), $options: "i" } },
+			{ desc: { $regex: search.trim(), $options: "i" } },
+		]
+	}
+	
 	// If user is not admin or super admin, only show public events
 	if (!isAdmin) {
 		query.privacy = "public"
