@@ -157,7 +157,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 										</p>
 									</div>
 									<p className="text-white mb-6">
-										We appreciate your interest. Our event &quot;{waitingListData?.eventName}&quot; is currently at capacity. We will email you if spots open up and you get on the list.
+										We appreciate your interest. Our event &quot;{waitingListData?.eventName}&quot; is currently {waitingListData?.isClosed ? 'closed' : 'at capacity'}. We will email you if spots open up and you get on the list.
 									</p>
 									<div className="mt-6">
 										<button

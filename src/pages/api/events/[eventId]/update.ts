@@ -129,6 +129,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (!newEvent) return sendResponse(res, null, "Failed to update event.", false, ResCode.INTERNAL_SERVER_ERROR)
 
+		// Update EventTracker capacity if it exists
+		const { EventTracker } = await import("@/models/events/event-tracker")
+		const eventTracker = await EventTracker.findOne({ eventId: new Types.ObjectId(eventId as string) })
+		if (eventTracker) {
+			eventTracker.eventCapacity = capacity
+			await eventTracker.save()
+		}
+
 		return sendResponse(res, newEvent, "Event updated successfully.", true, ResCode.OK)
 	} catch (error: any) {
 		console.log("Error:", error.message)
