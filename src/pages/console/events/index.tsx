@@ -231,36 +231,42 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const eventsWithBookings = await Bookings.distinct('eventId', { isDeleted: false })
 
 	// Fetch past events that have bookings
+	const now = new Date()
 	const pastEventsWithBookings = await Events.find({
 		_id: { $in: eventsWithBookings },
 		isDeleted: false,
-		endsOn: { $lt: new Date() } // Events that have ended
+		endsOn: { $lt: now } // Events that have ended
+	})
+
+	// If no past events with bookings, include all past events (for admin visibility)
+	const pastEventsToInclude = pastEventsWithBookings.length > 0 ? pastEventsWithBookings : await Events.find({
+		isDeleted: false,
+		endsOn: { $lt: now }
 	})
 
 	// Combine active events and past events with bookings, remove duplicates
 	const allEventsMap = new Map()
-	const now = new Date()
 
 	// Add active events
 	activeEvents.forEach(event => {
 		const eventData = event.toJSON()
-		eventData.isEnded = eventData.endsOn < now
+		eventData.isEnded = new Date(eventData.endsOn) < now
 		allEventsMap.set(eventData._id.toString(), eventData)
 	})
 
-	// Add past events with bookings (only if not already included)
-	pastEventsWithBookings.forEach(event => {
+	// Add past events (only if not already included)
+	pastEventsToInclude.forEach(event => {
 		const eventId = event._id.toString()
 		if (!allEventsMap.has(eventId)) {
 			const eventData = event.toJSON()
-			eventData.isEnded = true // Mark as ended since it has bookings and is in the past
+			eventData.isEnded = true // Mark as ended since it's in the past
 			allEventsMap.set(eventId, eventData)
 		}
 	})
 
-	// Convert to array and sort (ended events first, then by start date)
+	// Convert to array and sort (active events first, then ended events by start date)
 	const allEvents = Array.from(allEventsMap.values()).sort((a, b) => {
-		// Sort by status first (ended events at bottom), then by start date
+		// Sort by status first (active events first, ended events last), then by start date (newest first)
 		if (a.isEnded && !b.isEnded) return 1
 		if (!a.isEnded && b.isEnded) return -1
 		return Number(new Date(b.startsOn)) - Number(new Date(a.startsOn))
