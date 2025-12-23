@@ -30,6 +30,7 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	isEnded?: boolean; // UI flag to indicate if event has ended
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
 	getBookings(): Promise<IBookings[]>
 	deleteTracker(): Promise<void>
