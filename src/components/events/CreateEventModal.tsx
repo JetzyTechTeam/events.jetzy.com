@@ -114,18 +114,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 		queryKey: ["interest-categories"],
 		queryFn: async () => {
 			try {
-				const response = await axios.get("/api/interest-categories/list")
+				const response = await axios.get("/api/interest-categories/list", { baseURL: "" })
 				console.log("[CreateEventModal] Full API response:", response)
-				console.log("[CreateEventModal] Response.data:", response.data)
-				console.log("[CreateEventModal] Response.data.data:", response.data?.data)
-				console.log("[CreateEventModal] Response.data.status:", response.data?.status)
 				const data = response.data?.data || []
-				console.log("[CreateEventModal] Parsed categories array length:", data.length)
-				console.log("[CreateEventModal] Parsed categories:", data)
 				return data
 			} catch (error: any) {
 				console.error("[CreateEventModal] Error fetching categories:", error)
-				console.error("[CreateEventModal] Error response:", error.response)
 				return []
 			}
 		},
@@ -133,13 +127,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 	})
 
 	const categories = categoriesData || []
-	console.log("[CreateEventModal] Categories for dropdown:", categories.length, categories)
 	
-	// Log if categories is empty but we expected data
-	if (categories.length === 0 && !categoriesLoading && !categoriesError) {
-		console.warn("[CreateEventModal] No categories found but query succeeded")
-	}
-	
+	// Only log errors, not empty data (empty categories is a valid state)
 	if (categoriesError) {
 		console.error("[CreateEventModal] Categories error:", categoriesError)
 	}
@@ -382,10 +371,11 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			.then((res: any) => {
 				if (res?.payload?.status) {
 					Success("Success", "Event created successfully!")
-					onClose()
+					// Call callback first to trigger refresh, then close modal
 					if (onEventCreated) {
 						onEventCreated()
 					} else {
+						onClose()
 						router.push(`/console/events/${res.payload.data._id}/manage`)
 					}
 				} else {

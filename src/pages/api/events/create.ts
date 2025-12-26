@@ -14,6 +14,7 @@ import { formatTextWithLineBreaks } from "@/lib/utils"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import { Types } from "mongoose"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -131,6 +132,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			interestCategory: interestCategory || undefined,
 			interestSubCategory: interestSubCategory || undefined,
 			host: host && host.name?.trim() ? host : undefined,
+			ownerId: new Types.ObjectId((session.user as any)._id),
 			tickets: tickets.map((ticket, index) => ({
 				name: ticket.title,
 				desc: ticket.description || "",
@@ -140,6 +142,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		if (!newEvent) return sendResponse(res, null, "Failed to create event.", false, ResCode.INTERNAL_SERVER_ERROR)
+
+		// Debug: Log the created event's ownerId
+		console.log('[Event Create API] Event created:', {
+			eventId: newEvent._id?.toString(),
+			eventName: newEvent.name,
+			ownerId: newEvent.ownerId?.toString() || 'null',
+			ownerIdType: newEvent.ownerId ? typeof newEvent.ownerId : 'null',
+			userId: (session.user as any)._id,
+			userIdType: typeof (session.user as any)._id,
+			ownerIdMatches: newEvent.ownerId?.toString() === new Types.ObjectId((session.user as any)._id).toString()
+		})
 
 		// Create event tracker
 		await newEvent.createEventTracker(capacity)

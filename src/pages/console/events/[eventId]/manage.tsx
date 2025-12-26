@@ -1,9 +1,11 @@
 "use client"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { adminOnly } from "@/lib/authSession"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Events } from "@/models/events"
 import { GetServerSideProps } from "next"
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { DateTime } from "luxon"
 import Head from "next/head"
 import { useRouter } from "next/router"
@@ -31,6 +33,7 @@ import { GuestsList } from "@/components/console/GuestsList"
 import { WaitingList } from "@/components/console/WaitingList"
 import { EventBookings } from "@/components/HostedEvents"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
+import MarketingTab from "@/components/console/MarketingTab"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge, AvatarGroup } from "@chakra-ui/react"
 
@@ -51,12 +54,37 @@ export default function Manage({ event }: any) {
 	const [shareModal, setShareModal] = useState(false)
 	const [inviteGuestsModal, setInviteGuestsModal] = useState(false)
 	const [sendBlastModal, setSendBlastModal] = useState(false)
-	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion">("about")
 	const router = useRouter()
 	const { data: session } = useSession()
 
-	// @ts-ignore
-	if (session?.user?.role === Roles.USER) router.push("/console")
+	// Determine if user is admin
+	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
+	
+	// Define tabs based on user role
+	const allTabs = [
+		{ label: "About", value: "about" },
+		{ label: "Marketing", value: "marketing" },
+		{ label: "Discussion", value: "discussion" },
+		{ label: "Bookings", value: "bookings" },
+		...(isAdmin ? [
+			{ label: "Guests", value: "guests" },
+			{ label: "Waiting List", value: "waitingList" },
+			{ label: "Referral Codes", value: "referralCodes" }
+		] : [])
+	]
+	
+	// Ensure initial tab is valid for non-admin users
+	const validTabs = allTabs.map(t => t.value)
+	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion" | "marketing">(
+		validTabs.includes("about") ? "about" : (validTabs[0] as any)
+	)
+	
+	// Validate activeTab when role changes
+	useEffect(() => {
+		if (!validTabs.includes(activeTab)) {
+			setActiveTab(validTabs[0] as any)
+		}
+	}, [isAdmin])
 
 	const eventDate = DateTime.fromISO(eventData.startsOn).toLocal()
 	const endDate = DateTime.fromISO(eventData.endsOn).toLocal()
@@ -75,9 +103,13 @@ export default function Manage({ event }: any) {
 			
 			<ConsoleLayout page={undefined} backBtn="/console/events" maxW="100%">
 				{/* MODALS */}
-				<InviteGuestsModal inviteGuestsModal={inviteGuestsModal} setInviteGuestsModal={setInviteGuestsModal} event={eventData} />
-				<SendBlastModal sendBlastModal={sendBlastModal} setSendBlastModal={setSendBlastModal} event={eventData} />
-				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={eventData.slug} />
+				{isAdmin && (
+					<>
+						<InviteGuestsModal inviteGuestsModal={inviteGuestsModal} setInviteGuestsModal={setInviteGuestsModal} event={eventData} />
+						<SendBlastModal sendBlastModal={sendBlastModal} setSendBlastModal={setSendBlastModal} event={eventData} />
+						<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={eventData.slug} />
+					</>
+				)}
 
 				{/* FACEBOOK STYLE COVER */}
 				<Box bg="white" boxShadow="sm" pb={4} mb={6} mx={{ base: -4, md: -6, lg: -8 }} mt={{ base: -6, md: -8 }}>
@@ -152,22 +184,26 @@ export default function Manage({ event }: any) {
 								
 								{/* Check-in / Ticket Actions */}
 								<Flex gap={2}>
-									<Button 
-										bg="#E4E6EB" 
-										color="#1C1E21" 
-										_hover={{ bg: "#D8DADF" }}
-										leftIcon={<FiCheckCircle />}
-										onClick={() => router.push(`/console/events/${eventData._id}/check-in`)}
-									>
-										Check-In
-									</Button>
+									{isAdmin && (
+										<Button 
+											bg="#E4E6EB" 
+											color="#1C1E21" 
+											_hover={{ bg: "#D8DADF" }}
+											leftIcon={<FiCheckCircle />}
+											onClick={() => router.push(`/console/events/${eventData._id}/check-in`)}
+										>
+											Check-In
+										</Button>
+									)}
 									<Menu>
 										<MenuButton as={Button} bg="#E4E6EB" px={3} _hover={{ bg: "#D8DADF" }}>
 											<FiMoreHorizontal />
 										</MenuButton>
 										<MenuList zIndex={20}>
 											<MenuItem icon={<FiEdit />} onClick={() => router.push(`/console/events/${eventData._id}/update`)}>Edit Event</MenuItem>
-											<MenuItem icon={<FiShare2 />} onClick={() => setShareModal(true)}>Share</MenuItem>
+											{isAdmin && (
+												<MenuItem icon={<FiShare2 />} onClick={() => setShareModal(true)}>Share</MenuItem>
+											)}
 										</MenuList>
 									</Menu>
 								</Flex>
@@ -178,14 +214,7 @@ export default function Manage({ event }: any) {
 							{/* Action Bar */}
 							<Flex justify="space-between" align="center" wrap="wrap" gap={4}>
 								<Flex gap={1} overflowX="auto" pb={1} sx={{ '::-webkit-scrollbar': { display: 'none' } }}>
-									{[
-										{ label: "About", value: "about" },
-										{ label: "Guests", value: "guests" },
-										{ label: "Bookings", value: "bookings" },
-										{ label: "Waiting List", value: "waitingList" },
-										{ label: "Referral Codes", value: "referralCodes" },
-										{ label: "Discussion", value: "discussion" }
-									].map((tab) => (
+									{allTabs.map((tab) => (
 										<Button
 											key={tab.value}
 											variant="ghost"
@@ -205,50 +234,54 @@ export default function Manage({ event }: any) {
 								</Flex>
 								
 								<Flex gap={2}>
-									<Button 
-										bg="#1877F2" 
-										color="white" 
-										_hover={{ bg: "#166FE5" }}
-										leftIcon={<FiUserPlus />}
-										onClick={() => setInviteGuestsModal(true)}
-										size="sm"
-										px={6}
-									>
-										Invite
-									</Button>
-									<Button 
-										bg="#E4E6EB" 
-										color="#1C1E21" 
-										_hover={{ bg: "#D8DADF" }}
-										leftIcon={<FiSend />}
-										onClick={() => setSendBlastModal(true)}
-										size="sm"
-									>
-										Blast
-									</Button>
-									<Button 
-										bg="#E4E6EB" 
-										color="#1C1E21" 
-										_hover={{ bg: "#D8DADF" }}
-										leftIcon={<FiShare2 />}
-										onClick={() => setShareModal(true)}
-										size="sm"
-									>
-										Share
-									</Button>
-									<Menu>
-										<MenuButton as={Button} size="sm" bg="#E4E6EB" color="#1C1E21" _hover={{ bg: "#D8DADF" }}>
-											<FiMoreHorizontal />
-										</MenuButton>
-										<MenuList zIndex={20}>
-											<MenuItem icon={<FiUserPlus />} onClick={() => router.push(`/api/events/${eventData._id}/create-users`)}>
-												Create Ticket Users
-											</MenuItem>
-											<MenuItem icon={<FiUsers />} onClick={() => router.push(`/api/events/${eventData._id}/create-group`)}>
-												Create Interest Group
-											</MenuItem>
-										</MenuList>
-									</Menu>
+									{isAdmin && (
+										<>
+											<Button 
+												bg="#1877F2" 
+												color="white" 
+												_hover={{ bg: "#166FE5" }}
+												leftIcon={<FiUserPlus />}
+												onClick={() => setInviteGuestsModal(true)}
+												size="sm"
+												px={6}
+											>
+												Invite
+											</Button>
+											<Button 
+												bg="#E4E6EB" 
+												color="#1C1E21" 
+												_hover={{ bg: "#D8DADF" }}
+												leftIcon={<FiSend />}
+												onClick={() => setSendBlastModal(true)}
+												size="sm"
+											>
+												Blast
+											</Button>
+											<Button 
+												bg="#E4E6EB" 
+												color="#1C1E21" 
+												_hover={{ bg: "#D8DADF" }}
+												leftIcon={<FiShare2 />}
+												onClick={() => setShareModal(true)}
+												size="sm"
+											>
+												Share
+											</Button>
+											<Menu>
+												<MenuButton as={Button} size="sm" bg="#E4E6EB" color="#1C1E21" _hover={{ bg: "#D8DADF" }}>
+													<FiMoreHorizontal />
+												</MenuButton>
+												<MenuList zIndex={20}>
+													<MenuItem icon={<FiUserPlus />} onClick={() => router.push(`/api/events/${eventData._id}/create-users`)}>
+														Create Ticket Users
+													</MenuItem>
+													<MenuItem icon={<FiUsers />} onClick={() => router.push(`/api/events/${eventData._id}/create-group`)}>
+														Create Interest Group
+													</MenuItem>
+												</MenuList>
+											</Menu>
+										</>
+									)}
 								</Flex>
 							</Flex>
 						</Flex>
@@ -388,7 +421,7 @@ export default function Manage({ event }: any) {
 								</Box>
 							)}
 
-							{activeTab === "guests" && (
+							{activeTab === "guests" && isAdmin && (
 								<Box bg="white" borderRadius="lg" boxShadow="sm" p={0} mb={4} overflow="hidden">
 									<Box p={4} borderBottom="1px solid #CED0D4">
 										<Text fontSize="xl" fontWeight="bold" color="#1C1E21">Guest List</Text>
@@ -408,15 +441,19 @@ export default function Manage({ event }: any) {
 								</Box>
 							)}
 
-							{activeTab === "waitingList" && (
+							{activeTab === "waitingList" && isAdmin && (
 								<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4}>
 									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>Waiting List</Text>
 									<WaitingList eventId={eventData._id} />
 								</Box>
 							)}
 
-							{activeTab === "referralCodes" && (
+							{activeTab === "referralCodes" && isAdmin && (
 								<ReferralCodesManager eventId={eventData._id} />
+							)}
+
+							{activeTab === "marketing" && (
+								<MarketingTab eventId={eventData._id} eventSlug={eventData.slug} />
 							)}
 							
 						{activeTab === "discussion" && (
@@ -478,27 +515,46 @@ export default function Manage({ event }: any) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-	const sessionResult = await adminOnly(context)
-	if (!sessionResult || "redirect" in sessionResult) return sessionResult
-	const session = sessionResult.props.session
+	const session = await getServerSession(context.req, context.res, authOptions)
+	
+	if (!session) {
+		return {
+			redirect: {
+				destination: "/login",
+				permanent: false,
+			},
+		}
+	}
 
 	// Ensure database connection is ready
 	const { dbconn } = await import("@/configs/database")
 	if (dbconn.readyState !== 1) {
-		console.log("[console/events/manage] Database not connected, attempting to connect...")
 		await dbconn.asPromise()
 	}
 
 	// Get eventId from params (dynamic route) not query
 	const eventId = (context.params?.eventId || context.query.eventId) as string
 	if (!eventId) {
-		console.error("[console/events/manage] No eventId found in params or query")
 		return { props: {} }
 	}
 
 	const event = await Events.findOne({ _id: eventId, isDeleted: false })
 
 	if (!event) return { props: {} }
+
+	// Check permissions: Admin or Owner
+	const user = session.user as any
+	const isAdmin = user.role === "admin" || user.role === "super admin"
+	const isOwner = event.ownerId?.toString() === user._id || event.host?.email === user.email
+
+	if (!isAdmin && !isOwner) {
+		return {
+			redirect: {
+				destination: "/console/seller",
+				permanent: false,
+			},
+		}
+	}
 
 	return {
 		props: {

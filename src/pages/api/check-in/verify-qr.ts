@@ -74,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		console.log("[verify-qr] Booking found:", booking ? `Yes (${booking.bookingRef})` : "No")
 
 		// Get event details with full ticket information
-		const event = await Events.findById(eventId).populate("tickets")
+		const event = await Events.findById(eventId).populate("tickets").populate("ownerId", "firstName lastName email phone")
 
 		if (!booking) {
 			return sendResponse(
@@ -186,6 +186,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					startsOn: event?.startsOn,
 					endsOn: event?.endsOn,
 					timezone: event?.timezone,
+					owner: event?.ownerId
+						? {
+								name: `${(event.ownerId as any).firstName} ${(event.ownerId as any).lastName}`,
+								email: (event.ownerId as any).email,
+								phone: (event.ownerId as any).phone,
+						  }
+						: event?.host
+						? {
+								name: event.host.name,
+								email: event.host.email,
+								phone: event.host.phone,
+						  }
+						: undefined,
 				},
 				invitedGuests: invitedGuests.map((inv) => ({
 					email: inv.email,

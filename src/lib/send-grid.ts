@@ -476,6 +476,9 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
             <p><strong>Date and Time: </strong>${timestamp}</p>
             <p><strong>Venue: </strong>${location}</p>
+            <p><strong>Organizer: </strong>${(event.ownerId as any)?.firstName ? `${(event.ownerId as any).firstName} ${(event.ownerId as any).lastName}` : (event.host?.name || "Jetzy Events")}</p>
+            ${(event.ownerId as any)?.email ? `<p><strong>Email: </strong>${(event.ownerId as any).email}</p>` : (event.host?.email ? `<p><strong>Email: </strong>${event.host.email}</p>` : "")}
+            ${(event.ownerId as any)?.phone ? `<p><strong>Phone: </strong>${(event.ownerId as any).phone}</p>` : (event.host?.phone ? `<p><strong>Phone: </strong>${event.host.phone}</p>` : "")}
           </div>
 
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -633,6 +636,83 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 			console.error("[sendTicketConfirmation] SendGrid response:", JSON.stringify(error.response.body, null, 2))
 		}
 		throw error
+	}
+}
+
+export const sendOrganizerSaleNotification = async ({
+	event,
+	firstName,
+	lastName,
+	email,
+	tickets,
+	orderNumber,
+	totalAmount,
+	referralCode,
+	organizerEmail,
+}: {
+	event: IEvent
+	firstName: string
+	lastName: string
+	email: string
+	tickets: any[]
+	orderNumber: string
+	totalAmount: number
+	referralCode?: string
+	organizerEmail: string
+}) => {
+	try {
+		await sgMail.send({
+			to: organizerEmail,
+			from: process.env.SENDGRID_EMAIL_SENDER as string,
+			subject: `New Ticket Sale! - ${event.name}`,
+			html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">New Ticket Sold! 🎉</h1>
+          
+          <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;">
+            <h2 style="color: #155724; margin-bottom: 10px;">Cha-ching!</h2>
+            <p style="color: #155724; margin: 0;">
+              You just sold tickets for <strong>${event.name}</strong>.
+            </p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #333; margin-bottom: 15px;">Buyer Information</h3>
+            <p><strong>Name:</strong> ${firstName} ${lastName}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Order #:</strong> ${orderNumber}</p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #333; margin-bottom: 15px;">Order Summary</h3>
+            ${tickets
+							.map(
+								(t) => `
+              <div style="margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
+                <p style="margin: 0;"><strong>${t.quantity}x</strong> ${t.name}</p>
+                <p style="margin: 0; color: #666;">$${t.price} each</p>
+              </div>
+            `,
+							)
+							.join("")}
+            <p style="font-size: 18px; font-weight: bold; margin-top: 15px;">Total Revenue: $${totalAmount.toFixed(2)}</p>
+          </div>
+
+          ${
+						referralCode
+							? `
+          <div style="background-color: #e2e3e5; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #383d41;">
+            <h3 style="color: #383d41; margin: 0 0 10px 0;">Referral Source</h3>
+            <p style="margin: 0;">This sale came from code: <strong>${referralCode}</strong></p>
+          </div>
+          `
+							: ""
+					}
+        </div>
+      `,
+		})
+	} catch (error) {
+		console.error("Failed to send organizer notification:", error)
 	}
 }
 

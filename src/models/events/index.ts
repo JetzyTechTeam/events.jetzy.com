@@ -147,6 +147,13 @@ const eventsSchema = new Schema<IEvent>(
 			required: false,
 		},
 
+		ownerId: {
+			type: Schema.Types.ObjectId,
+			ref: "Users",
+			required: false,
+			index: true,
+		},
+
 		featuredGuests: {
 			type: [{
 				name: { type: String, required: true },

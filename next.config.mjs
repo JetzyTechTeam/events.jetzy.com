@@ -32,6 +32,14 @@ const nextConfig = {
 			},
 		],
 	},
+	async rewrites() {
+		return [
+			{
+				source: '/events/:slug*',
+				destination: '/:slug*',
+			},
+		]
+	},
 }
 
 export default nextConfig

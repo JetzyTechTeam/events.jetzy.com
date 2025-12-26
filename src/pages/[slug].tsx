@@ -3,8 +3,14 @@ import { IEvent } from "@/models/events/types"
 import { GetServerSideProps } from "next"
 import Head from "next/head"
 import dynamic from "next/dynamic"
-import React from "react"
+import React, { useEffect } from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
+import { http_client as api } from "@/configs/api"
+
+// Simple ID generator
+const generateVisitorId = () => {
+	return 'v_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+}
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { ssr: false }) // Import the HostedEvents component dynamically
 
@@ -12,9 +18,65 @@ type Props = {
 	event: string
 }
 export default function EventDetailPage({ event }: Props) {
-	try {
-		const data = JSON.parse(event) as IEvent
+	const data = JSON.parse(event) as IEvent
 
+	useEffect(() => {
+		const trackView = async () => {
+			try {
+				// Get or create visitor ID
+				let visitorId = localStorage.getItem("jetzy_visitor_id")
+				if (!visitorId) {
+					visitorId = generateVisitorId()
+					localStorage.setItem("jetzy_visitor_id", visitorId)
+				}
+
+				// Check for referral code
+				const urlParams = new URLSearchParams(window.location.search)
+				const referralCode = urlParams.get("ref")
+
+				if (referralCode) {
+					sessionStorage.setItem("jetzy_referral_code", referralCode)
+				}
+
+				console.log('[Event Page] Tracking view:', {
+					eventId: data._id,
+					referralCode,
+					visitorId,
+					hasEventId: !!data._id
+				})
+
+				// Track view - use fetch to avoid axios interceptor issues
+				const trackRes = await fetch("/api/analytics/track", {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify({
+						eventId: data._id,
+						referralCode,
+						visitorId
+					})
+				})
+
+				if (!trackRes.ok) {
+					const errorText = await trackRes.text()
+					console.error('[Event Page] Tracking failed:', trackRes.status, errorText)
+				} else {
+					const result = await trackRes.json()
+					console.log('[Event Page] Tracking successful:', result)
+				}
+			} catch (err: any) {
+				console.error('[Event Page] Tracking error:', err)
+			}
+		}
+
+		if (data?._id) {
+			trackView()
+		}
+	}, [data._id])
+
+	try {
 		// Validate that the event has required fields
 		if (!data || !data._id || !data.name) {
 			throw new Error("Invalid event data")
@@ -87,8 +149,30 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 		// Get the event by slug
 		const event = await Events.findOne({ slug: slug as string, isDeleted: false })
+		
+		// Debug logging
+		console.log('[Event Slug Page] Looking for event:', {
+			slug: slug as string,
+			eventFound: !!event,
+			eventId: event?._id?.toString(),
+			eventName: event?.name,
+			eventPrivacy: event?.privacy,
+			eventIsDeleted: event?.isDeleted
+		})
 
 		if (!event) {
+			// Try to find any event with similar slug for debugging
+			const similarEvents = await Events.find({ 
+				slug: { $regex: slug as string, $options: 'i' },
+				isDeleted: false 
+			}).select('slug name _id').limit(5).lean()
+			
+			console.log('[Event Slug Page] No exact match found. Similar slugs:', similarEvents.map((e: any) => ({
+				slug: e.slug,
+				name: e.name,
+				id: e._id.toString()
+			})))
+			
 			return { notFound: true } // If the event is not found, return a 404
 		}
 
