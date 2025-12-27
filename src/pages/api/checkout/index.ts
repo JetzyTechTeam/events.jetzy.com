@@ -24,6 +24,7 @@ type BodyParams = {
 		email: string
 		phone: string
 	}
+	referralCode?: string
 }
 // initialize stripe
 if (!process.env.NEXT_STRIPE_SECRET_KEY) {
@@ -50,6 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
+		const referralCode = req.body.referralCode as string | undefined
 
 		// Validate tickets array
 		if (!Array.isArray(tickets) || tickets.length === 0) {
@@ -73,6 +75,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
 			console.error("Error:", errorMessage)
+		}
+
+		// Validate and get referral code if provided
+		let referralCodeData: { code: string; discountPercentage: number } | null = null
+		if (referralCode) {
+			try {
+				const { ReferralCodes } = await import("@/models/events/referral-codes")
+				const { Types } = await import("mongoose")
+
+				const codeRecord = await ReferralCodes.findOne({
+					eventId: new Types.ObjectId(tickets[0]?.eventId),
+					code: referralCode.toUpperCase(),
+					isDeleted: false,
+					isActive: true,
+				})
+
+				if (!codeRecord) {
+					// return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
+					// Instead of failing, just ignore the invalid code but log it?
+					// Or fail? Usually better to fail so user knows why discount isn't applied.
+					// However, if we fail, we stop the whole checkout.
+					// Let's return error message
+					return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
+				}
+
+				// Check if code has reached max uses
+				if (codeRecord.maxUses !== null && codeRecord.maxUses !== undefined && codeRecord.usageCount >= codeRecord.maxUses) {
+					return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
+				}
+
+				referralCodeData = {
+					code: codeRecord.code,
+					discountPercentage: codeRecord.discountPercentage,
+				}
+			} catch (referralError: any) {
+				console.error("[checkout/index] Error validating referral code:", referralError)
+				return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
+			}
 		}
 
 		// using price api from stripe create price for the tickets selected
@@ -124,7 +164,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
-		const eventDetails = { 
+		const eventDetails = {
 			name: event?.name,
 			location: event?.location,
 			startsOn: event?.startsOn,
@@ -135,12 +175,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Validate and log URLs
 		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"
 		console.log("NEXT_PUBLIC_URL:", baseUrl)
-		
+
 		// Ensure URL is properly formatted
 		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
 		const successUrl = `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
-		
+
 		console.log("Success URL:", successUrl)
 		console.log("Cancel URL:", cancelUrl)
 
@@ -153,6 +193,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			throw new Error(`Invalid URL format: ${urlError.message || urlError}`)
 		}
 
+		// Create Stripe coupon for referral code discount if applicable
+		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
+		if (referralCodeData) {
+			try {
+				// Create a coupon for this discount (reusable or one-time)
+				// We create a one-time use coupon per session or reuse one if we want to track it differently.
+				// For simplicity/robustness, creating a fresh coupon ensures the percent match.
+				// However, to avoid clutter, we could try to retrieve one. 
+				// Let's create one dynamic coupon.
+				const coupon = await stripe.coupons.create({
+					percent_off: referralCodeData.discountPercentage,
+					duration: 'once',
+					name: `Referral: ${referralCodeData.code}`,
+				})
+
+				discountConfig = [{
+					coupon: coupon.id,
+				}]
+			} catch (couponError: any) {
+				console.error("[checkout/index] Error creating Stripe coupon:", couponError)
+				// Continue without discount if coupon creation fails? 
+				// Or fail?
+			}
+		}
+
+		// Prepare metadata
+		const metadata: Stripe.MetadataParam = {
+			firstName: user.firstName,
+			lastName: user.lastName,
+			email: user.email,
+			phone: user.phone,
+			tickets: req.body.tickets,
+			eventId: tickets[0]?.eventId || "",
+			eventDetails: JSON.stringify(eventDetails),
+		}
+
+		if (referralCodeData) {
+			metadata.referralCode = referralCodeData.code
+			metadata.discountPercentage = referralCodeData.discountPercentage.toString()
+		}
+
 		// create a checkout session
 		const session = await stripe.checkout.sessions.create({
 			client_reference_id: reference,
@@ -161,16 +242,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			mode: "payment",
 			success_url: successUrl,
 			cancel_url: cancelUrl,
-			metadata: {
-				firstName: user.firstName,
-				lastName: user.lastName,
-				email: user.email,
-				phone: user.phone,
-				tickets: req.body.tickets,
-				eventId: tickets[0]?.eventId || "",
-				eventDetails: JSON.stringify(eventDetails),
-			},
+			metadata: metadata,
 			customer_email: user.email,
+			discounts: discountConfig,
 		}).catch((stripeError) => {
 			console.error("Stripe session creation failed:", stripeError)
 			throw new Error(`Stripe error: ${stripeError.message}`)

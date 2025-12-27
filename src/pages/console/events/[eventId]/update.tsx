@@ -132,7 +132,8 @@ export default function UpdateEventPage({ event }: Props) {
 
 
 	// --- Initial form values ---
-	const initialValues: CreateEventFormData = {
+	// --- Initial form values ---
+	const initialValues: CreateEventFormData = React.useMemo(() => ({
 		name: eventDetails.name,
 		desc: eventDetails.desc,
 		location: eventDetails.location,
@@ -153,7 +154,7 @@ export default function UpdateEventPage({ event }: Props) {
 		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
 		timezone: eventDetails?.timezone || '',
 		showParticipants: eventDetails.showParticipants || false,
-	}
+	}), [eventDetails, uploadedImages])
 
 	const { ref } = usePlacesWidget({
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
@@ -379,24 +380,28 @@ export default function UpdateEventPage({ event }: Props) {
 							{/* Left Side: Form Fields */}
 							<Box flex="1">
 								<FormControl mb={4}>
-									<Flex alignItems="center">
-										<Field
-											as={Input}
-											id="name"
-											name="name"
-											placeholder="Event Name"
-											size="lg"
-											color="white"
-											border="none"
-											h="20"
-											fontSize="38"
-											fontWeight="bold"
-											p="0"
-											_focus={{ border: "none", boxShadow: "none" }}
-											_placeholder={{ color: "#FFFFFF52" }}
-											value={values?.name}
-										/>
-										<TimezoneSelect />
+									<Flex alignItems="center" gap={4}>
+										<Box flex="1">
+											<Field
+												as={Input}
+												id="name"
+												name="name"
+												placeholder="Event Name"
+												size="lg"
+												color="white"
+												border="none"
+												h="20"
+												fontSize="38"
+												fontWeight="bold"
+												p="0"
+												_focus={{ border: "none", boxShadow: "none" }}
+												_placeholder={{ color: "#FFFFFF52" }}
+												value={values?.name}
+											/>
+										</Box>
+										<Box w="130px">
+											<TimezoneSelect />
+										</Box>
 									</Flex>
 								</FormControl>
 								<Flex

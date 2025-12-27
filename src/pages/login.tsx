@@ -12,50 +12,53 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
 import React from "react"
+import { FaEye, FaEyeSlash } from "react-icons/fa"
 
 export default function LoginPage() {
 	const navigation = useRouter()
 	const [isLoading, setLoader] = React.useState(false)
+	const [showPassword, setShowPassword] = React.useState(false)
 	// The url callback to redirect user to after login
 	const { _cb } = navigation?.query
 
 	const formData: SignInFormData = {
 		email: "",
 		password: "",
-		isJetzyMember:false,
+		isJetzyMember: false,
 	}
 
 	const handleSubmit = async (values: SignInFormData) => {
 		setLoader(true)
-
+		console.log("Submitting login form...", values.email)
 
 		//  Process user login
 		const res = await signIn("credentials", {
 			email: values?.email,
 			password: values?.password,
-			isJetzyMember:values?.isJetzyMember , 
+			isJetzyMember: values?.isJetzyMember,
 			redirect: false,
 		})
 
-		
+		console.log("SignIn response:", res)
 
 		// handle error
 		if (res?.error) {
+			console.error("Login error:", res.error)
 			setLoader(false)
 
-			
 			// format an error message
-			const error = { message: res?.error  }
-
+			const error = { message: res?.error }
 			ServerErrors("Sorry", error)
-
 			return
 		}
 
 		// turn off loader
 		setLoader(false)
 
-		navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+		const redirectUrl = _cb ? _cb.toString() : ROUTES.dashboard.index
+		console.log("Login successful, redirecting to:", redirectUrl)
+
+		await navigation?.push(redirectUrl)
 	}
 
 	return (
@@ -97,18 +100,28 @@ export default function LoginPage() {
 											Password
 										</label>
 									</div>
-									<div className="mt-2">
+									<div className="mt-2 relative">
 										<Field
 											id="password"
 											name="password"
 											value={values?.password}
 											onChange={handleChange}
-											type="password"
+											type={showPassword ? "text" : "password"}
 											autoComplete="current-password"
 											required
-											className="text-white bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-
+											className="text-white bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 pr-10 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
+										<button
+											type="button"
+											className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-white"
+											onClick={() => setShowPassword(!showPassword)}
+										>
+											{showPassword ? (
+												<FaEyeSlash className="h-5 w-5" aria-hidden="true" />
+											) : (
+												<FaEye className="h-5 w-5" aria-hidden="true" />
+											)}
+										</button>
 										<ErrorMessage name="password" component="span" className="text-red-500 block mt-1" />
 									</div>
 								</div>

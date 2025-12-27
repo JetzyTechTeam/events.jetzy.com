@@ -1,5 +1,6 @@
 "use client"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
+import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { GetServerSideProps } from "next"
@@ -41,6 +42,7 @@ import { useSession } from "next-auth/react"
 export default function Manage({ event }: any) {
 	event = JSON.parse(event)
 
+	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion">("about")
 	const [shareModal, setShareModal] = useState(false)
 	const [inviteGuestsModal, setInviteGuestsModal] = useState(false)
 	const [sendBlastModal, setSendBlastModal] = useState(false)
@@ -94,6 +96,16 @@ export default function Manage({ event }: any) {
 							}}
 						>
 							Guests
+						</Tab>
+						<Tab
+							fontWeight="bold"
+							color="#9C9C9C"
+							_selected={{
+								color: "#F79432",
+								borderBottom: "2px solid #F79432",
+							}}
+						>
+							Referral Codes
 						</Tab>
 					</TabList>
 					<TabPanels>
@@ -151,6 +163,11 @@ export default function Manage({ event }: any) {
 							{/* Guests list content goes here */}
 							<div className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3">
 								<GuestsList eventId={event._id} />
+							</div>
+						</TabPanel>
+						<TabPanel>
+							<div className="bg-[#181818] rounded-xl p-3">
+								<ReferralCodesManager eventId={event._id} />
 							</div>
 						</TabPanel>
 					</TabPanels>

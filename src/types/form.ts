@@ -58,4 +58,5 @@ export type CreateJetzyAccountFormData = {
 export type CheckoutFormData = {
 	tickets: string
 	user: string
+	referralCode?: string
 }

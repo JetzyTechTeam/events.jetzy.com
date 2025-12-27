@@ -59,6 +59,8 @@ export interface IBookings extends IBaseModelProps {
 	subTotal: number
 	tax: number
 	total: number
+	referralCode?: string
+	discountAmount?: number
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }
@@ -67,4 +69,15 @@ export interface IEventTracker extends IBaseModelProps {
 	eventId: Types.ObjectId
 	bookedTickets: number
 	eventCapacity: number
+}
+
+export interface IReferralCode extends IBaseModelProps {
+	eventId: Types.ObjectId
+	code: string
+	discountPercentage: number
+	isActive: boolean
+	usageCount: number
+	maxUses?: number
+	createdBy?: Types.ObjectId
+	isDeleted: boolean
 }

@@ -22,6 +22,9 @@ type TicketEmailData = {
     desc: string
   }>
   orderNumber: string
+  referralCode?: string
+  discountAmount?: number
+  discountPercentage?: number
 }
 
 type WaitingListEmailData = {
@@ -154,7 +157,7 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
   }
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, referralCode, discountAmount, discountPercentage }: TicketEmailData) => {
   console.log("sendTicketConfirmation called with:", { email, orderNumber, eventName: event.name })
 
   // format event start and end time
@@ -223,7 +226,15 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             `,
           )
           .join("")}
-             <p style="margin-top: 10px; font-weight: bold;">Total Amount: $${totalAmount}</p>
+             <div style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">
+               ${discountAmount ? `
+                 <p style="margin: 5px 0;">Subtotal: $${totalAmount.toFixed(2)}</p>
+                 <p style="margin: 5px 0; color: #28a745;">Discount (${referralCode || 'PROMO'}): -$${discountAmount.toFixed(2)}</p>
+                 <p style="margin-top: 10px; font-weight: bold; font-size: 16px;">Total Paid: $${(totalAmount - discountAmount).toFixed(2)}</p>
+               ` : `
+                 <p style="margin-top: 10px; font-weight: bold;">Total Amount: $${totalAmount.toFixed(2)}</p>
+               `}
+             </div>
           </div>
           
           <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center; border: 1px solid #ffeeba;">
