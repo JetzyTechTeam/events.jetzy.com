@@ -10,49 +10,49 @@ dayjs.extend(timezone)
 sgMail.setApiKey(process.env.SENDGRID_API_KEY as string)
 
 type TicketEmailData = {
-	event: IEvent
-	firstName: string
-	lastName: string
-	email: string
-	phone: string
-	tickets: Array<{
-		name: string
-		quantity: number
-		price: number
-		desc: string
-	}>
-	orderNumber: string
+  event: IEvent
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  tickets: Array<{
+    name: string
+    quantity: number
+    price: number
+    desc: string
+  }>
+  orderNumber: string
 }
 
 type WaitingListEmailData = {
-	firstName: string
-	lastName: string
-	email: string
-	eventName: string
+  firstName: string
+  lastName: string
+  email: string
+  eventName: string
 }
 
 type WaitingListApprovalData = {
-	firstName: string
-	lastName: string
-	email: string
-	eventName: string
-	tickets: Array<{
-		name: string
-		quantity: number
-		price: number
-	}>
+  firstName: string
+  lastName: string
+  email: string
+  eventName: string
+  tickets: Array<{
+    name: string
+    quantity: number
+    price: number
+  }>
 }
 
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets }: WaitingListApprovalData) => {
-	try {
-		const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-		const totalAmount = tickets.reduce((sum, ticket) => sum + (ticket.price * ticket.quantity), 0)
+  try {
+    const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+    const totalAmount = tickets.reduce((sum, ticket) => sum + (ticket.price * ticket.quantity), 0)
 
-		await sgMail.send({
-			to: [email, "tech@jetzyapp.com"],
-			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `Jetzy [Good News!] Your wait is over - ${eventName}`,
-			html: `
+    await sgMail.send({
+      to: [email, "tech@jetzyapp.com"],
+      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      subject: `Jetzy [Good News!] Your wait is over - ${eventName}`,
+      html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Great News! Your Wait is Over! 🎉</h1>
           
@@ -97,20 +97,20 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
           </p>
         </div>
       `,
-		})
-	} catch (error) {
-		console.error("Failed to send waiting list approval:", error)
-		throw error
-	}
+    })
+  } catch (error) {
+    console.error("Failed to send waiting list approval:", error)
+    throw error
+  }
 }
 
 export const sendWaitingListNotification = async ({ firstName, lastName, email, eventName }: WaitingListEmailData) => {
-	try {
-		await sgMail.send({
-			to: [email, "tech@jetzyapp.com"],
-			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `Jetzy [Waiting List] ${eventName}`,
-			html: `
+  try {
+    await sgMail.send({
+      to: [email, "tech@jetzyapp.com"],
+      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      subject: `Jetzy [Waiting List] ${eventName}`,
+      html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">You're on the Waiting List!</h1>
           
@@ -147,89 +147,100 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
           </p>
         </div>
       `,
-		})
-	} catch (error) {
-		console.error("Failed to send waiting list notification:", error)
-		throw error
-	}
+    })
+  } catch (error) {
+    console.error("Failed to send waiting list notification:", error)
+    throw error
+  }
 }
 
 export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber }: TicketEmailData) => {
-	console.log("sendTicketConfirmation called with:", { email, orderNumber, eventName: event.name })
-	
-	// format event start and end time
-	const eventTimezone = event.timezone.split(') ')[1]
+  console.log("sendTicketConfirmation called with:", { email, orderNumber, eventName: event.name })
 
-	const start = dayjs.utc(event.startsOn).tz(eventTimezone)
-	const end = dayjs.utc(event.endsOn).tz(eventTimezone)
+  // format event start and end time
+  // event.timezone format is typically "(UTC-05:00) America/New_York" or similar? 
+  // The previous code split by ') ' to get the IANA zone.
+  const eventTimezone = event.timezone.includes(') ') ? event.timezone.split(') ')[1] : event.timezone
 
-	const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
-	const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
+  const start = dayjs.utc(event.startsOn).tz(eventTimezone)
+  const end = dayjs.utc(event.endsOn).tz(eventTimezone)
 
-	const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
-	const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
-	const location = event.location
-	
-	console.log("Email details:", { timestamp, location, totalAmount, tickets })
-	
-	try {
-		await sgMail.send({
-		  to: [email, "tech@jetzyapp.com"],
-			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `Jetzy [Booking Confirmation] ${event.name}`,
-			html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>
+  // Desired Date: December 31, 2025
+  const dateString = start.format('MMMM DD, YYYY')
+
+  // Desired Time: 7-10pm EST
+  // We'll format start and end times.
+  const startTimeResult = start.format('h:mmA').toLowerCase() // 7:00pm
+  // removing minutes if :00? User example "7-10pm". 
+  // Let's stick to standard format for now: 7:00pm - 10:00pm
+  const endTimeResult = end.format('h:mmA').toLowerCase()
+
+  // Get timezone abbreviation if possible, or just hardcode if we know it (we don't). 
+  // dayjs-timezone 'z' might return 'EST' or 'EDT' or '+05'. 
+  const tzAbbr = start.format('z')
+  const timeString = `${startTimeResult} - ${endTimeResult} ${tzAbbr}`
+
+  // Clean up minutes if they are zero to match "7-10pm" style? 
+  // "7:00pm".replace(":00", "") -> "7pm"
+  const cleanStart = startTimeResult.replace(":00", "")
+  const cleanEnd = endTimeResult.replace(":00", "")
+  const cleanTimeString = `${cleanStart}-${cleanEnd} ${tzAbbr}`
+
+  const totalAmount = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
+  const location = event.location
+
+  console.log("Email details:", { dateString, cleanTimeString, location, totalAmount, tickets })
+
+  try {
+    await sgMail.send({
+      to: [email, "tech@jetzyapp.com"],
+      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      subject: `Jetzy [Booking Confirmation] ${event.name}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;">
+          <p style="font-size: 16px; line-height: 1.5;">
+            This is to confirm that your ticket for <strong>${event.name}</strong> is booked. Following are the details:
+          </p>
           
-          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
-            <p><strong>Date and Time: </strong>${timestamp}</p>
-            <p><strong>Venue: </strong>${location}</p>
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0; line-height: 1.8;">
+            <p style="margin: 0;"><strong>Date:</strong> ${dateString}</p>
+            <p style="margin: 0;"><strong>Time:</strong> ${cleanTimeString}</p>
+            <p style="margin: 0;"><strong>Location:</strong> ${location}</p>
+            <p style="margin: 0;"><strong>Vibe:</strong> Sophisticated • Warm • Celebratory</p>
           </div>
 
-          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h2 style="color: #333; margin-bottom: 15px;">Customer Information</h2>
-            <p><strong>Name:</strong> ${firstName} ${lastName}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            ${phone ? `<p><strong>Phone: </strong> ${phone}</p>` : ""}
-            <p><strong>Order Number: </strong> ${orderNumber}</p>
-          </div>
-
-          <div style="margin: 20px 0;">
-            <h2 style="color: #333; margin-bottom: 15px;">Ticket Details</h2>
+           <div style="margin: 20px 0;">
+            <h3 style="color: #333; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">Ticket Details</h3>
+            <p><strong>Order Number:</strong> ${orderNumber}</p>
+             <p><strong>Name:</strong> ${firstName} ${lastName}</p>
             ${tickets
-							.map(
-								(ticket) => `
-              <div style="background-color: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
-                <h3 style="color: #333; margin: 0 0 10px 0;">${ticket.name}</h3>
-                <p><strong>Quantity: </strong> ${ticket.quantity}</p>
-                <p><strong>Price per ticket: </strong> $${ticket.price}</p>
-                <p><strong>Description: </strong> ${ticket.desc || ''}</p>
+          .map(
+            (ticket) => `
+              <div style="margin-bottom: 10px; font-size: 14px;">
+                <p style="margin: 5px 0;"><strong>${ticket.name}</strong> (x${ticket.quantity}) - $${ticket.price}/each</p>
+                ${ticket.desc ? `<p style="margin: 0; color: #666; font-size: 12px;">${ticket.desc}</p>` : ''}
               </div>
             `,
-							)
-							.join("")}
+          )
+          .join("")}
+             <p style="margin-top: 10px; font-weight: bold;">Total Amount: $${totalAmount}</p>
           </div>
           
-          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="color: #333; margin: 0;">Total Amount: $${totalAmount}</h3>
-          </div>
-          
-          <div style="background-color: #ffe6e6; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center;">
-            <p style="color: #cc0000; font-weight: bold; margin: 0;">
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center; border: 1px solid #ffeeba;">
+            <p style="color: #856404; font-weight: bold; margin: 0;">
               Please show this email at the entrance for entry
             </p>
           </div>
 
-          <p style="margin-top: 30px; text-align: center; color: #666;">
-            Welcome to Jetzy! You now have access to exclusive membership benefits.
+          <p style="margin-top: 30px; text-align: center; color: #666; font-size: 12px;">
+            Welcome to Jetzy! You now have access to exclusive <a href="https://jetzy.com" style="color: #F79432; text-decoration: none;">membership benefits</a>.
           </p>
         </div>
       `,
-		})
-		console.log("Ticket confirmation email sent successfully to:", email)
-	} catch (error) {
-		console.error("Failed to send ticket confirmation email:", error)
-		throw error
-	}
+    })
+    console.log("Ticket confirmation email sent successfully to:", email)
+  } catch (error) {
+    console.error("Failed to send ticket confirmation email:", error)
+    throw error
+  }
 }
