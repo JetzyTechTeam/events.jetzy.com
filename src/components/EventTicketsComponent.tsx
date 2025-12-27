@@ -43,8 +43,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
       name: ticket.name,
       price: ticket.price,
       description: ticket.desc,
-      quantity: 1,
-      isSelected: event.isPaid ? true : false,
+      quantity: 0,
+      isSelected: false,
       priceId: ticket.stripeProductId,
       eventId: event._id.toString(),
     };
@@ -66,16 +66,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const handleQuantityChange = (id: string, delta: number) => {
     setTickets((prevTickets) =>
       prevTickets.map((ticket, index) => {
-        const newQty = Math.max(1, ticket.quantity + delta);
+        const newQty = Math.max(0, ticket.quantity + delta);
         const ticketItem = ticketsItems[index];
 
         return ticket.id === id
           ? {
-              ...ticket,
-              quantity: newQty,
-              price:
-                newQty === 0 ? ticketItem.price : newQty * ticketItem.price,
-            }
+            ...ticket,
+            quantity: newQty,
+            isSelected: newQty > 0,
+            price:
+              newQty === 0 ? ticketItem.price : newQty * ticketItem.price,
+          }
           : ticket;
       })
     );
@@ -83,10 +84,19 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
   const handleTicketSelection = (id: string) => {
     setTickets((prevTickets) =>
-      prevTickets.map((ticket) => {
-        return ticket.id === id
-          ? { ...ticket, isSelected: !ticket.isSelected }
-          : ticket;
+      prevTickets.map((ticket, index) => {
+        const ticketItem = ticketsItems[index];
+        if (ticket.id === id) {
+          const newIsSelected = !ticket.isSelected;
+          const newQty = newIsSelected ? 1 : 0;
+          return {
+            ...ticket,
+            isSelected: newIsSelected,
+            quantity: newQty,
+            price: newQty === 0 ? ticketItem.price : newQty * ticketItem.price
+          }
+        }
+        return ticket;
       })
     );
   };
@@ -147,10 +157,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             {tickets.map((ticket, index) => (
               <div
                 key={ticket.id}
-                className={`relative bg-[#2b2b2b] p-4 rounded-lg cursor-pointer border-2 ${
-                  ticket.isSelected ? "border-jetzy" : "border-transparent"
-                }`}
-                onClick={() => { 
+                className={`relative bg-[#2b2b2b] p-4 rounded-lg cursor-pointer border-2 ${ticket.isSelected ? "border-jetzy" : "border-transparent"
+                  }`}
+                onClick={() => {
                   handleTicketSelection(ticket.id)
                   sendGAEvent({
                     category: "Event",
@@ -237,10 +246,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
               disabled={isLoading}
               onClick={() => {
                 showCheckoutForm(true)
-                sendGAEvent({ 
+                sendGAEvent({
                   category: "Event",
                   action: "Checkout Button Clicked",
-                  label: event.name, })
+                  label: event.name,
+                })
               }}
               className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50"
             >
@@ -298,7 +308,7 @@ type CommentType = {
 };
 
 type UserType = {
-  name?: string | null | undefined; email?: string | null | undefined; image?: string | null | undefined; 
+  name?: string | null | undefined; email?: string | null | undefined; image?: string | null | undefined;
 };
 
 type CommentItemProps = {
@@ -737,8 +747,8 @@ const CommentsSection = ({
       <div className="flex items-center justify-between">
         <h1 className="font-bold text-xl">Comments</h1>
         {session === null ? <></> : <p className="text-jetzy p-2 rounded-xl cursor-pointer" onClick={onOpen}>
-            Write a comment
-          </p>}
+          Write a comment
+        </p>}
       </div>
 
       {isLoading ? (
