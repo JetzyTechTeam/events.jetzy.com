@@ -17,27 +17,27 @@ import LightNavbar from "@/components/layout/LightNavbar"
 import Footer from "@/components/layout/Footer"
 import CommentsSection, { UserType } from "@/components/events/CommentsSection"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
-import { 
-	CalendarIcon, 
-	MapPinIcon, 
-	UserGroupIcon, 
-	ShareIcon, 
-	EllipsisHorizontalIcon, 
+import {
+	CalendarIcon,
+	MapPinIcon,
+	UserGroupIcon,
+	ShareIcon,
+	EllipsisHorizontalIcon,
 	TicketIcon,
 	QuestionMarkCircleIcon,
 	ChatBubbleLeftRightIcon
 } from "@heroicons/react/24/outline"
-import { 
-	Table, 
-	Thead, 
-	Tbody, 
-	Tr, 
-	Th, 
-	Td, 
-	Badge, 
-	Box, 
-	Text, 
-	Spinner, 
+import {
+	Table,
+	Thead,
+	Tbody,
+	Tr,
+	Th,
+	Td,
+	Badge,
+	Box,
+	Text,
+	Spinner,
 	Avatar,
 	AvatarGroup,
 	Flex,
@@ -64,8 +64,8 @@ import {
 	Stack,
 	Heading
 } from "@chakra-ui/react"
-import { 
-	MagnifyingGlassIcon, 
+import {
+	MagnifyingGlassIcon,
 	EllipsisHorizontalIcon as EllipsisIcon,
 	FunnelIcon,
 	ArrowDownTrayIcon
@@ -134,8 +134,8 @@ export default function HostedEvents({ event }: Props) {
 		try {
 			const userTimeZone = clonedEvent?.timezone?.split(") ")[1] || clonedEvent?.timezone || "UTC"
 			const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
-			return { 
-				formattedDate: date.format("dddd, MMMM D, YYYY"), 
+			return {
+				formattedDate: date.format("dddd, MMMM D, YYYY"),
 				formattedTime: date.format("h:mm A"),
 				formattedMonth: date.format("MMM").toUpperCase(),
 				formattedDay: date.format("D")
@@ -157,40 +157,40 @@ export default function HostedEvents({ event }: Props) {
 	return (
 		<div className="min-h-screen bg-[#F0F2F5]">
 			<LightNavbar />
-			
+
 			{/* Back Button */}
 			<div className="max-w-[1250px] mx-auto px-4 lg:px-0 pt-4">
 				<button
 					onClick={() => router.back()}
 					className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors font-medium mb-4"
 				>
-					<svg 
-						xmlns="http://www.w3.org/2000/svg" 
-						viewBox="0 0 24 24" 
-						fill="none" 
-						stroke="currentColor" 
-						strokeWidth="2" 
-						strokeLinecap="round" 
-						strokeLinejoin="round" 
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="2"
+						strokeLinecap="round"
+						strokeLinejoin="round"
 						className="w-5 h-5"
 					>
-						<path d="m12 19-7-7 7-7"/>
-						<path d="M19 12H5"/>
+						<path d="m12 19-7-7 7-7" />
+						<path d="M19 12H5" />
 					</svg>
 					<span>Back</span>
 				</button>
 			</div>
-			
+
 			{/* Cover Photo Area */}
 			<div className="bg-white shadow-sm border-b border-gray-300">
 				<div className="max-w-[1250px] mx-auto px-4 lg:px-0 pt-0 pb-4">
 					<div className="relative w-full h-[200px] md:h-[350px] lg:h-[400px] bg-gray-200 overflow-hidden rounded-b-xl mb-6">
 						{clonedEvent.images && clonedEvent.images.length > 0 ? (
-							<Image 
-								src={clonedEvent.images[0]} 
-								alt="Event Cover" 
-								fill 
-								className="object-cover" 
+							<Image
+								src={clonedEvent.images[0]}
+								alt="Event Cover"
+								fill
+								className="object-cover"
 								priority
 							/>
 						) : (
@@ -218,12 +218,11 @@ export default function HostedEvents({ event }: Props) {
 
 							{/* Action Bar */}
 							<div className="flex flex-wrap gap-3 py-4 border-t border-gray-200 mt-4">
-								<button 
+								<button
 									onClick={() => setIsTicketModalOpen(true)}
 									disabled={hasEventEnded}
-									className={`relative px-10 py-4 rounded-xl font-bold text-lg text-white transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${
-										hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 animate-pulse"
-									}`}
+									className={`relative px-10 py-4 rounded-xl font-bold text-lg text-white transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 animate-pulse"
+										}`}
 									style={{
 										animation: hasEventEnded ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
 									}}
@@ -238,17 +237,17 @@ export default function HostedEvents({ event }: Props) {
 										</span>
 									)}
 								</button>
-								
-								<button 
+
+								<button
 									onClick={() => sharer.share()}
 									className="px-4 py-2 bg-gray-200 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-2"
 								>
 									<ShareIcon className="w-5 h-5" />
 									Share
 								</button>
-								
+
 								<Menu>
-									<MenuButton 
+									<MenuButton
 										as={IconButton}
 										aria-label="More options"
 										icon={<EllipsisHorizontalIcon className="w-6 h-6" />}
@@ -279,68 +278,7 @@ export default function HostedEvents({ event }: Props) {
 			<div className="max-w-[1250px] mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
 				{/* Left Column (Discussion) - Moved below to focus on Get Ticket */}
 				<div className="lg:col-span-2 space-y-4 mt-8">
-					<DiscussionBoard eventId={clonedEvent._id.toString()} />
-				</div>
-
-				{/* Right Column (Sidebar) */}
-				<div className="space-y-4">
-					{/* Location Card */}
-					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Location</h2>
-						<div className="mb-4">
-							<iframe
-								width="100%"
-								height="200"
-								frameBorder="0"
-								style={{ border: 0, borderRadius: '8px' }}
-								src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&q=${encodeURIComponent(clonedEvent.location)}`}
-								allowFullScreen
-							/>
-						</div>
-						<div className="flex items-start gap-3">
-							<MapPinIcon className="w-6 h-6 text-gray-500 flex-shrink-0" />
-							<div>
-								<p className="font-semibold text-[#1C1E21]">{clonedEvent.location}</p>
-							</div>
-						</div>
-					</div>
-
-					{/* Sticky Ticket Card (Desktop) */}
-					<div className="bg-white rounded-lg shadow-lg p-6 border-2 border-blue-200 sticky top-20 transform transition-all duration-300 hover:shadow-2xl">
-						<div className="text-center">
-							<p className="text-gray-500 text-sm mb-2 font-semibold">Tickets starting from</p>
-							<p className="text-4xl font-extrabold text-[#1C1E21] mb-6">
-								{clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map(t => t.price))}` : 'Free'}
-							</p>
-							<button 
-								onClick={() => setIsTicketModalOpen(true)}
-								disabled={hasEventEnded}
-								className={`relative w-full py-5 px-6 rounded-xl font-extrabold text-xl text-white transition-all duration-300 shadow-xl hover:shadow-2xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${
-									hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900"
-								}`}
-								style={{
-									animation: hasEventEnded ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-								}}
-							>
-								<TicketIcon className="w-8 h-8" />
-								<span>
-									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets Now")}
-								</span>
-								{!hasEventEnded && (
-									<span className="absolute -top-3 -right-3 bg-yellow-400 text-yellow-900 text-sm font-bold px-3 py-1.5 rounded-full animate-bounce shadow-lg">
-										🎟️
-									</span>
-								)}
-							</button>
-							{!hasEventEnded && (
-								<p className="text-xs text-gray-500 mt-3 font-medium">
-									⚡ Limited availability - Secure your spot!
-								</p>
-							)}
-						</div>
-					</div>
-
-					{/* About Details (Description) */}
+					{/* About Details (Description) - Moved here */}
 					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
 						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">About</h2>
 						<div className="flex items-start gap-4 mb-4">
@@ -387,6 +325,68 @@ export default function HostedEvents({ event }: Props) {
 						)}
 					</div>
 
+					<DiscussionBoard eventId={clonedEvent._id.toString()} />
+				</div>
+
+				{/* Right Column (Sidebar) */}
+				<div className="space-y-4">
+					{/* Location Card */}
+					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Location</h2>
+						<div className="mb-4">
+							<iframe
+								width="100%"
+								height="200"
+								frameBorder="0"
+								style={{ border: 0, borderRadius: '8px' }}
+								src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&q=${encodeURIComponent(clonedEvent.location)}`}
+								allowFullScreen
+							/>
+						</div>
+						<div className="flex items-start gap-3">
+							<MapPinIcon className="w-6 h-6 text-gray-500 flex-shrink-0" />
+							<div>
+								<p className="font-semibold text-[#1C1E21]">{clonedEvent.location}</p>
+							</div>
+						</div>
+					</div>
+
+					{/* Sticky Ticket Card (Desktop) */}
+					<div className="bg-white rounded-lg shadow-lg p-6 border-2 border-blue-200 sticky top-20 transform transition-all duration-300 hover:shadow-2xl">
+						<div className="text-center">
+							<p className="text-gray-500 text-sm mb-2 font-semibold">Tickets starting from</p>
+							<p className="text-4xl font-extrabold text-[#1C1E21] mb-6">
+								{clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map(t => t.price))}` : 'Free'}
+							</p>
+							<button
+								onClick={() => setIsTicketModalOpen(true)}
+								disabled={hasEventEnded}
+								className={`relative w-full py-5 px-6 rounded-xl font-extrabold text-xl text-white transition-all duration-300 shadow-xl hover:shadow-2xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-800 hover:to-blue-900"
+									}`}
+								style={{
+									animation: hasEventEnded ? 'none' : 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+								}}
+							>
+								<TicketIcon className="w-8 h-8" />
+								<span>
+									{hasEventEnded ? "Event Ended" : (isSoldOut ? "Join Waiting List" : "Get Tickets Now")}
+								</span>
+								{!hasEventEnded && (
+									<span className="absolute -top-3 -right-3 bg-yellow-400 text-yellow-900 text-sm font-bold px-3 py-1.5 rounded-full animate-bounce shadow-lg">
+										🎟️
+									</span>
+								)}
+							</button>
+							{!hasEventEnded && (
+								<p className="text-xs text-gray-500 mt-3 font-medium">
+									⚡ Limited availability - Secure your spot!
+								</p>
+							)}
+						</div>
+					</div>
+
+
+
 					{/* Hosted By - Show only if no host info in about section */}
 					{(!clonedEvent.host || !clonedEvent.host.name) && (
 						<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
@@ -427,7 +427,7 @@ export default function HostedEvents({ event }: Props) {
 
 			{/* Ticket Modal */}
 			{clonedEvent && <EventTicketsComponent event={clonedEvent} isOpen={isTicketModalOpen} onClose={() => setIsTicketModalOpen(false)} />}
-			
+
 			{/* Checkout Modal */}
 			{clonedEvent?.name && <EventCheckoutModel event={clonedEvent.name} />}
 		</div>
@@ -435,40 +435,40 @@ export default function HostedEvents({ event }: Props) {
 }
 
 function EventGuests({ eventId, showParticipants }: { eventId: string, showParticipants?: boolean }) {
-    const { data: bookings, isLoading } = useQuery({
-        queryKey: ["eventGuests", eventId],
-        queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
-        enabled: !!showParticipants,
-    })
+	const { data: bookings, isLoading } = useQuery({
+		queryKey: ["eventGuests", eventId],
+		queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
+		enabled: !!showParticipants,
+	})
 
-    const guests = useMemo(() => {
-        if (!bookings?.data) return []
-        // Extract unique guests
-        const unique = new Map();
-        bookings.data.forEach((b: any) => {
-            if (!unique.has(b.customerEmail)) {
-                unique.set(b.customerEmail, { name: b.customerName, email: b.customerEmail });
-            }
-        });
-        return Array.from(unique.values());
-    }, [bookings?.data]);
+	const guests = useMemo(() => {
+		if (!bookings?.data) return []
+		// Extract unique guests
+		const unique = new Map();
+		bookings.data.forEach((b: any) => {
+			if (!unique.has(b.customerEmail)) {
+				unique.set(b.customerEmail, { name: b.customerName, email: b.customerEmail });
+			}
+		});
+		return Array.from(unique.values());
+	}, [bookings?.data]);
 
-    if (!showParticipants) return null;
-    if (guests.length === 0) return null;
+	if (!showParticipants) return null;
+	if (guests.length === 0) return null;
 
-    return (
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-            <h2 className="text-xl font-bold text-[#1C1E21] mb-4">Guests</h2>
-            <Flex align="center" gap={4}>
-                 <AvatarGroup size="md" max={5}>
-                    {guests.map((guest: any) => (
-                        <Avatar key={guest.email} name={guest.name} />
-                    ))}
-                 </AvatarGroup>
-                 <Text color="gray.600" fontSize="sm">{guests.length} going</Text>
-            </Flex>
-        </div>
-    )
+	return (
+		<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+			<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Guests</h2>
+			<Flex align="center" gap={4}>
+				<AvatarGroup size="md" max={5}>
+					{guests.map((guest: any) => (
+						<Avatar key={guest.email} name={guest.name} />
+					))}
+				</AvatarGroup>
+				<Text color="gray.600" fontSize="sm">{guests.length} going</Text>
+			</Flex>
+		</div>
+	)
 }
 
 function EventDescription({ description }: { description: string }) {
@@ -647,7 +647,7 @@ function EventBookings({ eventId }: { eventId: string }) {
 					</InputLeftElement>
 					<Input placeholder="Search bookings..." borderRadius="md" bg="white" />
 				</InputGroup>
-				
+
 				<Flex gap={2}>
 					<Select placeholder="Status" size="sm" borderRadius="md" bg="white" maxW="150px" icon={<FunnelIcon style={{ width: 14, height: 14 }} />}>
 						<option value="confirmed">Confirmed</option>
@@ -735,7 +735,7 @@ function EventBookings({ eventId }: { eventId: string }) {
 												textTransform="capitalize"
 												colorScheme={
 													booking.status === "confirmed" || booking.status === "approved" ? "green" :
-													booking.status === "pending" ? "yellow" : "red"
+														booking.status === "pending" ? "yellow" : "red"
 												}
 											>
 												{booking.status}
@@ -767,8 +767,8 @@ function EventBookings({ eventId }: { eventId: string }) {
 													}} isDisabled={isResending || booking.status === "cancelled"}>
 														{isResending ? "Sending..." : "Resend Receipt"}
 													</MenuItem>
-													<MenuItem 
-														color="red.500" 
+													<MenuItem
+														color="red.500"
 														onClick={(e) => {
 															e.preventDefault()
 															e.stopPropagation()
@@ -833,7 +833,7 @@ function EventBookings({ eventId }: { eventId: string }) {
 											<Badge
 												colorScheme={
 													selectedBooking.status === "confirmed" || selectedBooking.status === "approved" ? "green" :
-													selectedBooking.status === "pending" ? "yellow" : "red"
+														selectedBooking.status === "pending" ? "yellow" : "red"
 												}
 											>
 												{selectedBooking.status}

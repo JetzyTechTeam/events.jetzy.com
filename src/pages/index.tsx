@@ -66,19 +66,19 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	// Define the query based on authentication status and role
 	let query: any = { isDeleted: false }
-	
+
 	// Interest category filter from query params
 	const interestCategory = context.query.interestCategory as string | undefined
 	if (interestCategory && interestCategory !== "All" && interestCategory !== "") {
 		query.interestCategory = interestCategory
 	}
-	
+
 	// Interest subcategory filter from query params
 	const interestSubCategory = context.query.interestSubCategory as string | undefined
 	if (interestSubCategory && interestSubCategory !== "") {
 		query.interestSubCategory = interestSubCategory
 	}
-	
+
 	// Search filter from query params
 	const search = context.query.search as string | undefined
 	if (search && search.trim() !== "") {
@@ -88,7 +88,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			{ desc: { $regex: search.trim(), $options: "i" } },
 		]
 	}
-	
+
 	// If user is not admin or super admin, only show public events
 	if (!isAdmin) {
 		query.privacy = "public"
@@ -99,15 +99,42 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		// query.name = "Chinese Mid-Autumn Rooftop Celebration";
 	}
 
-	// Get events based on authentication status
-	const events = await Events.find(query).skip(skip).limit(limit).sort({ createdAt: -1 })
+	// Get events based on authentication status using aggregation for custom sorting
+	const now = new Date()
+	const events = await Events.aggregate([
+		{ $match: query },
+		{
+			$addFields: {
+				sortOrder: {
+					$switch: {
+						branches: [
+							// Live: Starts before/at now AND Ends after/at now
+							{ case: { $and: [{ $lte: ["$startsOn", now] }, { $gte: ["$endsOn", now] }] }, then: 1 },
+							// Upcoming: Starts after now
+							{ case: { $gt: ["$startsOn", now] }, then: 2 },
+							// Ended: Ends before now
+							{ case: { $lt: ["$endsOn", now] }, then: 3 }
+						],
+						default: 4 // Fallback
+					}
+				}
+			}
+		},
+		{ $sort: { sortOrder: 1, startsOn: 1 } },
+		{ $skip: skip },
+		{ $limit: limit }
+	])
 
 	if (!events) return { props: { events: null, pagination: null } }
 
 	// get total count of events based on authentication status
 	const total = await Events.countDocuments(query)
-	// serialize the events
-	const data = events.map((event) => event.toJSON())
+	// serialize the events (handle _id manually since aggregate returns POJO)
+	const data = events.map((event) => ({
+		...event,
+		_id: event._id.toString(),
+		// Ensure dates are stringified if needed, though JSON.stringify handles it usually
+	}))
 
 	// calculate page total and current page
 	const totalPages = Math.ceil(total / limit)

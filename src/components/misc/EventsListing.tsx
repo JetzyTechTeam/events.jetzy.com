@@ -44,10 +44,27 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 		}
 	}, [event.startsOn, event.timezone])
 
+	const eventStatus = useMemo(() => {
+		const now = dayjs()
+		const start = dayjs.utc(event.startsOn)
+		const end = dayjs.utc(event.endsOn)
+
+		if (start.isBefore(now) && end.isAfter(now)) return "Live"
+		if (end.isBefore(now)) return "Ended"
+		return "Upcoming"
+	}, [event.startsOn, event.endsOn])
+
 	return (
 		<div onClick={() => onClick(event)} className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer border border-border-light group flex flex-col h-full">
 			<div className="relative pt-[56.25%] bg-gray-200">
 				<Image src={event.images[0]} alt={event.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
+				{/* Status Badge */}
+				<div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold text-white shadow-sm ${eventStatus === "Live" ? "bg-red-500" :
+						eventStatus === "Upcoming" ? "bg-blue-500" :
+							"bg-gray-500"
+					}`}>
+					{eventStatus}
+				</div>
 			</div>
 
 			<div className="p-4 flex flex-1 flex-col">
@@ -64,7 +81,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 							{event.name}
 						</h3>
 						<p className="text-sm text-text-muted line-clamp-1 mb-2">{event.location?.split(",")[0]}</p>
-						
+
 						<div className="flex items-center gap-1 text-xs text-text-secondary mt-auto">
 							<span className="flex items-center">
 								{uniqueGuests} interested
@@ -114,7 +131,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	const [selectedLocation, setSelectedLocation] = useState("New York, NY")
 	const [searchQuery, setSearchQuery] = useState("")
 	const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
-	
+
 	// Fetch interest categories from API
 	const { data: categoriesData, isLoading: categoriesLoading, error: categoriesError } = useQuery({
 		queryKey: ["interest-categories"],
@@ -147,11 +164,11 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 		console.log("[EventsListing] Transformed categories:", transformed.length)
 		return transformed
 	}, [categoriesData])
-	
+
 	// Get active category and subcategory from query params or default to "All"
 	const activeCategory = (router.query.interestCategory as string) || "All"
 	const activeSubCategory = (router.query.interestSubCategory as string) || ""
-	
+
 	// Initialize search query from URL
 	React.useEffect(() => {
 		const searchParam = router.query.search as string
@@ -161,7 +178,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 			setSearchQuery("")
 		}
 	}, [router.query.search])
-	
+
 	// Cleanup timeout on unmount
 	React.useEffect(() => {
 		return () => {
@@ -170,7 +187,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 			}
 		}
 	}, [])
-	
+
 
 	const handleEventClick = (event: IEvent): void => {
 		router.push(ROUTES.eventDetails.replace("[slug]", event.slug))
@@ -218,13 +235,13 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 				<aside className="lg:w-[360px] p-4 lg:sticky lg:top-20 lg:h-[calc(100vh-80px)] lg:overflow-y-auto hidden lg:block">
 					<div className="mb-6">
 						<h1 className="text-2xl font-bold text-[#1C1E21] mb-4">Events</h1>
-						
+
 						{/* Search */}
 						<div className="relative mb-4">
 							<MagnifyingGlassIcon className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-							<input 
-								type="text" 
-								placeholder="Search events" 
+							<input
+								type="text"
+								placeholder="Search events"
 								value={searchQuery}
 								onChange={(e) => {
 									setSearchQuery(e.target.value)
@@ -247,7 +264,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 
 						{/* Menu Items */}
 						<div className="space-y-1">
-							<button 
+							<button
 								onClick={() => router.push("/")}
 								className="w-full flex items-center gap-3 px-2 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 transition-colors"
 							>
@@ -256,7 +273,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 								</div>
 								<span className="font-semibold text-[#1C1E21]">Browse Events</span>
 							</button>
-							<button 
+							<button
 								onClick={() => router.push("/my-events")}
 								className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-200 transition-colors"
 							>
@@ -271,7 +288,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 					<div className="border-t border-gray-300 my-4 pt-4">
 						<h3 className="font-semibold text-lg text-[#1C1E21] mb-2">Categories</h3>
 						<div className="space-y-1">
-							<button 
+							<button
 								onClick={() => handleCategoryChange("All")}
 								className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors ${activeCategory === 'All' ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-200'}`}
 							>
@@ -284,10 +301,10 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 								const categorySubcategories = category.subcategories || []
 								const isCategoryActive = activeCategory === category.name
 								const showSubcategories = isCategoryActive && categorySubcategories.length > 0
-								
+
 								return (
 									<div key={category._id || category.name}>
-										<button 
+										<button
 											onClick={() => handleCategoryChange(category.name)}
 											className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors ${isCategoryActive ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-200'}`}
 										>
@@ -296,18 +313,18 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 											</div>
 											<span className="font-medium text-sm">{category.name}</span>
 										</button>
-										
+
 										{/* Subcategories nested under category */}
 										{showSubcategories && (
 											<div className="ml-4 mt-1 space-y-1 pl-2 border-l-2 border-gray-200">
-												<button 
+												<button
 													onClick={() => handleSubCategoryChange("")}
 													className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors text-left ${activeSubCategory === '' ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100'}`}
 												>
 													<span className="font-medium text-xs">All {category.name}</span>
 												</button>
 												{categorySubcategories.map((subcategory: any) => (
-													<button 
+													<button
 														key={subcategory._id}
 														onClick={() => handleSubCategoryChange(subcategory.name)}
 														className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors text-left ${activeSubCategory === subcategory.name ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100'}`}
@@ -331,9 +348,9 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 						<h1 className="text-2xl font-bold text-[#1C1E21]">Events</h1>
 						<div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-lg">
 							<MapPinIcon className="w-4 h-4 text-gray-500" />
-							<select 
-								value={selectedLocation} 
-								onChange={(e) => setSelectedLocation(e.target.value)} 
+							<select
+								value={selectedLocation}
+								onChange={(e) => setSelectedLocation(e.target.value)}
 								className="text-sm bg-transparent border-none focus:outline-none"
 							>
 								<option>New York, NY</option>
@@ -352,7 +369,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 										<p className="text-red-400 font-bold uppercase tracking-wider mb-1 text-sm">Featured Event</p>
 										<h2 className="text-3xl font-bold mb-2">{items[0].name}</h2>
 										<p className="text-gray-200 mb-4 line-clamp-2 max-w-2xl">{items[0].desc}</p>
-										<button 
+										<button
 											onClick={() => handleEventClick(items[0])}
 											className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
 										>
@@ -366,7 +383,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 
 					{/* Events Grid */}
 					<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Upcoming Events</h2>
-					
+
 					{items.length === 0 ? (
 						<div className="text-center py-12 bg-white rounded-xl border border-gray-200">
 							<p className="text-gray-500">No events found in this category.</p>
@@ -403,7 +420,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 					)}
 				</main>
 			</div>
-			
+
 			<Footer />
 		</div>
 	)
