@@ -80,7 +80,7 @@ const initialValues = {
 
 const createEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
-	location: z.string().min(1, "Location is required"),
+	location: z.string().optional(),
 	desc: z.string().min(1, "Description is required"),
 	startDate: z.string().min(1, "Start date is required"),
 	startTime: z.string().min(1, "Start time is required"),
@@ -1050,7 +1050,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 	// Check if user is admin/super admin
 	const sessionResult = await adminOnly(context)
 	if (!sessionResult || "redirect" in sessionResult) return sessionResult
-	
+
 	return {
 		props: {
 			session: sessionResult.props.session,

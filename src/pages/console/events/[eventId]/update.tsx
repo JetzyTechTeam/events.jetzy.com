@@ -60,7 +60,7 @@ type Props = {
 
 const updateEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
-	location: z.string().min(1, "Location is required"),
+	location: z.string().optional(),
 	desc: z.string().min(1, "Description is required"),
 	startDate: z.string().min(1, "Start date is required"),
 	startTime: z.string().min(1, "Start time is required"),
@@ -84,7 +84,7 @@ export default function UpdateEventPage({ event }: Props) {
 	const [isUploading, setIsUploading] = React.useState(false)
 	const [isSubmitting, setIsSubmitting] = React.useState(false)
 	const [mainImageIndex, setMainImageIndex] = React.useState(0)
-	
+
 	// Ticket state (inline management)
 	const [tempTicket, setTempTicket] = React.useState<TicketData>({
 		id: "",
@@ -200,10 +200,11 @@ export default function UpdateEventPage({ event }: Props) {
 			return
 		}
 
-		if (uploadedImages.length === 0) {
-			Error("Validation Error", "Please add at least one image")
-			return
-		}
+		// Images are now optional
+		// if (uploadedImages.length === 0) {
+		// 	Error("Validation Error", "Please add at least one image")
+		// 	return
+		// }
 
 		values.images = uploadedImages
 		values.tickets = tickets
@@ -228,7 +229,7 @@ export default function UpdateEventPage({ event }: Props) {
 		const dateTimeChanged = startDateChanged || startTimeChanged || endDateChanged || endTimeChanged
 
 		// Fetch bookings logic (commented out in original, preserved here just in case)
-		
+
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: eventDetails._id.toString() }))
 			.then((res: any) => {
 				if (res?.payload?.status) {
@@ -1083,7 +1084,7 @@ export default function UpdateEventPage({ event }: Props) {
 															Manually approve each guest
 														</Text>
 													</Box>
-													<Switch 
+													<Switch
 														colorScheme="purple"
 														isChecked={values.requireApproval}
 														onChange={(e) => setFieldValue("requireApproval", e.target.checked)}
@@ -1121,7 +1122,7 @@ export default function UpdateEventPage({ event }: Props) {
 					</Formik>
 				</Box>
 			</ConsoleLayout>
-			
+
 			{/* Full Screen Loading Overlay */}
 			{isSubmitting && (
 				<Box
