@@ -69,8 +69,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				: req.body.user as BodyParams["user"]
 			
 			// Extract referral code if provided
+			// Store original case for tracking codes, but we'll check uppercase for discount codes
 			if (req.body.referralCode && typeof req.body.referralCode === 'string') {
-				referralCode = req.body.referralCode.trim().toUpperCase()
+				referralCode = req.body.referralCode.trim()
 			} else if (req.body.referralCode) {
 				referralCode = req.body.referralCode as string
 			}
@@ -157,35 +158,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Validate and get referral code if provided
+		// Note: referralCode can be either a discount code (in ReferralCodes collection) or a tracking code (from URL)
 		let referralCodeData: { code: string; discountPercentage: number } | null = null
+		let trackingReferralCode: string | undefined = undefined // Store tracking code even if not a discount code
+		
 		if (referralCode) {
 			try {
 				const { ReferralCodes } = await import("@/models/events/referral-codes")
 				const { Types } = await import("mongoose")
 				
+				// Check both uppercase and original case for referral code
 				const codeRecord = await ReferralCodes.findOne({
 					eventId: new Types.ObjectId(tickets[0]?.eventId),
-					code: referralCode.toUpperCase(),
+					$or: [
+						{ code: referralCode.toUpperCase() },
+						{ code: referralCode }
+					],
 					isDeleted: false,
 					isActive: true,
 				})
 
-				if (!codeRecord) {
-					return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
-				}
+				if (codeRecord) {
+					// Valid discount code found
+					// Check if code has reached max uses
+					if (codeRecord.maxUses !== null && codeRecord.maxUses !== undefined && codeRecord.usageCount >= codeRecord.maxUses) {
+						return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
+					}
 
-				// Check if code has reached max uses
-				if (codeRecord.maxUses !== null && codeRecord.maxUses !== undefined && codeRecord.usageCount >= codeRecord.maxUses) {
-					return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
-				}
-
-				referralCodeData = {
-					code: codeRecord.code,
-					discountPercentage: codeRecord.discountPercentage,
+					referralCodeData = {
+						code: codeRecord.code,
+						discountPercentage: codeRecord.discountPercentage,
+					}
+					trackingReferralCode = codeRecord.code // Use the validated code
+				} else {
+					// Not a valid discount code, but store it as a tracking code
+					// This allows tracking codes like "join-from-this" to be stored for analytics
+					// Preserve original case (usually lowercase from URL)
+					trackingReferralCode = referralCode.trim().toLowerCase()
+					console.log("[checkout/index] Referral code not found in database, storing as tracking code:", trackingReferralCode)
 				}
 			} catch (referralError: any) {
 				console.error("[checkout/index] Error validating referral code:", referralError)
-				return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
+				// Don't fail checkout if referral code validation fails - just store it as tracking code
+				trackingReferralCode = referralCode.trim().toLowerCase()
 			}
 		}
 
@@ -248,6 +263,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Use NEXT_PUBLIC_URL for redirect URLs
+		// TODO: Change back to environment variable after testing
+		// const baseUrl = process.env.NEXT_PUBLIC_URL
+		// if (!baseUrl) {
+		// 	return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
+		// }
+		
+		// Get base URL from environment variable
 		const baseUrl = process.env.NEXT_PUBLIC_URL
 		if (!baseUrl) {
 			return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
@@ -286,10 +308,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata.guestEmails = JSON.stringify(guestEmails)
 		}
 
-		// Add referral code to metadata if available
+		// Add referral code to metadata if available (either discount code or tracking code)
 		if (referralCodeData) {
+			// Valid discount code
 			metadata.referralCode = referralCodeData.code
 			metadata.discountPercentage = referralCodeData.discountPercentage.toString()
+		} else if (trackingReferralCode) {
+			// Tracking code (not a discount code, but still track it for analytics)
+			metadata.referralCode = trackingReferralCode
 		}
 
 		// Create Stripe coupon for referral code discount if applicable

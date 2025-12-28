@@ -40,6 +40,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	// We just load them from localStorage to pass to checkout API
 
 	// Pre-fill form data if user is logged in
+	// Note: We don't populate referralCode field from sessionStorage - that's for tracking only
+	// The referral code input field is for discount codes only
 	useEffect(() => {
 		if (session?.user) {
 			// Split fullName into firstName and lastName
@@ -54,7 +56,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 				email: session.user.email || "",
 				phone: (session.user as any).phone || "", // Phone might not exist in session
 				password: "", // Don't pre-fill password for logged-in users
-				referralCode: "", // Initialize referral code as empty
+				referralCode: "", // Keep empty - this field is for discount codes, not tracking codes
 			})
 		}
 	}, [session])
@@ -239,14 +241,24 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			}
 		}
 
+		// Get referral code from formData or sessionStorage (fallback)
+		let finalReferralCode = formData.referralCode?.trim()
+		if (!finalReferralCode && typeof window !== 'undefined') {
+			const stored = sessionStorage.getItem("jetzy_referral_code")
+			if (stored && stored.trim()) {
+				finalReferralCode = stored.trim()
+			}
+		}
+
 		// Include guest emails and referral code in the submission
+		// Don't convert to uppercase - let the API handle it (tracking codes should stay lowercase)
 		const submissionData = {
 			tickets: JSON.stringify(tickets),
 			user: JSON.stringify({
 				...formData,
 				guestEmails: finalGuestEmails,
 			}),
-			referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
+			referralCode: finalReferralCode || undefined,
 		}
 
 		dispatch(
@@ -306,15 +318,25 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			}
 		}
 
-		// Include guest emails and referral code in the submission
-		const submissionData = {
-			tickets: JSON.stringify(checkoutTickets),
-			user: JSON.stringify({
-				...finalFormData,
-				guestEmails: finalGuestEmails,
-			}),
-			referralCode: finalFormData.referralCode?.trim().toUpperCase() || undefined,
-		}
+			// Get referral code from formData or sessionStorage (fallback)
+			let finalReferralCode = finalFormData.referralCode?.trim()
+			if (!finalReferralCode && typeof window !== 'undefined') {
+				const stored = sessionStorage.getItem("jetzy_referral_code")
+				if (stored && stored.trim()) {
+					finalReferralCode = stored.trim()
+				}
+			}
+
+			// Include guest emails and referral code in the submission
+			// Don't convert to uppercase - let the API handle it (tracking codes should stay lowercase)
+			const submissionData = {
+				tickets: JSON.stringify(checkoutTickets),
+				user: JSON.stringify({
+					...finalFormData,
+					guestEmails: finalGuestEmails,
+				}),
+				referralCode: finalReferralCode || undefined,
+			}
 
 		dispatch(
 			CreateCheckoutSessionThunk({

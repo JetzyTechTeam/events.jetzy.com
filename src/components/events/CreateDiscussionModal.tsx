@@ -115,21 +115,35 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			postActivity: string
 		}) => {
 			// Build content with feeling/activity
-			let finalContent = postContent
+			let finalContent = postContent.trim()
 			if (postFeeling || postActivity) {
 				const feelingText = postFeeling ? `feeling ${postFeeling}` : ""
 				const activityText = postActivity ? `${postActivity}` : ""
 				const separator = postFeeling && postActivity ? " · " : ""
-				finalContent = `${postContent}\n\n${feelingText}${separator}${activityText}`
+				
+				if (finalContent) {
+					// If there's content, append feeling/activity
+					finalContent = `${finalContent}\n\n${feelingText}${separator}${activityText}`
+				} else {
+					// If no content, just use feeling/activity
+					finalContent = `${feelingText}${separator}${activityText}`.trim()
+				}
 			}
 
-			// Generate title from first 50 characters of content
-			const autoTitle = finalContent.slice(0, 50).trim() + (finalContent.length > 50 ? "..." : "")
+			// Generate title from content or use default
+			// If there's content, use first 50 characters
+			// If no content but images, use a default title
+			let autoTitle = "Post"
+			if (finalContent) {
+				autoTitle = finalContent.slice(0, 50).trim() + (finalContent.length > 50 ? "..." : "")
+			} else if (postImages.length > 0) {
+				autoTitle = `Image Post (${postImages.length} ${postImages.length === 1 ? 'image' : 'images'})`
+			}
 
 			const postData = {
 				eventId,
-				title: autoTitle || "Post",
-				content: finalContent,
+				title: autoTitle,
+				content: finalContent || "", // Allow empty content if images are present
 				tags: postTags.length > 0 ? postTags : undefined,
 				images: postImages.length > 0 ? postImages : undefined,
 			}
@@ -379,7 +393,8 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 								p={1}
 								_placeholder={{ color: "#65676B" }}
 								onKeyDown={(e) => {
-									if (e.key === 'Enter' && !e.shiftKey) {
+									// Allow Enter to submit if there's content OR images OR feeling/activity
+									if (e.key === 'Enter' && !e.shiftKey && (content.trim() || images.length > 0 || feeling || activity)) {
 										e.preventDefault()
 										handleSubmit()
 									}
@@ -505,7 +520,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 							size="lg"
 							_hover={{ bg: "#166FE5" }}
 							_active={{ transform: "scale(0.98)" }}
-							isDisabled={!content.trim()}
+							isDisabled={!content.trim() && images.length === 0 && !feeling && !activity}
 							w="full"
 						>
 							Post

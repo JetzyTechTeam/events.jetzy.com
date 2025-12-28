@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react"
-import { Box, Flex, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, useToast, Spinner, Card, CardBody, Stat, StatLabel, StatNumber, StatHelpText, Avatar, VStack, HStack, Tooltip, Collapse, IconButton } from "@chakra-ui/react"
-import { FiCopy, FiTrendingUp, FiUsers, FiDollarSign, FiLink, FiChevronDown, FiChevronUp, FiUser } from "react-icons/fi"
+import { Box, Flex, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, useToast, Spinner, Card, CardBody, Stat, StatLabel, StatNumber, StatHelpText, Avatar, VStack, HStack, Tooltip, Collapse, IconButton, Select } from "@chakra-ui/react"
+import { FiCopy, FiTrendingUp, FiUsers, FiDollarSign, FiLink, FiChevronDown, FiChevronUp, FiUser, FiChevronLeft, FiChevronRight } from "react-icons/fi"
 import { http_client as api } from "@/configs/api"
 import { DateTime } from "luxon"
 
@@ -14,13 +14,15 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 	const [isLoading, setIsLoading] = useState(true)
 	const [campaignName, setCampaignName] = useState("")
 	const [generatedLink, setGeneratedLink] = useState("")
+	const [currentPage, setCurrentPage] = useState(1)
+	const [itemsPerPage, setItemsPerPage] = useState(10)
 	const toast = useToast()
 
-	const fetchStats = async () => {
+	const fetchStats = React.useCallback(async (page: number, limit: number) => {
 		setIsLoading(true)
 		try {
-			console.log('[MarketingTab] Fetching stats for eventId:', eventId)
-			const statsRes = await fetch(`/api/console/seller/stats?eventId=${eventId}`, {
+			console.log('[MarketingTab] Fetching stats for eventId:', eventId, 'page:', page, 'limit:', limit)
+			const statsRes = await fetch(`/api/console/seller/stats?eventId=${eventId}&page=${page}&limit=${limit}`, {
 				method: 'GET',
 				credentials: 'include',
 				headers: {
@@ -35,7 +37,15 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 					totalViews: 0,
 					totalSales: 0,
 					totalRevenue: 0,
-					breakdown: []
+					breakdown: [],
+					pagination: {
+						currentPage: 1,
+						itemsPerPage: limit,
+						totalItems: 0,
+						totalPages: 0,
+						hasNextPage: false,
+						hasPreviousPage: false
+					}
 				})
 				return
 			}
@@ -49,7 +59,15 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 					totalViews: 0,
 					totalSales: 0,
 					totalRevenue: 0,
-					breakdown: []
+					breakdown: [],
+					pagination: {
+						currentPage: 1,
+						itemsPerPage: limit,
+						totalItems: 0,
+						totalPages: 0,
+						hasNextPage: false,
+						hasPreviousPage: false
+					}
 				})
 			} else {
 				// API returned unsuccessful response - set defaults
@@ -57,7 +75,15 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 					totalViews: 0,
 					totalSales: 0,
 					totalRevenue: 0,
-					breakdown: []
+					breakdown: [],
+					pagination: {
+						currentPage: 1,
+						itemsPerPage: limit,
+						totalItems: 0,
+						totalPages: 0,
+						hasNextPage: false,
+						hasPreviousPage: false
+					}
 				})
 			}
 		} catch (error: any) {
@@ -67,18 +93,26 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 				totalViews: 0,
 				totalSales: 0,
 				totalRevenue: 0,
-				breakdown: []
+				breakdown: [],
+				pagination: {
+					currentPage: 1,
+					itemsPerPage: itemsPerPage,
+					totalItems: 0,
+					totalPages: 0,
+					hasNextPage: false,
+					hasPreviousPage: false
+				}
 			})
 		} finally {
 			setIsLoading(false)
 		}
-	}
+	}, [eventId])
 
 	useEffect(() => {
 		if (eventId) {
-			fetchStats()
+			fetchStats(currentPage, itemsPerPage)
 		}
-	}, [eventId])
+	}, [eventId, currentPage, itemsPerPage, fetchStats])
 
 	const generateLink = () => {
 		if (!campaignName.trim()) {
@@ -86,10 +120,17 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 			return
 		}
 		
-		const baseUrl = window.location.origin
+		// Use NEXT_PUBLIC_URL from environment, fallback to window.location.origin for client-side
+		const baseUrl = process.env.NEXT_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+		if (!baseUrl) {
+			toast({ title: "Unable to generate link", description: "Base URL not configured", status: "error" })
+			return
+		}
+		
 		const code = campaignName.trim().replace(/\s+/g, "-").toLowerCase()
 		// Route is /[slug], not /events/[slug]
-		const link = `${baseUrl}/${eventSlug}?ref=${code}`
+		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
+		const link = `${cleanBaseUrl}/${eventSlug}?ref=${code}`
 		setGeneratedLink(link)
 	}
 
@@ -97,6 +138,24 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 		navigator.clipboard.writeText(generatedLink)
 		toast({ title: "Link copied!", status: "success" })
 	}
+
+	// Get pagination info from API response
+	const breakdown = stats?.breakdown || []
+	const pagination = stats?.pagination || {
+		currentPage: 1,
+		itemsPerPage: itemsPerPage,
+		totalItems: 0,
+		totalPages: 0,
+		hasNextPage: false,
+		hasPreviousPage: false
+	}
+	const totalPages = pagination.totalPages || 0
+	const startIndex = pagination.currentPage ? ((pagination.currentPage - 1) * pagination.itemsPerPage) : 0
+
+	// Reset to page 1 when items per page changes
+	useEffect(() => {
+		setCurrentPage(1)
+	}, [itemsPerPage])
 
 	if (isLoading && !stats) {
 		return <Flex justify="center" py={10}><Spinner /></Flex>
@@ -111,9 +170,10 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 				<Text fontSize="lg" fontWeight="bold" mb={4}>Create Tracking Link</Text>
 				<Flex gap={4} direction={{ base: "column", md: "row" }} align="flex-end">
 					<Box flex="1">
-						<Text fontSize="sm" mb={2} fontWeight="500">Campaign Name (e.g. twitter-promo, newsletter)</Text>
+						<Text fontSize="sm" mb={2} fontWeight="500">Campaign Name</Text>
+						<Text fontSize="xs" mb={2} color="gray.500">Create a unique identifier for your marketing campaign (e.g., social-media-promo, email-newsletter, partner-outreach)</Text>
 						<Input 
-							placeholder="Enter campaign name..." 
+							placeholder="Enter campaign identifier..." 
 							value={campaignName}
 							onChange={(e) => setCampaignName(e.target.value)}
 						/>
@@ -167,7 +227,25 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 			{/* Detailed Breakdown */}
 			<Box bg="white" borderRadius="lg" border="1px solid" borderColor="gray.200" overflow="hidden">
 				<Box p={4} borderBottom="1px solid" borderColor="gray.200">
-					<Text fontWeight="bold">Performance by Source</Text>
+					<Flex justify="space-between" align="center">
+						<Text fontWeight="bold">Performance by Source</Text>
+						{(stats?.pagination?.totalItems > 0 || breakdown.length > 0) && (
+							<Flex align="center" gap={2}>
+								<Text fontSize="sm" color="gray.600">Items per page:</Text>
+								<Select
+									size="sm"
+									value={itemsPerPage}
+									onChange={(e) => setItemsPerPage(Number(e.target.value))}
+									width="80px"
+								>
+									<option value={5}>5</option>
+									<option value={10}>10</option>
+									<option value={20}>20</option>
+									<option value={50}>50</option>
+								</Select>
+							</Flex>
+						)}
+					</Flex>
 				</Box>
 				<Box overflowX="auto">
 					<Table variant="simple">
@@ -178,25 +256,21 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 								<Th isNumeric>Unique Visitors</Th>
 								<Th>Logged-in Users</Th>
 								<Th isNumeric>Sales</Th>
+								<Th isNumeric>Tickets Sold</Th>
 								<Th isNumeric>Revenue</Th>
-								<Th isNumeric>Conversion</Th>
 							</Tr>
 						</Thead>
 						<Tbody>
-							{stats?.breakdown?.length > 0 ? (
-								stats.breakdown.map((row: any, i: number) => (
+							{breakdown.length > 0 ? (
+								breakdown.map((row: any, i: number) => (
 									<Tr key={i}>
 										<Td fontWeight="bold" color="blue.600">{row.referralCode}</Td>
 										<Td isNumeric>{row.views}</Td>
 										<Td isNumeric>{row.uniqueVisitors}</Td>
 										<LoggedInUsersCell row={row} />
 										<Td isNumeric>{row.sales}</Td>
+										<Td isNumeric>{row.ticketsSold || 0}</Td>
 										<Td isNumeric>${row.revenue.toFixed(2)}</Td>
-										<Td isNumeric>
-											{row.views > 0 
-												? ((row.sales / row.views) * 100).toFixed(1) + "%" 
-												: "0%"}
-										</Td>
 									</Tr>
 								))
 							) : (
@@ -209,6 +283,70 @@ export default function MarketingTab({ eventId, eventSlug }: MarketingTabProps) 
 						</Tbody>
 					</Table>
 				</Box>
+				
+				{/* Pagination Controls */}
+				{pagination.totalItems > 0 && totalPages > 1 && (
+					<Box p={4} borderTop="1px solid" borderColor="gray.200">
+						<Flex justify="space-between" align="center" flexWrap="wrap" gap={4}>
+							<Text fontSize="sm" color="gray.600">
+								Showing {startIndex + 1} to {Math.min(startIndex + pagination.itemsPerPage, pagination.totalItems)} of {pagination.totalItems} sources
+							</Text>
+							<Flex gap={2} align="center">
+								<Button
+									size="sm"
+									onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+									disabled={!pagination.hasPreviousPage}
+									leftIcon={<FiChevronLeft />}
+									variant="outline"
+								>
+									Previous
+								</Button>
+								<Flex gap={1}>
+									{Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+										// Show first page, last page, current page, and pages around current
+										if (
+											page === 1 ||
+											page === totalPages ||
+											(page >= pagination.currentPage - 1 && page <= pagination.currentPage + 1)
+										) {
+											return (
+												<Button
+													key={page}
+													size="sm"
+													onClick={() => setCurrentPage(page)}
+													colorScheme={pagination.currentPage === page ? "blue" : "gray"}
+													variant={pagination.currentPage === page ? "solid" : "outline"}
+													minW="40px"
+												>
+													{page}
+												</Button>
+											)
+										} else if (
+											page === pagination.currentPage - 2 ||
+											page === pagination.currentPage + 2
+										) {
+											return (
+												<Text key={page} px={2} color="gray.500">
+													...
+												</Text>
+											)
+										}
+										return null
+									})}
+								</Flex>
+								<Button
+									size="sm"
+									onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+									disabled={!pagination.hasNextPage}
+									rightIcon={<FiChevronRight />}
+									variant="outline"
+								>
+									Next
+								</Button>
+							</Flex>
+						</Flex>
+					</Box>
+				)}
 			</Box>
 		</Box>
 	)

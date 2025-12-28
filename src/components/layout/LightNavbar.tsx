@@ -15,7 +15,7 @@ import { useDisclosure } from "@chakra-ui/react"
 const navItems = [
 	{ name: "Events", href: "/", requiresAuth: false },
 	{ name: "Dashboard", href: "/console", requiresAuth: true, adminOnly: true },
-	{ name: "Seller Board", href: "/console/seller", requiresAuth: true },
+	{ name: "Seller Board", href: "/console/seller", requiresAuth: true, nonAdminOnly: true },
 	{ name: "My Events", href: "/console/events", requiresAuth: true, adminOnly: true },
 	{ name: "Bookings", href: "/console/bookings", requiresAuth: true, adminOnly: true },
 	{ name: "Create Event", href: "#", requiresAuth: true, isModal: true },
@@ -64,6 +64,9 @@ const LightNavbar: React.FC = () => {
 
 		// If item is admin only, check if user is admin
 		if (item.adminOnly && !isAdmin) return false
+
+		// If item is non-admin only, hide it for admins
+		if (item.nonAdminOnly && isAdmin) return false
 
 		return true
 	})

@@ -47,7 +47,7 @@ import axios from "axios"
 
 const createEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
-	location: z.string().min(1, "Location is required"),
+	location: z.string().optional(),
 	desc: z.string().min(1, "Description is required"),
 	startDate: z.string().min(1, "Start date is required"),
 	startTime: z.string().min(1, "Start time is required"),
@@ -298,7 +298,16 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			}
 		} catch (error: any) {
 			console.error("Error uploading file", error)
-			Error("Error", "Failed to upload file")
+			
+			// Check for specific EdgeStore errors
+			let errorMessage = "Failed to upload file"
+			if (error?.message?.includes("ACCOUNT_PAUSED") || error?.code === "ACCOUNT_PAUSED") {
+				errorMessage = "File upload service is currently paused. Please contact support or check your EdgeStore account status."
+			} else if (error?.message) {
+				errorMessage = error.message
+			}
+			
+			Error("Upload Error", errorMessage)
 		} finally {
 			setIsUploading(false)
 			setUploadProgress(0)
@@ -338,10 +347,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			return
 		}
 
-		if (uploadedImages.length === 0) {
-			Error("Validation Error", "Please add at least one image")
-			return
-		}
+		// Images are now optional, so we don't validate them
 
 		let finalTickets = tickets
 		if (finalTickets.length === 0) {

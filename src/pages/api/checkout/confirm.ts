@@ -171,6 +171,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				console.log("[checkout/confirm] Event ID:", metadata.eventId)
 				
 				// Determine base URL for QR code
+				// TODO: Change back to environment variable after testing
 				const baseUrl = process.env.NEXT_PUBLIC_URL
 				if (!baseUrl) {
 					console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping QR code generation")
@@ -335,37 +336,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					}
 					
 					// Send invitation emails to guests
-					if (!process.env.NEXT_PUBLIC_URL) {
+					const publicUrl = process.env.NEXT_PUBLIC_URL
+					if (!publicUrl) {
 						console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping guest invitation emails")
 					} else {
-						const hostName = `${metadata.firstName} ${metadata.lastName}`
-						const emailPromises = guestEmails.map(async (guestEmail: string) => {
-							try {
-								await sendEventInvitation({
-									email: guestEmail,
-									eventName: event.name,
-									eventSlug: event.slug,
-									eventDate,
-									eventLocation: event.location,
-									hostName,
-								})
-								console.log(`[checkout/confirm] Invitation email sent to: ${guestEmail}`)
-								return { email: guestEmail, success: true }
-							} catch (error: any) {
-								console.error(`[checkout/confirm] Failed to send invitation to ${guestEmail}:`, error.message)
-								return { email: guestEmail, success: false }
-							}
-						})
-						
-						const emailResults = await Promise.allSettled(emailPromises)
-						const successCount = emailResults.filter(
-							(r) => r.status === 'fulfilled' && r.value.success
-						).length
-						console.log(`[checkout/confirm] Sent ${successCount}/${guestEmails.length} invitation emails`)
+						try {
+							const hostName = `${metadata.firstName} ${metadata.lastName}`
+							const emailPromises = guestEmails.map(async (guestEmail: string) => {
+								try {
+									await sendEventInvitation({
+										email: guestEmail,
+										eventName: event.name,
+										eventSlug: event.slug,
+										eventDate,
+										eventLocation: event.location,
+										hostName,
+									})
+									console.log(`[checkout/confirm] Invitation email sent to: ${guestEmail}`)
+									return { email: guestEmail, success: true }
+								} catch (error: any) {
+									console.error(`[checkout/confirm] Failed to send invitation to ${guestEmail}:`, error.message)
+									return { email: guestEmail, success: false }
+								}
+							})
+							
+							const emailResults = await Promise.allSettled(emailPromises)
+							const successCount = emailResults.filter(
+								(r) => r.status === 'fulfilled' && r.value.success
+							).length
+							console.log(`[checkout/confirm] Sent ${successCount}/${guestEmails.length} invitation emails`)
+						} catch (guestError) {
+							console.error("[checkout/confirm] Error processing guest emails:", guestError)
+							// Don't fail the booking if guest processing fails
+						}
 					}
-				} catch (guestError) {
-					console.error("[checkout/confirm] Error processing guest emails:", guestError)
-					// Don't fail the booking if guest processing fails
+				} catch (guestEmailError: any) {
+					console.error("[checkout/confirm] Error processing guest emails:", guestEmailError)
+					// Don't fail the booking if guest email processing fails
 				}
 			}
 

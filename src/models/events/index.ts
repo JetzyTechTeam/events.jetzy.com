@@ -59,7 +59,8 @@ const eventsSchema = new Schema<IEvent>(
 		}, 
 		location: {
 			type: String,
-			required: true,
+			required: false,
+			default: "",
 		},
 		coordinates: {
 			long: {
@@ -88,7 +89,8 @@ const eventsSchema = new Schema<IEvent>(
 
 		images: {
 			type: [String],
-			required: true,
+			required: false,
+			default: [],
 		},
 
 		capacity: {

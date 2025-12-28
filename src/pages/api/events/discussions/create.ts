@@ -34,14 +34,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		console.log("[discussions/create] Request data:", { 
 			eventId, 
 			title, 
+			content: content?.trim() || "(empty)",
 			userId: (session.user as any)?._id,
 			images: images,
 			imagesCount: images?.length || 0,
 			tags: tags
 		})
 
-		if (!eventId || !title?.trim() || !content?.trim()) {
-			return sendResponse(res, null, "Event ID, title, and content are required", false, ResCode.BAD_REQUEST)
+		// Validate: eventId and title are required
+		// Content is optional if images are provided
+		if (!eventId || !title?.trim()) {
+			return sendResponse(res, null, "Event ID and title are required", false, ResCode.BAD_REQUEST)
+		}
+
+		// Require either content or images
+		const hasContent = content?.trim() && content.trim().length > 0
+		const hasImages = images && Array.isArray(images) && images.length > 0
+		
+		if (!hasContent && !hasImages) {
+			return sendResponse(res, null, "Post must have either content or images", false, ResCode.BAD_REQUEST)
 		}
 
 		// Verify event exists
@@ -69,11 +80,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// })
 
 		// Create discussion post
+		// Content can be empty if images are provided
 		const discussionPost = await DiscussionPosts.create({
 			eventId,
 			userId,
 			title: title.trim(),
-			content: content.trim(),
+			content: content?.trim() || "",
 			images: images || [],
 			tags: tags || [],
 			isPinned: false,

@@ -58,15 +58,15 @@ export default function Manage({ event }: any) {
 	const { data: session } = useSession()
 
 	// Determine if user is admin
-	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
+	const isAdmin = (session?.user as any)?.role === "admin" || (session?.user as any)?.role === "super admin"
 	
 	// Define tabs based on user role
 	const allTabs = [
 		{ label: "About", value: "about" },
 		{ label: "Marketing", value: "marketing" },
 		{ label: "Discussion", value: "discussion" },
-		{ label: "Bookings", value: "bookings" },
 		...(isAdmin ? [
+			{ label: "Bookings", value: "bookings" },
 			{ label: "Guests", value: "guests" },
 			{ label: "Waiting List", value: "waitingList" },
 			{ label: "Referral Codes", value: "referralCodes" }
@@ -432,7 +432,7 @@ export default function Manage({ event }: any) {
 								</Box>
 							)}
 
-							{activeTab === "bookings" && (
+							{activeTab === "bookings" && isAdmin && (
 								<Box mb={4}>
 									<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4}>
 										<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>Event Bookings</Text>
