@@ -356,19 +356,48 @@ export default function UpdateEventPage({ event }: Props) {
 										onClick={() => document.getElementById("image-upload-input")?.click()}
 									>
 										{uploadedImages.length > 0 ? (
-											<Image
-												src={uploadedImages[mainImageIndex]?.file || uploadedImages[0]?.file}
-												alt="Event"
-												w="100%"
-												h="100%"
-												objectFit="cover"
-											/>
+											<>
+												<Image
+													src={uploadedImages[mainImageIndex]?.file || uploadedImages[0]?.file}
+													alt="Event"
+													w="100%"
+													h="100%"
+													objectFit="cover"
+												/>
+												{isUploading && (
+													<Flex
+														position="absolute"
+														top="0"
+														left="0"
+														w="100%"
+														h="100%"
+														bg="rgba(0,0,0,0.5)"
+														alignItems="center"
+														justifyContent="center"
+														flexDirection="column"
+														gap={2}
+														zIndex={2}
+													>
+														<Spinner size="xl" color="white" thickness="4px" />
+														<Text color="white" fontWeight="600">{Math.round(uploadProgress)}%</Text>
+													</Flex>
+												)}
+											</>
 										) : (
 											<Flex h="100%" alignItems="center" justifyContent="center" flexDirection="column" gap={2}>
-												<Text fontSize="40px">📸</Text>
-												<Text fontSize="sm" color="#6B7280">
-													Add photo
-												</Text>
+												{isUploading ? (
+													<>
+														<Spinner size="xl" color="#8B5CF6" thickness="4px" />
+														<Text color="#6B7280" fontWeight="600" mt={2}>{Math.round(uploadProgress)}%</Text>
+													</>
+												) : (
+													<>
+														<Text fontSize="40px">📸</Text>
+														<Text fontSize="sm" color="#6B7280">
+															Add photo
+														</Text>
+													</>
+												)}
 											</Flex>
 										)}
 										<Button

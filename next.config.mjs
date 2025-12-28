@@ -30,6 +30,12 @@ const nextConfig = {
 				port: "",
 				pathname: "/**",
 			},
+			{
+				protocol: "https",
+				hostname: "jetzy-media-prod.s3.us-east-1.amazonaws.com",
+				port: "",
+				pathname: "/**",
+			},
 		],
 	},
 }
