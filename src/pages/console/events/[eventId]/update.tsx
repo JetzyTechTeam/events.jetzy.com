@@ -92,6 +92,7 @@ export default function UpdateEventPage({ event }: Props) {
 		title: "",
 		description: "",
 		price: 0,
+		disabled: false,
 	})
 	const [tickets, setTickets] = React.useState<TicketData[]>([])
 	const [hostImageUploading, setHostImageUploading] = React.useState(false)
@@ -117,6 +118,7 @@ export default function UpdateEventPage({ event }: Props) {
 				title: ticket.name,
 				price: Number(ticket.price),
 				description: ticket.desc,
+				disabled: ticket.disabled || false,
 			}))
 			setTickets(newTickets)
 			// Set initial tickets in Formik state
@@ -320,8 +322,12 @@ export default function UpdateEventPage({ event }: Props) {
 			Error("Validation Error", "Price cannot be negative")
 			return
 		}
-		setTickets([...tickets, { ...tempTicket, id: uniqueId(10) }])
-		setTempTicket({ id: "", title: "", description: "", price: 0 })
+		setTickets([...tickets, { ...tempTicket, id: uniqueId(10), disabled: false }])
+		setTempTicket({ id: "", title: "", description: "", price: 0, disabled: false })
+	}
+
+	const handleToggleTicketDisabled = (ticketId: string) => {
+		setTickets(tickets.map((t) => (t.id === ticketId ? { ...t, disabled: !t.disabled } : t)))
 	}
 
 	const handleRemoveTicket = (ticketId: string) => {
@@ -914,29 +920,51 @@ export default function UpdateEventPage({ event }: Props) {
 												{tickets.map((ticket) => (
 													<Flex
 														key={ticket.id}
-														bg="#F9FAFB"
+														bg={ticket.disabled ? "#FEF2F2" : "#F9FAFB"}
 														p={3}
 														borderRadius="md"
 														mb={2}
 														alignItems="center"
 														justifyContent="space-between"
+														border={ticket.disabled ? "1px" : "none"}
+														borderColor={ticket.disabled ? "#FCA5A5" : "transparent"}
 													>
-														<Box>
-															<Text fontSize="14px" fontWeight="600" color="#1F2937">
-																{ticket.title}
-															</Text>
+														<Box flex={1}>
+															<Flex alignItems="center" gap={2} mb={1}>
+																<Text fontSize="14px" fontWeight="600" color={ticket.disabled ? "#DC2626" : "#1F2937"}>
+																	{ticket.title}
+																</Text>
+																{ticket.disabled && (
+																	<Text fontSize="11px" color="#DC2626" fontWeight="600" bg="#FEE2E2" px={2} py={0.5} borderRadius="md">
+																		DISABLED
+																	</Text>
+																)}
+															</Flex>
 															<Text fontSize="13px" color="#6B7280">
 																${ticket.price.toFixed(2)} - {ticket.description}
 															</Text>
 														</Box>
-														<IconButton
-															aria-label="Remove"
-															icon={<FiX />}
-															size="sm"
-															variant="ghost"
-															colorScheme="red"
-															onClick={() => handleRemoveTicket(String(ticket.id))}
-														/>
+														<Flex alignItems="center" gap={2}>
+															<Box>
+																<Text fontSize="11px" color="#6B7280" mb={1} textAlign="center">
+																	{ticket.disabled ? "Disabled" : "Enabled"}
+																</Text>
+																<Switch
+																	colorScheme="purple"
+																	isChecked={!ticket.disabled}
+																	onChange={() => handleToggleTicketDisabled(String(ticket.id))}
+																	size="sm"
+																/>
+															</Box>
+															<IconButton
+																aria-label="Remove"
+																icon={<FiX />}
+																size="sm"
+																variant="ghost"
+																colorScheme="red"
+																onClick={() => handleRemoveTicket(String(ticket.id))}
+															/>
+														</Flex>
 													</Flex>
 												))}
 												<Box mt={3} p={4} border="1px" borderColor="#E5E7EB" borderRadius="md" bg="#FAFAFA">

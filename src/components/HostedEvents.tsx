@@ -356,7 +356,13 @@ export default function HostedEvents({ event }: Props) {
 						<div className="text-center">
 							<p className="text-gray-500 text-sm mb-2 font-semibold">Tickets starting from</p>
 							<p className="text-4xl font-extrabold text-[#1C1E21] mb-6">
-								{clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map(t => t.price))}` : 'Free'}
+								{(() => {
+									const enabledTickets = clonedEvent.tickets?.filter((t: any) => !t.disabled) || []
+									if (enabledTickets.length > 0) {
+										return `$${Math.min(...enabledTickets.map((t: any) => t.price))}`
+									}
+									return clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map((t: any) => t.price))}` : 'Free'
+								})()}
 							</p>
 							<button
 								onClick={() => setIsTicketModalOpen(true)}
@@ -381,6 +387,52 @@ export default function HostedEvents({ event }: Props) {
 								<p className="text-xs text-gray-500 mt-3 font-medium">
 									⚡ Limited availability - Secure your spot!
 								</p>
+							)}
+							
+							{/* All Tickets List */}
+							{clonedEvent.tickets && clonedEvent.tickets.length > 0 && (
+								<div className="mt-6 pt-6 border-t border-gray-200">
+									<p className="text-sm font-semibold text-gray-700 mb-3 text-left">Available Tickets</p>
+									<div className="space-y-2 max-h-[300px] overflow-y-auto">
+										{clonedEvent.tickets.map((ticket: any, index: number) => {
+											const isDisabled = ticket.disabled || false
+											return (
+												<div
+													key={ticket._id?.toString() || index}
+													className={`p-3 rounded-lg border-2 transition-all ${
+														isDisabled
+															? "bg-gray-100 border-gray-300 opacity-60 cursor-not-allowed"
+															: "bg-gray-50 border-gray-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer"
+													}`}
+													onClick={() => !isDisabled && !hasEventEnded && setIsTicketModalOpen(true)}
+												>
+													<div className="flex items-center justify-between">
+														<div className="flex-1">
+															<div className="flex items-center gap-2">
+																<p className={`font-semibold text-sm ${isDisabled ? "text-gray-500 line-through" : "text-gray-900"}`}>
+																	{ticket.name}
+																</p>
+																{isDisabled && (
+																	<span className="px-2 py-0.5 bg-gray-400 text-white text-xs font-semibold rounded-full">
+																		No longer available
+																	</span>
+																)}
+															</div>
+															{ticket.desc && (
+																<p className={`text-xs mt-1 ${isDisabled ? "text-gray-400" : "text-gray-600"}`}>
+																	{ticket.desc}
+																</p>
+															)}
+														</div>
+														<p className={`font-bold text-lg ml-3 ${isDisabled ? "text-gray-400 line-through" : "text-blue-600"}`}>
+															${ticket.price}
+														</p>
+													</div>
+												</div>
+											)
+										})}
+									</div>
+								</div>
 							)}
 						</div>
 					</div>

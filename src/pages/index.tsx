@@ -99,6 +99,13 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		// query.name = "Chinese Mid-Autumn Rooftop Celebration";
 	}
 
+	// Ensure database connection is ready
+	const { dbconn } = await import("@/configs/database")
+	if (dbconn.readyState !== 1) {
+		console.log("[index] Database not connected, attempting to connect...")
+		await dbconn.asPromise()
+	}
+
 	// Get events based on authentication status using aggregation for custom sorting
 	const now = new Date()
 	const events = await Events.aggregate([

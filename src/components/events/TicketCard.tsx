@@ -6,6 +6,7 @@ export type TicketData = {
   title: string
   price: number
   description: string
+  disabled?: boolean
 }
 
 export interface TicketCardProps {

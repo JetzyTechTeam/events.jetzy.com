@@ -22,6 +22,11 @@ const eventTciketsSchema = new Schema<IEventTicket>(
 			type: String,
 			required: true,
 		},
+		disabled: {
+			type: Boolean,
+			required: false,
+			default: false,
+		},
 	},
 	{ timestamps: true },
 )

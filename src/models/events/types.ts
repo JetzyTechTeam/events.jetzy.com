@@ -6,6 +6,7 @@ export interface IEventTicket {
 	price: number
 	desc: string
 	stripeProductId: string
+	disabled?: boolean
 	_id: Types.ObjectId
 	updatedAt: string
 	createdAt: string

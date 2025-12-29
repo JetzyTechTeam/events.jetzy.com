@@ -22,25 +22,33 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 
 	const session = useSession()
 
-	// format the event tickets
-	const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : []).map((ticket) => {
-		return {
-			id: ticket._id.toString(),
-			name: ticket.name,
-			price: ticket.price,
-			description: ticket.desc,
-			quantity: 1,
-			isSelected: event.isPaid ? true : false,
-			priceId: ticket.stripeProductId,
-			eventId: event._id.toString(),
-		}
-	})
+	// format the event tickets - include all tickets (enabled and disabled)
+	const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
+		.map((ticket) => {
+			return {
+				id: ticket._id.toString(),
+				name: ticket.name,
+				price: ticket.price,
+				description: ticket.desc,
+				quantity: 1,
+				isSelected: event.isPaid ? true : false,
+				priceId: ticket.stripeProductId,
+				eventId: event._id.toString(),
+				disabled: ticket.disabled || false,
+			}
+		})
+	
+	// Get disabled tickets for warning message
+	const disabledTickets = event.tickets && Array.isArray(event.tickets) 
+		? event.tickets.filter((ticket) => ticket.disabled).map((t) => t.name)
+		: []
+	const hasDisabledTickets = disabledTickets.length > 0
 
-	// State for ticket quantities
-	const [tickets, setTickets] = useState(ticketsItems)
+	// State for ticket quantities - only include enabled tickets for selection
+	const [tickets, setTickets] = useState(ticketsItems.filter((t) => !t.disabled))
 
-	// Clone a static verion of the tickets so when increasing the qty the amount is not recalculated from the original price
-	const staticTickets = ticketsItems.copyWithin(0, 0)
+	// Clone a static version of the enabled tickets so when increasing the qty the amount is not recalculated from the original price
+	const staticTickets = ticketsItems.filter((t) => !t.disabled).copyWithin(0, 0)
 
 	// State for loader
 	const [isLoading, setLoader] = useState(false)
@@ -92,15 +100,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 	// Handle increment/decrement for tickets
 	const handleQuantityChange = (id: string, delta: number) => {
 		setTickets((prevTickets) =>
-			prevTickets.map((ticket, index) => {
+			prevTickets.map((ticket) => {
 				const newQty = Math.max(1, ticket.quantity + delta)
-				const ticketItem = ticketsItems[index]
+				// Find the original ticket price from ticketsItems
+				const originalTicket = ticketsItems.find((t) => t.id === id && !t.disabled)
+				const basePrice = originalTicket?.price || ticket.price
 
 				return ticket.id === id
 					? {
 							...ticket,
 							quantity: newQty,
-							price: newQty === 0 ? ticketItem.price : newQty * ticketItem.price,
+							price: newQty * basePrice,
 					  }
 					: ticket
 			}),
@@ -127,16 +137,20 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 		}
 
 		const ticketsSelected = tickets
-			.map((ticket, index) => ({
-				id: ticket.id,
-				name: ticket.name,
-				price: ticketsItems[index].price,
-				description: ticket.description,
-				quantity: ticket.quantity,
-				isSelected: ticket.isSelected,
-				priceId: ticket.priceId,
-				eventId: ticket.eventId,
-			}))
+			.map((ticket) => {
+				// Find the original ticket from ticketsItems to get the base price
+				const originalTicket = ticketsItems.find((t) => t.id === ticket.id && !t.disabled)
+				return {
+					id: ticket.id,
+					name: ticket.name,
+					price: originalTicket?.price || ticket.price,
+					description: ticket.description,
+					quantity: ticket.quantity,
+					isSelected: ticket.isSelected,
+					priceId: ticket.priceId,
+					eventId: ticket.eventId,
+				}
+			})
 			.filter((ticket) => ticket.isSelected)
 
 		// Validate guest emails if provided
@@ -184,77 +198,127 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 
 						{/* Modal Body - Scrollable */}
 						<div className="overflow-y-auto max-h-[calc(90vh-200px)] p-6">
-							{/* Ticket Section */}
-							<div className="space-y-4">
-								{tickets.map((ticket, index) => (
-									<div
-										key={ticket.id}
-										className={`relative bg-background-gray p-5 rounded-xl cursor-pointer border-2 transition-all duration-200 hover:shadow-md ${
-											ticket.isSelected ? "border-primary-purple bg-primary-purple/5" : "border-border-light hover:border-primary-purple/30"
-										}`}
-										onClick={() => {
-											handleTicketSelection(ticket.id)
-											sendGAEvent({
-												category: "Event",
-												action: "Ticket Selected",
-												label: ticket.name,
-												eventName: event.name,
-											})
-										}}
-									>
-										{ticket.isSelected && (
-											<span className="absolute top-3 right-3 w-6 h-6 bg-primary-purple rounded-full flex items-center justify-center">
-												<CheckmarkSVG />
-											</span>
-										)}
-										<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full gap-4">
-											<div className="flex-1">
-												<h3 className="font-semibold text-lg text-text-primary">{ticket.name}</h3>
-												<p className="text-xs text-text-muted mt-1">Select your tickets and proceed to checkout</p>
-												{ticket.description && (
-													<div className="text-sm text-text-secondary mt-2">
-														<Linkify
-															options={{
-																target: "_blank",
-																className: "text-primary-purple underline hover:text-primary-dark font-medium",
-															}}
-														>
-															{ticket.description}
-														</Linkify>
-													</div>
-												)}
-											</div>
-
-											<div className="flex items-center gap-4 sm:flex-row flex-col-reverse w-full sm:w-auto">
-												<p className="text-primary-purple font-bold text-2xl">
-													{staticTickets[index].price.toLocaleString("en-US", {
-														style: "currency",
-														currency: "usd",
-													})}
-												</p>
-												{event.isPaid && ticket.isSelected && (
-													<div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-														<button
-															onClick={() => handleQuantityChange(ticket.id, -1)}
-															className="w-9 h-9 bg-white border-2 border-primary-purple text-primary-purple rounded-full flex items-center justify-center hover:bg-primary-purple hover:text-white transition-colors font-semibold text-lg"
-															aria-label="Decrease quantity"
-														>
-															−
-														</button>
-														<span className="text-text-primary text-lg font-semibold min-w-[2rem] text-center">{ticket.quantity}</span>
-														<button
-															onClick={() => handleQuantityChange(ticket.id, 1)}
-															className="w-9 h-9 bg-primary-purple text-white rounded-full flex items-center justify-center hover:bg-primary-dark transition-colors font-semibold text-lg"
-															aria-label="Increase quantity"
-														>
-															+
-														</button>
-													</div>
-												)}
-											</div>
+							{/* Warning for disabled tickets */}
+							{hasDisabledTickets && (
+								<div className="mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg">
+									<div className="flex items-start">
+										<div className="flex-shrink-0">
+											<svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+												<path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+											</svg>
+										</div>
+										<div className="ml-3 flex-1">
+											<p className="text-sm text-yellow-700">
+												<strong className="font-medium">Notice:</strong> The following ticket{disabledTickets.length > 1 ? 's' : ''} {disabledTickets.length > 1 ? 'are' : 'is'} no longer available for purchase:
+											</p>
+											<ul className="mt-2 list-disc list-inside text-sm text-yellow-700">
+												{disabledTickets.map((ticketName, idx) => (
+													<li key={idx} className="font-medium">{ticketName}</li>
+												))}
+											</ul>
 										</div>
 									</div>
-								))}
+								</div>
+							)}
+							
+							{/* Ticket Section */}
+							<div className="space-y-4">
+								{ticketsItems.map((ticket, index) => {
+									const isDisabled = ticket.disabled || false
+									const ticketIndex = tickets.findIndex((t) => t.id === ticket.id)
+									const isSelected = ticketIndex >= 0 && tickets[ticketIndex]?.isSelected
+									
+									return (
+										<div
+											key={ticket.id}
+											className={`relative p-5 rounded-xl border-2 transition-all duration-200 ${
+												isDisabled
+													? "bg-gray-100 border-gray-300 opacity-60 cursor-not-allowed"
+													: isSelected
+													? "bg-background-gray border-primary-purple bg-primary-purple/5 cursor-pointer hover:shadow-md"
+													: "bg-background-gray border-border-light cursor-pointer hover:shadow-md hover:border-primary-purple/30"
+											}`}
+											onClick={() => {
+												if (!isDisabled) {
+													handleTicketSelection(ticket.id)
+													sendGAEvent({
+														category: "Event",
+														action: "Ticket Selected",
+														label: ticket.name,
+														eventName: event.name,
+													})
+												}
+											}}
+										>
+											{isSelected && !isDisabled && (
+												<span className="absolute top-3 right-3 w-6 h-6 bg-primary-purple rounded-full flex items-center justify-center">
+													<CheckmarkSVG />
+												</span>
+											)}
+											<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full gap-4">
+												<div className="flex-1">
+													<div className="flex items-center gap-2 flex-wrap">
+														<h3 className={`font-semibold text-lg ${isDisabled ? "text-gray-500" : "text-text-primary"}`}>
+															{ticket.name}
+														</h3>
+														{isDisabled && (
+															<span className="px-2 py-1 bg-gray-400 text-white text-xs font-semibold rounded-full">
+																No longer available
+															</span>
+														)}
+													</div>
+													{!isDisabled && (
+														<p className="text-xs text-text-muted mt-1">Select your tickets and proceed to checkout</p>
+													)}
+													{ticket.description && (
+														<div className={`text-sm mt-2 ${isDisabled ? "text-gray-400" : "text-text-secondary"}`}>
+															<Linkify
+																options={{
+																	target: "_blank",
+																	className: isDisabled 
+																		? "text-gray-400" 
+																		: "text-primary-purple underline hover:text-primary-dark font-medium",
+																}}
+															>
+																{ticket.description}
+															</Linkify>
+														</div>
+													)}
+												</div>
+
+												<div className="flex items-center gap-4 sm:flex-row flex-col-reverse w-full sm:w-auto">
+													<p className={`font-bold text-2xl ${isDisabled ? "text-gray-400 line-through" : "text-primary-purple"}`}>
+														{ticket.price.toLocaleString("en-US", {
+															style: "currency",
+															currency: "usd",
+														})}
+													</p>
+													{event.isPaid && isSelected && !isDisabled && (
+														<div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+															<button
+																onClick={() => handleQuantityChange(ticket.id, -1)}
+																className="w-9 h-9 bg-white border-2 border-primary-purple text-primary-purple rounded-full flex items-center justify-center hover:bg-primary-purple hover:text-white transition-colors font-semibold text-lg"
+																aria-label="Decrease quantity"
+															>
+																−
+															</button>
+															<span className="text-text-primary text-lg font-semibold min-w-[2rem] text-center">
+																{tickets[ticketIndex]?.quantity || 1}
+															</span>
+															<button
+																onClick={() => handleQuantityChange(ticket.id, 1)}
+																className="w-9 h-9 bg-primary-purple text-white rounded-full flex items-center justify-center hover:bg-primary-dark transition-colors font-semibold text-lg"
+																aria-label="Increase quantity"
+															>
+																+
+															</button>
+														</div>
+													)}
+												</div>
+											</div>
+										</div>
+									)
+								})}
 							</div>
 
 							{/* Guest Invitation Section */}
