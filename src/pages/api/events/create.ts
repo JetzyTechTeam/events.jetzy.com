@@ -26,7 +26,7 @@ const schema = zod.object({
 	endDate: zod.string().nonempty(),
 	endTime: zod.string().nonempty(),
 	name: zod.string().nonempty(),
-	location: zod.string().nonempty(),
+	location: zod.string().optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
@@ -93,7 +93,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
 
 		// check if the event has images
-		if (images.length === 0) return sendResponse(res, null, "You need to add at least one image to an event.", false, ResCode.BAD_REQUEST)
+		// if (images.length === 0) return sendResponse(res, null, "You need to add at least one image to an event.", false, ResCode.BAD_REQUEST)
 
 		// If event is paid and has tickets, lets format the tickets and create stripe prices for each ticket
 		const formattedTickets: Stripe.PriceCreateParams[] = tickets.map((ticket) => ({
@@ -152,7 +152,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				status: "pending",
 				invitedAt: new Date(),
 			}))
-			
+
 			try {
 				await EventInvitation.insertMany(invitations)
 				console.log(`✅ Created ${invitations.length} event invitations`)
