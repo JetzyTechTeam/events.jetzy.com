@@ -25,7 +25,7 @@ const schema = zod.object({
 	endDate: zod.string().nonempty(),
 	endTime: zod.string().nonempty(),
 	name: zod.string().nonempty(),
-	location: zod.string().nonempty(),
+	location: zod.string().optional(),
 	capacity: zod.number().nonnegative(),
 	requireApproval: zod.boolean(),
 	images: zod.array(

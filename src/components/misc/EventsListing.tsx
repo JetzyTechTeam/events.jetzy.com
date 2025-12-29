@@ -44,10 +44,28 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 		}
 	}, [event.startsOn, event.timezone])
 
+	const eventStatus = useMemo(() => {
+		const now = dayjs()
+		const start = dayjs.utc(event.startsOn)
+		const end = dayjs.utc(event.endsOn)
+
+		if (start.isBefore(now) && end.isAfter(now)) return "Live"
+		if (end.isBefore(now)) return "Ended"
+		return "Upcoming"
+	}, [event.startsOn, event.endsOn])
+
 	return (
 		<div onClick={() => onClick(event)} className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer border border-border-light group flex flex-col h-full">
 			<div className="relative pt-[56.25%] bg-gray-200">
 				<Image src={event.images[0]} alt={event.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
+				{/* Status Badge */}
+				<div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold text-white shadow-sm ${
+					eventStatus === "Live" ? "bg-red-500" :
+					eventStatus === "Upcoming" ? "bg-blue-500" :
+					"bg-gray-500"
+				}`}>
+					{eventStatus}
+				</div>
 			</div>
 
 			<div className="p-4 flex flex-1 flex-col">
