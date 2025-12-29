@@ -37,6 +37,11 @@ import {
 import { CheckCircleIcon, CloseIcon, SearchIcon } from "@chakra-ui/icons"
 import axios from "axios"
 import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 import Tesseract from "tesseract.js"
 import { Html5Qrcode } from "html5-qrcode"
 import { useSession } from "next-auth/react"
@@ -1658,6 +1663,82 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 											</AlertDescription>
 										</VStack>
 									</Alert>
+								)}
+
+								{/* Event Details */}
+								{qrScanResult.event && (
+									<Box p={4} bg="linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)" borderRadius="lg" border="1px solid #C7D2FE">
+										<Text fontSize="sm" fontWeight="semibold" color="#4F46E5" mb={3} textTransform="uppercase" letterSpacing="wide">
+											Event Information
+										</Text>
+										<VStack align="stretch" spacing={3}>
+											<Box>
+												<Text fontSize="xs" color="#6366F1" fontWeight="medium" mb={1}>
+													Event Name
+												</Text>
+												<Text fontSize="md" fontWeight="bold" color="#1F2937">
+													{qrScanResult.event.name}
+												</Text>
+											</Box>
+											{qrScanResult.event.location && (
+												<Box>
+													<Text fontSize="xs" color="#6366F1" fontWeight="medium" mb={1}>
+														📍 Location
+													</Text>
+													<Text fontSize="sm" color="#1F2937">
+														{qrScanResult.event.location}
+													</Text>
+												</Box>
+											)}
+											{(qrScanResult.event.startsOn || qrScanResult.event.endsOn) && (
+												<Box>
+													<Text fontSize="xs" color="#6366F1" fontWeight="medium" mb={1}>
+														📅 Date & Time
+													</Text>
+													<Text fontSize="sm" color="#1F2937">
+														{qrScanResult.event.startsOn && (() => {
+															try {
+																const eventTimezone = qrScanResult.event.timezone?.split(') ')[1] || 'UTC'
+																const startDate = dayjs.utc(qrScanResult.event.startsOn).tz(eventTimezone)
+																const endDate = qrScanResult.event.endsOn ? dayjs.utc(qrScanResult.event.endsOn).tz(eventTimezone) : null
+																return `${startDate.format("MMM DD, YYYY h:mm A")}${endDate ? ` - ${endDate.format("h:mm A")}` : ''} ${eventTimezone}`
+															} catch (e) {
+																// Fallback to simple formatting if timezone parsing fails
+																return dayjs(qrScanResult.event.startsOn).format("MMM DD, YYYY h:mm A")
+															}
+														})()}
+													</Text>
+												</Box>
+											)}
+											{qrScanResult.event.owner && (
+												<>
+													<Divider borderColor="#C7D2FE" />
+													<Box>
+														<Text fontSize="xs" color="#6366F1" fontWeight="medium" mb={2} textTransform="uppercase" letterSpacing="wide">
+															Event Organizer
+														</Text>
+														<VStack align="flex-start" spacing={2}>
+															{qrScanResult.event.owner.name && (
+																<Text fontSize="sm" fontWeight="semibold" color="#1F2937">
+																	👤 {qrScanResult.event.owner.name}
+																</Text>
+															)}
+															{qrScanResult.event.owner.email && (
+																<Text fontSize="sm" color="#1F2937">
+																	📧 {qrScanResult.event.owner.email}
+																</Text>
+															)}
+															{qrScanResult.event.owner.phone && (
+																<Text fontSize="sm" color="#1F2937">
+																	📱 {qrScanResult.event.owner.phone}
+																</Text>
+															)}
+														</VStack>
+													</Box>
+												</>
+											)}
+										</VStack>
+									</Box>
 								)}
 
 								{/* Booking Details */}

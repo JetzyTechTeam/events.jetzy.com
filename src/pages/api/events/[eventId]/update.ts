@@ -56,8 +56,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	const session = await getServerSession(req, res, authOptions)
 
 	try {
-		// make sure user is logged-in before creating events
-		if (!session) return sendResponse(res, null, "You need to be logged in to create an event.", false, ResCode.UNAUTHORIZED)
+		// make sure user is logged-in before updating events
+		if (!session) return sendResponse(res, null, "You need to be logged in to update an event.", false, ResCode.UNAUTHORIZED)
 
 		// get the request body
 		const body = req?.body as { payload: string }
@@ -68,6 +68,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// validate the request body
 		const data = schema.safeParse({ ...params, eventId })
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
+
+		// Get the event first to check ownership
+		const event = await Events.findOne({ _id: new Types.ObjectId(eventId as string), isDeleted: false })
+		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
+
+		// Check permissions: Admin or Owner
+		const user = session.user as any
+		const isAdmin = user.role === "admin" || user.role === "super admin"
+		const isOwner = event.ownerId?.toString() === user._id || event.host?.email === user.email
+
+		if (!isAdmin && !isOwner) {
+			return sendResponse(res, null, "You don't have permission to update this event.", false, ResCode.FORBIDDEN)
+		}
 
 		// Desctructure the request body
 		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy, interestCategory, interestSubCategory, host } = params
@@ -96,12 +109,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const stripeProducts = await Promise.all(formattedTickets.map((ticket) => stripe.prices.create(ticket)))
 		if (!stripeProducts) return sendResponse(res, null, "Failed to create event tickets.", false, ResCode.INTERNAL_SERVER_ERROR)
 
-		// Get the event
-		const event = await Events.findOne({ _id: new Types.ObjectId(eventId as string) })
-		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
-
 		// Find the event by id and update it
-		const newEvent = await Events.updateOne(
+		const updateResult = await Events.updateOne(
 			{
 				_id: new Types.ObjectId(eventId as string),
 			},
@@ -128,13 +137,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					interestSubCategory: interestSubCategory || undefined,
 					host: host && host.name?.trim() ? host : undefined,
 				},
-			},
-			{ new: true },
+			}
 		)
 
-		if (!newEvent) return sendResponse(res, null, "Failed to update event.", false, ResCode.INTERNAL_SERVER_ERROR)
+		if (!updateResult || updateResult.matchedCount === 0) {
+			return sendResponse(res, null, "Failed to update event.", false, ResCode.INTERNAL_SERVER_ERROR)
+		}
 
-		return sendResponse(res, newEvent, "Event updated successfully.", true, ResCode.OK)
+		// Fetch the updated event to return
+		const updatedEvent = await Events.findOne({ _id: new Types.ObjectId(eventId as string) })
+		if (!updatedEvent) {
+			return sendResponse(res, null, "Event updated but could not be retrieved.", false, ResCode.INTERNAL_SERVER_ERROR)
+		}
+
+		return sendResponse(res, updatedEvent, "Event updated successfully.", true, ResCode.OK)
 	} catch (error: any) {
 		console.log("Error:", error.message)
 		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)

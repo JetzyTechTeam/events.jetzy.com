@@ -14,9 +14,10 @@ import { useDisclosure } from "@chakra-ui/react"
 // Navigation items with authentication requirements
 const navItems = [
 	{ name: "Events", href: "/", requiresAuth: false },
-	{ name: "Dashboard", href: "/console", requiresAuth: true },
-	{ name: "My Events", href: "/console/events", requiresAuth: true },
-	{ name: "Bookings", href: "/console/bookings", requiresAuth: true },
+	{ name: "Dashboard", href: "/console", requiresAuth: true, adminOnly: true },
+	{ name: "Seller Board", href: "/console/seller", requiresAuth: true, nonAdminOnly: true },
+	{ name: "My Events", href: "/console/events", requiresAuth: true, adminOnly: true },
+	{ name: "Bookings", href: "/console/bookings", requiresAuth: true, adminOnly: true },
 	{ name: "Create Event", href: "#", requiresAuth: true, isModal: true },
 ]
 
@@ -54,11 +55,20 @@ const LightNavbar: React.FC = () => {
 	const isAdmin = userRole === "admin" || userRole === "super admin"
 
 	// Filter navigation items based on authentication status and role
-	const visibleNavItems = navItems.filter((item) => {
+	const visibleNavItems = navItems.filter((item: any) => {
 		// Always show public items
 		if (!item.requiresAuth) return true
-		// Only show admin pages to logged-in admins/super admins
-		return session && isAdmin
+		
+		// If item requires auth, check if user is logged in
+		if (!session) return false
+
+		// If item is admin only, check if user is admin
+		if (item.adminOnly && !isAdmin) return false
+
+		// If item is non-admin only, hide it for admins
+		if (item.nonAdminOnly && isAdmin) return false
+
+		return true
 	})
 
 	return (
@@ -122,8 +132,8 @@ const LightNavbar: React.FC = () => {
 									</div>
 									<Menu.Item>
 										{({ active }) => (
-											<Link href="/console" className={`block px-4 py-2 text-sm ${active ? "bg-background-gray text-text-primary" : "text-text-secondary"}`}>
-												Dashboard
+											<Link href={isAdmin ? "/console" : "/console/seller"} className={`block px-4 py-2 text-sm ${active ? "bg-background-gray text-text-primary" : "text-text-secondary"}`}>
+												{isAdmin ? "Admin Dashboard" : "Seller Dashboard"}
 											</Link>
 										)}
 									</Menu.Item>

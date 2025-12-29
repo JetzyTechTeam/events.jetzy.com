@@ -44,7 +44,8 @@ const discussionPostSchema = new Schema<IDiscussionPost>(
 		},
 		content: {
 			type: String,
-			required: true,
+			required: false,
+			default: "",
 		},
 		images: {
 			type: [String],

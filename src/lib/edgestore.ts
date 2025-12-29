@@ -15,7 +15,10 @@ const useEdgeStore = () => {
             upload: async ({ file, onProgressChange, options }: { file: File; onProgressChange?: (progress: number) => void; options?: any }) => {
                 const formData = new FormData()
                 formData.append("upload_file", file)
-                formData.append("folder", "posts")
+                // Use folder from options if provided, otherwise default to "posts"
+                // This allows different components to specify folder (e.g., "events", "comments", "replies")
+                const folder = options?.folder || "posts"
+                formData.append("folder", folder)
 
                 try {
                     const response = await axios.post("https://prod-api.jetzy.com/api/v1/uploader/multiple", formData, {

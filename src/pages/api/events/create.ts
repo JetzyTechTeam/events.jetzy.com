@@ -14,6 +14,7 @@ import { formatTextWithLineBreaks } from "@/lib/utils"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import { Types } from "mongoose"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -37,7 +38,7 @@ const schema = zod.object({
 			id: zod.string().nonempty(),
 			file: zod.string().nonempty(),
 		}),
-	),
+	).optional(),
 	tickets: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
@@ -61,6 +62,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		// make sure user is logged-in before creating events
 		if (!session) return sendResponse(res, null, "You need to be logged in to create an event.", false, ResCode.UNAUTHORIZED)
+
+		// Validate that user has a valid ID
+		const userId = (session.user as any)?._id
+		if (!userId) {
+			return sendResponse(res, null, "Invalid user session. Please log in again.", false, ResCode.UNAUTHORIZED)
+		}
 
 		// get the request body
 		const body = req?.body as { payload: string }
@@ -92,8 +99,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
 
-		// check if the event has images
-		// if (images.length === 0) return sendResponse(res, null, "You need to add at least one image to an event.", false, ResCode.BAD_REQUEST)
+		// Images are now optional, so we don't validate them
+		// Ensure images is an array (default to empty array if not provided)
+		if (!images) {
+			images = []
+		}
 
 		// If event is paid and has tickets, lets format the tickets and create stripe prices for each ticket
 		const formattedTickets: Stripe.PriceCreateParams[] = tickets.map((ticket) => ({
@@ -108,11 +118,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const stripeProducts = await Promise.all(formattedTickets.map((ticket) => stripe.prices.create(ticket)))
 		if (!stripeProducts) return sendResponse(res, null, "Failed to create event tickets.", false, ResCode.INTERNAL_SERVER_ERROR)
 
+		// Create ownerId from validated userId
+		const ownerId = new Types.ObjectId(userId)
+
 		// create event
 		const newEvent = await Events.create({
 			slug: generateRandomId(10),
 			name,
-			location,
+			location: location || "",
 			coordinates: {
 				long: longitude,
 				lat: latitude,
@@ -123,7 +136,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			endsOn: end,
 			isPaid,
 			privacy,
-			images: images.map((image) => image.file),
+			images: images && images.length > 0 ? images.map((image) => image.file) : [],
 			capacity,
 			requireApproval,
 			showParticipants,
@@ -131,6 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			interestCategory: interestCategory || undefined,
 			interestSubCategory: interestSubCategory || undefined,
 			host: host && host.name?.trim() ? host : undefined,
+			ownerId: ownerId,
 			tickets: tickets.map((ticket, index) => ({
 				name: ticket.title,
 				desc: ticket.description || "",
@@ -140,6 +154,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		if (!newEvent) return sendResponse(res, null, "Failed to create event.", false, ResCode.INTERNAL_SERVER_ERROR)
+
+		// Debug: Log the created event's ownerId (only if userId exists)
+		if (userId) {
+			console.log('[Event Create API] Event created:', {
+				eventId: newEvent._id?.toString(),
+				eventName: newEvent.name,
+				ownerId: newEvent.ownerId?.toString() || 'null',
+				userId: userId,
+			})
+		}
 
 		// Create event tracker
 		await newEvent.createEventTracker(capacity)

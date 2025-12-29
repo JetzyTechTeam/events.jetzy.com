@@ -47,7 +47,7 @@ import axios from "axios"
 
 const createEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
-	location: z.string().min(1, "Location is required"),
+	location: z.string().optional(),
 	desc: z.string().min(1, "Description is required"),
 	startDate: z.string().min(1, "Start date is required"),
 	startTime: z.string().min(1, "Start time is required"),
@@ -114,18 +114,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 		queryKey: ["interest-categories"],
 		queryFn: async () => {
 			try {
-				const response = await axios.get("/api/interest-categories/list")
+				const response = await axios.get("/api/interest-categories/list", { baseURL: "" })
 				console.log("[CreateEventModal] Full API response:", response)
-				console.log("[CreateEventModal] Response.data:", response.data)
-				console.log("[CreateEventModal] Response.data.data:", response.data?.data)
-				console.log("[CreateEventModal] Response.data.status:", response.data?.status)
 				const data = response.data?.data || []
-				console.log("[CreateEventModal] Parsed categories array length:", data.length)
-				console.log("[CreateEventModal] Parsed categories:", data)
 				return data
 			} catch (error: any) {
 				console.error("[CreateEventModal] Error fetching categories:", error)
-				console.error("[CreateEventModal] Error response:", error.response)
 				return []
 			}
 		},
@@ -133,13 +127,8 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 	})
 
 	const categories = categoriesData || []
-	console.log("[CreateEventModal] Categories for dropdown:", categories.length, categories)
 	
-	// Log if categories is empty but we expected data
-	if (categories.length === 0 && !categoriesLoading && !categoriesError) {
-		console.warn("[CreateEventModal] No categories found but query succeeded")
-	}
-	
+	// Only log errors, not empty data (empty categories is a valid state)
 	if (categoriesError) {
 		console.error("[CreateEventModal] Categories error:", categoriesError)
 	}
@@ -309,7 +298,16 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			}
 		} catch (error: any) {
 			console.error("Error uploading file", error)
-			Error("Error", "Failed to upload file")
+			
+			// Check for specific EdgeStore errors
+			let errorMessage = "Failed to upload file"
+			if (error?.message?.includes("ACCOUNT_PAUSED") || error?.code === "ACCOUNT_PAUSED") {
+				errorMessage = "File upload service is currently paused. Please contact support or check your EdgeStore account status."
+			} else if (error?.message) {
+				errorMessage = error.message
+			}
+			
+			Error("Upload Error", errorMessage)
 		} finally {
 			setIsUploading(false)
 			setUploadProgress(0)
@@ -349,10 +347,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			return
 		}
 
-		if (uploadedImages.length === 0) {
-			Error("Validation Error", "Please add at least one image")
-			return
-		}
+		// Images are now optional, so we don't validate them
 
 		let finalTickets = tickets
 		if (finalTickets.length === 0) {
@@ -382,10 +377,11 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			.then((res: any) => {
 				if (res?.payload?.status) {
 					Success("Success", "Event created successfully!")
-					onClose()
+					// Call callback first to trigger refresh, then close modal
 					if (onEventCreated) {
 						onEventCreated()
 					} else {
+						onClose()
 						router.push(`/console/events/${res.payload.data._id}/manage`)
 					}
 				} else {

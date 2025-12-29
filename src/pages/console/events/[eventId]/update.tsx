@@ -47,9 +47,10 @@ import TimezoneSelect from "../../../../components/timezone-select"
 import { useSession } from "next-auth/react"
 import { IEvent } from "@/models/events/types"
 import { EmailProps } from "@/actions/send-update-email-to-users.action"
-import { adminOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { Types } from "mongoose"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import CollapsibleSection from "@/components/events/CollapsibleSection"
 import PrivacySelector from "@/components/events/PrivacySelector"
 import { useQuery } from "@tanstack/react-query"
@@ -327,9 +328,7 @@ export default function UpdateEventPage({ event }: Props) {
 		setTickets(tickets.filter((t) => t.id !== ticketId))
 	}
 
-	// @ts-ignore
-	// @ts-ignore
-	if (session?.user?.role === Roles.USER) router.push("/console")
+	// Access control is handled server-side in getServerSideProps
 
 	return (
 		<>
@@ -1188,18 +1187,47 @@ export default function UpdateEventPage({ event }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = async (context) => {
-	// Check if user is admin/super admin
-	const sessionResult = await adminOnly(context)
-	if (!sessionResult || "redirect" in sessionResult) return sessionResult
-	const session = sessionResult.props.session
+	const { getServerSession } = await import("next-auth/next")
+	const { authOptions } = await import("@/pages/api/auth/[...nextauth]")
+	
+	const session = await getServerSession(context.req, context.res, authOptions)
+	
+	if (!session) {
+		return {
+			redirect: {
+				destination: "/login",
+				permanent: false,
+			},
+		}
+	}
+
+	// Ensure database connection is ready
+	const { dbconn } = await import("@/configs/database")
+	if (dbconn.readyState !== 1) {
+		await dbconn.asPromise()
+	}
 
 	const { eventId } = context.params as { eventId: string }
 
-	// using event id, fetch event tickets from the database
+	// Fetch event from the database
 	const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
 	if (!event) {
 		return {
 			notFound: true,
+		}
+	}
+
+	// Check permissions: Admin or Owner
+	const user = session.user as any
+	const isAdmin = user.role === "admin" || user.role === "super admin"
+	const isOwner = event.ownerId?.toString() === user._id || event.host?.email === user.email
+
+	if (!isAdmin && !isOwner) {
+		return {
+			redirect: {
+				destination: "/console/seller",
+				permanent: false,
+			},
 		}
 	}
 

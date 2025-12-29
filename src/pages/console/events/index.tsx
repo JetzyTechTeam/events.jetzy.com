@@ -266,7 +266,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 						{dateStr} AT {timeStr}
 					</Text>
 					
-					<Link href={`/console/events/${event._id}/manage`}>
+					<Link href={`/${event.slug}`}>
 						<Text 
 							fontSize="lg" 
 							fontWeight="bold" 

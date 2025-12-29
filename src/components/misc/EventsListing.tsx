@@ -59,10 +59,11 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 			<div className="relative pt-[56.25%] bg-gray-200">
 				<Image src={event.images[0]} alt={event.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
 				{/* Status Badge */}
-				<div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold text-white shadow-sm ${eventStatus === "Live" ? "bg-red-500" :
-						eventStatus === "Upcoming" ? "bg-blue-500" :
-							"bg-gray-500"
-					}`}>
+				<div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold text-white shadow-sm ${
+					eventStatus === "Live" ? "bg-red-500" :
+					eventStatus === "Upcoming" ? "bg-blue-500" :
+					"bg-gray-500"
+				}`}>
 					{eventStatus}
 				</div>
 			</div>
