@@ -36,6 +36,7 @@ import DiscussionBoard from "@/components/events/DiscussionBoard"
 import MarketingTab from "@/components/console/MarketingTab"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge, AvatarGroup } from "@chakra-ui/react"
+import SafeHTML from "@/components/misc/SafeHTML"
 
 // Hardcoded presenter - shown when no presentedBy in database
 const defaultPresenter = { name: "Jetzy Community", logo: null }
@@ -168,15 +169,15 @@ export default function Manage({ event }: any) {
 									>
 										{formattedDate} AT {eventDate.toFormat("t")}
 									</Text>
-									<Text 
+									<Box 
 										fontSize={{ base: "2xl", md: "4xl" }} 
 										fontWeight="800" 
 										color="#1C1E21" 
 										lineHeight="1.2"
 										mb={1}
 									>
-										{eventData.name}
-									</Text>
+										<SafeHTML html={eventData.name} />
+									</Box>
 									<Text color="#65676B" fontSize="md">
 										{eventData.location}
 									</Text>
@@ -327,9 +328,20 @@ export default function Manage({ event }: any) {
 										</Box>
 									</Flex>
 
-									<Text fontSize="md" color="#1C1E21" whiteSpace="pre-wrap" lineHeight="1.6">
-										{eventData.desc || "No description provided."}
-									</Text>
+									{eventData.desc ? (
+										<SafeHTML
+											html={eventData.desc}
+											style={{
+												fontSize: "md",
+												color: "#1C1E21",
+												lineHeight: "1.6",
+											}}
+										/>
+									) : (
+										<Text fontSize="md" color="#1C1E21">
+											No description provided.
+										</Text>
+									)}
 
 									{/* Host Information */}
 									{eventData.host && eventData.host.name && (

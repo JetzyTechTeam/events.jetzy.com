@@ -36,6 +36,8 @@ import { ChevronDownIcon } from "@chakra-ui/icons"
 import { FiPlus, FiX, FiMapPin, FiCalendar, FiClock, FiDollarSign, FiSettings } from "react-icons/fi"
 import TimePicker from "@/components/form/TimePicker"
 import DatePicker from "@/components/form/DatePicker"
+import RichTextEditor from "@/components/form/RichTextEditor"
+import RichTextEditorTitle from "@/components/form/RichTextEditorTitle"
 import { Error, Success } from "@/lib/_toaster"
 import { UpdateEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
@@ -483,23 +485,23 @@ export default function UpdateEventPage({ event }: Props) {
 
 										{/* Event Name */}
 										<Box mb={6}>
-											<Field
-												as={Input}
-												name="name"
+											<RichTextEditorTitle
+												value={values.name || ""}
+												onChange={(value) => setFieldValue("name", value)}
 												placeholder="Event name"
-												size="lg"
-												border="none"
-												borderBottom="2px"
-												borderColor="#E5E7EB"
-												borderRadius={0}
-												px={0}
-												fontSize="24px"
-												fontWeight="600"
-												color="#1F2937"
-												_placeholder={{ color: "#9CA3AF", fontWeight: "400" }}
-												_hover={{ borderColor: "#D1D5DB", bg: "#FAFAFA" }}
-												_focus={{ borderColor: "#8B5CF6", boxShadow: "none", bg: "white" }}
-												transition="all 0.2s"
+												borderBottom="2px solid #E5E7EB"
+												sx={{
+													"& .ql-editor": {
+														fontSize: "24px",
+														fontWeight: "600",
+													},
+													"&:hover .ql-container": {
+														borderBottomColor: "#D1D5DB",
+													},
+													"& .ql-container.ql-snow": {
+														borderBottomColor: values.name ? "#8B5CF6" : "#E5E7EB",
+													},
+												}}
 											/>
 										</Box>
 
@@ -748,22 +750,10 @@ export default function UpdateEventPage({ event }: Props) {
 
 										{/* Description */}
 										<Box mb={6}>
-											<Field
-												as={Textarea}
-												name="desc"
-												placeholder="What are the details?"
+											<RichTextEditor
 												value={values.desc && values.desc !== "undefined" ? values.desc : ""}
-												rows={6}
-												border="1px"
-												borderColor="#E5E7EB"
-												borderRadius="lg"
-												p={4}
-												fontSize="16px"
-												fontWeight="400"
-												color="#1F2937"
-												_placeholder={{ color: "#9CA3AF", fontWeight: "400" }}
-												_hover={{ borderColor: "#D1D5DB", bg: "#F9FAFB" }}
-												_focus={{ borderColor: "#8B5CF6", boxShadow: "none", bg: "white" }}
+												onChange={(value) => setFieldValue("desc", value)}
+												placeholder="What are the details?"
 											/>
 										</Box>
 

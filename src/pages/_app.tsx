@@ -7,6 +7,7 @@ import { ToastContainer } from "react-toastify";
 import "flatpickr/dist/flatpickr.min.css";
 import "@Jetzy/styles/globals.scss";
 import "react-toastify/dist/ReactToastify.css";
+import "react-quill-new/dist/quill.snow.css";
 import React from "react";
 import { EdgeStoreProvider } from "@Jetzy/lib/edgestore";
 import { Analytics } from "@vercel/analytics/react";

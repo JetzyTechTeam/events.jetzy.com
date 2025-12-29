@@ -13,6 +13,7 @@ import LightNavbar from "../layout/LightNavbar"
 import Footer from "../layout/Footer"
 import { MapPinIcon, CalendarIcon, ChevronRightIcon, UserGroupIcon, TicketIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import { SparklesIcon, GlobeAltIcon, HeartIcon, SunIcon, MusicalNoteIcon, FireIcon } from "@heroicons/react/24/solid"
+import SafeHTML from "./SafeHTML"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -79,7 +80,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 					<div className="flex-1">
 						<p className="text-xs font-semibold text-text-secondary mb-1">{formattedDate}</p>
 						<h3 className="text-lg font-bold text-text-primary mb-1 line-clamp-2 leading-tight group-hover:text-primary-purple transition-colors">
-							{event.name}
+							<SafeHTML html={event.name} />
 						</h3>
 						<p className="text-sm text-text-muted line-clamp-1 mb-2">{event.location?.split(",")[0]}</p>
 

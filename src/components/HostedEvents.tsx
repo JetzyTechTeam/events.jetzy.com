@@ -17,6 +17,7 @@ import LightNavbar from "@/components/layout/LightNavbar"
 import Footer from "@/components/layout/Footer"
 import CommentsSection, { UserType } from "@/components/events/CommentsSection"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
+import SafeHTML from "@/components/misc/SafeHTML"
 import {
 	CalendarIcon,
 	MapPinIcon,
@@ -213,7 +214,9 @@ export default function HostedEvents({ event }: Props) {
 								<span className="text-red-500 font-bold uppercase text-sm mr-2">{formattedDate}</span>
 								<span className="text-gray-500 text-sm">AT {formattedTime}</span>
 							</div>
-							<h1 className="text-3xl md:text-4xl font-bold text-[#1C1E21] mb-2">{clonedEvent.name}</h1>
+							<h1 className="text-3xl md:text-4xl font-bold text-[#1C1E21] mb-2">
+								<SafeHTML html={clonedEvent.name} />
+							</h1>
 							<p className="text-gray-600 font-medium mb-4">{clonedEvent.location}</p>
 
 							{/* Action Bar */}
@@ -525,20 +528,15 @@ function EventGuests({ eventId, showParticipants }: { eventId: string, showParti
 
 function EventDescription({ description }: { description: string }) {
 	if (!description) return <p className="text-gray-500 italic">No description available</p>
-	const lines = description.split("\n")
-	const linkifyOptions = {
-		target: "_blank",
-		className: "text-blue-600 hover:underline",
-	}
-
+	
 	return (
-		<div className="text-base text-gray-800 break-words leading-relaxed">
-			{lines.map((line, i) => (
-				<p key={i} className="mb-3">
-					<Linkify options={linkifyOptions}>{line}</Linkify>
-				</p>
-			))}
-		</div>
+		<SafeHTML
+			html={description}
+			className="text-base text-gray-800 break-words leading-relaxed prose prose-sm max-w-none"
+			style={{
+				lineHeight: "1.6",
+			}}
+		/>
 	)
 }
 
@@ -907,7 +905,9 @@ function EventBookings({ eventId }: { eventId: string }) {
 											<Stack spacing={2}>
 												<Flex justify="space-between">
 													<Text fontWeight="semibold">Event Name:</Text>
-													<Text>{eventData.data.data.name}</Text>
+													<Box>
+														<SafeHTML html={eventData.data.data.name} />
+													</Box>
 												</Flex>
 												<Flex justify="space-between">
 													<Text fontWeight="semibold">Location:</Text>

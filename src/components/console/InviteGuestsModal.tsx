@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, useToast } from "@chakra-ui/react"
 import { FiUserPlus } from "react-icons/fi"
 import axios from "axios"
+import SafeHTML from "../misc/SafeHTML"
 
 interface InviteGuestsModalProps {
 	inviteGuestsModal: boolean
@@ -185,7 +186,9 @@ export function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, eve
 										</ul>
 									</div>
 									<div className="flex-1 border border-gray-200 rounded-2xl p-5 bg-gradient-to-br from-purple-50 to-white">
-										<p className="font-bold mb-3 text-sm md:text-base text-gray-800">Hi, Jetzy Events invites you to join {event.name}.</p>
+										<p className="font-bold mb-3 text-sm md:text-base text-gray-800">
+											Hi, Jetzy Events invites you to join <SafeHTML html={event.name} />.
+										</p>
 										<textarea
 											rows={3}
 											placeholder="Enter a custom message here..."

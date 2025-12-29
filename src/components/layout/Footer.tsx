@@ -2,7 +2,6 @@ import React from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
-import JetzyLogo from "@/assets/logo/jetzy_logo.png"
 import FacebookIcon from "@/assets/social/Facebook.png"
 import InstagramIcon from "@/assets/social/Instagram.png"
 import TikTokIcon from "@/assets/social/TikTok.png"
@@ -24,7 +23,13 @@ const Footer: React.FC = () => {
 				<div className="flex flex-col md:flex-row justify-between items-center gap-6">
 					{/* Logo Section */}
 					<div className="flex items-center gap-3">
-						<Image src={JetzyLogo} alt="Jetzy" width={32} height={32} className="object-contain" />
+						<Image 
+							src="/imgs/jetzy%20logo%20%282%29.png" 
+							alt="Jetzy Logo" 
+							width={32} 
+							height={32} 
+							className="object-contain"
+						/>
 						<span className="text-text-primary font-semibold text-lg">Jetzy</span>
 					</div>
 

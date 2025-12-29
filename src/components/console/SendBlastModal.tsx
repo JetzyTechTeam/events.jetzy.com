@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, useToast } from "@chakra-ui/react"
 import { FiSend } from "react-icons/fi"
 import axios from "axios"
+import SafeHTML from "../misc/SafeHTML"
 
 interface SendBlastModalProps {
 	sendBlastModal: boolean
@@ -364,7 +365,9 @@ export function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: Sen
 											</div>
 
 											<div style={{ background: 'linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%)', padding: '25px', borderRadius: '12px', margin: '25px 0' }}>
-												<h2 style={{ color: '#1F2937', margin: '0 0 20px 0', fontSize: '24px', fontWeight: 700 }}>{event.name}</h2>
+												<h2 style={{ color: '#1F2937', margin: '0 0 20px 0', fontSize: '24px', fontWeight: 700 }}>
+													<SafeHTML html={event.name} />
+												</h2>
 												
 												<div style={{ marginBottom: '12px' }}>
 													<span style={{ color: '#6B7280', fontSize: '14px', fontWeight: 600 }}>📅 Date & Time</span>

@@ -9,6 +9,7 @@ import { IEvent } from "@/models/events/types"
 
 import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalFooter, ModalBody, ModalCloseButton } from "@chakra-ui/react"
 import ExpandText from "../misc/ExpandText"
+import SafeHTML from "../misc/SafeHTML"
 import { useAppDispatch, useAppSelector } from "@/redux/stores"
 import { DeleteEventThunk, getEventState } from "@/redux/reducers/eventsSlice"
 import { useEdgeStore } from "@/lib/edgestore"
@@ -173,7 +174,9 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 							</div>
 							<div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white shadow rounded-lg">
 								<div className="flex-1">
-									<p className="text-lg font-medium text-gray-900">{event.name}</p>
+									<div className="text-lg font-medium text-gray-900">
+										<SafeHTML html={event.name} />
+									</div>
 									<p className="text-sm text-gray-500">Name</p>
 								</div>
 							</div>

@@ -3,7 +3,6 @@ import { Disclosure, Menu, Transition } from "@headlessui/react"
 import { Bars3Icon, BellIcon, XMarkIcon } from "@heroicons/react/24/outline"
 import { classNames } from "@Jetzy/lib/utils"
 import { ConsoleNavbarProps, Pages, Roles } from "@Jetzy/types"
-import JetzyLogo from "@/assets/logo/jetzy_logo.png"
 import Image from "next/image"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { signOut, useSession } from "next-auth/react"
@@ -60,7 +59,14 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 						<div className="flex h-16 items-center justify-between">
 							<div className="flex items-center">
 								<Link href="/" className="flex items-center gap-2 flex-shrink-0">
-									<Image src={JetzyLogo} alt="Jetzy" width={32} height={32} className="object-contain" />
+									<Image 
+										src="/imgs/jetzy%20logo%20%282%29.png" 
+										alt="Jetzy Logo" 
+										width={32} 
+										height={32} 
+										className="object-contain"
+										priority
+									/>
 									<span className="text-text-primary font-bold text-xl">Jetzy</span>
 								</Link>
 								<div className="hidden md:block">

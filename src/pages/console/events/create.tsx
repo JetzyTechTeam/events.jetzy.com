@@ -35,6 +35,8 @@ import { usePlacesWidget } from "react-google-autocomplete"
 import { DescriptionSVG, DotSVG, DottedLinesSVG, LocationSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG, VerticalDotsSVG } from "@/assets/icons"
 import TimePicker from "@/components/form/TimePicker"
 import DatePicker from "@/components/form/DatePicker"
+import RichTextEditor from "@/components/form/RichTextEditor"
+import RichTextEditorTitle from "@/components/form/RichTextEditorTitle"
 import { Error } from "@/lib/_toaster"
 import { CreateEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
@@ -286,21 +288,28 @@ const CreateEventPage = () => {
 										<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
 											Event Name
 										</FormLabel>
-										<Field
-											as={Input}
-											id="name"
-											name="name"
+										<RichTextEditorTitle
+											value={values?.name || ""}
+											onChange={(value) => setFieldValue("name", value)}
 											placeholder="Enter event name"
-											size="lg"
-											bg="#FFFFFF"
-											border="1px"
-											borderColor="#E5E7EB"
-											color="#1F2937"
-											fontSize="md"
-											_hover={{ borderColor: "#D1D5DB" }}
-											_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-											_placeholder={{ color: "#9CA3AF" }}
-											value={values?.name}
+											border="1px solid #E5E7EB"
+											borderRadius="md"
+											p={3}
+											sx={{
+												"& .ql-container.ql-snow": {
+													border: "none",
+												},
+												"& .ql-toolbar": {
+													border: "none",
+													borderBottom: "1px solid #E5E7EB",
+												},
+												"& .ql-editor": {
+													fontSize: "md",
+												},
+												"&:hover": {
+													borderColor: "#D1D5DB",
+												},
+											}}
 										/>
 									</FormControl>
 									<Box mt={4}>
@@ -316,20 +325,10 @@ const CreateEventPage = () => {
 									<FormLabel fontSize="sm" fontWeight="600" color="#1F2937" mb={2}>
 										Description
 									</FormLabel>
-									<Field
-										as={Textarea}
-										name="desc"
-										placeholder="Add description"
-										bg="#FFFFFF"
-										border="1px"
-										borderColor="#E5E7EB"
-										color="#1F2937"
-										fontSize="md"
-										rows={4}
+									<RichTextEditor
 										value={values.desc && values.desc !== "undefined" ? values.desc : ""}
-										_hover={{ borderColor: "#D1D5DB" }}
-										_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
-										_placeholder={{ color: "#9CA3AF" }}
+										onChange={(value) => setFieldValue("desc", value)}
+										placeholder="Add description"
 									/>
 								</FormControl>
 

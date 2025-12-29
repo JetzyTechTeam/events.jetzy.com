@@ -3,7 +3,6 @@ import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
-import JetzyLogo from "@/assets/logo/jetzy_logo.png"
 import { BellIcon, UserCircleIcon } from "@heroicons/react/24/outline"
 import { Menu } from "@headlessui/react"
 import SignupModal from "@/components/misc/SignupModal"
@@ -77,7 +76,14 @@ const LightNavbar: React.FC = () => {
 				<div className="flex justify-between items-center h-16">
 					{/* Logo */}
 					<Link href="/" className="flex items-center gap-2">
-						<Image src={JetzyLogo} alt="Jetzy" width={32} height={32} className="object-contain" />
+						<Image 
+							src="/imgs/jetzy%20logo%20%282%29.png" 
+							alt="Jetzy Logo" 
+							width={32} 
+							height={32} 
+							className="object-contain"
+							priority
+						/>
 						<span className="text-text-primary font-bold text-xl">Jetzy</span>
 					</Link>
 
