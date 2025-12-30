@@ -7,6 +7,9 @@ export interface IEventTicket {
 	desc: string
 	stripeProductId: string
 	disabled?: boolean
+	dueDate?: Date | string
+	quantityLimit?: number
+	quantitySold?: number
 	_id: Types.ObjectId
 	updatedAt: string
 	createdAt: string
@@ -23,6 +26,7 @@ export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
 	location: string
+	venueName?: string
 	showParticipants: boolean
 	featuredGuests?: IFeaturedGuest[]
 	coordinates: {
@@ -85,6 +89,7 @@ export interface IBookings extends IBaseModelProps {
 	discountAmount?: number
 	qrCodeToken?: string
 	qrCodeImageUrl?: string
+	stripeSessionId?: string
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }

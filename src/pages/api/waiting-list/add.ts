@@ -39,17 +39,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		console.log("Transformed tickets:", transformedTickets)
 
 		// Convert eventId to ObjectId for proper database operations
-		const objectId = new mongoose.Types.ObjectId(eventId)
+		let objectId: mongoose.Types.ObjectId
+		try {
+			objectId = new mongoose.Types.ObjectId(eventId)
+		} catch (error) {
+			console.error("[waiting-list/add] Invalid eventId format:", eventId)
+			return sendResponse(res, null, "Invalid event ID format", false, ResCode.BAD_REQUEST)
+		}
+		
+		console.log("[waiting-list/add] Processing for eventId:", objectId.toString(), "Type:", objectId.constructor.name)
 		
 		// Check if user is already on waiting list for this event
+		// No restrictions on pending/confirmed bookings when event is at capacity
 		const existingEntry = await WaitingList.findOne({
 			eventId: objectId,
 			email,
 		})
+		
+		console.log("[waiting-list/add] Existing entry check:", existingEntry ? {
+			_id: existingEntry._id.toString(),
+			email: existingEntry.email,
+			status: existingEntry.status,
+			eventId: existingEntry.eventId.toString()
+		} : "No existing entry")
 
 		if (existingEntry) {
+			// If entry exists with 'approved' status, reset it to 'waiting' so they can join again
+			if (existingEntry.status === 'approved') {
+				console.log("[waiting-list/add] Resetting approved entry back to waiting:", existingEntry._id)
+				existingEntry.status = 'waiting'
+				existingEntry.firstName = firstName
+				existingEntry.lastName = lastName
+				existingEntry.phone = phone
+				existingEntry.tickets = transformedTickets
+				await existingEntry.save()
+				console.log("[waiting-list/add] Entry reset to waiting status")
+				return sendResponse(res, existingEntry, "Re-added to waiting list", true, ResCode.OK)
+			}
+			
 			console.log("User already on waiting list:", existingEntry._id)
-			// User is already on waiting list, return success without error
+			// User is already on waiting list with 'waiting' status, return success without error
 			return sendResponse(res, existingEntry, "Already on waiting list", true, ResCode.OK)
 		}
 
@@ -64,7 +93,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			status: 'waiting',
 		})
 
-		console.log("Created waiting list entry:", waitingListEntry._id)
+		console.log("[waiting-list/add] Created waiting list entry:", {
+			_id: waitingListEntry._id,
+			eventId: waitingListEntry.eventId.toString(),
+			email: waitingListEntry.email,
+			status: waitingListEntry.status,
+			createdAt: waitingListEntry.createdAt
+		})
+		
+		// Verify the entry was created correctly
+		const verifyEntry = await WaitingList.findById(waitingListEntry._id).lean()
+		console.log("[waiting-list/add] Verified entry:", {
+			_id: verifyEntry?._id,
+			eventId: verifyEntry?.eventId?.toString(),
+			email: verifyEntry?.email,
+			status: verifyEntry?.status
+		})
 
 		// Send notification email
 		try {

@@ -7,9 +7,27 @@ import { extractTokenFromQRPayload } from "@/lib/qr-generator"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
+import SafeHTML from "@/components/misc/SafeHTML"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
+
+// Helper function to strip HTML tags and decode entities from event names
+function stripHTMLAndDecode(text: string): string {
+	if (!text) return text
+	// First strip all HTML tags
+	let cleaned = text.replace(/<[^>]*>/g, "")
+	// Then decode HTML entities
+	return cleaned
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&nbsp;/g, " ")
+		.replace(/&apos;/g, "'")
+		.trim()
+}
 
 interface TicketDetailsProps {
 	booking: any
@@ -56,8 +74,8 @@ export default function TicketDetailsPage({ booking, event, ticketDetails, invit
 	return (
 		<>
 			<Head>
-				<title>Ticket Details - {event.name} - Jetzy Events</title>
-				<meta name="description" content={`Your ticket for ${event.name}`} />
+				<title>Ticket Details - {stripHTMLAndDecode(event.name)} - Jetzy Events</title>
+				<meta name="description" content={`Your ticket for ${stripHTMLAndDecode(event.name)}`} />
 			</Head>
 			<div style={{ fontFamily: 'Arial, sans-serif', maxWidth: '900px', margin: '0 auto', padding: '20px', backgroundColor: '#f5f5f5', minHeight: '100vh' }}>
 				{/* Header */}
@@ -72,7 +90,9 @@ export default function TicketDetailsPage({ booking, event, ticketDetails, invit
 					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
 						<div>
 							<p style={{ color: '#666', margin: '8px 0', fontSize: '14px' }}><strong>Event Name:</strong></p>
-							<p style={{ color: '#333', margin: '0 0 15px 0', fontSize: '16px', fontWeight: '500' }}>{event.name}</p>
+							<div style={{ color: '#333', margin: '0 0 15px 0', fontSize: '16px', fontWeight: '500' }}>
+								{stripHTMLAndDecode(event.name || "")}
+							</div>
 						</div>
 						<div>
 							<p style={{ color: '#666', margin: '8px 0', fontSize: '14px' }}><strong>Date & Time:</strong></p>

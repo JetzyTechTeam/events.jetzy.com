@@ -3,16 +3,19 @@ import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
-import { BellIcon, UserCircleIcon } from "@heroicons/react/24/outline"
+import { UserCircleIcon, BookmarkIcon } from "@heroicons/react/24/outline"
 import { Menu } from "@headlessui/react"
 import SignupModal from "@/components/misc/SignupModal"
 import LoginModal from "@/components/misc/LoginModal"
 import CreateEventModal from "@/components/events/CreateEventModal"
 import { useDisclosure } from "@chakra-ui/react"
+import { useQuery } from "@tanstack/react-query"
+import axios from "axios"
 
 // Navigation items with authentication requirements
 const navItems = [
 	{ name: "Events", href: "/", requiresAuth: false },
+	{ name: "My Tickets", href: "/my-tickets", requiresAuth: true },
 	{ name: "Dashboard", href: "/console", requiresAuth: true, adminOnly: true },
 	{ name: "Seller Board", href: "/console/seller", requiresAuth: true, nonAdminOnly: true },
 	{ name: "My Events", href: "/console/events", requiresAuth: true, adminOnly: true },
@@ -27,6 +30,22 @@ const LightNavbar: React.FC = () => {
 	const [isSignupModalOpen, setIsSignupModalOpen] = useState(false)
 	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
 	const { isOpen: isCreateModalOpen, onOpen: onCreateModalOpen, onClose: onCreateModalClose } = useDisclosure()
+
+	// Fetch saved events count
+	const { data: savedEventsCount } = useQuery({
+		queryKey: ["saved-events-count"],
+		queryFn: async () => {
+			try {
+				const response = await axios.get("/api/events/saved-events-count")
+				return response.data?.data?.count || 0
+			} catch (error) {
+				return 0
+			}
+		},
+		enabled: !!session,
+		refetchOnWindowFocus: true,
+		refetchInterval: 30000, // Refetch every 30 seconds
+	})
 
 	const handleEventCreated = () => {
 		// Navigate to events page after creation
@@ -46,6 +65,10 @@ const LightNavbar: React.FC = () => {
 		if (href === "/console/events") {
 			return router.pathname.startsWith("/console/events")
 		}
+		// Exact match for /my-tickets
+		if (href === "/my-tickets") {
+			return router.pathname === "/my-tickets"
+		}
 		return router.pathname.startsWith(href)
 	}
 
@@ -57,7 +80,7 @@ const LightNavbar: React.FC = () => {
 	const visibleNavItems = navItems.filter((item: any) => {
 		// Always show public items
 		if (!item.requiresAuth) return true
-		
+
 		// If item requires auth, check if user is logged in
 		if (!session) return false
 
@@ -76,15 +99,15 @@ const LightNavbar: React.FC = () => {
 				<div className="flex justify-between items-center h-16">
 					{/* Logo */}
 					<Link href="/" className="flex items-center gap-2">
-						<Image 
-							src="/imgs/jetzy%20logo%20%282%29.png" 
-							alt="Jetzy Logo" 
-							width={32} 
-							height={32} 
+						<Image
+							src="/imgs/jetzy%20logo%20%282%29.png"
+							alt="Jetzy Logo"
+							width={32}
+							height={32}
 							className="object-contain"
 							priority
 						/>
-						<span className="text-text-primary font-bold text-xl">Jetzy</span>
+						<span className="text-jetzy font-bold text-xl">Jetzy</span>
 					</Link>
 
 					{/* Navigation Links */}
@@ -105,9 +128,8 @@ const LightNavbar: React.FC = () => {
 								<Link
 									key={item.name}
 									href={item.href}
-									className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-										isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
-									}`}
+									className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
+										}`}
 								>
 									{item.name}
 								</Link>
@@ -117,11 +139,24 @@ const LightNavbar: React.FC = () => {
 
 					{/* Right Section */}
 					<div className="flex items-center gap-4">
-						{/* Notification Icon - Only show when logged in */}
+						{/* Saved Events Icon - Only show when logged in */}
 						{session && (
-							<button className="p-2 text-text-secondary hover:text-text-primary rounded-full hover:bg-background-gray transition-colors" aria-label="Notifications">
-								<BellIcon className="w-6 h-6" />
-							</button>
+							<Link
+								href="/saved-events"
+								className={`p-2 rounded-full transition-colors relative ${
+									router.pathname === "/saved-events"
+										? "text-primary-purple bg-primary-purple/10"
+										: "text-text-secondary hover:text-text-primary hover:bg-background-gray"
+								}`}
+								aria-label="Saved Events"
+							>
+								<BookmarkIcon className="w-6 h-6" />
+								{typeof savedEventsCount === "number" && savedEventsCount > 0 && (
+									<span className="absolute top-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+										{savedEventsCount > 99 ? "99+" : savedEventsCount}
+									</span>
+								)}
+							</Link>
 						)}
 
 						{/* User Menu */}
@@ -140,6 +175,20 @@ const LightNavbar: React.FC = () => {
 										{({ active }) => (
 											<Link href={isAdmin ? "/console" : "/console/seller"} className={`block px-4 py-2 text-sm ${active ? "bg-background-gray text-text-primary" : "text-text-secondary"}`}>
 												{isAdmin ? "Admin Dashboard" : "Seller Dashboard"}
+											</Link>
+										)}
+									</Menu.Item>
+									<Menu.Item>
+										{({ active }) => (
+											<Link href="/my-tickets" className={`block px-4 py-2 text-sm ${active ? "bg-background-gray text-text-primary" : "text-text-secondary"}`}>
+												My Tickets
+											</Link>
+										)}
+									</Menu.Item>
+									<Menu.Item>
+										{({ active }) => (
+											<Link href="/saved-events" className={`block px-4 py-2 text-sm ${active ? "bg-background-gray text-text-primary" : "text-text-secondary"}`}>
+												Saved Events
 											</Link>
 										)}
 									</Menu.Item>
@@ -188,9 +237,8 @@ const LightNavbar: React.FC = () => {
 							<Link
 								key={item.name}
 								href={item.href}
-								className={`block px-3 py-2 rounded-md text-base font-medium ${
-									isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
-								}`}
+								className={`block px-3 py-2 rounded-md text-base font-medium ${isActive(item.href) ? "text-primary-purple bg-primary-purple/10" : "text-text-secondary hover:text-text-primary hover:bg-background-gray"
+									}`}
 							>
 								{item.name}
 							</Link>
@@ -209,11 +257,40 @@ const LightNavbar: React.FC = () => {
 								<div className="text-base font-medium text-text-primary">{user?.name}</div>
 								<div className="text-sm font-medium text-text-secondary">{user?.email}</div>
 							</div>
-							<button className="ml-auto flex-shrink-0 rounded-full p-1 text-text-secondary hover:text-text-primary hover:bg-background-gray transition-colors" aria-label="Notifications">
-								<BellIcon className="w-6 h-6" />
-							</button>
+							<div className="ml-auto flex items-center gap-2">
+								<Link
+									href="/saved-events"
+									className="flex-shrink-0 rounded-full p-1 text-text-secondary hover:text-text-primary hover:bg-background-gray transition-colors relative"
+									aria-label="Saved Events"
+								>
+									<BookmarkIcon className="w-6 h-6" />
+									{typeof savedEventsCount === "number" && savedEventsCount > 0 && (
+										<span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+											{savedEventsCount > 99 ? "99+" : savedEventsCount}
+										</span>
+									)}
+								</Link>
+							</div>
 						</div>
 						<div className="mt-3 space-y-1 px-2">
+							<Link
+								href={isAdmin ? "/console" : "/console/seller"}
+								className="block rounded-md px-3 py-2 text-base font-medium text-text-secondary hover:bg-background-gray hover:text-text-primary transition-colors"
+							>
+								{isAdmin ? "Admin Dashboard" : "Seller Dashboard"}
+							</Link>
+							<Link
+								href="/my-tickets"
+								className="block rounded-md px-3 py-2 text-base font-medium text-text-secondary hover:bg-background-gray hover:text-text-primary transition-colors"
+							>
+								My Tickets
+							</Link>
+							<Link
+								href="/saved-events"
+								className="block rounded-md px-3 py-2 text-base font-medium text-text-secondary hover:bg-background-gray hover:text-text-primary transition-colors"
+							>
+								Saved Events
+							</Link>
 							<button
 								onClick={() => signOut({ callbackUrl: "/" })}
 								className="w-full text-left block rounded-md px-3 py-2 text-base font-medium text-text-secondary hover:bg-background-gray hover:text-text-primary transition-colors"
@@ -258,9 +335,9 @@ const LightNavbar: React.FC = () => {
 			/>
 
 			{/* Create Event Modal */}
-			<CreateEventModal 
-				isOpen={isCreateModalOpen} 
-				onClose={onCreateModalClose} 
+			<CreateEventModal
+				isOpen={isCreateModalOpen}
+				onClose={onCreateModalClose}
 				onEventCreated={handleEventCreated}
 			/>
 		</nav>

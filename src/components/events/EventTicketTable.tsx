@@ -15,6 +15,8 @@ export interface TicketsRowData {
 	price: number
 	date: string
 	desc: string
+	dueDate?: string
+	quantityLimit?: number
 }
 
 export type UpdateTicketData = {
@@ -35,7 +37,7 @@ const EventTicketTable: React.FC<Props> = ({ rows, eventName, eventId }) => {
 	const [tableData, setTableData] = React.useState<TicketsRowData[]>(rows)
 	const [data, setData] = React.useState<TicketsRowData>(rows[0])
 
-	const handleChange = (key: keyof typeof data, value: string) => {
+	const handleChange = (key: keyof typeof data, value: string | number) => {
 		setData((prev) => ({ ...prev, [key]: value }))
 	}
 
@@ -46,7 +48,18 @@ const EventTicketTable: React.FC<Props> = ({ rows, eventName, eventId }) => {
 	}
 
 	const handleSaveTicketChanges = () => {
-		dispatcher(UpdateTicketThunk({ data: { payload: { title: data.title, description: data.desc }, params: { eventId, ticketId: data.id } } })).then((res: any) => {
+		dispatcher(UpdateTicketThunk({
+			data: {
+				payload: {
+					title: data.title,
+					description: data.desc,
+					price: data.price,
+					dueDate: data.dueDate,
+					quantityLimit: data.quantityLimit,
+				},
+				params: { eventId, ticketId: data.id }
+			}
+		})).then((res: any) => {
 			// update row data
 			if (res.payload.status) {
 				setTableData((prev) => prev.map((ticket) => (ticket.id === data.id ? data : ticket)))
@@ -148,6 +161,53 @@ const EventTicketTable: React.FC<Props> = ({ rows, eventName, eventId }) => {
 									value={data.desc}
 									onChange={(e) => handleChange("desc", e.target.value)}
 									placeholder="Enter description"
+									className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+								/>
+							</div>
+
+							{/* Price Input */}
+							<div>
+								<label htmlFor="ticket-price" className="block text-gray-700 font-bold mb-1">
+									Price ($)
+								</label>
+								<input
+									id="ticket-price"
+									type="number"
+									step="0.01"
+									min="0"
+									value={data.price}
+									onChange={(e) => handleChange("price", parseFloat(e.target.value) || 0)}
+									placeholder="0.00"
+									className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+								/>
+							</div>
+
+							{/* Due Date Input */}
+							<div>
+								<label htmlFor="ticket-due-date" className="block text-gray-700 font-bold mb-1">
+									Sales End Date
+								</label>
+								<input
+									id="ticket-due-date"
+									type="datetime-local"
+									value={data.dueDate || ""}
+									onChange={(e) => handleChange("dueDate", e.target.value)}
+									className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+								/>
+							</div>
+
+							{/* Quantity Limit Input */}
+							<div>
+								<label htmlFor="ticket-quantity-limit" className="block text-gray-700 font-bold mb-1">
+									Quantity Limit
+								</label>
+								<input
+									id="ticket-quantity-limit"
+									type="number"
+									min="1"
+									value={data.quantityLimit || ""}
+									onChange={(e) => handleChange("quantityLimit", e.target.value ? parseInt(e.target.value) : "")}
+									placeholder="Unlimited"
 									className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
 								/>
 							</div>

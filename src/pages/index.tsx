@@ -63,6 +63,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const isSignedIn = !!session
 	const userRole = (session?.user as any)?.role
 	const isAdmin = userRole === "admin" || userRole === "super admin"
+	const userId = (session?.user as any)?._id
 
 	// Define the query based on authentication status and role
 	let query: any = { isDeleted: false }
@@ -81,17 +82,70 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	// Search filter from query params
 	const search = context.query.search as string | undefined
-	if (search && search.trim() !== "") {
-		query.$or = [
-			{ name: { $regex: search.trim(), $options: "i" } },
-			{ location: { $regex: search.trim(), $options: "i" } },
-			{ desc: { $regex: search.trim(), $options: "i" } },
-		]
-	}
+	const hasSearch = search && search.trim() !== ""
 
-	// If user is not admin or super admin, only show public events
+	// Privacy filter: Only show public events OR private events owned by the user
 	if (!isAdmin) {
-		query.privacy = "public"
+		if (isSignedIn && userId) {
+			// Show public events OR private events owned by this user
+			const { Types } = await import("mongoose")
+			const userObjectId = new Types.ObjectId(userId)
+			
+			// Build privacy condition
+			const privacyCondition = {
+				$or: [
+					{ privacy: "public" },
+					{ 
+						$and: [
+							{ privacy: "private" },
+							{ ownerId: userObjectId }
+						]
+					}
+				]
+			}
+
+			// If there's a search filter, combine with privacy using $and
+			if (hasSearch) {
+				query.$and = [
+					{
+						$or: [
+							{ name: { $regex: search.trim(), $options: "i" } },
+							{ location: { $regex: search.trim(), $options: "i" } },
+							{ desc: { $regex: search.trim(), $options: "i" } },
+						]
+					},
+					privacyCondition
+				]
+			} else {
+				// No search, just apply privacy filter
+				Object.assign(query, privacyCondition)
+			}
+		} else {
+			// Not signed in: only show public events
+			if (hasSearch) {
+				query.$and = [
+					{
+						$or: [
+							{ name: { $regex: search.trim(), $options: "i" } },
+							{ location: { $regex: search.trim(), $options: "i" } },
+							{ desc: { $regex: search.trim(), $options: "i" } },
+						]
+					},
+					{ privacy: "public" }
+				]
+			} else {
+				query.privacy = "public"
+			}
+		}
+	} else {
+		// Admins can see all events, but still need to handle search
+		if (hasSearch) {
+			query.$or = [
+				{ name: { $regex: search.trim(), $options: "i" } },
+				{ location: { $regex: search.trim(), $options: "i" } },
+				{ desc: { $regex: search.trim(), $options: "i" } },
+			]
+		}
 	}
 
 	// If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
@@ -107,22 +161,70 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}
 
 	// Get events based on authentication status using aggregation for custom sorting
+	// Include Live, Upcoming, and Ended events with proper categorization
 	const now = new Date()
 	const events = await Events.aggregate([
-		{ $match: query },
+		{ 
+			$match: {
+				...query
+				// No filter - show all events (Live, Upcoming, and Ended)
+			}
+		},
 		{
 			$addFields: {
+				// Calculate event status for proper categorization
+				eventStatus: {
+					$switch: {
+						branches: [
+							// Ended: Ends before or at now
+							{ 
+								case: { $lte: ["$endsOn", now] }, 
+								then: "Ended" 
+							},
+							// Live: Starts before/at now AND Ends after now (not equal)
+							{ 
+								case: { 
+									$and: [
+										{ $lte: ["$startsOn", now] }, 
+										{ $gt: ["$endsOn", now] }
+									] 
+								}, 
+								then: "Live" 
+							},
+							// Upcoming: Starts after now
+							{ 
+								case: { $gt: ["$startsOn", now] }, 
+								then: "Upcoming" 
+							}
+						],
+						default: "Upcoming" // Fallback
+					}
+				},
 				sortOrder: {
 					$switch: {
 						branches: [
-							// Live: Starts before/at now AND Ends after/at now
-							{ case: { $and: [{ $lte: ["$startsOn", now] }, { $gte: ["$endsOn", now] }] }, then: 1 },
-							// Upcoming: Starts after now
-							{ case: { $gt: ["$startsOn", now] }, then: 2 },
-							// Ended: Ends before now
-							{ case: { $lt: ["$endsOn", now] }, then: 3 }
+							// Live events first
+							{ 
+								case: { 
+									$and: [
+										{ $lte: ["$startsOn", now] }, 
+										{ $gt: ["$endsOn", now] }
+									] 
+								}, 
+								then: 1 
+							},
+							// Upcoming events second
+							{ 
+								case: { $gt: ["$startsOn", now] }, 
+								then: 2 
+							},
+							// Ended events last
+							{ 
+								case: { $lte: ["$endsOn", now] }, 
+								then: 3 
+							}
 						],
-						default: 4 // Fallback
+						default: 4
 					}
 				}
 			}
@@ -134,7 +236,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	if (!events) return { props: { events: null, pagination: null } }
 
-	// get total count of events based on authentication status
+	// get total count of events based on authentication status (including all events)
 	const total = await Events.countDocuments(query)
 	// serialize the events (handle _id manually since aggregate returns POJO)
 	const data = events.map((event) => ({

@@ -1,4 +1,4 @@
-import React, { Fragment, useState } from "react"
+import React, { Fragment, useState, useEffect } from "react"
 import { Dialog, Transition } from "@headlessui/react"
 import { XMarkIcon } from "@heroicons/react/24/outline"
 import { ErrorMessage, Field, Form, Formik } from "formik"
@@ -24,7 +24,15 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSign
 	const [isLoading, setLoader] = useState(false)
 	const [showPassword, setShowPassword] = useState(false)
 	const [showForgotPassword, setShowForgotPassword] = useState(false)
+	const [hasShownSuccess, setHasShownSuccess] = useState(false)
 	const { _cb } = navigation?.query
+
+	// Reset success flag when modal opens
+	useEffect(() => {
+		if (isOpen) {
+			setHasShownSuccess(false)
+		}
+	}, [isOpen])
 
 	const formData: SignInFormData = {
 		email: "",
@@ -55,9 +63,10 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSign
 			return
 		}
 
-		// Success - show success toast (if no error, login was successful)
-		if (res?.ok) {
+		// Success - show success toast only once
+		if (res?.ok && !hasShownSuccess) {
 			Success("Login Successful", "You have been logged in successfully!")
+			setHasShownSuccess(true)
 		}
 
 		// turn off loader
@@ -70,8 +79,31 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onSwitchToSign
 		if (onLoginSuccess) {
 			onLoginSuccess()
 		} else {
-			// Otherwise, redirect normally
-			navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+			// Wait a moment for session to update, then redirect
+			setTimeout(async () => {
+				try {
+					const { getSession } = await import("next-auth/react")
+					const updatedSession = await getSession()
+					const userRole = (updatedSession?.user as any)?.role
+					const isAdmin = userRole === "admin" || userRole === "super admin"
+
+					// Determine redirect destination
+					let redirectUrl = ROUTES.home // Default to home page
+					
+					if (_cb) {
+						redirectUrl = _cb.toString()
+					} else if (isAdmin) {
+						redirectUrl = ROUTES.dashboard.index
+					} else {
+						redirectUrl = ROUTES.home
+					}
+
+					navigation.replace(redirectUrl)
+				} catch (error) {
+					console.error("Error getting session after login:", error)
+					navigation.replace(ROUTES.home)
+				}
+			}, 300)
 		}
 	}
 

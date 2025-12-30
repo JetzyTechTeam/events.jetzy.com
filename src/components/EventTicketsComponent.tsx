@@ -30,8 +30,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 				name: ticket.name,
 				price: ticket.price,
 				description: ticket.desc,
-				quantity: 1,
-				isSelected: event.isPaid ? true : false,
+				quantity: 0,
+				isSelected: false,
 				priceId: ticket.stripeProductId,
 				eventId: event._id.toString(),
 				disabled: ticket.disabled || false,
@@ -64,30 +64,28 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 		.filter((ticket) => ticket.isSelected)
 		.reduce((sum, ticket) => sum + ticket.quantity, 0)
 
-	// Calculate number of guest slots (total quantity - 1 for the buyer)
-	const guestSlots = Math.max(0, totalSelectedQuantity - 1)
+	// Calculate number of paid tickets (excluding free tickets)
+	const paidTicketQuantity = tickets
+		.filter((ticket) => ticket.isSelected && ticket.price > 0)
+		.reduce((sum, ticket) => sum + ticket.quantity, 0)
 
-	// Update guest emails array when quantity changes
-	useEffect(() => {
-		if (guestSlots > 0) {
-			// Ensure we have the right number of guest email fields
-			setGuestEmails((prevEmails) => {
-				if (prevEmails.length < guestSlots) {
-					return [...prevEmails, ...Array(guestSlots - prevEmails.length).fill("")]
-				} else if (prevEmails.length > guestSlots) {
-					return prevEmails.slice(0, guestSlots)
-				}
-				return prevEmails
-			})
-		} else {
-			setGuestEmails([])
-		}
-	}, [guestSlots])
+	// Guests are now unlimited - no dependency on ticket quantity
 
 	// Handle guest email changes
 	const handleGuestEmailChange = (index: number, value: string) => {
 		const newGuestEmails = [...guestEmails]
 		newGuestEmails[index] = value
+		setGuestEmails(newGuestEmails)
+	}
+
+	// Add a new guest slot
+	const handleAddGuest = () => {
+		setGuestEmails([...guestEmails, ""])
+	}
+
+	// Remove a guest slot
+	const handleRemoveGuest = (index: number) => {
+		const newGuestEmails = guestEmails.filter((_: string, i: number) => i !== index)
 		setGuestEmails(newGuestEmails)
 	}
 
@@ -99,30 +97,85 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 
 	// Handle increment/decrement for tickets
 	const handleQuantityChange = (id: string, delta: number) => {
-		setTickets((prevTickets) =>
-			prevTickets.map((ticket) => {
-				const newQty = Math.max(1, ticket.quantity + delta)
+		setTickets((prevTickets) => {
+			const updatedTickets = prevTickets.map((ticket) => {
+				if (ticket.id !== id) return ticket
+				
+				const newQty = Math.max(0, ticket.quantity + delta)
 				// Find the original ticket price from ticketsItems
 				const originalTicket = ticketsItems.find((t) => t.id === id && !t.disabled)
 				const basePrice = originalTicket?.price || ticket.price
 
-				return ticket.id === id
-					? {
-							...ticket,
-							quantity: newQty,
-							price: newQty * basePrice,
-					  }
-					: ticket
-			}),
-		)
+				// If quantity reaches 0, deselect the ticket
+				if (newQty === 0) {
+					return {
+						...ticket,
+						quantity: 0,
+						isSelected: false,
+						price: basePrice,
+					}
+				}
+
+				// If quantity becomes greater than 0 and ticket wasn't selected, select it
+				return {
+					...ticket,
+					quantity: newQty,
+					isSelected: newQty > 0 ? true : ticket.isSelected,
+					price: newQty * basePrice,
+				}
+			})
+			
+			// If any ticket is selected and no guest fields exist, add one
+			const hasSelectedTickets = updatedTickets.some((t) => t.isSelected)
+			if (hasSelectedTickets) {
+				setGuestEmails((prevEmails) => {
+					if (prevEmails.length === 0) {
+						return [""]
+					}
+					return prevEmails
+				})
+			}
+			
+			return updatedTickets
+		})
 	}
 
 	const handleTicketSelection = (id: string) => {
-		setTickets((prevTickets) =>
-			prevTickets.map((ticket) => {
-				return ticket.id === id ? { ...ticket, isSelected: !ticket.isSelected } : ticket
-			}),
-		)
+		setTickets((prevTickets) => {
+			const updatedTickets = prevTickets.map((ticket) => {
+				if (ticket.id !== id) return ticket
+				
+				const newIsSelected = !ticket.isSelected
+				// Find the original ticket price from ticketsItems
+				const originalTicket = ticketsItems.find((t) => t.id === id && !t.disabled)
+				const basePrice = originalTicket?.price || ticket.price
+				
+				// If selecting, keep quantity at 0 (user must increment manually). If deselecting, set quantity to 0.
+				const newQuantity = newIsSelected 
+					? 0  // Start at 0, not 1
+					: 0
+
+				return {
+					...ticket,
+					isSelected: newIsSelected,
+					quantity: newQuantity,
+					price: newQuantity * basePrice,
+				}
+			})
+			
+			// If any ticket is selected and no guest fields exist, add one
+			const hasSelectedTickets = updatedTickets.some((t) => t.isSelected)
+			if (hasSelectedTickets) {
+				setGuestEmails((prevEmails) => {
+					if (prevEmails.length === 0) {
+						return [""]
+					}
+					return prevEmails
+				})
+			}
+			
+			return updatedTickets
+		})
 	}
 
 	const showCheckoutForm = (showCheckout: boolean) => {
@@ -293,17 +346,18 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 															currency: "usd",
 														})}
 													</p>
-													{event.isPaid && isSelected && !isDisabled && (
+													{isSelected && !isDisabled && (
 														<div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
 															<button
 																onClick={() => handleQuantityChange(ticket.id, -1)}
-																className="w-9 h-9 bg-white border-2 border-primary-purple text-primary-purple rounded-full flex items-center justify-center hover:bg-primary-purple hover:text-white transition-colors font-semibold text-lg"
+																disabled={tickets[ticketIndex]?.quantity === 0}
+																className="w-9 h-9 bg-white border-2 border-primary-purple text-primary-purple rounded-full flex items-center justify-center hover:bg-primary-purple hover:text-white transition-colors font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
 																aria-label="Decrease quantity"
 															>
 																−
 															</button>
 															<span className="text-text-primary text-lg font-semibold min-w-[2rem] text-center">
-																{tickets[ticketIndex]?.quantity || 1}
+																{tickets[ticketIndex]?.quantity || 0}
 															</span>
 															<button
 																onClick={() => handleQuantityChange(ticket.id, 1)}
@@ -322,7 +376,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 							</div>
 
 							{/* Guest Invitation Section */}
-							{totalSelectedQuantity > 1 && (
+							{totalSelectedQuantity > 0 && (
 								<div className="mt-6 pt-6 border-t border-border-light">
 									<div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-5 border-2 border-blue-200">
 										<div className="flex items-start gap-3 mb-4">
@@ -334,8 +388,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 													👥 Invite Your Guests
 												</h3>
 												<p className="text-sm text-text-secondary">
-													You&apos;ve selected <strong className="text-primary-purple">{totalSelectedQuantity} ticket{totalSelectedQuantity > 1 ? 's' : ''}</strong>. 
-													You can invite <strong className="text-primary-purple">{guestSlots} guest{guestSlots !== 1 ? 's' : ''}</strong> to join you at this event.
+													You can invite <strong className="text-primary-purple">unlimited guests</strong> to join you at this event.
 												</p>
 												<p className="text-xs text-text-muted mt-2">
 													💡 Your guests will receive an invitation email with event details. This is optional - you can skip if you prefer.
@@ -343,23 +396,37 @@ const EventTicketsComponent: React.FC<Props> = ({ event, isOpen, onClose }) => {
 											</div>
 										</div>
 
-										{guestSlots > 0 && (
-											<div className="space-y-3 mt-4">
-												{guestEmails.slice(0, guestSlots).map((email: string, index: number) => (
-													<div key={index} className="flex items-center gap-2">
-														<div className="flex-1">
-															<input
-																type="email"
-																placeholder={`Guest ${index + 1} email address (optional)`}
-																value={email}
-																onChange={(e) => handleGuestEmailChange(index, e.target.value)}
-																className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
-															/>
-														</div>
+										<div className="space-y-3 mt-4">
+											{guestEmails.map((email: string, index: number) => (
+												<div key={index} className="flex items-center gap-2">
+													<div className="flex-1">
+														<input
+															type="email"
+															placeholder={`Guest ${index + 1} email address (optional)`}
+															value={email}
+															onChange={(e) => handleGuestEmailChange(index, e.target.value)}
+															className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all"
+														/>
 													</div>
-												))}
-											</div>
-										)}
+													<button
+														type="button"
+														onClick={() => handleRemoveGuest(index)}
+														className="px-3 py-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors text-sm font-semibold border border-red-200 hover:border-red-300"
+														aria-label="Remove guest"
+													>
+														<FiX className="w-4 h-4" />
+													</button>
+												</div>
+											))}
+											<button
+												type="button"
+												onClick={handleAddGuest}
+												className="w-full mt-2 px-4 py-3 bg-primary-purple/10 hover:bg-primary-purple/20 text-primary-purple font-semibold rounded-lg transition-colors border-2 border-primary-purple/30 hover:border-primary-purple/50 flex items-center justify-center gap-2"
+											>
+												<FiPlus className="w-5 h-5" />
+												Add Guest
+											</button>
+										</div>
 									</div>
 								</div>
 							)}

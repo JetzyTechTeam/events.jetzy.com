@@ -27,7 +27,7 @@ export const DeleteTicketApis = async (params: RequestParams<{ eventId: string; 
 }
 
 export const UpdateTicketApis = async (
-	params: RequestParams<{ payload: { title: string; description: string }; params: { eventId: string; ticketId: string } }>,
+	params: RequestParams<{ payload: { title: string; price?: number; description: string; dueDate?: string; quantityLimit?: number }; params: { eventId: string; ticketId: string } }>,
 ): Promise<ServerResponse<EventInterface, any>> => {
 	return await PUT(eventEndPoints.tickets.update.replace(":eventId", params?.data?.params.eventId as string).replace(":ticketId", params?.data?.params.ticketId as string), params?.data?.payload)
 }

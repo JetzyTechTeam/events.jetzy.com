@@ -23,14 +23,14 @@ const Footer: React.FC = () => {
 				<div className="flex flex-col md:flex-row justify-between items-center gap-6">
 					{/* Logo Section */}
 					<div className="flex items-center gap-3">
-						<Image 
-							src="/imgs/jetzy%20logo%20%282%29.png" 
-							alt="Jetzy Logo" 
-							width={32} 
-							height={32} 
+						<Image
+							src="/imgs/jetzy%20logo%20%282%29.png"
+							alt="Jetzy Logo"
+							width={32}
+							height={32}
 							className="object-contain"
 						/>
-						<span className="text-text-primary font-semibold text-lg">Jetzy</span>
+						<span className="text-jetzy font-semibold text-lg">Jetzy</span>
 					</div>
 
 					{/* Social Icons */}

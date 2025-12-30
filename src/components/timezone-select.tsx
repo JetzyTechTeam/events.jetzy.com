@@ -8,8 +8,10 @@ const timezones = moment.tz.names().map((tz) => {
 		.toString()
 		.padStart(2, "0")
 	const minutes = (Math.abs(offset) % 60).toString().padStart(2, "0")
+	// Format: "America/New_York (UTC-05:00)" - more intuitive
+	const cityName = tz.split('/').pop()?.replace(/_/g, ' ') || tz
 	return {
-		label: `(UTC${sign}${hours}:${minutes})`,
+		label: `${cityName} (UTC${sign}${hours}:${minutes})`,
 		value: tz,
 	}
 })

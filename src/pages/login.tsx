@@ -8,7 +8,7 @@ import { SignInFormData } from "@Jetzy/types"
 import { ErrorMessage, Field, Form, Formik } from "formik"
 import { GetServerSideProps } from "next"
 import Head from "next/head"
-import { signIn } from "next-auth/react"
+import { signIn, useSession, getSession } from "next-auth/react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
@@ -17,10 +17,22 @@ import { FiEye, FiEyeOff } from "react-icons/fi"
 
 export default function LoginPage() {
 	const navigation = useRouter()
+	const { data: session } = useSession()
 	const [isLoading, setLoader] = React.useState(false)
 	const [showPassword, setShowPassword] = React.useState(false)
+	const [hasShownSuccess, setHasShownSuccess] = React.useState(false)
 	// The url callback to redirect user to after login
 	const { _cb } = navigation?.query
+
+	// Redirect if already logged in
+	React.useEffect(() => {
+		if (session) {
+			const userRole = (session.user as any)?.role
+			const isAdmin = userRole === "admin" || userRole === "super admin"
+			const redirectUrl = _cb ? _cb.toString() : (isAdmin ? ROUTES.dashboard.index : ROUTES.home)
+			navigation.replace(redirectUrl)
+		}
+	}, [session, navigation, _cb])
 
 	const formData: SignInFormData = {
 		email: "",
@@ -51,15 +63,45 @@ export default function LoginPage() {
 			return
 		}
 
-		// Success - show success toast
-		if (res?.ok) {
+		// Success - show success toast only once
+		if (res?.ok && !hasShownSuccess) {
 			Success("Login Successful", "You have been logged in successfully!")
+			setHasShownSuccess(true)
 		}
 
 		// turn off loader
 		setLoader(false)
 
-		navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+		// Wait a moment for session to update, then redirect
+		setTimeout(async () => {
+			try {
+				// Get updated session after login
+				const updatedSession = await getSession()
+				const userRole = (updatedSession?.user as any)?.role
+				const isAdmin = userRole === "admin" || userRole === "super admin"
+
+				// Determine redirect destination
+				let redirectUrl = ROUTES.home // Default to home page
+				
+				if (_cb) {
+					// If there's a callback URL, use it
+					redirectUrl = _cb.toString()
+				} else if (isAdmin) {
+					// Admin users go to dashboard
+					redirectUrl = ROUTES.dashboard.index
+				} else {
+					// Regular users go to home page
+					redirectUrl = ROUTES.home
+				}
+
+				// Use replace instead of push to avoid adding to history and prevent loops
+				navigation.replace(redirectUrl)
+			} catch (error) {
+				console.error("Error getting session after login:", error)
+				// Fallback to home page if session fetch fails
+				navigation.replace(ROUTES.home)
+			}
+		}, 300)
 	}
 
 	return (

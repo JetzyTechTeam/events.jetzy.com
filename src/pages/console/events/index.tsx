@@ -19,6 +19,7 @@ import { toast } from "react-toastify"
 import CreateEventModal from "@/components/events/CreateEventModal"
 import { FiMoreHorizontal, FiCalendar, FiMapPin, FiClock, FiPlus } from "react-icons/fi"
 import { DateTime } from "luxon"
+import SafeHTML from "@/components/misc/SafeHTML"
 
 type Pagination = {
 	total: number
@@ -267,7 +268,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 					</Text>
 					
 					<Link href={`/${event.slug}`}>
-						<Text 
+						<Box
 							fontSize="lg" 
 							fontWeight="bold" 
 							color="#1C1E21" 
@@ -275,9 +276,16 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 							_hover={{ color: "#1877F2", textDecoration: "underline" }}
 							noOfLines={2}
 							cursor="pointer"
+							lineHeight="1.4"
+							sx={{
+								"& p": {
+									margin: 0,
+									display: "inline",
+								},
+							}}
 						>
-							{event.name}
-						</Text>
+							<SafeHTML html={event.name} />
+						</Box>
 					</Link>
 					
 					<Text fontSize="sm" color="#65676B" mb={4} noOfLines={1}>

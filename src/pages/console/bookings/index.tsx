@@ -32,6 +32,8 @@ export type Booking = {
 	customerPhone: string
 	total: number
 	createdAt: string
+	stripeSessionId?: string
+	paymentUrl?: string | null
 }
 
 export type Exportable = {

@@ -7,6 +7,7 @@ import { sendGAEvent } from "@next/third-parties/google"
 import { useSession } from "next-auth/react"
 import LoginModal from "./misc/LoginModal"
 import { FiArrowLeft, FiEye, FiEyeOff } from "react-icons/fi"
+import SafeHTML from "./misc/SafeHTML"
 
 export default function EventCheckoutModel({ event }: { event: string }) {
 	const { data: session } = useSession()
@@ -21,6 +22,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	const [isCheckingUser, setIsCheckingUser] = useState(false)
 	const [pendingCheckoutData, setPendingCheckoutData] = useState<{ formData: typeof formData; tickets: typeof tickets } | null>(null)
 	const [shouldStopCheckout, setShouldStopCheckout] = useState(false)
+	const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -61,6 +63,80 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		}
 	}, [session])
 
+	// Pending bookings check removed - users can buy tickets freely
+	// Capacity restrictions are handled in the main checkout flow
+
+	// Validate phone number
+	const validatePhoneNumber = (phone: string): string => {
+		if (!phone || phone.trim() === "") {
+			return "Phone number is required"
+		}
+		
+		// Remove all non-digit characters except +
+		const cleaned = phone.replace(/[^\d+]/g, "")
+		const allDigits = cleaned.replace(/\+/g, "")
+		
+		// Check for obviously invalid patterns (all same digit)
+		if (/^(\d)\1{9,}$/.test(allDigits)) {
+			return "Please enter a valid phone number"
+		}
+		
+		// Check for all zeros or all ones (only for 10+ digit numbers)
+		if (/^[01]+$/.test(allDigits) && allDigits.length >= 10) {
+			return "Please enter a valid phone number"
+		}
+		
+		const withPlus = cleaned.startsWith("+")
+		
+		if (withPlus) {
+			// With +, must have country code (1-3 digits) + 7-15 digits
+			// Total length should be 8-18 digits (country code + number)
+			if (allDigits.length < 8 || allDigits.length > 18) {
+				return "Please enter a valid phone number with country code (e.g., +1234567890)"
+			}
+			
+			// For international numbers, check the last 10 digits for sequential patterns
+			// This allows country codes like +92, +44, etc.
+			const last10Digits = allDigits.slice(-10)
+			if (/^(0123456789|1234567890|9876543210|0987654321)$/.test(last10Digits)) {
+				return "Please enter a valid phone number"
+			}
+			
+			// Check for repeated sequences in the last 10 digits
+			if (/^(\d{3})\1{2,}\d?$/.test(last10Digits)) {
+				return "Please enter a valid phone number"
+			}
+		} else {
+			// Without +, must be exactly 10 digits for US/Canada
+			if (allDigits.length !== 10) {
+				return "Please enter a 10-digit phone number or include country code with + (e.g., +1234567890)"
+			}
+			
+			// Check for sequential patterns
+			if (/^(0123456789|1234567890|9876543210|0987654321)$/.test(allDigits)) {
+				return "Please enter a valid phone number"
+			}
+			
+			// Check for patterns with repeated sequences like "1231231234"
+			if (/^(\d{3})\1{2,}\d?$/.test(allDigits)) {
+				return "Please enter a valid phone number"
+			}
+			
+			// Additional validation: check area code (first 3 digits shouldn't be 000, 111, etc.)
+			const areaCode = allDigits.substring(0, 3)
+			if (/^(\d)\1{2}$/.test(areaCode)) {
+				return "Please enter a valid phone number"
+			}
+			// Check exchange code (next 3 digits) shouldn't be 000, 111, etc.
+			const exchangeCode = allDigits.substring(3, 6)
+			if (/^(\d)\1{2}$/.test(exchangeCode)) {
+				return "Please enter a valid phone number"
+			}
+		}
+		
+		return ""
+	}
+
 	// Handle form input changes
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const { name, value } = e.target
@@ -69,12 +145,8 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			[name]: value,
 		}))
 		if (name === "phone") {
-			const phonePattern = /^\+?1?\d{10,15}$/
-			if (!phonePattern.test(value)) {
-				setPhoneError("Please enter a valid phone number.")
-			} else {
-				setPhoneError("")
-			}
+			const error = validatePhoneNumber(value)
+			setPhoneError(error)
 		}
 		if (name === "referralCode") {
 			// Reset validation state when code changes
@@ -137,6 +209,13 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
 
+		// Prevent duplicate submissions
+		if (isSubmittingCheckout || isLoading) {
+			return
+		}
+
+		setIsSubmittingCheckout(true)
+
 		// Check required fields (password only required if not logged in)
 		const requiredFields = session?.user 
 			? ['firstName', 'lastName', 'email', 'phone']
@@ -156,6 +235,28 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		if (!session?.user && formData.password.length < 6) {
 			Error("Password Error", "Password must be at least 6 characters long.")
 			return
+		}
+
+		// Validate phone number
+		const phoneValidationError = validatePhoneNumber(formData.phone)
+		if (phoneValidationError) {
+			setPhoneError(phoneValidationError)
+			Error("Invalid Phone Number", phoneValidationError)
+			return
+		}
+
+		// Validate referral code if one is entered
+		if (formData.referralCode && formData.referralCode.trim() !== "") {
+			// If referral code is entered, it must be valid
+			if (referralCodeValid === false) {
+				Error("Invalid Referral Code", "Please enter a valid referral code or remove it to continue.")
+				return
+			}
+			// If validation is still in progress, wait for it to complete
+			if (referralCodeValid === null && validatingReferralCode) {
+				Error("Please Wait", "Referral code validation in progress. Please wait.")
+				return
+			}
 		}
 
 		// Guest emails are validated in ticket selection modal, no need to validate here
@@ -266,21 +367,136 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 				data: submissionData,
 			}),
 		).then((res: any) => {
+			setIsSubmittingCheckout(false)
+			
+			// Check if the response indicates an error
+			if (!res || !res.payload) {
+				console.error("[EventCheckout] No response payload received")
+				Error("Checkout Error", "No response from server. Please try again.")
+				return
+			}
+			
+			// Check if the API returned an error
+			if (res.payload?.status === false) {
+				const errorMessage = res.payload?.message || "Failed to create checkout session. Please try again."
+				console.error("[EventCheckout] API returned error:", errorMessage)
+				Error("Checkout Error", errorMessage)
+				return
+			}
+			
 			if (res.payload?.status) {
+				// Check if user has pending bookings (must complete these first)
+				if (res.payload?.data?.hasPendingBookings) {
+					const pendingCount = res.payload?.data?.pendingCount || 0
+					Error(
+						"Pending Bookings", 
+						res.payload?.message || `You have ${pendingCount} pending booking${pendingCount > 1 ? 's' : ''} for this event. Please complete payment for your pending booking${pendingCount > 1 ? 's' : ''} first. Check your email for payment links.`
+					)
+					dispatch(toggleCheckoutForm(false))
+					return
+				}
+				// Check if user already has a confirmed booking
+				if (res.payload?.data?.hasExistingBooking) {
+					Error("Already Booked", res.payload?.message || "You already have a confirmed booking for this event.")
+					dispatch(toggleCheckoutForm(false))
+					return
+				}
 				// Check if event is at capacity
 				if (res.payload?.data?.atCapacity) {
 					setWaitingListData(res.payload.data)
 					setShowWaitingList(true)
-				} else {
-					// Clear localStorage after successful checkout initiation
-					if (typeof window !== 'undefined') {
-						localStorage.removeItem("eventGuestEmails")
-					}
-					// redirect user to payment page
-					dispatch(toggleCheckoutForm(false))
-					window.location.href = res?.payload?.data?.url
+					return
 				}
+				
+				// Check if user is already on waiting list
+				if (res.payload?.data?.alreadyOnWaitingList) {
+					// User is already on waiting list - show waiting list UI
+					setWaitingListData({
+						atCapacity: true,
+						eventName: res.payload.data.eventName,
+						eventId: res.payload.data.eventId,
+						alreadyOnWaitingList: true
+					})
+					setShowWaitingList(true)
+					return
+				}
+				
+				// Get the checkout URL from the response
+				// The Stripe session object is in res.payload.data, and it has a .url property
+				const sessionData = res?.payload?.data
+				const checkoutUrl = sessionData?.url
+				
+				console.log("[EventCheckout] Checkout response:", {
+					hasPayload: !!res?.payload,
+					hasData: !!sessionData,
+					hasUrl: !!checkoutUrl,
+					url: checkoutUrl,
+					dataType: typeof sessionData,
+					dataKeys: sessionData ? Object.keys(sessionData) : [],
+					sessionId: sessionData?.id,
+					paymentStatus: sessionData?.payment_status,
+					fullResponse: res?.payload
+				})
+				
+				// Check if we have a valid checkout URL
+				if (!checkoutUrl || typeof checkoutUrl !== 'string' || !checkoutUrl.startsWith('http')) {
+					console.error("[EventCheckout] Invalid checkout URL received:", {
+						checkoutUrl,
+						type: typeof checkoutUrl,
+						hasUrl: !!checkoutUrl,
+						sessionData: sessionData,
+						sessionId: sessionData?.id,
+						allSessionKeys: sessionData ? Object.keys(sessionData) : []
+					})
+					
+					// If we have a session ID but no URL, this is unusual - log it
+					if (sessionData?.id && !checkoutUrl) {
+						console.error("[EventCheckout] Session created with ID but no URL - this should not happen for checkout sessions")
+					}
+					
+					Error("Checkout Error", "Failed to create checkout session. The server did not return a valid payment URL. Please try again or contact support.")
+					return
+				}
+				
+				// Clear localStorage after successful checkout initiation
+				if (typeof window !== 'undefined') {
+					localStorage.removeItem("eventGuestEmails")
+					// Store current page URL for back navigation on cancel
+					const currentUrl = window.location.href
+					sessionStorage.setItem("checkout_return_url", currentUrl)
+					// Store tickets in sessionStorage to preserve them across navigation
+					sessionStorage.setItem("checkout_tickets", JSON.stringify(tickets))
+					console.log("[EventCheckout] Stored return URL and tickets in sessionStorage")
+					// Set retry flag so checkout can reopen when returning
+					sessionStorage.setItem("checkout_retry", "true")
+				}
+				
+				// redirect user to payment page (Stripe checkout)
+				console.log("[EventCheckout] Redirecting to Stripe checkout:", checkoutUrl)
+				dispatch(toggleCheckoutForm(false))
+				
+				// Small delay to ensure modal closes before redirect
+				setTimeout(() => {
+					// Use window.location.href to ensure full page navigation to Stripe
+					window.location.href = checkoutUrl
+				}, 100)
+			} else {
+				// Response status is false or undefined
+				const errorMessage = res.payload?.message || "Failed to create checkout session. Please try again."
+				console.error("[EventCheckout] Checkout failed:", {
+					status: res.payload?.status,
+					message: res.payload?.message,
+					code: res.payload?.code,
+					payload: res.payload
+				})
+				Error("Checkout Error", errorMessage)
+				setIsSubmittingCheckout(false)
 			}
+		}).catch((error) => {
+			console.error("[EventCheckout] Checkout error:", error)
+			const errorMessage = error?.response?.data?.message || error?.message || "An unexpected error occurred. Please try again."
+			Error("Checkout Error", errorMessage)
+			setIsSubmittingCheckout(false)
 		})
 	}
 
@@ -344,6 +560,28 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			}),
 		).then((res: any) => {
 			if (res.payload?.status) {
+				// Check if user has pending bookings (must complete these first)
+				if (res.payload?.data?.hasPendingBookings) {
+					const pendingCount = res.payload?.data?.pendingCount || 0
+					Error(
+						"Pending Bookings", 
+						res.payload?.message || `You have ${pendingCount} pending booking${pendingCount > 1 ? 's' : ''} for this event. Please complete payment for your pending booking${pendingCount > 1 ? 's' : ''} first. Check your email for payment links.`
+					)
+					dispatch(toggleCheckoutForm(false))
+					return
+				}
+				// Check if user already has a confirmed booking
+				if (res.payload?.data?.hasExistingBooking) {
+					Error("Already Booked", res.payload?.message || "You already have a confirmed booking for this event.")
+					dispatch(toggleCheckoutForm(false))
+					return
+				}
+				// Check if user is already on waiting list
+				if (res.payload?.data?.alreadyOnWaitingList) {
+					Error("Already on Waiting List", res.payload?.message || "You are already on the waiting list for this event.")
+					dispatch(toggleCheckoutForm(false))
+					return
+				}
 				// Check if event is at capacity
 				if (res.payload?.data?.atCapacity) {
 					setWaitingListData(res.payload.data)
@@ -352,6 +590,11 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 					// Clear localStorage after successful checkout initiation
 					if (typeof window !== 'undefined') {
 						localStorage.removeItem("eventGuestEmails")
+						// Store current page URL for back navigation on cancel
+						const currentUrl = window.location.href
+						sessionStorage.setItem("checkout_return_url", currentUrl)
+						// Clear retry flag since we're starting a new checkout
+						sessionStorage.removeItem("checkout_retry")
 					}
 					// redirect user to payment page
 					dispatch(toggleCheckoutForm(false))
@@ -385,20 +628,37 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			if (result.status) {
 				setWaitingListRegistered(true)
 			} else {
-				Error("Error", result.message || "Failed to join waiting list")
+				// Check if error is due to pending bookings
+				if (result.data?.hasPendingBookings) {
+					const pendingCount = result.data.pendingCount || 0
+					Error(
+						"Pending Bookings",
+						result.message || `You have ${pendingCount} pending booking${pendingCount > 1 ? "s" : ""} for this event. Please complete payment for your pending booking${pendingCount > 1 ? "s" : ""} first. Check your email for payment links.`
+					)
+					// Close waiting list UI and checkout form
+					setShowWaitingList(false)
+					setWaitingListData(null)
+					dispatch(toggleCheckoutForm(false))
+				} else {
+					Error("Error", result.message || "Failed to join waiting list")
+				}
 			}
 		} catch (error) {
 			console.error("Error joining waiting list:", error)
 			Error("Error", "Failed to join waiting list. Please try again.")
 		}
-	}, [waitingListData, formData, tickets])
+	}, [waitingListData, formData, tickets, dispatch])
 
 	// Automatically register to waiting list when waiting list is shown
+	// Skip if user is already on waiting list
 	useEffect(() => {
-		if (showWaitingList && !waitingListRegistered && formData.firstName && formData.lastName && formData.email && formData.phone) {
+		if (showWaitingList && !waitingListRegistered && !waitingListData?.alreadyOnWaitingList && formData.firstName && formData.lastName && formData.email && formData.phone) {
 			handleJoinWaitingList()
+		} else if (showWaitingList && waitingListData?.alreadyOnWaitingList) {
+			// User is already on waiting list - mark as registered to prevent duplicate attempts
+			setWaitingListRegistered(true)
 		}
-	}, [showWaitingList, waitingListRegistered, formData.firstName, formData.lastName, formData.email, formData.phone, handleJoinWaitingList])
+	}, [showWaitingList, waitingListRegistered, waitingListData?.alreadyOnWaitingList, formData.firstName, formData.lastName, formData.email, formData.phone, handleJoinWaitingList])
 
 	// Handle back button
 	const handleBack = () => {
@@ -442,9 +702,13 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 									<div className="bg-primary-purple/10 border border-primary-purple/30 rounded-xl p-6 mb-6">
 										<p className="text-primary-purple text-2xl font-bold text-center">You&apos;re on the waitlist</p>
 									</div>
-									<p className="text-text-secondary mb-6 leading-relaxed">
-										Thank you for your interest! &quot;{waitingListData?.eventName}&quot; is currently at capacity. We&apos;ll email you if spots become available.
-									</p>
+									<div className="text-text-secondary mb-6 leading-relaxed">
+										{waitingListData?.alreadyOnWaitingList ? (
+											<>You are already on the waiting list for &quot;<SafeHTML html={waitingListData?.eventName || ""} as="span" />&quot;. We&apos;ll email you if spots become available.</>
+										) : (
+											<>Thank you for your interest! &quot;<SafeHTML html={waitingListData?.eventName || ""} as="span" />&quot; is currently at capacity. We&apos;ll email you if spots become available.</>
+										)}
+									</div>
 									<button
 										onClick={() => {
 											dispatch(toggleCheckoutForm(false))
@@ -513,8 +777,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 											disabled={!!session?.user && !!(session.user as any).phone} // Only disable if phone exists in session
 											className="w-full p-3 bg-white text-text-primary border-2 border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-purple focus:border-primary-purple transition-all disabled:bg-background-gray disabled:cursor-not-allowed"
 											required // Always required
-											pattern="^\+?[0-9]{7,15}$"
-											title="Enter a valid phone number (e.g., +1234567890)"
+											title="Enter a valid phone number with country code (e.g., +1234567890) or 10-digit US/Canada number"
 										/>
 										{phoneError && <span className="text-red-500 text-sm mt-1 block">{phoneError}</span>}
 									</div>
@@ -620,11 +883,17 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 
 								{/* Submit Button */}
 								<button
-									disabled={isLoading || isCheckingUser}
+									disabled={
+										isLoading || 
+										isCheckingUser || 
+										isSubmittingCheckout ||
+										!!phoneError || 
+										!!(formData.referralCode && formData.referralCode.trim() !== "" && referralCodeValid === false)
+									}
 									type="submit"
 									className="w-full bg-primary-purple text-white font-semibold px-6 py-3.5 rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 								>
-									{isLoading || isCheckingUser ? (
+									{isLoading || isCheckingUser || isSubmittingCheckout ? (
 										<>
 											<Spinner />
 											<span>{isCheckingUser ? "Checking..." : "Processing..."}</span>

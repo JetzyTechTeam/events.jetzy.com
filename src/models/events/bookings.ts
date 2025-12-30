@@ -86,17 +86,38 @@ const bookingSchema = new Schema<IBookings>(
 			type: Number,
 			default: 0,
 		},
+		stripeSessionId: {
+			type: String,
+			required: false,
+			index: true,
+		},
 	},
 	{
 		timestamps: true,
 		methods: {
 			// Whenever a new booking is made we need to update the event tracker
 			async updateEventTracker() {
+				// Update EventTracker
 				const eventTracker = await EventTracker.findOne({ eventId: this.eventId })
-				if (!eventTracker) return
+				if (eventTracker) {
+					eventTracker.bookedTickets += this.tickets.reduce((acc, curr) => acc + curr.quantity, 0)
+					await eventTracker.save()
+				}
 
-				eventTracker.bookedTickets += this.tickets.reduce((acc, curr) => acc + curr.quantity, 0)
-				await eventTracker.save()
+				// Update quantitySold for each ticket in the Event
+				if (this.tickets && this.tickets.length > 0) {
+					for (const bookedTicket of this.tickets) {
+						await Events.updateOne(
+							{
+								_id: this.eventId,
+								"tickets._id": bookedTicket.ticketId
+							},
+							{
+								$inc: { "tickets.$.quantitySold": bookedTicket.quantity }
+							}
+						)
+					}
+				}
 			},
 
 			// Get the event details

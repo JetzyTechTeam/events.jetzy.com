@@ -75,10 +75,16 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 								<Tr key={row._id.toString()}>
 									<Td fontWeight={"bold"}>
 										{/* image and event name */}
-										<Flex align="center" gap={2} justifyContent={"flex-start"} alignItems={"center"}>
-											<Box display={{ base: "none", md: "block" }}>
+									<Flex align="center" gap={2} justifyContent={"flex-start"} alignItems={"center"}>
+										<Box display={{ base: "none", md: "block" }}>
+											{row.images && row.images.length > 0 && row.images[0] && row.images[0].trim() !== "" ? (
 												<Image src={row.images[0]} alt={row.name} width={50} height={50} />
-											</Box>
+											) : (
+												<Box width={50} height={50} bg="gray.100" display="flex" alignItems="center" justifyContent="center" color="gray.400" fontSize="xs">
+													No Image
+												</Box>
+											)}
+										</Box>
 											<Button
 												onClick={() => {
 													setEventData(row)
@@ -164,7 +170,7 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 					<ModalBody>
 						<div className="space-y-4">
 							<div className="">
-								{event.images && event.images.length > 0 ? (
+								{event.images && event.images.length > 0 && event.images[0] && event.images[0].trim() !== "" ? (
 									<Image src={event.images[0]} alt={event.name} width={200} height={200} className="d-block m-auto" />
 								) : (
 									<Box width={200} height={200} display="flex" alignItems="center" justifyContent="center" bg="gray.100" color="gray.500">

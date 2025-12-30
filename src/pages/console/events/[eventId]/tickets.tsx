@@ -30,6 +30,8 @@ export default function EventTicketsPage({ tickets, eventName, eventId }: Props)
 		price: ticket.price,
 		date: ticket.createdAt,
 		desc: ticket.desc,
+		dueDate: ticket.dueDate ? new Date(ticket.dueDate).toISOString().slice(0, 16) : "",
+		quantityLimit: ticket.quantityLimit,
 	}))
 
 	return (

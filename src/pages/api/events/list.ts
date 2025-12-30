@@ -22,7 +22,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const isSignedIn = !!session;
 		const userRole = (session?.user as any)?.role;
 		const isAdmin = userRole === "admin" || userRole === "super admin";
-		
+		const userId = (session?.user as any)?._id;
+
 		// run validation
 		const validation = validationSchema.safeParse({
 			limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
@@ -42,27 +43,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Define the query based on authentication status and role
 		let query: any = { isDeleted: false };
-		
+
 		// Location filter
 		if (locFilter) {
 			query.location = { $regex: locFilter, $options: "i" };
 		}
-		
+
 		// Interest category filter
 		if (interestCategory && interestCategory !== "All") {
 			query.interestCategory = interestCategory;
 		}
-		
+
 		// Interest subcategory filter
 		if (interestSubCategory && interestSubCategory !== "") {
 			query.interestSubCategory = interestSubCategory;
 		}
-		
-		// If user is not admin or super admin, only show public events
+
+		// Privacy filter: Only show public events OR private events owned by the user
 		if (!isAdmin) {
-			query.privacy = "public";
+			if (isSignedIn && userId) {
+				// Show public events OR private events owned by this user
+				const { Types } = await import("mongoose")
+				const userObjectId = new Types.ObjectId(userId)
+				query.$or = [
+					{ privacy: "public" },
+					{ 
+						$and: [
+							{ privacy: "private" },
+							{ ownerId: userObjectId }
+						]
+					}
+				]
+			} else {
+				// Not signed in: only show public events
+				query.privacy = "public";
+			}
 		}
-		
+		// Admins can see all events (no privacy filter)
+
 		// If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
 		if (!isSignedIn) {
 			query.name = "Chinese Mid-Autumn Rooftop Celebration";
@@ -70,7 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		//    get all the events from the database
 		const events = await Events.find(query)
-			.sort({ createdAt: -1 })
+			.sort({ startsOn: 1 }) // Sort by event start date in ascending order (chronological)
 			.skip(skip)
 			.limit(limit)
 			.lean()

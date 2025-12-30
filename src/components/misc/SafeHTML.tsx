@@ -3,9 +3,10 @@ import { Box, BoxProps } from "@chakra-ui/react"
 
 interface SafeHTMLProps extends Omit<BoxProps, "dangerouslySetInnerHTML"> {
 	html: string
+	as?: keyof JSX.IntrinsicElements
 }
 
-const SafeHTML: React.FC<SafeHTMLProps> = ({ html, ...boxProps }) => {
+const SafeHTML: React.FC<SafeHTMLProps> = ({ html, as = "div", ...boxProps }) => {
 	const [sanitizedHTML, setSanitizedHTML] = useState<string>(html)
 
 	useEffect(() => {
@@ -52,6 +53,7 @@ const SafeHTML: React.FC<SafeHTMLProps> = ({ html, ...boxProps }) => {
 
 	return (
 		<Box
+			as={as === "span" ? "span" : undefined}
 			{...boxProps}
 			sx={{
 				wordWrap: "break-word",

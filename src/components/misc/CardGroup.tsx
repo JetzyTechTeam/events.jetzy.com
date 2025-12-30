@@ -37,7 +37,7 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 			const date = dayjs.utc(item.startsOn).tz(userTimeZone)
 
 			const formattedDate = date.format("MMM D, YYYY")
-			const formattedTime = date.format("h:mm A")
+			const formattedTime = date.format("hh:mm A")
 
 			return { formattedDate, formattedTime }
 		} catch (error) {
@@ -58,7 +58,13 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 						className="bg-white border border-border-light shadow-sm rounded-xl overflow-hidden hover:shadow-md transition-shadow duration-300 group"
 					>
 						<div className="relative h-48 w-full overflow-hidden">
-							<Image className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+							{item?.images && item?.images.length > 0 && item?.images[0] && item?.images[0].trim() !== "" ? (
+								<Image className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+							) : (
+								<div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
+									No Image
+								</div>
+							)}
 						</div>
 						<div className="p-4 space-y-2">
 							<h3 className="text-lg font-semibold text-text-primary group-hover:text-primary-purple transition-colors line-clamp-2">{item?.name}</h3>

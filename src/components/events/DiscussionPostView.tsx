@@ -541,21 +541,25 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 									<Box mt={2}>
 										{comment.images.length === 1 ? (
 											<Box position="relative" borderRadius="md" overflow="hidden" maxW="300px">
-												{isVideoUrl(comment.images[0]) ? (
-													<video
-														src={comment.images[0]}
-														controls
-														style={{ width: "100%", maxHeight: "200px", objectFit: "contain" }}
-													/>
-												) : (
-													<Image
-														src={comment.images[0]}
-														alt="Comment image"
-														width={300}
-														height={200}
-														style={{ objectFit: "cover", borderRadius: "8px" }}
-													/>
-												)}
+											{comment.images && comment.images.length > 0 && comment.images[0] && comment.images[0].trim() !== "" && (
+												<>
+													{isVideoUrl(comment.images[0]) ? (
+														<video
+															src={comment.images[0]}
+															controls
+															style={{ width: "100%", maxHeight: "200px", objectFit: "contain" }}
+														/>
+													) : (
+														<Image
+															src={comment.images[0]}
+															alt="Comment image"
+															width={300}
+															height={200}
+															style={{ objectFit: "cover", borderRadius: "8px" }}
+														/>
+													)}
+												</>
+											)}
 											</Box>
 										) : (
 											<SimpleGrid columns={2} spacing={1} maxW="300px">
@@ -1498,9 +1502,9 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				</Box>
 
 				{/* Images/Videos */}
-				{post.images && post.images.length > 0 && (
+				{post.images && post.images.length > 0 && post.images[0] && post.images[0].trim() !== "" && (
 					<Box mb={4} borderRadius="lg" overflow="hidden">
-						{post.images.length === 1 ? (
+						{post.images.filter((img: string) => img && img.trim() !== "").length === 1 ? (
 							<Box position="relative" w="full">
 								{isVideoUrl(post.images[0]) ? (
 									<video
@@ -1520,8 +1524,8 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 								)}
 							</Box>
 						) : (
-							<SimpleGrid columns={post.images.length === 2 ? 2 : 2} spacing={2}>
-								{post.images.map((img: string, idx: number) => (
+							<SimpleGrid columns={post.images.filter((img: string) => img && img.trim() !== "").length === 2 ? 2 : 2} spacing={2}>
+								{post.images.filter((img: string) => img && img.trim() !== "").map((img: string, idx: number) => (
 									<Box key={idx} position="relative" w="full" h="300px">
 										{isVideoUrl(img) ? (
 											<video

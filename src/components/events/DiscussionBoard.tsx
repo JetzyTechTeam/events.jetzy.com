@@ -250,7 +250,7 @@ const FeedPostCard = ({
 				</Box>
 
 				{/* Images/Videos */}
-				{post.images && post.images.length > 0 && (
+				{post.images && post.images.length > 0 && post.images[0] && post.images[0].trim() !== "" && (
 					<Box mb={3} borderRadius="lg" overflow="hidden">
 						{post.images.length === 1 ? (
 							<Box position="relative" w="full">
@@ -273,7 +273,7 @@ const FeedPostCard = ({
 							</Box>
 						) : (
 							<SimpleGrid columns={2} spacing={1}>
-								{post.images.slice(0, 4).map((img: string, idx: number) => (
+								{post.images.slice(0, 4).filter((img: string) => img && img.trim() !== "").map((img: string, idx: number) => (
 									<Box key={idx} position="relative" w="full" h="200px">
 										{isVideoUrl(img) ? (
 											<video 

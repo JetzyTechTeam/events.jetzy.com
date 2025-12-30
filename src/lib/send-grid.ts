@@ -9,6 +9,25 @@ dayjs.extend(timezone)
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY as string)
 
+// Helper function to strip HTML tags and decode HTML entities in event names
+function decodeHTMLEntities(text: string): string {
+	if (!text) return text
+	// First strip HTML tags
+	let cleaned = text.replace(/<[^>]*>/g, "")
+	// Then decode HTML entities
+	return cleaned
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&nbsp;/g, " ")
+		.replace(/&apos;/g, "'")
+		.replace(/&#x27;/g, "'")
+		.replace(/&#x2F;/g, "/")
+		.trim()
+}
+
 type TicketEmailData = {
 	event: IEvent
 	firstName: string
@@ -63,6 +82,7 @@ type WaitingListApprovalData = {
 		quantity: number
 		price: number
 	}>
+	paymentUrl?: string
 }
 
 type EventInvitationData = {
@@ -86,7 +106,7 @@ type BlastEmailData = {
 	customMessage: string
 }
 
-export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets }: WaitingListApprovalData) => {
+export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets, paymentUrl }: WaitingListApprovalData) => {
 	try {
 		const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
 		const totalAmount = tickets.reduce((sum, ticket) => sum + (ticket.price * ticket.quantity), 0)
@@ -94,7 +114,7 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
 		await sgMail.send({
 			to: [email, "tech@jetzyapp.com"],
 			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `Jetzy [Good News!] Your wait is over - ${eventName}`,
+			subject: `Jetzy [Good News!] Your wait is over - ${decodeHTMLEntities(eventName)}`,
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Great News! Your Wait is Over! 🎉</h1>
@@ -102,7 +122,7 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
           <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;">
             <h2 style="color: #155724; margin-bottom: 15px;">Tickets Available!</h2>
             <p style="color: #155724; margin: 0;">
-              Congratulations! Spots have become available for "${eventName}" and you&apos;ve been selected from our waiting list.
+              Congratulations! Spots have become available for "${decodeHTMLEntities(eventName)}" and you&apos;ve been selected from our waiting list.
             </p>
           </div>
 
@@ -130,7 +150,7 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
           </div>
 
           <div style="text-align: center; margin: 30px 0;">
-            <a href="#" style="background-color: #F79432; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+            <a href="${paymentUrl || '#'}" style="background-color: #F79432; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
               Complete Your Purchase Now
             </a>
           </div>
@@ -152,7 +172,7 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
 		await sgMail.send({
 			to: [email, "tech@jetzyapp.com"],
 			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `Jetzy [Waiting List] ${eventName}`,
+			subject: `Jetzy [Waiting List] ${decodeHTMLEntities(eventName)}`,
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">You're on the Waiting List!</h1>
@@ -160,7 +180,7 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
             <h2 style="color: #856404; margin-bottom: 15px;">Event Capacity Reached</h2>
             <p style="color: #856404; margin: 0;">
-              Unfortunately, the event "${eventName}" has reached its capacity limit. 
+              Unfortunately, the event "${decodeHTMLEntities(eventName)}" has reached its capacity limit. 
               However, we've added you to our waiting list and will notify you immediately 
               if spots become available.
             </p>
@@ -212,8 +232,8 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
 				name: 'Jetzy Events'
 			},
 			replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `${hostName} invited you to ${eventName}`,
-			text: `You're invited to ${eventName}!\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event details: ${eventUrl}\n\n--\nThis invitation was sent by ${hostName} via Jetzy Events`,
+			subject: `${hostName} invited you to ${decodeHTMLEntities(eventName)}`,
+			text: `You're invited to ${decodeHTMLEntities(eventName)}!\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event details: ${eventUrl}\n\n--\nThis invitation was sent by ${hostName} via Jetzy Events`,
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
           <div style="background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); padding: 40px 20px; border-radius: 12px 12px 0 0; text-align: center;">
@@ -228,7 +248,7 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
             </div>
 
             <div style="background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%); padding: 25px; border-radius: 12px; margin: 25px 0; border-left: 4px solid #8B5CF6;">
-              <h2 style="color: #1F2937; margin: 0 0 20px 0; font-size: 24px; font-weight: 700;">${eventName}</h2>
+              <h2 style="color: #1F2937; margin: 0 0 20px 0; font-size: 24px; font-weight: 700;">${decodeHTMLEntities(eventName)}</h2>
               
               <div style="margin-bottom: 12px;">
                 <span style="color: #6B7280; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">📅 Date & Time</span>
@@ -313,7 +333,7 @@ export const sendBlastEmail = async ({
 			},
 			replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
 			subject,
-			text: `${eventName}\n\n${customMessage}\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event: ${eventUrl}\n\n--\nSent by ${hostName} via Jetzy Events`,
+			text: `${decodeHTMLEntities(eventName)}\n\n${customMessage}\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event: ${eventUrl}\n\n--\nSent by ${hostName} via Jetzy Events`,
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
           <div style="background: linear-gradient(135deg, ${config.color} 0%, ${config.color}dd 100%); padding: 40px 20px; border-radius: 12px 12px 0 0; text-align: center;">
@@ -332,7 +352,7 @@ export const sendBlastEmail = async ({
             </div>
 
             <div style="background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%); padding: 25px; border-radius: 12px; margin: 25px 0;">
-              <h2 style="color: #1F2937; margin: 0 0 20px 0; font-size: 24px; font-weight: 700;">${eventName}</h2>
+              <h2 style="color: #1F2937; margin: 0 0 20px 0; font-size: 24px; font-weight: 700;">${decodeHTMLEntities(eventName)}</h2>
               
               <div style="margin-bottom: 12px;">
                 <span style="color: #6B7280; font-size: 14px; font-weight: 600; text-transform: uppercase;">📅 Date & Time</span>
@@ -466,7 +486,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 	const emailPayload = {
 		to: [email, "tech@jetzyapp.com"],
 		from: process.env.SENDGRID_EMAIL_SENDER as string,
-		subject: `Jetzy [Booking Confirmation] ${event.name}`,
+		subject: `Jetzy [Booking Confirmation] ${decodeHTMLEntities(event.name)}`,
 		...(attachments.length > 0 ? { attachments } : {}),
 		html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -664,7 +684,7 @@ export const sendOrganizerSaleNotification = async ({
 		await sgMail.send({
 			to: organizerEmail,
 			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `New Ticket Sale! - ${event.name}`,
+			subject: `New Ticket Sale! - ${decodeHTMLEntities(event.name)}`,
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">New Ticket Sold! 🎉</h1>
@@ -672,7 +692,7 @@ export const sendOrganizerSaleNotification = async ({
           <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;">
             <h2 style="color: #155724; margin-bottom: 10px;">Cha-ching!</h2>
             <p style="color: #155724; margin: 0;">
-              You just sold tickets for <strong>${event.name}</strong>.
+              You just sold tickets for <strong>${decodeHTMLEntities(event.name)}</strong>.
             </p>
           </div>
 
@@ -736,7 +756,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
 		await sgMail.send({
 			to: [email, "tech@jetzyapp.com"],
 			from: process.env.SENDGRID_EMAIL_SENDER as string,
-			subject: `Jetzy [Booking Cancelled] ${event.name}`,
+			subject: `Jetzy [Booking Cancelled] ${decodeHTMLEntities(event.name)}`,
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Booking Cancellation Confirmation</h1>
@@ -744,13 +764,13 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
             <h2 style="color: #856404; margin-bottom: 15px;">Your Booking Has Been Cancelled</h2>
             <p style="color: #856404; margin: 0;">
-              We're sorry to inform you that your booking for "${event.name}" has been cancelled.
+              We're sorry to inform you that your booking for "${decodeHTMLEntities(event.name)}" has been cancelled.
             </p>
           </div>
 
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
-            <p><strong>Event Name:</strong> ${event.name}</p>
+            <p><strong>Event Name:</strong> ${decodeHTMLEntities(event.name)}</p>
             <p><strong>Date and Time:</strong> ${timestamp}</p>
             <p><strong>Venue:</strong> ${location}</p>
           </div>

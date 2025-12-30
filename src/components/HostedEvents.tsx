@@ -18,6 +18,8 @@ import Footer from "@/components/layout/Footer"
 import CommentsSection, { UserType } from "@/components/events/CommentsSection"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
 import SafeHTML from "@/components/misc/SafeHTML"
+import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
+import { toggleCheckoutForm, setSelectedTickets, getCheckoutStore } from "@Jetzy/redux/reducers/checkoutSlice"
 import {
 	CalendarIcon,
 	MapPinIcon,
@@ -26,8 +28,12 @@ import {
 	EllipsisHorizontalIcon,
 	TicketIcon,
 	QuestionMarkCircleIcon,
-	ChatBubbleLeftRightIcon
+	ChatBubbleLeftRightIcon,
+	BookmarkIcon
 } from "@heroicons/react/24/outline"
+import {
+	BookmarkIcon as BookmarkSolidIcon
+} from "@heroicons/react/24/solid"
 import {
 	Table,
 	Thead,
@@ -47,6 +53,7 @@ import {
 	MenuButton,
 	MenuList,
 	MenuItem,
+	MenuDivider,
 	Input,
 	InputGroup,
 	InputLeftElement,
@@ -92,7 +99,15 @@ export default function HostedEvents({ event }: Props) {
 	const router = useRouter()
 	const [shareUrl, setShareUrl] = useState("")
 	const [isTicketModalOpen, setIsTicketModalOpen] = useState(false)
+	const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+	const [reportReason, setReportReason] = useState("")
+	const [reportDescription, setReportDescription] = useState("")
+	const [isSubmittingReport, setIsSubmittingReport] = useState(false)
+	const [isSaved, setIsSaved] = useState(false)
+	const [isSaving, setIsSaving] = useState(false)
+	const [isCheckingSaved, setIsCheckingSaved] = useState(true)
 	const { data: session } = useSession()
+	const toast = useToast()
 
 	// Validate event data early and safely
 	const isValidEvent = event && event._id && event.name
@@ -118,11 +133,151 @@ export default function HostedEvents({ event }: Props) {
 	// @ts-ignore
 	const isAdmin = session?.user?.role === "admin"
 
+	const dispatch = useAppDispatch()
+	const { tickets, showCheckout } = useAppSelector(getCheckoutStore)
+	const queryClient = useQueryClient()
+
 	useEffect(() => {
 		if (typeof window !== "undefined") {
 			setShareUrl(window.location.href)
 		}
 	}, [])
+
+	// Check if event is saved when component loads
+	useEffect(() => {
+		const checkSavedStatus = async () => {
+			if (!session || !clonedEvent?._id) {
+				setIsCheckingSaved(false)
+				return
+			}
+
+			try {
+				setIsCheckingSaved(true)
+				const response = await axios.get(`/api/events/check-saved?eventId=${clonedEvent._id}`)
+				setIsSaved(response.data.data?.isSaved || false)
+			} catch (error) {
+				console.error("Error checking saved status:", error)
+				setIsSaved(false)
+			} finally {
+				setIsCheckingSaved(false)
+			}
+		}
+
+		checkSavedStatus()
+	}, [session, clonedEvent?._id])
+
+	// Auto-reopen checkout form when returning from cancel page
+	useEffect(() => {
+		if (typeof window !== "undefined") {
+			const shouldRetry = sessionStorage.getItem("checkout_retry")
+			
+			if (shouldRetry === "true") {
+				// Try to restore tickets from sessionStorage
+				const storedTickets = sessionStorage.getItem("checkout_tickets")
+				let parsedTickets: any[] = []
+				
+				if (storedTickets) {
+					try {
+						parsedTickets = JSON.parse(storedTickets)
+						if (Array.isArray(parsedTickets) && parsedTickets.length > 0) {
+							// Ensure all restored tickets have isSelected: true and proper structure
+							const ticketsToRestore = parsedTickets.map(t => ({
+								...t,
+								isSelected: true, // Ensure they're marked as selected
+								quantity: t.quantity || 0 // Ensure quantity is set
+							}))
+							
+							// Restore tickets to Redux state immediately
+							dispatch(setSelectedTickets(ticketsToRestore))
+							console.log("[HostedEvents] ✅ Restored", ticketsToRestore.length, "tickets from sessionStorage:", ticketsToRestore)
+							
+							// Clear the retry flag
+							sessionStorage.removeItem("checkout_retry")
+							
+							// Reopen checkout form after a delay to ensure Redux state is updated and page is loaded
+							setTimeout(() => {
+								dispatch(toggleCheckoutForm(true))
+								console.log("[HostedEvents] ✅ Auto-opened checkout form - ready to proceed with same tickets!")
+							}, 600)
+						} else {
+							console.warn("[HostedEvents] Stored tickets array is empty")
+							sessionStorage.removeItem("checkout_retry")
+							sessionStorage.removeItem("checkout_tickets")
+						}
+					} catch (e) {
+						console.error("[HostedEvents] Error parsing stored tickets:", e)
+						sessionStorage.removeItem("checkout_retry")
+						sessionStorage.removeItem("checkout_tickets")
+					}
+				} else {
+					console.warn("[HostedEvents] No tickets found in sessionStorage")
+					sessionStorage.removeItem("checkout_retry")
+				}
+			}
+		}
+	}, [dispatch]) // Run on mount and when dispatch changes
+
+	// Handle save/unsave event
+	const handleSaveEvent = async () => {
+		if (!session) {
+			toast({
+				title: "Login required",
+				description: "Please log in to save events",
+				status: "warning",
+				duration: 2000,
+				isClosable: true,
+			})
+			return
+		}
+
+		if (!clonedEvent?._id) {
+			toast({
+				title: "Error",
+				description: "Event information is not available",
+				status: "error",
+				duration: 2000,
+				isClosable: true,
+			})
+			return
+		}
+
+		setIsSaving(true)
+		try {
+			const action = isSaved ? "unsave" : "save"
+			const response = await axios.post("/api/events/save", {
+				eventId: clonedEvent._id,
+				action,
+			})
+
+			if (response.data.status) {
+				setIsSaved(response.data.data?.isSaved || false)
+				// Invalidate saved events count query to update the badge
+				queryClient.invalidateQueries({ queryKey: ["saved-events-count"] })
+				toast({
+					title: isSaved ? "Event unsaved" : "Event saved",
+					description: isSaved
+						? "Event has been removed from your saved events"
+						: "Event has been saved to your collection",
+					status: "success",
+					duration: 2000,
+					isClosable: true,
+				})
+			} else {
+				throw new Error(response.data.message || "Failed to save event")
+			}
+		} catch (error: any) {
+			console.error("Error saving/unsaving event:", error)
+			toast({
+				title: "Error",
+				description: error.response?.data?.message || error.message || "Failed to save event. Please try again.",
+				status: "error",
+				duration: 3000,
+				isClosable: true,
+			})
+		} finally {
+			setIsSaving(false)
+		}
+	}
 
 	const sharer = useWebShare({
 		title: shareTitle,
@@ -133,16 +288,54 @@ export default function HostedEvents({ event }: Props) {
 	const { formattedDate, formattedTime, formattedMonth, formattedDay } = useMemo(() => {
 		if (!clonedEvent?.startsOn) return { formattedDate: "", formattedTime: "", formattedMonth: "", formattedDay: "" }
 		try {
-			const userTimeZone = clonedEvent?.timezone?.split(") ")[1] || clonedEvent?.timezone || "UTC"
-			const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
+			// Extract timezone - handle both "(UTC-05:00) America/New_York" format and plain timezone name
+			let userTimeZone: string
+			if (clonedEvent?.timezone?.includes(") ")) {
+				userTimeZone = clonedEvent.timezone.split(") ")[1]
+			} else {
+				userTimeZone = clonedEvent?.timezone || "UTC"
+			}
+			
+			// Validate timezone is not a date format
+			if (userTimeZone.match(/^\d{4}-\d{2}-\d{2}/) || userTimeZone.match(/^\d{2}:\d{2}$/)) {
+				console.warn("[HostedEvents] Invalid timezone format detected, using UTC:", clonedEvent?.timezone)
+				userTimeZone = "UTC"
+			}
+			
+			// Convert UTC date to user's timezone
+			const utcDate = dayjs.utc(clonedEvent.startsOn)
+			const localDate = utcDate.tz(userTimeZone)
+			
+			// Debug logging
+			if (process.env.NODE_ENV === "development") {
+				console.log("[HostedEvents] Timezone conversion:", {
+					originalUTC: utcDate.format("YYYY-MM-DD HH:mm:ss UTC"),
+					timezone: userTimeZone,
+					converted: localDate.format("YYYY-MM-DD HH:mm:ss z"),
+					storedTimezone: clonedEvent?.timezone
+				})
+			}
+			
 			return {
-				formattedDate: date.format("dddd, MMMM D, YYYY"),
-				formattedTime: date.format("h:mm A"),
-				formattedMonth: date.format("MMM").toUpperCase(),
-				formattedDay: date.format("D")
+				formattedDate: localDate.format("dddd, MMMM D, YYYY"),
+				formattedTime: localDate.format("hh:mm A"),
+				formattedMonth: localDate.format("MMM").toUpperCase(),
+				formattedDay: localDate.format("D")
 			}
 		} catch (error) {
-			return { formattedDate: "", formattedTime: "", formattedMonth: "", formattedDay: "" }
+			console.error("[HostedEvents] Error formatting date with timezone:", error, "Timezone:", clonedEvent?.timezone)
+			// Fallback to UTC if timezone conversion fails
+			try {
+				const date = dayjs.utc(clonedEvent.startsOn)
+				return {
+					formattedDate: date.format("dddd, MMMM D, YYYY"),
+					formattedTime: date.format("hh:mm A"),
+					formattedMonth: date.format("MMM").toUpperCase(),
+					formattedDay: date.format("D")
+				}
+			} catch (fallbackError) {
+				return { formattedDate: "", formattedTime: "", formattedMonth: "", formattedDay: "" }
+			}
 		}
 	}, [clonedEvent?.startsOn, clonedEvent?.timezone])
 
@@ -217,7 +410,14 @@ export default function HostedEvents({ event }: Props) {
 							<h1 className="text-3xl md:text-4xl font-bold text-[#1C1E21] mb-2">
 								<SafeHTML html={clonedEvent.name} />
 							</h1>
-							<p className="text-gray-600 font-medium mb-4">{clonedEvent.location}</p>
+							{clonedEvent.venueName ? (
+								<div className="mb-4">
+									<p className="text-gray-900 font-semibold mb-1">{clonedEvent.venueName}</p>
+									<p className="text-gray-600 font-medium">{clonedEvent.location}</p>
+								</div>
+							) : (
+								<p className="text-gray-600 font-medium mb-4">{clonedEvent.location}</p>
+							)}
 
 							{/* Action Bar */}
 							<div className="flex flex-wrap gap-3 py-4 border-t border-gray-200 mt-4">
@@ -253,20 +453,90 @@ export default function HostedEvents({ event }: Props) {
 									<MenuButton
 										as={IconButton}
 										aria-label="More options"
-										icon={<EllipsisHorizontalIcon className="w-6 h-6" />}
+										icon={<EllipsisHorizontalIcon className="w-5 h-5" />}
 										variant="ghost"
-										className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+										className="p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors w-10 h-10 flex items-center justify-center"
 										_hover={{ bg: "gray.300" }}
 										bg="gray.200"
 									/>
-									<MenuList>
-										<MenuItem icon={<TicketIcon className="w-4 h-4" />}>
-											Save Event
+									<MenuList
+										bg="white"
+										border="1px solid #E5E7EB"
+										borderRadius="12px"
+										boxShadow="0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)"
+										py={2}
+										minW="180px"
+									>
+										<MenuItem
+											icon={
+												isSaved ? (
+													<BookmarkSolidIcon className="w-4 h-4" />
+												) : (
+													<BookmarkIcon className="w-4 h-4" />
+												)
+											}
+											onClick={handleSaveEvent}
+											isDisabled={isSaving || isCheckingSaved}
+											py={2.5}
+											px={4}
+											_hover={{ bg: "#F3F4F6" }}
+											fontSize="sm"
+											fontWeight="500"
+											color="#1F2937"
+										>
+											{isCheckingSaved
+												? "Loading..."
+												: isSaving
+												? isSaved
+													? "Unsaving..."
+													: "Saving..."
+												: isSaved
+												? "Unsave Event"
+												: "Save Event"}
 										</MenuItem>
-										<MenuItem icon={<ShareIcon className="w-4 h-4" />}>
+										<MenuItem 
+											icon={<ShareIcon className="w-4 h-4" />}
+											onClick={async () => {
+												try {
+													const eventUrl = `${window.location.origin}/${clonedEvent?.slug || ''}`
+													await navigator.clipboard.writeText(eventUrl)
+													toast({
+														title: "Link copied!",
+														description: "Event link has been copied to clipboard",
+														status: "success",
+														duration: 2000,
+														isClosable: true,
+													})
+												} catch (error) {
+													toast({
+														title: "Failed to copy link",
+														description: "Please try again",
+														status: "error",
+														duration: 2000,
+														isClosable: true,
+													})
+												}
+											}}
+											py={2.5}
+											px={4}
+											_hover={{ bg: "#F3F4F6" }}
+											fontSize="sm"
+											fontWeight="500"
+											color="#1F2937"
+										>
 											Copy Link
 										</MenuItem>
-										<MenuItem color="red.500" icon={<EllipsisHorizontalIcon className="w-4 h-4" />}>
+										<MenuDivider borderColor="#E5E7EB" />
+										<MenuItem 
+											color="#DC2626"
+											icon={<EllipsisHorizontalIcon className="w-4 h-4" />}
+											onClick={() => setIsReportModalOpen(true)}
+											py={2.5}
+											px={4}
+											_hover={{ bg: "#FEF2F2" }}
+											fontSize="sm"
+											fontWeight="500"
+										>
 											Report Event
 										</MenuItem>
 									</MenuList>
@@ -288,7 +558,7 @@ export default function HostedEvents({ event }: Props) {
 							<UserGroupIcon className="w-6 h-6 text-gray-500 mt-1" />
 							<div>
 								<p className="text-[#1C1E21]">
-									{clonedEvent.privacy === 'private' ? 'Private' : 'Public'}  · Anyone on or off Jetzy
+									{clonedEvent.privacy === 'private' ? 'Private - Only people who are invited' : 'Public - Anyone on Jetzy'}
 								</p>
 							</div>
 						</div>
@@ -297,7 +567,7 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 
 						{/* Host Information */}
-						{clonedEvent.host && clonedEvent.host.name && (
+						{clonedEvent.host && clonedEvent.host.name && clonedEvent.host.name.trim() !== "" && (
 							<div className="mt-6 pt-6 border-t border-gray-200">
 								<h3 className="text-lg font-semibold text-[#1C1E21] mb-4">Host Information</h3>
 								<Flex align="center" gap={4} mb={3}>
@@ -307,7 +577,9 @@ export default function HostedEvents({ event }: Props) {
 										<Avatar name={clonedEvent.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
 									)}
 									<Box>
-										<Text fontSize="md" fontWeight="semibold" color="#1C1E21">{clonedEvent.host.name}</Text>
+										<Text fontSize="md" fontWeight="semibold" color="#1C1E21" noOfLines={2} title={clonedEvent.host.name}>
+											{clonedEvent.host.name}
+										</Text>
 										{clonedEvent.host.email && (
 											<Text fontSize="sm" color="#65676B" mt={1}>
 												<a href={`mailto:${clonedEvent.host.email}`} className="text-blue-600 hover:underline">
@@ -334,25 +606,32 @@ export default function HostedEvents({ event }: Props) {
 				{/* Right Column (Sidebar) */}
 				<div className="space-y-4">
 					{/* Location Card */}
-					<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Location</h2>
-						<div className="mb-4">
-							<iframe
-								width="100%"
-								height="200"
-								frameBorder="0"
-								style={{ border: 0, borderRadius: '8px' }}
-								src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&q=${encodeURIComponent(clonedEvent.location)}`}
-								allowFullScreen
-							/>
-						</div>
-						<div className="flex items-start gap-3">
-							<MapPinIcon className="w-6 h-6 text-gray-500 flex-shrink-0" />
-							<div>
-								<p className="font-semibold text-[#1C1E21]">{clonedEvent.location}</p>
+					{clonedEvent.location && (
+						<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+							<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Location</h2>
+							{clonedEvent.location.trim() && (
+								<div className="mb-4">
+									<iframe
+										width="100%"
+										height="200"
+										frameBorder="0"
+										style={{ border: 0, borderRadius: '8px' }}
+										src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&q=${encodeURIComponent(clonedEvent.location)}`}
+										allowFullScreen
+									/>
+								</div>
+							)}
+							<div className="flex items-start gap-3">
+								<MapPinIcon className="w-6 h-6 text-gray-500 flex-shrink-0" />
+								<div>
+									{clonedEvent.venueName && (
+										<p className="font-semibold text-[#1C1E21] mb-1">{clonedEvent.venueName}</p>
+									)}
+									<p className={`text-[#1C1E21] ${clonedEvent.venueName ? 'text-sm text-gray-600' : 'font-semibold'}`}>{clonedEvent.location}</p>
+								</div>
 							</div>
 						</div>
-					</div>
+					)}
 
 					{/* Sticky Ticket Card (Desktop) */}
 					<div className="bg-white rounded-lg shadow-lg p-6 border-2 border-blue-200 sticky top-20 transform transition-all duration-300 hover:shadow-2xl">
@@ -362,9 +641,21 @@ export default function HostedEvents({ event }: Props) {
 								{(() => {
 									const enabledTickets = clonedEvent.tickets?.filter((t: any) => !t.disabled) || []
 									if (enabledTickets.length > 0) {
-										return `$${Math.min(...enabledTickets.map((t: any) => t.price))}`
+										// Only consider paid tickets (price > 0) for the minimum price display
+										const paidTickets = enabledTickets.filter((t: any) => t.price > 0)
+										if (paidTickets.length > 0) {
+											return `$${Math.min(...paidTickets.map((t: any) => t.price))}`
+										}
+										// If all tickets are free, show "Free"
+										return 'Free'
 									}
-									return clonedEvent.tickets && clonedEvent.tickets.length > 0 ? `$${Math.min(...clonedEvent.tickets.map((t: any) => t.price))}` : 'Free'
+									// Fallback: check all tickets if enabledTickets is empty
+									const allTickets = clonedEvent.tickets || []
+									const paidTickets = allTickets.filter((t: any) => t.price > 0)
+									if (paidTickets.length > 0) {
+										return `$${Math.min(...paidTickets.map((t: any) => t.price))}`
+									}
+									return allTickets.length > 0 ? 'Free' : 'Free'
 								})()}
 							</p>
 							<button
@@ -442,33 +733,35 @@ export default function HostedEvents({ event }: Props) {
 
 
 
-					{/* Hosted By - Show only if no host info in about section */}
-					{(!clonedEvent.host || !clonedEvent.host.name) && (
+					{/* Hosted By - Show only if host name exists and no host info in about section */}
+					{clonedEvent.host && clonedEvent.host.name && clonedEvent.host.name.trim() !== "" && (!clonedEvent.host.email && !clonedEvent.host.phone) && (
 						<div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
 							<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Hosted by</h2>
 							<Flex align="center" gap={3}>
-								{defaultHosts.slice(0, 3).map((host, index) => (
-									<Box
-										key={index}
-										w="40px"
-										h="40px"
-										borderRadius="full"
-										bgGradient="linear(to-br, purple.400, purple.600)"
-										display="flex"
-										alignItems="center"
-										justifyContent="center"
-										color="white"
-										fontWeight="semibold"
-										boxShadow="md"
-										border="2px solid white"
-										ml={index > 0 ? "-12px" : "0"}
-										zIndex={5 - index}
-										title={host.name}
-									>
-										{host.name.charAt(0)}
-									</Box>
-								))}
-								<Text fontSize="sm" color="gray.600" ml={2}>and {defaultHosts.length - 3} others</Text>
+								{clonedEvent.host.image ? (
+									<Avatar src={clonedEvent.host.image} name={clonedEvent.host.name} size="md" />
+								) : (
+									<Avatar name={clonedEvent.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
+								)}
+								<Box>
+									<Text fontSize="md" fontWeight="semibold" color="#1C1E21" noOfLines={2} title={clonedEvent.host.name}>
+										{clonedEvent.host.name}
+									</Text>
+									{clonedEvent.host.email && (
+										<Text fontSize="sm" color="#65676B" mt={1}>
+											<a href={`mailto:${clonedEvent.host.email}`} className="text-blue-600 hover:underline">
+												{clonedEvent.host.email}
+											</a>
+										</Text>
+									)}
+									{clonedEvent.host.phone && (
+										<Text fontSize="sm" color="#65676B" mt={1}>
+											<a href={`tel:${clonedEvent.host.phone}`} className="text-blue-600 hover:underline">
+												{clonedEvent.host.phone}
+											</a>
+										</Text>
+									)}
+								</Box>
 							</Flex>
 						</div>
 					)}
@@ -485,6 +778,116 @@ export default function HostedEvents({ event }: Props) {
 
 			{/* Checkout Modal */}
 			{clonedEvent?.name && <EventCheckoutModel event={clonedEvent.name} />}
+
+			{/* Report Event Modal */}
+			<Modal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} isCentered>
+				<ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
+				<ModalContent bg="white" color="#1F2937" mx={{ base: 4, md: 0 }} borderRadius="2xl" border="1px solid #E5E7EB" boxShadow="xl">
+					<ModalHeader fontSize={{ base: "lg", md: "xl" }} borderBottom="1px solid #E5E7EB" pb={4}>
+						Report Event
+					</ModalHeader>
+					<ModalCloseButton color="#6B7280" _hover={{ bg: "#F3F4F6" }} />
+					<ModalBody pb={6} pt={6}>
+						<div className="flex flex-col gap-4">
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-2">Reason for reporting</label>
+								<Select
+									value={reportReason}
+									onChange={(e) => setReportReason(e.target.value)}
+									placeholder="Select a reason"
+									border="1px solid #E5E7EB"
+									_hover={{ borderColor: "#D1D5DB" }}
+									_focus={{ borderColor: "#8B5CF6", boxShadow: "0 0 0 1px #8B5CF6" }}
+								>
+									<option value="spam">Spam or Scam</option>
+									<option value="inappropriate">Inappropriate Content</option>
+									<option value="misleading">Misleading Information</option>
+									<option value="harassment">Harassment or Bullying</option>
+									<option value="fake">Fake Event</option>
+									<option value="other">Other</option>
+								</Select>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-2">Additional details (optional)</label>
+								<textarea
+									value={reportDescription}
+									onChange={(e) => setReportDescription(e.target.value)}
+									placeholder="Please provide any additional information..."
+									rows={4}
+									className="w-full p-3 bg-white text-gray-900 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all resize-none"
+								/>
+							</div>
+						</div>
+					</ModalBody>
+					<ModalFooter borderTop="1px solid #E5E7EB" pt={4}>
+						<Button
+							variant="ghost"
+							mr={3}
+							onClick={() => {
+								setIsReportModalOpen(false)
+								setReportReason("")
+								setReportDescription("")
+							}}
+							_hover={{ bg: "#F3F4F6" }}
+						>
+							Cancel
+						</Button>
+						<Button
+							bg="#DC2626"
+							color="white"
+							_hover={{ bg: "#B91C1C" }}
+							isLoading={isSubmittingReport}
+							onClick={async () => {
+								if (!reportReason) {
+									toast({
+										title: "Please select a reason",
+										status: "warning",
+										duration: 2000,
+										isClosable: true,
+									})
+									return
+								}
+
+								setIsSubmittingReport(true)
+								try {
+									const response = await axios.post("/api/events/report", {
+										eventId: clonedEvent?._id,
+										reason: reportReason,
+										description: reportDescription,
+									})
+
+									if (response.data.status) {
+										toast({
+											title: "Report submitted",
+											description: "Thank you for reporting this event. We will review it shortly.",
+											status: "success",
+											duration: 3000,
+											isClosable: true,
+										})
+										setIsReportModalOpen(false)
+										setReportReason("")
+										setReportDescription("")
+									} else {
+										throw new Error(response.data.message || "Failed to submit report")
+									}
+								} catch (error: any) {
+									toast({
+										title: "Failed to submit report",
+										description: error.response?.data?.message || error.message || "Please try again later",
+										status: "error",
+										duration: 3000,
+										isClosable: true,
+									})
+								} finally {
+									setIsSubmittingReport(false)
+								}
+							}}
+						>
+							Submit Report
+						</Button>
+					</ModalFooter>
+				</ModalContent>
+			</Modal>
 		</div>
 	)
 }
@@ -547,6 +950,8 @@ interface TicketInfo {
 }
 
 interface Booking {
+	stripeSessionId?: string
+	paymentUrl?: string | null
 	_id: string
 	bookingRef: string
 	tickets: TicketInfo[]
@@ -737,8 +1142,19 @@ function EventBookings({ eventId }: { eventId: string }) {
 									</Td>
 								</Tr>
 							) : (
-								bookings.data.map((booking: Booking) => (
-									<Tr key={booking._id} _hover={{ bg: "gray.50" }} transition="background 0.2s">
+								bookings.data.map((booking: Booking) => {
+									// Debug: Log booking details
+									if (booking.status === "pending") {
+										console.log("[EventBookings] Pending booking:", {
+											bookingId: booking._id,
+											status: booking.status,
+											hasPaymentUrl: !!booking.paymentUrl,
+											paymentUrl: booking.paymentUrl,
+											hasStripeSessionId: !!(booking as any).stripeSessionId,
+										})
+									}
+									return (
+										<Tr key={booking._id} _hover={{ bg: "gray.50" }} transition="background 0.2s">
 										<Td py={4}>
 											<Flex align="center" gap={3}>
 												<Avatar size="sm" name={booking.customerName} bg="blue.500" color="white" />
@@ -785,7 +1201,8 @@ function EventBookings({ eventId }: { eventId: string }) {
 												textTransform="capitalize"
 												colorScheme={
 													booking.status === "confirmed" || booking.status === "approved" ? "green" :
-														booking.status === "pending" ? "yellow" : "red"
+														booking.status === "pending" ? "yellow" :
+														booking.status === "failed" || booking.status === "cancelled" ? "red" : "gray"
 												}
 											>
 												{booking.status}
@@ -809,6 +1226,73 @@ function EventBookings({ eventId }: { eventId: string }) {
 														setSelectedBooking(booking)
 														onDetailsOpen()
 													}}>View Details</MenuItem>
+													{booking.status === "pending" && (
+														<MenuItem onClick={async (e) => {
+															e.preventDefault()
+															e.stopPropagation()
+															try {
+																let paymentUrl = booking.paymentUrl
+																
+																// If paymentUrl is not available but stripeSessionId exists, fetch it
+																if (!paymentUrl && (booking as any).stripeSessionId) {
+																	toast({
+																		title: "Fetching payment link...",
+																		status: "info",
+																		duration: 2000,
+																		isClosable: true,
+																	})
+																	const response = await axios.get(`/api/bookings/payment-url?sessionId=${(booking as any).stripeSessionId}`)
+																	paymentUrl = response.data?.data?.paymentUrl
+																}
+																
+																if (!paymentUrl) {
+																	// Try to get payment URL from booking reference
+																	try {
+																		const response = await axios.get(`/api/bookings/payment-url-by-booking?bookingRef=${booking.bookingRef}`)
+																		if (response.data?.data?.paymentUrl) {
+																			paymentUrl = response.data.data.paymentUrl
+																		}
+																	} catch (fallbackError: any) {
+																		// Silently handle 404 or other errors - don't log to console
+																		// The error will be handled by the outer catch block
+																		if (fallbackError?.response?.status !== 404) {
+																			console.log("[EventBookings] Could not retrieve payment URL from booking reference:", fallbackError?.response?.status || fallbackError?.message)
+																		}
+																	}
+																}
+																
+																if (!paymentUrl) {
+																	// Show a user-friendly error message
+																	throw new Error("Payment link is not available for this booking. The payment session may have expired or the booking was created through a different method. Please contact support if you need assistance.")
+																}
+																
+																await navigator.clipboard.writeText(paymentUrl)
+																toast({
+																	title: "Payment link copied!",
+																	status: "success",
+																	duration: 2000,
+																	isClosable: true,
+																})
+															} catch (error: any) {
+																// Only log non-user-facing errors
+																if (error?.response?.status !== 404 && !error?.message?.includes("Payment link is not available")) {
+																	console.error("Error copying payment link:", error)
+																}
+																
+																// Show user-friendly error message
+																const errorMessage = error?.response?.data?.message || error?.message || "Could not retrieve payment link"
+																toast({
+																	title: "Payment Link Unavailable",
+																	description: errorMessage,
+																	status: "warning",
+																	duration: 5000,
+																	isClosable: true,
+																})
+															}
+														}}>
+															Copy Payment Link
+														</MenuItem>
+													)}
 													<MenuItem onClick={async (e) => {
 														e.preventDefault()
 														e.stopPropagation()
@@ -833,7 +1317,8 @@ function EventBookings({ eventId }: { eventId: string }) {
 											</Menu>
 										</Td>
 									</Tr>
-								))
+									)
+								})
 							)}
 						</Tbody>
 					</Table>
@@ -883,12 +1368,47 @@ function EventBookings({ eventId }: { eventId: string }) {
 											<Badge
 												colorScheme={
 													selectedBooking.status === "confirmed" || selectedBooking.status === "approved" ? "green" :
-														selectedBooking.status === "pending" ? "yellow" : "red"
+														selectedBooking.status === "pending" ? "yellow" :
+														selectedBooking.status === "failed" || selectedBooking.status === "cancelled" ? "red" : "gray"
 												}
 											>
 												{selectedBooking.status}
 											</Badge>
 										</Flex>
+										{selectedBooking.status === "pending" && selectedBooking.paymentUrl && (
+											<Flex justify="space-between" align="center">
+												<Text fontWeight="semibold">Payment Link:</Text>
+												<Flex align="center" gap={2}>
+													<Text fontSize="xs" fontFamily="mono" color="gray.600" maxW="200px" isTruncated>
+														{selectedBooking.paymentUrl}
+													</Text>
+													<Button
+														size="xs"
+														colorScheme="blue"
+														onClick={async () => {
+															try {
+																await navigator.clipboard.writeText(selectedBooking.paymentUrl!)
+																toast({
+																	title: "Payment link copied!",
+																	status: "success",
+																	duration: 2000,
+																	isClosable: true,
+																})
+															} catch (error) {
+																toast({
+																	title: "Failed to copy",
+																	status: "error",
+																	duration: 2000,
+																	isClosable: true,
+																})
+															}
+														}}
+													>
+														Copy
+													</Button>
+												</Flex>
+											</Flex>
+										)}
 										<Flex justify="space-between">
 											<Text fontWeight="semibold">Booking Date:</Text>
 											<Text>{new Date(selectedBooking.createdAt).toLocaleString()}</Text>

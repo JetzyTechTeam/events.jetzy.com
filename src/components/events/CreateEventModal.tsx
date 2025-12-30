@@ -105,7 +105,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 	const [isUploading, setIsUploading] = React.useState(false)
 	const [isSubmitting, setIsSubmitting] = React.useState(false)
 	const [mainImageIndex, setMainImageIndex] = React.useState(0)
-	const [tempTicket, setTempTicket] = React.useState({ id: "", title: "", description: "", price: 0 })
+	const [tempTicket, setTempTicket] = React.useState({ id: "", title: "", description: "", price: 0, dueDate: "", quantityLimit: undefined as number | undefined })
 	const [tickets, setTickets] = React.useState<any[]>([])
 	const [invitedGuests, setInvitedGuests] = React.useState<string[]>([])
 	const [guestEmail, setGuestEmail] = React.useState("")
@@ -245,6 +245,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 						locationInputRef.current,
 						{
 							fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
+							types: ["geocode", "establishment"], // Improved: includes addresses and places for better matching
 						}
 					)
 
@@ -253,7 +254,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 						console.log("Place selected:", place)
 						
 						if (place && formikRef.current) {
-							formikRef.current.setFieldValue("location", place.formatted_address || "")
+							// Save venue name (establishment name) separately from address
+							const venueName = place.name || ""
+							const address = place.formatted_address || ""
+							
+							formikRef.current.setFieldValue("venueName", venueName)
+							formikRef.current.setFieldValue("location", address)
 							
 							if (place.geometry?.location) {
 								const lat = place.geometry.location.lat()
@@ -408,7 +414,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 			return
 		}
 		setTickets([...tickets, { ...tempTicket, id: uniqueId(10) }])
-		setTempTicket({ id: "", title: "", description: "", price: 0 })
+		setTempTicket({ id: "", title: "", description: "", price: 0, dueDate: "", quantityLimit: undefined })
 	}
 
 	const handleRemoveTicket = (ticketId: string) => {
@@ -1033,12 +1039,38 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 															type="number"
 															step="0.01"
 															min="0"
-															value={tempTicket.price}
-															onChange={(e) =>
-																setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) || 0 })
-															}
+															value={tempTicket.price === 0 ? "" : tempTicket.price}
+															onChange={(e) => {
+																const val = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0
+																setTempTicket({ ...tempTicket, price: val })
+															}}
 														/>
 													</InputGroup>
+													<Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={3} mb={3}>
+														<Box>
+															<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
+																Sales End Date (Optional)
+															</Text>
+															<Input
+																type="datetime-local"
+																size="sm"
+																value={tempTicket.dueDate || ""}
+																onChange={(e) => setTempTicket({ ...tempTicket, dueDate: e.target.value })}
+															/>
+														</Box>
+														<Box>
+															<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
+																Quantity Limit (Optional)
+															</Text>
+															<Input
+																type="number"
+																placeholder="Unlimited"
+																size="sm"
+																value={tempTicket.quantityLimit || ""}
+																onChange={(e) => setTempTicket({ ...tempTicket, quantityLimit: e.target.value ? parseInt(e.target.value) : undefined })}
+															/>
+														</Box>
+													</Grid>
 													<Button
 														size="sm"
 														w="full"

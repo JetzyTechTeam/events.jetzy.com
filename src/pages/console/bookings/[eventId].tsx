@@ -147,13 +147,14 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 	const totalPages = Math.ceil(bookings.length / itemsPerPage)
 
 	const getStatusColor = (status: string) => {
-		switch (status) {
+		switch (status.toLowerCase()) {
 			case "confirmed":
 			case "approved":
 				return "green"
 			case "pending":
 				return "yellow"
 			case "cancelled":
+			case "failed":
 				return "red"
 			case "refunded":
 				return "gray"
@@ -525,6 +526,69 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 																<MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-5 h-5" />} variant="ghost" size="sm" />
 																<MenuList>
 																	<MenuItem onClick={() => handleViewDetails(booking)}>View Details</MenuItem>
+																	{booking.status === "pending" && (
+																		<MenuItem onClick={async () => {
+																			try {
+																				let paymentUrl = booking.paymentUrl
+																				
+																				// If paymentUrl is not available but stripeSessionId exists, fetch it
+																				if (!paymentUrl && booking.stripeSessionId) {
+																					toast({
+																						title: "Fetching payment link...",
+																						status: "info",
+																						duration: 2000,
+																						isClosable: true,
+																					})
+																					const response = await axios.get(`/api/bookings/payment-url?sessionId=${booking.stripeSessionId}`)
+																					paymentUrl = response.data?.data?.paymentUrl
+																				}
+																				
+																				if (!paymentUrl) {
+																					// Try to get payment URL from booking reference
+																					try {
+																						const response = await axios.get(`/api/bookings/payment-url-by-booking?bookingRef=${booking.bookingRef}`)
+																						if (response.data?.data?.paymentUrl) {
+																							paymentUrl = response.data.data.paymentUrl
+																						}
+																					} catch (fallbackError: any) {
+																						// Silently handle 404 or other errors - don't log to console
+																						if (fallbackError?.response?.status !== 404) {
+																							console.log("[ConsoleBookings] Could not retrieve payment URL from booking reference:", fallbackError?.response?.status || fallbackError?.message)
+																						}
+																					}
+																				}
+																				
+																				if (!paymentUrl) {
+																					throw new Error("Payment link is not available for this booking. The payment session may have expired or the booking was created through a different method.")
+																				}
+																				
+																				await navigator.clipboard.writeText(paymentUrl)
+																				toast({
+																					title: "Payment link copied!",
+																					status: "success",
+																					duration: 2000,
+																					isClosable: true,
+																				})
+																			} catch (error: any) {
+																				// Only log non-user-facing errors
+																				if (error?.response?.status !== 404 && !error?.message?.includes("Payment link is not available")) {
+																					console.error("Error copying payment link:", error)
+																				}
+																				
+																				// Show user-friendly error message
+																				const errorMessage = error?.response?.data?.message || error?.message || "Could not retrieve payment link"
+																				toast({
+																					title: "Payment Link Unavailable",
+																					description: errorMessage,
+																					status: "warning",
+																					duration: 5000,
+																					isClosable: true,
+																				})
+																			}
+																		}}>
+																			Copy Payment Link
+																		</MenuItem>
+																	)}
 																	<MenuItem 
 																		onClick={() => handleResendReceipt(booking)}
 																		isDisabled={booking.status === "cancelled"}
@@ -636,6 +700,40 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 													{selectedBooking.status}
 												</Badge>
 											</Flex>
+											{selectedBooking.status === "pending" && selectedBooking.paymentUrl && (
+												<Flex justify="space-between" align="center">
+													<Text fontWeight="semibold">Payment Link:</Text>
+													<Flex align="center" gap={2}>
+														<Text fontSize="xs" fontFamily="mono" color="gray.600" maxW="200px" isTruncated>
+															{selectedBooking.paymentUrl}
+														</Text>
+														<Button
+															size="xs"
+															colorScheme="blue"
+															onClick={async () => {
+																try {
+																	await navigator.clipboard.writeText(selectedBooking.paymentUrl!)
+																	toast({
+																		title: "Payment link copied!",
+																		status: "success",
+																		duration: 2000,
+																		isClosable: true,
+																	})
+																} catch (error) {
+																	toast({
+																		title: "Failed to copy",
+																		status: "error",
+																		duration: 2000,
+																		isClosable: true,
+																	})
+																}
+															}}
+														>
+															Copy
+														</Button>
+													</Flex>
+												</Flex>
+											)}
 											<Flex justify="space-between">
 												<Text fontWeight="semibold">Booking Date:</Text>
 												<Text>{new Date(selectedBooking.createdAt).toLocaleString()}</Text>
@@ -850,14 +948,73 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 		customerPhone: 1,
 		total: 1,
 		createdAt: 1,
+		stripeSessionId: 1,
 	})
 		.sort({ createdAt: -1 })
 		.lean()
 		.exec()
 
+	// For pending bookings with stripeSessionId, retrieve the payment URL from Stripe
+	const { default: Stripe } = await import('stripe')
+	const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
+	
+		const bookingsWithPaymentUrl = await Promise.all(
+		bookings.map(async (booking: any) => {
+			if (booking.status === 'pending' && booking.stripeSessionId) {
+				try {
+					const session = await stripe.checkout.sessions.retrieve(booking.stripeSessionId)
+					
+					console.log(`[bookings/[eventId]] Session details for booking ${booking._id}:`, {
+						id: session.id,
+						payment_status: session.payment_status,
+						status: session.status,
+						expires_at: session.expires_at,
+						expires_at_date: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+						hasUrl: !!session.url,
+						url: session.url
+					})
+					
+					// Check if session has expired
+					if (session.expires_at && session.expires_at < Math.floor(Date.now() / 1000)) {
+						console.log(`[bookings/[eventId]] Session expired for booking ${booking._id}`)
+						return {
+							...booking,
+							paymentUrl: null,
+						}
+					}
+					
+					// Check if session is already completed
+					if (session.payment_status === 'paid' || session.status === 'complete') {
+						console.log(`[bookings/[eventId]] Session already completed for booking ${booking._id}`)
+						return {
+							...booking,
+							paymentUrl: null,
+						}
+					}
+					
+					return {
+						...booking,
+						paymentUrl: session.url || null,
+					}
+				} catch (error: any) {
+					console.error(`[bookings/[eventId]] Error retrieving Stripe session for booking ${booking._id}:`, {
+						message: error.message,
+						code: error.code,
+						type: error.type
+					})
+					return {
+						...booking,
+						paymentUrl: null,
+					}
+				}
+			}
+			return booking
+		})
+	)
+
 	//exportable data for excel
 	const exportable = await Promise.all(
-		bookings.map(async (b) => {
+		bookingsWithPaymentUrl.map(async (b) => {
 			const event = eventDoc
 
 			//get ticket summary
@@ -893,7 +1050,7 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 				startsOn: eventDoc.startsOn.toISOString(),
 				endsOn: eventDoc.endsOn.toISOString(),
 			},
-			bookings: bookings.map((b) => ({
+			bookings: bookingsWithPaymentUrl.map((b) => ({
 				...b,
 				_id: b._id.toString(),
 				eventId: b.eventId.toString(),
@@ -902,6 +1059,7 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 					ticketId: t.ticketId.toString(),
 					quantity: t.quantity,
 				})),
+				paymentUrl: b.paymentUrl || null,
 			})),
 			exportable,
 			filters: {

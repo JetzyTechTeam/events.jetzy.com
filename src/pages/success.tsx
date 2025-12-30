@@ -9,6 +9,7 @@ import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 import LightNavbar from "@/components/layout/LightNavbar"
 import Footer from "@/components/layout/Footer"
+import SafeHTML from "@/components/misc/SafeHTML"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -40,6 +41,9 @@ const CheckoutSuccessPage: React.FC = () => {
 	const [referralCode, setReferralCode] = React.useState<string | null>(null)
 	const [discountAmount, setDiscountAmount] = React.useState<number>(0)
 	const [discountPercentage, setDiscountPercentage] = React.useState<number | null>(null)
+	const [ticketToken, setTicketToken] = React.useState<string | null>(null)
+	const [paymentVerified, setPaymentVerified] = React.useState(false)
+	const [verificationFailed, setVerificationFailed] = React.useState(false)
 
 	let { payload, session_id, event } = query
 
@@ -81,13 +85,66 @@ const CheckoutSuccessPage: React.FC = () => {
 			if (session_id) {
 				try {
 					const response = await axios.get(`/api/checkout/confirm?session_id=${session_id}`)
-					const session = response.data
-					setSessionData(session)
-
-					if (session.payment_status !== "paid") {
-						Error("Payment Error", "Your payment was not successful. Please try again.")
+					
+					// Verify response status is 200
+					if (response.status !== 200) {
+						console.error("[success] Non-200 response status:", response.status)
+						setIsLoading(false)
+						const errorMessage = response.data?.message || "Your payment was not successful. Please try again."
+						Error("Payment Error", errorMessage)
+						router.replace(`/cancel?session_id=${session_id}`)
 						return
 					}
+
+					// The API returns the Stripe session object directly
+					const session = response.data
+					
+					// Verify payment status is actually "paid"
+					// Note: The API returns the full Stripe session object, so payment_status is on the session
+					if (!session || session.payment_status !== "paid") {
+						console.error("[success] Payment not paid. Status:", session?.payment_status)
+						setIsLoading(false)
+						const errorMessage = session?.message || "Your payment was not successful. Please try again."
+						Error("Payment Error", errorMessage)
+						router.replace(`/cancel?session_id=${session_id}`)
+						return
+					}
+
+					// Payment is verified
+					console.log("[success] Payment verified successfully. Status:", session.payment_status)
+					setSessionData(session)
+					setPaymentVerified(true)
+
+					// Fetch booking to get ticket token (with retry logic for webhook timing)
+					const fetchBooking = async (retries = 3, delay = 1000) => {
+						for (let i = 0; i < retries; i++) {
+							try {
+								const bookingResponse = await axios.get(`/api/bookings/by-session?session_id=${session_id}`)
+								if (bookingResponse.data?.status && bookingResponse.data?.data?.qrCodeToken) {
+									setTicketToken(bookingResponse.data.data.qrCodeToken)
+									return
+								}
+							} catch (bookingError: any) {
+								if (bookingError?.response?.status === 404) {
+									if (i === retries - 1) {
+										console.warn("[success] Booking not found after retries. This may be normal if the webhook hasn't processed yet.")
+										// Don't fail the page if booking fetch fails - booking might be created by webhook later
+									} else {
+										console.log(`[success] Booking not found yet, retrying in ${delay}ms... (attempt ${i + 1}/${retries})`)
+										await new Promise(resolve => setTimeout(resolve, delay))
+									}
+								} else {
+									console.error("[success] Error fetching booking:", bookingError?.response?.data || bookingError?.message)
+									if (i === retries - 1) {
+										// Don't fail the page if booking fetch fails
+									} else {
+										await new Promise(resolve => setTimeout(resolve, delay))
+									}
+								}
+							}
+						}
+					}
+					await fetchBooking()
 
 					// Extract referral code and discount from session metadata
 					if (session.metadata?.referralCode) {
@@ -135,10 +192,59 @@ const CheckoutSuccessPage: React.FC = () => {
 						setDiscountAmount(discount)
 					}
 				} catch (error: any) {
-					console.error("Error checking payment status:", error)
-					Error("Error", "Unable to verify payment. Please contact support.")
+					console.error("[success] Error checking payment status:", error)
+					
+					// If it's a 400 error, it means payment failed - redirect to cancel immediately
+					if (error.response?.status === 400) {
+						const errorMessage = error.response?.data?.message || "Your payment was not successful. Please try again."
+						console.log("[success] Payment verification failed (400). Redirecting to cancel page.")
+						setIsLoading(false)
+						setVerificationFailed(true)
+						Error("Payment Error", errorMessage)
+						router.replace(`/cancel?session_id=${session_id}`)
+						return
+					}
+					
+					// For other errors (network, server, etc.), retry once after a delay
+					// This handles cases where the Stripe webhook hasn't processed yet or there's a temporary network issue
+					console.log("[success] Non-400 error. Retrying payment verification in 2 seconds...")
+					setTimeout(async () => {
+						try {
+							const retryResponse = await axios.get(`/api/checkout/confirm?session_id=${session_id}`)
+							if (retryResponse.status === 200 && retryResponse.data?.payment_status === "paid") {
+								console.log("[success] Payment verified on retry")
+								const session = retryResponse.data
+								setSessionData(session)
+								setPaymentVerified(true)
+								setIsLoading(false)
+							} else {
+								console.error("[success] Payment still not verified on retry")
+								setIsLoading(false)
+								setVerificationFailed(true)
+								const errorMessage = retryResponse.data?.message || "Your payment verification is taking longer than expected. Please check your email or contact support."
+								Error("Verification Error", errorMessage)
+							}
+						} catch (retryError: any) {
+							console.error("[success] Retry also failed:", retryError)
+							setIsLoading(false)
+							if (retryError.response?.status === 400) {
+								setVerificationFailed(true)
+								const errorMessage = retryError.response?.data?.message || "Your payment was not successful. Please try again."
+								Error("Payment Error", errorMessage)
+								router.replace(`/cancel?session_id=${session_id}`)
+							} else {
+								setVerificationFailed(true)
+								const errorMessage = retryError.response?.data?.message || retryError.message || "An error occurred while verifying your payment. Please contact support."
+								Error("Verification Error", errorMessage)
+							}
+						}
+					}, 2000)
 				} finally {
-					setIsLoading(false)
+					// Only set loading to false if we're not retrying
+					// The retry mechanism will handle setting loading to false
+					if (!session_id || paymentVerified || verificationFailed) {
+						setIsLoading(false)
+					}
 				}
 			} else {
 				setIsLoading(false)
@@ -163,6 +269,28 @@ const CheckoutSuccessPage: React.FC = () => {
 				<div className="text-center">
 					<div className="animate-spin rounded-full h-12 w-12 border-b-4 border-primary-purple mx-auto mb-4"></div>
 					<p className="text-text-primary font-medium">Verifying your payment...</p>
+				</div>
+			</div>
+		)
+	}
+
+	// Don't show success page if payment verification failed (when session_id exists)
+	// Only show error if we've explicitly determined payment failed (not just loading)
+	if (session_id && !paymentVerified && !isLoading && verificationFailed) {
+		// Payment verification failed - redirect should have happened, but show error state
+		return (
+			<div className="min-h-screen bg-background-light flex items-center justify-center p-4">
+				<div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md">
+					<div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+						<svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+					</div>
+					<h1 className="text-2xl font-bold text-text-primary mb-4">Payment Verification Failed</h1>
+					<p className="text-text-secondary mb-4">Your payment could not be verified. Please try again.</p>
+					<button onClick={() => router.push("/")} className="bg-primary-purple text-white px-8 py-3 rounded-lg hover:bg-primary-dark transition-colors font-semibold shadow-md">
+						Go to Home
+					</button>
 				</div>
 			</div>
 		)
@@ -245,7 +373,9 @@ const CheckoutSuccessPage: React.FC = () => {
 									<div className="space-y-2">
 										<div className="flex items-start gap-3">
 											<span className="text-text-muted text-sm font-medium min-w-[80px]">Event:</span>
-											<span className="text-text-primary font-semibold flex-1">{parsedEvent?.name || eventData?.name}</span>
+											<span className="text-text-primary font-semibold flex-1">
+												<SafeHTML html={parsedEvent?.name || eventData?.name || ""} />
+											</span>
 										</div>
 										<div className="flex items-start gap-3">
 											<span className="text-text-muted text-sm font-medium min-w-[80px]">Location:</span>
@@ -328,6 +458,27 @@ const CheckoutSuccessPage: React.FC = () => {
 
 							{/* Action Buttons */}
 							<div className="mt-8 flex flex-col sm:flex-row gap-4">
+								{ticketToken && (
+									<button
+										onClick={() => router.push(`/ticket/${ticketToken}`)}
+										className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold px-6 py-3.5 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+									>
+										<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+										</svg>
+										View Your Ticket
+									</button>
+								)}
+								<button
+									onClick={() => router.push("/my-tickets")}
+									className="flex-1 bg-blue-500 text-white font-semibold px-6 py-3.5 rounded-lg hover:bg-blue-600 transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+								>
+									<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+									</svg>
+									My Tickets
+								</button>
 								<button
 									onClick={() => router.push(`/${parsedEvent?.slug || eventData?.slug || ""}`)}
 									className="flex-1 bg-primary-purple text-white font-semibold px-6 py-3.5 rounded-lg hover:bg-primary-dark transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"

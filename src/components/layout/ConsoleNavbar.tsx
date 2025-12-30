@@ -59,15 +59,15 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 						<div className="flex h-16 items-center justify-between">
 							<div className="flex items-center">
 								<Link href="/" className="flex items-center gap-2 flex-shrink-0">
-									<Image 
-										src="/imgs/jetzy%20logo%20%282%29.png" 
-										alt="Jetzy Logo" 
-										width={32} 
-										height={32} 
+									<Image
+										src="/imgs/jetzy%20logo%20%282%29.png"
+										alt="Jetzy Logo"
+										width={32}
+										height={32}
 										className="object-contain"
 										priority
 									/>
-									<span className="text-text-primary font-bold text-xl">Jetzy</span>
+									<span className="text-jetzy font-bold text-xl">Jetzy</span>
 								</Link>
 								<div className="hidden md:block">
 									<div className="ml-10 flex items-baseline space-x-1">

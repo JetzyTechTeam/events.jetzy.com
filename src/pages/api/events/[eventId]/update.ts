@@ -41,6 +41,9 @@ const schema = zod.object({
 			price: zod.number().nonnegative(),
 			description: zod.string().optional(),
 			disabled: zod.boolean().optional(),
+			dueDate: zod.string().optional(),
+			quantityLimit: zod.number().positive().optional(),
+			quantitySold: zod.number().nonnegative().optional(),
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -84,15 +87,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy, interestCategory, interestSubCategory, host } = params
+		const { startDate, startTime, endDate, endTime, name, location, venueName, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy, interestCategory, interestSubCategory, host } = params
 
 		// construct datetime for start and end dates
-		const extractedTimeZone = timezone?.split(') ')[1]
-		const start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
-		const end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		// Extract timezone - handle both "(UTC-05:00) America/New_York" format and plain timezone name
+		let extractedTimeZone: string | undefined
+		if (timezone?.includes(') ')) {
+			extractedTimeZone = timezone.split(') ')[1]
+		} else {
+			extractedTimeZone = timezone
+		}
 
-		// check if start date is greater than end date
-		if (start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
+		// Validate timezone exists
+		if (!extractedTimeZone || extractedTimeZone.trim() === '') {
+			return sendResponse(res, null, "Please select a timezone from the dropdown (e.g., 'New York' or 'London').", false, ResCode.BAD_REQUEST)
+		}
+
+		// Validate that extractedTimeZone is a valid timezone (not a date format)
+		if (extractedTimeZone.match(/^\d{4}-\d{2}-\d{2}/) || extractedTimeZone.match(/^\d{2}:\d{2}$/)) {
+			return sendResponse(res, null, "Please select a timezone from the dropdown instead of entering a date or time.", false, ResCode.BAD_REQUEST)
+		}
+
+		// Declare start and end dates outside try block so they're accessible later
+		let start: Date
+		let end: Date
+
+		try {
+			start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+			end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+
+			// check if start date is greater than end date
+			if (start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
+		} catch (timezoneError: any) {
+			console.error("[events/update] Timezone conversion error:", timezoneError)
+			return sendResponse(res, null, `Invalid timezone. Please select a valid timezone from the dropdown (e.g., 'New York' or 'London').`, false, ResCode.BAD_REQUEST)
+		}
 
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
@@ -110,6 +139,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const stripeProducts = await Promise.all(formattedTickets.map((ticket) => stripe.prices.create(ticket)))
 		if (!stripeProducts) return sendResponse(res, null, "Failed to create event tickets.", false, ResCode.INTERNAL_SERVER_ERROR)
 
+		// Get existing event to preserve ticket states
+		const existingEvent = await Events.findById(new Types.ObjectId(eventId as string))
+		
+		// Auto-disable logic: Check if tickets should be disabled based on due date or quantity limit
+		// But respect user's manual enable/disable setting - only auto-disable if conditions require it
+		const now = new Date()
+		const processedTickets = tickets.map((ticket, index) => {
+			// Find existing ticket to preserve its disabled state if not explicitly set
+			const existingTicket = existingEvent?.tickets?.find((t: any) => {
+				// Try to match by ID or by name (fallback)
+				return t._id?.toString() === ticket.id || t.name === ticket.title
+			})
+			
+			// Check auto-disable conditions first
+			const isExpired = ticket.dueDate && new Date(ticket.dueDate) < now
+			const isSoldOut = ticket.quantityLimit && ticket.quantitySold !== undefined && ticket.quantitySold >= ticket.quantityLimit
+			
+			// Determine if ticket should be disabled:
+			// 1. If expired or sold out, it MUST be disabled (safety requirement)
+			// 2. Otherwise, respect the user's manual setting (ticket.disabled)
+			// 3. If ticket.disabled is undefined, preserve existing state or default to false
+			let shouldDisable: boolean
+			if (isExpired || isSoldOut) {
+				// Conditions require disable - override user setting for safety
+				shouldDisable = true
+			} else {
+				// No conditions require disable - respect user's manual setting
+				// If ticket.disabled is explicitly set (true or false), use that value
+				// If undefined, preserve the existing ticket's disabled state (default to false/enabled)
+				if (typeof ticket.disabled === 'boolean') {
+					// User explicitly set disabled to true or false - respect that
+					shouldDisable = ticket.disabled
+				} else {
+					// ticket.disabled is undefined - preserve existing state or default to enabled
+					shouldDisable = existingTicket?.disabled === true
+				}
+			}
+			
+			return {
+				name: ticket.title,
+				desc: ticket.description || "",
+				price: ticket.price.toFixed(2),
+				stripeProductId: stripeProducts[index].id,
+				disabled: shouldDisable,
+				dueDate: ticket.dueDate || undefined,
+				quantityLimit: ticket.quantityLimit || undefined,
+				quantitySold: ticket.quantitySold || 0,
+			}
+		})
+
 		// Find the event by id and update it
 		const updateResult = await Events.updateOne(
 			{
@@ -125,13 +204,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					isPaid,
 					capacity,
 					requireApproval,
-					tickets: tickets.map((ticket, index) => ({
-						name: ticket.title,
-						desc: ticket.description || "",
-						price: ticket.price.toFixed(2),
-						stripeProductId: stripeProducts[index].id,
-						disabled: ticket.disabled || false,
-					})),
+					tickets: processedTickets,
 					images: images.map((image) => image.file),
 					timezone: timezone,
 					privacy,
@@ -144,6 +217,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (!updateResult || updateResult.matchedCount === 0) {
 			return sendResponse(res, null, "Failed to update event.", false, ResCode.INTERNAL_SERVER_ERROR)
+		}
+
+		// Sync EventTracker.eventCapacity with event.capacity if capacity was changed
+		if (capacity !== undefined) {
+			try {
+				const { EventTracker } = await import("@/models/events/event-tracker")
+				await EventTracker.findOneAndUpdate(
+					{ eventId: new Types.ObjectId(eventId as string) },
+					{ $set: { eventCapacity: capacity } },
+					{ upsert: false } // Don't create if it doesn't exist
+				)
+			} catch (trackerError: any) {
+				console.error("[events/update] Failed to sync EventTracker capacity:", trackerError.message)
+				// Don't fail the request if tracker update fails
+			}
 		}
 
 		// Fetch the updated event to return

@@ -45,6 +45,24 @@ dayjs.extend(timezone)
 import Tesseract from "tesseract.js"
 import { Html5Qrcode } from "html5-qrcode"
 import { useSession } from "next-auth/react"
+import SafeHTML from "@/components/misc/SafeHTML"
+
+// Helper function to strip HTML tags and decode entities from event names
+function stripHTMLAndDecode(text: string): string {
+	if (!text) return text
+	// First strip all HTML tags
+	let cleaned = text.replace(/<[^>]*>/g, "")
+	// Then decode HTML entities
+	return cleaned
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&nbsp;/g, " ")
+		.replace(/&apos;/g, "'")
+		.trim()
+}
 
 interface BookingInfo {
 	bookingId: string
@@ -117,7 +135,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		// @ts-ignore
 		const userRole = session?.user?.role
 		const isAdmin = userRole === "admin" || userRole === "super admin"
-		
+
 		if (!isAdmin) {
 			// Non-admin users don't have access to guest list
 			return
@@ -476,12 +494,12 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 			if (navigator.permissions) {
 				const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName })
 				console.log("Camera permission status:", permissionStatus.state)
-				
+
 				if (permissionStatus.state === 'denied') {
 					return false
 				}
 			}
-			
+
 			// Try to access camera to trigger permission prompt
 			try {
 				const stream = await navigator.mediaDevices.getUserMedia({ video: true })
@@ -516,12 +534,12 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				await new Promise((resolve) => setTimeout(resolve, 100))
 				retries++
 			}
-			
+
 			const element = document.getElementById("qr-reader")
 			if (!element) {
 				throw new Error("QR scanner element not found. Please try again.")
 			}
-			
+
 			if (!qrCodeReaderRef.current) {
 				throw new Error("QR reader container not available. Please refresh the page.")
 			}
@@ -549,7 +567,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					duration: 10000,
 					isClosable: true,
 				})
-				
+
 				// Show additional help toast
 				setTimeout(() => {
 					toast({
@@ -578,7 +596,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 						duration: 10000,
 						isClosable: true,
 					})
-					
+
 					setTimeout(() => {
 						toast({
 							title: "How to Fix Camera Permission",
@@ -592,7 +610,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				}
 				throw err // Re-throw other errors
 			}
-			
+
 			if (!devices || devices.length === 0) {
 				throw new Error("No camera found. Please connect a camera and try again.")
 			}
@@ -604,14 +622,14 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 
 			// Try to start with environment camera (back camera), fallback to any camera
 			let cameraId: string | { facingMode: string } = { facingMode: "environment" }
-			
+
 			// Try to find back camera first
-			const backCamera = devices.find((device: any) => 
-				device.label?.toLowerCase().includes("back") || 
+			const backCamera = devices.find((device: any) =>
+				device.label?.toLowerCase().includes("back") ||
 				device.label?.toLowerCase().includes("rear") ||
 				device.label?.toLowerCase().includes("environment")
 			)
-			
+
 			if (backCamera) {
 				cameraId = backCamera.id
 				console.log("Using back camera:", backCamera.label)
@@ -635,8 +653,8 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				(errorMessage: string) => {
 					// Ignore scanning errors (they're frequent during scanning)
 					// Only log if it's not a "NotFoundException" (normal during scanning)
-					if (!errorMessage.includes("NotFoundException") && 
-					    !errorMessage.includes("No MultiFormat Readers")) {
+					if (!errorMessage.includes("NotFoundException") &&
+						!errorMessage.includes("No MultiFormat Readers")) {
 						console.debug("QR scan error:", errorMessage)
 					}
 				}
@@ -646,15 +664,15 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 			console.log("QR scanner started successfully")
 		} catch (err: any) {
 			console.error("QR scanner error:", err)
-			
+
 			// Provide more helpful error messages
 			let errorMessage = "Failed to start QR scanner"
 			let showPermissionHelp = false
-			
-			if (err.message === "PERMISSION_DENIED" || 
-			    err.name === "NotAllowedError" || 
-			    err.message?.includes("permission") ||
-			    err.message?.includes("Permission denied")) {
+
+			if (err.message === "PERMISSION_DENIED" ||
+				err.name === "NotAllowedError" ||
+				err.message?.includes("permission") ||
+				err.message?.includes("Permission denied")) {
 				errorMessage = "Camera permission denied"
 				showPermissionHelp = true
 			} else if (err.name === "NotFoundError" || err.message?.includes("camera")) {
@@ -664,7 +682,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 			} else if (err.message) {
 				errorMessage = err.message
 			}
-			
+
 			if (showPermissionHelp) {
 				// Show detailed permission help
 				toast({
@@ -674,7 +692,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					duration: 10000,
 					isClosable: true,
 				})
-				
+
 				// Show additional help toast
 				setTimeout(() => {
 					toast({
@@ -694,7 +712,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					isClosable: true,
 				})
 			}
-			
+
 			setIsCameraActive(false)
 		}
 	}
@@ -728,12 +746,12 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 				// Set QR scan result and show popup modal
 				setQrScanResult(bookingData)
 				setIsQrModalOpen(true)
-				
+
 				// Reset guest count and details for new scan
 				setGuestCount(1)
 				setCollectGuestDetails(false)
 				setGuestDetails([])
-				
+
 				// Set booking info directly from QR scan result (no need for additional validation)
 				setBookingInfo({
 					bookingId: bookingData.bookingId,
@@ -750,7 +768,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					checkInHistory: bookingData.checkInHistory || [],
 					bookingStatus: bookingData.status,
 				})
-				
+
 				toast({
 					title: "QR Code Verified",
 					description: "Ticket information loaded successfully",
@@ -855,12 +873,12 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 
 				// Update booking info
 				setBookingInfo(response.data.data)
-				
+
 				// Reset states
 				setGuestCount(1)
 				setCollectGuestDetails(false)
 				setGuestDetails([])
-				
+
 				// Refresh guest list
 				fetchGuestList()
 			} else {
@@ -1052,7 +1070,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 						Check-In Portal
 					</Heading>
 					<Text color="#6B7280" fontSize="md" fontWeight="medium">
-						{eventName}
+						{stripHTMLAndDecode(eventName || "")}
 					</Text>
 				</Box>
 
@@ -1436,7 +1454,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 															</Text>
 														</HStack>
 														<Text color="#6B7280" fontSize="sm">
-															{dayjs(entry.timestamp).format("MMM DD, h:mm A")}
+															{dayjs(entry.timestamp).format("MMM DD, hh:mm A")}
 														</Text>
 													</HStack>
 													<Text color="#9CA3AF" fontSize="xs" mt={1}>
@@ -1494,7 +1512,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 														</Text>
 													</HStack>
 													<Text fontSize="xs" color="#6B7280" fontWeight="medium">
-														{dayjs(guest.checkedInAt).format("MMM DD, h:mm A")}
+														{dayjs(guest.checkedInAt).format("MMM DD, hh:mm A")}
 													</Text>
 												</HStack>
 												<VStack align="flex-start" spacing={1} ml={9}>
@@ -1637,7 +1655,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 												All guests for this booking have been checked in.
 												{qrScanResult.lastCheckInAt && (
 													<Text mt={1} fontWeight="semibold">
-														Last checked in: {dayjs(qrScanResult.lastCheckInAt).format("MMM DD, YYYY h:mm A")}
+														Last checked in: {dayjs(qrScanResult.lastCheckInAt).format("MMM DD, YYYY hh:mm A")}
 													</Text>
 												)}
 											</AlertDescription>
@@ -1657,7 +1675,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 												{qrScanResult.checkedInCount} of {qrScanResult.totalTickets} guest{qrScanResult.totalTickets > 1 ? "s" : ""} checked in. {qrScanResult.remainingTickets} remaining.
 												{qrScanResult.lastCheckInAt && (
 													<Text mt={1} fontWeight="semibold">
-														Last checked in: {dayjs(qrScanResult.lastCheckInAt).format("MMM DD, YYYY h:mm A")}
+														Last checked in: {dayjs(qrScanResult.lastCheckInAt).format("MMM DD, YYYY hh:mm A")}
 													</Text>
 												)}
 											</AlertDescription>
@@ -1677,7 +1695,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 													Event Name
 												</Text>
 												<Text fontSize="md" fontWeight="bold" color="#1F2937">
-													{qrScanResult.event.name}
+													{stripHTMLAndDecode(qrScanResult.event.name || "")}
 												</Text>
 											</Box>
 											{qrScanResult.event.location && (
@@ -1701,10 +1719,10 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 																const eventTimezone = qrScanResult.event.timezone?.split(') ')[1] || 'UTC'
 																const startDate = dayjs.utc(qrScanResult.event.startsOn).tz(eventTimezone)
 																const endDate = qrScanResult.event.endsOn ? dayjs.utc(qrScanResult.event.endsOn).tz(eventTimezone) : null
-																return `${startDate.format("MMM DD, YYYY h:mm A")}${endDate ? ` - ${endDate.format("h:mm A")}` : ''} ${eventTimezone}`
+																return `${startDate.format("MMM DD, YYYY hh:mm A")}${endDate ? ` - ${endDate.format("hh:mm A")}` : ''} ${eventTimezone}`
 															} catch (e) {
 																// Fallback to simple formatting if timezone parsing fails
-																return dayjs(qrScanResult.event.startsOn).format("MMM DD, YYYY h:mm A")
+																return dayjs(qrScanResult.event.startsOn).format("MMM DD, YYYY hh:mm A")
 															}
 														})()}
 													</Text>

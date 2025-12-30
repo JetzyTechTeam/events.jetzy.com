@@ -28,6 +28,8 @@ type SessionMetadata = {
 	guestEmails?: string // JSON stringified array of guest emails
 	referralCode?: string
 	discountPercentage?: string
+	bookingId?: string // For waiting list approvals
+	fromWaitingList?: string // "true" if booking was created from waiting list
 }
 
 type TicketsProps = Array<{
@@ -78,15 +80,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const session = await stripe.checkout.sessions.retrieve(session_id)
 		console.log("[checkout/confirm] Stripe session retrieved. Payment status:", session.payment_status)
 		
+		// get the session metadata (needed even for failed payments to create/update booking)
+		const metadata = session.metadata as SessionMetadata
+		
+		// If payment failed, create or update booking with failed status
+		if (session.payment_status === "unpaid" || session.payment_status === "no_payment_required") {
+			if (metadata && metadata.tickets && metadata.eventId) {
+				try {
+					const bookingRef = `JZ-${session.client_reference_id}`
+					const existingBooking = await Bookings.findOne({ bookingRef })
+					
+					if (existingBooking) {
+						// Update existing booking to failed status
+						existingBooking.status = BookingStatus.FAILED
+						await existingBooking.save()
+						console.log("[checkout/confirm] Updated booking to failed status:", bookingRef)
+					} else {
+						// Create new booking with failed status
+						const tickets = JSON.parse(metadata.tickets) as TicketsProps
+						const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
+						await Bookings.create({
+							status: BookingStatus.FAILED,
+							eventId: metadata.eventId,
+							bookingRef,
+							customerName: `${metadata.firstName} ${metadata.lastName}`,
+							customerEmail: metadata.email,
+							customerPhone: metadata.phone,
+							tickets: tickets.map((ticket) => ({
+								ticketId: ticket.id,
+								quantity: ticket.quantity,
+							})),
+							subTotal: subtotal,
+							total: session.amount_total ? session.amount_total / 100 : 0,
+							referralCode: metadata.referralCode || undefined,
+							discountAmount: 0,
+						})
+						console.log("[checkout/confirm] Created booking with failed status:", bookingRef)
+					}
+				} catch (error: any) {
+					console.error("[checkout/confirm] Error handling failed payment:", error)
+				}
+			}
+			
+			return res.status(400).json({ 
+				message: "Payment not completed",
+				payment_status: session.payment_status
+			})
+		}
+		
 		if (session.payment_status !== "paid") {
 			return res.status(400).json({ 
 				message: "Payment not completed",
 				payment_status: session.payment_status
 			})
 		}
-
-		// get the session metadata
-		const metadata = session.metadata as SessionMetadata
 
 		if (!metadata || !metadata.tickets) {
 			console.error("[checkout/confirm] Missing metadata or tickets in session")
@@ -144,23 +191,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (session.payment_status === "paid") {
 			console.log("[checkout/confirm] Payment successful, creating booking...")
 			const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
-			const booking = await Bookings.create({
-				status: BookingStatus.CONFIRMED,
-				eventId: metadata.eventId,
-				bookingRef: `JZ-${session.client_reference_id}`,
-				customerName: `${metadata.firstName} ${metadata.lastName}`,
-				customerEmail: metadata.email,
-				customerPhone: metadata.phone,
-				tickets: tickets.map((ticket) => ({
-					ticketId: ticket.id,
-					quantity: ticket.quantity,
-				})),
-				subTotal: subtotal,
-				total: session.amount_total ? session.amount_total / 100 : 0,
-				referralCode: metadata.referralCode || undefined,
-				discountAmount: discountAmount,
-			})
-			console.log("[checkout/confirm] Booking created:", booking.bookingRef)
+			const bookingRef = `JZ-${session.client_reference_id}`
+			
+			// Check if booking already exists (might have been created from waiting list or with failed status)
+			let booking = await Bookings.findOne({ bookingRef })
+			
+			// Also check by bookingId if provided (for waiting list approvals)
+			if (!booking && metadata.bookingId) {
+				booking = await Bookings.findById(metadata.bookingId)
+			}
+			
+			if (booking) {
+				// Update existing booking to confirmed status
+				booking.status = BookingStatus.CONFIRMED
+				booking.subTotal = subtotal
+				booking.total = session.amount_total ? session.amount_total / 100 : 0
+				booking.referralCode = metadata.referralCode || undefined
+				booking.discountAmount = discountAmount
+				// Store stripeSessionId for easy lookup
+				booking.stripeSessionId = session.id
+				await booking.save()
+				console.log("[checkout/confirm] Updated booking to confirmed status:", bookingRef)
+				
+				// If this was from waiting list, update event tracker (wasn't updated when PENDING booking was created)
+				if (metadata.fromWaitingList === 'true') {
+					const { EventTracker } = await import("@/models/events/event-tracker")
+					const eventTracker = await EventTracker.findOne({ eventId: booking.eventId })
+					if (eventTracker) {
+						const totalTicketsToAdd = booking.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+						eventTracker.bookedTickets += totalTicketsToAdd
+						await eventTracker.save()
+						console.log("[checkout/confirm] Updated event tracker for waiting list booking")
+					}
+				}
+			} else {
+				// Create new booking
+				booking = await Bookings.create({
+					status: BookingStatus.CONFIRMED,
+					eventId: metadata.eventId,
+					bookingRef,
+					customerName: `${metadata.firstName} ${metadata.lastName}`,
+					customerEmail: metadata.email,
+					customerPhone: metadata.phone,
+					tickets: tickets.map((ticket) => ({
+						ticketId: ticket.id,
+						quantity: ticket.quantity,
+					})),
+					subTotal: subtotal,
+					total: session.amount_total ? session.amount_total / 100 : 0,
+					referralCode: metadata.referralCode || undefined,
+					discountAmount: discountAmount,
+					stripeSessionId: session.id,
+				})
+				console.log("[checkout/confirm] Booking created:", booking.bookingRef)
+			}
 
 			// Generate QR code for the booking
 			let qrCodeToken: string | undefined

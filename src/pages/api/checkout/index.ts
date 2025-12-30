@@ -205,8 +205,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// using price api from stripe create price for the tickets selected
+		// Filter out tickets that aren't selected, have quantity 0, or don't have priceId
 		const prices = tickets
-			.filter((ticket) => ticket.priceId) // Filter out tickets without priceId
+			.filter((ticket) => ticket.isSelected && ticket.quantity > 0 && ticket.priceId)
 			.map((ticket) => {
 				return {
 					price: ticket.priceId,
@@ -231,26 +232,170 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
+		// Auto-disable tickets that have exceeded due date or quantity limit
+		const now = new Date()
+		let ticketsUpdated = false
+		const updatedTickets = event.tickets?.map((ticket: any) => {
+			let shouldDisable = ticket.disabled || false
+			
+			// Check if due date has passed
+			if (ticket.dueDate) {
+				const dueDate = new Date(ticket.dueDate)
+				if (dueDate < now && !ticket.disabled) {
+					shouldDisable = true
+					ticketsUpdated = true
+				}
+			}
+			
+			// Check if quantity limit has been reached
+			if (ticket.quantityLimit && ticket.quantitySold !== undefined) {
+				if (ticket.quantitySold >= ticket.quantityLimit && !ticket.disabled) {
+					shouldDisable = true
+					ticketsUpdated = true
+				}
+			}
+			
+			return {
+				...ticket.toObject(),
+				disabled: shouldDisable,
+			}
+		}) || event.tickets
+
+		// Update event if any tickets were auto-disabled
+		if (ticketsUpdated && updatedTickets) {
+			await Events.updateOne(
+				{ _id: event._id },
+				{ $set: { tickets: updatedTickets } }
+			)
+			// Update the event object for use below
+			event.tickets = updatedTickets
+		}
+
+		// Validate that selected tickets are not disabled
+		const selectedTicketIds = tickets
+			.filter(ticket => ticket.isSelected && ticket.quantity > 0)
+			.map(ticket => ticket.id)
+		
+		const disabledTickets = event.tickets?.filter((ticket: any) => {
+			const ticketId = ticket._id?.toString()
+			return ticket.disabled && selectedTicketIds.includes(ticketId)
+		}) || []
+		
+		if (disabledTickets.length > 0) {
+			const disabledTicketNames = disabledTickets.map((t: any) => t.name).join(", ")
+			return sendResponse(res, null, `The following ticket(s) are no longer available: ${disabledTicketNames}. Please refresh the page and select different tickets.`, false, ResCode.BAD_REQUEST)
+		}
+
+		// Validate event has a slug
+		if (!event.slug) {
+			console.error("[checkout/index] Event missing slug:", event._id, event.name)
+			return sendResponse(res, null, "Event configuration error: missing slug", false, ResCode.INTERNAL_SERVER_ERROR)
+		}
+
+		// Import required modules
+		const { Bookings } = await import("@/models/events/bookings")
+		const { BookingStatus } = await import("@/models/events/types")
+		const { Types } = await import("mongoose")
+		
+		// Ensure eventId is an ObjectId
+		const eventObjectId = new Types.ObjectId(event._id.toString())
+		
 		// Check if event has capacity limit
 		if (event.capacity > 0) {
 			// Get current booked tickets from event tracker
 			const { EventTracker } = await import("@/models/events/event-tracker")
-			const eventTracker = await EventTracker.findOne({ eventId: event._id })
+			let eventTracker = await EventTracker.findOne({ eventId: event._id })
 			
-			if (eventTracker) {
-				const totalTicketsRequested = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-				const availableCapacity = event.capacity - eventTracker.bookedTickets
+			// If EventTracker doesn't exist, create it with the current event capacity
+			if (!eventTracker) {
+				console.log("[checkout/index] EventTracker not found, creating one with capacity:", event.capacity)
+				eventTracker = await EventTracker.create({
+					eventId: event._id,
+					eventCapacity: event.capacity,
+					bookedTickets: 0,
+				})
+			}
+			
+			// Count CONFIRMED, APPROVED, PENDING, and CHECKED_IN bookings toward capacity
+			// PENDING bookings are reserved spots (especially from waiting list approvals)
+			// CHECKED_IN bookings still count toward capacity (they're confirmed bookings that have been checked in)
+			const activeBookings = await Bookings.find({
+				eventId: eventObjectId,
+				status: { $in: [BookingStatus.CONFIRMED, BookingStatus.APPROVED, BookingStatus.PENDING, BookingStatus.CHECKED_IN] },
+				isDeleted: false,
+			})
+			
+			// Also get all bookings for debugging
+			const allBookings = await Bookings.find({
+				eventId: eventObjectId,
+				isDeleted: false,
+			})
+			
+			const actualBookedTickets = activeBookings.reduce((sum, booking) => {
+				return sum + booking.tickets.reduce((ticketSum, ticket) => ticketSum + ticket.quantity, 0)
+			}, 0)
+			
+			console.log("[checkout/index] Capacity check:", {
+				eventId: event._id.toString(),
+				eventCapacity: event.capacity,
+				actualBookedTickets,
+				activeBookingsCount: activeBookings.length,
+				allBookingsCount: allBookings.length,
+				bookingsByStatus: allBookings.reduce((acc, b) => {
+					acc[b.status] = (acc[b.status] || 0) + 1
+					return acc
+				}, {} as Record<string, number>),
+			})
+			
+			// Filter out tickets that aren't selected or have quantity 0
+			const selectedTickets = tickets.filter(ticket => ticket.isSelected && ticket.quantity > 0)
+			const totalTicketsRequested = selectedTickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+			// Use event.capacity as source of truth (in case EventTracker.eventCapacity is stale)
+			const availableCapacity = event.capacity - actualBookedTickets
+			
+			console.log("[checkout/index] Capacity calculation:", {
+				eventCapacity: event.capacity,
+				actualBookedTickets,
+				availableCapacity,
+				totalTicketsRequested,
+				hasEnoughCapacity: availableCapacity >= totalTicketsRequested,
+				willShowWaitingList: availableCapacity < totalTicketsRequested,
+			})
+
+			// Show waiting list if:
+			// 1. Available capacity is 0 or less (event is at or over capacity)
+			// 2. OR available capacity is less than requested tickets (would exceed capacity)
+			const isAtOrOverCapacity = availableCapacity <= 0
+			const wouldExceedCapacity = availableCapacity < totalTicketsRequested
+			
+			if (isAtOrOverCapacity || wouldExceedCapacity) {
+				// Event is at capacity or would be exceeded
+				// No restrictions - allow user to join waiting list regardless of existing bookings
 				
-				if (availableCapacity < totalTicketsRequested) {
-					// Event is at capacity, return waiting list option
+				// Check if user is already on waiting list
+				const { WaitingList } = await import("@/models/waitingList")
+				const existingWaitingListEntry = await WaitingList.findOne({
+					eventId: event._id,
+					email: user.email.toLowerCase(),
+					status: 'waiting'
+				})
+
+				if (existingWaitingListEntry) {
 					return sendResponse(res, {
-						atCapacity: true,
-						availableCapacity,
-						requestedTickets: totalTicketsRequested,
+						alreadyOnWaitingList: true,
 						eventName: event.name,
 						eventId: event._id,
-					}, "Event capacity reached. Would you like to join the waiting list?", true, ResCode.OK)
+					}, "You are already on the waiting list for this event.", true, ResCode.OK)
 				}
+
+				// Event is at capacity, return waiting list option
+				return sendResponse(res, {
+					atCapacity: true,
+					availableCapacity,
+					requestedTickets: totalTicketsRequested,
+					eventName: event.name,
+					eventId: event._id,
+				}, "Event capacity reached. Would you like to join the waiting list?", true, ResCode.OK)
 			}
 		}
 
@@ -269,16 +414,84 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// 	return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
 		// }
 		
-		// Get base URL from environment variable
-		const baseUrl = process.env.NEXT_PUBLIC_URL
+		// Get base URL dynamically from request headers (no hardcoded URLs)
+		let baseUrl: string | null = null
+		
+		// Always use request origin if available (works for both localhost and production)
+		if (req.headers.host) {
+			// Determine protocol from headers (respects proxies and SSL)
+			const protocol = req.headers['x-forwarded-proto']?.toString().split(',')[0]?.trim() || 
+				(req.headers['x-forwarded-ssl'] === 'on' ? 'https' : null) ||
+				(req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1') ? 'http' : 'https')
+			
+			baseUrl = `${protocol}://${req.headers.host}`
+			console.log("[checkout/index] Using request origin as base URL:", baseUrl)
+		} else {
+			// Fallback to environment variable only if request headers don't have host
+			baseUrl = process.env.NEXT_PUBLIC_URL || null
+			if (baseUrl) {
+				console.log("[checkout/index] Using NEXT_PUBLIC_URL as base URL:", baseUrl)
+			}
+		}
+		
 		if (!baseUrl) {
-			return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
+			return sendResponse(res, null, "Cannot determine base URL from request headers or environment", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 		
 		// Ensure URL is properly formatted
 		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
 		const successUrl = `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
-		const cancelUrl = `${cleanBaseUrl}/cancel`
+		
+		// Get the return URL from request (the event page URL)
+		// This will be passed as a query parameter so it persists even if sessionStorage is lost
+		// Priority 1: Use referer if available (most reliable - works for any environment)
+		let eventPageUrl: string | null = null
+		
+		if (req.headers.referer) {
+			try {
+				const refererUrl = new URL(req.headers.referer)
+				const baseUrlObj = new URL(cleanBaseUrl)
+				
+				// Only use if it's from the same origin and not the base URL
+				if (refererUrl.origin === baseUrlObj.origin && 
+					refererUrl.pathname !== '/' && 
+					refererUrl.pathname !== '' &&
+					!refererUrl.pathname.includes('/cancel') &&
+					!refererUrl.pathname.includes('/success')) {
+					eventPageUrl = refererUrl.href
+					console.log("[checkout/index] Using referer URL:", eventPageUrl)
+				} else {
+					console.log("[checkout/index] Referer URL rejected - origin:", refererUrl.origin, "base origin:", baseUrlObj.origin, "pathname:", refererUrl.pathname)
+				}
+			} catch (e) {
+				// Invalid referer, use default
+				console.error("[checkout/index] Error parsing referer:", e)
+			}
+		}
+		
+		// Priority 2: Construct from event slug if referer not available
+		if (!eventPageUrl && eventDetails && eventDetails.slug) {
+			eventPageUrl = `${cleanBaseUrl}/${eventDetails.slug}`
+			console.log("[checkout/index] Constructed event page URL from slug:", eventPageUrl)
+		}
+		
+		// If we still don't have a valid URL, log error
+		if (!eventPageUrl || eventPageUrl === cleanBaseUrl || eventPageUrl === `${cleanBaseUrl}/`) {
+			console.error("[checkout/index] WARNING: Could not construct valid event page URL. Event slug:", eventDetails?.slug, "Referer:", req.headers.referer, "Base URL:", cleanBaseUrl)
+			// Don't use base URL - it will redirect to home page
+			// Instead, try to construct from slug even if we already tried
+			if (eventDetails && eventDetails.slug) {
+				eventPageUrl = `${cleanBaseUrl}/${eventDetails.slug}`
+				console.log("[checkout/index] Forced construction from slug:", eventPageUrl)
+			} else {
+				console.error("[checkout/index] Cannot construct return URL - event slug missing")
+				// This is a critical error - we can't proceed without a valid return URL
+				return sendResponse(res, null, "Cannot determine return URL. Event configuration error.", false, ResCode.INTERNAL_SERVER_ERROR)
+			}
+		}
+		
+		const encodedReturnUrl = encodeURIComponent(eventPageUrl)
+		const cancelUrl = `${cleanBaseUrl}/cancel?returnUrl=${encodedReturnUrl}`
 		
 		console.log("[checkout/index] Success URL:", successUrl)
 		console.log("[checkout/index] Cancel URL:", cancelUrl)
@@ -346,7 +559,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			mode: "payment",
 			success_url: successUrl,
 			cancel_url: cancelUrl,
-			locale: "en", // Explicitly set locale to prevent locale loading errors
+			// Removed locale parameter - Stripe will auto-detect based on user's browser settings
 			metadata,
 			customer_email: user.email,
 		}
@@ -357,11 +570,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const session = await stripe.checkout.sessions.create(sessionParams).catch((stripeError) => {
-			console.error("Stripe session creation failed:", stripeError)
+			console.error("[checkout/index] Stripe session creation failed:", stripeError)
 			throw new Error(`Stripe error: ${stripeError.message}`)
 		})
 
 		if (session) {
+			// Log session details for debugging
+			console.log("[checkout/index] Stripe session created:", {
+				id: session.id,
+				hasUrl: !!session.url,
+				url: session.url,
+				paymentStatus: session.payment_status,
+				mode: session.mode
+			})
+			
+			// Verify session has URL (should always be present for checkout sessions)
+			if (!session.url) {
+				console.error("[checkout/index] Stripe session created but URL is missing:", session)
+				return sendResponse(res, null, "Checkout session created but payment URL is missing. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+			}
+			
 			return sendResponse(res, session, "Checkout created successfully!", true, ResCode.OK)
 		}
 

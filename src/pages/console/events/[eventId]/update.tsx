@@ -33,7 +33,7 @@ import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { CreateEventFormData, Pages, Roles } from "@/types"
 import { usePlacesWidget } from "react-google-autocomplete"
 import { ChevronDownIcon } from "@chakra-ui/icons"
-import { FiPlus, FiX, FiMapPin, FiCalendar, FiClock, FiDollarSign, FiSettings } from "react-icons/fi"
+import { FiPlus, FiX, FiMapPin, FiCalendar, FiClock, FiDollarSign, FiSettings, FiEdit } from "react-icons/fi"
 import TimePicker from "@/components/form/TimePicker"
 import DatePicker from "@/components/form/DatePicker"
 import RichTextEditor from "@/components/form/RichTextEditor"
@@ -56,6 +56,12 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import CollapsibleSection from "@/components/events/CollapsibleSection"
 import PrivacySelector from "@/components/events/PrivacySelector"
 import { useQuery } from "@tanstack/react-query"
+import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 type Props = {
 	event: string
@@ -121,6 +127,9 @@ export default function UpdateEventPage({ event }: Props) {
 				price: Number(ticket.price),
 				description: ticket.desc,
 				disabled: ticket.disabled || false,
+				dueDate: ticket.dueDate ? new Date(ticket.dueDate).toISOString().slice(0, 16) : "", // Format for datetime-local
+				quantityLimit: ticket.quantityLimit,
+				quantitySold: ticket.quantitySold || 0,
 			}))
 			setTickets(newTickets)
 			// Set initial tickets in Formik state
@@ -143,10 +152,10 @@ export default function UpdateEventPage({ event }: Props) {
 		privacy: eventDetails.privacy,
 		interestCategory: eventDetails.interestCategory || "",
 		interestSubCategory: eventDetails.interestSubCategory || "",
-		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
-		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
-		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
-		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
+		startDate: dayjs(eventDetails.startsOn).tz(eventDetails.timezone?.split(") ")[1] || 'UTC').format('YYYY-MM-DD'),
+		startTime: dayjs(eventDetails.startsOn).tz(eventDetails.timezone?.split(") ")[1] || 'UTC').format('HH:mm'),
+		endDate: dayjs(eventDetails.endsOn).tz(eventDetails.timezone?.split(") ")[1] || 'UTC').format('YYYY-MM-DD'),
+		endTime: dayjs(eventDetails.endsOn).tz(eventDetails.timezone?.split(") ")[1] || 'UTC').format('HH:mm'),
 		timezone: eventDetails?.timezone || "",
 		showParticipants: eventDetails.showParticipants || false,
 	}
@@ -166,7 +175,13 @@ export default function UpdateEventPage({ event }: Props) {
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
 		onPlaceSelected: (place) => {
 			if (formikRef.current) {
-				formikRef.current?.setFieldValue("location", place.formatted_address)
+				// Save venue name (establishment name) separately from address
+				const venueName = place.name || ""
+				const address = place.formatted_address || ""
+
+				formikRef.current?.setFieldValue("venueName", venueName)
+				formikRef.current?.setFieldValue("location", address)
+
 				// Get the geometry location coordinates
 				const lat = place.geometry.location.lat()
 				const lng = place.geometry.location.lng()
@@ -182,7 +197,7 @@ export default function UpdateEventPage({ event }: Props) {
 		},
 		options: {
 			fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
-			types: ["establishment"],
+			types: ["geocode", "establishment"], // Improved: includes addresses and places for better matching
 		},
 	})
 
@@ -324,8 +339,12 @@ export default function UpdateEventPage({ event }: Props) {
 			Error("Validation Error", "Price cannot be negative")
 			return
 		}
-		setTickets([...tickets, { ...tempTicket, id: uniqueId(10), disabled: false }])
-		setTempTicket({ id: "", title: "", description: "", price: 0, disabled: false })
+		if (editTicketIndex !== null) {
+			handleUpdateTicket()
+		} else {
+			setTickets([...tickets, { ...tempTicket, id: uniqueId(10), disabled: false }])
+			setTempTicket({ id: "", title: "", description: "", price: 0, disabled: false, dueDate: "", quantityLimit: undefined })
+		}
 	}
 
 	const handleToggleTicketDisabled = (ticketId: string) => {
@@ -334,6 +353,39 @@ export default function UpdateEventPage({ event }: Props) {
 
 	const handleRemoveTicket = (ticketId: string) => {
 		setTickets(tickets.filter((t) => t.id !== ticketId))
+	}
+
+	const [editTicketIndex, setEditTicketIndex] = React.useState<number | null>(null)
+
+	const handleEditTicket = (ticketId: string) => {
+		const index = tickets.findIndex((t) => t.id === ticketId)
+		if (index !== -1) {
+			setTempTicket({ ...tickets[index] })
+			setEditTicketIndex(index)
+		}
+	}
+
+	const handleUpdateTicket = () => {
+		if (!tempTicket.title) {
+			Error("Validation Error", "Please enter a ticket name")
+			return
+		}
+		if (tempTicket.price < 0) {
+			Error("Validation Error", "Price cannot be negative")
+			return
+		}
+		if (editTicketIndex !== null) {
+			const updatedTickets = [...tickets]
+			updatedTickets[editTicketIndex] = { ...tempTicket }
+			setTickets(updatedTickets)
+			setEditTicketIndex(null)
+			setTempTicket({ id: "", title: "", description: "", price: 0, disabled: false, dueDate: "", quantityLimit: undefined })
+		}
+	}
+
+	const handleCancelEdit = () => {
+		setEditTicketIndex(null)
+		setTempTicket({ id: "", title: "", description: "", price: 0, disabled: false, dueDate: "", quantityLimit: undefined })
 	}
 
 	// Access control is handled server-side in getServerSideProps
@@ -929,10 +981,20 @@ export default function UpdateEventPage({ event }: Props) {
 																		DISABLED
 																	</Text>
 																)}
+																{ticket.quantityLimit && (
+																	<Text fontSize="11px" color="#6B7280" bg="#F3F4F6" px={2} py={0.5} borderRadius="md">
+																		{ticket.quantitySold || 0} / {ticket.quantityLimit} sold
+																	</Text>
+																)}
 															</Flex>
 															<Text fontSize="13px" color="#6B7280">
 																${ticket.price.toFixed(2)} - {ticket.description}
 															</Text>
+															{ticket.dueDate && (
+																<Text fontSize="11px" color="#6B7280" mt={1}>
+																	Sales end: {dayjs(ticket.dueDate).format('MMM D, YYYY h:mm A')}
+																</Text>
+															)}
 														</Box>
 														<Flex alignItems="center" gap={2}>
 															<Box>
@@ -944,8 +1006,18 @@ export default function UpdateEventPage({ event }: Props) {
 																	isChecked={!ticket.disabled}
 																	onChange={() => handleToggleTicketDisabled(String(ticket.id))}
 																	size="sm"
+																	isDisabled={editTicketIndex === tickets.indexOf(ticket)}
 																/>
 															</Box>
+															<IconButton
+																aria-label="Edit"
+																icon={<FiEdit />}
+																size="sm"
+																variant="ghost"
+																colorScheme="blue"
+																onClick={() => handleEditTicket(String(ticket.id))}
+																isDisabled={editTicketIndex === tickets.indexOf(ticket)}
+															/>
 															<IconButton
 																aria-label="Remove"
 																icon={<FiX />}
@@ -953,13 +1025,14 @@ export default function UpdateEventPage({ event }: Props) {
 																variant="ghost"
 																colorScheme="red"
 																onClick={() => handleRemoveTicket(String(ticket.id))}
+																isDisabled={editTicketIndex === tickets.indexOf(ticket)}
 															/>
 														</Flex>
 													</Flex>
 												))}
 												<Box mt={3} p={4} border="1px" borderColor="#E5E7EB" borderRadius="md" bg="#FAFAFA">
 													<Text fontSize="14px" fontWeight="600" color="#1F2937" mb={3}>
-														Add Ticket
+														{editTicketIndex !== null ? "Edit Ticket" : "Add Ticket"}
 													</Text>
 													<Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={3} mb={3}>
 														<Box>
@@ -988,10 +1061,11 @@ export default function UpdateEventPage({ event }: Props) {
 																	step="0.01"
 																	min="0"
 																	bg="white"
-																	value={tempTicket.price}
-																	onChange={(e) =>
-																		setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) || 0 })
-																	}
+																	value={tempTicket.price === 0 ? "" : tempTicket.price}
+																	onChange={(e) => {
+																		const val = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0
+																		setTempTicket({ ...tempTicket, price: val })
+																	}}
 																/>
 															</InputGroup>
 														</Box>
@@ -1010,17 +1084,58 @@ export default function UpdateEventPage({ event }: Props) {
 															}
 														/>
 													</Box>
-													<Button
-														size="sm"
-														w="full"
-														bg="#8B5CF6"
-														color="white"
-														_hover={{ bg: "#7C3AED" }}
-														onClick={handleAddTicket}
-														isDisabled={!tempTicket.title}
-													>
-														Add Ticket
-													</Button>
+													<Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={3} mb={3}>
+														<Box>
+															<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
+																Sales End Date (Optional)
+															</Text>
+															<Input
+																type="datetime-local"
+																size="sm"
+																bg="white"
+																value={tempTicket.dueDate || ""}
+																onChange={(e) => setTempTicket({ ...tempTicket, dueDate: e.target.value })}
+															/>
+														</Box>
+														<Box>
+															<Text fontSize="12px" fontWeight="500" color="#1F2937" mb={1}>
+																Quantity Limit (Optional)
+															</Text>
+															<Input
+																type="number"
+																placeholder="Unlimited"
+																size="sm"
+																bg="white"
+																value={tempTicket.quantityLimit || ""}
+																onChange={(e) => setTempTicket({ ...tempTicket, quantityLimit: e.target.value ? parseInt(e.target.value) : undefined })}
+															/>
+														</Box>
+													</Grid>
+													<Flex gap={2}>
+														<Button
+															size="sm"
+															flex={1}
+															bg="#8B5CF6"
+															color="white"
+															_hover={{ bg: "#7C3AED" }}
+															onClick={handleAddTicket}
+															isDisabled={!tempTicket.title}
+														>
+															{editTicketIndex !== null ? "Update Ticket" : "Add Ticket"}
+														</Button>
+														{editTicketIndex !== null && (
+															<Button
+																size="sm"
+																flex={1}
+																bg="gray.400"
+																color="white"
+																_hover={{ bg: "gray.500" }}
+																onClick={handleCancelEdit}
+															>
+																Cancel
+															</Button>
+														)}
+													</Flex>
 												</Box>
 											</Box>
 										</CollapsibleSection>
@@ -1207,9 +1322,9 @@ export default function UpdateEventPage({ event }: Props) {
 export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = async (context) => {
 	const { getServerSession } = await import("next-auth/next")
 	const { authOptions } = await import("@/pages/api/auth/[...nextauth]")
-	
+
 	const session = await getServerSession(context.req, context.res, authOptions)
-	
+
 	if (!session) {
 		return {
 			redirect: {

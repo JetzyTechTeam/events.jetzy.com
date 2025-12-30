@@ -1,6 +1,6 @@
 import EventListing from "@/components/misc/EventsListing"
 import { Events } from "@/models/events"
-import { Bookings } from "@/models/events/bookings"
+import { SavedEvents } from "@/models/events/saved-events"
 import { IEvent } from "@/models/events/types"
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
@@ -20,14 +20,14 @@ type Props = {
 	}
 }
 
-export default function MyEvents({ events, pagination }: Props) {
+export default function SavedEventsPage({ events, pagination }: Props) {
 	const data = events ? (JSON.parse(events) as IEvent[]) : []
 
 	return (
 		<>
 			<Head>
-				<title>Your Events - Jetzy Events</title>
-				<meta name="description" content="View all events you've registered for or booked tickets." />
+				<title>Saved Events - Jetzy Events</title>
+				<meta name="description" content="View all events you've saved for later." />
 			</Head>
 			<EventListing pagination={pagination} items={data} />
 		</>
@@ -47,7 +47,15 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 	}
 
-	const userEmail = session.user.email
+	const userId = (session.user as any)?._id
+	if (!userId) {
+		return {
+			redirect: {
+				destination: "/api/auth/signin",
+				permanent: false,
+			},
+		}
+	}
 
 	// Pagination
 	const limit = 20
@@ -55,18 +63,17 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const skip = (page - 1) * limit
 
 	try {
-		// Find all bookings for this user
-		const bookings = await Bookings.find({
-			customerEmail: userEmail,
-			isDeleted: false,
+		const userObjectId = new mongoose.Types.ObjectId(userId)
+
+		// Find all saved events for this user
+		const savedEvents = await SavedEvents.find({
+			userId: userObjectId,
 		})
 			.sort({ createdAt: -1 })
 			.lean()
 
-		// Get unique event IDs from bookings
-		const eventIds = [...new Set(bookings.map((booking) => booking.eventId.toString()))].map(
-			(id) => new mongoose.Types.ObjectId(id)
-		)
+		// Get event IDs from saved events
+		const eventIds = savedEvents.map((saved) => saved.eventId)
 
 		if (eventIds.length === 0) {
 			return {
@@ -93,18 +100,18 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			.limit(limit)
 			.lean()
 
-		// Get total count of unique events
-		const totalEvents = eventIds.length
-		const totalPages = Math.ceil(totalEvents / limit)
+		// Get total count of saved events
+		const totalSavedEvents = eventIds.length
+		const totalPages = Math.ceil(totalSavedEvents / limit)
 
-		// Serialize events (already plain objects from .lean(), need to convert _id to string for JSON)
+		// Serialize events
 		const data = JSON.parse(JSON.stringify(events))
 
 		return {
 			props: {
 				events: JSON.stringify(data),
 				pagination: {
-					total: totalEvents,
+					total: totalSavedEvents,
 					page,
 					showing: data.length,
 					limit,
@@ -113,7 +120,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			},
 		}
 	} catch (error: any) {
-		console.error("[my-events] Error:", error)
+		console.error("[saved-events] Error:", error)
 		return {
 			props: {
 				events: JSON.stringify([]),
@@ -128,3 +135,4 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 	}
 }
+

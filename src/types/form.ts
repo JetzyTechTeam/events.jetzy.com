@@ -24,6 +24,7 @@ export type CreateEventFormData = {
 	endTime: string
 	name: string
 	location: string
+	venueName?: string
 	longitude?: number
 	latitude?: number
 	placeId?: string

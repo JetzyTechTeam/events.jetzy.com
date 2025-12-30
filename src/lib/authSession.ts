@@ -61,13 +61,18 @@ export const adminOnly = async (context: any) => {
 export const unauthorizedOnly = async (context: any) => {
 	const _session = await getSession(context)
 
-	if (_session)
+	if (_session) {
+		// Check user role to redirect appropriately
+		const userRole = (_session.user as any)?.role
+		const isAdmin = userRole === "admin" || userRole === "super admin"
+		
 		return {
 			redirect: {
-				destination: ROUTES.dashboard.index,
+				destination: isAdmin ? ROUTES.dashboard.index : ROUTES.home,
 				permanent: false,
 			},
 		}
+	}
 
 	try {
 		// Fetch site config date

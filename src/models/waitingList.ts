@@ -14,7 +14,7 @@ export interface IWaitingList {
 		name: string
 		price: number
 	}>
-	status: 'waiting' | 'notified' | 'converted'
+	status: 'waiting' | 'notified' | 'converted' | 'approved'
 	createdAt: string
 	updatedAt: string
 }
@@ -63,11 +63,11 @@ const waitingListSchema = new Schema<IWaitingList>(
 				},
 			},
 		],
-		status: {
-			type: String,
-			enum: ['waiting', 'notified', 'converted'],
-			default: 'waiting',
-		},
+	status: {
+		type: String,
+		enum: ['waiting', 'notified', 'converted', 'approved'],
+		default: 'waiting',
+	},
 	},
 	{ timestamps: true },
 )

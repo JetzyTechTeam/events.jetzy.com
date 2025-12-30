@@ -23,7 +23,8 @@ import {
 	FiUsers, 
 	FiClock,
 	FiGlobe,
-	FiMoreHorizontal
+	FiMoreHorizontal,
+	FiShoppingCart
 } from "react-icons/fi"
 import Image from "next/image"
 import { SendBlastModal } from "@/components/console/SendBlastModal"
@@ -235,6 +236,17 @@ export default function Manage({ event }: any) {
 								</Flex>
 								
 								<Flex gap={2}>
+									<Button 
+										bg="#10B981" 
+										color="white" 
+										_hover={{ bg: "#059669" }}
+										leftIcon={<FiShoppingCart />}
+										onClick={() => router.push(`/${eventData.slug}`)}
+										size="sm"
+										px={6}
+									>
+										Get Ticket
+									</Button>
 									{isAdmin && (
 										<>
 											<Button 
@@ -313,7 +325,7 @@ export default function Manage({ event }: any) {
 											<FiGlobe size={20} color="#65676B" />
 										</Flex>
 										<Box>
-											<Text color="#1C1E21">{eventData.privacy === 'private' ? 'Private' : 'Public'} · Anyone on or off Jetzy</Text>
+											<Text color="#1C1E21">{eventData.privacy === 'private' ? 'Private - Only people who are invited' : 'Public - Anyone on Jetzy'}</Text>
 										</Box>
 									</Flex>
 
@@ -344,7 +356,7 @@ export default function Manage({ event }: any) {
 									)}
 
 									{/* Host Information */}
-									{eventData.host && eventData.host.name && (
+									{eventData.host && eventData.host.name && eventData.host.name.trim() !== "" && (
 										<Box mt={6} pt={6} borderTop="1px" borderColor="gray.200">
 											<Text fontSize="lg" fontWeight="semibold" color="#1C1E21" mb={4}>Host Information</Text>
 											<Flex align="center" gap={4}>
@@ -404,31 +416,32 @@ export default function Manage({ event }: any) {
 								</Box>
 							)}
 
-							{activeTab === "about" && (
+							{activeTab === "about" && eventData.host && eventData.host.name && eventData.host.name.trim() !== "" && (
 								<Box bg="white" borderRadius="lg" boxShadow="sm" p={6} mb={4}>
 									<Text fontSize="2xl" fontWeight="bold" mb={4} color="#1C1E21">Hosted by</Text>
-									<Flex align="center" gap={2}>
-										{defaultHosts.map((host, index) => (
-											<Box
-												key={index}
-												w="48px"
-												h="48px"
-												borderRadius="full"
-												bgGradient="linear(to-br, purple.400, purple.600)"
-												display="flex"
-												alignItems="center"
-												justifyContent="center"
-												color="white"
-												fontWeight="semibold"
-												boxShadow="md"
-												border="2px solid white"
-												ml={index > 0 ? "-12px" : "0"}
-												zIndex={defaultHosts.length - index}
-												title={host.name}
-											>
-												{host.name.charAt(0)}
-											</Box>
-										))}
+									<Flex align="center" gap={3}>
+										{eventData.host.image ? (
+											<Avatar src={eventData.host.image} name={eventData.host.name} size="md" />
+										) : (
+											<Avatar name={eventData.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
+										)}
+										<Box>
+											<Text fontSize="md" fontWeight="semibold" color="#1C1E21">{eventData.host.name}</Text>
+											{eventData.host.email && (
+												<Text fontSize="sm" color="#65676B" mt={1}>
+													<a href={`mailto:${eventData.host.email}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+														{eventData.host.email}
+													</a>
+												</Text>
+											)}
+											{eventData.host.phone && (
+												<Text fontSize="sm" color="#65676B" mt={1}>
+													<a href={`tel:${eventData.host.phone}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+														{eventData.host.phone}
+													</a>
+												</Text>
+											)}
+										</Box>
 									</Flex>
 								</Box>
 							)}
@@ -475,49 +488,75 @@ export default function Manage({ event }: any) {
 
 						{/* RIGHT COLUMN (SIDEBAR) */}
 						<Box flex="1" order={{ base: 1, lg: 2 }}>
-							<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4} position="sticky" top="20px">
-								<Text fontSize="lg" fontWeight="bold" mb={4} color="#1C1E21">Location</Text>
-								
-								<Flex gap={3} mb={4}>
-									<FiMapPin size={20} color="#65676B" style={{ marginTop: '4px' }} />
-									<Box>
-										<Text fontWeight="medium" color="#1C1E21">{eventData.location}</Text>
-										<Text fontSize="sm" color="#65676B">{eventData.location}</Text>
-									</Box>
-								</Flex>
-								
-								{/* Static Map Placeholder */}
-								<Box 
-									w="full" 
-									h="200px" 
-									bg="gray.100" 
-									borderRadius="md" 
-									mb={4} 
-									position="relative"
-									overflow="hidden"
-								>
-									{/* Use a real static map image if available or Google Maps Embed API */}
-									<iframe
-										width="100%"
-										height="100%"
-										frameBorder="0"
-										style={{ border: 0 }}
-										src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&q=${encodeURIComponent(eventData.location)}`}
-										allowFullScreen
-									/>
+							{eventData.location && (
+								<Box bg="white" borderRadius="lg" boxShadow="sm" p={4} mb={4} position="sticky" top="20px">
+									<Text fontSize="lg" fontWeight="bold" mb={4} color="#1C1E21">Location</Text>
+									
+									<Flex gap={3} mb={4}>
+										<FiMapPin size={20} color="#65676B" style={{ marginTop: '4px' }} />
+										<Box>
+											{eventData.venueName && (
+												<Text fontWeight="semibold" color="#1C1E21" mb={1}>{eventData.venueName}</Text>
+											)}
+											<Text fontWeight="medium" color={eventData.venueName ? "#65676B" : "#1C1E21"} fontSize={eventData.venueName ? "sm" : "md"}>{eventData.location}</Text>
+										</Box>
+									</Flex>
+									
+									{/* Static Map Placeholder */}
+									{eventData.location.trim() && (
+										<Box 
+											w="full" 
+											h="200px" 
+											bg="gray.100" 
+											borderRadius="md" 
+											mb={4} 
+											position="relative"
+											overflow="hidden"
+										>
+											{/* Use a real static map image if available or Google Maps Embed API */}
+											<iframe
+												width="100%"
+												height="100%"
+												frameBorder="0"
+												style={{ border: 0 }}
+												src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&q=${encodeURIComponent(eventData.location)}`}
+												allowFullScreen
+											/>
+										</Box>
+									)}
 								</Box>
-							</Box>
+							)}
 
-							<Box bg="white" borderRadius="lg" boxShadow="sm" p={4}>
-								<Text fontSize="lg" fontWeight="bold" mb={4} color="#1C1E21">Host</Text>
-								<Flex align="center" gap={3}>
-									<Avatar name={session?.user?.name || "Host"} src={session?.user?.image || ""} size="md" />
-									<Box>
-										<Text fontWeight="semibold" color="#1C1E21">{session?.user?.name || "Event Host"}</Text>
-										<Text fontSize="sm" color="#65676B">Host</Text>
-									</Box>
-								</Flex>
-							</Box>
+							{/* Host Section - Only show if event has a host name */}
+							{eventData.host && eventData.host.name && eventData.host.name.trim() !== "" && (
+								<Box bg="white" borderRadius="lg" boxShadow="sm" p={4}>
+									<Text fontSize="lg" fontWeight="bold" mb={4} color="#1C1E21">Host</Text>
+									<Flex align="center" gap={3}>
+										{eventData.host.image ? (
+											<Avatar src={eventData.host.image} name={eventData.host.name} size="md" />
+										) : (
+											<Avatar name={eventData.host.name} size="md" bgGradient="linear(to-br, purple.400, purple.600)" color="white" />
+										)}
+										<Box>
+											<Text fontWeight="semibold" color="#1C1E21">{eventData.host.name}</Text>
+											{eventData.host.email && (
+												<Text fontSize="sm" color="#65676B" mt={1}>
+													<a href={`mailto:${eventData.host.email}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+														{eventData.host.email}
+													</a>
+												</Text>
+											)}
+											{eventData.host.phone && (
+												<Text fontSize="sm" color="#65676B" mt={1}>
+													<a href={`tel:${eventData.host.phone}`} style={{ color: "#3182CE", textDecoration: "underline" }}>
+														{eventData.host.phone}
+													</a>
+												</Text>
+											)}
+										</Box>
+									</Flex>
+								</Box>
+							)}
 						</Box>
 					</Flex>
 				</Box>

@@ -31,39 +31,74 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 
 	const uniqueGuests = totals?.data?.uniqueGuests ?? 0
 
-	const { formattedDate, formattedMonth, formattedDay, formattedTime } = useMemo(() => {
-		if (!event?.startsOn) return { formattedDate: "", formattedMonth: "", formattedDay: "", formattedTime: "" }
+	const { formattedDate, formattedMonth, formattedDay, formattedTime, formattedEndDate, formattedEndTime } = useMemo(() => {
+		if (!event?.startsOn) return { 
+			formattedDate: "", 
+			formattedMonth: "", 
+			formattedDay: "", 
+			formattedTime: "",
+			formattedEndDate: "",
+			formattedEndTime: ""
+		}
 
-		const userTimeZone = event.timezone?.split(") ")[1]
-		const date = dayjs.utc(event.startsOn).tz(userTimeZone)
+		const userTimeZone = event.timezone?.split(") ")[1] || event.timezone || "UTC"
+		const startDate = dayjs.utc(event.startsOn).tz(userTimeZone)
+		const endDate = event.endsOn ? dayjs.utc(event.endsOn).tz(userTimeZone) : null
 
 		return {
-			formattedDate: date.format("ddd, MMM D • h:mm A"),
-			formattedMonth: date.format("MMM"),
-			formattedDay: date.format("D"),
-			formattedTime: date.format("h:mm A"),
+			formattedDate: startDate.format("ddd, MMM D • hh:mm A"),
+			formattedMonth: startDate.format("MMM"),
+			formattedDay: startDate.format("D"),
+			formattedTime: startDate.format("hh:mm A"),
+			formattedEndDate: endDate ? endDate.format("ddd, MMM D • hh:mm A") : "",
+			formattedEndTime: endDate ? endDate.format("hh:mm A") : "",
 		}
-	}, [event.startsOn, event.timezone])
+	}, [event.startsOn, event.endsOn, event.timezone])
 
+	// Use status from backend if available, otherwise calculate it
 	const eventStatus = useMemo(() => {
-		const now = dayjs()
+		// If backend provided status, use it (more reliable)
+		if ((event as any).eventStatus) {
+			return (event as any).eventStatus
+		}
+		
+		// Fallback: calculate status on client side
+		const now = dayjs.utc()
 		const start = dayjs.utc(event.startsOn)
-		const end = dayjs.utc(event.endsOn)
+		const end = event.endsOn ? dayjs.utc(event.endsOn) : null
 
-		if (start.isBefore(now) && end.isAfter(now)) return "Live"
-		if (end.isBefore(now)) return "Ended"
+		if (!end) {
+			// If no end date, check if it's started
+			return start.isAfter(now) ? "Upcoming" : "Live"
+		}
+
+		// Compare UTC times to avoid timezone issues
+		// Check Ended first: if end time is before or equal to now, it's ended
+		if (end.isBefore(now) || end.isSame(now)) return "Ended"
+		// Live: started and hasn't ended yet
+		if (start.isBefore(now) || start.isSame(now)) return "Live"
+		// Otherwise it's upcoming
 		return "Upcoming"
 	}, [event.startsOn, event.endsOn])
+
+	const hasImage = event.images && event.images.length > 0 && event.images[0] && event.images[0].trim() !== ""
 
 	return (
 		<div onClick={() => onClick(event)} className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer border border-border-light group flex flex-col h-full">
 			<div className="relative pt-[56.25%] bg-gray-200">
-				<Image src={event.images[0]} alt={event.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
+				{hasImage ? (
+					<Image src={event.images[0]} alt={event.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
+				) : (
+					<div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
+						No Image
+					</div>
+				)}
 				{/* Status Badge */}
 				<div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold text-white shadow-sm ${
 					eventStatus === "Live" ? "bg-red-500" :
 					eventStatus === "Upcoming" ? "bg-blue-500" :
-					"bg-gray-500"
+					eventStatus === "Ended" ? "bg-gray-500" :
+					"bg-gray-400"
 				}`}>
 					{eventStatus}
 				</div>
@@ -78,11 +113,26 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 					</div>
 
 					<div className="flex-1">
-						<p className="text-xs font-semibold text-text-secondary mb-1">{formattedDate}</p>
+						<p className="text-xs font-semibold text-text-secondary mb-1">
+							{formattedDate}
+							{formattedEndDate && formattedEndDate !== formattedDate && (
+								<span className="text-text-muted"> - {formattedEndTime}</span>
+							)}
+						</p>
+						{formattedEndDate && formattedEndDate !== formattedDate && (
+							<p className="text-xs text-text-muted mb-1">Ends: {formattedEndDate}</p>
+						)}
 						<h3 className="text-lg font-bold text-text-primary mb-1 line-clamp-2 leading-tight group-hover:text-primary-purple transition-colors">
 							<SafeHTML html={event.name} />
 						</h3>
-						<p className="text-sm text-text-muted line-clamp-1 mb-2">{event.location?.split(",")[0]}</p>
+						{event.venueName ? (
+							<>
+								<p className="text-sm font-medium text-text-primary line-clamp-1 mb-1">{event.venueName}</p>
+								<p className="text-sm text-text-muted line-clamp-2 mb-2">{event.location}</p>
+							</>
+						) : (
+							<p className="text-sm text-text-muted line-clamp-2 mb-2">{event.location}</p>
+						)}
 
 						<div className="flex items-center gap-1 text-xs text-text-secondary mt-auto">
 							<span className="flex items-center">
@@ -276,7 +326,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 								<span className="font-semibold text-[#1C1E21]">Browse Events</span>
 							</button>
 							<button
-								onClick={() => router.push("/my-events")}
+								onClick={() => router.push("/my-tickets")}
 								className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-200 transition-colors"
 							>
 								<div className="w-9 h-9 rounded-full bg-gray-300 flex items-center justify-center text-gray-700">
@@ -362,7 +412,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 					</div>
 
 					{/* Banner / Featured (Top Section) */}
-					{items.length > 0 && (
+					{items.length > 0 && items[0].images && items[0].images.length > 0 && items[0].images[0] && items[0].images[0].trim() !== "" && (
 						<div className="mb-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
 							<div className="relative h-[250px] sm:h-[350px]">
 								<Image src={items[0].images[0]} alt={items[0].name} fill className="object-cover" />
@@ -384,7 +434,10 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 					)}
 
 					{/* Events Grid */}
-					<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Upcoming Events</h2>
+					<div className="mb-6">
+						<h2 className="text-xl font-bold text-[#1C1E21] mb-4">Events</h2>
+						<div className="h-px bg-gray-200 mb-6"></div>
+					</div>
 
 					{items.length === 0 ? (
 						<div className="text-center py-12 bg-white rounded-xl border border-gray-200">

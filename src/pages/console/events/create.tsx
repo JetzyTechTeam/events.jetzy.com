@@ -27,6 +27,7 @@ import {
 	IconButton,
 	Select,
 	Image,
+	Grid,
 } from "@chakra-ui/react"
 import { Formik, Form, Field, FormikProps, FieldArray } from "formik"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
@@ -54,6 +55,12 @@ import { adminOnly } from "@/lib/authSession"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import { ChevronDownIcon } from "@chakra-ui/icons"
+import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 const initialValues = {
 	name: "",
@@ -139,7 +146,13 @@ const CreateEventPage = () => {
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
 		onPlaceSelected: (place) => {
 			if (formikRef.current) {
-				formikRef.current?.setFieldValue("location", place.formatted_address)
+				// Save venue name (establishment name) separately from address
+				const venueName = place.name || ""
+				const address = place.formatted_address || ""
+
+				formikRef.current?.setFieldValue("venueName", venueName)
+				formikRef.current?.setFieldValue("location", address)
+
 				// Get the geometry location coordinates
 				const lat = place.geometry.location.lat()
 				const lng = place.geometry.location.lng()
@@ -155,7 +168,7 @@ const CreateEventPage = () => {
 		},
 		options: {
 			fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
-			types: ["establishment"],
+			types: ["geocode", "establishment"], // Improved: includes addresses and places for better matching
 		},
 	})
 
@@ -730,9 +743,19 @@ const CreateEventPage = () => {
 																<Text color="#1F2937" fontWeight="600" fontSize="sm" mb={1}>
 																	{ticket.title}
 																</Text>
-																<Text color="#6B7280" fontSize="xs" mb={2} noOfLines={2}>
+																<Text color="#6B7280" fontSize="xs" mb={1} noOfLines={2}>
 																	{ticket.description}
 																</Text>
+																{ticket.quantityLimit && (
+																	<Text color="#6B7280" fontSize="xs" mb={1}>
+																		Limit: {ticket.quantityLimit}
+																	</Text>
+																)}
+																{ticket.dueDate && (
+																	<Text color="#6B7280" fontSize="xs" mb={2}>
+																		Ends: {dayjs(ticket.dueDate).format('MMM D, h:mm A')}
+																	</Text>
+																)}
 																<Text color="#8B5CF6" fontWeight="bold" fontSize="md">
 																	${ticket.price}
 																</Text>
@@ -844,6 +867,35 @@ const CreateEventPage = () => {
 														}
 													/>
 												</FormControl>
+												<Grid templateColumns="1fr 1fr" gap={4} mb={4}>
+													<FormControl>
+														<FormLabel color="#1F2937" fontSize="sm">Sales End Date</FormLabel>
+														<Input
+															type="datetime-local"
+															size="sm"
+															bg="#FFFFFF"
+															border="1px"
+															borderColor="#E5E7EB"
+															color="#1F2937"
+															value={tempTicket.dueDate || ""}
+															onChange={(e) => setTempTicket({ ...tempTicket, dueDate: e.target.value })}
+														/>
+													</FormControl>
+													<FormControl>
+														<FormLabel color="#1F2937" fontSize="sm">Quantity Limit</FormLabel>
+														<Input
+															type="number"
+															placeholder="Unlimited"
+															size="sm"
+															bg="#FFFFFF"
+															border="1px"
+															borderColor="#E5E7EB"
+															color="#1F2937"
+															value={tempTicket.quantityLimit || ""}
+															onChange={(e) => setTempTicket({ ...tempTicket, quantityLimit: e.target.value ? parseInt(e.target.value) : undefined })}
+														/>
+													</FormControl>
+												</Grid>
 											</ModalBody>
 
 											<ModalFooter>

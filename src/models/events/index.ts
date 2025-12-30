@@ -27,6 +27,19 @@ const eventTciketsSchema = new Schema<IEventTicket>(
 			required: false,
 			default: false,
 		},
+		dueDate: {
+			type: Date,
+			required: false,
+		},
+		quantityLimit: {
+			type: Number,
+			required: false,
+		},
+		quantitySold: {
+			type: Number,
+			required: false,
+			default: 0,
+		},
 	},
 	{ timestamps: true },
 )
@@ -59,10 +72,15 @@ const eventsSchema = new Schema<IEvent>(
 			required: true,
 		},
 		timezone: {
-				type: String,
-				required: true,
-		}, 
+			type: String,
+			required: true,
+		},
 		location: {
+			type: String,
+			required: false,
+			default: "",
+		},
+		venueName: {
 			type: String,
 			required: false,
 			default: "",

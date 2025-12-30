@@ -22,9 +22,9 @@ const BookingEventCard: React.FC<Props> = ({ event }) => {
 			const userTimeZone = event?.timezone?.split(") ")[1] || event?.timezone || "UTC"
 			const date = dayjs.utc(event.startsOn).tz(userTimeZone)
 
-			return { 
+			return {
 				formattedDate: date.format("ddd, MMM D, YYYY"),
-				formattedTime: date.format("h:mm A"),
+				formattedTime: date.format("hh:mm A"),
 				month: date.format("MMM").toUpperCase(),
 				day: date.format("D")
 			}
@@ -39,12 +39,12 @@ const BookingEventCard: React.FC<Props> = ({ event }) => {
 			<div className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-all duration-200 cursor-pointer group h-full flex flex-col">
 				{/* Top Section with Image and Date */}
 				<div className="relative h-48 bg-gray-100">
-					{event.images && event.images.length > 0 ? (
-						<Image 
-							src={event.images[0]} 
-							alt={event.name} 
-							fill 
-							className="object-cover group-hover:scale-105 transition-transform duration-500" 
+					{event.images && event.images.length > 0 && event.images[0] && event.images[0].trim() !== "" ? (
+						<Image
+							src={event.images[0]}
+							alt={event.name}
+							fill
+							className="object-cover group-hover:scale-105 transition-transform duration-500"
 						/>
 					) : (
 						<div className="w-full h-full flex items-center justify-center bg-gray-50 text-gray-400">
@@ -69,7 +69,7 @@ const BookingEventCard: React.FC<Props> = ({ event }) => {
 							<ClockIcon className="w-4 h-4 flex-shrink-0" />
 							<span>{formattedTime}</span>
 						</div>
-						
+
 						{event.location && (
 							<div className="flex items-center gap-2 text-sm text-gray-500">
 								<MapPinIcon className="w-4 h-4 flex-shrink-0" />

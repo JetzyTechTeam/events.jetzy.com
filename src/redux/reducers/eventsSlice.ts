@@ -39,7 +39,7 @@ export const DeleteTicketThunk = createAsyncThunk("event/deleteTicket", async (p
 
 export const UpdateTicketThunk = createAsyncThunk(
 	"event/updateTicket",
-	async (params: RequestParams<{ payload: { title: string; description: string }; params: { eventId: string; ticketId: string } }>) => {
+	async (params: RequestParams<{ payload: { title: string; price?: number; description: string; dueDate?: string; quantityLimit?: number }; params: { eventId: string; ticketId: string } }>) => {
 		return await UpdateTicketApis(params)
 	},
 )
@@ -75,10 +75,7 @@ export const eventSlice = createSlice({
 		builder.addCase(CreateEventThunk.fulfilled, (state, action) => {
 			state.isLoading = false
 			state.data = action.payload?.data
-
-			if (action?.payload?.status) {
-				Success("Event created", "Event created successfully.")
-			}
+			// Success message is already shown in CreateEventModal.tsx, no need to duplicate
 		})
 		builder.addCase(CreateEventThunk.rejected, (state, action) => {
 			state.isLoading = false
@@ -129,10 +126,7 @@ export const eventSlice = createSlice({
 		builder.addCase(UpdateEventThunk.fulfilled, (state, action) => {
 			state.isLoading = false
 			state.data = action.payload?.data
-
-			if (action?.payload?.status) {
-				Success("Event updated", "Event updated successfully.")
-			}
+			// Success message is already shown in UpdateEventPage, no need to duplicate
 		})
 
 		builder.addCase(UpdateEventThunk.rejected, (state, action) => {
@@ -206,6 +200,6 @@ export const eventSlice = createSlice({
 	},
 })
 
-export const {} = eventSlice.actions
+export const { } = eventSlice.actions
 export const getEventState = (state: AppState) => state?.events
 export default eventSlice
