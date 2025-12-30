@@ -14,6 +14,7 @@ export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
 	location: string
+	venueName?: string
 	showParticipants: boolean
 	coordinates: {
 		long: number
@@ -34,6 +35,12 @@ export interface IEvent extends IBaseModelProps {
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
 	getBookings(): Promise<IBookings[]>
 	deleteTracker(): Promise<void>
+	ownerId?: any;
+	host?: {
+		name?: string;
+		email?: string;
+		phone?: string;
+	}
 }
 
 export enum BookingStatus {
