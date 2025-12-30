@@ -175,10 +175,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		} else {
 			// For paid events, create Stripe checkout session
 			try {
-				// Get base URL dynamically
-				const protocol = req.headers['x-forwarded-proto'] || (req.headers.referer?.startsWith('https') ? 'https' : 'http')
-				const host = req.headers.host || 'localhost:3000'
-				const baseUrl = `${protocol}://${host}`
+			// Get base URL dynamically from request headers (production-ready)
+			let baseUrl: string | null = null
+			
+			if (req.headers.host) {
+				// Determine protocol from headers (respects proxies and SSL)
+				const protocol = req.headers['x-forwarded-proto']?.toString().split(',')[0]?.trim() || 
+					(req.headers['x-forwarded-ssl'] === 'on' ? 'https' : null) ||
+					(req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1') ? 'http' : 'https')
+				
+				baseUrl = `${protocol}://${req.headers.host}`
+			} else {
+				// Fallback to environment variable only if request headers don't have host
+				baseUrl = process.env.NEXT_PUBLIC_URL || null
+			}
+			
+			if (!baseUrl) {
+				return sendResponse(res, null, "Cannot determine base URL from request headers or environment", false, ResCode.INTERNAL_SERVER_ERROR)
+			}
 
 				// Log event tickets for debugging
 				console.log("[waiting-list/approve] Event tickets:", {

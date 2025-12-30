@@ -254,12 +254,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				console.log("[checkout/confirm] Booking ID:", booking._id.toString())
 				console.log("[checkout/confirm] Event ID:", metadata.eventId)
 				
-				// Determine base URL for QR code
-				// TODO: Change back to environment variable after testing
-				const baseUrl = process.env.NEXT_PUBLIC_URL
+				// Determine base URL for QR code (production-ready)
+				// Try to get from request headers first, fallback to environment variable
+				let baseUrl: string | null = null
+				
+				if (req.headers.host) {
+					const protocol = req.headers['x-forwarded-proto']?.toString().split(',')[0]?.trim() || 
+						(req.headers['x-forwarded-ssl'] === 'on' ? 'https' : null) ||
+						(req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1') ? 'http' : 'https')
+					baseUrl = `${protocol}://${req.headers.host}`
+				} else {
+					baseUrl = process.env.NEXT_PUBLIC_URL || null
+				}
+				
 				if (!baseUrl) {
-					console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping QR code generation")
-					throw new Error("NEXT_PUBLIC_URL environment variable is required for QR code generation")
+					console.warn("[checkout/confirm] Cannot determine base URL, skipping QR code generation")
+					throw new Error("Base URL is required for QR code generation. Set NEXT_PUBLIC_URL or ensure request headers include host.")
 				}
 				
 				const qrCode = await generateQRCodeForBooking(
@@ -420,9 +430,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					}
 					
 					// Send invitation emails to guests
-					const publicUrl = process.env.NEXT_PUBLIC_URL
+					// Get base URL dynamically (production-ready)
+					let publicUrl: string | null = null
+					
+					if (req.headers.host) {
+						const protocol = req.headers['x-forwarded-proto']?.toString().split(',')[0]?.trim() || 
+							(req.headers['x-forwarded-ssl'] === 'on' ? 'https' : null) ||
+							(req.headers.host.includes('localhost') || req.headers.host.includes('127.0.0.1') ? 'http' : 'https')
+						publicUrl = `${protocol}://${req.headers.host}`
+					} else {
+						publicUrl = process.env.NEXT_PUBLIC_URL || null
+					}
+					
 					if (!publicUrl) {
-						console.warn("[checkout/confirm] NEXT_PUBLIC_URL not set, skipping guest invitation emails")
+						console.warn("[checkout/confirm] Cannot determine base URL, skipping guest invitation emails")
 					} else {
 						try {
 							const hostName = `${metadata.firstName} ${metadata.lastName}`
