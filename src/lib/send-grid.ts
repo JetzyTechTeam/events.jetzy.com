@@ -246,6 +246,16 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <p style="margin-top: 30px; text-align: center; color: #666; font-size: 12px;">
             Welcome to Jetzy! You now have access to exclusive <a href="https://jetzy.com" style="color: #F79432; text-decoration: none;">membership benefits</a>.
           </p>
+
+          <div style="text-align: center; margin-top: 20px;">
+            <p style="margin-bottom: 10px; color: #666; font-size: 12px;">Download the Jetzy App</p>
+            <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="display: inline-block; margin: 0 5px;">
+              <img src="https://assets.stickpng.com/images/5a902db97f96951c82922874.png" alt="Download on the App Store" style="height: 40px; width: auto;">
+            </a>
+            <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="display: inline-block; margin: 0 5px;">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/1024px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;">
+            </a>
+          </div>
         </div>
       `,
     })
