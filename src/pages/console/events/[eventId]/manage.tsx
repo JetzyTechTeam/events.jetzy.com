@@ -1,6 +1,7 @@
 "use client"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { adminOnly } from "@/lib/authSession"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Events } from "@/models/events"
@@ -99,8 +100,8 @@ export default function Manage({ event }: any) {
 	return (
 		<>
 			<Head>
-				<title>{eventData.name} - Jetzy Events</title>
-				<meta name="description" content={`Manage ${eventData.name}`} />
+				<title>{stripHTMLAndDecode(eventData.name)} - Jetzy Events</title>
+				<meta name="description" content={`Manage ${stripHTMLAndDecode(eventData.name)}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			

@@ -45,6 +45,7 @@ import { TicketData } from "@/components/events/TicketCard"
 import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { useEdgeStore } from "@Jetzy/lib/edgestore"
 import { uniqueId } from "@/lib/utils"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 import TimezoneSelect from "../../../../components/timezone-select"
 import { useSession } from "next-auth/react"
 import { IEvent } from "@/models/events/types"
@@ -393,8 +394,8 @@ export default function UpdateEventPage({ event }: Props) {
 	return (
 		<>
 			<Head>
-				<title>Edit {eventDetails.name} - Jetzy Events</title>
-				<meta name="description" content={`Update details for ${eventDetails.name}`} />
+				<title>Edit {stripHTMLAndDecode(eventDetails.name)} - Jetzy Events</title>
+				<meta name="description" content={`Update details for ${stripHTMLAndDecode(eventDetails.name)}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.UpdateEvent} backBtn={`/console/events/${eventDetails._id}/manage`} maxW="max-w-4xl">

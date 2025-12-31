@@ -7,6 +7,7 @@ import React, { useEffect } from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import { http_client as api } from "@/configs/api"
 import { useAnalytics } from "@/hooks/useAnalytics"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 
 // Simple ID generator
 const generateVisitorId = () => {
@@ -85,16 +86,16 @@ export default function EventDetailPage({ event }: Props) {
 		return (
 			<>
 				<Head>
-					<title>{data.name} - Jetzy Events</title>
-					<meta name="description" content={data.desc || `Join ${data.name} on Jetzy. Book your tickets now!`} />
-					<meta name="keywords" content={`${data.name}, event, tickets, booking, ${data.location}`} />
-					<meta property="og:title" content={`${data.name} - Jetzy Events`} />
-					<meta property="og:description" content={data.desc || `Join ${data.name} on Jetzy.`} />
+					<title>{stripHTMLAndDecode(data.name)} - Jetzy Events</title>
+					<meta name="description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy. Book your tickets now!`} />
+					<meta name="keywords" content={`${stripHTMLAndDecode(data.name)}, event, tickets, booking, ${data.location}`} />
+					<meta property="og:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
+					<meta property="og:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
 					{data.images && data.images.length > 0 && <meta property="og:image" content={data.images[0]} />}
 					<meta property="og:type" content="event" />
 					<meta name="twitter:card" content="summary_large_image" />
-					<meta name="twitter:title" content={`${data.name} - Jetzy Events`} />
-					<meta name="twitter:description" content={data.desc || `Join ${data.name} on Jetzy.`} />
+					<meta name="twitter:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
+					<meta name="twitter:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
 					{data.images && data.images.length > 0 && <meta name="twitter:image" content={data.images[0]} />}
 				</Head>
 				<ErrorBoundary>

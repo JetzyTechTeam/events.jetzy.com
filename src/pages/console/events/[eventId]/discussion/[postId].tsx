@@ -1,6 +1,7 @@
 "use client"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 import { Events } from "@/models/events"
 import { GetServerSideProps } from "next"
 import React from "react"
@@ -18,8 +19,8 @@ export default function DiscussionPostPage({ event }: any) {
 	return (
 		<>
 			<Head>
-				<title>Discussion - {eventData.name} - Jetzy Events</title>
-				<meta name="description" content={`Discussion for ${eventData.name}`} />
+				<title>Discussion - {stripHTMLAndDecode(eventData.name)} - Jetzy Events</title>
+				<meta name="description" content={`Discussion for ${stripHTMLAndDecode(eventData.name)}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 

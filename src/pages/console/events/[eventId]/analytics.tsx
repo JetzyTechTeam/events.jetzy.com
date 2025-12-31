@@ -34,6 +34,7 @@ import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
 import NextLink from "next/link"
 import SafeHTML from "@/components/misc/SafeHTML"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 
 interface EventAnalyticsData {
 	event: {
@@ -352,8 +353,8 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	return (
 		<>
 			<Head>
-				<title>Event Analytics - {eventData.name} - Jetzy Events</title>
-				<meta name="description" content={`View analytics for ${eventData.name}`} />
+				<title>Event Analytics - {stripHTMLAndDecode(eventData.name)} - Jetzy Events</title>
+				<meta name="description" content={`View analytics for ${stripHTMLAndDecode(eventData.name)}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout>

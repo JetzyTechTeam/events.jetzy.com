@@ -6,6 +6,7 @@ import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
 import Head from "next/head"
 import { adminOnly } from "@/lib/authSession"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { Box, Container, Heading, Text, Alert, AlertIcon } from "@chakra-ui/react"
@@ -35,8 +36,8 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 	return (
 		<>
 			<Head>
-				<title>Check-In Portal - {eventData.name} | Jetzy Events</title>
-				<meta name="description" content={`Check-in attendees for ${eventData.name}`} />
+				<title>Check-In Portal - {stripHTMLAndDecode(eventData.name)} | Jetzy Events</title>
+				<meta name="description" content={`Check-in attendees for ${stripHTMLAndDecode(eventData.name)}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl" backBtn={`/console/events/${eventId}/manage`}>

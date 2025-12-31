@@ -5,6 +5,7 @@ import { Events } from "@/models/events"
 import { Pages } from "@/types"
 import { Booking } from "."
 import { adminOnly } from "@/lib/authSession"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 import Head from "next/head"
 import React, { useState, useMemo } from "react"
 import Link from "next/link"
@@ -275,8 +276,8 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
 	return (
 		<>
 			<Head>
-				<title>{event.name} - Bookings - Jetzy Events</title>
-				<meta name="description" content={`View and manage bookings for ${event.name}`} />
+				<title>{stripHTMLAndDecode(event.name)} - Bookings - Jetzy Events</title>
+				<meta name="description" content={`View and manage bookings for ${stripHTMLAndDecode(event.name)}`} />
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Bookings}>
