@@ -20,6 +20,7 @@ const navItems = [
 	{ name: "Seller Board", href: "/console/seller", requiresAuth: true, nonAdminOnly: true },
 	{ name: "My Events", href: "/console/events", requiresAuth: true, adminOnly: true },
 	{ name: "Bookings", href: "/console/bookings", requiresAuth: true, adminOnly: true },
+	{ name: "Analytics", href: "/console/analytics", requiresAuth: true, adminOnly: true },
 	{ name: "Create Event", href: "#", requiresAuth: true, isModal: true },
 ]
 
@@ -68,6 +69,10 @@ const LightNavbar: React.FC = () => {
 		// Exact match for /my-tickets
 		if (href === "/my-tickets") {
 			return router.pathname === "/my-tickets"
+		}
+		// Exact match for /console/analytics
+		if (href === "/console/analytics") {
+			return router.pathname === "/console/analytics"
 		}
 		return router.pathname.startsWith(href)
 	}

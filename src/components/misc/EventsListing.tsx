@@ -14,6 +14,7 @@ import Footer from "../layout/Footer"
 import { MapPinIcon, CalendarIcon, ChevronRightIcon, UserGroupIcon, TicketIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import { SparklesIcon, GlobeAltIcon, HeartIcon, SunIcon, MusicalNoteIcon, FireIcon } from "@heroicons/react/24/solid"
 import SafeHTML from "./SafeHTML"
+import { useAnalytics } from "@/hooks/useAnalytics"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -183,6 +184,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	const [selectedLocation, setSelectedLocation] = useState("New York, NY")
 	const [searchQuery, setSearchQuery] = useState("")
 	const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+	const { trackAction } = useAnalytics()
 
 	// Fetch interest categories from API
 	const { data: categoriesData, isLoading: categoriesLoading, error: categoriesError } = useQuery({
@@ -246,6 +248,12 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	}
 
 	const handleCategoryChange = (category: string) => {
+		// Track category click
+		trackAction('category_click', router.pathname, {
+			category: category === "All" ? null : category,
+			action: category === "All" ? "clear_filter" : "apply_filter"
+		}).catch((err) => console.error('Failed to track category click:', err))
+
 		const newQuery = { ...router.query }
 		if (category === "All") {
 			delete newQuery.interestCategory
@@ -264,6 +272,14 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 	}
 
 	const handleSubCategoryChange = (subCategory: string) => {
+		// Track filter action
+		trackAction('filter', router.pathname, {
+			filterType: 'interestSubCategory',
+			filterValue: subCategory === "" ? null : subCategory,
+			category: activeCategory,
+			action: subCategory === "" ? "clear_filter" : "apply_filter"
+		}).catch((err) => console.error('Failed to track filter:', err))
+
 		const newQuery = { ...router.query }
 		if (subCategory === "") {
 			delete newQuery.interestSubCategory

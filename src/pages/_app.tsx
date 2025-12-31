@@ -15,6 +15,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { ChakraProvider } from "@chakra-ui/react";
 import ReactQueryProvider from "@/lib/react-query-provider";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import { AnalyticsProvider } from "@/contexts/AnalyticsContext";
 
 export default function App({
   Component,
@@ -40,8 +41,10 @@ export default function App({
           />
           <EdgeStoreProvider>
             <ChakraProvider>
-              <Component {...pageProps} />
-              <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
+              <AnalyticsProvider>
+                <Component {...pageProps} />
+                <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
+              </AnalyticsProvider>
             </ChakraProvider>
           </EdgeStoreProvider>
         </SessionProvider>

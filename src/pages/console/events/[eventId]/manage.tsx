@@ -24,7 +24,8 @@ import {
 	FiClock,
 	FiGlobe,
 	FiMoreHorizontal,
-	FiShoppingCart
+	FiShoppingCart,
+	FiTrendingUp
 } from "react-icons/fi"
 import Image from "next/image"
 import { SendBlastModal } from "@/components/console/SendBlastModal"
@@ -204,7 +205,10 @@ export default function Manage({ event }: any) {
 										<MenuList zIndex={20}>
 											<MenuItem icon={<FiEdit />} onClick={() => router.push(`/console/events/${eventData._id}/update`)}>Edit Event</MenuItem>
 											{isAdmin && (
-												<MenuItem icon={<FiShare2 />} onClick={() => setShareModal(true)}>Share</MenuItem>
+												<>
+													<MenuItem icon={<FiTrendingUp />} onClick={() => router.push(`/console/events/${eventData._id}/analytics`)}>Analytics</MenuItem>
+													<MenuItem icon={<FiShare2 />} onClick={() => setShareModal(true)}>Share</MenuItem>
+												</>
 											)}
 										</MenuList>
 									</Menu>
@@ -269,6 +273,16 @@ export default function Manage({ event }: any) {
 												size="sm"
 											>
 												Blast
+											</Button>
+											<Button 
+												bg="#E4E6EB" 
+												color="#1C1E21" 
+												_hover={{ bg: "#D8DADF" }}
+												leftIcon={<FiTrendingUp />}
+												onClick={() => router.push(`/console/events/${eventData._id}/analytics`)}
+												size="sm"
+											>
+												Analytics
 											</Button>
 											<Button 
 												bg="#E4E6EB" 

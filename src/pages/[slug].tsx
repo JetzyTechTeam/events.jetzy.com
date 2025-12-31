@@ -6,6 +6,7 @@ import dynamic from "next/dynamic"
 import React, { useEffect } from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import { http_client as api } from "@/configs/api"
+import { useAnalytics } from "@/hooks/useAnalytics"
 
 // Simple ID generator
 const generateVisitorId = () => {
@@ -19,6 +20,7 @@ type Props = {
 }
 export default function EventDetailPage({ event }: Props) {
 	const data = JSON.parse(event) as IEvent
+	const { trackEventInteraction } = useAnalytics()
 
 	useEffect(() => {
 		const trackView = async () => {
@@ -38,14 +40,15 @@ export default function EventDetailPage({ event }: Props) {
 					sessionStorage.setItem("jetzy_referral_code", referralCode)
 				}
 
-				console.log('[Event Page] Tracking view:', {
-					eventId: data._id,
-					referralCode,
-					visitorId,
-					hasEventId: !!data._id
-				})
+				// Track event view using new analytics system
+				if (data?._id) {
+					await trackEventInteraction(data._id.toString(), 'view', {
+						referralCode: referralCode || undefined,
+						visitorId: visitorId
+					})
+				}
 
-				// Track view - use fetch to avoid axios interceptor issues
+				// Also track using old system for backward compatibility
 				const trackRes = await fetch("/api/analytics/track", {
 					method: 'POST',
 					headers: {
@@ -61,10 +64,7 @@ export default function EventDetailPage({ event }: Props) {
 
 				if (!trackRes.ok) {
 					const errorText = await trackRes.text()
-					console.error('[Event Page] Tracking failed:', trackRes.status, errorText)
-				} else {
-					const result = await trackRes.json()
-					console.log('[Event Page] Tracking successful:', result)
+					console.error('[Event Page] Legacy tracking failed:', trackRes.status, errorText)
 				}
 			} catch (err: any) {
 				console.error('[Event Page] Tracking error:', err)
@@ -74,7 +74,7 @@ export default function EventDetailPage({ event }: Props) {
 		if (data?._id) {
 			trackView()
 		}
-	}, [data._id])
+	}, [data._id, trackEventInteraction])
 
 	try {
 		// Validate that the event has required fields

@@ -8,6 +8,7 @@ import axios from "axios"
 import Link from "next/link"
 import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
+import { useAnalytics } from "@/hooks/useAnalytics"
 import Linkify from "linkify-react"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
@@ -108,6 +109,7 @@ export default function HostedEvents({ event }: Props) {
 	const [isCheckingSaved, setIsCheckingSaved] = useState(true)
 	const { data: session } = useSession()
 	const toast = useToast()
+	const { trackEventInteraction } = useAnalytics()
 
 	// Validate event data early and safely
 	const isValidEvent = event && event._id && event.name
@@ -422,7 +424,15 @@ export default function HostedEvents({ event }: Props) {
 							{/* Action Bar */}
 							<div className="flex flex-wrap gap-3 py-4 border-t border-gray-200 mt-4">
 								<button
-									onClick={() => setIsTicketModalOpen(true)}
+									onClick={async () => {
+										// Track booking button click
+										if (clonedEvent?._id && !hasEventEnded) {
+											await trackEventInteraction(clonedEvent._id.toString(), 'booking_start', {
+												isSoldOut: isSoldOut
+											})
+										}
+										setIsTicketModalOpen(true)
+									}}
 									disabled={hasEventEnded}
 									className={`relative px-10 py-4 rounded-xl font-bold text-lg text-white transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center gap-3 transform hover:scale-105 active:scale-95 ${hasEventEnded ? "bg-gray-400 cursor-not-allowed" : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 animate-pulse"
 										}`}
@@ -442,7 +452,15 @@ export default function HostedEvents({ event }: Props) {
 								</button>
 
 								<button
-									onClick={() => sharer.share()}
+									onClick={async () => {
+										// Track share interaction
+										if (clonedEvent?._id) {
+											await trackEventInteraction(clonedEvent._id.toString(), 'share', {
+												method: 'web_share'
+											})
+										}
+										sharer.share()
+									}}
 									className="px-4 py-2 bg-gray-200 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-300 transition-colors flex items-center gap-2"
 								>
 									<ShareIcon className="w-5 h-5" />

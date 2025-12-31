@@ -35,6 +35,11 @@ export const usersSchema = new Schema(
 			},
 			default: "user",
 		},
+		lastActiveAt: {
+			type: Date,
+			required: false,
+			index: true,
+		},
 	},
 	{ timestamps: true },
 )
