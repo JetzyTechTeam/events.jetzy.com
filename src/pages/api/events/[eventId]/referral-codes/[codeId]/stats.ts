@@ -50,7 +50,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             status: true,
             data: {
                 ...result,
-                code: referralCode.code
+                code: referralCode.code,
+                commissionPercentage: referralCode.commissionPercentage || 10
             },
         })
     } catch (error: any) {

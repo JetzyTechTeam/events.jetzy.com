@@ -23,6 +23,12 @@ const referralCodeSchema = new Schema<IReferralCode>(
 			min: 0,
 			max: 100,
 		},
+		commissionPercentage: {
+			type: Number,
+			default: 10,
+			min: 0,
+			max: 100,
+		},
 		isActive: {
 			type: Boolean,
 			default: true,

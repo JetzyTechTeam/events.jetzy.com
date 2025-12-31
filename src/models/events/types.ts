@@ -82,6 +82,7 @@ export interface IReferralCode extends IBaseModelProps {
 	eventId: Types.ObjectId
 	code: string
 	discountPercentage: number
+	commissionPercentage: number
 	isActive: boolean
 	usageCount: number
 	maxUses?: number

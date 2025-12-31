@@ -39,9 +39,10 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 	// Stats Modal State
 	const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure()
 	const [selectedStatsCode, setSelectedStatsCode] = useState<ReferralCode | null>(null)
-	const [statsData, setStatsData] = useState<{ totalSales: number; verifiedUsageCount: number; code: string } | null>(null)
+	const [statsData, setStatsData] = useState<{ totalSales: number; verifiedUsageCount: number; code: string; commissionPercentage: number } | null>(null)
 	const [statsLoading, setStatsLoading] = useState(false)
 	const [commissionRate, setCommissionRate] = useState<string>("10")
+	const [savingCommission, setSavingCommission] = useState(false)
 
 	useEffect(() => {
 		if (eventId) {
@@ -203,9 +204,11 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			setStatsLoading(true)
 			const response = await axios.get(`/api/events/${eventId}/referral-codes/${code._id}/stats`)
 			if (response.data.status) {
-				setStatsData(response.data.data)
+				const data = response.data.data
+				setStatsData(data)
+				setCommissionRate(data.commissionPercentage?.toString() || "10")
 				// Log to console for debugging
-				console.log("Stats data:", response.data.data)
+				console.log("Stats data:", data)
 			}
 		} catch (error: any) {
 			console.error("Failed to fetch stats:", error)
@@ -217,6 +220,57 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			})
 		} finally {
 			setStatsLoading(false)
+		}
+	}
+
+	const handleUpdateCommission = async () => {
+		if (!selectedStatsCode) return
+
+		try {
+			setSavingCommission(true)
+			const percentage = parseFloat(commissionRate)
+
+			if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+				toast({
+					title: "Invalid Percentage",
+					description: "Please enter a valid percentage between 0 and 100",
+					status: "warning",
+					duration: 3000,
+				})
+				return
+			}
+
+			const response = await axios.patch(`/api/events/${eventId}/referral-codes/${selectedStatsCode._id}`, {
+				commissionPercentage: percentage
+			})
+
+			if (response.data.status) {
+				toast({
+					title: "Success",
+					description: "Commission rate saved successfully",
+					status: "success",
+					duration: 3000,
+				})
+				// Update local stats data
+				if (statsData) {
+					setStatsData({
+						...statsData,
+						commissionPercentage: percentage
+					})
+				}
+			} else {
+				throw new Error(response.data.message || "Failed to update commission rate")
+			}
+		} catch (error: any) {
+			console.error("Failed to update commission rate:", error)
+			toast({
+				title: "Error",
+				description: error.response?.data?.message || "Failed to save commission rate",
+				status: "error",
+				duration: 3000,
+			})
+		} finally {
+			setSavingCommission(false)
 		}
 	}
 
@@ -446,6 +500,16 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 												<NumberInputField border="1px solid #434343" _focus={{ borderColor: "#F79432" }} />
 											</NumberInput>
 											<Text>%</Text>
+											<Button
+												size="sm"
+												bg="#F79432"
+												color="black"
+												_hover={{ bg: "#E68422" }}
+												onClick={handleUpdateCommission}
+												isLoading={savingCommission}
+											>
+												Save
+											</Button>
 										</Flex>
 									</FormControl>
 

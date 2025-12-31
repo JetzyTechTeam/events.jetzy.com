@@ -12,6 +12,7 @@ import zod from "zod"
 const updateReferralCodeSchema = zod.object({
 	isActive: zod.boolean().optional(),
 	discountPercentage: zod.number().min(0).max(100).optional(),
+	commissionPercentage: zod.number().min(0).max(100).optional(),
 	maxUses: zod.number().positive().optional().nullable(),
 })
 
@@ -76,6 +77,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 			if (validation.data.maxUses !== undefined) {
 				updateData.maxUses = validation.data.maxUses
+			}
+			if (validation.data.commissionPercentage !== undefined) {
+				updateData.commissionPercentage = validation.data.commissionPercentage
 			}
 
 			// Update referral code
