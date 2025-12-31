@@ -65,6 +65,12 @@ import { useSession } from "next-auth/react"
 import { useAppDispatch } from "@/redux/stores"
 import { UpdateEventThunk } from "@/redux/reducers/eventsSlice"
 import { z } from "zod"
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 type Props = {
 	event: string
@@ -133,28 +139,38 @@ export default function UpdateEventPage({ event }: Props) {
 
 	// --- Initial form values ---
 	// --- Initial form values ---
-	const initialValues: CreateEventFormData = React.useMemo(() => ({
-		name: eventDetails.name,
-		desc: eventDetails.desc,
-		location: eventDetails.location,
-		capacity: eventDetails.capacity,
-		requireApproval: eventDetails.requireApproval,
-		isPaid: eventDetails.isPaid,
-		images: uploadedImages,
-		tickets: eventDetails.tickets.map(ticket => ({
-			id: ticket._id?.toString() || uniqueId(10),
-			title: ticket.name,
-			price: Number(ticket.price),
-			description: ticket.desc,
-		})),
-		privacy: eventDetails.privacy,
-		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
-		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
-		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
-		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
-		timezone: eventDetails?.timezone || '',
-		showParticipants: eventDetails.showParticipants || false,
-	}), [eventDetails, uploadedImages])
+	const initialValues: CreateEventFormData = React.useMemo(() => {
+		const tzString = eventDetails?.timezone || '';
+		// Extract timezone from string like "(UTC-05:00) America/New_York" -> "America/New_York"
+		const parts = tzString.split(') ');
+		const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess();
+
+		const start = dayjs(eventDetails.startsOn).tz(extractedTimeZone);
+		const end = dayjs(eventDetails.endsOn).tz(extractedTimeZone);
+
+		return {
+			name: eventDetails.name,
+			desc: eventDetails.desc,
+			location: eventDetails.location,
+			capacity: eventDetails.capacity,
+			requireApproval: eventDetails.requireApproval,
+			isPaid: eventDetails.isPaid,
+			images: uploadedImages,
+			tickets: eventDetails.tickets.map(ticket => ({
+				id: ticket._id?.toString() || uniqueId(10),
+				title: ticket.name,
+				price: Number(ticket.price),
+				description: ticket.desc,
+			})),
+			privacy: eventDetails.privacy,
+			startDate: start.format('YYYY-MM-DD'),
+			startTime: start.format('HH:mm'),
+			endDate: end.format('YYYY-MM-DD'),
+			endTime: end.format('HH:mm'),
+			timezone: eventDetails?.timezone || '',
+			showParticipants: eventDetails.showParticipants || false,
+		}
+	}, [eventDetails, uploadedImages])
 
 	const { ref } = usePlacesWidget({
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
