@@ -36,6 +36,13 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		isActive: true,
 	})
 
+	// Stats Modal State
+	const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure()
+	const [selectedStatsCode, setSelectedStatsCode] = useState<ReferralCode | null>(null)
+	const [statsData, setStatsData] = useState<{ totalSales: number; verifiedUsageCount: number; code: string } | null>(null)
+	const [statsLoading, setStatsLoading] = useState(false)
+	const [commissionRate, setCommissionRate] = useState<string>("10")
+
 	useEffect(() => {
 		if (eventId) {
 			fetchCodes()
@@ -186,6 +193,33 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		setEditingCode(null)
 	}
 
+	const handleOpenStats = async (code: ReferralCode) => {
+		setSelectedStatsCode(code)
+		setStatsData(null)
+		setCommissionRate("10")
+		onStatsOpen()
+
+		try {
+			setStatsLoading(true)
+			const response = await axios.get(`/api/events/${eventId}/referral-codes/${code._id}/stats`)
+			if (response.data.status) {
+				setStatsData(response.data.data)
+				// Log to console for debugging
+				console.log("Stats data:", response.data.data)
+			}
+		} catch (error: any) {
+			console.error("Failed to fetch stats:", error)
+			toast({
+				title: "Error",
+				description: "Failed to load usage statistics",
+				status: "error",
+				duration: 3000,
+			})
+		} finally {
+			setStatsLoading(false)
+		}
+	}
+
 	const handleOpenCreate = () => {
 		resetForm()
 		onOpen()
@@ -258,6 +292,15 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 									<Td>{code.maxUses == null ? "Unlimited" : `${code.maxUses} (${code.maxUses - code.usageCount} remaining)`}</Td>
 									<Td>
 										<Flex gap={2}>
+											<Button
+												size="sm"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												onClick={() => handleOpenStats(code)}
+											>
+												Stats
+											</Button>
 											<IconButton
 												aria-label="Delete code"
 												icon={<FiTrash2 />}
@@ -356,6 +399,70 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 							Create
 						</Button>
 					</ModalFooter>
+				</ModalContent>
+			</Modal>
+
+			{/* Stats Modal */}
+			<Modal isOpen={isStatsOpen} onClose={onStatsClose} size="lg" isCentered>
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+					<ModalHeader>Referral Stats: {selectedStatsCode?.code}</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						{statsLoading ? (
+							<Flex justify="center" py={8}>
+								<Text>Loading statistics...</Text>
+							</Flex>
+						) : statsData ? (
+							<Box>
+								<Flex gap={4} mb={6}>
+									<Box flex={1} bg="#101010" p={4} borderRadius="xl" border="1px solid #333">
+										<Text fontSize="sm" color="gray.400" mb={1}>Total Bookings</Text>
+										<Text fontSize="2xl" fontWeight="bold">{statsData!.verifiedUsageCount}</Text>
+									</Box>
+									<Box flex={1} bg="#101010" p={4} borderRadius="xl" border="1px solid #333">
+										<Text fontSize="sm" color="gray.400" mb={1}>Total Sales Generated</Text>
+										<Text fontSize="2xl" fontWeight="bold" color="#F79432">
+											${statsData!.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+										</Text>
+									</Box>
+								</Flex>
+
+								<Box bg="#252525" p={4} borderRadius="xl" border="1px solid #434343">
+									<Text fontWeight="bold" mb={4} fontSize="lg">Commission Calculator</Text>
+									<FormControl mb={4}>
+										<FormLabel color="gray.400">Commission Percentage</FormLabel>
+										<Flex gap={2} align="center">
+											<NumberInput
+												value={commissionRate}
+												onChange={(value) => setCommissionRate(value)}
+												min={0}
+												max={100}
+												bg="#101010"
+												borderColor="#434343"
+												color="white"
+												flex={1}
+											>
+												<NumberInputField border="1px solid #434343" _focus={{ borderColor: "#F79432" }} />
+											</NumberInput>
+											<Text>%</Text>
+										</Flex>
+									</FormControl>
+
+									<Box pt={4} borderTop="1px solid #434343">
+										<Flex justify="space-between" align="center">
+											<Text color="gray.400">Total Owed</Text>
+											<Text fontSize="2xl" fontWeight="bold" color="#F79432">
+												${((statsData!.totalSales * (parseFloat(commissionRate) || 0)) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+											</Text>
+										</Flex>
+									</Box>
+								</Box>
+							</Box>
+						) : (
+							<Text textAlign="center" color="gray.400">No data available</Text>
+						)}
+					</ModalBody>
 				</ModalContent>
 			</Modal>
 		</Box>
