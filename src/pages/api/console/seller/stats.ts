@@ -191,10 +191,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					totalRevenue: { $sum: "$total" },
 					ticketCount: { 
 						$sum: {
-							$map: {
-								input: "$tickets",
-								as: "ticket",
-								in: "$$ticket.quantity"
+							$reduce: {
+								input: { $ifNull: ["$tickets", []] },
+								initialValue: 0,
+								in: { $add: ["$$value", { $ifNull: ["$$this.quantity", 0] }] }
 							}
 						}
 					},

@@ -62,6 +62,7 @@
     "slick-carousel": "^1.8.1",
     "stripe": "^15.4.0",
     "tesseract.js": "^2.1.4",
+    "xlsx": "^0.18.5",
     "yup": "^1.4.0",
     "zod": "^3.23.3"
   },
@@ -73,6 +74,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/react-slick": "^0.23.13",
+    "@types/xlsx": "^0.0.35",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.0.10",
     "postcss": "^8",
