@@ -991,6 +991,7 @@ function EventBookings({ eventId }: { eventId: string }) {
 	const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
 	const [isCancelling, setIsCancelling] = useState(false)
 	const [isResending, setIsResending] = useState(false)
+	const [isCreatingPaymentLink, setIsCreatingPaymentLink] = useState(false)
 	const queryClient = useQueryClient()
 
 	const { data: bookings, isLoading } = useQuery({
@@ -1245,71 +1246,203 @@ function EventBookings({ eventId }: { eventId: string }) {
 														onDetailsOpen()
 													}}>View Details</MenuItem>
 													{booking.status === "pending" && (
-														<MenuItem onClick={async (e) => {
-															e.preventDefault()
-															e.stopPropagation()
-															try {
-																let paymentUrl = booking.paymentUrl
-																
-																// If paymentUrl is not available but stripeSessionId exists, fetch it
-																if (!paymentUrl && (booking as any).stripeSessionId) {
+														<>
+															<MenuItem onClick={async (e) => {
+																e.preventDefault()
+																e.stopPropagation()
+																try {
+																	let paymentUrl = booking.paymentUrl
+																	
+																	// If paymentUrl is not available but stripeSessionId exists, fetch it
+																	if (!paymentUrl && (booking as any).stripeSessionId) {
+																		toast({
+																			title: "Fetching payment link...",
+																			status: "info",
+																			duration: 2000,
+																			isClosable: true,
+																		})
+																		const response = await axios.get(`/api/bookings/payment-url?sessionId=${(booking as any).stripeSessionId}`)
+																		paymentUrl = response.data?.data?.paymentUrl
+																	}
+																	
+																	if (!paymentUrl) {
+																		// Try to get payment URL from booking reference
+																		try {
+																			const response = await axios.get(`/api/bookings/payment-url-by-booking?bookingRef=${booking.bookingRef}`)
+																			if (response.data?.data?.paymentUrl) {
+																				paymentUrl = response.data.data.paymentUrl
+																			}
+																		} catch (fallbackError: any) {
+																			// Silently handle 404 or other errors - don't log to console
+																			// The error will be handled by the outer catch block
+																			if (fallbackError?.response?.status !== 404) {
+																				console.log("[EventBookings] Could not retrieve payment URL from booking reference:", fallbackError?.response?.status || fallbackError?.message)
+																			}
+																		}
+																	}
+																	
+																	if (!paymentUrl) {
+																		// Show a user-friendly error message
+																		throw new Error("Payment link is not available for this booking. The payment session may have expired or the booking was created through a different method. Please contact support if you need assistance.")
+																	}
+																	
+																	await navigator.clipboard.writeText(paymentUrl)
 																	toast({
-																		title: "Fetching payment link...",
+																		title: "Payment link copied!",
+																		status: "success",
+																		duration: 2000,
+																		isClosable: true,
+																	})
+																} catch (error: any) {
+																	// Only log non-user-facing errors
+																	if (error?.response?.status !== 404 && !error?.message?.includes("Payment link is not available")) {
+																		console.error("Error copying payment link:", error)
+																	}
+																	
+																	// Show user-friendly error message
+																	const errorMessage = error?.response?.data?.message || error?.message || "Could not retrieve payment link"
+																	toast({
+																		title: "Payment Link Unavailable",
+																		description: errorMessage,
+																		status: "warning",
+																		duration: 5000,
+																		isClosable: true,
+																	})
+																}
+															}}>
+																Copy Payment Link
+															</MenuItem>
+															<MenuItem onClick={async (e) => {
+																e.preventDefault()
+																e.stopPropagation()
+																setIsCreatingPaymentLink(true)
+																try {
+																	toast({
+																		title: "Creating new payment link...",
 																		status: "info",
 																		duration: 2000,
 																		isClosable: true,
 																	})
-																	const response = await axios.get(`/api/bookings/payment-url?sessionId=${(booking as any).stripeSessionId}`)
-																	paymentUrl = response.data?.data?.paymentUrl
-																}
-																
-																if (!paymentUrl) {
-																	// Try to get payment URL from booking reference
-																	try {
-																		const response = await axios.get(`/api/bookings/payment-url-by-booking?bookingRef=${booking.bookingRef}`)
-																		if (response.data?.data?.paymentUrl) {
-																			paymentUrl = response.data.data.paymentUrl
+																	
+																	const response = await axios.post(`/api/bookings/create-payment-link`, {
+																		bookingId: booking._id,
+																		sendEmail: false
+																	})
+																	
+																	if (response.data?.status && response.data?.data?.paymentUrl) {
+																		const newPaymentUrl = response.data.data.paymentUrl
+																		
+																		// Auto-copy the new link
+																		try {
+																			await navigator.clipboard.writeText(newPaymentUrl)
+																		} catch (clipboardError) {
+																			// Clipboard permission denied - non-critical
+																			console.warn("Failed to copy to clipboard:", clipboardError)
 																		}
-																	} catch (fallbackError: any) {
-																		// Silently handle 404 or other errors - don't log to console
-																		// The error will be handled by the outer catch block
-																		if (fallbackError?.response?.status !== 404) {
-																			console.log("[EventBookings] Could not retrieve payment URL from booking reference:", fallbackError?.response?.status || fallbackError?.message)
-																		}
+																		toast({
+																			title: "New payment link created and copied!",
+																			status: "success",
+																			duration: 3000,
+																			isClosable: true,
+																		})
+																		
+																		// Refresh the bookings data
+																		queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+																	} else {
+																		throw new Error(response.data?.message || "Failed to create payment link")
 																	}
+																} catch (error: any) {
+																	console.error("Error creating new payment link:", error)
+																	console.error("Error response data:", error?.response?.data)
+																	const errorMessage = error?.response?.data?.message || error?.message || "Failed to create payment link"
+																	
+																	// Use setTimeout to ensure toast is called after error handling completes
+																	setTimeout(() => {
+																		try {
+																			toast({
+																				title: error?.response?.status === 400 ? "Cannot Create Payment Link" : "Error",
+																				description: errorMessage,
+																				status: "error",
+																				duration: 10000,
+																				isClosable: true,
+																			})
+																		} catch (toastError) {
+																			console.error("Failed to show toast:", toastError)
+																			// Fallback: use alert if toast fails
+																			alert(`Error: ${errorMessage}`)
+																		}
+																	}, 100)
+																} finally {
+																	setIsCreatingPaymentLink(false)
 																}
-																
-																if (!paymentUrl) {
-																	// Show a user-friendly error message
-																	throw new Error("Payment link is not available for this booking. The payment session may have expired or the booking was created through a different method. Please contact support if you need assistance.")
+															}}>
+																Create New Payment Link
+															</MenuItem>
+															<MenuItem onClick={async (e) => {
+																e.preventDefault()
+																e.stopPropagation()
+																setIsCreatingPaymentLink(true)
+																try {
+																	toast({
+																		title: "Creating payment link and sending email...",
+																		status: "info",
+																		duration: 2000,
+																		isClosable: true,
+																	})
+																	
+																	const response = await axios.post(`/api/bookings/create-payment-link`, {
+																		bookingId: booking._id,
+																		sendEmail: true
+																	})
+																	
+																	if (response.data?.status && response.data?.data?.paymentUrl) {
+																		const emailSent = response.data.data.emailSent
+																		
+																		toast({
+																			title: emailSent ? "Payment link created and email sent!" : "Payment link created (email failed)",
+																			description: emailSent 
+																				? `Payment link has been sent to ${booking.customerEmail}` 
+																				: "Payment link was created but email could not be sent. Link has been copied to clipboard.",
+																			status: emailSent ? "success" : "warning",
+																			duration: 5000,
+																			isClosable: true,
+																		})
+																		
+																		// Copy link to clipboard even if email was sent
+																		if (response.data.data.paymentUrl) {
+																			try {
+																				await navigator.clipboard.writeText(response.data.data.paymentUrl)
+																			} catch (clipboardError) {
+																				// Clipboard permission denied - non-critical, just log
+																				console.warn("Failed to copy to clipboard:", clipboardError)
+																			}
+																		}
+																		
+																		// Refresh the bookings data
+																		queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+																	} else {
+																		throw new Error(response.data?.message || "Failed to create payment link")
+																	}
+																} catch (error: any) {
+																	console.error("Error creating and sending payment link:", error)
+																	console.error("Error response data:", error?.response?.data)
+																	const errorMessage = error?.response?.data?.message || error?.message || "Failed to create payment link"
+																	
+																	// Note: Next.js error overlay in dev mode is normal - toast will still show
+																	toast({
+																		title: error?.response?.status === 400 ? "Cannot Create Payment Link" : "Error",
+																		description: errorMessage,
+																		status: "error",
+																		duration: 10000,
+																		isClosable: true,
+																	})
+																} finally {
+																	setIsCreatingPaymentLink(false)
 																}
-																
-																await navigator.clipboard.writeText(paymentUrl)
-																toast({
-																	title: "Payment link copied!",
-																	status: "success",
-																	duration: 2000,
-																	isClosable: true,
-																})
-															} catch (error: any) {
-																// Only log non-user-facing errors
-																if (error?.response?.status !== 404 && !error?.message?.includes("Payment link is not available")) {
-																	console.error("Error copying payment link:", error)
-																}
-																
-																// Show user-friendly error message
-																const errorMessage = error?.response?.data?.message || error?.message || "Could not retrieve payment link"
-																toast({
-																	title: "Payment Link Unavailable",
-																	description: errorMessage,
-																	status: "warning",
-																	duration: 5000,
-																	isClosable: true,
-																})
-															}
-														}}>
-															Copy Payment Link
-														</MenuItem>
+															}}>
+																Create & Send Payment Link via Email
+															</MenuItem>
+														</>
 													)}
 													<MenuItem onClick={async (e) => {
 														e.preventDefault()
@@ -1393,30 +1526,114 @@ function EventBookings({ eventId }: { eventId: string }) {
 												{selectedBooking.status}
 											</Badge>
 										</Flex>
-										{selectedBooking.status === "pending" && selectedBooking.paymentUrl && (
-											<Flex justify="space-between" align="center">
-												<Text fontWeight="semibold">Payment Link:</Text>
-												<Flex align="center" gap={2}>
-													<Text fontSize="xs" fontFamily="mono" color="gray.600" maxW="200px" isTruncated>
-														{selectedBooking.paymentUrl}
-													</Text>
+										{selectedBooking.status === "pending" && (
+											<Box>
+												<Text fontWeight="semibold" mb={2}>Payment Link:</Text>
+												<Flex direction="column" gap={2}>
+													{selectedBooking.paymentUrl && (
+														<Text fontSize="xs" fontFamily="mono" color="gray.600" wordBreak="break-all">
+															{selectedBooking.paymentUrl}
+														</Text>
+													)}
+													<Flex gap={2} flexWrap="wrap">
 													<Button
 														size="xs"
 														colorScheme="blue"
 														onClick={async () => {
 															try {
-																await navigator.clipboard.writeText(selectedBooking.paymentUrl!)
+																let paymentUrl = selectedBooking.paymentUrl
+																let isExpired = false
+																
+																// If paymentUrl is not available but stripeSessionId exists, fetch it
+																if (!paymentUrl && selectedBooking.stripeSessionId) {
+																	toast({
+																		title: "Fetching payment link...",
+																		status: "info",
+																		duration: 2000,
+																		isClosable: true,
+																	})
+																	try {
+																		const response = await axios.get(`/api/bookings/payment-url?sessionId=${selectedBooking.stripeSessionId}`)
+																		paymentUrl = response.data?.data?.paymentUrl
+																		// Update selectedBooking state with fetched paymentUrl
+																		if (paymentUrl) {
+																			setSelectedBooking({ ...selectedBooking, paymentUrl })
+																		}
+																	} catch (fetchError: any) {
+																		// Check if error indicates expiration
+																		if (fetchError?.response?.data?.message?.includes("expired")) {
+																			isExpired = true
+																		}
+																	}
+																}
+																
+																if (!paymentUrl && !isExpired) {
+																	// Try to get payment URL from booking reference
+																	try {
+																		const response = await axios.get(`/api/bookings/payment-url-by-booking?bookingRef=${selectedBooking.bookingRef}`)
+																		if (response.data?.data?.paymentUrl) {
+																			paymentUrl = response.data.data.paymentUrl
+																			// Update selectedBooking state with fetched paymentUrl
+																			setSelectedBooking({ ...selectedBooking, paymentUrl })
+																		}
+																	} catch (fallbackError: any) {
+																		// Check if error indicates expiration
+																		if (fallbackError?.response?.data?.message?.includes("expired")) {
+																			isExpired = true
+																		}
+																		// Silently handle 404 or other errors - don't log to console
+																		if (fallbackError?.response?.status !== 404 && !isExpired) {
+																			console.log("[EventBookings] Could not retrieve payment URL from booking reference:", fallbackError?.response?.status || fallbackError?.message)
+																		}
+																	}
+																}
+																
+																if (!paymentUrl && !isExpired) {
+																	throw new Error("Payment link is not available for this booking. The payment session may have expired or the booking was created through a different method.")
+																}
+																
+																if (isExpired || !paymentUrl) {
+																	throw new Error("EXPIRED")
+																}
+																
+																await navigator.clipboard.writeText(paymentUrl)
 																toast({
 																	title: "Payment link copied!",
 																	status: "success",
 																	duration: 2000,
 																	isClosable: true,
 																})
-															} catch (error) {
+															} catch (error: any) {
+																// Check if error indicates expiration
+																const isExpired = error?.message === "EXPIRED" || 
+																	error?.response?.data?.message?.includes("expired") ||
+																	error?.message?.includes("expired")
+																
+																if (isExpired) {
+																	// Show option to create new link
+																	toast({
+																		title: "Payment Link Expired",
+																		description: "The payment link has expired. Please create a new payment link.",
+																		status: "warning",
+																		duration: 5000,
+																		isClosable: true,
+																	})
+																	// Don't show error, user will see "Create New Link" button
+																	return
+																}
+																
+																// Only log non-user-facing errors
+																if (error?.response?.status !== 404 && !error?.message?.includes("Payment link is not available")) {
+																	console.error("Error copying payment link:", error)
+																}
+																
+																// Show user-friendly error message
+																const errorMessage = error?.response?.data?.message || error?.message || "Could not retrieve payment link"
 																toast({
-																	title: "Failed to copy",
-																	status: "error",
-																	duration: 2000,
+																	title: "Payment Link Unavailable",
+																	description: errorMessage,
+																	status: "warning",
+																	duration: 5000,
 																	isClosable: true,
 																})
 															}
@@ -1424,8 +1641,152 @@ function EventBookings({ eventId }: { eventId: string }) {
 													>
 														Copy
 													</Button>
+													<Button
+														size="xs"
+														colorScheme="green"
+														isLoading={isCreatingPaymentLink}
+														onClick={async () => {
+															setIsCreatingPaymentLink(true)
+															try {
+																toast({
+																	title: "Creating new payment link...",
+																	status: "info",
+																	duration: 2000,
+																	isClosable: true,
+																})
+																
+																const response = await axios.post(`/api/bookings/create-payment-link`, {
+																	bookingId: selectedBooking._id,
+																	sendEmail: false
+																})
+																
+																if (response.data?.status && response.data?.data?.paymentUrl) {
+																	const newPaymentUrl = response.data.data.paymentUrl
+																	setSelectedBooking({ 
+																		...selectedBooking, 
+																		paymentUrl: newPaymentUrl,
+																		stripeSessionId: response.data.data.sessionId || selectedBooking.stripeSessionId
+																	})
+																	
+																	// Auto-copy the new link
+																	await navigator.clipboard.writeText(newPaymentUrl)
+																	toast({
+																		title: "New payment link created and copied!",
+																		status: "success",
+																		duration: 3000,
+																		isClosable: true,
+																	})
+																} else {
+																	throw new Error(response.data?.message || "Failed to create payment link")
+																}
+															} catch (error: any) {
+																console.error("Error creating new payment link:", error)
+																console.error("Error response data:", error?.response?.data)
+																const errorMessage = error?.response?.data?.message || error?.message || "Failed to create payment link"
+																
+																// Use setTimeout to ensure toast is called after error handling completes
+																setTimeout(() => {
+																	try {
+																		toast({
+																			title: error?.response?.status === 400 ? "Cannot Create Payment Link" : "Error",
+																			description: errorMessage,
+																			status: "error",
+																			duration: 10000,
+																			isClosable: true,
+																		})
+																	} catch (toastError) {
+																		console.error("Failed to show toast:", toastError)
+																		// Fallback: use alert if toast fails
+																		alert(`Error: ${errorMessage}`)
+																	}
+																}, 100)
+															} finally {
+																setIsCreatingPaymentLink(false)
+															}
+														}}
+													>
+														Create New Link
+													</Button>
+													<Button
+														size="xs"
+														colorScheme="purple"
+														isLoading={isCreatingPaymentLink}
+														onClick={async () => {
+															setIsCreatingPaymentLink(true)
+															try {
+																toast({
+																	title: "Creating payment link and sending email...",
+																	status: "info",
+																	duration: 2000,
+																	isClosable: true,
+																})
+																
+																const response = await axios.post(`/api/bookings/create-payment-link`, {
+																	bookingId: selectedBooking._id,
+																	sendEmail: true
+																})
+																
+																if (response.data?.status && response.data?.data?.paymentUrl) {
+																	const emailSent = response.data.data.emailSent
+																	const newPaymentUrl = response.data.data.paymentUrl
+																	
+																	setSelectedBooking({ 
+																		...selectedBooking, 
+																		paymentUrl: newPaymentUrl,
+																		stripeSessionId: response.data.data.sessionId || selectedBooking.stripeSessionId
+																	})
+																	
+																	toast({
+																		title: emailSent ? "Payment link created and email sent!" : "Payment link created (email failed)",
+																		description: emailSent 
+																			? `Payment link has been sent to ${selectedBooking.customerEmail}` 
+																			: "Payment link was created but email could not be sent. Link has been copied to clipboard.",
+																		status: emailSent ? "success" : "warning",
+																		duration: 5000,
+																		isClosable: true,
+																	})
+																	
+																	// Copy link to clipboard even if email was sent
+																	try {
+																		await navigator.clipboard.writeText(newPaymentUrl)
+																	} catch (clipboardError) {
+																		// Clipboard permission denied - non-critical
+																		console.warn("Failed to copy to clipboard:", clipboardError)
+																	}
+																} else {
+																	throw new Error(response.data?.message || "Failed to create payment link")
+																}
+															} catch (error: any) {
+																console.error("Error creating and sending payment link:", error)
+																console.error("Error response data:", error?.response?.data)
+																const errorMessage = error?.response?.data?.message || error?.message || "Failed to create payment link"
+																
+																// Use setTimeout to ensure toast is called after error handling completes
+																setTimeout(() => {
+																	try {
+																		toast({
+																			title: error?.response?.status === 400 ? "Cannot Create Payment Link" : "Error",
+																			description: errorMessage,
+																			status: "error",
+																			duration: 10000,
+																			isClosable: true,
+																		})
+																	} catch (toastError) {
+																		console.error("Failed to show toast:", toastError)
+																		// Fallback: use alert if toast fails
+																		alert(`Error: ${errorMessage}`)
+																	}
+																}, 100)
+															} finally {
+																setIsCreatingPaymentLink(false)
+															}
+														}}
+													>
+														Create & Send Email
+													</Button>
+													</Flex>
 												</Flex>
-											</Flex>
+											</Box>
 										)}
 										<Flex justify="space-between">
 											<Text fontWeight="semibold">Booking Date:</Text>
@@ -1464,7 +1825,16 @@ function EventBookings({ eventId }: { eventId: string }) {
 											<Heading size="sm" mb={3}>Ticket Details</Heading>
 											<Stack spacing={2}>
 												{selectedBooking.tickets.map((ticket, idx) => {
-													const eventTicket = eventData.data.data.tickets?.find((t: any) => t._id.toString() === ticket.ticketId.toString())
+													const eventTicket = eventData.data.data.tickets?.find((t: any) => {
+														if (!t || !t._id) return false
+														
+														// Normalize both IDs to strings for comparison
+														const bookingTicketIdStr = (ticket.ticketId?.toString?.() || String(ticket.ticketId)).trim()
+														const eventTicketIdStr = (t._id?.toString?.() || String(t._id)).trim()
+														
+														// Compare normalized strings (handles both ObjectId and string)
+														return eventTicketIdStr === bookingTicketIdStr
+													})
 													return (
 														<Box key={idx} p={3} bg="gray.50" borderRadius="md">
 															<Flex justify="space-between" mb={1}>

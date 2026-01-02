@@ -167,6 +167,89 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
 	}
 }
 
+type PaymentLinkEmailData = {
+	firstName: string
+	lastName: string
+	email: string
+	eventName: string
+	bookingRef: string
+	tickets: Array<{
+		name: string
+		quantity: number
+		price: number
+	}>
+	paymentUrl: string
+	totalAmount: number
+}
+
+export const sendPaymentLinkEmail = async ({ firstName, lastName, email, eventName, bookingRef, tickets, paymentUrl, totalAmount }: PaymentLinkEmailData) => {
+	try {
+		const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
+
+		await sgMail.send({
+			to: [email, "tech@jetzyapp.com"],
+			from: process.env.SENDGRID_EMAIL_SENDER as string,
+			subject: `Jetzy [Payment Link] Complete your booking for ${decodeHTMLEntities(eventName)}`,
+			html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">Complete Your Booking</h1>
+          
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p style="color: #333; margin: 0 0 15px 0;">
+              Hello ${firstName} ${lastName},
+            </p>
+            <p style="color: #333; margin: 0;">
+              Your booking for "${decodeHTMLEntities(eventName)}" is pending payment. Please use the payment link below to complete your purchase.
+            </p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">Booking Details</h2>
+            <p style="color: #666; margin: 5px 0;"><strong>Booking Reference:</strong> ${bookingRef}</p>
+            ${tickets.map(ticket => `
+              <div style="background-color: #fff; padding: 15px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ddd;">
+                <h3 style="color: #333; margin: 0 0 10px 0;">${ticket.name}</h3>
+                <p style="margin: 5px 0;"><strong>Quantity:</strong> ${ticket.quantity}</p>
+                <p style="margin: 5px 0;"><strong>Price per ticket:</strong> $${ticket.price}</p>
+                <p style="margin: 5px 0;"><strong>Subtotal:</strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
+              </div>
+            `).join('')}
+            
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 8px; margin-top: 15px;">
+              <h3 style="color: #333; margin: 0 0 10px 0;">Total: ${totalTickets} tickets - $${totalAmount.toFixed(2)}</h3>
+            </div>
+          </div>
+
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+            <h3 style="color: #856404; margin: 0 0 10px 0;">Important: Limited Time Offer</h3>
+            <p style="color: #856404; margin: 0;">
+              This payment link is valid for <strong>24 hours</strong>. Please complete your purchase as soon as possible to secure your tickets.
+            </p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${paymentUrl}" style="background-color: #F79432; color: #000; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              Complete Your Purchase Now
+            </a>
+          </div>
+          
+          <p style="margin-top: 30px; text-align: center; color: #666;">
+            If you have any questions or need assistance, please contact us.
+          </p>
+          
+          <p style="font-size: 12px; color: #999; text-align: center; margin-top: 20px;">
+            If the button above does not work, copy and paste this link into your browser:<br/>
+            <a href="${paymentUrl}" style="color: #F79432; word-break: break-all;">${paymentUrl}</a>
+          </p>
+        </div>
+      `,
+		})
+	} catch (error) {
+		console.error("Failed to send payment link email:", error)
+		throw error
+	}
+}
+
 export const sendWaitingListNotification = async ({ firstName, lastName, email, eventName }: WaitingListEmailData) => {
 	try {
 		await sgMail.send({
