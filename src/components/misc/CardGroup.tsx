@@ -8,6 +8,8 @@ import React, { useMemo } from "react"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
+import { stripHTMLAndDecode } from "@/lib/helpers"
+import SafeHTML from "./SafeHTML"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -59,7 +61,7 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 					>
 						<div className="relative h-48 w-full overflow-hidden">
 							{item?.images && item?.images.length > 0 && item?.images[0] && item?.images[0].trim() !== "" ? (
-								<Image className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+								<Image className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300" src={item?.images[0]} alt={stripHTMLAndDecode(item?.name)} width={512} height={512} />
 							) : (
 								<div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
 									No Image
@@ -67,7 +69,7 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 							)}
 						</div>
 						<div className="p-4 space-y-2">
-							<h3 className="text-lg font-semibold text-text-primary group-hover:text-primary-purple transition-colors line-clamp-2">{item?.name}</h3>
+							<h3 className="text-lg font-semibold text-text-primary group-hover:text-primary-purple transition-colors line-clamp-2">{stripHTMLAndDecode(item?.name)}</h3>
 
 							{/* Date and Time */}
 							{formattedDate && (
@@ -92,7 +94,9 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 								</div>
 							)}
 
-							<p className="text-sm text-text-muted line-clamp-2">{item?.desc}</p>
+							<div className="text-sm text-text-muted line-clamp-2">
+								<SafeHTML html={item?.desc || ""} />
+							</div>
 						</div>
 					</Link>
 				)

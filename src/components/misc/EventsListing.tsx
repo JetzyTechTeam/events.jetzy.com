@@ -15,6 +15,7 @@ import { MapPinIcon, CalendarIcon, ChevronRightIcon, UserGroupIcon, TicketIcon, 
 import { SparklesIcon, GlobeAltIcon, HeartIcon, SunIcon, MusicalNoteIcon, FireIcon } from "@heroicons/react/24/solid"
 import SafeHTML from "./SafeHTML"
 import { useAnalytics } from "@/hooks/useAnalytics"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -88,7 +89,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 		<div onClick={() => onClick(event)} className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer border border-border-light group flex flex-col h-full">
 			<div className="relative pt-[56.25%] bg-gray-200">
 				{hasImage ? (
-					<Image src={event.images[0]} alt={event.name} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
+					<Image src={event.images[0]} alt={stripHTMLAndDecode(event.name)} fill className="object-cover group-hover:scale-105 transition-transform duration-500" />
 				) : (
 					<div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
 						No Image
@@ -431,12 +432,14 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 					{items.length > 0 && items[0].images && items[0].images.length > 0 && items[0].images[0] && items[0].images[0].trim() !== "" && (
 						<div className="mb-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
 							<div className="relative h-[250px] sm:h-[350px]">
-								<Image src={items[0].images[0]} alt={items[0].name} fill className="object-cover" />
+								<Image src={items[0].images[0]} alt={stripHTMLAndDecode(items[0].name)} fill className="object-cover" />
 								<div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-6">
 									<div className="text-white">
 										<p className="text-red-400 font-bold uppercase tracking-wider mb-1 text-sm">Featured Event</p>
-										<h2 className="text-3xl font-bold mb-2">{items[0].name}</h2>
-										<p className="text-gray-200 mb-4 line-clamp-2 max-w-2xl">{items[0].desc}</p>
+										<h2 className="text-3xl font-bold mb-2">{stripHTMLAndDecode(items[0].name)}</h2>
+										<div className="text-gray-200 mb-4 line-clamp-2 max-w-2xl">
+											<SafeHTML html={items[0].desc || ""} />
+										</div>
 										<button
 											onClick={() => handleEventClick(items[0])}
 											className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"

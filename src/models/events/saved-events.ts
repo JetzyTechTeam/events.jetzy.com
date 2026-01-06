@@ -34,3 +34,4 @@ savedEventSchema.index({ userId: 1, eventId: 1 }, { unique: true })
 export const SavedEvents: Model<ISavedEvent> =
 	dbconn.models["SavedEvents"] || dbconn.model("SavedEvents", savedEventSchema)
 
+

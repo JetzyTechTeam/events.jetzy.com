@@ -6,6 +6,7 @@ import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 import { CalendarIcon, MapPinIcon, ClockIcon } from "@heroicons/react/24/outline"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -42,7 +43,7 @@ const BookingEventCard: React.FC<Props> = ({ event }) => {
 					{event.images && event.images.length > 0 && event.images[0] && event.images[0].trim() !== "" ? (
 						<Image
 							src={event.images[0]}
-							alt={event.name}
+							alt={stripHTMLAndDecode(event.name)}
 							fill
 							className="object-cover group-hover:scale-105 transition-transform duration-500"
 						/>
@@ -61,7 +62,7 @@ const BookingEventCard: React.FC<Props> = ({ event }) => {
 				{/* Content Section */}
 				<div className="p-5 flex-1 flex flex-col">
 					<h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 group-hover:text-primary-purple transition-colors">
-						{event.name}
+						{stripHTMLAndDecode(event.name)}
 					</h3>
 
 					<div className="space-y-2 mt-auto">
