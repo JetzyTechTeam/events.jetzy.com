@@ -2,6 +2,7 @@
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { adminOnly } from "@/lib/authSession"
 import { stripHTMLAndDecode } from "@/lib/helpers"
+import { ROUTES } from "@/configs/routes"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Events } from "@/models/events"
@@ -233,7 +234,16 @@ export default function Manage({ event }: any) {
 											px={4}
 											h="50px"
 											_hover={{ bg: "#F0F2F5", borderRadius: "md", borderBottom: "3px solid transparent" }}
-											onClick={() => setActiveTab(tab.value as any)}
+											onClick={() => {
+												// Check if user tries to access Chat tab and is not logged in
+												if (tab.value === "chat" && !session) {
+													// Redirect to login page with callback URL
+													const currentUrl = router.asPath
+													router.push(`${ROUTES.login}?_cb=${encodeURIComponent(currentUrl)}`)
+													return
+												}
+												setActiveTab(tab.value as any)
+											}}
 											fontSize="md"
 											fontWeight="600"
 										>
@@ -503,10 +513,32 @@ export default function Manage({ event }: any) {
 						)}
 
 						{activeTab === "chat" && (
-							<JetzyChatIntegration 
-								eventId={eventData._id} 
-								eventName={eventData.name}
-							/>
+							session ? (
+								<JetzyChatIntegration 
+									eventId={eventData._id} 
+									eventName={eventData.name}
+								/>
+							) : (
+								<Box bg="white" borderRadius="lg" boxShadow="sm" p={8} textAlign="center">
+									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={2}>
+										Login Required
+									</Text>
+									<Text color="#65676B" mb={4}>
+										Please login to access the chat.
+									</Text>
+									<Button
+										onClick={() => {
+											const currentUrl = router.asPath
+											router.push(`${ROUTES.login}?_cb=${encodeURIComponent(currentUrl)}`)
+										}}
+										bg="#1877F2"
+										color="white"
+										_hover={{ bg: "#166FE5" }}
+									>
+										Login
+									</Button>
+								</Box>
+							)
 						)}
 						</Box>
 

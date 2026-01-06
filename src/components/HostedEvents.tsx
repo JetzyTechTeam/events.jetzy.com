@@ -22,6 +22,7 @@ import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import SafeHTML from "@/components/misc/SafeHTML"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { toggleCheckoutForm, setSelectedTickets, getCheckoutStore } from "@Jetzy/redux/reducers/checkoutSlice"
+import { ROUTES } from "@/configs/routes"
 import {
 	CalendarIcon,
 	MapPinIcon,
@@ -113,6 +114,7 @@ export default function HostedEvents({ event }: Props) {
 	const [isSaved, setIsSaved] = useState(false)
 	const [isSaving, setIsSaving] = useState(false)
 	const [isCheckingSaved, setIsCheckingSaved] = useState(true)
+	const [activeTabIndex, setActiveTabIndex] = useState(0)
 	const { data: session } = useSession()
 	const toast = useToast()
 	const { trackEventInteraction } = useAnalytics()
@@ -626,7 +628,20 @@ export default function HostedEvents({ event }: Props) {
 
 					{/* Discussion and Chat Tabs */}
 					<div className="bg-white rounded-lg shadow-sm border border-gray-200">
-						<Tabs defaultIndex={0} colorScheme="blue">
+						<Tabs 
+							index={activeTabIndex} 
+							onChange={(index) => {
+								// If user tries to access Chat tab (index 1) and is not logged in
+								if (index === 1 && !session) {
+									// Redirect to login page with callback URL
+									const currentUrl = router.asPath
+									router.push(`${ROUTES.login}?_cb=${encodeURIComponent(currentUrl)}`)
+									return
+								}
+								setActiveTabIndex(index)
+							}}
+							colorScheme="blue"
+						>
 							<TabList borderBottom="1px" borderColor="gray.200" px={4} pt={4}>
 								<Tab 
 									_selected={{ color: "#1877F2", borderBottomColor: "#1877F2" }}
@@ -651,10 +666,32 @@ export default function HostedEvents({ event }: Props) {
 									<DiscussionBoard eventId={clonedEvent._id.toString()} />
 								</TabPanel>
 								<TabPanel px={0} py={0}>
-									<JetzyChatIntegration 
-										eventId={clonedEvent._id.toString()} 
-										eventName={clonedEvent.name}
-									/>
+									{session ? (
+										<JetzyChatIntegration 
+											eventId={clonedEvent._id.toString()} 
+											eventName={clonedEvent.name}
+										/>
+									) : (
+										<Box p={8} textAlign="center">
+											<Text fontSize="lg" fontWeight="bold" color="#1C1E21" mb={2}>
+												Login Required
+											</Text>
+											<Text color="#65676B" mb={4}>
+												Please login to access the chat.
+											</Text>
+											<Button
+												onClick={() => {
+													const currentUrl = router.asPath
+													router.push(`${ROUTES.login}?_cb=${encodeURIComponent(currentUrl)}`)
+												}}
+												bg="#1877F2"
+												color="white"
+												_hover={{ bg: "#166FE5" }}
+											>
+												Login
+											</Button>
+										</Box>
+									)}
 								</TabPanel>
 							</TabPanels>
 						</Tabs>
