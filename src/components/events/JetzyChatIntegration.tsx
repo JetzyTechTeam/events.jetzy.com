@@ -211,8 +211,12 @@ export default function JetzyChatIntegration({ eventId, eventName }: JetzyChatIn
 					top="50%" 
 					left="50%" 
 					transform="translate(-50%, -50%)"
-					zIndex={1}
+					zIndex={10}
 					textAlign="center"
+					bg="white"
+					p={4}
+					borderRadius="md"
+					boxShadow="md"
 				>
 					<Spinner size="lg" color="blue.500" thickness="4px" />
 					<Text mt={4} color="gray.600" fontSize="md">Loading chat...</Text>
@@ -245,12 +249,9 @@ export default function JetzyChatIntegration({ eventId, eventName }: JetzyChatIn
 				}}
 				allow="microphone; camera"
 				onLoad={() => {
-					// Fallback: hide loading after 10 seconds if no message received
-					setTimeout(() => {
-						if (isLoading) {
-							setIsLoading(false)
-						}
-					}, 10000)
+					// Hide events app loading as soon as iframe loads
+					// JetzyChat will show its own loading state inside the iframe
+					setIsLoading(false)
 				}}
 				title="JetzyChat"
 			/>
