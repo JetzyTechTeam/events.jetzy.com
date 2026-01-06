@@ -69,6 +69,91 @@ export default function LoginPage() {
 			setHasShownSuccess(true)
 		}
 
+		// Get API token from external API after NextAuth login succeeds
+		if (res?.ok) {
+			try {
+				// Use a separate env variable for external API to avoid affecting HTTPClient
+				// This allows NEXT_PUBLIC_API_BASE_URL to remain unchanged for existing API calls
+				const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL
+				
+				// Debug: Log the API base URL (only first part for security)
+				if (process.env.NODE_ENV === 'development') {
+					console.log('[Login] NEXT_PUBLIC_EXTERNAL_API_BASE_URL:', process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || 'NOT SET (using NEXT_PUBLIC_API_BASE_URL as fallback)')
+					console.log('[Login] NEXT_PUBLIC_API_BASE_URL (fallback):', process.env.NEXT_PUBLIC_API_BASE_URL || 'NOT SET')
+				}
+				
+				// Validate that externalApiUrl is set and is a valid absolute URL
+				if (!externalApiUrl || externalApiUrl.trim() === '') {
+					console.warn('[Login] External API URL not set, skipping token fetch')
+					console.warn('[Login] Please set NEXT_PUBLIC_EXTERNAL_API_BASE_URL in .env.local or .env')
+					console.warn('[Login] Example: NEXT_PUBLIC_EXTERNAL_API_BASE_URL=https://test.jetzy.com')
+					return
+				}
+
+				// Ensure externalApiUrl doesn't have trailing slash and is absolute URL
+				const baseUrl = externalApiUrl.trim().replace(/\/+$/, '') // Remove trailing slashes
+				
+				// Validate it's an absolute URL (starts with http:// or https://)
+				if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+					console.error('[Login] External API URL must be an absolute URL (start with http:// or https://)')
+					console.error('[Login] Current value:', baseUrl)
+					console.error('[Login] Example: NEXT_PUBLIC_EXTERNAL_API_BASE_URL=https://test.jetzy.com')
+					return
+				}
+
+				// Use fetch directly with full absolute URL
+				// The endpoint is /authorize (from authEndpoints.login = "public:/authorize")
+				const authorizeUrl = `${baseUrl}/authorize`
+				
+				// Debug: Log the full URL being called
+				if (process.env.NODE_ENV === 'development') {
+					console.log('[Login] Calling authorize endpoint:', authorizeUrl)
+				}
+				
+				const tokenResponse = await fetch(authorizeUrl, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						email: values.email,
+						password: values.password,
+						isJetzyMember: values.isJetzyMember
+					})
+				})
+
+				if (tokenResponse.ok) {
+					const tokenData = await tokenResponse.json()
+					if (tokenData?.status && tokenData?.data?.accessToken) {
+						// Store token for events app API calls and JetzyChat
+						sessionStorage.setItem('api_token', tokenData.data.accessToken)
+						if (process.env.NODE_ENV === 'development') {
+							console.log('[Login] API token stored in sessionStorage')
+						}
+					} else {
+						console.warn('[Login] Token response missing accessToken:', tokenData)
+					}
+				} else {
+					const errorText = await tokenResponse.text()
+					console.warn('[Login] Failed to get API token:', tokenResponse.status, tokenResponse.statusText)
+					if (process.env.NODE_ENV === 'development') {
+						console.warn('[Login] Response:', errorText.substring(0, 200))
+					}
+				}
+			} catch (error: any) {
+				console.error('[Login] Error fetching API token:', error)
+				// Log more details in development
+				if (process.env.NODE_ENV === 'development') {
+					console.warn('[Login] Token fetch error details:', {
+						message: error?.message,
+						status: error?.code,
+						data: error
+					})
+				}
+				// Continue anyway - user is still logged in via NextAuth
+			}
+		}
+
 		// turn off loader
 		setLoader(false)
 

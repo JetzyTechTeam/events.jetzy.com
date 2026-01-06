@@ -18,6 +18,7 @@ import LightNavbar from "@/components/layout/LightNavbar"
 import Footer from "@/components/layout/Footer"
 import CommentsSection, { UserType } from "@/components/events/CommentsSection"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
+import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import SafeHTML from "@/components/misc/SafeHTML"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { toggleCheckoutForm, setSelectedTickets, getCheckoutStore } from "@Jetzy/redux/reducers/checkoutSlice"
@@ -71,7 +72,12 @@ import {
 	useDisclosure,
 	Divider,
 	Stack,
-	Heading
+	Heading,
+	Tabs,
+	TabList,
+	TabPanels,
+	Tab,
+	TabPanel
 } from "@chakra-ui/react"
 import {
 	MagnifyingGlassIcon,
@@ -618,7 +624,41 @@ export default function HostedEvents({ event }: Props) {
 						)}
 					</div>
 
-					<DiscussionBoard eventId={clonedEvent._id.toString()} />
+					{/* Discussion and Chat Tabs */}
+					<div className="bg-white rounded-lg shadow-sm border border-gray-200">
+						<Tabs defaultIndex={0} colorScheme="blue">
+							<TabList borderBottom="1px" borderColor="gray.200" px={4} pt={4}>
+								<Tab 
+									_selected={{ color: "#1877F2", borderBottomColor: "#1877F2" }}
+									fontWeight="medium"
+									px={6}
+									py={3}
+								>
+									Discussion
+								</Tab>
+								<Tab 
+									_selected={{ color: "#1877F2", borderBottomColor: "#1877F2" }}
+									fontWeight="medium"
+									px={6}
+									py={3}
+								>
+									Chat
+								</Tab>
+							</TabList>
+
+							<TabPanels>
+								<TabPanel px={0} py={0}>
+									<DiscussionBoard eventId={clonedEvent._id.toString()} />
+								</TabPanel>
+								<TabPanel px={0} py={0}>
+									<JetzyChatIntegration 
+										eventId={clonedEvent._id.toString()} 
+										eventName={clonedEvent.name}
+									/>
+								</TabPanel>
+							</TabPanels>
+						</Tabs>
+					</div>
 				</div>
 
 				{/* Right Column (Sidebar) */}

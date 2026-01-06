@@ -36,6 +36,7 @@ import { GuestsList } from "@/components/console/GuestsList"
 import { WaitingList } from "@/components/console/WaitingList"
 import { EventBookings } from "@/components/HostedEvents"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
+import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import MarketingTab from "@/components/console/MarketingTab"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { Box, Flex, Text, Button, Avatar, IconButton, Menu, MenuButton, MenuList, MenuItem, Divider, Badge, AvatarGroup } from "@chakra-ui/react"
@@ -69,6 +70,7 @@ export default function Manage({ event }: any) {
 		{ label: "About", value: "about" },
 		{ label: "Marketing", value: "marketing" },
 		{ label: "Discussion", value: "discussion" },
+		{ label: "Chat", value: "chat" },
 		...(isAdmin ? [
 			{ label: "Bookings", value: "bookings" },
 			{ label: "Guests", value: "guests" },
@@ -79,7 +81,7 @@ export default function Manage({ event }: any) {
 	
 	// Ensure initial tab is valid for non-admin users
 	const validTabs = allTabs.map(t => t.value)
-	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion" | "marketing">(
+	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion" | "marketing" | "chat">(
 		validTabs.includes("about") ? "about" : (validTabs[0] as any)
 	)
 	
@@ -498,6 +500,13 @@ export default function Manage({ event }: any) {
 							
 						{activeTab === "discussion" && (
 							<DiscussionBoard eventId={eventData._id} />
+						)}
+
+						{activeTab === "chat" && (
+							<JetzyChatIntegration 
+								eventId={eventData._id} 
+								eventName={eventData.name}
+							/>
 						)}
 						</Box>
 

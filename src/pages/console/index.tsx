@@ -14,6 +14,7 @@ import { useDisclosure, Box, Flex, Text, Button, SimpleGrid, Avatar, IconButton,
 import { FiPlus, FiCalendar, FiUsers, FiTrendingUp, FiMoreHorizontal, FiClock, FiMapPin } from "react-icons/fi"
 import Image from "next/image"
 import { DateTime } from "luxon"
+import { stripHTMLAndDecode } from "@/lib/helpers"
 
 export default function ConsoleDashboard() {
 	const { isFetching, dataList } = useAppSelector(getEventState)
@@ -227,7 +228,7 @@ const DashboardEventCard = ({ event }: { event: EventInterface }) => {
 							cursor="pointer"
 							mb={1}
 						>
-							{event.name}
+							{stripHTMLAndDecode(event.name)}
 						</Text>
 					</Link>
 					<Flex align="center" gap={4} color="#65676B" fontSize="sm">
@@ -247,7 +248,7 @@ const DashboardEventCard = ({ event }: { event: EventInterface }) => {
 					<Box position="relative" w="120px" h="full" display={{ base: "none", sm: "block" }}>
 						<Image 
 							src={event.images[0]} 
-							alt={event.name} 
+							alt={stripHTMLAndDecode(event.name)} 
 							fill 
 							className="object-cover"
 						/>
