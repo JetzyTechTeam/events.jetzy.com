@@ -71,7 +71,8 @@ export default function Manage({ event }: any) {
 		{ label: "About", value: "about" },
 		{ label: "Marketing", value: "marketing" },
 		{ label: "Discussion", value: "discussion" },
-		{ label: "Chat", value: "chat" },
+		// Chat tab hidden temporarily
+		// { label: "Chat", value: "chat" },
 		...(isAdmin ? [
 			{ label: "Bookings", value: "bookings" },
 			{ label: "Guests", value: "guests" },
@@ -235,13 +236,6 @@ export default function Manage({ event }: any) {
 											h="50px"
 											_hover={{ bg: "#F0F2F5", borderRadius: "md", borderBottom: "3px solid transparent" }}
 											onClick={() => {
-												// Check if user tries to access Chat tab and is not logged in
-												if (tab.value === "chat" && !session) {
-													// Redirect to login page with callback URL
-													const currentUrl = router.asPath
-													router.push(`${ROUTES.login}?_cb=${encodeURIComponent(currentUrl)}`)
-													return
-												}
 												setActiveTab(tab.value as any)
 											}}
 											fontSize="md"
@@ -512,7 +506,8 @@ export default function Manage({ event }: any) {
 							<DiscussionBoard eventId={eventData._id} />
 						)}
 
-						{activeTab === "chat" && (
+						{/* Chat tab content hidden temporarily */}
+						{/* {activeTab === "chat" && (
 							session ? (
 								<JetzyChatIntegration 
 									eventId={eventData._id} 
@@ -539,7 +534,7 @@ export default function Manage({ event }: any) {
 									</Button>
 								</Box>
 							)
-						)}
+						)} */}
 						</Box>
 
 						{/* RIGHT COLUMN (SIDEBAR) */}

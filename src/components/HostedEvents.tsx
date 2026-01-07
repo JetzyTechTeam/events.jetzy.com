@@ -631,13 +631,7 @@ export default function HostedEvents({ event }: Props) {
 						<Tabs 
 							index={activeTabIndex} 
 							onChange={(index) => {
-								// If user tries to access Chat tab (index 1) and is not logged in
-								if (index === 1 && !session) {
-									// Redirect to login page with callback URL
-									const currentUrl = router.asPath
-									router.push(`${ROUTES.login}?_cb=${encodeURIComponent(currentUrl)}`)
-									return
-								}
+								// Chat tab is hidden, so only Discussion tab (index 0) is available
 								setActiveTabIndex(index)
 							}}
 							colorScheme="blue"
@@ -651,21 +645,23 @@ export default function HostedEvents({ event }: Props) {
 								>
 									Discussion
 								</Tab>
-								<Tab 
+								{/* Chat tab hidden temporarily */}
+								{/* <Tab 
 									_selected={{ color: "#1877F2", borderBottomColor: "#1877F2" }}
 									fontWeight="medium"
 									px={6}
 									py={3}
 								>
 									Chat
-								</Tab>
+								</Tab> */}
 							</TabList>
 
 							<TabPanels>
 								<TabPanel px={0} py={0}>
 									<DiscussionBoard eventId={clonedEvent._id.toString()} />
 								</TabPanel>
-								<TabPanel px={0} py={0}>
+								{/* Chat tab panel hidden temporarily */}
+								{/* <TabPanel px={0} py={0}>
 									{session ? (
 										<JetzyChatIntegration 
 											eventId={clonedEvent._id.toString()} 
@@ -692,7 +688,7 @@ export default function HostedEvents({ event }: Props) {
 											</Button>
 										</Box>
 									)}
-								</TabPanel>
+								</TabPanel> */}
 							</TabPanels>
 						</Tabs>
 					</div>
