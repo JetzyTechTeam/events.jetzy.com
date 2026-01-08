@@ -23,6 +23,11 @@ export const signupValidation = yup.object().shape({
     .string()
     .required("Confirm password is required")
     .oneOf([yup.ref("password")], "Password did not match."),
+  
+  jetzyChatTermsAccepted: yup
+    .boolean()
+    .oneOf([true], "You must accept the Privacy Policy and JetzyChat Terms to create an account.")
+    .required("You must accept the Privacy Policy and JetzyChat Terms."),
 })
 
 export const FgpwdValidatorScheme = yup.object().shape({

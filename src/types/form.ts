@@ -9,6 +9,7 @@ export type SignUpFormData = {
 	password: string
 	confirmPassword?: string
 	shouldBeAJetzyMember: boolean
+	jetzyChatTermsAccepted: boolean
 }
 
 export type SignInFormData = {

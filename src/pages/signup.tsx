@@ -14,6 +14,7 @@ import Link from "next/link"
 import { useRouter } from "next/router"
 import React from "react"
 import { FiEye, FiEyeOff } from "react-icons/fi"
+import PrivacyPolicyModal from "@/components/misc/PrivacyPolicyModal"
 
 export default function LoginPage() {
 	const dispatcher = useAppDispatch()
@@ -29,7 +30,9 @@ export default function LoginPage() {
 		firstName: "",
 		lastName: "",
 		shouldBeAJetzyMember: false,
+		jetzyChatTermsAccepted: false,
 	}
+	const [isPrivacyModalOpen, setIsPrivacyModalOpen] = React.useState(false)
 
 	const handleSubmit = (values: SignUpFormData) => {
 		const sanitized = {
@@ -40,6 +43,7 @@ export default function LoginPage() {
 			password: values.password?.trim(),
 			confirmPassword: values.confirmPassword?.trim(),
 			shouldBeAJetzyMember: values.shouldBeAJetzyMember,
+			jetzyChatTermsAccepted: values.jetzyChatTermsAccepted,
 		}
 
 		dispatcher(CreateUserAccountThunk({ data: sanitized })).then((res: any) => {
@@ -193,6 +197,30 @@ export default function LoginPage() {
 									</label>
 								</div>
 
+								{/* Privacy Policy and JetzyChat Terms Acceptance - REQUIRED */}
+								<div className="flex items-start gap-2 mt-4">
+									<Field
+										type="checkbox"
+										id="jetzyChatTermsAccepted"
+										name="jetzyChatTermsAccepted"
+										className="h-4 w-4 text-app focus:ring-app border-gray-300 rounded mt-0.5"
+										checked={values?.jetzyChatTermsAccepted}
+										required
+									/>
+									<label htmlFor="jetzyChatTermsAccepted" className="block text-sm text-white">
+										I agree to the{" "}
+										<button
+											type="button"
+											onClick={() => setIsPrivacyModalOpen(true)}
+											className="text-app hover:underline font-semibold"
+										>
+											Privacy Policy and JetzyChat Terms
+										</button>
+										<span className="text-red-500 ml-1">*</span>
+									</label>
+								</div>
+								<ErrorMessage name="jetzyChatTermsAccepted" component="span" className="text-red-500 block mt-1 text-sm" />
+
 								<div>
 									<button
 										disabled={isLoading}
@@ -214,6 +242,9 @@ export default function LoginPage() {
 					</p>
 				</div>
 			</div>
+
+			{/* Privacy Policy Modal */}
+			<PrivacyPolicyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />
 		</>
 	)
 }

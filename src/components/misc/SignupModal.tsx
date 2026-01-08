@@ -10,6 +10,7 @@ import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { SignUpFormData } from "@Jetzy/types"
 import { FiEye, FiEyeOff } from "react-icons/fi"
 import Spinner from "./Spinner"
+import PrivacyPolicyModal from "./PrivacyPolicyModal"
 
 interface SignupModalProps {
 	isOpen: boolean
@@ -31,7 +32,9 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 		firstName: "",
 		lastName: "",
 		shouldBeAJetzyMember: false,
+		jetzyChatTermsAccepted: false,
 	}
+	const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false)
 
 	const handleSubmit = (values: SignUpFormData) => {
 		const sanitized = {
@@ -42,6 +45,7 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 			password: values.password?.trim(),
 			confirmPassword: values.confirmPassword?.trim(),
 			shouldBeAJetzyMember: values.shouldBeAJetzyMember,
+			jetzyChatTermsAccepted: values.jetzyChatTermsAccepted,
 		}
 
 		dispatcher(CreateUserAccountThunk({ data: sanitized })).then((res: any) => {
@@ -217,6 +221,30 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 												</label>
 											</div>
 
+											{/* Privacy Policy and JetzyChat Terms Acceptance - REQUIRED */}
+											<div className="flex items-start gap-2">
+												<Field
+													type="checkbox"
+													id="jetzyChatTermsAccepted"
+													name="jetzyChatTermsAccepted"
+													className="h-4 w-4 text-primary-purple focus:ring-primary-purple border-border-gray rounded mt-0.5"
+													checked={values?.jetzyChatTermsAccepted}
+													required
+												/>
+												<label htmlFor="jetzyChatTermsAccepted" className="block text-sm text-text-secondary">
+													I agree to the{" "}
+													<button
+														type="button"
+														onClick={() => setIsPrivacyModalOpen(true)}
+														className="text-primary-purple hover:underline font-semibold"
+													>
+														Privacy Policy and JetzyChat Terms
+													</button>
+													<span className="text-red-500 ml-1">*</span>
+												</label>
+											</div>
+											<ErrorMessage name="jetzyChatTermsAccepted" component="span" className="text-red-500 text-xs block mt-1" />
+
 											{/* Sign up button */}
 											<div className="pt-2">
 												<button
@@ -256,6 +284,9 @@ const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, onSwitchToLo
 					</div>
 				</div>
 			</Dialog>
+
+			{/* Privacy Policy Modal */}
+			<PrivacyPolicyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />
 		</Transition>
 	)
 }

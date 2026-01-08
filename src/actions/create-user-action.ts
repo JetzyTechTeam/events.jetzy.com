@@ -24,6 +24,7 @@ const settings = {
 	isPushNotification: isBoolean.TRUE,
 	isPrivacyPolicyAccepted: isBoolean.FALSE,
 	isTermsAndConditionsAccepted: isBoolean.TRUE,
+	isJetzyChatTermsAccepted: isBoolean.FALSE,
 	isSelfieVerified: isBoolean.FALSE,
 	isInterestSelected: isBoolean.FALSE,
 	isSelectMember: isBoolean.FALSE,
