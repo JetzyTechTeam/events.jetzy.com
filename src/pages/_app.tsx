@@ -8,7 +8,6 @@ import "flatpickr/dist/flatpickr.min.css";
 import "@Jetzy/styles/globals.scss";
 import "react-toastify/dist/ReactToastify.css";
 import React from "react";
-import { EdgeStoreProvider } from "@Jetzy/lib/edgestore";
 import { Analytics } from "@vercel/analytics/react";
 
 import { ChakraProvider } from "@chakra-ui/react";
@@ -37,12 +36,10 @@ export default function App({
             pauseOnHover
             theme="light"
           />
-          <EdgeStoreProvider>
-            <ChakraProvider>
-              <Component {...pageProps} />
-              <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
-            </ChakraProvider>
-          </EdgeStoreProvider>
+          <ChakraProvider>
+            <Component {...pageProps} />
+            <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
+          </ChakraProvider>
         </SessionProvider>
       </ReduxProvider>
     </ReactQueryProvider>

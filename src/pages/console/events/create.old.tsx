@@ -3,7 +3,7 @@ import DragAndDropFileUpload, { FileUploadData } from "@Jetzy/components/misc/Dr
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { authorizedOnly } from "@Jetzy/lib/authSession"
-import { useEdgeStore } from "@Jetzy/lib/edgestore"
+import { uploadFile, deleteFile } from "@/services/upload.service"
 import { eventValidation } from "@Jetzy/lib/validator/event"
 import { CreateEventThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
@@ -29,7 +29,6 @@ const uploadedImages: FileUploadData[] = []
 export default function CreateEventPage() {
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
 
-	const { edgestore } = useEdgeStore()
 	const navigation = useRouter()
 	const { isLoading } = useAppSelector(getEventState)
 	const dispatcher = useAppDispatch()
@@ -113,7 +112,7 @@ export default function CreateEventPage() {
 			return
 		}
 
-		dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({...values, privacy: values.privacy}) } })).then((res: any) => {
+		dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) } })).then((res: any) => {
 			if (res?.payload?.status) {
 				navigation.push(`/console/events/${res.payload.data._id}/manage`);
 			}
@@ -148,7 +147,7 @@ export default function CreateEventPage() {
 
 			try {
 				// delete the image from the server
-				await edgestore.publicFiles.delete({ url: image.file })
+				await deleteFile(image.file)
 			} catch (error: any) {
 				console.error("Error deleting image", error)
 				Error("Error", "Failed to delete image")
@@ -255,7 +254,7 @@ export default function CreateEventPage() {
 											</div>
 										</div>
 
-												{/* Event Privacy Field */}
+										{/* Event Privacy Field */}
 										<div>
 											<label htmlFor="eventPrivacy" className="block text-sm font-semibold leading-6">
 												Event Privacy
@@ -276,7 +275,7 @@ export default function CreateEventPage() {
 											</div>
 										</div>
 
-											{/* Show Participants Switch */}
+										{/* Show Participants Switch */}
 										<div className="flex items-center justify-between mt-4">
 											<label htmlFor="showParticipants" className="block text-sm font-semibold leading-6">
 												Show Participants
@@ -297,7 +296,7 @@ export default function CreateEventPage() {
 												</Switch>
 											</div>
 										</div>
-										
+
 										<div>
 											<label className="block text-sm font-semibold leading-6">Date and Time</label>
 											<div className="mt-2 grid grid-rows-2">

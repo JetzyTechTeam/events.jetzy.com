@@ -55,7 +55,7 @@ import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
-import { useEdgeStore } from "@/lib/edgestore";
+import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
 import ImageUploadBox from "../../../components/image-upload-box";
 import TimezoneSelect from "../../../components/timezone-select";
@@ -92,7 +92,6 @@ const CreateEventPage = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const dispatcher = useAppDispatch();
   const navigation = useRouter();
-  const { edgestore } = useEdgeStore();
   const { data: session } = useSession();
   const router = useRouter();
 
@@ -211,11 +210,11 @@ const CreateEventPage = () => {
         const file = files[i];
 
         // Upload the current file
-        const res = await edgestore.publicFiles.upload({
-          file,
+        const res = await uploadFile(file, {
           onProgressChange: (progress) => {
             setUploadProgress(progress);
           },
+          folder: "posts" // Using posts as verified by test
         });
 
         // Add the new image data to the array
@@ -235,14 +234,9 @@ const CreateEventPage = () => {
 
   const handleImageDelete = async (imageUrl: string) => {
     try {
-      // Try to delete from EdgeStore (may fail if already deleted)
-      try {
-        await edgestore.publicFiles.delete({ url: imageUrl });
-        console.log("Successfully deleted from EdgeStore:", imageUrl);
-      } catch (edgestoreError: any) {
-        // Log but don't fail - file might already be deleted
-        console.warn("EdgeStore deletion failed (file may not exist):", edgestoreError.message);
-      }
+      // Try to delete (may fail if already deleted)
+      await deleteFile(imageUrl);
+      console.log("Successfully deleted:", imageUrl);
 
       // Update local state
       setUploadedImages((prevImages) =>

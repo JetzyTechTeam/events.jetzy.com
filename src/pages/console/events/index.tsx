@@ -1,7 +1,7 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
-import { useEdgeStore } from "@/lib/edgestore"
+import { deleteFile } from "@/services/upload.service"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
@@ -64,7 +64,6 @@ export default function EventsListing({ events, pagination }: Props) {
 const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isEnded?: boolean }) => {
 	const event = props
 	const dispatcher = useAppDispatch()
-	const edgestore = useEdgeStore()
 	const [loading, setLoading] = React.useState(false)
 	const router = useRouter()
 	const { isOpen, onOpen, onClose } = useDisclosure()
@@ -78,7 +77,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 				// delete the images from edge store server
 				if (item.images.length > 0) {
 					item.images.forEach((image) => {
-						edgestore.edgestore.publicFiles.delete({ url: image })
+						deleteFile(image)
 					})
 				}
 				toast.success("Event deleted successfully!")

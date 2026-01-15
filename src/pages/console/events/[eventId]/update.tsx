@@ -5,7 +5,7 @@ import { Types } from "mongoose"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { ROUTES } from "@/configs/routes"
-import { useEdgeStore } from "@Jetzy/lib/edgestore"
+import { uploadFile, deleteFile } from "@/services/upload.service"
 import { CreateEventFormData, Pages, Roles } from "@/types"
 import { Field, Form, Formik, FormikProps, FieldArray } from "formik"
 import { GetServerSideProps } from "next"
@@ -92,7 +92,6 @@ export default function UpdateEventPage({ event }: Props) {
 	const { isOpen, onOpen, onClose } = useDisclosure();
 	const dispatcher = useAppDispatch();
 	const navigation = useRouter();
-	const { edgestore } = useEdgeStore();
 	const { data: session } = useSession()
 	const router = useRouter();
 	const toast = useToast();
@@ -318,11 +317,11 @@ export default function UpdateEventPage({ event }: Props) {
 				const file = files[i];
 
 				// Upload the current file
-				const res = await edgestore.publicFiles.upload({
-					file,
+				const res = await uploadFile(file, {
 					onProgressChange: (progress) => {
 						setUploadProgress(progress);
 					},
+					folder: "posts"
 				});
 
 				// Add the new image data to the array
@@ -344,7 +343,7 @@ export default function UpdateEventPage({ event }: Props) {
 		try {
 			// Try to delete from EdgeStore (may fail if already deleted)
 			try {
-				await edgestore.publicFiles.delete({ url: imageUrl });
+				await deleteFile(imageUrl);
 				console.log("Successfully deleted from EdgeStore:", imageUrl);
 			} catch (edgestoreError: any) {
 				// Log but don't fail - file might already be deleted

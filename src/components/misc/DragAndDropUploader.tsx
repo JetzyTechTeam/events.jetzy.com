@@ -2,8 +2,7 @@ import React, { useState } from "react"
 import ProgressBar from "./ProgressBar"
 import { Error } from "@/lib/_toaster"
 import { uniqueId } from "@/lib/utils"
-import { useEdgeStore } from "@/lib/edgestore"
-import EdgeStore from "@edgestore/react"
+import { uploadFile } from "@/services/upload.service"
 
 export type FileUploadData = {
 	id: string
@@ -23,31 +22,28 @@ const DragAndDropFileUpload: React.FC<FileUploadProps> = ({ onUpload, onDelete, 
 	const [progress, updateProgressBar] = useState(0)
 	const [isVisibile, setIsVisible] = useState(true)
 
-	const { edgestore } = useEdgeStore()
-
 	const [dragOver, setDragOver] = useState(false)
 	const [previewImage, setPreviewImage] = useState<null | string>(defaultImage)
 
 	const handleUpload = async (file: File) => {
 		try {
-			let options: any
+			let options: any = {}
 
 			if (uploadedFiles) {
 				const uploadedFile = uploadedFiles.find((f) => f.id === _customId)
 				if (uploadedFile) {
-					options = {
-						replaceTargetUrl: uploadedFile.file,
-					}
+					// Logic for replacing file if needed, though uploadFile service handles simple upload.
+					// If the backend needs to know about replacement, we might need adjustments, 
+					// but standard upload usually just gives a new URL.
 				}
 			}
 			// upload the file to the server
-			const res = await edgestore.publicFiles.upload({
-				file,
+			const res = await uploadFile(file, {
 				onProgressChange: (progress) => {
 					// you can use this to show a progress bar
 					updateProgressBar(progress)
 				},
-				options,
+				folder: "posts" // Defaulting to posts as per previous behavior
 			})
 
 			if (onUpload) onUpload({ id: _customId, file: res.url })
