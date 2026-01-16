@@ -16,7 +16,7 @@ const eventTciketsSchema = new Schema<IEventTicket>(
 		},
 		desc: {
 			type: String,
-			required: true,
+			required: false,
 		},
 		stripeProductId: {
 			type: String,
