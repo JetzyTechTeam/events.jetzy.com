@@ -39,7 +39,7 @@ const schema = zod.object({
 			id: zod.string().nonempty(),
 			title: zod.string().nonempty(),
 			price: zod.number().nonnegative(),
-			description: zod.string().nonempty(),
+			description: zod.string().optional(),
 		}),
 	),
 	isPaid: zod.boolean(),
