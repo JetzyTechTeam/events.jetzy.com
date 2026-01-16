@@ -143,8 +143,9 @@ const CreateEventPage = () => {
     const validation = createEventSchema.safeParse(values);
 
     if (!validation.success) {
-      const firstError = Object.values(validation.error.flatten().fieldErrors)[0]?.[0];
-      Error("Validation Error", firstError || "Please fix the form errors");
+      const fieldErrors = validation.error.flatten().fieldErrors;
+      const errorMessages = Object.values(fieldErrors).flat().join("\n");
+      Error("Validation Error", errorMessages || "Please fix the form errors");
       return;
     }
 
