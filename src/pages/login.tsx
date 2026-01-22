@@ -22,7 +22,7 @@ export default function LoginPage() {
 	const formData: SignInFormData = {
 		email: "",
 		password: "",
-		isJetzyMember:false,
+		isJetzyMember: false,
 	}
 
 	const handleSubmit = async (values: SignInFormData) => {
@@ -33,19 +33,20 @@ export default function LoginPage() {
 		const res = await signIn("credentials", {
 			email: values?.email,
 			password: values?.password,
-			isJetzyMember:values?.isJetzyMember , 
+			isJetzyMember: values?.isJetzyMember,
 			redirect: false,
 		})
 
-		
+		console.log('Login Result:', res);
 
 		// handle error
 		if (res?.error) {
+			console.error('Login Error detail:', res.error);
 			setLoader(false)
 
-			
+
 			// format an error message
-			const error = { message: res?.error  }
+			const error = { message: res?.error }
 
 			ServerErrors("Sorry", error)
 

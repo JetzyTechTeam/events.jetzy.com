@@ -15,36 +15,82 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "text", placeholder: "Email Address" },
         password: { label: "Password", type: "password" },
-        isJetzyMember:{label: "isJetzyMember",type:"text"}
+        isJetzyMember: { label: "isJetzyMember", type: "text" }
 
       },
 
       // @ts-ignore
       async authorize(credentials, req) {
-        const { email, password , isJetzyMember} = credentials ?? {};
+        const { email, password, isJetzyMember: isJetzyMemberRaw } = credentials ?? {};
+        const isJetzyMember = String(isJetzyMemberRaw) === "true";
+
+        console.log('--- Authorize Debug ---');
+        console.log('Email:', email);
+        console.log('isJetzyMember:', isJetzyMember, `(raw: ${isJetzyMemberRaw})`);
 
         if (!email || !password) throw new Error("Please provide your credentials.");
 
-        
-        const userModel = isJetzyMember ==="true" ? EventUsers : Users
+        let user = null;
+        let userModel = isJetzyMember ? EventUsers : Users;
 
-        //const user = await Users.findOne({ email }).select('+password');
-        const user = await userModel.findOne({email}).select('+password')
+        user = await userModel.findOne({ email }).select('+password');
 
-        if (!user) throw new Error("User was not found.");
+        // Fallback: Check the other collection if not found
+        if (!user) {
+          console.log(`User not found in ${isJetzyMember ? 'EventUsers' : 'Users'}, checking other collection...`);
+          userModel = isJetzyMember ? Users : EventUsers;
+          user = await userModel.findOne({ email }).select('+password');
+        }
+
+        if (!user) {
+          console.log('User not found in either collection');
+          throw new Error("User was not found.");
+        }
 
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
-        if (!isPasswordCorrect) throw new Error("Invalid password.");
-        
+        if (!isPasswordCorrect) {
+          console.log('Password mismatch');
+          throw new Error("Invalid password.");
+        }
+
+        let accessToken = null;
+
+        // Try to get external token
+        try {
+          console.log('Attempting external login to:', `${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api/v1/accounts/authorize`);
+          const externalLoginRes = await fetch(`${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api/v1/accounts/authorize`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+
+          if (externalLoginRes.ok) {
+            const externalData = await externalLoginRes.json();
+            console.log('External login response status:', externalData.status || externalData.success);
+            if (externalData && (externalData.status || externalData.success)) {
+              accessToken = externalData.data?.accessToken;
+              console.log('Fetched external accessToken successfully');
+            }
+          } else {
+            console.log('External login failed with status:', externalLoginRes.status);
+            const errorText = await externalLoginRes.text();
+            console.log('Error body:', errorText.substring(0, 100));
+          }
+        } catch (err) {
+          console.error('External token fetch error:', err);
+        }
+
         const userData = {
           _id: user._id.toString(),
+          id: user._id.toString(),
           fullName: `${user.firstName} ${user.lastName}`,
           email: user.email,
-          //image: user.image,
           role: user.role,
+          accessToken: accessToken,
           ...(user.image ? { image: user.image } : {}),
         };
 
+        console.log('Returning userData, hasToken:', !!accessToken);
         return userData;
       },
     }),
@@ -55,18 +101,21 @@ export const authOptions: NextAuthOptions = {
     signOut: "/login",
   },
   callbacks: {
-    async jwt({ token, user, profile }) {
+    async jwt({ token, user }) {
       if (user) {
         token.profile = user
+        // @ts-ignore
+        token.accessToken = user.accessToken
       }
       return token
     },
 
-    async session({ session, user, token }) {
-      //   @ts-ignore
+    async session({ session, token }) {
       if (token?.profile) {
         // @ts-ignore
         session.user = token.profile
+        // @ts-ignore
+        session.accessToken = token.accessToken
       }
 
       return session

@@ -1,0 +1,21 @@
+export const interestEndPoints = {
+    create: "external:/v2/interests",
+    list: "external:/v2/interests",
+    details: "external:/v2/interests/:interestId",
+    update: "external:/v2/interests/:interestId",
+    hide: "external:/v2/interests/:interestId/hide",
+    delete: "external:/v2/interests/:interestId",
+    join: "external:/v2/interests/:interestId/join",
+    invitationAction: "external:/v2/interests/:interestId/invitation/:action",
+    members: "external:/v2/interests/:interestId/members",
+    invite: "external:/v2/interests/:interestId/members/invite",
+    removeMember: "external:/v2/interests/:interestId/members/remove", // Also used for Leave
+    listUsersToInvite: "external:/v2/interests/:interestId/users",
+    requests: "external:/v2/interests/:interestId/requests",
+    requestAction: "external:/v2/interests/:interestId/requests/:userId/action",
+    feed: "external:/v2/interests/:interestId/feed",
+    createPost: "external:/v1/post",
+    likePost: "external:/v2/posts/:postId/like",
+    getPostComments: "external:/v2/posts/:postId/comments",
+    createComment: "external:/v2/posts/:postId/comments",
+}

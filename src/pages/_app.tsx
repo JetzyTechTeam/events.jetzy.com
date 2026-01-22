@@ -14,6 +14,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { ChakraProvider } from "@chakra-ui/react";
 import ReactQueryProvider from "@/lib/react-query-provider";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import SessionSync from "@Jetzy/components/auth/SessionSync";
 
 export default function App({
   Component,
@@ -25,6 +26,7 @@ export default function App({
       <ReduxProvider store={store}>
         <Analytics />
         <SessionProvider session={session}>
+          <SessionSync />
           <ToastContainer
             position="top-center"
             autoClose={5000}

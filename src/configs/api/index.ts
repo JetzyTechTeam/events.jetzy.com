@@ -19,14 +19,18 @@ HTTPClient.interceptors.request.use((configs: any) => {
 		const isProtected = url[0]
 		const path = url[1]
 
-		if (isProtected === "protected") {
-			configs.baseURL = BaseUrl
+		if (isProtected === "protected" || isProtected === "external") {
+			configs.baseURL = isProtected === "external" ? `${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api` : BaseUrl
 			if (typeof window !== "undefined") {
 				if ("sessionStorage" in window) {
-					if (sessionStorage?.getItem("api_token")) {
+					const token = sessionStorage?.getItem("api_token")
+					if (token) {
 						if (typeof configs?.headers !== "undefined") {
-							configs.headers.Authorization = `Bearer ${sessionStorage?.getItem("api_token")}`
+							configs.headers.Authorization = `Bearer ${token}`
+							console.log(`API [${isProtected}]: Attached Authorization token (masked) for ${configs.url}`)
 						}
+					} else {
+						console.log(`API [${isProtected}]: NO api_token found in sessionStorage for ${configs.url}`)
 					}
 				}
 			}
@@ -53,15 +57,17 @@ HTTPClient.interceptors.request.use((configs: any) => {
 		}
 
 		//  Set the request header
+		if (typeof configs?.headers === "undefined") {
+			configs.headers = {}
+		}
+
 		const testPath = path?.toString()
-		if (testPath.includes("uploader")) {
-			if (typeof configs?.headers != "undefined") {
-				configs.headers["Content-Type"] = "multipart/form-data"
-			}
+		if (testPath?.includes("uploader")) {
+			configs.headers["Content-Type"] = "multipart/form-data"
+		} else if (isProtected === "external") {
+			configs.headers["Content-Type"] = "application/json"
 		} else {
-			if (typeof configs?.headers != "undefined") {
-				configs.headers["Content-Type"] = "application/x-www-form-urlencoded"
-			}
+			configs.headers["Content-Type"] = "application/x-www-form-urlencoded"
 		}
 		if (path) configs.url = path
 

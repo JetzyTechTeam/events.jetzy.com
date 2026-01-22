@@ -11,7 +11,7 @@ const nextConfig = {
 	sassOptions: {
 		includePaths: [path.join(__dirname, "styles")],
 	},
-  transpilePackages: ["antd", "@ant-design", "rc-util", "rc-pagination", "rc-picker", "rc-notification", "rc-tooltip", "rc-tree", "rc-table"],
+	transpilePackages: ["antd", "@ant-design", "rc-util", "rc-pagination", "rc-picker", "rc-notification", "rc-tooltip", "rc-tree", "rc-table"],
 	images: {
 		remotePatterns: [
 			{
@@ -29,6 +29,18 @@ const nextConfig = {
 			{
 				protocol: "https",
 				hostname: "via.placeholder.com",
+				port: "",
+				pathname: "/**",
+			},
+			{
+				protocol: "https",
+				hostname: "jetzy-media-prod.s3.us-east-1.amazonaws.com",
+				port: "",
+				pathname: "/**",
+			},
+			{
+				protocol: "https",
+				hostname: "jetzy-media-staging.s3.us-east-1.amazonaws.com",
 				port: "",
 				pathname: "/**",
 			},
