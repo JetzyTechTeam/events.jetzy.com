@@ -104,6 +104,10 @@ export const CreatePostApi = async (params: RequestParams<{ content: string; des
     return await POST(interestEndPoints.createPost, params.data)
 }
 
+export const DeletePostApi = async (params: RequestParams<{ postId: string }>): Promise<ServerResponse<any, any>> => {
+    return await DROP(interestEndPoints.deletePost.replace(":postId", params.data?.postId as string))
+}
+
 export const LikePostApi = async (params: RequestParams<{ postId: string; reactionType: string }>): Promise<ServerResponse<any, any>> => {
     return await POST(interestEndPoints.likePost.replace(":postId", params.data?.postId as string), { reactionType: params.data?.reactionType })
 }
@@ -124,3 +128,11 @@ export const DeleteCommentApi = async (params: RequestParams<{ commentId: string
     return await DROP(interestEndPoints.deleteComment.replace(":commentId", params.data?.commentId as string))
 }
 
+
+export const ReactToCommentApi = async (params: RequestParams<{ commentId: string; type: string }>): Promise<ServerResponse<any, any>> => {
+    return await POST(interestEndPoints.reactToComment, params.data)
+}
+
+export const UpdateCommentApi = async (params: RequestParams<{ commentId: string; content: string }>): Promise<ServerResponse<any, any>> => {
+    return await PUT(interestEndPoints.updateComment, params.data)
+}

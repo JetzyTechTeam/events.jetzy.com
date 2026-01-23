@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { HeartIcon as HeartIconSolid, ChatBubbleLeftIcon, TrashIcon } from '@heroicons/react/24/solid'
+import React, { useState, useEffect, useRef } from 'react'
+import { HeartIcon as HeartIconSolid, ChatBubbleLeftIcon, TrashIcon, ArrowUturnLeftIcon, PencilIcon, XMarkIcon, CheckIcon } from '@heroicons/react/24/solid'
 import { HeartIcon as HeartIconOutline } from '@heroicons/react/24/outline'
 import Spinner from '@Jetzy/components/misc/Spinner'
 import dayjs from 'dayjs'
@@ -13,12 +13,167 @@ interface InterestFeedProps {
     posts: any[];
     loading: boolean;
     onCreatePost: (text: string, media?: any[]) => void;
+    onDeletePost: (postId: string) => void;
     onLike: (postId: string, isLiked: boolean) => void;
     onComment: (postId: string, text: string) => Promise<any>;
     onFetchComments: (postId: string) => Promise<any[]>;
+    onLikeComment?: (postId: string, commentId: string) => void;
+    onUpdateComment?: (postId: string, commentId: string, content: string) => Promise<void>;
 }
 
-export default function InterestFeed({ posts, loading, onCreatePost, onLike, onComment, onFetchComments }: InterestFeedProps) {
+const parseMentions = (content: string, mentions: any[] = []) => {
+    // Parse <mention:USER_ID> and convert to highlighted text
+    const mentionRegex = /<mention:([^>]+)>/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = mentionRegex.exec(content)) !== null) {
+        // Add text before mention
+        if (match.index > lastIndex) {
+            parts.push({ type: 'text', content: content.substring(lastIndex, match.index) });
+        }
+        // Add mention
+        const userId = match[1];
+        const mentionedUser = mentions?.find((m: any) => (m._id === userId || m.id === userId));
+        const name = mentionedUser ? `${mentionedUser.firstName || ''} ${mentionedUser.lastName || ''}`.trim() : 'User';
+
+        parts.push({ type: 'mention', userId, name: name || 'User' });
+        lastIndex = match.index + match[0].length;
+    }
+
+    // Add remaining text
+    if (lastIndex < content.length) {
+        parts.push({ type: 'text', content: content.substring(lastIndex) });
+    }
+
+    return parts.length > 0 ? parts : [{ type: 'text', content }];
+}
+
+// Sub-component for Comments to handle scrolling
+const PostComments = ({
+    post,
+    comments,
+    loading,
+    currentUserId,
+    onLikeComment,
+    onReply,
+    onDelete,
+    onEditInit,
+    editingComment,
+    onEditSave,
+    setEditingComment
+}: any) => {
+    const bottomRef = useRef<HTMLDivElement>(null)
+
+    // Scroll to bottom on mount and when comments change (new message)
+    useEffect(() => {
+        if (!loading && comments?.length > 0) {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }
+    }, [comments?.length, loading])
+
+    if (loading) return <div className="flex justify-center py-2"><Spinner /></div>
+    if (!comments || comments.length === 0) return <p className="text-center text-xs text-gray-500">No comments yet.</p>
+
+    return (
+        <div className="mt-4 pt-4 border-t border-gray-800 space-y-4 max-h-[500px] overflow-y-auto custom-scrollbar pr-1">
+            {comments.map((comment: any) => {
+                const author = comment.author || comment.userDetails || comment.user || {};
+                const authorId = author._id || author.id || comment.userId;
+                const isCommentAuthor = currentUserId && authorId && (currentUserId === authorId);
+
+                return (
+                    <div key={comment._id} className="flex gap-3 group">
+                        <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
+                            {author.image ? (
+                                <img src={author.image} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-white font-bold text-[10px]">
+                                    {(author.firstName || 'U')?.charAt(0)}
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex-1 bg-gray-800/30 rounded-lg p-2 relative">
+                            <h5 className="text-white text-xs font-semibold">
+                                {author.firstName} {author.lastName}
+                            </h5>
+                            {editingComment?.commentId === comment._id ? (
+                                <div className="mt-1">
+                                    <textarea
+                                        value={editingComment.content}
+                                        onChange={(e) => setEditingComment((prev: any) => prev ? { ...prev, content: e.target.value } : null)}
+                                        className="w-full bg-gray-900 border border-gray-700 rounded p-1 text-xs text-white resize-none focus:border-app outline-none"
+                                        rows={2}
+                                    />
+                                    <div className="flex justify-end gap-2 mt-1">
+                                        <button onClick={() => setEditingComment(null)} className="text-gray-400 hover:text-white">
+                                            <XMarkIcon className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={onEditSave} className="text-app hover:text-white">
+                                            <CheckIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-gray-300 text-xs mt-1">
+                                    {parseMentions(comment.content || '', comment.mentions || []).map((part: any, idx: number) => (
+                                        part.type === 'mention' ? (
+                                            <span key={idx} className="text-app font-medium">@{part.name}</span>
+                                        ) : (
+                                            <span key={idx}>{part.content}</span>
+                                        )
+                                    ))}
+                                </p>
+                            )}
+
+                            <div className="flex items-center gap-3 mt-1">
+                                <p className="text-[10px] text-gray-500">
+                                    {comment.createdAt ? dayjs(comment.createdAt).fromNow() : ''}
+                                </p>
+                                <button
+                                    onClick={() => onReply(post._id, comment)}
+                                    className="text-[10px] text-gray-400 hover:text-app transition-colors"
+                                >
+                                    Reply
+                                </button>
+                                <button
+                                    onClick={() => onLikeComment(post._id, comment._id)}
+                                    className={`flex items-center gap-1 text-[10px] transition-colors ${comment.isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
+                                >
+                                    {comment.isLiked ? <HeartIconSolid className="w-3 h-3" /> : <HeartIconOutline className="w-3 h-3" />}
+                                    <span>{comment.likesCount || comment.reactionCounts?.total || 0}</span>
+                                </button>
+                            </div>
+
+                            {isCommentAuthor && !editingComment && (
+                                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                        onClick={() => onEditInit(post._id, comment)}
+                                        className="text-gray-500 hover:text-blue-500 transition-colors"
+                                        title="Edit comment"
+                                    >
+                                        <PencilIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => onDelete(post._id, comment._id)}
+                                        className="text-gray-500 hover:text-red-500 transition-colors"
+                                        title="Delete comment"
+                                    >
+                                        <TrashIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            })}
+            <div ref={bottomRef} className="h-1" />
+        </div>
+    )
+}
+
+export default function InterestFeed({ posts, loading, onCreatePost, onDeletePost, onLike, onComment, onFetchComments, onLikeComment, onUpdateComment }: InterestFeedProps) {
     const [newPostText, setNewPostText] = useState('')
     const [posting, setPosting] = useState(false)
     const [newCommentTexts, setNewCommentTexts] = useState<{ [key: string]: string }>({})
@@ -29,6 +184,8 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
     const [uploadingImage, setUploadingImage] = useState(false)
     const [imagePreviews, setImagePreviews] = useState<string[]>([])
     const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+    const [replyingTo, setReplyingTo] = useState<{ postId: string; commentId: string; userId: string; userName: string } | null>(null)
+    const [editingComment, setEditingComment] = useState<{ postId: string; commentId: string; content: string } | null>(null)
 
     // Fetch current user session
     useEffect(() => {
@@ -156,8 +313,15 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
     }
 
     const handleCommentSubmit = async (postId: string) => {
-        const text = newCommentTexts[postId];
+        let text = newCommentTexts[postId];
         if (!text?.trim()) return;
+
+        // If replying, format with mention tag
+        if (replyingTo && replyingTo.postId === postId) {
+            // Replace @UserName with <mention:USER_ID>
+            text = text.replace(`@${replyingTo.userName}`, `<mention:${replyingTo.userId}>`);
+            setReplyingTo(null);
+        }
 
         setNewCommentTexts(prev => ({ ...prev, [postId]: '' }));
 
@@ -212,10 +376,65 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
         }
     }
 
+    const handleReplyToComment = (postId: string, comment: any) => {
+        const author = comment.author || comment.userDetails || comment.user || {};
+        const authorId = author._id || author.id || comment.userId;
+        const authorName = `${author.firstName || 'User'} ${author.lastName || ''}`.trim();
+
+        setReplyingTo({ postId, commentId: comment._id, userId: authorId, userName: authorName });
+        setNewCommentTexts(prev => ({ ...prev, [postId]: `@${authorName} ` }));
+        setShowComments(prev => ({ ...prev, [postId]: true }));
+    }
+
+    const handleEditCommentInit = (postId: string, comment: any) => {
+        setEditingComment({ postId, commentId: comment._id, content: comment.content });
+    }
+
+    const handleEditCommentSave = async () => {
+        if (!editingComment || !onUpdateComment) return;
+
+        try {
+            // Optimistic update
+            setComments(prev => ({
+                ...prev,
+                [editingComment.postId]: prev[editingComment.postId].map(c =>
+                    c._id === editingComment.commentId ? { ...c, content: editingComment.content } : c
+                )
+            }));
+
+            await onUpdateComment(editingComment.postId, editingComment.commentId, editingComment.content);
+            setEditingComment(null);
+        } catch (err) {
+            console.error('Failed to update comment:', err);
+            ErrorToast('Failed to update comment');
+            fetchComments(editingComment.postId); // Revert
+        }
+    }
+
+    const handleLikeCommentClick = (postId: string, commentId: string) => {
+        // Optimistic update
+        setComments(prev => ({
+            ...prev,
+            [postId]: prev[postId].map(c => {
+                if (c._id === commentId) {
+                    const isLiked = c.isLiked;
+                    return {
+                        ...c,
+                        isLiked: !isLiked,
+                        likesCount: (c.likesCount || 0) + (isLiked ? -1 : 1)
+                    };
+                }
+                return c;
+            })
+        }));
+
+        if (onLikeComment) {
+            onLikeComment(postId, commentId);
+        }
+    }
 
     return (
         <div className="space-y-6">
-            {/* ... (Create Post section remains same) */}
             <div className="bg-[#1E1E1E] rounded-xl p-4 shadow-xl">
                 <div className="flex gap-4">
                     <div className="w-10 h-10 rounded-full bg-gray-700 flex-shrink-0" />
@@ -227,7 +446,6 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                             className="w-full bg-gray-800 text-white rounded-lg p-3 min-h-[80px] border-none focus:ring-1 focus:ring-app resize-none"
                         />
 
-                        {/* Image Previews */}
                         {imagePreviews.length > 0 && (
                             <div className="flex flex-wrap gap-2 mt-3">
                                 {imagePreviews.map((src, idx) => (
@@ -266,7 +484,6 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                 </div>
             </div>
 
-            {/* Posts Feed */}
             {loading && posts.length === 0 ? (
                 <div className="flex justify-center py-10">
                     <Spinner />
@@ -278,7 +495,6 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
             ) : (
                 posts.map((post) => (
                     <div key={post._id} className="bg-[#1E1E1E] rounded-xl p-5 shadow-xl transition-all hover:shadow-2xl">
-                        {/* Post Header */}
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-700">
                                 {(post.userDetails?.image || post.user?.image) ? (
@@ -289,7 +505,7 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                                     </div>
                                 )}
                             </div>
-                            <div>
+                            <div className="flex-1">
                                 <h4 className="text-white font-semibold text-sm">
                                     {post.userDetails?.firstName || post.user?.firstName} {post.userDetails?.lastName || post.user?.lastName}
                                 </h4>
@@ -297,14 +513,21 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                                     {post.createdAt ? dayjs(post.createdAt).format('MMM D, YYYY • h:mm A') : ''}
                                 </p>
                             </div>
+                            {currentUserId && (post.user?._id === currentUserId || post.user?.id === currentUserId || post.userDetails?._id === currentUserId) && (
+                                <button
+                                    onClick={() => onDeletePost(post._id)}
+                                    className="text-gray-500 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-gray-800/50"
+                                    title="Delete post"
+                                >
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
 
-                        {/* Post Content */}
                         <div className="text-gray-200 mb-4 whitespace-pre-wrap text-sm leading-relaxed">
                             {post.description || post.content || post.text || post.body || post.post || post.caption}
                         </div>
 
-                        {/* Media Grid */}
                         {post.media && post.media.length > 0 && (
                             <div className={`grid gap-2 mb-4 rounded-xl overflow-hidden ${post.media.length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-lg'}`}>
                                 {post.media.map((media: any, idx: number) => (
@@ -321,7 +544,6 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                             </div>
                         )}
 
-                        {/* Actions */}
                         <div className="flex items-center gap-6 pt-3 border-t border-gray-800">
                             <button
                                 onClick={() => onLike(post._id, (post.isLiked || post.hasReacted))}
@@ -331,14 +553,23 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                                 <span>{post.likesCount ?? post.totalReactions?.total ?? post.reactionCounts?.total ?? post.reactions?.likes ?? 0}</span>
                             </button>
                             <div className="flex-1 flex items-center gap-2">
-                                <input
-                                    type="text"
-                                    placeholder="Write a comment..."
-                                    value={newCommentTexts[post._id] || ''}
-                                    onChange={(e) => setNewCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleCommentSubmit(post._id)}
-                                    className="flex-1 bg-gray-800/50 border-none rounded-lg px-3 py-1 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-app"
-                                />
+                                <div className="flex-1 relative">
+                                    {replyingTo && replyingTo.postId === post._id && (
+                                        <div className="absolute -top-6 left-0 text-[10px] text-app flex items-center gap-1">
+                                            <ArrowUturnLeftIcon className="w-3 h-3" />
+                                            <span>Replying to @{replyingTo.userName}</span>
+                                            <button onClick={() => setReplyingTo(null)} className="text-gray-500 hover:text-white ml-1">×</button>
+                                        </div>
+                                    )}
+                                    <input
+                                        type="text"
+                                        placeholder="Write a comment..."
+                                        value={newCommentTexts[post._id] || ''}
+                                        onChange={(e) => setNewCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleCommentSubmit(post._id)}
+                                        className="w-full bg-gray-800/50 border-none rounded-lg px-3 py-1 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-app"
+                                    />
+                                </div>
                                 <button
                                     onClick={() => handleCommentSubmit(post._id)}
                                     className="text-gray-400 hover:text-app transition-colors"
@@ -357,53 +588,20 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                             </div>
                         </div>
 
-                        {/* Comments List */}
                         {showComments[post._id] && (
-                            <div className="mt-4 pt-4 border-t border-gray-800 space-y-4">
-                                {loadingComments[post._id] ? (
-                                    <div className="flex justify-center py-2"><Spinner /></div>
-                                ) : comments[post._id]?.length === 0 ? (
-                                    <p className="text-center text-xs text-gray-500">No comments yet.</p>
-                                ) : (
-                                    comments[post._id]?.map((comment) => {
-                                        const author = comment.author || comment.userDetails || comment.user || {};
-                                        const authorId = author._id || author.id || comment.userId;
-                                        const isCommentAuthor = currentUserId && authorId && (currentUserId === authorId);
-
-                                        return (
-                                            <div key={comment._id} className="flex gap-3 group">
-                                                <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
-                                                    {author.image ? (
-                                                        <img src={author.image} alt="" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-white font-bold text-[10px]">
-                                                            {(author.firstName || 'U')?.charAt(0)}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="flex-1 bg-gray-800/30 rounded-lg p-2 relative">
-                                                    <h5 className="text-white text-xs font-semibold">
-                                                        {author.firstName} {author.lastName}
-                                                    </h5>
-                                                    <p className="text-gray-300 text-xs mt-1">{comment.content}</p>
-                                                    <p className="text-[10px] text-gray-500 mt-1">
-                                                        {comment.createdAt ? dayjs(comment.createdAt).fromNow() : ''}
-                                                    </p>
-                                                    {isCommentAuthor && (
-                                                        <button
-                                                            onClick={() => handleDeleteComment(post._id, comment._id)}
-                                                            className="absolute top-2 right-2 text-gray-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                                                            title="Delete comment"
-                                                        >
-                                                            <TrashIcon className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )
-                                    })
-                                )}
-                            </div>
+                            <PostComments
+                                post={post}
+                                comments={comments[post._id]}
+                                loading={loadingComments[post._id]}
+                                currentUserId={currentUserId}
+                                onLikeComment={handleLikeCommentClick}
+                                onReply={handleReplyToComment}
+                                onDelete={handleDeleteComment}
+                                onEditInit={handleEditCommentInit}
+                                editingComment={editingComment}
+                                onEditSave={handleEditCommentSave}
+                                setEditingComment={setEditingComment}
+                            />
                         )}
                     </div>
                 ))

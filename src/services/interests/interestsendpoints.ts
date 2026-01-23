@@ -15,8 +15,12 @@ export const interestEndPoints = {
     requestAction: "external:/v2/interests/:interestId/requests/:userId/action",
     feed: "external:/v2/interests/:interestId/feed",
     createPost: "external:/v1/post",
+    deletePost: "external:/v1/posts/:postId",
     likePost: "external:/v2/posts/:postId/like",
     getPostComments: "external:/v2/posts/:postId/comments",
     createComment: "external:/v2/posts/:postId/comments",
     deleteComment: "external:/v1/post/comments/:commentId",
+    reactToComment: "external:/v1/post/comments/reactions",
+    getCommentReactions: "external:/v1/post/comments/reactions",
+    updateComment: "external:/v1/post/comments",
 }
