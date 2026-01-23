@@ -244,14 +244,14 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
 
                         {/* Media Grid */}
                         {post.media && post.media.length > 0 && (
-                            <div className={`grid gap-2 mb-4 rounded-lg overflow-hidden ${post.media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            <div className={`grid gap-2 mb-4 rounded-xl overflow-hidden ${post.media.length > 1 ? 'grid-cols-2' : 'grid-cols-1 max-w-lg'}`}>
                                 {post.media.map((media: any, idx: number) => (
-                                    <div key={idx} className="aspect-video bg-black/50">
+                                    <div key={idx} className="bg-gray-900 flex items-center justify-center rounded-lg overflow-hidden">
                                         {(media.type === 'image' || !media.type) && (
                                             <img
                                                 src={typeof media === 'string' ? media : (media.url || media.fileUrl || media.file)}
                                                 alt="Post media"
-                                                className="w-full h-full object-cover"
+                                                className="max-h-[350px] w-auto h-auto object-contain cursor-pointer"
                                             />
                                         )}
                                     </div>
