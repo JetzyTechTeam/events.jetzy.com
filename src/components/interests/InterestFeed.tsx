@@ -38,7 +38,7 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
             setUploadingImage(true)
             try {
                 const token = typeof window !== 'undefined' ? sessionStorage.getItem('api_token') : null
-                const uploadUrl = process.env.VITE_UPLOAD_API_URL || 'https://prod-api.jetzy.com/api/v1/uploader/multiple'
+                const uploadUrl = 'https://prod-api.jetzy.com/api/v1/uploader/multiple'
 
                 for (const file of selectedImages) {
                     const uploadData = new FormData()

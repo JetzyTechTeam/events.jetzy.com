@@ -46,7 +46,7 @@ export default function CreateInterestGroupPage() {
             uploadData.append('folder', 'posts')
 
             const token = typeof window !== 'undefined' ? sessionStorage.getItem('api_token') : null
-            const uploadUrl = process.env.VITE_UPLOAD_API_URL || 'https://prod-api.jetzy.com/api/v1/uploader/multiple'
+            const uploadUrl = 'https://prod-api.jetzy.com/api/v1/uploader/multiple'
 
             const response = await fetch(uploadUrl, {
                 method: 'POST',
