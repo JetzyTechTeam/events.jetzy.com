@@ -10,9 +10,9 @@ dayjs.extend(relativeTime)
 interface InterestFeedProps {
     posts: any[];
     loading: boolean;
-    onCreatePost: (text: string) => void;
+    onCreatePost: (text: string, media?: any[]) => void;
     onLike: (postId: string, isLiked: boolean) => void;
-    onComment: (postId: string, text: string) => Promise<void>;
+    onComment: (postId: string, text: string) => Promise<any>;
     onFetchComments: (postId: string) => Promise<any[]>;
 }
 
@@ -65,7 +65,7 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
             }
         }
 
-        await (onCreatePost as any)(newPostText, mediaArr)
+        await onCreatePost(newPostText, mediaArr)
         setNewPostText('')
         setSelectedImages([])
         setImagePreviews([])
@@ -94,9 +94,27 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
     const fetchComments = async (postId: string) => {
         setLoadingComments(prev => ({ ...prev, [postId]: true }))
         try {
-            const data = await onFetchComments(postId)
-            console.log('InterestFeed comments for', postId, ':', data);
-            setComments(prev => ({ ...prev, [postId]: data }))
+            const serverData = await onFetchComments(postId)
+
+            setComments(prev => {
+                const localComments = prev[postId] || [];
+                // Merge server data with local comments
+                // Keep all server comments, and add any local comments that don't exist on server yet
+                const merged = [...serverData];
+                localComments.forEach(local => {
+                    if (!serverData.find((s: any) => s._id === local._id)) {
+                        merged.push(local);
+                    }
+                });
+
+                // Sort by date if possible
+                return {
+                    ...prev,
+                    [postId]: merged.sort((a: any, b: any) =>
+                        new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+                    )
+                };
+            });
         } finally {
             setLoadingComments(prev => ({ ...prev, [postId]: false }))
         }
@@ -114,14 +132,22 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
         const text = newCommentTexts[postId];
         if (!text?.trim()) return;
 
-        await onComment(postId, text);
+        const newComment = await onComment(postId, text);
         setNewCommentTexts(prev => ({ ...prev, [postId]: '' }));
-        // Always fetch comments to update the local count
-        fetchComments(postId)
-        if (!showComments[postId]) {
-            // Optional: Auto-open comments on post?
-            // setShowComments(prev => ({ ...prev, [postId]: true }))
+
+        if (newComment) {
+            // Optimistically add to local comments state
+            setComments(prev => ({
+                ...prev,
+                [postId]: [...(prev[postId] || []), newComment]
+            }));
+
+            // Ensure comments are visible
+            setShowComments(prev => ({ ...prev, [postId]: true }));
         }
+
+        // Wait a bit before fetching the official list to account for eventual consistency
+        setTimeout(() => fetchComments(postId), 2000);
     }
 
 
@@ -261,7 +287,10 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                                     onClick={() => toggleComments(post._id)}
                                     className="text-xs text-gray-400 hover:text-white"
                                 >
-                                    {comments[post._id] ? comments[post._id].length : (post.commentsCount ?? post.summary?.totalComments ?? post.commentCount ?? 0)} comments
+                                    {Math.max(
+                                        (post.commentsCount ?? post.summary?.totalComments ?? post.commentCount ?? 0),
+                                        (comments[post._id]?.length || 0)
+                                    )} comments
                                 </button>
                             </div>
                         </div>

@@ -326,17 +326,19 @@ export default function InterestGroupPage() {
                 ))
                 // Delay fetchFeed to give backend time to update aggregators
                 setTimeout(() => fetchFeed(), 1000)
+                return res.data;
             }
         } catch (err) {
             Error('Failed to add comment')
             console.error('Comment error:', err)
         }
+        return null;
     }
 
     const handleFetchComments = async (postId: string) => {
         try {
             console.log('Fetching comments for post:', postId);
-            const res = await GetPostCommentsApi({ data: { postId } })
+            const res = await GetPostCommentsApi({ data: { postId, perPage: 100 } })
             // console.log('Fetch Comments Raw Response for', postId, ':', res);
             // Some APIs might return status: false even if data is present
             if (res && res.data) {
