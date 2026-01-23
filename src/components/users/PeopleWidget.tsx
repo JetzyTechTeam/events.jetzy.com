@@ -5,16 +5,19 @@ import Link from 'next/link'
 
 interface PeopleWidgetProps {
     creator?: any;
+    members?: any[];
 }
 
-export default function PeopleWidget({ creator }: PeopleWidgetProps) {
-    console.log('PeopleWidget Creator Prop:', creator);
+export default function PeopleWidget({ creator, members }: PeopleWidgetProps) {
+    console.log('PeopleWidget Props:', { creator, membersCount: members?.length });
     const [users, setUsers] = useState<any[]>([])
-    const [loading, setLoading] = useState(true)
+    const [loading, setLoading] = useState(false)
 
     useEffect(() => {
-        fetchUsers()
-    }, [])
+        if (!members) {
+            fetchUsers()
+        }
+    }, [members])
 
     const fetchUsers = async () => {
         try {
@@ -41,8 +44,15 @@ export default function PeopleWidget({ creator }: PeopleWidgetProps) {
 
     if (loading) return <div className="p-4 flex justify-center"><Spinner /></div>
 
-    // Filter creator from fetched users to avoid duplication
-    const displayUsers = users.filter(u => u._id !== creator?._id);
+    // Use passed members if available, otherwise use fetched users
+    const sourceUsers = members || users;
+
+    // Filter creator from users to avoid duplication
+    const displayUsers = sourceUsers.filter(u => {
+        const userId = u._id || u.userDetails?._id || u.user?._id;
+        const creatorId = creator?._id || creator?.id || creator;
+        return String(userId) !== String(creatorId);
+    });
 
     return (
         <div className="bg-[#1E1E1E] rounded-xl p-4 shadow-xl mb-6">
@@ -74,22 +84,32 @@ export default function PeopleWidget({ creator }: PeopleWidgetProps) {
                 {displayUsers.length === 0 && !creator ? (
                     <div className="text-gray-500 text-sm py-4 w-full text-center">No people found</div>
                 ) : (
-                    displayUsers.map((user) => (
-                        <div key={user._id} className="flex flex-col items-center min-w-[80px] w-[80px]">
-                            <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-700 mb-2 border-2 border-transparent hover:border-app transition-all cursor-pointer">
-                                {user.image ? (
-                                    <img src={user.image} alt={user.firstName} className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-white font-bold text-xl uppercase">
-                                        {(user.firstName || 'U').charAt(0)}
-                                    </div>
-                                )}
+                    displayUsers.map((member) => {
+                        const firstName = member.firstName || member.userDetails?.firstName || member.user?.firstName || 'U';
+                        const lastName = member.lastName || member.userDetails?.lastName || member.user?.lastName || '';
+                        const image = member.image || member.userDetails?.image || member.user?.image;
+                        const isAdminMember = member.isAdmin || member.role === 'admin' || member.role === 'creator';
+
+                        return (
+                            <div key={member._id} className="flex flex-col items-center min-w-[80px] w-[80px]">
+                                <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-700 mb-2 border-2 border-transparent hover:border-app transition-all cursor-pointer relative">
+                                    {image ? (
+                                        <img src={image} alt={firstName} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-white font-bold text-xl uppercase bg-gray-600">
+                                            {firstName.charAt(0)}
+                                        </div>
+                                    )}
+                                    {isAdminMember && (
+                                        <div className="absolute bottom-0 right-0 w-4 h-4 bg-app/80 rounded-full border-2 border-[#1E1E1E]" title="Admin" />
+                                    )}
+                                </div>
+                                <p className="text-white text-xs font-medium text-center truncate w-full px-1">
+                                    {firstName} {lastName ? lastName.charAt(0) + '...' : ''}
+                                </p>
                             </div>
-                            <p className="text-white text-xs font-medium text-center truncate w-full px-1">
-                                {user.firstName} {user.lastName ? user.lastName.charAt(0) + '...' : ''}
-                            </p>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
         </div>

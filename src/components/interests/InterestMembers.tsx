@@ -118,25 +118,42 @@ export default function InterestMembers({ interestId, members, loading, creator 
                                 </div>
                             </div>
                         )}
-                        {members.filter((m: any) => (m.userDetails?._id || m.user?._id) !== creator?._id).map((member: any) => (
-                            <div key={member._id} className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-lg hover:bg-gray-800 transition-colors">
-                                <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
-                                    {(member.userDetails?.image || member.user?.image) ? (
-                                        <img src={member.userDetails?.image || member.user?.image} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-white font-bold">
-                                            {(member.userDetails?.firstName || member.user?.firstName || 'M')?.charAt(0)}
+                        {members.filter((m: any) => {
+                            const memberId = m._id || m.userDetails?._id || m.user?._id;
+                            const creatorId = creator?._id || creator?.id || creator;
+                            return String(memberId) !== String(creatorId);
+                        }).map((member: any) => {
+                            const firstName = member.firstName || member.userDetails?.firstName || member.user?.firstName || 'M';
+                            const lastName = member.lastName || member.userDetails?.lastName || member.user?.lastName || '';
+                            const image = member.image || member.userDetails?.image || member.user?.image;
+                            const isAdminMember = member.isAdmin || member.role === 'admin' || member.role === 'creator';
+                            const role = member.role || (isAdminMember ? 'Admin' : 'Member');
+
+                            return (
+                                <div key={member._id} className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-lg hover:bg-gray-800 transition-colors">
+                                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
+                                        {image ? (
+                                            <img src={image} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-white font-bold bg-gray-600">
+                                                {firstName.charAt(0)}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="overflow-hidden">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-white font-medium truncate">
+                                                {firstName} {lastName}
+                                            </h3>
+                                            {isAdminMember && (
+                                                <span className="text-[8px] bg-app/20 text-app px-1 rounded-sm font-bold uppercase border border-app/30">Admin</span>
+                                            )}
                                         </div>
-                                    )}
+                                        <p className="text-xs text-gray-400 capitalize">{role}</p>
+                                    </div>
                                 </div>
-                                <div className="overflow-hidden">
-                                    <h3 className="text-white font-medium truncate">
-                                        {member.userDetails?.firstName || member.user?.firstName} {member.userDetails?.lastName || member.user?.lastName}
-                                    </h3>
-                                    <p className="text-xs text-gray-400 capitalize">{member.role}</p>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

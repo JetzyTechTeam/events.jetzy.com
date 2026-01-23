@@ -95,11 +95,25 @@ export default function InterestGroupPage() {
 
     useEffect(() => {
         if (interestId) {
-            if (activeTab === 'feed') fetchFeed()
+            if (activeTab === 'feed') {
+                fetchFeed()
+                fetchMembers() // PeopleWidget needs member data
+            }
             if (activeTab === 'members') fetchMembers()
             if (activeTab === 'requests') fetchRequests()
         }
     }, [interestId, activeTab])
+
+    const handleRefresh = () => {
+        if (activeTab === 'feed') {
+            fetchFeed()
+            fetchMembers()
+        } else if (activeTab === 'members') {
+            fetchMembers()
+        } else if (activeTab === 'requests') {
+            fetchRequests()
+        }
+    }
 
 
     // Debug interest object
@@ -191,7 +205,9 @@ export default function InterestGroupPage() {
             const res = await GetInterestMembersApi({ data: { interestId: interestId as string } })
             // @ts-ignore
             if ((res.status || res.success) && res.data) {
-                setMembers(res.data.docs || [])
+                // Handle different response structures: data.members (new) or data.docs (old/other)
+                const memberData = res.data.members || res.data.docs || []
+                setMembers(memberData)
             }
         } catch (err) {
             console.error(err)
@@ -561,14 +577,17 @@ export default function InterestGroupPage() {
                     <>
                         <div className="flex justify-end mb-2">
                             <button
-                                onClick={fetchFeed}
+                                onClick={handleRefresh}
                                 className="text-xs text-app hover:text-white transition-colors flex items-center gap-1"
-                                disabled={loadingFeed}
+                                disabled={loadingFeed || loadingMembers}
                             >
                                 <span>Refresh</span>
                             </button>
                         </div>
-                        <PeopleWidget creator={interest?.creator || interest?.user || interest?.owner || (isAdmin ? currentUser : null)} />
+                        <PeopleWidget
+                            creator={interest?.creator || interest?.user || interest?.owner || (isAdmin ? currentUser : null)}
+                            members={members}
+                        />
                         <InterestFeed
                             posts={posts}
                             loading={loadingFeed}
