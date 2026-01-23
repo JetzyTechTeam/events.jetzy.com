@@ -27,7 +27,7 @@ import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalFooter, ModalBody,
 import ExpandText from "../misc/ExpandText"
 import { useAppDispatch, useAppSelector } from "@/redux/stores"
 import { DeleteEventThunk, getEventState } from "@/redux/reducers/eventsSlice"
-import { useEdgeStore } from "@/lib/edgestore"
+import { deleteFile } from "@/services/upload.service"
 import { useRouter } from "next/router"
 
 type Props = {
@@ -37,7 +37,6 @@ type Props = {
 const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 	const [event, setEventData] = React.useState<IEvent>(rows[0] || [])
 	const [tableData, setTableData] = React.useState<IEvent[]>(rows)
-	const edgestore = useEdgeStore()
 	const router = useRouter()
 
 	const { isOpen, onOpen, onClose } = useDisclosure()
@@ -52,13 +51,13 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 			// delete the images from edge store server
 			if (item.images.length > 0) {
 				item.images.forEach((image) => {
-					edgestore.edgestore.publicFiles.delete({ url: image })
+					deleteFile(image)
 				})
 			}
 		})
 	}
 
-	const  onView = () => {
+	const onView = () => {
 		router.push(ROUTES.dashboard.events.edit.replace(":eventId", event._id.toString()))
 	}
 
@@ -111,19 +110,19 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 								</Td>
 								<Td>{new Date(row.createdAt).toDateString()}</Td>
 								<Td className="space-x-2">
-								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
-								 onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))}
-								>
-								Edit
-								</Button>
-								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
-								 onClick={() => router.push(ROUTES.dashboard.events.manage.replace(":eventId", row._id.toString()))}
-								>
-								Manage
-								</Button>
-								<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
-								Delete
-								</Button>
+									<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+										onClick={() => router.push(ROUTES.dashboard.events.edit.replace(":eventId", row._id.toString()))}
+									>
+										Edit
+									</Button>
+									<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<PencilIcon style={{ width: 15, height: 15 }} />}
+										onClick={() => router.push(ROUTES.dashboard.events.manage.replace(":eventId", row._id.toString()))}
+									>
+										Manage
+									</Button>
+									<Button bg='#3E3E3E' color='white' size='sm' leftIcon={<TrashIcon style={{ width: 15, height: 15 }} />} onClick={() => handleRemove(row)}>
+										Delete
+									</Button>
 								</Td>
 							</Tr>
 						))}
@@ -165,15 +164,15 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 					<ModalCloseButton />
 					<ModalBody>
 						<div className="space-y-4">
-						<div className="">
-							{event.images && event.images.length > 0 ? (
-								<Image src={event.images[0]} alt={event.name} width={200} height={200} className="d-block m-auto" />
-							) : (
-								<Box width={200} height={200} display="flex" alignItems="center" justifyContent="center" bg="gray.100" color="gray.500">
-									No Image
-								</Box>
-							)}
-						</div>
+							<div className="">
+								{event.images && event.images.length > 0 ? (
+									<Image src={event.images[0]} alt={event.name} width={200} height={200} className="d-block m-auto" />
+								) : (
+									<Box width={200} height={200} display="flex" alignItems="center" justifyContent="center" bg="gray.100" color="gray.500">
+										No Image
+									</Box>
+								)}
+							</div>
 							<div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white shadow rounded-lg">
 								<div className="flex-1">
 									<p className="text-lg font-medium text-gray-900">{event.name}</p>

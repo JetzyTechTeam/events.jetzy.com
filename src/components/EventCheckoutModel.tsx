@@ -1,7 +1,7 @@
 import { Error } from "@Jetzy/lib/_toaster"
 import { CreateCheckoutSessionThunk, getCheckoutStore, toggleCheckoutForm } from "@Jetzy/redux/reducers/checkoutSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback, useRef } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 
@@ -20,7 +20,13 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		lastName: "",
 		email: "",
 		phone: "",
+		referralCode: "",
 	})
+
+	const [referralCodeValid, setReferralCodeValid] = useState<boolean | null>(null)
+	const [referralCodeDiscount, setReferralCodeDiscount] = useState<number | null>(null)
+	const [validatingReferralCode, setValidatingReferralCode] = useState(false)
+	const referralCodeValidationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
 	// Handle form input changes
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,6 +43,55 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 				setPhoneError("")
 			}
 		}
+		if (name === "referralCode") {
+			// Reset validation state when code changes
+			setReferralCodeValid(null)
+			setReferralCodeDiscount(null)
+		}
+	}
+
+	// Validate referral code
+	const handleValidateReferralCode = async (code: string) => {
+		if (!code || code.trim() === "") {
+			setReferralCodeValid(null)
+			setReferralCodeDiscount(null)
+			return
+		}
+
+		// Get eventId from tickets (tickets have eventId but TypeScript type doesn't include it)
+		const eventId = (tickets[0] as any)?.eventId
+		if (!eventId) {
+			return
+		}
+
+		setValidatingReferralCode(true)
+		try {
+			const response = await fetch(`/api/events/${eventId}/referral-codes/validate`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					eventId,
+					code: code.toUpperCase().trim(),
+				}),
+			})
+
+			const result = await response.json()
+			if (result.status && result.data) {
+				setReferralCodeValid(true)
+				setReferralCodeDiscount(result.data.discountPercentage)
+			} else {
+				setReferralCodeValid(false)
+				setReferralCodeDiscount(null)
+			}
+		} catch (error) {
+			console.error("Error validating referral code:", error)
+			setReferralCodeValid(false)
+			setReferralCodeDiscount(null)
+		} finally {
+			setValidatingReferralCode(false)
+		}
 	}
 
 	// Handle form submission
@@ -48,9 +103,14 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 		// 	return
 		// }
 
-		const hasFilledAllFields = Object.values(formData).every((value) => value)
+		// Check required fields (exclude referralCode as it is optional)
+		const requiredFields = { ...formData } as any
+		delete requiredFields.referralCode
+
+		const hasFilledAllFields = Object.values(requiredFields).every((value) => value)
+
 		if (!hasFilledAllFields) {
-			Error("Form Error", "Please fill in all fields.")
+			Error("Form Error", "Please fill in all required fields.")
 			return
 		}
 
@@ -65,6 +125,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 				data: {
 					tickets: JSON.stringify(tickets),
 					user: JSON.stringify(formData),
+					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
 				},
 			}),
 		).then((res: any) => {
@@ -85,10 +146,10 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 	// Handle joining waiting list
 	const handleJoinWaitingList = useCallback(async () => {
 		try {
-			const response = await fetch('/api/waiting-list/add', {
-				method: 'POST',
+			const response = await fetch("/api/waiting-list/add", {
+				method: "POST",
 				headers: {
-					'Content-Type': 'application/json',
+					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
 					eventId: waitingListData.eventId,
@@ -102,7 +163,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 			})
 
 			const result = await response.json()
-			
+
 			if (result.status) {
 				setWaitingListRegistered(true)
 				// Don't show error message if user is already on waiting list
@@ -134,7 +195,7 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 						<button
 							onClick={() => {
 								dispatch(toggleCheckoutForm(false))
-								sendGAEvent({ category: "Event", action: "Checkout Modal Closed", label: event })	
+								sendGAEvent({ category: "Event", action: "Checkout Modal Closed", label: event })
 							}}
 							className="absolute top-2 right-2 bg-black text-white w-8 h-8 rounded-full flex items-center justify-center"
 						>
@@ -152,12 +213,10 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 										</svg>
 									</div>
 									<div className="bg-[#F79432]/20 border border-[#F79432]/30 rounded-lg p-6 mb-6">
-										<p className="text-[#F79432] text-2xl font-bold text-center">
-											You are on the waitlist
-										</p>
+										<p className="text-[#F79432] text-2xl font-bold text-center">You are on the waitlist</p>
 									</div>
 									<p className="text-white mb-6">
-										We appreciate your interest. Our event &quot;{waitingListData?.eventName}&quot; is currently at capacity. We will email you if spots open up and you get on the list.
+										We appreciate your interest. Our event &quot;{waitingListData?.eventName}&quot; is currently {waitingListData?.isClosed ? "closed" : "at capacity"}. We will email you if spots open up and you get on the list.
 									</p>
 									<div className="mt-6">
 										<button
@@ -175,54 +234,103 @@ export default function EventCheckoutModel({ event }: { event: string }) {
 							/* Form */
 							<form onSubmit={handleSubmit} className="p-6 space-y-6">
 								<h2 className="text-2xl font-bold">Checkout</h2>
-							<div className="space-y-4">
-								<input
-									type="text"
-									name="firstName"
-									placeholder="First Name"
-									value={formData.firstName}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-								/>
-								<input
-									type="text"
-									name="lastName"
-									placeholder="Last Name"
-									value={formData.lastName}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-								/>
-								<input
-									type="email"
-									name="email"
-									placeholder="Email"
-									value={formData.email}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-								/>
-								<input
-									type="tel"
-									name="phone"
-									placeholder="Phone Number"
-									value={formData.phone}
-									onChange={handleInputChange}
-									className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-									required
-									pattern="^\+?[0-9]{7,15}$"
-									title="Enter a valid phone number (e.g., +1234567890)"
-								/>
-								{phoneError && (
-										<span className="text-red-500 text-sm">{phoneError}</span>
-									)}
-								</div>
-							{/* an info paragrph */}
-							{/* <p className="text-sm text-[#A5A5A5]">By signing up, you create a Jetzy account for exclusive deals. Existing accounts won&apos;t be duplicated.</p> */}
+								<div className="space-y-4">
+									<input
+										type="text"
+										name="firstName"
+										placeholder="First Name"
+										value={formData.firstName}
+										onChange={handleInputChange}
+										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+										required
+									/>
+									<input
+										type="text"
+										name="lastName"
+										placeholder="Last Name"
+										value={formData.lastName}
+										onChange={handleInputChange}
+										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+										required
+									/>
+									<input
+										type="email"
+										name="email"
+										placeholder="Email"
+										value={formData.email}
+										onChange={handleInputChange}
+										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+										required
+									/>
+									<input
+										type="tel"
+										name="phone"
+										placeholder="Phone Number"
+										value={formData.phone}
+										onChange={handleInputChange}
+										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+										required
+										pattern="^\+?[0-9]{7,15}$"
+										title="Enter a valid phone number (e.g., +1234567890)"
+									/>
+									{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
 
-							{/* Terms Checkbox */}
-							{/* <div className="flex items-start space-x-2">
+									{/* Referral Code Field */}
+									<div>
+										<label className="block text-sm font-medium text-white mb-1.5">
+											Referral Code <span className="text-gray-400 font-normal">(Optional)</span>
+										</label>
+										<div className="relative">
+											<input
+												type="text"
+												name="referralCode"
+												placeholder="Enter referral code"
+												value={formData.referralCode}
+												onChange={(e) => {
+													handleInputChange(e)
+													// Clear previous timeout
+													if (referralCodeValidationTimeoutRef.current) {
+														clearTimeout(referralCodeValidationTimeoutRef.current)
+													}
+													// Validate after user stops typing (debounce)
+													const value = e.target.value.toUpperCase().trim()
+													if (value) {
+														referralCodeValidationTimeoutRef.current = setTimeout(() => {
+															handleValidateReferralCode(value)
+														}, 500)
+													} else {
+														setReferralCodeValid(null)
+														setReferralCodeDiscount(null)
+													}
+												}}
+												onBlur={() => {
+													if (referralCodeValidationTimeoutRef.current) {
+														clearTimeout(referralCodeValidationTimeoutRef.current)
+													}
+													if (formData.referralCode.trim()) {
+														handleValidateReferralCode(formData.referralCode)
+													}
+												}}
+												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 uppercase text-white"
+												style={{ textTransform: "uppercase" }}
+											/>
+											{validatingReferralCode && (
+												<div className="absolute right-3 top-1/2 -translate-y-1/2">
+													<Spinner />
+												</div>
+											)}
+										</div>
+										{referralCodeValid === true && referralCodeDiscount !== null && (
+											<p className="text-sm text-green-500 mt-1.5 font-medium">✓ Valid! You&apos;ll get {referralCodeDiscount}% off your order</p>
+										)}
+										{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
+									</div>
+								</div>
+								{/* an info paragrph */}
+								{/* <p className="text-sm text-[#A5A5A5]">By signing up, you create a Jetzy account for exclusive deals. Existing accounts won&apos;t be duplicated.</p> */}
+
+								{/* Terms Checkbox */}
+								{/* <div className="flex items-start space-x-2">
 								<input type="checkbox" id="terms" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="mt-1" required />
 								<label htmlFor="terms" className="text-sm text-[#A5A5A5]">
 									I accept the Terms and Conditions and consent to creating a Jetzy account.

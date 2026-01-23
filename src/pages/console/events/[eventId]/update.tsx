@@ -5,7 +5,7 @@ import { Types } from "mongoose"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { ROUTES } from "@/configs/routes"
-import { useEdgeStore } from "@Jetzy/lib/edgestore"
+import { uploadFile, deleteFile } from "@/services/upload.service"
 import { CreateEventFormData, Pages, Roles } from "@/types"
 import { Field, Form, Formik, FormikProps, FieldArray } from "formik"
 import { GetServerSideProps } from "next"
@@ -65,6 +65,12 @@ import { useSession } from "next-auth/react"
 import { useAppDispatch } from "@/redux/stores"
 import { UpdateEventThunk } from "@/redux/reducers/eventsSlice"
 import { z } from "zod"
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 type Props = {
 	event: string
@@ -86,7 +92,6 @@ export default function UpdateEventPage({ event }: Props) {
 	const { isOpen, onOpen, onClose } = useDisclosure();
 	const dispatcher = useAppDispatch();
 	const navigation = useRouter();
-	const { edgestore } = useEdgeStore();
 	const { data: session } = useSession()
 	const router = useRouter();
 	const toast = useToast();
@@ -132,28 +137,39 @@ export default function UpdateEventPage({ event }: Props) {
 
 
 	// --- Initial form values ---
-	const initialValues: CreateEventFormData = {
-		name: eventDetails.name,
-		desc: eventDetails.desc,
-		location: eventDetails.location,
-		capacity: eventDetails.capacity,
-		requireApproval: eventDetails.requireApproval,
-		isPaid: eventDetails.isPaid,
-		images: uploadedImages,
-		tickets: eventDetails.tickets.map(ticket => ({
-			id: ticket._id?.toString() || uniqueId(10),
-			title: ticket.name,
-			price: Number(ticket.price),
-			description: ticket.desc,
-		})),
-		privacy: eventDetails.privacy,
-		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
-		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
-		endDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
-		endTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
-		timezone: eventDetails?.timezone || '',
-		showParticipants: eventDetails.showParticipants || false,
-	}
+	// --- Initial form values ---
+	const initialValues: CreateEventFormData = React.useMemo(() => {
+		const tzString = eventDetails?.timezone || '';
+		// Extract timezone from string like "(UTC-05:00) America/New_York" -> "America/New_York"
+		const parts = tzString.split(') ');
+		const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess();
+
+		const start = dayjs(eventDetails.startsOn).tz(extractedTimeZone);
+		const end = dayjs(eventDetails.endsOn).tz(extractedTimeZone);
+
+		return {
+			name: eventDetails.name,
+			desc: eventDetails.desc,
+			location: eventDetails.location,
+			capacity: eventDetails.capacity,
+			requireApproval: eventDetails.requireApproval,
+			isPaid: eventDetails.isPaid,
+			images: uploadedImages,
+			tickets: eventDetails.tickets.map(ticket => ({
+				id: ticket._id?.toString() || uniqueId(10),
+				title: ticket.name,
+				price: Number(ticket.price),
+				description: ticket.desc,
+			})),
+			privacy: eventDetails.privacy,
+			startDate: start.format('YYYY-MM-DD'),
+			startTime: start.format('HH:mm'),
+			endDate: end.format('YYYY-MM-DD'),
+			endTime: end.format('HH:mm'),
+			timezone: eventDetails?.timezone || '',
+			showParticipants: eventDetails.showParticipants || false,
+		}
+	}, [eventDetails, uploadedImages])
 
 	const { ref } = usePlacesWidget({
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
@@ -198,8 +214,9 @@ export default function UpdateEventPage({ event }: Props) {
 		const validation = updateEventSchema.safeParse(values);
 
 		if (!validation.success) {
-			const firstError = Object.values(validation.error.flatten().fieldErrors)[0]?.[0];
-			Error("Validation Error", firstError || "Please fix the form errors");
+			const fieldErrors = validation.error.flatten().fieldErrors;
+			const errorMessages = Object.values(fieldErrors).flat().join("\n");
+			Error("Validation Error", errorMessages || "Please fix the form errors");
 			return;
 		}
 
@@ -301,11 +318,11 @@ export default function UpdateEventPage({ event }: Props) {
 				const file = files[i];
 
 				// Upload the current file
-				const res = await edgestore.publicFiles.upload({
-					file,
+				const res = await uploadFile(file, {
 					onProgressChange: (progress) => {
 						setUploadProgress(progress);
 					},
+					folder: "posts"
 				});
 
 				// Add the new image data to the array
@@ -327,7 +344,7 @@ export default function UpdateEventPage({ event }: Props) {
 		try {
 			// Try to delete from EdgeStore (may fail if already deleted)
 			try {
-				await edgestore.publicFiles.delete({ url: imageUrl });
+				await deleteFile(imageUrl);
 				console.log("Successfully deleted from EdgeStore:", imageUrl);
 			} catch (edgestoreError: any) {
 				// Log but don't fail - file might already be deleted
@@ -379,24 +396,28 @@ export default function UpdateEventPage({ event }: Props) {
 							{/* Left Side: Form Fields */}
 							<Box flex="1">
 								<FormControl mb={4}>
-									<Flex alignItems="center">
-										<Field
-											as={Input}
-											id="name"
-											name="name"
-											placeholder="Event Name"
-											size="lg"
-											color="white"
-											border="none"
-											h="20"
-											fontSize="38"
-											fontWeight="bold"
-											p="0"
-											_focus={{ border: "none", boxShadow: "none" }}
-											_placeholder={{ color: "#FFFFFF52" }}
-											value={values?.name}
-										/>
-										<TimezoneSelect />
+									<Flex alignItems="center" gap={4}>
+										<Box flex="1">
+											<Field
+												as={Input}
+												id="name"
+												name="name"
+												placeholder="Event Name"
+												size="lg"
+												color="white"
+												border="none"
+												h="20"
+												fontSize="38"
+												fontWeight="bold"
+												p="0"
+												_focus={{ border: "none", boxShadow: "none" }}
+												_placeholder={{ color: "#FFFFFF52" }}
+												value={values?.name}
+											/>
+										</Box>
+										<Box w="130px">
+											<TimezoneSelect />
+										</Box>
 									</Flex>
 								</FormControl>
 								<Flex

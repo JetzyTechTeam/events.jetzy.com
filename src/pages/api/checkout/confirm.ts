@@ -1,10 +1,14 @@
+import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation } from "@/lib/send-grid"
 import { uniqueId } from "@/lib/utils"
+// import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+// import { Users } from "@/models/userModal"
+// import { EventInvitation } from "@/models/events/event-invitations"
 
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
@@ -15,6 +19,8 @@ type SessionMetadata = {
 	email: string
 	phone: string
 	tickets: string // JSON stringified array of ticket objects
+	referralCode?: string
+	discountPercentage?: string
 }
 
 type TicketsProps = Array<{
@@ -50,8 +56,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// get the tickets from the metadata
 		const tickets = JSON.parse(metadata.tickets) as TicketsProps
 
+		// Handle referral code tracking
+		let discountAmount = 0
+		if (metadata.referralCode && metadata.discountPercentage) {
+			try {
+				const { ReferralCodes } = await import("@/models/events/referral-codes")
+				const referralCode = await ReferralCodes.findOne({
+					code: metadata.referralCode.toUpperCase(),
+					isDeleted: false,
+				})
+
+				if (referralCode) {
+					// Calculate discount amount from original subtotal
+					const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
+					const discountPercent = parseFloat(metadata.discountPercentage)
+					// Round to 2 decimal places with Number.EPSILON to prevent floating-point edge cases
+					discountAmount = Math.round((subtotal * (discountPercent / 100) + Number.EPSILON) * 100) / 100
+
+					// Increment usage count
+					referralCode.usageCount += 1
+					await referralCode.save()
+					console.log("[checkout/confirm] Referral code usage incremented:", metadata.referralCode)
+				}
+			} catch (referralError: any) {
+				console.error("[checkout/confirm] Error processing referral code:", referralError)
+				// Continue without failing the booking
+			}
+		}
+
 		// Create a booking record if the payment was successful
 		if (session.payment_status === "paid") {
+			const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
 			const booking = await Bookings.create({
 				status: BookingStatus.CONFIRMED,
 				eventId: metadata.eventId,
@@ -63,8 +98,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					ticketId: ticket.id,
 					quantity: ticket.quantity,
 				})),
-				subTotal: tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0),
+				subTotal: subtotal,
 				total: session.amount_total ? session.amount_total / 100 : 0,
+				referralCode: metadata.referralCode || undefined,
+				discountAmount: discountAmount,
 			})
 
 			// update the event tracker
@@ -74,6 +111,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			if (!event) {
 				return res.status(404).json({ message: "Event not found" })
 			}
+
+			// Check if location is hidden and reverse geocode if needed
+			await resolveEventLocation(event)
 
 			// send email to the customer
 			try {
@@ -91,15 +131,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						desc: ticket.desc,
 					})),
 					orderNumber: `JZ-${session.client_reference_id}`,
+					referralCode: metadata.referralCode,
+					discountAmount: discountAmount > 0 ? discountAmount : undefined,
+					discountPercentage: metadata.discountPercentage ? parseFloat(metadata.discountPercentage) : undefined,
 				})
 				console.log("Ticket confirmation email sent successfully")
 			} catch (emailError) {
 				console.error("Failed to send ticket confirmation email:", emailError)
 				// Don't fail the request if email fails
 			}
+
+
+
+			return res.status(200).json({ session, event })
 		}
 
-		return res.status(200).json(session)
+		return res.status(200).json({ session })
 	} catch (error) {
 		console.error("Error retrieving session:", error)
 		return res.status(500).json({ message: "Internal server error" })

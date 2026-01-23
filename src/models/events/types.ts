@@ -14,6 +14,7 @@ export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
 	location: string
+	venueName?: string
 	showParticipants: boolean
 	coordinates: {
 		long: number
@@ -30,9 +31,16 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	isEnded?: boolean; // UI flag to indicate if event has ended
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
 	getBookings(): Promise<IBookings[]>
 	deleteTracker(): Promise<void>
+	ownerId?: any;
+	host?: {
+		name?: string;
+		email?: string;
+		phone?: string;
+	}
 }
 
 export enum BookingStatus {
@@ -58,6 +66,8 @@ export interface IBookings extends IBaseModelProps {
 	subTotal: number
 	tax: number
 	total: number
+	referralCode?: string
+	discountAmount?: number
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }
@@ -66,4 +76,16 @@ export interface IEventTracker extends IBaseModelProps {
 	eventId: Types.ObjectId
 	bookedTickets: number
 	eventCapacity: number
+}
+
+export interface IReferralCode extends IBaseModelProps {
+	eventId: Types.ObjectId
+	code: string
+	discountPercentage: number
+	commissionPercentage: number
+	isActive: boolean
+	usageCount: number
+	maxUses?: number
+	createdBy?: Types.ObjectId
+	isDeleted: boolean
 }

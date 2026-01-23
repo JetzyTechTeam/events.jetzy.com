@@ -6,7 +6,7 @@ import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import DragAndDropFileUpload, { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { ROUTES } from "@Jetzy/configs/routes"
-import { useEdgeStore } from "@Jetzy/lib/edgestore"
+import { uploadFile, deleteFile } from "@/services/upload.service"
 import { eventValidation } from "@Jetzy/lib/validator/event"
 import { getEventState, UpdateEventThunk } from "@Jetzy/redux/reducers/eventsSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
@@ -34,12 +34,10 @@ type Props = {
 }
 export default function CreateEventPage({ event }: Props) {
 	const eventDetails = React.useMemo(() => JSON.parse(event) as IEvent, [event]);
-  const [eventTicketsData, setEventTicketsData] = React.useState<TicketData[]>([])
-  const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([])
+	const [eventTicketsData, setEventTicketsData] = React.useState<TicketData[]>([])
+	const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([])
 
 	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
-
-	const { edgestore } = useEdgeStore()
 	const navigation = useRouter()
 	const { isLoading } = useAppSelector(getEventState)
 	const dispatcher = useAppDispatch()
@@ -50,35 +48,35 @@ export default function CreateEventPage({ event }: Props) {
 	// --- Initialize images and tickets on mount ---
 	React.useEffect(() => {
 		if (eventDetails.images && eventDetails.images.length > 0) {
-      const newUploadedImages: FileUploadData[] = eventDetails.images.map(img => ({
-        id: uniqueId(10),
-        file: img,
-      }))
-      setUploadedImages(newUploadedImages)
-      
-      setImageUploadComponents(
-        newUploadedImages.map((img) => (
-          <DragAndDropFileUpload
-            customId={img.id}
-            onUpload={fileUploader}
-            onDelete={fileUpoaderRemoveImage}
-            uploadedFiles={newUploadedImages}
-            key={img.id}
-          />
-        ))
-      )
-    }
+			const newUploadedImages: FileUploadData[] = eventDetails.images.map(img => ({
+				id: uniqueId(10),
+				file: img,
+			}))
+			setUploadedImages(newUploadedImages)
 
-    // Handle tickets
-    if (eventDetails.tickets && eventDetails.tickets.length > 0) {
-      const newTickets: TicketData[] = eventDetails.tickets.map(ticket => ({
-        id: ticket._id?.toString() || uniqueId(10),
-        title: ticket.name,
-        price: Number(ticket.price),
-        description: ticket.desc,
-      }))
-      setEventTicketsData(newTickets)
-    }
+			setImageUploadComponents(
+				newUploadedImages.map((img) => (
+					<DragAndDropFileUpload
+						customId={img.id}
+						onUpload={fileUploader}
+						onDelete={fileUpoaderRemoveImage}
+						uploadedFiles={newUploadedImages}
+						key={img.id}
+					/>
+				))
+			)
+		}
+
+		// Handle tickets
+		if (eventDetails.tickets && eventDetails.tickets.length > 0) {
+			const newTickets: TicketData[] = eventDetails.tickets.map(ticket => ({
+				id: ticket._id?.toString() || uniqueId(10),
+				title: ticket.name,
+				price: Number(ticket.price),
+				description: ticket.desc,
+			}))
+			setEventTicketsData(newTickets)
+		}
 	}, [event])
 
 	// --- Initial form values ---
@@ -89,8 +87,8 @@ export default function CreateEventPage({ event }: Props) {
 		capacity: eventDetails.capacity,
 		requireApproval: eventDetails.requireApproval,
 		isPaid: eventDetails.isPaid,
-    images: uploadedImages,
-    tickets: eventTicketsData,
+		images: uploadedImages,
+		tickets: eventTicketsData,
 		privacy: eventDetails.privacy,
 		startDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10), // yyyy-mm-dd
 		startTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5), // hh:mm
@@ -123,15 +121,15 @@ export default function CreateEventPage({ event }: Props) {
 
 		const dateTimeChanged = startDateChanged || startTimeChanged || endDateChanged || endTimeChanged
 
-// Fetch bookings for the event
-const events = await axios.post(`/api/get-bookings`, {
-	eventId: eventDetails._id
-})
-  .then(response => response.data)
-  .catch(error => {
-    console.error('Error fetching bookings:', error);
-    return [];
-  });
+		// Fetch bookings for the event
+		const events = await axios.post(`/api/get-bookings`, {
+			eventId: eventDetails._id
+		})
+			.then(response => response.data)
+			.catch(error => {
+				console.error('Error fetching bookings:', error);
+				return [];
+			});
 
 
 		if (nameChanged || locationChanged || dateTimeChanged) {
@@ -151,7 +149,7 @@ const events = await axios.post(`/api/get-bookings`, {
 					oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
 					userEmail: event.customerEmail,
 				}))
-				Promise.all(updatePromises)
+			Promise.all(updatePromises)
 				.then((results) => {
 					console.log('All event updates sent successfully:', results);
 				})
@@ -192,11 +190,7 @@ const events = await axios.post(`/api/get-bookings`, {
 			setUploadedImages(newImages)
 
 			try {
-				await fetch('/api/delete-image', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ url: image.file }),
-				});
+				await deleteFile(image.file)
 			} catch (error: any) {
 				console.error("Error deleting image", error)
 				Error("Error", "Failed to delete image")
@@ -251,28 +245,28 @@ const events = await axios.post(`/api/get-bookings`, {
 				<div className="w-full grid md:grid-cols-2 xs:grid-cols-1 gap-4">
 					{/* Image Uploader */}
 					<section className="bg-[#1E1E1E] space-y-6 p-3 rounded-lg">
-					{uploadedImages.map((img) => (
-						<div key={img.id} className="relative">
-							<DragAndDropFileUpload
-								customId={img.id}
-								onUpload={fileUploader}
-								onDelete={fileUpoaderRemoveImage}
-								uploadedFiles={uploadedImages}
-								defaultImage={img.file}
-								key={img.id}
-							/>
-							<button
-								type="button"
-								onClick={() => fileUpoaderRemoveImage(img)}
-								className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-7 h-7 p-1 hover:bg-red-700 transition flex justify-center items-center"
-								title="Delete Image"
-							>
-								&#10005;
-							</button>
+						{uploadedImages.map((img) => (
+							<div key={img.id} className="relative">
+								<DragAndDropFileUpload
+									customId={img.id}
+									onUpload={fileUploader}
+									onDelete={fileUpoaderRemoveImage}
+									uploadedFiles={uploadedImages}
+									defaultImage={img.file}
+									key={img.id}
+								/>
+								<button
+									type="button"
+									onClick={() => fileUpoaderRemoveImage(img)}
+									className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-7 h-7 p-1 hover:bg-red-700 transition flex justify-center items-center"
+									title="Delete Image"
+								>
+									&#10005;
+								</button>
 							</div>
 						))}
 						<div className="flex justify-center items-center">
-						<button
+							<button
 								type="button"
 								onClick={() => {
 									const id = uniqueId(10)

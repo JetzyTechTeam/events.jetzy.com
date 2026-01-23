@@ -16,7 +16,7 @@ const eventTciketsSchema = new Schema<IEventTicket>(
 		},
 		desc: {
 			type: String,
-			required: true,
+			required: false,
 		},
 		stripeProductId: {
 			type: String,
@@ -54,12 +54,16 @@ const eventsSchema = new Schema<IEvent>(
 			required: true,
 		},
 		timezone: {
-				type: String,
-				required: true,
-		}, 
+			type: String,
+			required: true,
+		},
 		location: {
 			type: String,
 			required: true,
+		},
+		venueName: {
+			type: String,
+			required: false,
 		},
 		coordinates: {
 			long: {

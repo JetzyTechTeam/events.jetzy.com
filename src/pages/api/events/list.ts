@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Check authentication status
 		const session = await getServerSession(req, res, authOptions);
 		const isSignedIn = !!session;
-		
+
 		// run validation
 		const validation = validationSchema.safeParse({
 			limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
@@ -36,10 +36,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Define the query based on authentication status
 		let query: any = { isDeleted: false, location: { $regex: locFilter, $options: "i" } };
-		
-		// If user is not signed in, only show "Chinese Mid-Autumn Rooftop Celebration"
+
+		// If user is not signed in, only show events that have not ended
 		if (!isSignedIn) {
-			query.name = "Chinese Mid-Autumn Rooftop Celebration";
+			query.endsOn = { $gte: new Date() };
 		}
 
 		//    get all the events from the database

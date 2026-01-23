@@ -1,7 +1,7 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
-import { useEdgeStore } from "@/lib/edgestore"
+import { deleteFile } from "@/services/upload.service"
 import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
@@ -54,17 +54,16 @@ export default function EventsListing({ events, pagination }: Props) {
 				{!eventList.length && <p>No events found.</p>}
 
 				{eventList.map((event) => (
-					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} />
+					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} isEnded={event.isEnded} />
 				))}
 			</div>
 		</ConsoleLayout>
 	)
 }
 
-const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) => {
+const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isEnded?: boolean }) => {
 	const event = props
 	const dispatcher = useAppDispatch()
-	const edgestore = useEdgeStore()
 	const [loading, setLoading] = React.useState(false)
 	const router = useRouter()
 	const { isOpen, onOpen, onClose } = useDisclosure()
@@ -78,7 +77,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 				// delete the images from edge store server
 				if (item.images.length > 0) {
 					item.images.forEach((image) => {
-						edgestore.edgestore.publicFiles.delete({ url: image })
+						deleteFile(image)
 					})
 				}
 				toast.success("Event deleted successfully!")
@@ -97,45 +96,86 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void }) =
 	return (
 		<>
 			<div className="space-y-5">
-				<div className="flex items-center justify-between bg-[#1E1E1E] rounded-xl p-5">
+				<div className={`flex items-center justify-between rounded-xl p-5 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
 					{/* CONTENT SECTION  */}
-					<div className="space-y-5">
-						<Link href={`/${event.slug}`}>
-							<Heading as="h3" fontSize={20} cursor="pointer" _hover={{ textDecoration: "underline" }}>
-								{event.name}
-							</Heading>
-						</Link>
+					<div className="space-y-4 flex-1">
+						<div className="flex items-start justify-between">
+							<div className="flex-1">
+								<Link href={`/${event.slug}`}>
+									<Heading as="h3" fontSize={20} cursor="pointer" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
+										{event.name}
+									</Heading>
+								</Link>
+								{props.isEnded && (
+									<span className="inline-block mt-1 px-2 py-1 bg-[#444444] text-[#A7A7A7] text-xs rounded-full font-medium">
+										ENDED EVENT
+									</span>
+								)}
+							</div>
+						</div>
+
+						{/* PROMINENT DATE/TIME SECTION */}
+						<div className="bg-[#2A2A2A] rounded-lg p-3 border border-[#444444]">
+							<div className="flex items-center gap-x-3 text-white font-medium">
+								<DateTimeSVG stroke="#F79432" />
+								<div>
+									<div className="text-lg">
+										{new Date(event.startsOn?.toString()).toLocaleDateString('en-US', {
+											weekday: 'long',
+											year: 'numeric',
+											month: 'long',
+											day: 'numeric'
+										})}
+									</div>
+									<div className="text-sm text-[#A7A7A7]">
+										{new Date(event.startsOn?.toString()).toLocaleTimeString('en-US', {
+											hour: '2-digit',
+											minute: '2-digit'
+										})} - {new Date(event.endsOn?.toString()).toLocaleTimeString('en-US', {
+											hour: '2-digit',
+											minute: '2-digit'
+										})} ({event.timezone})
+									</div>
+								</div>
+							</div>
+						</div>
+
 						<div className="space-y-2">
-							<Text className="flex gap-x-2 text-[#A7A7A7]">
-								<DateTimeSVG />
-								<span>
-									{new Date(event.startsOn?.toString()).toDateString()} {event.timezone}
-								</span>
-							</Text>
 							<Text className="flex gap-x-2 text-[#A7A7A7]">
 								<LocationSVG />
 								<span>{event.location}</span>
 							</Text>
 						</div>
+
 						<div className="flex items-center gap-x-3">
-							<Link href={`/console/events/${event._id}/manage`} className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+							<Link href={`/console/events/${event._id}/manage`} className="bg-[#3E3E3E] p-2 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 								Manage Event
 							</Link>
-							<Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm">
+							<Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 								Edit Event
 							</Link>
-							<div
-								onClick={() => confirmDelete(event)}
-								className={`w-max bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm cursor-pointer ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
-								style={{ pointerEvents: loading ? "none" : "auto" }}
-							>
-								{loading ? "Deleting..." : "Delete Event"}
-							</div>
+							{!props.isEnded && (
+								<div
+									onClick={() => confirmDelete(event)}
+									className={`w-max bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm cursor-pointer hover:bg-[#451919] transition-colors ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+									style={{ pointerEvents: loading ? "none" : "auto" }}
+								>
+									{loading ? "Deleting..." : "Delete Event"}
+								</div>
+							)}
 						</div>
 					</div>
 
 					{/* IMAGE SECTION */}
-					<Image src={event && event?.images[0]} alt={event.name} className="w-[180px] h-[150px] rounded-xl" width={180} height={150} />
+					<div className="ml-4">
+						<Image
+							src={event && event?.images[0]}
+							alt={event.name}
+							className={`w-[180px] h-[150px] rounded-xl ${props.isEnded ? 'opacity-60' : ''}`}
+							width={180}
+							height={150}
+						/>
+					</div>
 				</div>
 			</div>
 			<AlertDialog isOpen={isOpen} leastDestructiveRef={cancelRef} onClose={onClose}>
@@ -181,14 +221,61 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const limit = 20
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * limit
-	// fetch events
-	const events = await Events.find({ isDeleted: false }).limit(limit).skip(skip).sort({ createdAt: -1 })
-	if (!events) return { props: { events: [] } }
+
+	// fetch active events (not deleted)
+	const activeEvents = await Events.find({ isDeleted: false }).sort({ createdAt: -1 })
+
+	// Get events with bookings to include past events that have activity
+	const { Bookings } = await import("@/models/events/bookings")
+	const eventsWithBookings = await Bookings.distinct('eventId', { isDeleted: false })
+
+	// Fetch past events that have bookings
+	const now = new Date()
+	const pastEventsWithBookings = await Events.find({
+		_id: { $in: eventsWithBookings },
+		isDeleted: false,
+		endsOn: { $lt: now } // Events that have ended
+	})
+
+	// If no past events with bookings, include all past events (for admin visibility)
+	const pastEventsToInclude = pastEventsWithBookings.length > 0 ? pastEventsWithBookings : await Events.find({
+		isDeleted: false,
+		endsOn: { $lt: now }
+	})
+
+	// Combine active events and past events with bookings, remove duplicates
+	const allEventsMap = new Map()
+
+	// Add active events
+	activeEvents.forEach(event => {
+		const eventData = event.toJSON()
+		eventData.isEnded = new Date(eventData.endsOn) < now
+		allEventsMap.set(eventData._id.toString(), eventData)
+	})
+
+	// Add past events (only if not already included)
+	pastEventsToInclude.forEach(event => {
+		const eventId = event._id.toString()
+		if (!allEventsMap.has(eventId)) {
+			const eventData = event.toJSON()
+			eventData.isEnded = true // Mark as ended since it's in the past
+			allEventsMap.set(eventId, eventData)
+		}
+	})
+
+	// Convert to array and sort (active events first, then ended events by start date)
+	const allEvents = Array.from(allEventsMap.values()).sort((a, b) => {
+		// Sort by status first (active events first, ended events last), then by start date (newest first)
+		if (a.isEnded && !b.isEnded) return 1
+		if (!a.isEnded && b.isEnded) return -1
+		return Number(new Date(b.startsOn)) - Number(new Date(a.startsOn))
+	})
+
+	// Apply pagination
+	const paginatedEvents = allEvents.slice(skip, skip + limit)
 
 	// get total count of events
-	const total = await Events.countDocuments({ isDeleted: false })
-	// serialize the events
-	const data = events.map((event) => event.toJSON())
+	const total = allEvents.length
 
 	// calculate page total and current page
 	const totalPages = Math.ceil(total / limit)
@@ -197,14 +284,14 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const pagination = {
 		total,
 		page,
-		showing: data.length,
+		showing: paginatedEvents.length,
 		limit,
 		totalPages,
 	}
 
 	return {
 		props: {
-			events: JSON?.stringify(data),
+			events: JSON?.stringify(paginatedEvents),
 			pagination,
 		},
 	}
