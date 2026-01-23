@@ -51,6 +51,148 @@ const parseMentions = (content: string, mentions: any[] = []) => {
 }
 
 // Sub-component for Comments to handle scrolling
+const CommentItem = ({
+    comment,
+    post,
+    currentUserId,
+    onLikeComment,
+    onReply,
+    onDelete,
+    onEditInit,
+    editingComment,
+    onEditSave,
+    setEditingComment,
+    level = 0
+}: any) => {
+    const author = comment.author || comment.userDetails || comment.user || {};
+    const authorId = author._id || author.id || comment.userId;
+    const isCommentAuthor = currentUserId && authorId && (currentUserId === authorId);
+
+    return (
+        <div key={comment._id} className={`flex flex-col gap-3 group ${level > 0 ? 'ml-6 border-l border-gray-800 pl-4' : ''}`}>
+            <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
+                    {author.image ? (
+                        <img src={author.image} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-white font-bold text-[10px]">
+                            {(author.firstName || 'U')?.charAt(0)}
+                        </div>
+                    )}
+                </div>
+                <div className="flex-1 bg-gray-800/30 rounded-lg p-2 relative">
+                    <h5 className="text-white text-xs font-semibold">
+                        {author.firstName} {author.lastName}
+                    </h5>
+                    {editingComment?.commentId === comment._id ? (
+                        <div className="mt-1">
+                            <textarea
+                                value={editingComment.content}
+                                onChange={(e) => setEditingComment((prev: any) => prev ? { ...prev, content: e.target.value } : null)}
+                                className="w-full bg-gray-900 border border-gray-700 rounded p-1 text-xs text-white resize-none focus:border-app outline-none"
+                                rows={2}
+                            />
+                            <div className="flex justify-end gap-2 mt-1">
+                                <button onClick={() => setEditingComment(null)} className="text-gray-400 hover:text-white">
+                                    <XMarkIcon className="w-4 h-4" />
+                                </button>
+                                <button onClick={onEditSave} className="text-app hover:text-white">
+                                    <CheckIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-gray-300 text-xs mt-1">
+                            {parseMentions(comment.content || '', comment.mentions || []).map((part: any, idx: number) => (
+                                part.type === 'mention' ? (
+                                    <span key={idx} className="text-app font-medium">@{part.name}</span>
+                                ) : (
+                                    <span key={idx}>{part.content}</span>
+                                )
+                            ))}
+                        </p>
+                    )}
+
+                    {comment.image && (
+                        <div className="mt-2 rounded-xl overflow-hidden max-w-[280px] border border-gray-700/50 shadow-inner group/img relative">
+                            <img
+                                src={comment.image}
+                                alt="Comment media"
+                                className="w-full h-auto max-h-[300px] object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                                onClick={() => window.open(comment.image, '_blank')}
+                            />
+                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity pointer-events-none flex items-center justify-center">
+                                <span className="text-[10px] text-white bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">View Full Image</span>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-3 mt-1">
+                        <p className="text-[10px] text-gray-500">
+                            {comment.createdAt ? dayjs(comment.createdAt).fromNow() : ''}
+                        </p>
+                        <button
+                            onClick={() => onReply(post._id, comment)}
+                            className="text-[10px] text-gray-400 hover:text-app transition-colors"
+                        >
+                            Reply
+                        </button>
+                        <button
+                            onClick={() => onLikeComment(post._id, comment._id)}
+                            className={`flex items-center gap-1 text-[10px] transition-colors ${comment.isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
+                        >
+                            {comment.isLiked ? <HeartIconSolid className="w-3 h-3" /> : <HeartIconOutline className="w-3 h-3" />}
+                            <span>{comment.likesCount || comment.reactionCounts?.total || 0}</span>
+                        </button>
+                    </div>
+
+                    {isCommentAuthor && !editingComment && (
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                                onClick={() => onEditInit(post._id, comment)}
+                                className="text-gray-500 hover:text-blue-500 transition-colors"
+                                title="Edit comment"
+                            >
+                                <PencilIcon className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={() => onDelete(post._id, comment._id)}
+                                className="text-gray-500 hover:text-red-500 transition-colors"
+                                title="Delete comment"
+                            >
+                                <TrashIcon className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Render Replies Recursive */}
+            {(comment.replies || comment.comments) && (comment.replies || comment.comments).length > 0 && (
+                <div className="flex flex-col gap-4 mt-2">
+                    {(comment.replies || comment.comments).map((reply: any) => (
+                        <CommentItem
+                            key={reply._id}
+                            comment={reply}
+                            post={post}
+                            currentUserId={currentUserId}
+                            onLikeComment={onLikeComment}
+                            onReply={onReply}
+                            onDelete={onDelete}
+                            onEditInit={onEditInit}
+                            editingComment={editingComment}
+                            onEditSave={onEditSave}
+                            setEditingComment={setEditingComment}
+                            level={level + 1}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// Sub-component for Comments to handle scrolling
 const PostComments = ({
     post,
     comments,
@@ -78,110 +220,21 @@ const PostComments = ({
 
     return (
         <div className="mt-4 pt-4 border-t border-gray-800 space-y-4 max-h-[500px] overflow-y-auto custom-scrollbar pr-1">
-            {comments.map((comment: any) => {
-                const author = comment.author || comment.userDetails || comment.user || {};
-                const authorId = author._id || author.id || comment.userId;
-                const isCommentAuthor = currentUserId && authorId && (currentUserId === authorId);
-
-                return (
-                    <div key={comment._id} className="flex gap-3 group">
-                        <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
-                            {author.image ? (
-                                <img src={author.image} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-white font-bold text-[10px]">
-                                    {(author.firstName || 'U')?.charAt(0)}
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex-1 bg-gray-800/30 rounded-lg p-2 relative">
-                            <h5 className="text-white text-xs font-semibold">
-                                {author.firstName} {author.lastName}
-                            </h5>
-                            {editingComment?.commentId === comment._id ? (
-                                <div className="mt-1">
-                                    <textarea
-                                        value={editingComment.content}
-                                        onChange={(e) => setEditingComment((prev: any) => prev ? { ...prev, content: e.target.value } : null)}
-                                        className="w-full bg-gray-900 border border-gray-700 rounded p-1 text-xs text-white resize-none focus:border-app outline-none"
-                                        rows={2}
-                                    />
-                                    <div className="flex justify-end gap-2 mt-1">
-                                        <button onClick={() => setEditingComment(null)} className="text-gray-400 hover:text-white">
-                                            <XMarkIcon className="w-4 h-4" />
-                                        </button>
-                                        <button onClick={onEditSave} className="text-app hover:text-white">
-                                            <CheckIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <p className="text-gray-300 text-xs mt-1">
-                                    {parseMentions(comment.content || '', comment.mentions || []).map((part: any, idx: number) => (
-                                        part.type === 'mention' ? (
-                                            <span key={idx} className="text-app font-medium">@{part.name}</span>
-                                        ) : (
-                                            <span key={idx}>{part.content}</span>
-                                        )
-                                    ))}
-                                </p>
-                            )}
-
-                            {comment.image && (
-                                <div className="mt-2 rounded-xl overflow-hidden max-w-[280px] border border-gray-700/50 shadow-inner group/img relative">
-                                    <img
-                                        src={comment.image}
-                                        alt="Comment media"
-                                        className="w-full h-auto max-h-[300px] object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
-                                        onClick={() => window.open(comment.image, '_blank')}
-                                    />
-                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity pointer-events-none flex items-center justify-center">
-                                        <span className="text-[10px] text-white bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">View Full Image</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex items-center gap-3 mt-1">
-                                <p className="text-[10px] text-gray-500">
-                                    {comment.createdAt ? dayjs(comment.createdAt).fromNow() : ''}
-                                </p>
-                                <button
-                                    onClick={() => onReply(post._id, comment)}
-                                    className="text-[10px] text-gray-400 hover:text-app transition-colors"
-                                >
-                                    Reply
-                                </button>
-                                <button
-                                    onClick={() => onLikeComment(post._id, comment._id)}
-                                    className={`flex items-center gap-1 text-[10px] transition-colors ${comment.isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
-                                >
-                                    {comment.isLiked ? <HeartIconSolid className="w-3 h-3" /> : <HeartIconOutline className="w-3 h-3" />}
-                                    <span>{comment.likesCount || comment.reactionCounts?.total || 0}</span>
-                                </button>
-                            </div>
-
-                            {isCommentAuthor && !editingComment && (
-                                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button
-                                        onClick={() => onEditInit(post._id, comment)}
-                                        className="text-gray-500 hover:text-blue-500 transition-colors"
-                                        title="Edit comment"
-                                    >
-                                        <PencilIcon className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                        onClick={() => onDelete(post._id, comment._id)}
-                                        className="text-gray-500 hover:text-red-500 transition-colors"
-                                        title="Delete comment"
-                                    >
-                                        <TrashIcon className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )
-            })}
+            {comments.map((comment: any) => (
+                <CommentItem
+                    key={comment._id}
+                    comment={comment}
+                    post={post}
+                    currentUserId={currentUserId}
+                    onLikeComment={onLikeComment}
+                    onReply={onReply}
+                    onDelete={onDelete}
+                    onEditInit={onEditInit}
+                    editingComment={editingComment}
+                    onEditSave={onEditSave}
+                    setEditingComment={setEditingComment}
+                />
+            ))}
             <div ref={bottomRef} className="h-1" />
         </div>
     )

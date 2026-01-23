@@ -477,7 +477,9 @@ export default function InterestGroupPage() {
                     postId,
                     page: 1,
                     limit: 100,
-                    sortBy: 'newest'
+                    sortBy: 'newest',
+                    includeReplies: true,
+                    maxDepth: 5
                 }
             })
             // ... (rest of logic same)
