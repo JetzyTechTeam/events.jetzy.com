@@ -1,5 +1,6 @@
 'use client'
 import { authorizedOnly } from "@/lib/authSession"
+import { stripHtml } from "@/utils/text";
 import { Events } from "@/models/events"
 import { Types } from "mongoose"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
@@ -137,7 +138,6 @@ export default function UpdateEventPage({ event }: Props) {
 
 
 	// --- Initial form values ---
-	// --- Initial form values ---
 	const initialValues: CreateEventFormData = React.useMemo(() => {
 		const tzString = eventDetails?.timezone || '';
 		// Extract timezone from string like "(UTC-05:00) America/New_York" -> "America/New_York"
@@ -148,8 +148,8 @@ export default function UpdateEventPage({ event }: Props) {
 		const end = dayjs(eventDetails.endsOn).tz(extractedTimeZone);
 
 		return {
-			name: eventDetails.name,
-			desc: eventDetails.desc,
+			name: stripHtml(eventDetails.name),
+			desc: stripHtml(eventDetails.desc),
 			location: eventDetails.location,
 			capacity: eventDetails.capacity,
 			requireApproval: eventDetails.requireApproval,
@@ -157,9 +157,9 @@ export default function UpdateEventPage({ event }: Props) {
 			images: uploadedImages,
 			tickets: eventDetails.tickets.map(ticket => ({
 				id: ticket._id?.toString() || uniqueId(10),
-				title: ticket.name,
+				title: stripHtml(ticket.name),
 				price: Number(ticket.price),
-				description: ticket.desc,
+				description: stripHtml(ticket.desc),
 			})),
 			privacy: eventDetails.privacy,
 			startDate: start.format('YYYY-MM-DD'),

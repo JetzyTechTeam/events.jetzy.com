@@ -1,4 +1,5 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
+import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
 import { deleteFile } from "@/services/upload.service"
@@ -103,7 +104,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							<div className="flex-1">
 								<Link href={`/${event.slug}`}>
 									<Heading as="h3" fontSize={20} cursor="pointer" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
-										{event.name}
+										{stripHtml(event.name)}
 									</Heading>
 								</Link>
 								{props.isEnded && (
@@ -170,7 +171,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					<div className="ml-4">
 						<Image
 							src={event && event?.images[0]}
-							alt={event.name}
+							alt={stripHtml(event.name)}
 							className={`w-[180px] h-[150px] rounded-xl ${props.isEnded ? 'opacity-60' : ''}`}
 							width={180}
 							height={150}

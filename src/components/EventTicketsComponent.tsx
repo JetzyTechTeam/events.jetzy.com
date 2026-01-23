@@ -26,6 +26,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import Linkify from "linkify-react";
 import { sendGAEvent } from "@next/third-parties/google";
+import { stripHtml } from "@/utils/text";
 
 type Props = {
   event: IEvent;
@@ -185,7 +186,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                         target: '_blank',
                         className: 'text-orange-600 underline hover:text-orange-800',
                       }}>
-                        {ticket.description}
+                        {stripHtml(ticket.description)}
                       </Linkify>
                     </p>
                     <div className="flex items-center justify-between w-full">

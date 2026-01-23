@@ -32,6 +32,8 @@ import axios from "axios";
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
+import { stripHtml } from "@/utils/text";
+
 interface EventCardProps {
   event: IEvent;
   onClick: (event: IEvent) => void;
@@ -39,21 +41,21 @@ interface EventCardProps {
 
 const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 
-  
-const { data: totals } = useQuery({
-  queryKey: ["eventTotals", event._id] ,
-  queryFn:  () => axios.get(`/api/events/${event._id}/totals`),
-});
 
-const { data: session } = useSession();
+  const { data: totals } = useQuery({
+    queryKey: ["eventTotals", event._id],
+    queryFn: () => axios.get(`/api/events/${event._id}/totals`),
+  });
+
+  const { data: session } = useSession();
   // @ts-ignore
   const isAdmin = session?.user?.role === "admin";
 
-const totalTickets = totals?.data?.totalTickets ?? 0;
-const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
+  const totalTickets = totals?.data?.totalTickets ?? 0;
+  const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
 
-// Calculate total available tickets for percentage
-const totalAvailableTickets = event.capacity ?? 0;
+  // Calculate total available tickets for percentage
+  const totalAvailableTickets = event.capacity ?? 0;
 
   const cardBg = useColorModeValue("#1e1e1e", "gray.700");
   const borderColor = useColorModeValue("#434343", "gray.600");
@@ -67,17 +69,17 @@ const totalAvailableTickets = event.capacity ?? 0;
 
   const isNew = diffDays < 2;
 
-const { formattedDate, formattedTime } = useMemo(() => {
-  if (!event?.startsOn) return { formattedDate: '', formattedTime: '' }
+  const { formattedDate, formattedTime } = useMemo(() => {
+    if (!event?.startsOn) return { formattedDate: '', formattedTime: '' }
 
-  const userTimeZone = event.timezone?.split(') ')[1]
-  const date = dayjs.utc(event.startsOn).tz(userTimeZone)
+    const userTimeZone = event.timezone?.split(') ')[1]
+    const date = dayjs.utc(event.startsOn).tz(userTimeZone)
 
-  const formattedDate = date.format('MMMM DD, YYYY') 
-  const formattedTime = date.format('hh:mm A') 
+    const formattedDate = date.format('MMMM DD, YYYY')
+    const formattedTime = date.format('hh:mm A')
 
-  return { formattedDate, formattedTime }
-}, [event.startsOn, event.timezone])
+    return { formattedDate, formattedTime }
+  }, [event.startsOn, event.timezone])
 
   return (
     <Box
@@ -98,7 +100,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
       <Box p="2">
         <Image
           src={event.images[0]}
-          alt={event.name}
+          alt={stripHtml(event.name)}
           objectFit="cover"
           w="100%"
           h="200px"
@@ -108,7 +110,7 @@ const { formattedDate, formattedTime } = useMemo(() => {
       <Box p="2">
         <Stack spacing="3">
           <Text fontSize="xl" fontWeight="bold" wordBreak="break-word" overflowWrap="anywhere">
-            {event.name}
+            {stripHtml(event.name)}
           </Text>
           <Box h="24">
             <Text

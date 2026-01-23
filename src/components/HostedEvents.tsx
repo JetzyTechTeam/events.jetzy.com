@@ -23,6 +23,8 @@ import timezone from "dayjs/plugin/timezone"
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
+import { stripHtml } from "@/utils/text";
+
 const settings = {
 	infinite: true,
 	speed: 500,
@@ -67,7 +69,7 @@ export default function HostedEvents({ event }: Props) {
 		}
 	}, [event, isValidEvent])
 
-	const shareTitle = clonedEvent?.name || ""
+	const shareTitle = stripHtml(clonedEvent?.name || "")
 	const shareDesc = clonedEvent?.desc || ""
 
 	// @ts-ignore
@@ -170,7 +172,7 @@ export default function HostedEvents({ event }: Props) {
 							{/* Header Section */}
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-6 space-y-4 sm:space-y-0">
 								<div className="text-center sm:text-left">
-									<h2 className="text-3xl font-bold break-words overflow-wrap-anywhere">{clonedEvent.name}</h2>
+									<h2 className="text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(clonedEvent.name)}</h2>
 									<p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb] break-words">
 										<DateTimeSVG />
 										{formattedDate}, {formattedTime} {clonedEvent?.timezone || ""}
@@ -234,7 +236,7 @@ export default function HostedEvents({ event }: Props) {
 
 					{clonedEvent && <EventTicketsComponent event={clonedEvent} />}
 				</div>
-				{clonedEvent?.name && <EventCheckoutModel event={clonedEvent.name} />}
+				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} />}
 			</>
 		)
 	} catch (error) {
@@ -572,7 +574,7 @@ function EventDescription({ description }: { description: string }) {
 		<div className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere">
 			{lines.map((line, i) => (
 				<p key={i} className="leading-[24px] mb-2 break-words overflow-wrap-anywhere">
-					<Linkify options={linkifyOptions}>{line}</Linkify>
+					<Linkify options={linkifyOptions}>{stripHtml(line)}</Linkify>
 				</p>
 			))}
 		</div>

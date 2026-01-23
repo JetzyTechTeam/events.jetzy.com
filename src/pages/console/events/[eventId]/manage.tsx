@@ -1,4 +1,5 @@
 "use client"
+import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { authorizedOnly } from "@/lib/authSession"
@@ -55,7 +56,7 @@ export default function Manage({ event }: any) {
 	return (
 		<>
 			<ConsoleLayout
-				page={event.name}
+				page={stripHtml(event.name) as any}
 				component={
 					<div className="flex gap-2">
 						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} onClick={() => router.push(`/console/events/${event._id}/check-in`)} fontWeight="bold">
@@ -135,7 +136,7 @@ export default function Manage({ event }: any) {
 							</div>
 							<div className="flex h-full gap-x-5">
 								<div className="w-[250px] h-[200px] object-cover object-top rounded-2xl">
-									<img src={event.images[0]} alt={event.name} className="w-full h-full object-cover object-top rounded-2xl" />
+									<img src={event.images[0]} alt={stripHtml(event.name)} className="w-full h-full object-cover object-top rounded-2xl" />
 								</div>
 								<div className="w-full">
 									<div className="p-3 flex flex-col gap-y-3 border-b border-[#585858] pb-10">
@@ -154,7 +155,7 @@ export default function Manage({ event }: any) {
 									</div>
 									<div className="p-3 flex flex-col gap-y-3">
 										<h4 className="font-bold">Description</h4>
-										<p className="font-semibold text-[#B5B6B7]">{event.desc}</p>
+										<p className="font-semibold text-[#B5B6B7]">{stripHtml(event.desc)}</p>
 									</div>
 								</div>
 							</div>
