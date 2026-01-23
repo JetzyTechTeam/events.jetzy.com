@@ -198,18 +198,11 @@ export default function InterestGroupPage() {
         try {
             const res = await CreatePostApi({
                 data: {
-                    description: text,
-                    // @ts-ignore
                     content: text,
-                    // @ts-ignore
-                    text: text,
-                    // @ts-ignore
-                    body: text,
-                    // @ts-ignore
-                    post: text,
-                    // @ts-ignore
-                    caption: text,
+                    // description: text,
+                    media: [],
                     interestIds: [interestId as string],
+                    interest: [interestId as string],
                     privacy: 'public'
                 }
             })

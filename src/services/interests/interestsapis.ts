@@ -100,7 +100,7 @@ export const GetInterestFeedApi = async (params: RequestParams<{ interestId: str
     return await GET(url)
 }
 
-export const CreatePostApi = async (params: RequestParams<{ description: string; media?: any[]; interestIds: string[]; privacy?: string }>): Promise<ServerResponse<any, any>> => {
+export const CreatePostApi = async (params: RequestParams<{ content: string; description?: string; media?: any[]; interest?: string[]; interestIds?: string[]; privacy?: string; tags?: string[]; location?: any }>): Promise<ServerResponse<any, any>> => {
     return await POST(interestEndPoints.createPost, params.data)
 }
 
