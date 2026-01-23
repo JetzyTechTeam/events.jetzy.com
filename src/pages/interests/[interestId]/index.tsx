@@ -58,16 +58,19 @@ export default function InterestGroupPage() {
         if (!interest || !currentUser) return false;
 
         // Get creator ID from various possible locations
-        const creatorId = interest.creator?._id || interest.creator?.id || interest.creator || interest.user?._id || interest.user?.id || interest.user;
+        const creatorId = interest.userId || interest.owner || interest.creator?._id || interest.creator?.id || interest.creator || interest.user?._id || interest.user?.id || interest.user;
         const currentUserId = currentUser._id || currentUser.id;
 
         // Check if user is creator
-        const isCreator = creatorId === currentUserId;
+        const isCreator = String(creatorId) === String(currentUserId);
 
         // Check if user has admin/creator role in membership
         const hasAdminRole = interest?.currentUserMembership?.role === 'admin' || interest?.currentUserMembership?.role === 'creator';
 
-        return isCreator || hasAdminRole;
+        // Check if user is a global admin
+        const isGlobalAdmin = currentUser?.role === 'admin';
+
+        return isCreator || hasAdminRole || isGlobalAdmin;
     }, [interest, currentUser]);
 
     const isMember = interest?.isMember || interest?.currentUserMembership?.status === 'member';
@@ -490,9 +493,69 @@ export default function InterestGroupPage() {
 
     return (
         <div className="min-h-screen bg-black pb-20">
-            {/* ... (Head and Header) */}
+            <Head>
+                <title>{interest?.name ? `${interest.name} | Jetzy` : 'Interest Group'}</title>
+            </Head>
+
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-                {/* ... (Header and Tabs) */}
+                {isAdmin && (
+                    <button
+                        onClick={() => router.push('/interests')}
+                        className="flex items-center gap-2 text-gray-500 hover:text-white transition-colors mb-6 group w-fit"
+                    >
+                        <ArrowLeftIcon className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                        Back to Interests
+                    </button>
+                )}
+
+                <InterestGroupHeader
+                    interest={interest}
+                    onJoin={handleJoin}
+                    onLeave={handleLeave}
+                    loading={loading}
+                />
+
+                {/* Tabs */}
+                <div className="mb-6 border-b border-gray-800 flex justify-between items-center">
+                    <div className="flex gap-8">
+                        <button
+                            onClick={() => setActiveTab('feed')}
+                            className={`pb-4 px-2 font-medium transition-colors relative ${activeTab === 'feed' ? 'text-app' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Feed
+                            {activeTab === 'feed' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-app rounded-full" />}
+                        </button>
+                        {isAdmin && (
+                            <button
+                                onClick={() => setActiveTab('requests')}
+                                className={`pb-4 px-2 font-medium transition-colors relative ${activeTab === 'requests' ? 'text-app' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                Join Requests
+                                {requests.length > 0 && <span className="ml-2 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{requests.length}</span>}
+                                {activeTab === 'requests' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-app rounded-full" />}
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex gap-4 items-center">
+                        <button
+                            onClick={() => setActiveTab('members')}
+                            className={`pb-4 px-2 font-medium transition-colors relative ${activeTab === 'members' ? 'text-app' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Invite
+                            {activeTab === 'members' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-app rounded-full" />}
+                        </button>
+                        {isAdmin && (
+                            <button
+                                onClick={handleDeleteGroup}
+                                className="mb-4 text-gray-500 hover:text-red-500 transition-colors bg-gray-900/50 p-2 rounded-lg"
+                                title="Delete Group"
+                            >
+                                <TrashIcon className="w-5 h-5" />
+                            </button>
+                        )}
+                    </div>
+                </div>
                 {/* Content */}
                 {activeTab === 'feed' && (
                     <>
