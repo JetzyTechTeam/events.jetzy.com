@@ -108,7 +108,7 @@ export const LikePostApi = async (params: RequestParams<{ postId: string; reacti
     return await POST(interestEndPoints.likePost.replace(":postId", params.data?.postId as string), { reactionType: params.data?.reactionType })
 }
 
-export const GetPostCommentsApi = async (params: RequestParams<{ postId: string; page?: number; perPage?: number }>): Promise<ServerResponse<any, any>> => {
+export const GetPostCommentsApi = async (params: RequestParams<{ postId: string; page?: number; perPage?: number; limit?: number; sortBy?: string; includeReplies?: boolean; maxDepth?: number }>): Promise<ServerResponse<any, any>> => {
     let url = interestEndPoints.getPostComments.replace(":postId", params.data?.postId as string) + "?"
     const { postId, ...rest } = params.data || {}
     const q = new URLSearchParams(rest as any).toString()

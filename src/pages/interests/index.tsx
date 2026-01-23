@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
 import { PlusIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
@@ -10,38 +10,89 @@ import { Error } from '@Jetzy/lib/_toaster'
 export default function InterestsListingPage() {
     const [interests, setInterests] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
+    const [loadingMore, setLoadingMore] = useState(false)
     const [search, setSearch] = useState('')
     const [activeCategory, setActiveCategory] = useState('All')
+    const [page, setPage] = useState(1)
+    const [hasMore, setHasMore] = useState(false)
+    const LIMIT = 10
 
     const categories = ['All', 'Travel', 'Food', 'Technology', 'Photography', 'Sports', 'Music', 'Business', 'Art']
 
     useEffect(() => {
-        fetchInterests()
+        handleResetAndFetch()
     }, [activeCategory])
 
-    const fetchInterests = async (searchQuery = '') => {
+    const handleResetAndFetch = () => {
+        setPage(1)
+        setInterests([])
+        fetchInterests(search, 1, true)
+    }
+
+    const fetchInterests = async (searchQuery = search, pageNum = 1, isInitial = false) => {
         try {
-            setLoading(true)
-            const params: any = {}
+            if (isInitial) setLoading(true)
+            else setLoadingMore(true)
+
+            const params: any = {
+                page: pageNum,
+                limit: LIMIT
+            }
             if (activeCategory !== 'All') params.category = activeCategory
             if (searchQuery) params.search = searchQuery
 
             const res = await ListInterestsApi({ data: params })
             if (res.status && res.data) {
                 const fetchedInterests = res.data.interests || res.data.docs || (Array.isArray(res.data) ? res.data : [])
-                setInterests(fetchedInterests)
+
+                if (isInitial) {
+                    setInterests(fetchedInterests)
+                } else {
+                    setInterests(prev => [...prev, ...fetchedInterests])
+                }
+
+                // Check pagination meta from API
+                const meta = res.data.pagination || {}
+                setHasMore(meta.nextPage !== null && fetchedInterests.length > 0)
+                setPage(pageNum)
             }
         } catch (err) {
             console.error(err)
             Error('Failed to load interest groups')
         } finally {
             setLoading(false)
+            setLoadingMore(false)
         }
     }
 
+    const loadMore = () => {
+        if (!loadingMore && hasMore) {
+            fetchInterests(search, page + 1)
+        }
+    }
+
+    const observerTarget = useRef(null)
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+                    loadMore()
+                }
+            },
+            { threshold: 1.0 }
+        )
+
+        if (observerTarget.current) {
+            observer.observe(observerTarget.current)
+        }
+
+        return () => observer.disconnect()
+    }, [hasMore, loadingMore, loading, page])
+
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault()
-        fetchInterests(search)
+        handleResetAndFetch()
     }
 
     return (
@@ -108,10 +159,17 @@ export default function InterestsListingPage() {
                         <Spinner />
                     </div>
                 ) : interests.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {interests.map((group) => (
-                            <InterestGroupCard key={group._id} group={group} />
-                        ))}
+                    <div className="space-y-12">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            {interests.map((group) => (
+                                <InterestGroupCard key={group._id} group={group} />
+                            ))}
+                        </div>
+
+                        {/* Infinite Scroll Sentinel */}
+                        <div ref={observerTarget} className="h-10 w-full flex justify-center items-center">
+                            {loadingMore && <Spinner />}
+                        </div>
                     </div>
                 ) : (
                     <div className="text-center py-20 bg-[#111] rounded-3xl border border-white/5 shadow-inner">

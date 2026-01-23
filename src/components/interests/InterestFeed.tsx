@@ -98,20 +98,27 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
 
             setComments(prev => {
                 const localComments = prev[postId] || [];
+                console.log('🔄 Merging comments - Local:', localComments.length, 'Server:', serverData.length);
+
                 // Merge server data with local comments
                 // Keep all server comments, and add any local comments that don't exist on server yet
                 const merged = [...serverData];
                 localComments.forEach(local => {
-                    if (!serverData.find((s: any) => s._id === local._id)) {
+                    // Only keep local ones that aren't in server data yet (by ID)
+                    const existsOnServer = serverData.find((s: any) => s._id === local._id);
+                    if (!existsOnServer) {
+                        console.log('➕ Adding local comment not found on server:', local._id, local.content);
                         merged.push(local);
                     }
                 });
 
-                // Sort by date if possible
+                console.log('✅ Final merged count:', merged.length);
+
+                // Sort by date to keep chat flow natural
                 return {
                     ...prev,
                     [postId]: merged.sort((a: any, b: any) =>
-                        new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+                        new Date(a.createdAt || Date.now()).getTime() - new Date(b.createdAt || Date.now()).getTime()
                     )
                 };
             });
@@ -123,7 +130,8 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
     const toggleComments = (postId: string) => {
         const isShowing = !showComments[postId]
         setShowComments(prev => ({ ...prev, [postId]: isShowing }))
-        if (isShowing && (!comments[postId] || comments[postId].length === 0)) {
+        // Always fetch when showing to ensure we have the full list (not just the 2 from feed API)
+        if (isShowing) {
             fetchComments(postId)
         }
     }
@@ -132,22 +140,28 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
         const text = newCommentTexts[postId];
         if (!text?.trim()) return;
 
-        const newComment = await onComment(postId, text);
         setNewCommentTexts(prev => ({ ...prev, [postId]: '' }));
 
-        if (newComment) {
-            // Optimistically add to local comments state
-            setComments(prev => ({
-                ...prev,
-                [postId]: [...(prev[postId] || []), newComment]
-            }));
+        try {
+            const newComment = await onComment(postId, text);
+            console.log('Comment created successfully:', newComment);
 
-            // Ensure comments are visible
-            setShowComments(prev => ({ ...prev, [postId]: true }));
+            if (newComment) {
+                // Optimistically add to local comments state
+                setComments(prev => ({
+                    ...prev,
+                    [postId]: [...(prev[postId] || []), newComment]
+                }));
+
+                // Ensure comments are visible
+                setShowComments(prev => ({ ...prev, [postId]: true }));
+            }
+        } catch (err) {
+            console.error('Failed to submit comment:', err);
         }
 
-        // Wait a bit before fetching the official list to account for eventual consistency
-        setTimeout(() => fetchComments(postId), 2000);
+        // Wait longer for backend to index the new comment before refreshing
+        setTimeout(() => fetchComments(postId), 5000);
     }
 
 

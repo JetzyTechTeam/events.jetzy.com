@@ -326,7 +326,17 @@ export default function InterestGroupPage() {
                 ))
                 // Delay fetchFeed to give backend time to update aggregators
                 setTimeout(() => fetchFeed(), 1000)
-                return res.data;
+
+                // Return data with optimistic author info if missing
+                return {
+                    ...res.data,
+                    author: res.data.author || res.data.user || {
+                        firstName: "Super",
+                        lastName: "Admin",
+                        image: "https://storage.googleapis.com/media-jetzy/jetzy/jetzy-prod/prod-dist/mnt/images/jetzy/user_profile/52f/b60/52fb607b331b4076bb9bf25aeccace73/base.jpg"
+                    },
+                    createdAt: res.data.createdAt || new Date().toISOString()
+                };
             }
         } catch (err) {
             Error('Failed to add comment')
@@ -337,15 +347,40 @@ export default function InterestGroupPage() {
 
     const handleFetchComments = async (postId: string) => {
         try {
-            console.log('Fetching comments for post:', postId);
-            const res = await GetPostCommentsApi({ data: { postId, perPage: 100 } })
-            // console.log('Fetch Comments Raw Response for', postId, ':', res);
+            console.log('Fetching all comments for post:', postId);
+            const res = await GetPostCommentsApi({
+                data: {
+                    postId,
+                    page: 1,
+                    limit: 100,
+                    sortBy: 'popular',
+                    includeReplies: true,
+                    maxDepth: 5
+                }
+            })
+            console.log('Raw API Response for comments:', res);
+
             // Some APIs might return status: false even if data is present
             if (res && res.data) {
-                const commentData = res.data.comments || res.data.docs || (Array.isArray(res.data) ? res.data : [])
-                console.log('Processed Comments for', postId, ':', commentData);
+                // Try multiple possible data locations
+                const commentData = res.data.comments || res.data.docs || res.data.data || (Array.isArray(res.data) ? res.data : [])
+                console.log('Extracted comment data:', commentData);
+                console.log('Comment count:', commentData.length);
+                console.log('Pagination metadata:', res.data.pagination);
+
+                // If we got fewer comments than expected, log a warning
+                if (res.data.pagination) {
+                    const { page, perPage, nextPage } = res.data.pagination;
+                    console.log(`📊 Pagination: Page ${page}, PerPage ${perPage}, NextPage: ${nextPage}`);
+                    if (nextPage) {
+                        console.warn('⚠️ There are more comments available! NextPage:', nextPage);
+                    }
+                }
+
                 return commentData
             }
+
+            console.warn('No data in response:', res);
             return []
         } catch (err) {
             console.error('Fetch comments error:', err)
