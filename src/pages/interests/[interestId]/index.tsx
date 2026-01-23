@@ -425,13 +425,6 @@ export default function InterestGroupPage() {
                             Feed
                             {activeTab === 'feed' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-app rounded-full" />}
                         </button>
-                        <button
-                            onClick={() => setActiveTab('members')}
-                            className={`pb-4 px-2 font-medium transition-colors relative ${activeTab === 'members' ? 'text-app' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            Members
-                            {activeTab === 'members' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-app rounded-full" />}
-                        </button>
                         {isAdmin && (
                             <button
                                 onClick={() => setActiveTab('requests')}
@@ -444,15 +437,24 @@ export default function InterestGroupPage() {
                         )}
                     </div>
 
-                    {isAdmin && (
+                    <div className="flex gap-4 items-center">
                         <button
-                            onClick={handleDeleteGroup}
-                            className="mb-4 text-gray-500 hover:text-red-500 transition-colors bg-gray-900/50 p-2 rounded-lg"
-                            title="Delete Group"
+                            onClick={() => setActiveTab('members')}
+                            className={`pb-4 px-2 font-medium transition-colors relative ${activeTab === 'members' ? 'text-app' : 'text-gray-400 hover:text-white'}`}
                         >
-                            <TrashIcon className="w-5 h-5" />
+                            Invite
+                            {activeTab === 'members' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-app rounded-full" />}
                         </button>
-                    )}
+                        {isAdmin && (
+                            <button
+                                onClick={handleDeleteGroup}
+                                className="mb-4 text-gray-500 hover:text-red-500 transition-colors bg-gray-900/50 p-2 rounded-lg"
+                                title="Delete Group"
+                            >
+                                <TrashIcon className="w-5 h-5" />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Content */}
