@@ -243,13 +243,13 @@ export default function InterestGroupPage() {
         }
     }
 
-    const handleCreatePost = async (text: string) => {
+    const handleCreatePost = async (text: string, media: any[] = []) => {
         try {
             const res = await CreatePostApi({
                 data: {
                     content: text,
                     // description: text,
-                    media: [],
+                    media: media,
                     interestIds: [interestId as string],
                     interest: [interestId as string],
                     privacy: 'public'

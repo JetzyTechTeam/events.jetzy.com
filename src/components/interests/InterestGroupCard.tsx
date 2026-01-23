@@ -24,9 +24,9 @@ export default function InterestGroupCard({ group }: InterestGroupCardProps) {
         <Link href={`/interests/${group._id}`} className="block group">
             <div className="bg-[#1E1E1E] rounded-2xl overflow-hidden shadow-lg hover:shadow-app/20 transition-all duration-300 hover:-translate-y-1 h-full flex flex-col border border-white/5">
                 <div className="relative h-48 w-full overflow-hidden bg-gray-900 flex items-center justify-center">
-                    {!imageError && group.image ? (
+                    {!imageError && (group.image || (group as any).coverImage) ? (
                         <img
-                            src={group.image}
+                            src={group.image || (group as any).coverImage}
                             alt={group.name}
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                             onError={() => setImageError(true)}

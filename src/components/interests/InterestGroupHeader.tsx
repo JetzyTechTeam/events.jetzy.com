@@ -17,9 +17,9 @@ export default function InterestGroupHeader({ interest, onJoin, onLeave, loading
             {/* Cover Image Background with Blur */}
             <div className="absolute inset-0 h-48 sm:h-64 w-full">
                 <div className="absolute inset-0 bg-gradient-to-t from-[#1E1E1E] to-transparent z-10" />
-                {interest?.image ? (
+                {interest?.image || interest?.coverImage ? (
                     <img
-                        src={interest.image}
+                        src={interest.image || interest.coverImage}
                         alt={interest.name}
                         className="w-full h-full object-cover opacity-60"
                     />
@@ -31,9 +31,9 @@ export default function InterestGroupHeader({ interest, onJoin, onLeave, loading
             <div className="relative z-20 px-6 pt-32 pb-6 sm:px-10 flex flex-col sm:flex-row items-end sm:items-center gap-6">
                 {/* Profile Image */}
                 <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl border-4 border-[#1E1E1E] overflow-hidden shadow-lg bg-gray-800 flex-shrink-0">
-                    {interest?.image ? (
+                    {interest?.image || interest?.coverImage ? (
                         <img
-                            src={interest.image}
+                            src={interest.image || interest.coverImage}
                             alt={interest.name}
                             className="w-full h-full object-cover"
                         />

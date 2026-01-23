@@ -59,7 +59,7 @@ export default function CreateInterestGroupPage() {
             const res = await response.json()
 
             if (res.status && res.data && res.data.length > 0) {
-                const uploadedUrl = typeof res.data[0] === 'string' ? res.data[0] : res.data[0]?.file || res.data[0]?.url
+                const uploadedUrl = res.data[0].fileUrl
                 setFormData(prev => ({ ...prev, image: uploadedUrl }))
                 Success('Image uploaded successfully')
             } else {
