@@ -22,7 +22,7 @@ import InterestFeed from '@Jetzy/components/interests/InterestFeed'
 import InterestMembers from '@Jetzy/components/interests/InterestMembers'
 import Spinner from '@Jetzy/components/misc/Spinner'
 import { Error, Success } from '@Jetzy/lib/_toaster'
-import { CheckIcon, XMarkIcon, TrashIcon } from '@heroicons/react/24/solid'
+import { CheckIcon, XMarkIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/solid'
 import PeopleWidget from '@Jetzy/components/users/PeopleWidget'
 
 export default function InterestGroupPage() {
@@ -363,6 +363,14 @@ export default function InterestGroupPage() {
             </Head>
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+                <button
+                    onClick={() => router.push('/interests')}
+                    className="flex items-center gap-2 text-gray-500 hover:text-white transition-colors mb-6 group w-fit"
+                >
+                    <ArrowLeftIcon className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                    Back to Interests
+                </button>
+
                 <InterestGroupHeader
                     interest={interest}
                     onJoin={handleJoin}
