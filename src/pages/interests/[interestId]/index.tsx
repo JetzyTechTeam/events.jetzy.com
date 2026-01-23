@@ -23,6 +23,7 @@ import InterestMembers from '@Jetzy/components/interests/InterestMembers'
 import Spinner from '@Jetzy/components/misc/Spinner'
 import { Error, Success } from '@Jetzy/lib/_toaster'
 import { CheckIcon, XMarkIcon, TrashIcon } from '@heroicons/react/24/solid'
+import PeopleWidget from '@Jetzy/components/users/PeopleWidget'
 
 export default function InterestGroupPage() {
     const router = useRouter()
@@ -30,6 +31,23 @@ export default function InterestGroupPage() {
     const [loading, setLoading] = useState(true)
     const [interest, setInterest] = useState<any>(null)
     const [activeTab, setActiveTab] = useState<'feed' | 'members' | 'requests'>('feed')
+    const [currentUser, setCurrentUser] = useState<any>(null)
+
+    useEffect(() => {
+        // Fetch current user session to potentially use as fallback if they are the creator
+        const fetchSession = async () => {
+            try {
+                const response = await fetch('/api/auth/session')
+                const session = await response.json()
+                if (session?.user) {
+                    setCurrentUser(session.user)
+                }
+            } catch (e) {
+                console.error(e)
+            }
+        }
+        fetchSession()
+    }, [])
 
     const isAdmin = interest?.isAdmin || interest?.currentUserMembership?.role === 'admin' || interest?.currentUserMembership?.role === 'creator';
     const isMember = interest?.isMember || interest?.currentUserMembership?.status === 'member';
@@ -59,6 +77,17 @@ export default function InterestGroupPage() {
             if (activeTab === 'requests') fetchRequests()
         }
     }, [interestId, activeTab])
+
+    // Debug interest object
+    useEffect(() => {
+        if (interest) {
+            console.log('Interest Object Debug:', {
+                creator: interest.creator,
+                user: interest.user,
+                fullObject: interest
+            })
+        }
+    }, [interest])
 
     const fetchInterestDetails = async () => {
         try {
@@ -393,6 +422,7 @@ export default function InterestGroupPage() {
                                 <span>Refresh</span>
                             </button>
                         </div>
+                        <PeopleWidget creator={interest?.creator || interest?.user || interest?.owner || (isAdmin ? currentUser : null)} />
                         <InterestFeed
                             posts={posts}
                             loading={loadingFeed}
@@ -409,6 +439,7 @@ export default function InterestGroupPage() {
                         interestId={interestId as string}
                         members={members}
                         loading={loadingMembers}
+                        creator={interest?.creator || interest?.user}
                     />
                 )}
 

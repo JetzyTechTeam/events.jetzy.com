@@ -8,9 +8,10 @@ interface InterestMembersProps {
     interestId: string;
     members: any[];
     loading: boolean;
+    creator?: any;
 }
 
-export default function InterestMembers({ interestId, members, loading }: InterestMembersProps) {
+export default function InterestMembers({ interestId, members, loading, creator }: InterestMembersProps) {
     const [showInviteModal, setShowInviteModal] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [searchResults, setSearchResults] = useState<any[]>([])
@@ -77,7 +78,28 @@ export default function InterestMembers({ interestId, members, loading }: Intere
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {members.map((member: any) => (
+                        {creator && (
+                            <div className="flex items-center gap-3 bg-app/10 border border-app/30 p-3 rounded-lg hover:bg-app/20 transition-colors">
+                                <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-700 flex-shrink-0 ring-2 ring-app/50">
+                                    {creator.image ? (
+                                        <img src={creator.image} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-white font-bold bg-app">
+                                            {(creator.firstName || 'A').charAt(0)}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="overflow-hidden">
+                                    <h3 className="text-white font-medium truncate">
+                                        {creator.firstName} {creator.lastName}
+                                    </h3>
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-[10px] bg-app text-white px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Admin</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {members.filter((m: any) => (m.userDetails?._id || m.user?._id) !== creator?._id).map((member: any) => (
                             <div key={member._id} className="flex items-center gap-3 bg-gray-800/50 p-3 rounded-lg hover:bg-gray-800 transition-colors">
                                 <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
                                     {(member.userDetails?.image || member.user?.image) ? (
