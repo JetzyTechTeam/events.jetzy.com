@@ -396,9 +396,9 @@ export default function InterestGroupPage() {
         }
     }
 
-    const handleComment = async (postId: string, text: string) => {
+    const handleComment = async (postId: string, text: string, image?: string) => {
         try {
-            const res = await CreateCommentApi({ data: { postId, content: text } })
+            const res = await CreateCommentApi({ data: { postId, content: text, image } })
             // @ts-ignore
             if (res.status || res.success) {
                 Success('Comment added')
@@ -412,6 +412,7 @@ export default function InterestGroupPage() {
                 // Return data with optimistic author info if missing
                 return {
                     ...res.data,
+                    image: res.data.image || image,
                     author: res.data.author || res.data.user || currentUser || {
                         firstName: currentUser?.firstName || "User",
                         lastName: currentUser?.lastName || "",

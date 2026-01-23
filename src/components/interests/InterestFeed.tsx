@@ -15,7 +15,7 @@ interface InterestFeedProps {
     onCreatePost: (text: string, media?: any[]) => void;
     onDeletePost: (postId: string) => void;
     onLike: (postId: string, isLiked: boolean) => void;
-    onComment: (postId: string, text: string) => Promise<any>;
+    onComment: (postId: string, text: string, image?: string) => Promise<any>;
     onFetchComments: (postId: string) => Promise<any[]>;
     onLikeComment?: (postId: string, commentId: string) => void;
     onUpdateComment?: (postId: string, commentId: string, content: string) => Promise<void>;
@@ -127,6 +127,20 @@ const PostComments = ({
                                 </p>
                             )}
 
+                            {comment.image && (
+                                <div className="mt-2 rounded-xl overflow-hidden max-w-[280px] border border-gray-700/50 shadow-inner group/img relative">
+                                    <img
+                                        src={comment.image}
+                                        alt="Comment media"
+                                        className="w-full h-auto max-h-[300px] object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                                        onClick={() => window.open(comment.image, '_blank')}
+                                    />
+                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity pointer-events-none flex items-center justify-center">
+                                        <span className="text-[10px] text-white bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">View Full Image</span>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="flex items-center gap-3 mt-1">
                                 <p className="text-[10px] text-gray-500">
                                     {comment.createdAt ? dayjs(comment.createdAt).fromNow() : ''}
@@ -186,6 +200,8 @@ export default function InterestFeed({ posts, loading, onCreatePost, onDeletePos
     const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [replyingTo, setReplyingTo] = useState<{ postId: string; commentId: string; userId: string; userName: string } | null>(null)
     const [editingComment, setEditingComment] = useState<{ postId: string; commentId: string; content: string } | null>(null)
+    const [commentImages, setCommentImages] = useState<{ [key: string]: File | null }>({})
+    const [commentImagePreviews, setCommentImagePreviews] = useState<{ [key: string]: string | null }>({})
 
     // Fetch current user session
     useEffect(() => {
@@ -267,6 +283,25 @@ export default function InterestFeed({ posts, loading, onCreatePost, onDeletePos
         setImagePreviews(prev => prev.filter((_, i) => i !== index))
     }
 
+    const handleCommentFileChange = (postId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        setCommentImages(prev => ({ ...prev, [postId]: file }))
+        const reader = new FileReader()
+        reader.onload = (e) => {
+            if (e.target?.result) {
+                setCommentImagePreviews(prev => ({ ...prev, [postId]: e.target!.result as string }))
+            }
+        }
+        reader.readAsDataURL(file)
+    }
+
+    const removeCommentImage = (postId: string) => {
+        setCommentImages(prev => ({ ...prev, [postId]: null }))
+        setCommentImagePreviews(prev => ({ ...prev, [postId]: null }))
+    }
+
     const fetchComments = async (postId: string) => {
         setLoadingComments(prev => ({ ...prev, [postId]: true }))
         try {
@@ -325,8 +360,36 @@ export default function InterestFeed({ posts, loading, onCreatePost, onDeletePos
 
         setNewCommentTexts(prev => ({ ...prev, [postId]: '' }));
 
+        // Upload image if any
+        let imageUrl = '';
+        const imageFile = commentImages[postId];
+        if (imageFile) {
+            try {
+                const token = typeof window !== 'undefined' ? sessionStorage.getItem('api_token') : null
+                const uploadUrl = 'https://prod-api.jetzy.com/api/v1/uploader/multiple'
+                const uploadData = new FormData()
+                uploadData.append('upload_file', imageFile)
+                uploadData.append('folder', 'posts')
+
+                const res = await fetch(uploadUrl, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: uploadData
+                })
+                const uploadRes = await res.json()
+                if (uploadRes.status && uploadRes.data && uploadRes.data.length > 0) {
+                    imageUrl = uploadRes.data[0].fileUrl;
+                }
+            } catch (err) {
+                console.error('Comment image upload failed:', err)
+            }
+        }
+
+        // Clear image state early
+        removeCommentImage(postId);
+
         try {
-            const newComment = await onComment(postId, text);
+            const newComment = await onComment(postId, text, imageUrl);
             console.log('Comment created successfully:', newComment);
 
             if (newComment) {
@@ -567,8 +630,38 @@ export default function InterestFeed({ posts, loading, onCreatePost, onDeletePos
                                         value={newCommentTexts[post._id] || ''}
                                         onChange={(e) => setNewCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
                                         onKeyDown={(e) => e.key === 'Enter' && handleCommentSubmit(post._id)}
-                                        className="w-full bg-gray-800/50 border-none rounded-lg px-3 py-1 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-app"
+                                        className="w-full bg-gray-800/50 border-none rounded-lg pl-3 pr-8 py-1 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-app"
                                     />
+                                    <label className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer text-gray-500 hover:text-app transition-colors">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleCommentFileChange(post._id, e)}
+                                        />
+                                    </label>
+                                    {commentImagePreviews[post._id] && (
+                                        <div className="absolute bottom-[calc(100%+8px)] left-0 bg-[#2A2A2A] p-1.5 rounded-xl border border-gray-700 shadow-[0_8px_30px_rgb(0,0,0,0.5)] flex items-center gap-2 z-20 group transition-all animate-in slide-in-from-bottom-2 duration-200">
+                                            <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-600 shadow-inner">
+                                                <img src={commentImagePreviews[post._id]!} alt="Preview" className="w-full h-full object-cover" />
+                                            </div>
+                                            <div className="flex flex-col justify-center pr-2">
+                                                <p className="text-[10px] text-gray-400 font-medium">Image attached</p>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); removeCommentImage(post._id); }}
+                                                    className="mt-1 flex items-center gap-1 text-[10px] text-red-500 hover:text-red-400 transition-colors font-bold"
+                                                >
+                                                    <XMarkIcon className="w-3 h-3" />
+                                                    Remove
+                                                </button>
+                                            </div>
+                                            <div className="absolute -bottom-1.5 left-4 w-3 h-3 bg-[#2A2A2A] border-r border-b border-gray-700 rotate-45" />
+                                        </div>
+                                    )}
                                 </div>
                                 <button
                                     onClick={() => handleCommentSubmit(post._id)}

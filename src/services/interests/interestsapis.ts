@@ -65,8 +65,11 @@ export const GetInterestMembersApi = async (params: RequestParams<{ interestId: 
     return await GET(url)
 }
 
-export const InviteMembersApi = async (params: RequestParams<{ interestId: string; users: string[]; message?: string }>): Promise<ServerResponse<any, any>> => {
-    return await POST(interestEndPoints.invite.replace(":interestId", params.data?.interestId as string), { users: params.data?.users, message: params.data?.message })
+export const InviteMembersApi = async (params: RequestParams<{ interestId: string; userId?: string; users?: string[]; message?: string }>): Promise<ServerResponse<any, any>> => {
+    const body: any = { message: params.data?.message }
+    if (params.data?.userId) body.userId = params.data.userId
+    if (params.data?.users) body.users = params.data.users
+    return await POST(interestEndPoints.invite.replace(":interestId", params.data?.interestId as string), body)
 }
 
 export const RemoveMemberApi = async (params: RequestParams<{ interestId: string; users: string[] }>): Promise<ServerResponse<any, any>> => {
@@ -120,8 +123,11 @@ export const GetPostCommentsApi = async (params: RequestParams<{ postId: string;
     return await GET(url)
 }
 
-export const CreateCommentApi = async (params: RequestParams<{ postId: string; content: string }>): Promise<ServerResponse<any, any>> => {
-    return await POST(interestEndPoints.createComment.replace(":postId", params.data?.postId as string), { content: params.data?.content })
+export const CreateCommentApi = async (params: RequestParams<{ postId: string; content: string; image?: string }>): Promise<ServerResponse<any, any>> => {
+    return await POST(interestEndPoints.createComment.replace(":postId", params.data?.postId as string), {
+        content: params.data?.content,
+        image: params.data?.image
+    })
 }
 
 export const DeleteCommentApi = async (params: RequestParams<{ commentId: string }>): Promise<ServerResponse<any, any>> => {
@@ -131,6 +137,15 @@ export const DeleteCommentApi = async (params: RequestParams<{ commentId: string
 
 export const ReactToCommentApi = async (params: RequestParams<{ commentId: string; type: string }>): Promise<ServerResponse<any, any>> => {
     return await POST(interestEndPoints.reactToComment, params.data)
+}
+
+export const GetCommentReactionsApi = async (params: RequestParams<{ commentId: string; page?: number; perPage?: number }>): Promise<ServerResponse<any, any>> => {
+    let url = interestEndPoints.getCommentReactions + "?"
+    if (params.data) {
+        const q = new URLSearchParams(params.data as any).toString()
+        url += q
+    }
+    return await GET(url)
 }
 
 export const UpdateCommentApi = async (params: RequestParams<{ commentId: string; content: string }>): Promise<ServerResponse<any, any>> => {

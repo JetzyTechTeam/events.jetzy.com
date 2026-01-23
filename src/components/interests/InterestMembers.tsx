@@ -56,7 +56,7 @@ export default function InterestMembers({ interestId, members, loading, creator 
     const handleInvite = async (userId: string) => {
         try {
             setInvitingIds(prev => [...prev, userId])
-            const res = await InviteMembersApi({ data: { interestId, users: [userId], message: "Join our interest group!" } })
+            const res = await InviteMembersApi({ data: { interestId, userId, message: "Join our interest group!" } })
             if (res.status) {
                 Success('Invitation sent')
                 // Update local state to show invited
