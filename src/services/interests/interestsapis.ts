@@ -120,3 +120,7 @@ export const CreateCommentApi = async (params: RequestParams<{ postId: string; c
     return await POST(interestEndPoints.createComment.replace(":postId", params.data?.postId as string), { content: params.data?.content })
 }
 
+export const DeleteCommentApi = async (params: RequestParams<{ commentId: string }>): Promise<ServerResponse<any, any>> => {
+    return await DROP(interestEndPoints.deleteComment.replace(":commentId", params.data?.commentId as string))
+}
+

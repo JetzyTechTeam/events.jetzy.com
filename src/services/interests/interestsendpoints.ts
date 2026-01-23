@@ -18,4 +18,5 @@ export const interestEndPoints = {
     likePost: "external:/v2/posts/:postId/like",
     getPostComments: "external:/v2/posts/:postId/comments",
     createComment: "external:/v2/posts/:postId/comments",
+    deleteComment: "external:/v1/post/comments/:commentId",
 }

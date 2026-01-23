@@ -1,9 +1,11 @@
-import React, { useState } from 'react'
-import { HeartIcon as HeartIconSolid, ChatBubbleLeftIcon } from '@heroicons/react/24/solid'
+import React, { useState, useEffect } from 'react'
+import { HeartIcon as HeartIconSolid, ChatBubbleLeftIcon, TrashIcon } from '@heroicons/react/24/solid'
 import { HeartIcon as HeartIconOutline } from '@heroicons/react/24/outline'
 import Spinner from '@Jetzy/components/misc/Spinner'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
+import { DeleteCommentApi } from '@Jetzy/services/interests/interestsapis'
+import { Error, Success } from '@Jetzy/lib/_toaster'
 
 dayjs.extend(relativeTime)
 
@@ -26,6 +28,23 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
     const [selectedImages, setSelectedImages] = useState<File[]>([])
     const [uploadingImage, setUploadingImage] = useState(false)
     const [imagePreviews, setImagePreviews] = useState<string[]>([])
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
+    // Fetch current user session
+    useEffect(() => {
+        const fetchSession = async () => {
+            try {
+                const response = await fetch('/api/auth/session')
+                const session = await response.json()
+                if (session?.user) {
+                    setCurrentUserId(session.user.id || session.user._id)
+                }
+            } catch (e) {
+                console.error('Failed to fetch session:', e)
+            }
+        }
+        fetchSession()
+    }, [])
 
     const handlePostSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -162,6 +181,35 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
 
         // Wait longer for backend to index the new comment before refreshing
         setTimeout(() => fetchComments(postId), 5000);
+    }
+
+    const handleDeleteComment = async (postId: string, commentId: string) => {
+        if (!confirm('Are you sure you want to delete this comment? This action cannot be undone.')) {
+            return;
+        }
+
+        // Optimistically remove from UI
+        setComments(prev => ({
+            ...prev,
+            [postId]: (prev[postId] || []).filter(c => c._id !== commentId)
+        }));
+
+        try {
+            const res = await DeleteCommentApi({ data: { commentId } });
+            // @ts-ignore
+            if (res.status || res.success) {
+                Success('Comment deleted successfully');
+                // Refresh comments after a delay
+                setTimeout(() => fetchComments(postId), 1000);
+            } else {
+                throw new Error('Delete failed');
+            }
+        } catch (err) {
+            Error('Failed to delete comment');
+            console.error('Delete comment error:', err);
+            // Rollback on error
+            fetchComments(postId);
+        }
     }
 
 
@@ -319,8 +367,11 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                                 ) : (
                                     comments[post._id]?.map((comment) => {
                                         const author = comment.author || comment.userDetails || comment.user || {};
+                                        const authorId = author._id || author.id || comment.userId;
+                                        const isCommentAuthor = currentUserId && authorId && (currentUserId === authorId);
+
                                         return (
-                                            <div key={comment._id} className="flex gap-3">
+                                            <div key={comment._id} className="flex gap-3 group">
                                                 <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700 flex-shrink-0">
                                                     {author.image ? (
                                                         <img src={author.image} alt="" className="w-full h-full object-cover" />
@@ -330,7 +381,7 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="flex-1 bg-gray-800/30 rounded-lg p-2">
+                                                <div className="flex-1 bg-gray-800/30 rounded-lg p-2 relative">
                                                     <h5 className="text-white text-xs font-semibold">
                                                         {author.firstName} {author.lastName}
                                                     </h5>
@@ -338,6 +389,15 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                                                     <p className="text-[10px] text-gray-500 mt-1">
                                                         {comment.createdAt ? dayjs(comment.createdAt).fromNow() : ''}
                                                     </p>
+                                                    {isCommentAuthor && (
+                                                        <button
+                                                            onClick={() => handleDeleteComment(post._id, comment._id)}
+                                                            className="absolute top-2 right-2 text-gray-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                                            title="Delete comment"
+                                                        >
+                                                            <TrashIcon className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         )
