@@ -24,8 +24,27 @@ export default function InterestMembers({ interestId, members, loading, creator 
         try {
             setSearching(true)
             const res = await GetUsersToInviteApi({ data: { interestId, query: searchQuery } })
-            if (res.status) {
-                setSearchResults(res.data.docs || [])
+            console.log("Search invite response:", res)
+
+            let users: any[] = []
+
+            const responseData = res as any
+            if (Array.isArray(responseData)) {
+                users = responseData
+            } else if (Array.isArray(responseData?.data)) {
+                users = responseData.data
+            } else if (Array.isArray(responseData?.data?.docs)) {
+                users = responseData.data.docs
+            } else if (Array.isArray(responseData?.data?.users)) {
+                users = responseData.data.users
+            } else if (Array.isArray(responseData?.docs)) {
+                users = responseData.docs
+            } else if (Array.isArray(responseData?.users)) { // Some APIs return { users: [] }
+                users = responseData.users
+            }
+
+            if (users) {
+                setSearchResults(users)
             }
         } catch (err) {
             console.error(err)
