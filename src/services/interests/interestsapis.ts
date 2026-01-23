@@ -92,7 +92,7 @@ export const JoinRequestActionApi = async (params: RequestParams<{ interestId: s
     return await POST(url, { action: params.data?.action })
 }
 
-export const GetInterestFeedApi = async (params: RequestParams<{ interestId: string; page?: number; perPage?: number }>): Promise<ServerResponse<any, any>> => {
+export const GetInterestFeedApi = async (params: RequestParams<{ interestId: string; page?: number; perPage?: number; sort?: string; ts?: number }>): Promise<ServerResponse<any, any>> => {
     let url = interestEndPoints.feed.replace(":interestId", params.data?.interestId as string) + "?"
     const { interestId, ...rest } = params.data || {}
     const q = new URLSearchParams(rest as any).toString()

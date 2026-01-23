@@ -77,14 +77,34 @@ export default function InterestGroupPage() {
         }
     }
 
+    // Track successfully created post to handle eventual consistency (indexing lag)
+    const latestCreatedPostRef = React.useRef<any>(null)
+
     const fetchFeed = async () => {
         try {
             setLoadingFeed(true)
-            const res = await GetInterestFeedApi({ data: { interestId: interestId as string } })
+            const res = await GetInterestFeedApi({ data: { interestId: interestId as string, page: 1, perPage: 20, sort: '-createdAt', ts: Date.now() } })
             // @ts-ignore
-            if ((res.status || res.success) && res.data) {
+            if (res.status || res.success) {
                 console.log('Feed API Response Data:', res.data);
-                const feedData = res.data.posts || res.data.docs || (Array.isArray(res.data) ? res.data : [])
+                let feedData = res.data?.posts || res.data?.docs || res.data?.data || (Array.isArray(res.data) ? res.data : [])
+
+                // Smart Merge: If we recently created a post but backend hasn't indexed it yet, inject it back in.
+                if (latestCreatedPostRef.current) {
+                    const found = feedData.find((p: any) => p._id === latestCreatedPostRef.current._id);
+                    if (!found) {
+                        console.log('Re-injecting missing optimistic post:', latestCreatedPostRef.current._id);
+                        feedData = [latestCreatedPostRef.current, ...feedData];
+                    }
+                }
+
+                // Ensure sorted by newest first
+                feedData = feedData.sort((a: any, b: any) => {
+                    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return dateB - dateA;
+                })
+
                 console.log('First Post Example:', feedData[0]);
                 setPosts(feedData)
             }
@@ -209,8 +229,16 @@ export default function InterestGroupPage() {
             if (res.status) {
                 Success('Post created')
                 console.log('Create Post Response:', res);
-                // Delay fetch to allow backend propagation
-                setTimeout(() => fetchFeed(), 1000)
+                if (res.data) {
+                    const newPost = {
+                        ...res.data,
+                        createdAt: res.data.createdAt || new Date().toISOString(),
+                        user: typeof res.data.user === 'string' ? { _id: res.data.user, firstName: 'Me', image: null } : res.data.user
+                    }
+                    latestCreatedPostRef.current = newPost;
+                    setPosts(prev => [newPost, ...prev])
+                }
+                setTimeout(() => fetchFeed(), 4000)
             }
         } catch (err) {
             Error('Failed to create post')
@@ -355,14 +383,25 @@ export default function InterestGroupPage() {
 
                 {/* Content */}
                 {activeTab === 'feed' && (
-                    <InterestFeed
-                        posts={posts}
-                        loading={loadingFeed}
-                        onCreatePost={handleCreatePost}
-                        onLike={handleLike}
-                        onComment={handleComment}
-                        onFetchComments={handleFetchComments}
-                    />
+                    <>
+                        <div className="flex justify-end mb-2">
+                            <button
+                                onClick={fetchFeed}
+                                className="text-xs text-app hover:text-white transition-colors flex items-center gap-1"
+                                disabled={loadingFeed}
+                            >
+                                <span>Refresh</span>
+                            </button>
+                        </div>
+                        <InterestFeed
+                            posts={posts}
+                            loading={loadingFeed}
+                            onCreatePost={handleCreatePost}
+                            onLike={handleLike}
+                            onComment={handleComment}
+                            onFetchComments={handleFetchComments}
+                        />
+                    </>
                 )}
 
                 {activeTab === 'members' && (
