@@ -5,7 +5,7 @@ import Spinner from '@Jetzy/components/misc/Spinner'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { DeleteCommentApi } from '@Jetzy/services/interests/interestsapis'
-import { Error, Success } from '@Jetzy/lib/_toaster'
+import { Error as ErrorToast, Success } from '@Jetzy/lib/_toaster'
 
 dayjs.extend(relativeTime)
 
@@ -205,7 +205,7 @@ export default function InterestFeed({ posts, loading, onCreatePost, onLike, onC
                 throw new Error('Delete failed');
             }
         } catch (err) {
-            Error('Failed to delete comment');
+            ErrorToast('Failed to delete comment');
             console.error('Delete comment error:', err);
             // Rollback on error
             fetchComments(postId);
