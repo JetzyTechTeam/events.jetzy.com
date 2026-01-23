@@ -277,7 +277,11 @@ const Navbar = () => {
               <MenuItem
                 bg="black"
                 _hover={{ bg: "gray.700" }}
-                onClick={() => signOut({ callbackUrl: "/" })}
+                onClick={() => {
+                  // Clear session storage before logout
+                  sessionStorage?.clear();
+                  signOut({ callbackUrl: "/" });
+                }}
               >
                 Logout
               </MenuItem>

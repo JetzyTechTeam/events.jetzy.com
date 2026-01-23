@@ -24,6 +24,9 @@ import Spinner from '@Jetzy/components/misc/Spinner'
 import { Error, Success } from '@Jetzy/lib/_toaster'
 import { CheckIcon, XMarkIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/solid'
 import PeopleWidget from '@Jetzy/components/users/PeopleWidget'
+import { useAppSelector } from '@Jetzy/redux/stores'
+import { getAuthUser } from '@Jetzy/redux/reducers/appSlice'
+import { useSession } from 'next-auth/react'
 
 export default function InterestGroupPage() {
     const router = useRouter()
@@ -31,25 +34,39 @@ export default function InterestGroupPage() {
     const [loading, setLoading] = useState(true)
     const [interest, setInterest] = useState<any>(null)
     const [activeTab, setActiveTab] = useState<'feed' | 'members' | 'requests'>('feed')
-    const [currentUser, setCurrentUser] = useState<any>(null)
 
+    // Client-side authentication check
+    const { data: session, status } = useSession()
+
+    // Redirect to login if not authenticated
     useEffect(() => {
-        // Fetch current user session to potentially use as fallback if they are the creator
-        const fetchSession = async () => {
-            try {
-                const response = await fetch('/api/auth/session')
-                const session = await response.json()
-                if (session?.user) {
-                    setCurrentUser(session.user)
-                }
-            } catch (e) {
-                console.error(e)
-            }
+        if (status === 'unauthenticated') {
+            const currentPath = router.asPath
+            router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
         }
-        fetchSession()
-    }, [])
+    }, [status, router])
 
-    const isAdmin = interest?.isAdmin || interest?.currentUserMembership?.role === 'admin' || interest?.currentUserMembership?.role === 'creator';
+    // Use Redux store user instead of local state - this updates when session changes
+    const currentUser = useAppSelector(getAuthUser)
+
+    // FIX: Backend returns isAdmin: true for all users, so we need to check manually
+    // Check if current user is the creator or has admin role in membership
+    const isAdmin = React.useMemo(() => {
+        if (!interest || !currentUser) return false;
+
+        // Get creator ID from various possible locations
+        const creatorId = interest.creator?._id || interest.creator?.id || interest.creator || interest.user?._id || interest.user?.id || interest.user;
+        const currentUserId = currentUser._id || currentUser.id;
+
+        // Check if user is creator
+        const isCreator = creatorId === currentUserId;
+
+        // Check if user has admin/creator role in membership
+        const hasAdminRole = interest?.currentUserMembership?.role === 'admin' || interest?.currentUserMembership?.role === 'creator';
+
+        return isCreator || hasAdminRole;
+    }, [interest, currentUser]);
+
     const isMember = interest?.isMember || interest?.currentUserMembership?.status === 'member';
 
     // Feed State
@@ -78,6 +95,7 @@ export default function InterestGroupPage() {
         }
     }, [interestId, activeTab])
 
+
     // Debug interest object
     useEffect(() => {
         if (interest) {
@@ -86,8 +104,25 @@ export default function InterestGroupPage() {
                 user: interest.user,
                 fullObject: interest
             })
+
+            // Debug isAdmin calculation
+            const creatorId = interest.creator?._id || interest.creator?.id || interest.creator || interest.user?._id || interest.user?.id || interest.user;
+            const currentUserId = currentUser?._id || currentUser?.id;
+            const isCreator = creatorId === currentUserId;
+            const hasAdminRole = interest?.currentUserMembership?.role === 'admin' || interest?.currentUserMembership?.role === 'creator';
+
+            console.log('🔐 Admin Check Debug:', {
+                'interest.isAdmin (UNRELIABLE)': interest?.isAdmin,
+                'creatorId': creatorId,
+                'currentUserId': currentUserId,
+                'isCreator': isCreator,
+                'currentUserMembership': interest?.currentUserMembership,
+                'membership.role': interest?.currentUserMembership?.role,
+                'hasAdminRole': hasAdminRole,
+                'FINAL isAdmin': isCreator || hasAdminRole
+            });
         }
-    }, [interest])
+    }, [interest, currentUser])
 
     const fetchInterestDetails = async () => {
         try {
@@ -330,10 +365,10 @@ export default function InterestGroupPage() {
                 // Return data with optimistic author info if missing
                 return {
                     ...res.data,
-                    author: res.data.author || res.data.user || {
-                        firstName: "Super",
-                        lastName: "Admin",
-                        image: "https://storage.googleapis.com/media-jetzy/jetzy/jetzy-prod/prod-dist/mnt/images/jetzy/user_profile/52f/b60/52fb607b331b4076bb9bf25aeccace73/base.jpg"
+                    author: res.data.author || res.data.user || currentUser || {
+                        firstName: currentUser?.firstName || "User",
+                        lastName: currentUser?.lastName || "",
+                        image: currentUser?.image || null
                     },
                     createdAt: res.data.createdAt || new Date().toISOString()
                 };
@@ -393,6 +428,16 @@ export default function InterestGroupPage() {
         return <div className="min-h-screen flex items-center justify-center bg-black"><Spinner /></div>
     }
 
+    // Show loading while checking authentication
+    if (status === 'loading') {
+        return <div className="min-h-screen flex items-center justify-center bg-black"><Spinner /></div>
+    }
+
+    // Don't render if not authenticated (will redirect)
+    if (status === 'unauthenticated') {
+        return <div className="min-h-screen flex items-center justify-center bg-black"><Spinner /></div>
+    }
+
     return (
         <div className="min-h-screen bg-black pb-20">
             <Head>
@@ -400,13 +445,15 @@ export default function InterestGroupPage() {
             </Head>
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-                <button
-                    onClick={() => router.push('/interests')}
-                    className="flex items-center gap-2 text-gray-500 hover:text-white transition-colors mb-6 group w-fit"
-                >
-                    <ArrowLeftIcon className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                    Back to Interests
-                </button>
+                {isAdmin && (
+                    <button
+                        onClick={() => router.push('/interests')}
+                        className="flex items-center gap-2 text-gray-500 hover:text-white transition-colors mb-6 group w-fit"
+                    >
+                        <ArrowLeftIcon className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                        Back to Interests
+                    </button>
+                )}
 
                 <InterestGroupHeader
                     interest={interest}

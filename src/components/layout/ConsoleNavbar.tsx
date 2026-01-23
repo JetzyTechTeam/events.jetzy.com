@@ -8,6 +8,8 @@ import Image from "next/image"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { signOut, useSession } from "next-auth/react"
 import Link from "next/link"
+import { useAppDispatch } from "@Jetzy/redux/stores"
+import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 
 const navigation = [
 	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
@@ -19,7 +21,14 @@ const navigation = [
 export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	// Logout user from system
 	const { data: session } = useSession()
-	const logout = () => signOut({callbackUrl: '/'})
+	const dispatch = useAppDispatch()
+
+	const logout = () => {
+		// Clear Redux session storage first
+		dispatch(destroySession({}))
+		// Then sign out
+		signOut({ callbackUrl: '/' })
+	}
 
 	const user = {
 		name: session?.user?.name,
@@ -31,8 +40,8 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	const userRole = session?.user?.role;
 
 	const filteredNavigation = userRole === Roles.USER
-  ? navigation.filter(item => item.name === Pages.Dasshboard)
-  : navigation;
+		? navigation.filter(item => item.name === Pages.Dasshboard)
+		: navigation;
 
 	return (
 		<Disclosure as="nav" className="bg-gray-800">
@@ -76,10 +85,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 											<Menu.Button className="relative flex max-w-xs items-center rounded-full bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800">
 												<span className="absolute -inset-1.5" />
 												<span className="sr-only">Open user menu</span>
-												{user.imageUrl ?	<img className="h-10 w-10 rounded-full" src={user.imageUrl} alt="" />
-							: 
-							<div className="h-10 w-10 rounded-full bg-gray-500" />	
-							}
+												{user.imageUrl ? <img className="h-10 w-10 rounded-full" src={user.imageUrl} alt="" />
+													:
+													<div className="h-10 w-10 rounded-full bg-gray-500" />
+												}
 											</Menu.Button>
 										</div>
 										<Transition
@@ -136,10 +145,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 						<div className="border-t border-gray-700 pb-3 pt-4">
 							<div className="flex items-center px-5">
 								<div className="flex-shrink-0">
-								{user.imageUrl ?	<img className="h-10 w-10 rounded-full" src={user.imageUrl} alt="" />
-							: 
-							<div className="h-10 w-10 rounded-full bg-gray-500" />	
-							}
+									{user.imageUrl ? <img className="h-10 w-10 rounded-full" src={user.imageUrl} alt="" />
+										:
+										<div className="h-10 w-10 rounded-full bg-gray-500" />
+									}
 								</div>
 								<div className="ml-3">
 									<div className="text-base font-medium leading-none text-white">{user.name}</div>
