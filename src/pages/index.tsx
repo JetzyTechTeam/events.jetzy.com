@@ -1,11 +1,11 @@
 import EventListing from "@/components/misc/EventsListing";
-import { Events } from "@/models/events";
 import { IEvent } from "@/models/events/types";
 import { GetServerSideProps } from "next";
-import { getServerSession } from "next-auth";
 import dynamic from "next/dynamic";
 import React from "react";
-import { authOptions } from "./api/auth/[...nextauth]";
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+import { Spinner, Center } from "@chakra-ui/react";
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), {
   ssr: false,
@@ -22,66 +22,54 @@ type Props = {
   };
 };
 
-export default function Home({ events, pagination }: Props) {
-  const data = events ? (JSON.parse(events) as IEvent[]) : [];
+export default function Home(props: Props) {
+  // Use props if available (SSR/fallback), otherwise fetch
+  const [page, setPage] = React.useState(1);
 
-  if (!events) return <div>No events found</div>;
+  const { data, isLoading } = useQuery({
+    queryKey: ["events", page],
+    queryFn: async () => {
+      const response = await axios.get(`/api/events?page=${page}`);
+      return response.data;
+    },
+    initialData: props.events ? {
+      data: JSON.parse(props.events) as IEvent[],
+      pagination: props.pagination
+    } : undefined,
+    enabled: !props.events
+  });
 
-  const { page, totalPages } = pagination;
+  if (isLoading) return <Center h="100vh"><Spinner /></Center>;
 
-  return <EventListing pagination={pagination} items={data} />;
+  if (!data || !data.data) return <div>No events found</div>;
+
+  const eventsData = data.data as IEvent[];
+  const paginationData = data.pagination || {
+    total: 0,
+    page: 1,
+    showing: 0,
+    limit: 20,
+    totalPages: 1
+  };
+
+  return <EventListing pagination={paginationData} items={eventsData} />;
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (
   context
 ) => {
-  const session = await getServerSession(context.req, context.res, authOptions);
-
-  // lets paginate the events
-  const limit = 20;
-  const page = context.query.page ? parseInt(context.query.page as string) : 1;
-  const skip = (page - 1) * limit;
-
-  // Check if user is signed in
-  const isSignedIn = !!session;
-
-  // Define the query based on authentication status
-  let query: any = { isDeleted: false, privacy: "public" };
-
-  // If user is not signed in, only show events that have not ended
-  if (!isSignedIn) {
-    query.endsOn = { $gte: new Date() };
-  }
-
-  // Get events based on authentication status
-  const events = await Events.find(query)
-    .skip(skip)
-    .limit(limit)
-    .sort({ createdAt: -1 });
-
-  if (!events) return { props: { events: null, pagination: null } };
-
-  // get total count of events based on authentication status
-  const total = await Events.countDocuments(query);
-  // serialize the events
-  const data = events.map((event) => event.toJSON());
-
-  // calculate page total and current page
-  const totalPages = Math.ceil(total / limit);
-
-  // pagination object
-  const pagination = {
-    total,
-    page,
-    showing: data.length,
-    limit,
-    totalPages,
-  };
-
+  // Return empty props to bypass build-time DB connection issues
+  // Data will be fetched on client side
   return {
     props: {
-      events: JSON.stringify(data),
-      pagination,
+      events: null,
+      pagination: {
+        total: 0,
+        page: 1,
+        showing: 0,
+        limit: 20,
+        totalPages: 0,
+      },
     },
   };
 };

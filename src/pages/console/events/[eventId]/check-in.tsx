@@ -5,27 +5,43 @@ import CheckInStats from "@/components/CheckInStats"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
 import { authorizedOnly } from "@/lib/authSession"
-import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
-import { Box, Container, Heading, Text, Alert, AlertIcon } from "@chakra-ui/react"
+import { Box, Container, Heading, Text, Alert, AlertIcon, Spinner, Center } from "@chakra-ui/react"
+import { useQuery } from "@tanstack/react-query"
+import axios from "axios"
+import { useRouter } from "next/router"
 
 interface CheckInPageProps {
 	event: string | null
 }
 
 export default function CheckInPage({ event }: CheckInPageProps) {
-	if (!event) {
+	const router = useRouter()
+	const { eventId } = router.query
+
+	const { data: eventData, isLoading, error } = useQuery({
+		queryKey: ["event", eventId],
+		queryFn: async () => {
+			if (!eventId) return null;
+			const response = await axios.get(`/api/events/${eventId}`)
+			return response.data
+		},
+		initialData: event ? JSON.parse(event) : undefined,
+		enabled: !!eventId && !event
+	})
+
+	if (isLoading) return <ConsoleLayout page={Pages.Manage}><Center h="50vh"><Spinner size="xl" /></Center></ConsoleLayout>
+
+	if (error || !eventData) {
 		return (
 			<ConsoleLayout page={Pages.Manage}>
 				<Alert status="error">
 					<AlertIcon />
-					Event not found
+					Event not found or failed to load.
 				</Alert>
 			</ConsoleLayout>
 		)
 	}
-
-	const eventData: IEvent = JSON.parse(event)
 
 	return (
 		<ConsoleLayout page={Pages.Manage} maxW="max-w-7xl">
@@ -45,42 +61,9 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 		return authResult
 	}
 
-	const { eventId } = context.params || {}
-
-	if (!eventId) {
-		return {
-			props: {
-				event: null,
-			},
-		}
-	}
-
-	try {
-		// Fetch the event
-		const event = await Events.findById(eventId).lean()
-
-		if (!event) {
-			return {
-				props: {
-					event: null,
-				},
-			}
-		}
-
-		return {
-			props: {
-				event: JSON.stringify({
-					...event,
-					_id: event._id.toString(),
-				}),
-			},
-		}
-	} catch (error) {
-		console.error("Error fetching event:", error)
-		return {
-			props: {
-				event: null,
-			},
-		}
+	return {
+		props: {
+			event: null,
+		},
 	}
 }
