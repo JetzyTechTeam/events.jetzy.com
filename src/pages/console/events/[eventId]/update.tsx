@@ -18,7 +18,7 @@ import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
 import { IEvent } from "@/models/events/types"
-import { EmailProps } from "@/actions/send-update-email-to-users.action"
+import { EmailProps } from "@/lib/email-service"
 import axios from "axios"
 import {
 	Box,

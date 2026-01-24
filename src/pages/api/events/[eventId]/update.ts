@@ -99,7 +99,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
 		// Find the event by id and update it
-		const newEvent = await Events.updateOne(
+		const newEvent = await Events.findOneAndUpdate(
 			{
 				_id: new Types.ObjectId(eventId as string),
 			},

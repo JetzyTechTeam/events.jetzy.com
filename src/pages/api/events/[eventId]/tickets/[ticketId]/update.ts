@@ -28,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { eventId, ticketId } = req.query
 
 		// Update the ticket
-		const event = await Events.updateOne(
+		const event = await Events.findOneAndUpdate(
 			{ _id: eventId, "tickets._id": ticketId },
 			{
 				$set: {

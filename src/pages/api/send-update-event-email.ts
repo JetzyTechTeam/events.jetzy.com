@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next"
-import { sendUpdateEventEmail } from "@/actions/send-update-email-to-users.action"
+import { sendUpdateEventEmailLogic as sendUpdateEventEmail } from "@/lib/email-service"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -32,19 +32,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const data = {
-        eventName,
-        oldEventName,
-        location,
-        oldLocation,
-        startDate,
-        oldStartDate,
-        endDate,
-        oldEndDate,
-        endTime,
-        oldEndTime,
-        startTime,
-        oldStartTime,
-        userEmail
+      eventName,
+      oldEventName,
+      location,
+      oldLocation,
+      startDate,
+      oldStartDate,
+      endDate,
+      oldEndDate,
+      endTime,
+      oldEndTime,
+      startTime,
+      oldStartTime,
+      userEmail
     }
 
     await sendUpdateEventEmail(data)
