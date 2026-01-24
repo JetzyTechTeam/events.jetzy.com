@@ -7,9 +7,10 @@ interface InterestGroupHeaderProps {
     onJoin: () => void;
     onLeave: () => void;
     loading: boolean;
+    memberCount?: number;
 }
 
-export default function InterestGroupHeader({ interest, onJoin, onLeave, loading }: InterestGroupHeaderProps) {
+export default function InterestGroupHeader({ interest, onJoin, onLeave, loading, memberCount }: InterestGroupHeaderProps) {
     const isMember = interest?.isMember || interest?.membershipStatus === 'member' || interest?.currentUserMembership?.status === 'member';
 
     return (
@@ -52,7 +53,7 @@ export default function InterestGroupHeader({ interest, onJoin, onLeave, loading
                     <div className="flex items-center gap-4 text-sm text-gray-400">
                         <div className="flex items-center gap-1 bg-black/30 px-3 py-1 rounded-full backdrop-blur-sm">
                             <UserGroupIcon className="w-4 h-4 text-app" />
-                            <span>{interest?.memberCount || 0} Members</span>
+                            <span>{memberCount ?? interest?.memberCount ?? 0} Members</span>
                         </div>
                         <div className="flex items-center gap-1 bg-black/30 px-3 py-1 rounded-full backdrop-blur-sm">
                             <span className={`w-2 h-2 rounded-full ${interest?.type === 'public' ? 'bg-green-500' : 'bg-yellow-500'}`} />

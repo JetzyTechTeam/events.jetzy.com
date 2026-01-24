@@ -6,9 +6,10 @@ import Link from 'next/link'
 interface PeopleWidgetProps {
     creator?: any;
     members?: any[];
+    onViewAll?: () => void;
 }
 
-export default function PeopleWidget({ creator, members }: PeopleWidgetProps) {
+export default function PeopleWidget({ creator, members, onViewAll }: PeopleWidgetProps) {
     console.log('PeopleWidget Props:', { creator, membersCount: members?.length });
     const [users, setUsers] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
@@ -58,7 +59,10 @@ export default function PeopleWidget({ creator, members }: PeopleWidgetProps) {
         <div className="bg-[#1E1E1E] rounded-xl p-4 shadow-xl mb-6">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-white font-bold text-lg">People</h3>
-                <button className="text-app text-sm font-medium hover:underline flex items-center bg-transparent border-none cursor-pointer">
+                <button
+                    onClick={onViewAll}
+                    className="text-app text-sm font-medium hover:underline flex items-center bg-transparent border-none cursor-pointer"
+                >
                     View all <span className="ml-1 text-lg">&rsaquo;</span>
                 </button>
             </div>

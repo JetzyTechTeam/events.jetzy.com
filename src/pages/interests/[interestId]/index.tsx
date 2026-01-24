@@ -532,6 +532,7 @@ export default function InterestGroupPage() {
                     onJoin={handleJoin}
                     onLeave={handleLeave}
                     loading={loading}
+                    memberCount={members.length > 0 ? members.length : interest?.memberCount}
                 />
 
                 {/* Tabs */}
@@ -590,6 +591,7 @@ export default function InterestGroupPage() {
                         <PeopleWidget
                             creator={interest?.creator || interest?.user || interest?.owner || (isAdmin ? currentUser : null)}
                             members={members}
+                            onViewAll={() => setActiveTab('members')}
                         />
                         <InterestFeed
                             posts={posts}
