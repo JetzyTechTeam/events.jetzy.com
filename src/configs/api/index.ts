@@ -20,7 +20,7 @@ HTTPClient.interceptors.request.use((configs: any) => {
 		const path = url[1]
 
 		if (isProtected === "protected" || isProtected === "external") {
-			configs.baseURL = isProtected === "external" ? `${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api` : BaseUrl
+			configs.baseURL = isProtected === "external" ? `https://prod-api.jetzy.com/api` : BaseUrl
 			if (typeof window !== "undefined") {
 				if ("sessionStorage" in window) {
 					const token = sessionStorage?.getItem("api_token")

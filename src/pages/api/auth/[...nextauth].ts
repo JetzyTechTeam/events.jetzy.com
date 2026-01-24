@@ -57,8 +57,8 @@ export const authOptions: NextAuthOptions = {
 
         // Try to get external token
         try {
-          console.log('Attempting external login to:', `${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api/v1/accounts/authorize`);
-          const externalLoginRes = await fetch(`${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api/v1/accounts/authorize`, {
+          console.log('Attempting external login to:', `https://prod-api.jetzy.com/api/v1/accounts/authorize`);
+          const externalLoginRes = await fetch(`https://prod-api.jetzy.com/api/v1/accounts/authorize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
