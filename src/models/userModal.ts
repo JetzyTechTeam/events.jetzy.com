@@ -1,4 +1,4 @@
-"use server"
+
 
 import { dbconn } from "@Jetzy/configs/database"
 import { Roles } from "@Jetzy/types"
