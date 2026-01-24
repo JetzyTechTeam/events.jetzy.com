@@ -33,4 +33,4 @@ export const eventUsersSchema = new Schema(
   { timestamps: true }
 )
 
-export const EventUsers = dbconn.models.eventUsersSchema || dbconn.model("EventUsers", eventUsersSchema, 'event-users')
+export const EventUsers = dbconn.models.EventUsers || dbconn.model("EventUsers", eventUsersSchema, 'event-users')

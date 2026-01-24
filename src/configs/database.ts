@@ -16,6 +16,10 @@ if (process.env.NODE_ENV === "production") {
         socketTimeoutMS: 45000,
         family: 4,
     })
+    // Ensure connection is established before proceeding
+    dbconn.asPromise().catch((err) => {
+        console.error("Failed to establish database connection in production:", err);
+    });
 } else {
     if (!global.mongooseConnection) {
         global.mongooseConnection = createConnection(process.env.NEXT_EVENTS_DB_URL, {
