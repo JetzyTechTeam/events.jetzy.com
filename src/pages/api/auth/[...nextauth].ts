@@ -1,5 +1,6 @@
 import { Users } from "@Jetzy/models/userModal"
 import { EventUsers } from "@/models/eventUsersModal"
+import { ensureDbConnected } from "@/configs/database"
 import NextAuth, { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcrypt"
@@ -22,6 +23,10 @@ export const authOptions: NextAuthOptions = {
       // @ts-ignore
       async authorize(credentials, req) {
         try {
+          // Ensure database connection is ready before any queries
+          await ensureDbConnected();
+          console.log('✅ Database connection verified');
+
           const { email, password, isJetzyMember: isJetzyMemberRaw } = credentials ?? {};
           const isJetzyMember = String(isJetzyMemberRaw) === "true";
 
