@@ -111,15 +111,17 @@ export default function InterestGroupPage() {
                     }
                 }, 100);
 
-                // Timeout after 3 seconds
+                // Timeout after 8 seconds (increased for JIT sync/slow DB)
                 setTimeout(() => {
                     clearInterval(checkTokenInterval);
                     const token = sessionStorage.getItem('api_token');
                     if (!token) {
-                        console.error('❌ Token still not available after 3 seconds');
+                        console.error('❌ Token still not available after 8 seconds');
+                    } else {
+                        console.log('✅ Token found at the last second of polling');
                     }
                     setWaitingForAuth(false);
-                }, 3000);
+                }, 8000);
 
                 return () => clearInterval(checkTokenInterval);
             }
@@ -553,6 +555,13 @@ export default function InterestGroupPage() {
                 <div className="text-center">
                     <Spinner />
                     <p className="text-gray-400 mt-4">Authenticating...</p>
+                    {/* Add a button to skip waiting if user believes they have the token */}
+                    <button
+                        onClick={() => setWaitingForAuth(false)}
+                        className="mt-6 text-xs text-app border border-app/30 px-3 py-1 rounded hover:bg-app/10 transition-colors"
+                    >
+                        Click here if it takes too long
+                    </button>
                 </div>
             </div>
         )
