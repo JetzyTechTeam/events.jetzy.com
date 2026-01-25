@@ -87,14 +87,53 @@ export default function InterestGroupPage() {
     const [requests, setRequests] = useState<any[]>([])
     const [loadingRequests, setLoadingRequests] = useState(false)
 
+    // Track if we're waiting for authentication to complete
+    const [waitingForAuth, setWaitingForAuth] = useState(true)
+
+    // Wait for session to be authenticated and token to be stored
     useEffect(() => {
-        if (interestId) {
-            fetchInterestDetails()
+        if (status === 'authenticated' && session) {
+            // Check if token is in sessionStorage
+            const token = sessionStorage.getItem('api_token');
+
+            if (token) {
+                console.log('✅ Token found in sessionStorage, ready to make API calls');
+                setWaitingForAuth(false);
+            } else {
+                console.log('⏳ Session authenticated but token not in sessionStorage yet, waiting...');
+                // Wait a bit for SessionSync to store the token
+                const checkTokenInterval = setInterval(() => {
+                    const token = sessionStorage.getItem('api_token');
+                    if (token) {
+                        console.log('✅ Token now available in sessionStorage');
+                        setWaitingForAuth(false);
+                        clearInterval(checkTokenInterval);
+                    }
+                }, 100);
+
+                // Timeout after 3 seconds
+                setTimeout(() => {
+                    clearInterval(checkTokenInterval);
+                    const token = sessionStorage.getItem('api_token');
+                    if (!token) {
+                        console.error('❌ Token still not available after 3 seconds');
+                    }
+                    setWaitingForAuth(false);
+                }, 3000);
+
+                return () => clearInterval(checkTokenInterval);
+            }
         }
-    }, [interestId])
+    }, [status, session])
 
     useEffect(() => {
-        if (interestId) {
+        if (interestId && !waitingForAuth) {
+            fetchInterestDetails()
+        }
+    }, [interestId, waitingForAuth])
+
+    useEffect(() => {
+        if (interestId && !waitingForAuth) {
             if (activeTab === 'feed') {
                 fetchFeed()
                 fetchMembers() // PeopleWidget needs member data
@@ -102,7 +141,7 @@ export default function InterestGroupPage() {
             if (activeTab === 'members') fetchMembers()
             if (activeTab === 'requests') fetchRequests()
         }
-    }, [interestId, activeTab])
+    }, [interestId, activeTab, waitingForAuth])
 
     const handleRefresh = () => {
         if (activeTab === 'feed') {
@@ -506,6 +545,17 @@ export default function InterestGroupPage() {
 
     if (loading && !interest) {
         return <div className="min-h-screen flex items-center justify-center bg-black"><Spinner /></div>
+    }
+
+    if (waitingForAuth) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-black">
+                <div className="text-center">
+                    <Spinner />
+                    <p className="text-gray-400 mt-4">Authenticating...</p>
+                </div>
+            </div>
+        )
     }
 
     // ... (rest of auth checks)

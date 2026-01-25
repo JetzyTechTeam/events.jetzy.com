@@ -19,8 +19,14 @@ HTTPClient.interceptors.request.use((configs: any) => {
 		const isProtected = url[0]
 		const path = url[1]
 
-		if (isProtected === "protected" || isProtected === "external") {
-			configs.baseURL = isProtected === "external" ? `https://prod-api.jetzy.com/api` : BaseUrl
+		if (isProtected === "protected" || isProtected === "external" || isProtected === "public") {
+			if (isProtected === "external") {
+				configs.baseURL = `${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api`
+			} else {
+				// public and protected use the local API
+				configs.baseURL = process.env.NEXT_PUBLIC_API_BASE_URL || BaseUrl
+			}
+
 			if (typeof window !== "undefined") {
 				if ("sessionStorage" in window) {
 					const token = sessionStorage?.getItem("api_token")

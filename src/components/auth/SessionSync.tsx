@@ -15,10 +15,15 @@ export default function SessionSync() {
             const accessToken = session.accessToken || session.user?.accessToken;
             console.log('SessionSync: accessToken found:', accessToken ? 'YES (masked)' : 'NO');
 
-            // Store token in sessionStorage for API calls
+            // Store token in sessionStorage for API calls - do this immediately and synchronously
             if (accessToken) {
-                sessionStorage.setItem('api_token', accessToken);
-                console.log('SessionSync: ✅ Stored token in sessionStorage');
+                try {
+                    sessionStorage.setItem('api_token', accessToken);
+                    console.log('SessionSync: ✅ Stored token in sessionStorage');
+                    console.log('SessionSync: Token length:', accessToken.length);
+                } catch (err) {
+                    console.error('SessionSync: ❌ Failed to store token:', err);
+                }
             } else {
                 // No token in session - this happens for old sessions after deployment
                 sessionStorage.removeItem('api_token');
@@ -44,10 +49,13 @@ export default function SessionSync() {
             }));
 
             if (accessToken) {
-                console.log('SessionSync: Dispatched LOGIN with token');
+                console.log('SessionSync: ✅ Dispatched LOGIN with token to Redux');
             } else {
-                console.warn('SessionSync: Dispatched LOGIN WITHOUT external token');
+                console.warn('SessionSync: ⚠️ Dispatched LOGIN WITHOUT external token');
             }
+        } else if (status === 'unauthenticated') {
+            console.log('SessionSync: User is unauthenticated');
+            sessionStorage.removeItem('api_token');
         }
     }, [session, status, dispatch]);
 

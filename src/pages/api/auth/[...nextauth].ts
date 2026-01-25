@@ -63,13 +63,17 @@ export const authOptions: NextAuthOptions = {
 
           // Try to get external token with timeout
           try {
-            console.log('Attempting external login to:', `https://prod-api.jetzy.com/api/v1/accounts/authorize`);
+            const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || 'https://test.jetzy.com';
+            const loginEndpoint = `${externalApiUrl}/api/v1/accounts/authorize`;
+            console.log('--- Authorize Debug Start ---');
+            console.log('Attempting external login to:', loginEndpoint);
+            console.log('Credentials provided - email:', email, 'hasPassword:', !!password);
 
             // Create abort controller for timeout
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-            const externalLoginRes = await fetch(`https://prod-api.jetzy.com/api/v1/accounts/authorize`, {
+            const externalLoginRes = await fetch(loginEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, password }),
@@ -78,17 +82,75 @@ export const authOptions: NextAuthOptions = {
 
             clearTimeout(timeoutId);
 
+            console.log('External fetch response status:', externalLoginRes.status, externalLoginRes.statusText);
+
             if (externalLoginRes.ok) {
               const externalData = await externalLoginRes.json();
-              console.log('External login response status:', externalData.status || externalData.success);
+              console.log('External login response data:', JSON.stringify(externalData).substring(0, 500));
               if (externalData && (externalData.status || externalData.success)) {
                 accessToken = externalData.data?.accessToken;
-                console.log('Fetched external accessToken successfully');
+                console.log('Fetched external accessToken successfully:', accessToken ? 'YES (masked)' : 'NO (missing in data)');
+              } else {
+                console.warn('External login returned success=false/status=false:', externalData.message || 'No message');
               }
             } else {
               console.log('External login failed with status:', externalLoginRes.status);
               const errorText = await externalLoginRes.text();
               console.log('Error body:', errorText.substring(0, 100));
+            }
+
+            // JIT SYNC: If we have a local user but no external token, try to register them externally
+            if (!accessToken) {
+              console.log('🔄 Attempting JIT External Sync for user:', email);
+              const createEndpoint = `${externalApiUrl}/api/v1/accounts/create`;
+
+              // Map local user fields to external API format
+              const syncPayload = {
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: email,
+                password: password,
+                role: user.role || 'user'
+              };
+
+              console.log('JIT Sync Endpoint:', createEndpoint);
+
+              const createRes = await fetch(createEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(syncPayload)
+              });
+
+              console.log('JIT Sync response status:', createRes.status);
+
+              if (createRes.ok || createRes.status === 409) {
+                if (createRes.status === 409) {
+                  console.log('ℹ️ User already exists externally (409), proceeding to retry login');
+                } else {
+                  console.log('✅ JIT Sync (registration) successful');
+                }
+
+                // Retry login now that user should exist externally
+                console.log('Retrying external login...');
+                const retryLoginRes = await fetch(loginEndpoint, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ email, password }),
+                });
+
+                if (retryLoginRes.ok) {
+                  const retryData = await retryLoginRes.json();
+                  if (retryData && (retryData.status || retryData.success)) {
+                    accessToken = retryData.data?.accessToken;
+                    console.log('✅ Fetched accessToken after JIT sync retry');
+                  }
+                } else {
+                  console.warn('Retry login failed after JIT sync:', retryLoginRes.status);
+                }
+              } else {
+                const createErrorText = await createRes.text();
+                console.error('❌ JIT Sync failed:', createRes.status, createErrorText.substring(0, 100));
+              }
             }
           } catch (err: any) {
             if (err.name === 'AbortError') {
@@ -96,8 +158,8 @@ export const authOptions: NextAuthOptions = {
             } else {
               console.error('External token fetch error:', err.message || err);
             }
-            // Continue without external token - don't crash the function
           }
+          console.log('--- Authorize Debug End ---');
 
           const userData = {
             _id: user._id.toString(),

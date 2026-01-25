@@ -7,7 +7,7 @@ import { loginValidatorScheme } from "@Jetzy/lib/validator/authValidtor"
 import { SignInFormData } from "@Jetzy/types"
 import { ErrorMessage, Field, Form, Formik } from "formik"
 import { GetServerSideProps } from "next"
-import { signIn } from "next-auth/react"
+import { signIn, useSession } from "next-auth/react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
@@ -16,6 +16,9 @@ import React from "react"
 export default function LoginPage() {
 	const navigation = useRouter()
 	const [isLoading, setLoader] = React.useState(false)
+	const [waitingForSession, setWaitingForSession] = React.useState(false)
+	const { data: session, status } = useSession()
+
 	// The url callback to redirect user to after login
 	const { _cb } = navigation?.query
 
@@ -24,6 +27,17 @@ export default function LoginPage() {
 		password: "",
 		isJetzyMember: false,
 	}
+
+	// Handle redirect after session is established
+	React.useEffect(() => {
+		if (waitingForSession && status === 'authenticated' && session) {
+			console.log('✅ Session established, redirecting...');
+			// Small delay to ensure SessionSync has processed the session
+			setTimeout(() => {
+				navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+			}, 300);
+		}
+	}, [waitingForSession, status, session, navigation, _cb])
 
 	const handleSubmit = async (values: SignInFormData) => {
 		setLoader(true)
@@ -53,10 +67,10 @@ export default function LoginPage() {
 			return
 		}
 
-		// turn off loader
-		setLoader(false)
-
-		navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+		// Wait for session to be established before redirecting
+		console.log('Login successful, waiting for session...');
+		setWaitingForSession(true)
+		// Loader stays on until redirect happens
 	}
 
 	return (
