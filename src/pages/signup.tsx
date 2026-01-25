@@ -17,6 +17,9 @@ export default function LoginPage() {
 	const { isLoading } = useAppSelector(getAuthState)
 	const navigate = useRouter()
 
+	// Get callback URL from query params
+	const { _cb } = navigate?.query
+
 	const formData: SignUpFormData = {
 		email: "",
 		password: "",
@@ -27,20 +30,24 @@ export default function LoginPage() {
 	}
 
 	const handleSubmit = (values: SignUpFormData) => {
-		
+
 		const sanitized = {
 			...values,
 			email: values.email?.trim(),
 			firstName: values.firstName?.trim(),
 			lastName: values.lastName?.trim(),
-			password: values.password?.trim() ,
+			password: values.password?.trim(),
 			confirmPassword: values.confirmPassword?.trim(),
 			shouldBeAJetzyMember: values.shouldBeAJetzyMember,
 
 		};
 
 		dispatcher(CreateUserAccountThunk({ data: sanitized })).then((res: any) => {
-			if (res?.payload?.status) navigate.push(ROUTES.login)
+			if (res?.payload?.status) {
+				// Redirect to login with callback URL preserved
+				const loginUrl = _cb ? `${ROUTES.login}?_cb=${encodeURIComponent(_cb.toString())}` : ROUTES.login
+				navigate.push(loginUrl)
+			}
 		})
 	}
 
@@ -189,7 +196,7 @@ export default function LoginPage() {
 
 					<p className="mt-10 text-center text-sm text-gray-500">
 						Already have account?{" "}
-						<Link href={ROUTES.login} className="font-semibold leading-6 text-app hover:text-indigo-500">
+						<Link href={_cb ? `${ROUTES.login}?_cb=${encodeURIComponent(_cb.toString())}` : ROUTES.login} className="font-semibold leading-6 text-app hover:text-indigo-500">
 							Login
 						</Link>
 					</p>

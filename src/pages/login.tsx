@@ -144,7 +144,7 @@ export default function LoginPage() {
 
 					<p className="mt-10 text-center text-sm text-gray-500">
 						Don&apos;t have an account?{" "}
-						<Link href={ROUTES.create} className="font-semibold leading-6 text-app hover:text-blue-500">
+						<Link href={_cb ? `${ROUTES.create}?_cb=${encodeURIComponent(_cb.toString())}` : ROUTES.create} className="font-semibold leading-6 text-app hover:text-blue-500">
 							Create Account
 						</Link>
 					</p>
