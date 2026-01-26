@@ -58,6 +58,8 @@ export default function InterestGroupPage() {
         if (!interest || !currentUser) return false;
 
         // Get creator ID from various possible locations
+        const { interestId: paramsId } = router.query
+        const mongoId = interest?._id || interest?.id || (paramsId as string);
         const creatorId = interest.userId || interest.owner || interest.creator?._id || interest.creator?.id || interest.creator || interest.user?._id || interest.user?.id || interest.user;
         const currentUserId = currentUser._id || currentUser.id;
 
@@ -73,8 +75,6 @@ export default function InterestGroupPage() {
         return isCreator || hasAdminRole || isGlobalAdmin;
     }, [interest, currentUser]);
 
-    const isMember = interest?.isMember || interest?.currentUserMembership?.status === 'member';
-
     // Feed State
     const [posts, setPosts] = useState<any[]>([])
     const [loadingFeed, setLoadingFeed] = useState(false)
@@ -82,6 +82,31 @@ export default function InterestGroupPage() {
     // Members State
     const [members, setMembers] = useState<any[]>([])
     const [loadingMembers, setLoadingMembers] = useState(false)
+
+    // Lock membership state for a few seconds after an action to prevent flickering from slow DB sync
+    const [membershipAction, setMembershipAction] = useState<{ status: boolean; ts: number } | null>(null);
+
+    // Check if current user is member
+    const isMember = React.useMemo(() => {
+        // If we recently performed a join/leave, lock the UI to that state for 10 seconds
+        if (membershipAction && (Date.now() - membershipAction.ts < 10000)) {
+            return membershipAction.status;
+        }
+
+        if (!currentUser) return false;
+        const currentUserId = currentUser._id || currentUser.id;
+        const currentEmail = currentUser.email?.toLowerCase();
+
+        // Check if user is in the members list
+        const inMembersList = members.some(m => {
+            const memberId = m.user?._id || m.user?.id || m.userDetails?._id || m.userDetails?.id || m._id;
+            const memberEmail = (m.email || m.userDetails?.email || m.user?.email || m.user?.userDetails?.email)?.toLowerCase();
+            return String(memberId) === String(currentUserId) || (memberEmail && currentEmail && memberEmail === currentEmail);
+        });
+
+        // If either source says they are a member, they are.
+        return inMembersList || interest?.isMember || interest?.currentUserMembership?.status === 'member' || false;
+    }, [interest, currentUser, members, membershipAction]);
 
     // Requests State (Admin only)
     const [requests, setRequests] = useState<any[]>([])
@@ -127,6 +152,11 @@ export default function InterestGroupPage() {
             }
         }
     }, [status, session])
+
+    // Clear lock when user changes
+    useEffect(() => {
+        setMembershipAction(null);
+    }, [currentUser?._id]);
 
     useEffect(() => {
         if (interestId && !waitingForAuth) {
@@ -188,10 +218,15 @@ export default function InterestGroupPage() {
     const fetchInterestDetails = async () => {
         try {
             setLoading(true)
-            const res = await GetInterestDetailsApi({ data: { interestId: interestId as string, includeMembers: true } })
-            console.log('Interest API Response:', res);
+            const res = await GetInterestDetailsApi({
+                data: {
+                    interestId: interestId as string,
+                    includeMembers: true,
+                    ts: Date.now()
+                } as any
+            })
             // @ts-ignore
-            if ((res.status || res.success) && res.data) {
+            if (res.status && res.data) {
                 setInterest(res.data)
             }
         } catch (err) {
@@ -243,11 +278,15 @@ export default function InterestGroupPage() {
     const fetchMembers = async () => {
         try {
             setLoadingMembers(true)
-            const res = await GetInterestMembersApi({ data: { interestId: interestId as string } })
+            const mongoId = interest?._id || interest?.id || (interestId as string);
+            // Add a timestamp to bypass any caching
+            const res = await GetInterestMembersApi({ data: { interestId: mongoId, ts: Date.now() } as any })
+            console.log('👥 fetchMembers Response (Fresh):', res);
             // @ts-ignore
             if ((res.status || res.success) && res.data) {
-                // Handle different response structures: data.members (new) or data.docs (old/other)
-                const memberData = res.data.members || res.data.docs || []
+                // The response can be an array directly, or an object with members/docs property
+                const memberData = Array.isArray(res.data) ? res.data : (res.data.members || res.data.docs || [])
+                console.log(`👥 setting members (${memberData.length} found)`);
                 setMembers(memberData)
             }
         } catch (err) {
@@ -277,9 +316,49 @@ export default function InterestGroupPage() {
         try {
             setLoading(true)
             const res = await JoinInterestApi({ data: { interestId: interestId as string } })
+            console.log('🤝 Join Response:', res);
             if (res.status) {
                 Success(res.message || 'Joined successfully')
-                fetchInterestDetails()
+                // Lock status to joined
+                setMembershipAction({ status: true, ts: Date.now() });
+
+                // Optimistic update for interest status
+                setInterest((prev: any) => prev ? {
+                    ...prev,
+                    isMember: true,
+                    currentUserMembership: { ...prev.currentUserMembership, status: 'member' }
+                } : null);
+
+                // Optimistic update for members list
+                if (currentUser) {
+                    const newUser = {
+                        _id: currentUser._id || currentUser.id,
+                        user: {
+                            _id: currentUser._id || currentUser.id,
+                            firstName: currentUser.firstName || currentUser.fullName?.split(' ')[0] || 'Me',
+                            lastName: currentUser.lastName || currentUser.fullName?.split(' ')[1] || '',
+                            image: currentUser.image,
+                            email: currentUser.email
+                        },
+                        role: 'member'
+                    };
+                    setMembers((prev: any[]) => {
+                        // Check if already in list to avoid duplicates
+                        const exists = prev.some(m => {
+                            const mId = m.user?._id || m.user?.id || m.userDetails?._id || m.userDetails?.id || m._id;
+                            return String(mId) === String(newUser._id);
+                        });
+                        return exists ? prev : [newUser, ...prev];
+                    });
+                }
+
+                // Refresh after a longer delay to ensure DB sync
+                setTimeout(() => {
+                    console.log('🔄 background refresh after join (Fresh hit)');
+                    // Note: We might get old data if DB is slow, but our lock prevents UI flickering
+                    fetchInterestDetails()
+                    fetchMembers()
+                }, 2500)
             }
         } catch (err) {
             ErrorToast('Failed to join group')
@@ -292,21 +371,86 @@ export default function InterestGroupPage() {
         if (!confirm('Are you sure you want to leave this group?')) return;
         try {
             setLoading(true)
-            const response = await fetch('/api/auth/session')
-            const session = await response.json()
-            const userId = session?.user?.id || session?.user?._id;
+            const mongoId = interest?._id || interest?.id || (interestId as string);
 
-            if (userId) {
-                const res = await RemoveMemberApi({ data: { interestId: interestId as string, users: [userId] } })
+            const currentEmail = currentUser?.email?.toLowerCase();
+            const currentFullName = (currentUser?.fullName || currentUser?.name || `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`).trim().toLowerCase();
+
+            const currentMember = members.find(m => {
+                const memberEmail = (m.email || m.userDetails?.email || m.user?.email || m.user?.userDetails?.email)?.toLowerCase();
+                const mFName = m.firstName || m.userDetails?.firstName || m.user?.firstName || '';
+                const mLName = m.lastName || m.userDetails?.lastName || m.user?.lastName || '';
+                const memberFullName = (m.fullName || `${mFName} ${mLName}`).trim().toLowerCase();
+
+                return (memberEmail && currentEmail && memberEmail === currentEmail) ||
+                    (memberFullName && currentFullName && memberFullName === currentFullName);
+            });
+
+            const jetzyUserId = currentMember ? (currentMember.user?._id || currentMember.user?.id || currentMember.user || currentMember.userDetails?._id || currentMember._id) : null;
+            const userIdToUse = jetzyUserId || currentUser?._id || currentUser?.id;
+
+            if (userIdToUse) {
+                const res = await RemoveMemberApi({ data: { interestId: mongoId, users: [userIdToUse] } })
                 if (res.status) {
                     Success('Left group successfully')
-                    fetchInterestDetails()
+                    // Lock status to left
+                    setMembershipAction({ status: false, ts: Date.now() });
+
+                    // Optimistic update
+                    setInterest((prev: any) => prev ? {
+                        ...prev,
+                        isMember: false,
+                        currentUserMembership: { ...prev.currentUserMembership, status: 'non-member' }
+                    } : null);
+                    setMembers((prev: any[]) => prev.filter(m => {
+                        const mId = m.user?._id || m.user?.id || m.userDetails?._id || m.userDetails?.id || m._id;
+                        const mEmail = (m.email || m.userDetails?.email || m.user?.email)?.toLowerCase();
+                        return String(mId) !== String(userIdToUse) && mEmail !== currentEmail;
+                    }));
+                    // Refresh after delay
+                    setTimeout(() => {
+                        console.log('🔄 background refresh after leave (Fresh hit)');
+                        fetchInterestDetails()
+                        fetchMembers()
+                    }, 2500)
+                } else {
+                    ErrorToast(res.message || 'Failed to leave group')
                 }
             }
         } catch (err) {
+            console.error('🚪 handleLeave Error:', err);
             ErrorToast('Failed to leave group')
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleRemoveMember = async (userId: string) => {
+        if (!confirm('Are you sure you want to remove this member?')) return;
+        try {
+            setLoadingMembers(true)
+            const mongoId = interest?._id || interest?.id || (interestId as string);
+            const res = await RemoveMemberApi({ data: { interestId: mongoId, users: [userId] } })
+            if (res.status) {
+                Success('Member removed successfully')
+                // Optimistic removal
+                setMembers(prev => prev.filter(m => {
+                    const mId = m.user?._id || m.user?.id || m.userDetails?._id || m.userDetails?.id || m._id;
+                    return String(mId) !== String(userId);
+                }));
+                setTimeout(() => {
+                    console.log('🔄 background refresh after remove (Fresh hit)');
+                    fetchMembers()
+                    fetchInterestDetails()
+                }, 2500)
+            } else {
+                ErrorToast(res.message || 'Failed to remove member')
+            }
+        } catch (err) {
+            console.error('👤 handleRemoveMember Error:', err);
+            ErrorToast('Failed to remove member')
+        } finally {
+            setLoadingMembers(false)
         }
     }
 
@@ -587,7 +731,7 @@ export default function InterestGroupPage() {
                 )}
 
                 <InterestGroupHeader
-                    interest={interest}
+                    interest={{ ...interest, isMember: isMember }}
                     onJoin={handleJoin}
                     onLeave={handleLeave}
                     loading={loading}
@@ -621,7 +765,7 @@ export default function InterestGroupPage() {
                             onClick={() => setActiveTab('members')}
                             className={`pb-4 px-2 font-medium transition-colors relative ${activeTab === 'members' ? 'text-app' : 'text-gray-400 hover:text-white'}`}
                         >
-                            Invite
+                            Members
                             {activeTab === 'members' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-app rounded-full" />}
                         </button>
                         {isAdmin && (
@@ -655,6 +799,7 @@ export default function InterestGroupPage() {
                         <InterestFeed
                             posts={posts}
                             loading={loadingFeed}
+                            currentUserId={currentUser?._id || currentUser?.id}
                             onCreatePost={handleCreatePost}
                             onDeletePost={handleDeletePost}
                             onLike={handleLike}
@@ -672,6 +817,8 @@ export default function InterestGroupPage() {
                         members={members}
                         loading={loadingMembers}
                         creator={interest?.creator || interest?.user}
+                        isAdmin={isAdmin}
+                        onRemoveMember={handleRemoveMember}
                     />
                 )}
 

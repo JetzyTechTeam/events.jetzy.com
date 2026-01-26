@@ -19,6 +19,7 @@ interface InterestFeedProps {
     onFetchComments: (postId: string) => Promise<any[]>;
     onLikeComment?: (postId: string, commentId: string) => void;
     onUpdateComment?: (postId: string, commentId: string, content: string) => Promise<void>;
+    currentUserId?: string | null;
 }
 
 const parseMentions = (content: string, mentions: any[] = []) => {
@@ -240,7 +241,18 @@ const PostComments = ({
     )
 }
 
-export default function InterestFeed({ posts, loading, onCreatePost, onDeletePost, onLike, onComment, onFetchComments, onLikeComment, onUpdateComment }: InterestFeedProps) {
+export default function InterestFeed({
+    posts,
+    loading,
+    onCreatePost,
+    onDeletePost,
+    onLike,
+    onComment,
+    onFetchComments,
+    onLikeComment,
+    onUpdateComment,
+    currentUserId
+}: InterestFeedProps) {
     const [newPostText, setNewPostText] = useState('')
     const [posting, setPosting] = useState(false)
     const [newCommentTexts, setNewCommentTexts] = useState<{ [key: string]: string }>({})
@@ -250,27 +262,12 @@ export default function InterestFeed({ posts, loading, onCreatePost, onDeletePos
     const [selectedImages, setSelectedImages] = useState<File[]>([])
     const [uploadingImage, setUploadingImage] = useState(false)
     const [imagePreviews, setImagePreviews] = useState<string[]>([])
-    const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+    // const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [replyingTo, setReplyingTo] = useState<{ postId: string; commentId: string; userId: string; userName: string } | null>(null)
     const [editingComment, setEditingComment] = useState<{ postId: string; commentId: string; content: string } | null>(null)
     const [commentImages, setCommentImages] = useState<{ [key: string]: File | null }>({})
     const [commentImagePreviews, setCommentImagePreviews] = useState<{ [key: string]: string | null }>({})
 
-    // Fetch current user session
-    useEffect(() => {
-        const fetchSession = async () => {
-            try {
-                const response = await fetch('/api/auth/session')
-                const session = await response.json()
-                if (session?.user) {
-                    setCurrentUserId(session.user.id || session.user._id)
-                }
-            } catch (e) {
-                console.error('Failed to fetch session:', e)
-            }
-        }
-        fetchSession()
-    }, [])
 
     const handlePostSubmit = async (e: React.FormEvent) => {
         e.preventDefault()

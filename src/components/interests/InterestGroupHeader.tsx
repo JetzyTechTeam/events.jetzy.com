@@ -11,7 +11,9 @@ interface InterestGroupHeaderProps {
 }
 
 export default function InterestGroupHeader({ interest, onJoin, onLeave, loading, memberCount }: InterestGroupHeaderProps) {
-    const isMember = interest?.isMember || interest?.membershipStatus === 'member' || interest?.currentUserMembership?.status === 'member';
+    // Simply trust the parent's `isMember` calculation which now includes locking and list checking
+    // The parent passes `interest` with an overridden `isMember` property
+    const isMember = interest?.isMember === true;
 
     return (
         <div className="relative bg-[#1E1E1E] rounded-xl overflow-hidden mb-6 shadow-2xl">

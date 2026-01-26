@@ -73,7 +73,10 @@ export const InviteMembersApi = async (params: RequestParams<{ interestId: strin
 }
 
 export const RemoveMemberApi = async (params: RequestParams<{ interestId: string; users: string[] }>): Promise<ServerResponse<any, any>> => {
-    return await POST(interestEndPoints.removeMember.replace(":interestId", params.data?.interestId as string), { users: params.data?.users })
+    const url = interestEndPoints.removeMember.replace(":interestId", params.data?.interestId as string);
+    const body = { users: params.data?.users };
+    console.log('📡 RemoveMemberApi Request:', { url, body });
+    return await POST(url, body)
 }
 
 export const GetUsersToInviteApi = async (params: RequestParams<{ interestId: string; query?: string; page?: number; perPage?: number }>): Promise<ServerResponse<any, any>> => {
