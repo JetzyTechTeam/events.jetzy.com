@@ -87,13 +87,19 @@ export default function InterestGroupPage() {
     const [membershipAction, setMembershipAction] = useState<{ status: boolean; ts: number } | null>(null);
 
     // Check if current user is member
+    // Check if current user is member
     const isMember = React.useMemo(() => {
         // If we recently performed a join/leave, lock the UI to that state for 10 seconds
         if (membershipAction && (Date.now() - membershipAction.ts < 10000)) {
+            console.log('🔒 Membership Locked:', membershipAction.status);
             return membershipAction.status;
         }
 
-        if (!currentUser) return false;
+        if (!currentUser) {
+            console.log('👤 isMember: No Current User');
+            return false;
+        }
+
         const currentUserId = currentUser._id || currentUser.id;
         const currentEmail = currentUser.email?.toLowerCase();
 
@@ -101,11 +107,43 @@ export default function InterestGroupPage() {
         const inMembersList = members.some(m => {
             const memberId = m.user?._id || m.user?.id || m.userDetails?._id || m.userDetails?.id || m._id;
             const memberEmail = (m.email || m.userDetails?.email || m.user?.email || m.user?.userDetails?.email)?.toLowerCase();
-            return String(memberId) === String(currentUserId) || (memberEmail && currentEmail && memberEmail === currentEmail);
+
+            const idMatch = String(memberId) === String(currentUserId);
+            const emailMatch = (memberEmail && currentEmail && memberEmail === currentEmail);
+
+            // Name fallback: sometimes IDs/Emails don't match or are hidden
+            const mData = m.user || m.userDetails || m;
+            const mFirstName = (mData.firstName || '').trim().toLowerCase();
+            const mLastName = (mData.lastName || '').trim().toLowerCase();
+            const mFullName = (mData.fullName || `${mFirstName} ${mLastName}`).trim().toLowerCase();
+
+            const myFirstName = (currentUser.firstName || '').trim().toLowerCase();
+            const myLastName = (currentUser.lastName || '').trim().toLowerCase();
+            const myFullName = (currentUser.fullName || currentUser.name || `${myFirstName} ${myLastName}`).trim().toLowerCase();
+
+            const nameMatch = (mFullName && myFullName && mFullName === myFullName);
+
+            return idMatch || emailMatch || nameMatch;
         });
 
-        // If either source says they are a member, they are.
-        return inMembersList || interest?.isMember || interest?.currentUserMembership?.status === 'member' || false;
+        const isMemberByInterest = interest?.isMember || interest?.currentUserMembership?.status === 'member';
+
+        console.log('🔍 isMember Check:', {
+            inMembersList,
+            isMemberByInterest,
+            membersCount: members.length,
+            userId: currentUserId
+        });
+
+        // PRIORITY FIX: If we have members loaded, trust the list absolutely.
+        // The `interest.isMember` flag from backend is often stale/cached.
+        if (members.length > 0) {
+            console.log('🔍 isMember: Trusting members list because it is loaded.');
+            return inMembersList;
+        }
+
+        // Fallback only if members list is empty (not loaded yet)
+        return inMembersList || isMemberByInterest || false;
     }, [interest, currentUser, members, membershipAction]);
 
     // Requests State (Admin only)
@@ -161,6 +199,7 @@ export default function InterestGroupPage() {
     useEffect(() => {
         if (interestId && !waitingForAuth) {
             fetchInterestDetails()
+            fetchMembers()
         }
     }, [interestId, waitingForAuth])
 
@@ -388,6 +427,13 @@ export default function InterestGroupPage() {
 
             const jetzyUserId = currentMember ? (currentMember.user?._id || currentMember.user?.id || currentMember.user || currentMember.userDetails?._id || currentMember._id) : null;
             const userIdToUse = jetzyUserId || currentUser?._id || currentUser?.id;
+
+            console.log('🚪 handleLeave Debug:', {
+                foundMember: !!currentMember,
+                memberIdFromList: jetzyUserId,
+                currentUserId: currentUser?._id || currentUser?.id,
+                FINAL_ID_TO_REMOVE: userIdToUse
+            });
 
             if (userIdToUse) {
                 const res = await RemoveMemberApi({ data: { interestId: mongoId, users: [userIdToUse] } })
