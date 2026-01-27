@@ -1,6 +1,5 @@
 import React from 'react'
-import Image from 'next/image'
-import { CheckCircleIcon, UserGroupIcon, PlusIcon, MinusIcon } from '@heroicons/react/24/solid'
+import { CheckCircleIcon, UserGroupIcon, PlusIcon, MinusIcon, UserPlusIcon } from '@heroicons/react/24/solid'
 
 interface InterestGroupHeaderProps {
     interest: any;
@@ -8,9 +7,10 @@ interface InterestGroupHeaderProps {
     onLeave: () => void;
     loading: boolean;
     memberCount?: number;
+    onInvite?: () => void;
 }
 
-export default function InterestGroupHeader({ interest, onJoin, onLeave, loading, memberCount }: InterestGroupHeaderProps) {
+export default function InterestGroupHeader({ interest, onJoin, onLeave, loading, memberCount, onInvite }: InterestGroupHeaderProps) {
     // Simply trust the parent's `isMember` calculation which now includes locking and list checking
     // The parent passes `interest` with an overridden `isMember` property
     const isMember = interest?.isMember === true;
@@ -64,8 +64,8 @@ export default function InterestGroupHeader({ interest, onJoin, onLeave, loading
                     </div>
                 </div>
 
-                {/* Action Button */}
-                <div className="flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0">
+                {/* Action Buttons */}
+                <div className="flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0 flex gap-3">
                     {isMember ? (
                         <button
                             onClick={onLeave}
@@ -83,6 +83,16 @@ export default function InterestGroupHeader({ interest, onJoin, onLeave, loading
                         >
                             <PlusIcon className="w-5 h-5" />
                             Join Group
+                        </button>
+                    )}
+
+                    {onInvite && (
+                        <button
+                            onClick={onInvite}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-lg font-semibold border border-white/20 transition-all backdrop-blur-sm"
+                        >
+                            <UserPlusIcon className="w-5 h-5" />
+                            Invite
                         </button>
                     )}
                 </div>

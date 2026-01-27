@@ -23,6 +23,7 @@ import {
 import InterestGroupHeader from '@Jetzy/components/interests/InterestGroupHeader'
 import InterestFeed from '@Jetzy/components/interests/InterestFeed'
 import InterestMembers from '@Jetzy/components/interests/InterestMembers'
+import InviteMemberModal from '@Jetzy/components/interests/InviteMemberModal'
 import Spinner from '@Jetzy/components/misc/Spinner'
 import { Error as ErrorToast, Success } from '@Jetzy/lib/_toaster'
 import { CheckIcon, XMarkIcon, TrashIcon, ArrowLeftIcon } from '@heroicons/react/24/solid'
@@ -152,6 +153,9 @@ export default function InterestGroupPage() {
 
     // Track if we're waiting for authentication to complete
     const [waitingForAuth, setWaitingForAuth] = useState(true)
+
+    // Invite Modal State
+    const [showInviteModal, setShowInviteModal] = useState(false)
 
     // Wait for session to be authenticated and token to be stored
     useEffect(() => {
@@ -782,6 +786,7 @@ export default function InterestGroupPage() {
                     onLeave={handleLeave}
                     loading={loading}
                     memberCount={members.length > 0 ? members.length : interest?.memberCount}
+                    onInvite={() => setShowInviteModal(true)}
                 />
 
                 {/* Tabs */}
@@ -906,6 +911,14 @@ export default function InterestGroupPage() {
                             ))
                         )}
                     </div>
+                )}
+
+                {/* Invite Modal */}
+                {showInviteModal && (
+                    <InviteMemberModal
+                        interestId={interestId as string}
+                        onClose={() => setShowInviteModal(false)}
+                    />
                 )}
             </div>
         </div>
