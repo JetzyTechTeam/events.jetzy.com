@@ -1,4 +1,4 @@
-import { createUserAction } from "@/actions/create-user-action"
+import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
 import { uniqueId } from "@/lib/utils"
 import { NextApiRequest } from "next"
@@ -35,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// create jetzy user
 		try {
-			await createUserAction({
+			await createOrUpdateUser({
 				firstName: user.firstName,
 				lastName: user.lastName,
 				email: user.email,
