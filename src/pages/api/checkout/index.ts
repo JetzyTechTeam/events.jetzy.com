@@ -1,9 +1,6 @@
-import { Events } from "@/models/events"
-import { createUserAction } from "@Jetzy/actions/create-user-action"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
-import { useQuery } from "@tanstack/react-query"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
 
@@ -26,40 +23,79 @@ type BodyParams = {
 	}
 	referralCode?: string
 }
-// initialize stripe
-if (!process.env.NEXT_STRIPE_SECRET_KEY) {
-	throw new Error("NEXT_STRIPE_SECRET_KEY environment variable is required")
-}
-const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY)
+
+let stripeInstance: Stripe | null = null
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	console.log("[checkout/index] Request received:", { method: req.method, bodyKeys: Object.keys(req.body || {}) })
+
 	try {
-		// Validate request method
-		if (req.method !== 'POST') {
-			return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
+		// Check for missing env vars early
+		const missingVars = [];
+		if (!process.env.NEXT_EVENTS_DB_URL) missingVars.push("NEXT_EVENTS_DB_URL");
+		if (!process.env.NEXT_STRIPE_SECRET_KEY) missingVars.push("NEXT_STRIPE_SECRET_KEY");
+		if (!process.env.NEXT_PUBLIC_URL) missingVars.push("NEXT_PUBLIC_URL");
+
+		if (missingVars.length > 0) {
+			console.error("[checkout/index] CRITICAL: Missing environment variables:", missingVars.join(", "));
+			return res.status(500).json({
+				error: {
+					code: "500",
+					message: `Missing environment variables: ${missingVars.join(", ")}. Please check your production environment configuration.`
+				}
+			});
 		}
 
-		// Validate required environment variables
-		if (!process.env.NEXT_PUBLIC_URL) {
-			return sendResponse(res, null, "NEXT_PUBLIC_URL environment variable is required", false, ResCode.INTERNAL_SERVER_ERROR)
+		// initialize stripe
+		if (!stripeInstance) {
+			stripeInstance = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
+		}
+		const stripe = stripeInstance
+
+		// Ensure database connection
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
+
+		// Dynamically import models to ensure they use the connected db
+		const { Events } = await import("@/models/events")
+		const { createUserAction } = await import("@Jetzy/actions/create-user-action")
+
+		// Validate request method
+		if (req.method !== 'POST') {
+			console.warn("[checkout/index] Method not allowed:", req.method)
+			return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
 		}
 
 		// Get request params
 		if (!req.body?.tickets || !req.body?.user) {
+			console.warn("[checkout/index] Missing parameters")
 			return sendResponse(res, null, "Missing required parameters: tickets and user", false, ResCode.BAD_REQUEST)
 		}
 
-		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
-		const user = JSON.parse(req.body?.user) as BodyParams["user"]
+		let tickets: BodyParams["tickets"]
+		let user: BodyParams["user"]
+
+		try {
+			// Handle both stringified and object bodies
+			tickets = typeof req.body.tickets === 'string' ? JSON.parse(req.body.tickets) : req.body.tickets
+			user = typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user
+		} catch (parseError: any) {
+			console.error("[checkout/index] JSON parse error:", parseError.message)
+			return sendResponse(res, null, "Invalid JSON data in request body", false, ResCode.BAD_REQUEST)
+		}
+
 		const referralCode = req.body.referralCode as string | undefined
+		console.log("[checkout/index] Checkout started for:", { email: user?.email, eventId: tickets?.[0]?.eventId, referralCode })
 
 		// Validate tickets array
 		if (!Array.isArray(tickets) || tickets.length === 0) {
+			console.warn("[checkout/index] Invalid tickets array")
 			return sendResponse(res, null, "Invalid tickets data", false, ResCode.BAD_REQUEST)
 		}
 
 		// Validate user data
-		if (!user.email || !user.firstName || !user.lastName) {
+		if (!user || !user.email || !user.firstName || !user.lastName) {
+			console.warn("[checkout/index] Invalid user data")
 			return sendResponse(res, null, "Invalid user data", false, ResCode.BAD_REQUEST)
 		}
 
@@ -74,7 +110,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			})
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
-			console.error("Error:", errorMessage)
+			console.error("[checkout/index] Error creating user profile:", errorMessage)
+			// Non-critical error, continue
 		}
 
 		// Validate and get referral code if provided
@@ -84,24 +121,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const { ReferralCodes } = await import("@/models/events/referral-codes")
 				const { Types } = await import("mongoose")
 
+				const eventIdToQuery = tickets[0]?.eventId
+				if (!eventIdToQuery || !Types.ObjectId.isValid(eventIdToQuery)) {
+					console.error("[checkout/index] Invalid event ID in tickets:", eventIdToQuery)
+					return sendResponse(res, null, "Invalid event ID", false, ResCode.BAD_REQUEST)
+				}
+
 				const codeRecord = await ReferralCodes.findOne({
-					eventId: new Types.ObjectId(tickets[0]?.eventId),
+					eventId: new Types.ObjectId(eventIdToQuery),
 					code: referralCode.toUpperCase(),
 					isDeleted: false,
 					isActive: true,
 				})
 
 				if (!codeRecord) {
-					// return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
-					// Instead of failing, just ignore the invalid code but log it?
-					// Or fail? Usually better to fail so user knows why discount isn't applied.
-					// However, if we fail, we stop the whole checkout.
-					// Let's return error message
+					console.warn("[checkout/index] Referral code not found or inactive for this event:", referralCode)
 					return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
 				}
 
 				// Check if code has reached max uses
 				if (codeRecord.maxUses !== null && codeRecord.maxUses !== undefined && codeRecord.usageCount >= codeRecord.maxUses) {
+					console.warn("[checkout/index] Referral code max uses reached")
 					return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
 				}
 
@@ -109,6 +149,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					code: codeRecord.code,
 					discountPercentage: codeRecord.discountPercentage,
 				}
+				console.log("[checkout/index] Referral code applied:", referralCodeData)
 			} catch (referralError: any) {
 				console.error("[checkout/index] Error validating referral code:", referralError)
 				return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
@@ -132,6 +173,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		if (!event) {
+			console.warn("[checkout/index] Event not found:", tickets[0]?.eventId)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
@@ -147,11 +189,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				// If capacity is 0 (closed) or if available capacity is insufficient
 				if (event.capacity === 0 || availableCapacity < totalTicketsRequested) {
-					// Event is closed or at capacity, return waiting list option
 					const message = event.capacity === 0
 						? "This event is currently closed. Would you like to join the waiting list?"
 						: "Event capacity reached. Would you like to join the waiting list?"
 
+					console.info("[checkout/index] Event at capacity or closed")
 					return sendResponse(res, {
 						atCapacity: true,
 						availableCapacity,
@@ -172,36 +214,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			slug: event?.slug,
 		}
 
-		// Validate and log URLs
-		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://jetzy-events.vercel.app"
-		console.log("NEXT_PUBLIC_URL:", baseUrl)
-
-		// Ensure URL is properly formatted
-		const cleanBaseUrl = baseUrl.replace(/\/$/, '') // Remove trailing slash
+		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+		const cleanBaseUrl = baseUrl.replace(/\/$/, '')
 		const successUrl = `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
-
-		console.log("Success URL:", successUrl)
-		console.log("Cancel URL:", cancelUrl)
-
-		// Validate URLs
-		try {
-			new URL(successUrl.replace('{CHECKOUT_SESSION_ID}', 'test'))
-			new URL(cancelUrl)
-		} catch (urlError: any) {
-			console.error("Invalid URL format:", urlError)
-			throw new Error(`Invalid URL format: ${urlError.message || urlError}`)
-		}
 
 		// Create Stripe coupon for referral code discount if applicable
 		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
 		if (referralCodeData) {
 			try {
-				// Create a coupon for this discount (reusable or one-time)
-				// We create a one-time use coupon per session or reuse one if we want to track it differently.
-				// For simplicity/robustness, creating a fresh coupon ensures the percent match.
-				// However, to avoid clutter, we could try to retrieve one. 
-				// Let's create one dynamic coupon.
 				const coupon = await stripe.coupons.create({
 					percent_off: referralCodeData.discountPercentage,
 					duration: 'once',
@@ -213,8 +234,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				}]
 			} catch (couponError: any) {
 				console.error("[checkout/index] Error creating Stripe coupon:", couponError)
-				// Continue without discount if coupon creation fails? 
-				// Or fail?
 			}
 		}
 
@@ -224,7 +243,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			lastName: user.lastName,
 			email: user.email,
 			phone: user.phone,
-			tickets: req.body.tickets,
+			tickets: typeof req.body.tickets === 'string' ? req.body.tickets : JSON.stringify(tickets),
 			eventId: tickets[0]?.eventId || "",
 			eventDetails: JSON.stringify(eventDetails),
 		}
@@ -245,18 +264,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata: metadata,
 			customer_email: user.email,
 			discounts: discountConfig,
-		}).catch((stripeError) => {
-			console.error("Stripe session creation failed:", stripeError)
+		}).catch((stripeError: any) => {
+			console.error("[checkout/index] Stripe session creation failed:", stripeError.message)
 			throw new Error(`Stripe error: ${stripeError.message}`)
 		})
 
 		if (session) {
+			console.log("[checkout/index] Checkout session created:", session.id)
 			return sendResponse(res, session, "Checkout created successfully!", true, ResCode.OK)
 		}
 
 		return sendResponse(res, null, "Couldn't complete checkout.", false, ResCode.BAD_REQUEST)
 	} catch (error: any) {
-		console.log("Error:", error.message)
-		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)
+		console.error("[checkout/index] CRITICAL ERROR:", error.message || error)
+		if (error.stack) console.error(error.stack)
+		return res.status(500).json({
+			error: {
+				code: "500",
+				message: error.message || "An unexpected server error occurred"
+			}
+		})
 	}
 }

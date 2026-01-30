@@ -1,6 +1,9 @@
 import { createConnection, Connection } from "mongoose"
 
-if (!process.env.NEXT_EVENTS_DB_URL) throw new Error("Add the NEXT_EVENTS_DB_URL environment variable inside .env.local to use MongoDB")
+const dbUrl = process.env.NEXT_EVENTS_DB_URL
+if (!dbUrl) {
+    console.warn("⚠️ NEXT_EVENTS_DB_URL is missing! This will cause database connection failures.")
+}
 
 let dbconn: Connection
 let connectionPromise: Promise<Connection> | null = null
@@ -11,8 +14,10 @@ declare global {
 }
 
 // Create connection with proper async handling
+const safeDbUrl = dbUrl || "mongodb://localhost:27017/missing-db-url"
+
 if (process.env.NODE_ENV === "production") {
-    dbconn = createConnection(process.env.NEXT_EVENTS_DB_URL, {
+    dbconn = createConnection(safeDbUrl, {
         autoIndex: false,
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 10000, // Increased to 10s
@@ -40,7 +45,7 @@ if (process.env.NODE_ENV === "production") {
     });
 } else {
     if (!global.mongooseConnection) {
-        global.mongooseConnection = createConnection(process.env.NEXT_EVENTS_DB_URL, {
+        global.mongooseConnection = createConnection(safeDbUrl, {
             autoIndex: false,
             maxPoolSize: 10,
             serverSelectionTimeoutMS: 10000,
