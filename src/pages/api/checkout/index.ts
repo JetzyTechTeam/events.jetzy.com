@@ -58,7 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Dynamically import models to ensure they use the connected db
 		const { Events } = await import("@/models/events")
-		const { createUserAction } = await import("@Jetzy/actions/create-user-action")
+		const { createOrUpdateUser } = await import("@Jetzy/lib/user-utils")
 
 		// Validate request method
 		if (req.method !== 'POST') {
@@ -101,7 +101,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// create jetzy user
 		try {
-			await createUserAction({
+			await createOrUpdateUser({
 				firstName: user.firstName,
 				lastName: user.lastName,
 				email: user.email,
