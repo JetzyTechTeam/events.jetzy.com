@@ -4,6 +4,7 @@ import { GetServerSideProps } from "next"
 import dynamic from "next/dynamic"
 import React from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
+import { ensureDbConnected } from "@/configs/database"
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { ssr: false }) // Import the HostedEvents component dynamically
 
@@ -13,7 +14,7 @@ type Props = {
 export default function EventDetailPage({ event }: Props) {
 	try {
 		const data = JSON.parse(event) as IEvent
-		
+
 		// Validate that the event has required fields
 		if (!data || !data._id || !data.name) {
 			throw new Error("Invalid event data")
@@ -53,6 +54,7 @@ export default function EventDetailPage({ event }: Props) {
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
 	try {
+		await ensureDbConnected()
 		// let get the slug from the request params
 		const { slug } = context.params
 
@@ -64,7 +66,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 		// Get the event by slug
 		const event = await Events.findOne({ slug: slug as string, isDeleted: false })
-		
+
 		if (!event) {
 			return { notFound: true } // If the event is not found, return a 404
 		}

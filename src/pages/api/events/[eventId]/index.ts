@@ -2,9 +2,11 @@ import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { Events } from "@/models/events"
 import { NextApiRequest, NextApiResponse } from "next"
+import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
+		await ensureDbConnected()
 		// get the request path parameter
 		const { eventId } = req.query
 

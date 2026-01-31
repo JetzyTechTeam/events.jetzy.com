@@ -3,9 +3,11 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
+		await ensureDbConnected()
 		//    get all the events from the database
 		const events = await Events.find({ isDeleted: false }).sort({ createdAt: -1 })
 
