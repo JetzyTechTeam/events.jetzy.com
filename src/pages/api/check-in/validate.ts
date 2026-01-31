@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
+import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { CheckIn } from "@/models/checkIn"
 import { getServerSession } from "next-auth"
@@ -15,6 +16,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if (req.method !== "POST") {
 		return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
 	}
+
+	await ensureDbConnected()
 
 	try {
 		// Verify admin authentication

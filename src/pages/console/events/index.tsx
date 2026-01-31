@@ -4,6 +4,7 @@ import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
 import { deleteFile } from "@/services/upload.service"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
@@ -214,6 +215,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
+	await ensureDbConnected()
 	// check if user is authorized
 	const session = await authorizedOnly(context)
 	if (!session) return session

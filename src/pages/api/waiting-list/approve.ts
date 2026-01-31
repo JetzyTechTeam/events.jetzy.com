@@ -3,6 +3,7 @@ import { WaitingList } from "@/models/waitingList"
 import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
 import { EventTracker } from "@/models/events/event-tracker"
+import { ensureDbConnected } from "@/configs/database"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { sendTicketConfirmation } from "@/lib/send-grid"
@@ -14,6 +15,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
 	}
 
+	await ensureDbConnected()
+
 	try {
 		const { waitingListId, eventName } = req.body
 
@@ -23,7 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Find the waiting list entry
 		const waitingListEntry = await WaitingList.findById(waitingListId)
-		
+
 		if (!waitingListEntry) {
 			return sendResponse(res, null, "Waiting list entry not found", false, ResCode.NOT_FOUND)
 		}
@@ -42,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Calculate total tickets requested by this waiting list user
 		const requestedTickets = waitingListEntry.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-		
+
 		// Check if adding these tickets would exceed capacity
 		if (eventTracker.bookedTickets + requestedTickets > eventTracker.eventCapacity) {
 			return sendResponse(res, null, "Cannot approve: Event is at full capacity", false, ResCode.BAD_REQUEST)
@@ -104,10 +107,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Don't fail the request if email fails
 		}
 
-		return sendResponse(res, { 
-			success: true, 
+		return sendResponse(res, {
+			success: true,
 			booking: booking,
-			bookingRef: bookingRef 
+			bookingRef: bookingRef
 		}, "User approved, booking created and confirmation email sent", true, ResCode.OK)
 	} catch (error: any) {
 		console.error("Error approving waiting list user:", error)

@@ -4,6 +4,7 @@ import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { GetServerSideProps } from "next"
 import React, { useEffect, useState } from "react"
 import {
@@ -633,6 +634,7 @@ function EventDateTime({ iso }: { iso: string }) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
+	await ensureDbConnected()
 	const session = await authorizedOnly(context)
 	if (!session) return session
 

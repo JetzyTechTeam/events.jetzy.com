@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next"
 import { Bookings } from "@/models/events/bookings"
 import { EventTracker } from "@/models/events/event-tracker"
+import { ensureDbConnected } from "@/configs/database"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { BookingStatus } from "@/models/events/types"
@@ -10,6 +11,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if (req.method !== "POST") {
 		return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
 	}
+
+	await ensureDbConnected()
 
 	try {
 		const { bookingRef } = req.body
@@ -34,8 +37,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Only prevent cancellation if already cancelled
 
 		// Update booking status to cancelled
-		await Bookings.findByIdAndUpdate(booking._id, { 
-			status: BookingStatus.CANCELLED 
+		await Bookings.findByIdAndUpdate(booking._id, {
+			status: BookingStatus.CANCELLED
 		})
 
 		// Update event tracker to free up the tickets

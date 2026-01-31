@@ -2,6 +2,7 @@ import EventTicketTable, { TicketsRowData } from "@/components/events/EventTicke
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { IEventTicket } from "@/models/events/types"
 import { Pages } from "@/types"
 import { Types } from "mongoose"
@@ -43,6 +44,7 @@ type Params = {
 	eventId: string
 }
 export const getServerSideProps: GetServerSideProps<any, Params> = async (context) => {
+	await ensureDbConnected()
 	// check if user is authorized
 	const session = await authorizedOnly(context)
 	if (!session) return session

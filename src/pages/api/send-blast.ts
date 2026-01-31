@@ -1,5 +1,6 @@
 import { EventInvitation } from "@/models/events/event-invitations";
 import { Bookings } from "@/models/events/bookings";
+import { ensureDbConnected } from "@/configs/database";
 import { NextApiRequest, NextApiResponse } from "next";
 import sendgrid from "@sendgrid/mail";
 import mongoose from "mongoose";
@@ -8,6 +9,7 @@ import { BookingStatus } from "@/models/events/types";
 sendgrid.setApiKey(process.env.SENDGRID_API_KEY as string);
 
 export default async function sendBlast(req: NextApiRequest, res: NextApiResponse) {
+  await ensureDbConnected()
   const { status, subject, message, eventLink, event, targetType, emailType } = req.body;
 
   try {
@@ -104,11 +106,11 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     findPeople.forEach(async (person) => {
       // Create personalized HTML with booking reference if available
       let personalizedHtml = html;
-      
+
       // Replace user email placeholder
       const userEmail = (person as any).email || (person as any).customerEmail;
       personalizedHtml = personalizedHtml.replace('{{userEmail}}', userEmail);
-      
+
       if (targetType === 'bookings' && 'bookingRef' in person && person.bookingRef) {
         personalizedHtml = personalizedHtml.replace('{{bookingRef}}', person.bookingRef);
       } else {
@@ -125,7 +127,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     })
 
     return res.status(200).json({ message: "Blast sent successfully" });
-    
+
   } catch (error) {
     return res.status(500).json({ error: "Failed to send blast" });
   }

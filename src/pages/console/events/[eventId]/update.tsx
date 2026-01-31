@@ -3,6 +3,7 @@ import { authorizedOnly } from "@/lib/authSession"
 import { stripHtml } from "@/utils/text";
 import { Events } from "@/models/events"
 import { Types } from "mongoose"
+import { ensureDbConnected } from "@/configs/database"
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { ROUTES } from "@/configs/routes"
@@ -819,6 +820,7 @@ export default function UpdateEventPage({ event }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = async (context) => {
+	await ensureDbConnected()
 	// check if user is authorized
 	const session = await authorizedOnly(context)
 	if (!session) return session
