@@ -576,7 +576,7 @@ export default function AnalyticsPage() {
 
 										{/* Visitor & Session Metrics */}
 										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 												Visitors & Sessions
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
@@ -862,9 +862,7 @@ export default function AnalyticsPage() {
 										</SimpleGrid>
 
 										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-												Booking Status Breakdown
-											</Text>
+											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>Booking Status Breakdown</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
 													title="Confirmed"
