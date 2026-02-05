@@ -543,7 +543,7 @@ export default function AnalyticsPage() {
 									{/* Overview Tab */}
 									<TabPanel px={0}>
 										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 												Overview
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
@@ -616,7 +616,7 @@ export default function AnalyticsPage() {
 
 										{/* Event Breakdown */}
 										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 												Event Breakdown
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
@@ -649,7 +649,7 @@ export default function AnalyticsPage() {
 
 										{/* Booking Status Breakdown */}
 										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 												Booking Status
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
@@ -686,7 +686,7 @@ export default function AnalyticsPage() {
 
 										{/* Revenue & Check-in Metrics */}
 										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 												Revenue & Attendance
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
@@ -721,7 +721,7 @@ export default function AnalyticsPage() {
 
 										{/* Users & Referral Codes */}
 										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 												Users & Referrals
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={4}>
