@@ -2,6 +2,7 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { UserAction, UserJourney } from "@/models/analytics"
+import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -12,10 +13,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
-		const { sessionId, actionType, page, metadata } = req.body
+		const { actionType, page, metadata, visitorId: bodyVisitorId, sessionId: bodySessionId } = req.body
 
-		if (!sessionId || !actionType || !page) {
+		if (!bodySessionId || !actionType || !page) {
 			return sendResponse(res, null, "Session ID, action type, and page are required", false, ResCode.BAD_REQUEST)
 		}
 
@@ -32,7 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Fire and forget - don't block the request
 		UserAction.create({
-			sessionId,
+			sessionId: bodySessionId,
 			userId: userId,
 			actionType,
 			page,
@@ -51,10 +53,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		UserJourney.findOneAndUpdate(
-			{ sessionId },
+			{ sessionId: bodySessionId },
 			{
 				$setOnInsert: {
-					sessionId,
+					sessionId: bodySessionId,
 					userId: userId,
 					journey: [],
 				},

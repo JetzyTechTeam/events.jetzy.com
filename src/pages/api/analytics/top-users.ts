@@ -3,6 +3,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Users } from "@/models/userModal"
 import { UserSession, PageView, UserAction, EventInteraction } from "@/models/analytics"
+import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -13,6 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
 		if (!session) {
 			return sendResponse(res, null, "Unauthorized", false, ResCode.UNAUTHORIZED)

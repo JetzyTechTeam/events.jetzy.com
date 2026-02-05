@@ -1,7 +1,9 @@
+
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventInteraction, UserJourney } from "@/models/analytics"
+import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -12,6 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
 		const { eventId, sessionId, interactionType, metadata } = req.body
 
@@ -45,7 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Update UserJourney - add event interaction step
 		const journeyStep = {
-			action: `event_${interactionType}`,
+			action: `event_${interactionType} `,
 			eventId: eventObjectId,
 			timestamp,
 			metadata: metadata || undefined,

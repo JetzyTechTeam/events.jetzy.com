@@ -5,6 +5,7 @@ import { UserSession } from "@/models/analytics"
 import { Users } from "@/models/userModal"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
+import { ensureDbConnected } from "@/configs/database"
 import { Types } from "mongoose"
 import { randomUUID } from "crypto"
 
@@ -14,6 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
 		const { sessionId, referrer, entryPage, userAgent, deviceType } = req.body
 

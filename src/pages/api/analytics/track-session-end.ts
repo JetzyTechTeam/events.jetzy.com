@@ -1,6 +1,9 @@
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
+import { ensureDbConnected } from "@/configs/database"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
 import { UserSession } from "@/models/analytics"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -9,6 +12,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
 		const { sessionId, exitPage } = req.body
 
 		if (!sessionId) {

@@ -8,6 +8,7 @@ import { CheckIn } from "@/models/checkIn"
 import { Users } from "@/models/userModal"
 import { ReferralCodes } from "@/models/events/referral-codes"
 import { PageView, UserSession } from "@/models/analytics"
+import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 
@@ -17,6 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
 		if (!session) {
 			return sendResponse(res, null, "Unauthorized", false, ResCode.UNAUTHORIZED)
@@ -168,7 +170,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// NOTE: Referral codes are entities, not time-series data, so we show ALL codes regardless of creation date
 		// Usage count shows total usage across all time (usageCount is cumulative)
 		const referralMatch: any = { isDeleted: false }
-		
+
 		const totalReferralCodes = await ReferralCodes.countDocuments(referralMatch)
 		const activeReferralCodes = await ReferralCodes.countDocuments({ ...referralMatch, isActive: true })
 		const inactiveReferralCodes = await ReferralCodes.countDocuments({ ...referralMatch, isActive: false })
