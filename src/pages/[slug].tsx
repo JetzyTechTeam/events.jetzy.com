@@ -17,93 +17,73 @@ type Props = {
 export default function EventDetailPage({ event }: Props) {
 	const { trackEventInteraction } = useAnalytics()
 
+	let data: IEvent | null = null
+	let parseError = null
+
 	try {
-		const data = JSON.parse(event) as IEvent
+		data = JSON.parse(event) as IEvent
+	} catch (error) {
+		parseError = error
+	}
 
-		useEffect(() => {
-			const trackView = async () => {
-				try {
-					// Get visitor ID
-					let visitorId = localStorage.getItem("visitor_id")
-					if (!visitorId) {
-						const ShortUniqueId = (await import("short-unique-id")).default
-						const uid = new ShortUniqueId({ length: 10 })
-						visitorId = uid.randomUUID()
-						localStorage.setItem("visitor_id", visitorId as string)
-					}
+	useEffect(() => {
+		const trackView = async () => {
+			if (!data?._id) return
 
-					// Check for referral code
-					const urlParams = new URLSearchParams(window.location.search)
-					const referralCode = urlParams.get("ref")
-
-					if (referralCode) {
-						sessionStorage.setItem("jetzy_referral_code", referralCode)
-					}
-
-					// Track event view using new analytics system
-					if (data?._id) {
-						await trackEventInteraction(data._id.toString(), "view", {
-							referralCode: referralCode || undefined,
-							visitorId: visitorId,
-						})
-					}
-
-					// Also track using old system for backward compatibility
-					const trackRes = await fetch("/api/analytics/track", {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-						},
-						credentials: "include",
-						body: JSON.stringify({
-							eventId: data._id,
-							referralCode,
-							visitorId,
-						}),
-					})
-
-					if (!trackRes.ok) {
-						const errorText = await trackRes.text()
-						console.error("[Event Page] Legacy tracking failed:", trackRes.status, errorText)
-					}
-				} catch (err: any) {
-					console.error("[Event Page] Tracking error:", err)
+			try {
+				// Get visitor ID
+				let visitorId = localStorage.getItem("visitor_id")
+				if (!visitorId) {
+					const ShortUniqueId = (await import("short-unique-id")).default
+					const uid = new ShortUniqueId({ length: 10 })
+					visitorId = uid.randomUUID()
+					localStorage.setItem("visitor_id", visitorId as string)
 				}
-			}
 
-			if (data?._id) {
-				trackView()
-			}
-		}, [data._id, trackEventInteraction])
+				// Check for referral code
+				const urlParams = new URLSearchParams(window.location.search)
+				const referralCode = urlParams.get("ref")
 
-		// Validate that the event has required fields
-		if (!data || !data._id || !data.name) {
-			throw new Error("Invalid event data")
+				if (referralCode) {
+					sessionStorage.setItem("jetzy_referral_code", referralCode)
+				}
+
+				// Track event view using new analytics system
+				if (data?._id) {
+					await trackEventInteraction(data._id.toString(), "view", {
+						referralCode: referralCode || undefined,
+						visitorId: visitorId,
+					})
+				}
+
+				// Also track using old system for backward compatibility
+				const trackRes = await fetch("/api/analytics/track", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					credentials: "include",
+					body: JSON.stringify({
+						eventId: data._id,
+						referralCode,
+						visitorId,
+					}),
+				})
+
+				if (!trackRes.ok) {
+					const errorText = await trackRes.text()
+					console.error("[Event Page] Legacy tracking failed:", trackRes.status, errorText)
+				}
+			} catch (err: any) {
+				console.error("[Event Page] Tracking error:", err)
+			}
 		}
 
-		return (
-			<>
-				<Head>
-					<title>{stripHTMLAndDecode(data.name)} - Jetzy Events</title>
-					<meta name="description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy. Book your tickets now!`} />
-					<meta name="keywords" content={`${stripHTMLAndDecode(data.name)}, event, tickets, booking, ${data.location}`} />
-					<meta property="og:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
-					<meta property="og:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
-					{data.images && data.images.length > 0 && <meta property="og:image" content={data.images[0]} />}
-					<meta property="og:type" content="event" />
-					<meta name="twitter:card" content="summary_large_image" />
-					<meta name="twitter:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
-					<meta name="twitter:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
-					{data.images && data.images.length > 0 && <meta name="twitter:image" content={data.images[0]} />}
-				</Head>
-				<ErrorBoundary>
-					<HostedEvents event={data} />
-				</ErrorBoundary>
-			</>
-		)
-	} catch (error) {
-		console.error("Error parsing event data:", error)
-		// Return the error page directly
+		trackView()
+	}, [data?._id, trackEventInteraction])
+
+	if (parseError || !data || !data._id || !data.name) {
+		console.error("Error parsing event data or invalid data:", parseError)
 		return (
 			<div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-8">
 				<div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
@@ -116,7 +96,7 @@ export default function EventDetailPage({ event }: Props) {
 						<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Event Not Found</h1>
 						<p className="text-gray-600 mb-6">We couldn&apos;t find the event you were looking for. Please try again or contact the event organizer for more information.</p>
 						<button
-							onClick={() => window.location.href = "/"}
+							onClick={() => (window.location.href = "/")}
 							className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
 						>
 							See All Events
@@ -126,6 +106,27 @@ export default function EventDetailPage({ event }: Props) {
 			</div>
 		)
 	}
+
+	return (
+		<>
+			<Head>
+				<title>{stripHTMLAndDecode(data.name)} - Jetzy Events</title>
+				<meta name="description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy. Book your tickets now!`} />
+				<meta name="keywords" content={`${stripHTMLAndDecode(data.name)}, event, tickets, booking, ${data.location}`} />
+				<meta property="og:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
+				<meta property="og:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
+				{data.images && data.images.length > 0 && <meta property="og:image" content={data.images[0]} />}
+				<meta property="og:type" content="event" />
+				<meta name="twitter:card" content="summary_large_image" />
+				<meta name="twitter:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
+				<meta name="twitter:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
+				{data.images && data.images.length > 0 && <meta name="twitter:image" content={data.images[0]} />}
+			</Head>
+			<ErrorBoundary>
+				<HostedEvents event={data} />
+			</ErrorBoundary>
+		</>
+	)
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
