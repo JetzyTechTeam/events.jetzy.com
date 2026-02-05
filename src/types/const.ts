@@ -4,6 +4,7 @@ export enum Pages {
 	Bookings = "Bookings",
 	Manage = 'Manage Event',
 	CreateEvent = 'Create Event',
+	Analytics = "Analytics",
 }
 
 export enum Roles {

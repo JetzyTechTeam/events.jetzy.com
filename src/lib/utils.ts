@@ -103,8 +103,8 @@ export function arrayShuffleRandomizer(arr: Array<any>) {
 
 		currentIndex--
 
-		/* Swap it with the current element */
-		;[arr[currentIndex], arr[randomIndex]] = [arr[randomIndex], arr[currentIndex]]
+			/* Swap it with the current element */
+			;[arr[currentIndex], arr[randomIndex]] = [arr[randomIndex], arr[currentIndex]]
 	}
 
 	return arr
@@ -128,7 +128,7 @@ export const navigateTo = (path: string): void => {
 	window.location.href = `${origin.origin}${path}`
 }
 
-export const snoopOnchange = () => {}
+export const snoopOnchange = () => { }
 
 export const greetings = (name: string) => {
 	var today = new Date()
@@ -219,4 +219,9 @@ export const formatTextWithLineBreaks = (text: string): string => {
 		.replace(/\? /g, "?\n") // Add \n after a question mark
 		.replace(/(\n\s*)+/g, "\n") // Remove extra new lines (if any)
 		.trim() // Trim leading/trailing spaces
+}
+
+export const stripHTMLAndDecode = (str: string) => {
+	if (!str) return ""
+	return str.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ")
 }

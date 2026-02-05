@@ -2,9 +2,12 @@ import { Events } from "@/models/events"
 import { IEvent } from "@/models/events/types"
 import { GetServerSideProps } from "next"
 import dynamic from "next/dynamic"
-import React from "react"
+import React, { useEffect } from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import { ensureDbConnected } from "@/configs/database"
+import { useAnalytics } from "@/hooks/useAnalytics"
+import Head from "next/head"
+import { stripHTMLAndDecode } from "@/lib/utils"
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { ssr: false }) // Import the HostedEvents component dynamically
 
@@ -12,8 +15,66 @@ type Props = {
 	event: string
 }
 export default function EventDetailPage({ event }: Props) {
+	const { trackEventInteraction } = useAnalytics()
+
 	try {
 		const data = JSON.parse(event) as IEvent
+
+		useEffect(() => {
+			const trackView = async () => {
+				try {
+					// Get visitor ID
+					let visitorId = localStorage.getItem("visitor_id")
+					if (!visitorId) {
+						const ShortUniqueId = (await import("short-unique-id")).default
+						const uid = new ShortUniqueId({ length: 10 })
+						visitorId = uid.randomUUID()
+						localStorage.setItem("visitor_id", visitorId as string)
+					}
+
+					// Check for referral code
+					const urlParams = new URLSearchParams(window.location.search)
+					const referralCode = urlParams.get("ref")
+
+					if (referralCode) {
+						sessionStorage.setItem("jetzy_referral_code", referralCode)
+					}
+
+					// Track event view using new analytics system
+					if (data?._id) {
+						await trackEventInteraction(data._id.toString(), "view", {
+							referralCode: referralCode || undefined,
+							visitorId: visitorId,
+						})
+					}
+
+					// Also track using old system for backward compatibility
+					const trackRes = await fetch("/api/analytics/track", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						credentials: "include",
+						body: JSON.stringify({
+							eventId: data._id,
+							referralCode,
+							visitorId,
+						}),
+					})
+
+					if (!trackRes.ok) {
+						const errorText = await trackRes.text()
+						console.error("[Event Page] Legacy tracking failed:", trackRes.status, errorText)
+					}
+				} catch (err: any) {
+					console.error("[Event Page] Tracking error:", err)
+				}
+			}
+
+			if (data?._id) {
+				trackView()
+			}
+		}, [data._id, trackEventInteraction])
 
 		// Validate that the event has required fields
 		if (!data || !data._id || !data.name) {
@@ -21,9 +82,24 @@ export default function EventDetailPage({ event }: Props) {
 		}
 
 		return (
-			<ErrorBoundary>
-				<HostedEvents event={data} />
-			</ErrorBoundary>
+			<>
+				<Head>
+					<title>{stripHTMLAndDecode(data.name)} - Jetzy Events</title>
+					<meta name="description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy. Book your tickets now!`} />
+					<meta name="keywords" content={`${stripHTMLAndDecode(data.name)}, event, tickets, booking, ${data.location}`} />
+					<meta property="og:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
+					<meta property="og:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
+					{data.images && data.images.length > 0 && <meta property="og:image" content={data.images[0]} />}
+					<meta property="og:type" content="event" />
+					<meta name="twitter:card" content="summary_large_image" />
+					<meta name="twitter:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
+					<meta name="twitter:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
+					{data.images && data.images.length > 0 && <meta name="twitter:image" content={data.images[0]} />}
+				</Head>
+				<ErrorBoundary>
+					<HostedEvents event={data} />
+				</ErrorBoundary>
+			</>
 		)
 	} catch (error) {
 		console.error("Error parsing event data:", error)
@@ -80,7 +156,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			},
 		}
 	} catch (error) {
-		console.error('Error in getServerSideProps:', error);
+		console.error("Error in getServerSideProps:", error)
 		return {
 			notFound: true,
 		}
