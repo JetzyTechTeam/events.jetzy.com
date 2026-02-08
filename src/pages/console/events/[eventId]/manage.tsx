@@ -705,7 +705,7 @@ function DailyViewsModal({ isOpen, onClose, dailyViews }: { isOpen: boolean; onC
 									<Tr>
 										<Th color="gray.400">Date</Th>
 										<Th color="gray.400" isNumeric>Views</Th>
-										<Th color="gray.400" isNumeric>Unique Viewers</Th>
+										<Th color="gray.400" isNumeric>Unique Sessions</Th>
 									</Tr>
 								</Thead>
 								<Tbody>

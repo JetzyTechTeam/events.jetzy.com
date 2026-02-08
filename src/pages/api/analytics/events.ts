@@ -144,7 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				$group: {
 					_id: "$interactionType",
 					count: { $sum: 1 },
-					uniqueUsers: { $addToSet: { $ifNull: ["$userId", "$sessionId"] } },
+					uniqueUsers: { $addToSet: "$sessionId" },
 				},
 			},
 		])
@@ -214,7 +214,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				$group: {
 					_id: viewsDateFormat,
 					views: { $sum: 1 },
-					uniqueViewers: { $addToSet: { $ifNull: ["$userId", "$sessionId"] } },
+					uniqueViewers: { $addToSet: "$sessionId" },
 				},
 			},
 			{
