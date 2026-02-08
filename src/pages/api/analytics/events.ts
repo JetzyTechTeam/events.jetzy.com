@@ -144,7 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				$group: {
 					_id: "$interactionType",
 					count: { $sum: 1 },
-					uniqueUsers: { $addToSet: "$userId" },
+					uniqueUsers: { $addToSet: { $ifNull: ["$userId", "$sessionId"] } },
 				},
 			},
 		])
@@ -153,7 +153,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		interactionStats.forEach((stat) => {
 			interactions[stat._id] = {
 				count: stat.count,
-				uniqueUsers: stat.uniqueUsers.filter((id: any) => id).length,
+				uniqueUsers: stat.uniqueUsers.length,
 			}
 		})
 
@@ -214,14 +214,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				$group: {
 					_id: viewsDateFormat,
 					views: { $sum: 1 },
-					uniqueViewers: { $addToSet: "$userId" },
+					uniqueViewers: { $addToSet: { $ifNull: ["$userId", "$sessionId"] } },
 				},
 			},
 			{
 				$project: {
 					date: "$_id",
 					views: 1,
-					uniqueViewers: { $size: { $filter: { input: "$uniqueViewers", as: "user", cond: { $ne: ["$$user", null] } } } },
+					uniqueViewers: { $size: "$uniqueViewers" },
 				},
 			},
 			{ $sort: { date: 1 } },
