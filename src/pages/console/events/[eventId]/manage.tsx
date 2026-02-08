@@ -30,12 +30,19 @@ import {
 	TabPanels,
 	TabPanel,
 	Select,
+	Table,
+	Thead,
+	Tbody,
+	Tr,
+	Th,
+	Td,
+	TableContainer,
 } from "@chakra-ui/react"
 import { DateTime } from "luxon"
 import axios from "axios"
 import { useQuery } from "@tanstack/react-query"
 import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icons"
-import { ShareIcon } from "@heroicons/react/20/solid"
+import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { useRouter } from "next/router"
 import { Roles } from "@/types"
 import { redirect } from "next/navigation"
@@ -48,8 +55,17 @@ export default function Manage({ event }: any) {
 	const [shareModal, setShareModal] = useState(false)
 	const [inviteGuestsModal, setInviteGuestsModal] = useState(false)
 	const [sendBlastModal, setSendBlastModal] = useState(false)
+	const [showDailyViewsModal, setShowDailyViewsModal] = useState(false)
 	const router = useRouter()
 	const { data: session } = useSession()
+
+	const { data: analytics } = useQuery({
+		queryKey: ["event-analytics", event._id],
+		queryFn: async () => {
+			const res = await axios.get("/api/analytics/events", { params: { eventId: event._id, groupBy: "day" } })
+			return res.data.data
+		},
+	})
 
 	// @ts-ignore
 	if (session?.user?.role === Roles.USER) router.push("/console")
@@ -77,6 +93,14 @@ export default function Manage({ event }: any) {
 
 				{/* SHARE MODAL  */}
 				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={event.slug} />
+
+				{/* DAILY VIEWS MODAL */}
+				<DailyViewsModal
+					isOpen={showDailyViewsModal}
+					onClose={() => setShowDailyViewsModal(false)}
+					dailyViews={analytics?.trends?.views || []}
+				/>
+
 				<Tabs variant="line">
 					<TabList borderBottom="2px solid #9C9C9C">
 						<Tab
@@ -133,6 +157,18 @@ export default function Manage({ event }: any) {
 								>
 									<ShareIcon className="w-6 h-6 text-[#949494]" />
 									<p className="font-bold text-[#9C9C9C]">Share Event</p>
+								</div>
+
+								{/* Total Views Block */}
+								<div
+									className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
+									onClick={() => setShowDailyViewsModal(true)}
+								>
+									<EyeIcon className="w-6 h-6 text-[#949494]" />
+									<div className="flex flex-col">
+										<p className="font-bold text-[#9C9C9C]">Total Views</p>
+										<p className="text-xl font-bold text-white">{analytics?.summary?.views || 0}</p>
+									</div>
 								</div>
 							</div>
 							<div className="flex h-full gap-x-5">
@@ -650,4 +686,42 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			event: JSON?.stringify(event),
 		},
 	}
+}
+
+function DailyViewsModal({ isOpen, onClose, dailyViews }: { isOpen: boolean; onClose: () => void; dailyViews: any[] }) {
+	return (
+		<Modal isOpen={isOpen} onClose={onClose} isCentered size="xl">
+			<ModalOverlay />
+			<ModalContent bg="#1E1E1E" color="white">
+				<ModalHeader>Daily Event Views</ModalHeader>
+				<ModalCloseButton />
+				<ModalBody pb={6}>
+					{dailyViews.length === 0 ? (
+						<Text>No views recorded for this event yet.</Text>
+					) : (
+						<TableContainer maxHeight="400px" overflowY="auto">
+							<Table variant="simple" colorScheme="gray">
+								<Thead>
+									<Tr>
+										<Th color="gray.400">Date</Th>
+										<Th color="gray.400" isNumeric>Views</Th>
+										<Th color="gray.400" isNumeric>Unique Viewers</Th>
+									</Tr>
+								</Thead>
+								<Tbody>
+									{dailyViews.slice().reverse().map((day: any) => (
+										<Tr key={day.date}>
+											<Td>{DateTime.fromISO(day.date).toLocaleString(DateTime.DATE_MED)}</Td>
+											<Td isNumeric>{day.views}</Td>
+											<Td isNumeric>{day.uniqueViewers}</Td>
+										</Tr>
+									))}
+								</Tbody>
+							</Table>
+						</TableContainer>
+					)}
+				</ModalBody>
+			</ModalContent>
+		</Modal>
+	)
 }
