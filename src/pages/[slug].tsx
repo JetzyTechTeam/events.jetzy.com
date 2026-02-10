@@ -142,7 +142,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 
 		// Get the event by slug
-		const event = await Events.findOne({ slug: slug as string, isDeleted: false })
+		// escape special characters for regex
+		const escapedSlug = (slug as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+		const event = await Events.findOne({
+			slug: { $regex: new RegExp(`^${escapedSlug}$`, "i") },
+			isDeleted: false,
+		})
 
 		if (!event) {
 			return { notFound: true } // If the event is not found, return a 404
