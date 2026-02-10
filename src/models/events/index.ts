@@ -140,5 +140,37 @@ const eventsSchema = new Schema<IEvent>(
 	},
 )
 
+// Activity Sync Middleware
+eventsSchema.post("save", async function (doc) {
+	try {
+		const { upsertActivityFromEvent } = await import("@/lib/activity-sync")
+		await upsertActivityFromEvent(doc)
+	} catch (error) {
+		console.error("Error in post-save activity sync:", error)
+	}
+})
+
+eventsSchema.post("findOneAndUpdate", async function (doc) {
+	try {
+		if (doc) {
+			const { upsertActivityFromEvent } = await import("@/lib/activity-sync")
+			await upsertActivityFromEvent(doc)
+		}
+	} catch (error) {
+		console.error("Error in post-findOneAndUpdate activity sync:", error)
+	}
+})
+
+eventsSchema.post("findOneAndDelete", async function (doc) {
+	try {
+		if (doc) {
+			const { deleteActivityByEventId } = await import("@/lib/activity-sync")
+			await deleteActivityByEventId(doc._id)
+		}
+	} catch (error) {
+		console.error("Error in post-findOneAndDelete activity sync:", error)
+	}
+})
+
 // Export the user model
 export const Events: Model<IEvent> = dbconn.models["Events"] || dbconn.model("Events", eventsSchema)

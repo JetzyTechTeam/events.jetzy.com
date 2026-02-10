@@ -24,7 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const bookings = await event.getBookings()
 		if (bookings.length > 0) {
 			// soft delete the event
-			await Events.findByIdAndUpdate(eventId, { isDeleted: true })
+			await Events.findByIdAndUpdate(eventId, { isDeleted: true }, { new: true })
 		} else {
 			// hard delete the event
 			await Events.findByIdAndDelete(eventId)
