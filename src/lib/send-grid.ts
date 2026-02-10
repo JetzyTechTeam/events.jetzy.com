@@ -9,6 +9,18 @@ dayjs.extend(timezone)
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY as string)
 
+// Helper function to wrap HTML content in proper tags
+const wrapHtml = (html: string) => `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>${html}</body></html>`;
+
+// Helper function to strip HTML tags for plain text version
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gm, '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Helper function to strip HTML tags and decode HTML entities in event names
 function decodeHTMLEntities(text: string): string {
   if (!text) return text
@@ -115,7 +127,7 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
       to: [email, "tech@jetzyapp.com"],
       from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Jetzy [Good News!] Your wait is over - ${decodeHTMLEntities(eventName)}`,
-      html: `
+      html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Great News! Your Wait is Over! 🎉</h1>
           
@@ -159,7 +171,8 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
             Thank you for your patience! We&apos;re excited to see you at the event.
           </p>
         </div>
-      `,
+      `),
+      text: `Great News! Your wait is over for ${eventName}.\n\nTickets have become available and you've been selected from our waiting list. You have 24 hours to complete your purchase.\n\nTotal: ${totalTickets} tickets - $${totalAmount.toFixed(2)}\n\nVisit Jetzy Events to complete your purchase.`
     })
   } catch (error) {
     console.error("Failed to send waiting list approval:", error)
@@ -173,7 +186,7 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
       to: [email, "tech@jetzyapp.com"],
       from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Jetzy [Waiting List] ${decodeHTMLEntities(eventName)}`,
-      html: `
+      html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">You're on the Waiting List!</h1>
           
@@ -209,7 +222,8 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
             Thank you for your interest in Jetzy events! We'll be in touch soon.
           </p>
         </div>
-      `,
+      `),
+      text: `You're on the Waiting List for ${eventName}!\n\nUnfortunately, the event has reached its capacity, but we've added you to the waiting list. We'll notify you if a spot opens up.`
     })
   } catch (error) {
     console.error("Failed to send waiting list notification:", error)
@@ -234,7 +248,7 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
       replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `${hostName} invited you to ${decodeHTMLEntities(eventName)}`,
       text: `You're invited to ${decodeHTMLEntities(eventName)}!\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event details: ${eventUrl}\n\n--\nThis invitation was sent by ${hostName} via Jetzy Events`,
-      html: `
+      html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
           <div style="background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); padding: 40px 20px; border-radius: 12px 12px 0 0; text-align: center;">
             <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 700;">You're Invited!</h1>
@@ -287,7 +301,7 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
             </div>
           </div>
         </div>
-      `,
+      `),
     })
     console.log(`✅ Event invitation sent successfully to: ${email}`)
   } catch (error) {
@@ -334,7 +348,7 @@ export const sendBlastEmail = async ({
       replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
       subject,
       text: `${decodeHTMLEntities(eventName)}\n\n${customMessage}\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event: ${eventUrl}\n\n--\nSent by ${hostName} via Jetzy Events`,
-      html: `
+      html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
           <div style="background: linear-gradient(135deg, ${config.color} 0%, ${config.color}dd 100%); padding: 40px 20px; border-radius: 12px 12px 0 0; text-align: center;">
             <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 700;">${config.emoji} ${subject}</h1>
@@ -383,7 +397,7 @@ export const sendBlastEmail = async ({
             </div>
           </div>
         </div>
-      `,
+      `),
     })
     console.log(`✅ Blast email sent successfully to: ${email}`)
   } catch (error) {
@@ -564,7 +578,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
         subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
-        html,
+        html: wrapHtml(html),
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id}`)
       return { success: true, message: "Email sent successfully" }
@@ -642,7 +657,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
         subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
-        html,
+        html: wrapHtml(html),
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Valentine Event)`)
       return { success: true, message: "Email sent successfully" }
@@ -722,7 +738,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
         subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
-        html,
+        html: wrapHtml(html),
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Valentine SF)`)
       return { success: true, message: "Email sent successfully" }
@@ -802,7 +819,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
         subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
-        html,
+        html: wrapHtml(html),
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Valentine LA)`)
       return { success: true, message: "Email sent successfully" }
@@ -814,7 +832,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Jetzy [Booking Confirmation] ${decodeHTMLEntities(event.name)}`,
       ...(attachments.length > 0 ? { attachments } : {}),
-      html: `
+      html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>
           
@@ -877,7 +895,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             </p>
           </div>
         </div>
-      `,
+      `),
+      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}\n\nThank you for choosing Jetzy Events!`,
     }
 
     console.log("[sendTicketConfirmation] Sending email with payload:", {
@@ -927,7 +946,7 @@ export const sendOrganizerSaleNotification = async ({
       to: organizerEmail,
       from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `New Ticket Sale! - ${decodeHTMLEntities(event.name)}`,
-      html: `
+      html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">New Ticket Sold! 🎉</h1>
           
@@ -970,7 +989,8 @@ export const sendOrganizerSaleNotification = async ({
           : ""
         }
         </div>
-      `,
+      `),
+      text: `New Ticket Sold for ${event.name}!\n\nBuyer: ${firstName} ${lastName}\nOrder #: ${orderNumber}\nTotal Revenue: $${totalAmount.toFixed(2)}`,
     })
   } catch (error) {
     console.error("Failed to send organizer notification:", error)
@@ -998,7 +1018,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
       to: [email, "tech@jetzyapp.com"],
       from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Jetzy [Booking Cancelled] ${decodeHTMLEntities(event.name)}`,
-      html: `
+      html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Booking Cancellation Confirmation</h1>
           
@@ -1065,7 +1085,8 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
             </p>
           </div>
         </div>
-      `,
+      `),
+      text: `Booking Cancellation Confirmation for ${event.name}.\n\nYour booking has been cancelled and a refund of $${totalAmount.toFixed(2)} has been processed.\n\nThank you for choosing Jetzy Events!`,
     })
 
     console.log("[sendBookingCancellation] Email sent successfully to:", email)

@@ -1,26 +1,25 @@
-
-// Set environment variables BEFORE importing send-grid
-// process.env.SENDGRID_API_KEY = "YOUR_API_KEY";
-// process.env.SENDGRID_EMAIL_SENDER = "marketing@jetzyapp.com";
+import * as dotenv from "dotenv";
+dotenv.config();
 
 import { sendTicketConfirmation } from "../src/lib/send-grid";
 import { IEvent } from "../src/models/events/types";
 
 const run = async () => {
-    console.log("Preparing to send email...");
+    const testEmail = process.argv[2] || "raoarsalanlatif@gmail.com";
+    console.log(`Preparing to send email to: ${testEmail}...`);
 
     const mockEvent: IEvent = {
-        name: "Real Email Test Event",
+        name: "Annual Networking Gala - New York",
         images: ["https://placehold.co/600x400"],
-        location: "123 Real Test St, New York, NY", // Hardcoded resolved location
-        startsOn: new Date("2025-12-31T19:00:00"),
-        endsOn: new Date("2025-12-31T22:00:00"),
+        location: "Bar Sella, Hyatt Union Square, 134 4th Ave, New York, NY 10003",
+        startsOn: new Date("2026-12-31T19:00:00"),
+        endsOn: new Date("2027-01-01T03:00:00"),
         timezone: "America/New_York",
-        _id: "mock_event_id" as any,
-        slug: "real-test-event",
+        _id: "69406b0aecf5f8dab077a1dc" as any,
+        slug: "networking-gala",
         showParticipants: true,
         coordinates: { lat: 40.7, long: -74.0, placeId: "pid" },
-        desc: "Test description",
+        desc: "Join us for our annual networking gala.",
         isPaid: true,
         capacity: 100,
         requireApproval: false,
@@ -40,7 +39,7 @@ const run = async () => {
             event: mockEvent,
             firstName: "Arsalan",
             lastName: "Rao",
-            email: "raoarsalanlatif@gmail.com",
+            email: testEmail,
             phone: "+1234567890",
             tickets: [
                 {
