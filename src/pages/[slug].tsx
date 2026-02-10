@@ -142,16 +142,27 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 
 		// Get the event by slug
-		// escape special characters for regex
-		const escapedSlug = (slug as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-		const event = await Events.findOne({
-			slug: { $regex: new RegExp(`^${escapedSlug}$`, "i") },
-			isDeleted: false,
-		})
+		console.log(`[Slug Lookup v2] Searching for slug: "${slug}"`)
+
+		// 1. Try exact match first (standard Next.js behavior)
+		let event = await Events.findOne({ slug: slug as string, isDeleted: false })
+
+		// 2. If not found, try case-insensitive match
+		if (!event) {
+			console.log(`[Slug Lookup v2] Exact match failed, trying case-insensitive regex for: "${slug}"`)
+			const escapedSlug = (slug as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+			event = await Events.findOne({
+				slug: { $regex: new RegExp(`^${escapedSlug}$`, "i") },
+				isDeleted: false,
+			})
+		}
 
 		if (!event) {
+			console.log(`[Slug Lookup v2] Event not found for slug: "${slug}"`)
 			return { notFound: true } // If the event is not found, return a 404
 		}
+
+		console.log(`[Slug Lookup v2] Successfully found event: ${event._id} for slug: "${slug}"`)
 
 		// compress the event data
 		const eventData = JSON.stringify(event.toJSON())
