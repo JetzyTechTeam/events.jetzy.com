@@ -1,0 +1,73 @@
+Connecting to production database...
+Connected.
+Searching for Valentine events...
+Found 3 events:
+- ID: 697cf23827f6f5f0d7d8c25a
+  Name: Jetzy Valentine's Event
+  Description: Don’t be alone this Valentine's — find someone to share it with.
+On February 11th, Jetzy invites you to an intimate Pre- Valentine’s gathering in New York City designed for meaningful connections, effortless conversations, and unforgettable first encounters.
+Whether you’re single, new to the city, or simply open to meeting someone extraordinary, this evening is your opportunity to connect in a setting that feels refined, warm, and genuinely welcoming.
+This is not a typical Valentine’s event.
+It’s a thoughtfully curated experience bringing together Jetzy’s global community — accomplished, well-traveled, and open-minded individuals who value authenticity and real connection.
+Enjoy an elegant atmosphere, engaging conversations, delightful food and drinks, and the possibility of meeting someone who changes your story.
+📅 Date: February 11
+⏰ Time: 6:30 PM onwards
+📍 Venue: NYC (to be disclosed after registration)
+Cost: Covers entry ticket only.
+Food & Drinks can be purchased from the bar
+Early bird till Feb 3rd: $25
+Steady Bird till Feb 8: $35
+Lazy Bird till Feb 11, 12 pm: $50
+Door: $75
+Step in with curiosity.
+Leave with connection.
+This Valentine’s, let Jetzy help you find someone worth celebrating.
+  Slug: rOY402PFUL
+  Lowest Ticket Price: 50
+---
+- ID: 698643a2a2b2892a70c68c08
+  Name: Jetzy Valentine's Event Bay Area
+  Description: Don’t be alone this Valentine — find someone to share it with.
+On February 14th, Jetzy invites you to a Valentine’s evening gathering in San Jose, designed for meaningful connections, effortless conversations, and unforgettable first encounters beyond work and routine.
+Whether you’re single, new to the city, or simply open to meeting someone extraordinary, this evening is your opportunity to connect in a setting that feels refined, warm, and genuinely welcoming.
+This is not a typical Valentine’s event.
+It’s a thoughtfully curated experience bringing together Jetzy’s global community — accomplished, well-traveled, and open-minded individuals who value authenticity and real connection.
+Enjoy an elegant atmosphere, engaging conversations, delightful food and drinks, and the possibility of meeting someone who just might change your story.
+Date: February 14
+Time: 6:00 PM onwards
+Venue: San Jose (venue details will be shared after booking)
+Space is limited — we recommend reserving your spot early.
+  Slug: 5Ec6LWsSo4
+  Lowest Ticket Price: 10
+---
+- ID: 698a27d43c43238502823ddf
+  Name: Valentine's Event LA
+  Description: Don’t be alone this Valentine’s Day!
+Find someone at our Global Soulmate’s themed speed dating party!
+On February 13th, Jetzy invites you to an exclusive Pre-Valentine’s Day gathering in Santa Monica.
+This isn't just a mixer, but it’s a curated experience designed to move you from small talk to meaningful connection through our Speed Dating event to find a chance to meet your "Global Soulmate".
+The Experience: Four Rounds of Connection
+We're skipping the awkward 1-on-1 interview-style interrogation talks and replacing them with high-energy, themed rotations:
+Round 1: Bucket List Destinations – Connect with the room over your preferred "Bucket List" destinations, cultural traditions that move you, and which languages you'd like to speak (or want to learn).
+Round 2: The Cultural Compass – Groups will become smaller and split by continent interest.
+Here, we dive deeper into your lifestyle preferences and dig deeper into cultural traditions you'd like to explore/are interested in.
+Round 3: The Personality Match – Groups become smaller in even more intimate groups: "Hot Takes" and "Would You Rather." Are you an adrenaline junkie or a relaxing-type of adventure seeker?
+Find the peanut butter to your jelly sandwich!
+Final Round: The Spotlight – We’ll open the floor for volunteers to share the best connections they made and see if they're "Global Soulmates".
+Whether you've found a new travel buddy or a romantic spark, this is where stories begin.
+The Atmosphere: Since it is also Galentine’s Day at the venue, the ladies will enjoy fun trinkets, specialty cocktails, and a vibrant soundtrack to keep the energy high.
+Event Details:
+📅 Date: February 13
+⏰ Time: 6:30 PM
+📍 Venue: TBA Location in Santa Monica
+Cost: Covers entry ticket only.
+Food & Drinks can be purchased from the bar
+Early bird till Feb 10th: $30
+Standard till Feb 12th: $45
+Door: $60
+Step in with curiosity.
+Leave with connection.
+Whether you’re looking for a partner for your next trip to Tokyo or someone to explore the hidden corners of LA, let Jetzy help you find someone worth celebrating.
+  Slug: 3qgdpurzVk
+  Lowest Ticket Price: 30
+---
