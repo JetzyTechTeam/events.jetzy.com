@@ -42,7 +42,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 
 	const filteredNavigation = userRole === Roles.USER
 		? navigation.filter(item => item.name === Pages.Dasshboard)
-		: navigation;
+		: navigation.filter(item => item.name !== Pages.Dasshboard);
 
 	return (
 		<Disclosure as="nav" className="bg-gray-800">

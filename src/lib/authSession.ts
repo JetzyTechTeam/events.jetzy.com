@@ -45,7 +45,7 @@ export const adminOnly = async (context: any) => {
 	if (!isAdmin) {
 		return {
 			redirect: {
-				destination: ROUTES.dashboard.index || "/",
+				destination: ROUTES.home,
 				permanent: false,
 			},
 		}
@@ -68,7 +68,7 @@ export const unauthorizedOnly = async (context: any) => {
 
 		return {
 			redirect: {
-				destination: isAdmin ? ROUTES.dashboard.index : ROUTES.home,
+				destination: isAdmin ? ROUTES.dashboard.events.index : ROUTES.home,
 				permanent: false,
 			},
 		}

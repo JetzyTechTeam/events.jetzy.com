@@ -29,19 +29,17 @@ export default function ConsoleDashboard() {
 
 	// @ts-ignore
 	const admin = session?.user?.role === "admin";
- 
+
 	React.useEffect(() => {
 		// Dispatcher the event to fetch events list from the server
-		if (admin) {
-			dispatcher(ListEventsThunk())
-		}
-	}, [admin])
+		dispatcher(ListEventsThunk())
+	}, [])
 
 	return (
 		<ConsoleLayout page={Pages.Dasshboard} component={
 			admin ?
-		<CreateEventButton />
-		: <></>
+				<CreateEventButton />
+				: <></>
 		}>
 			{!dataList?.length && !isFetching && <p>No events found.</p>}
 

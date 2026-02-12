@@ -34,7 +34,14 @@ export default function LoginPage() {
 			console.log('✅ Session established, redirecting...');
 			// Small delay to ensure SessionSync has processed the session
 			setTimeout(() => {
-				navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.index)
+				setTimeout(() => {
+					// @ts-ignore
+					if (session?.user?.role === 'admin' || session?.user?.role === 'super admin') {
+						navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.events.index)
+					} else {
+						navigation?.push(_cb ? _cb.toString() : ROUTES.home)
+					}
+				}, 300);
 			}, 300);
 		}
 	}, [waitingForSession, status, session, navigation, _cb])
