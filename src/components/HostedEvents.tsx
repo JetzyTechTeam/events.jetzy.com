@@ -19,6 +19,7 @@ import Linkify from "linkify-react"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
+import { useRouter } from "next/router";
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -53,6 +54,7 @@ export default function HostedEvents({ event }: Props) {
 	const [shareUrl, setShareUrl] = useState("")
 	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list">("bookings")
 	const { data: session } = useSession()
+	const router = useRouter()
 
 	// Validate event data early and safely
 	const isValidEvent = event && event._id && event.name
@@ -135,9 +137,9 @@ export default function HostedEvents({ event }: Props) {
 				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
 					<div className="max-w-4xl mx-auto mb-6 flex items-center justify-between">
 						{isAdmin && (
-							<Link href="/" className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
+							<button onClick={() => router.back()} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white">
 								Back
-							</Link>
+							</button>
 						)}
 						{isAdmin && (
 							<Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
