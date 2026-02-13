@@ -142,6 +142,8 @@ export default function HostedEvents({ event }: Props) {
 		)
 	}
 
+	const isEnded = clonedEvent?.endsOn ? new Date(clonedEvent.endsOn).getTime() < Date.now() : false
+
 	try {
 		return (
 			<>
@@ -204,13 +206,15 @@ export default function HostedEvents({ event }: Props) {
 										<ShareIcon className="w-6 h-6 text-white inline-block" />
 									</button>
 
-									<a
-										role="button"
-										href="#event-tickets"
-										className="bg-[#F79432] text-black font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm"
-									>
-										Get Tickets
-									</a>
+									{!isEnded && (
+										<a
+											role="button"
+											href="#event-tickets"
+											className="bg-[#F79432] text-black font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm"
+										>
+											Get Tickets
+										</a>
+									)}
 								</div>
 							</div>
 						</div>
@@ -247,7 +251,7 @@ export default function HostedEvents({ event }: Props) {
 
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
-					{clonedEvent && <EventTicketsComponent event={clonedEvent} />}
+					{clonedEvent && !isEnded && <EventTicketsComponent event={clonedEvent} />}
 
 					{clonedEvent?._id && (
 						<div id="discussion-section" className="max-w-4xl mx-auto mt-8">

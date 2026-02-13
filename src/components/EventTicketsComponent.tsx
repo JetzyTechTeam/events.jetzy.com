@@ -33,6 +33,10 @@ type Props = {
 };
 
 const EventTicketsComponent: React.FC<Props> = ({ event }) => {
+  const isEnded = event?.endsOn ? new Date(event.endsOn).getTime() < Date.now() : false;
+
+  if (isEnded) return null;
+
   const eventId = event._id.toString();
 
   const session = useSession();
