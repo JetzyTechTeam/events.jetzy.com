@@ -14,11 +14,21 @@ if (!admin.apps.length) {
     } else {
         try {
             console.log("Firebase Admin: Attempting to initialize with Project ID:", projectId);
+
+            // Robust private key parsing
+            let formattedKey = privateKey;
+            if (formattedKey.includes("\\n")) {
+                formattedKey = formattedKey.replace(/\\n/g, "\n");
+            }
+
+            // Trim any quotes that might have been accidentally included
+            formattedKey = formattedKey.replace(/^"|"$/g, '');
+
             admin.initializeApp({
                 credential: admin.credential.cert({
                     project_id: projectId,
                     client_email: clientEmail,
-                    private_key: privateKey.replace(/\\n/g, "\n"),
+                    private_key: formattedKey,
                 } as any),
             });
             console.log("✅ Firebase Admin initialized successfully");

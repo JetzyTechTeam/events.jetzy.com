@@ -60,7 +60,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				$setOnInsert: {
 					sessionId,
 					userId: userId,
-					journey: [],
 				},
 				$push: {
 					journey: journeyStep,
