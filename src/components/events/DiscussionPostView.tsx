@@ -1622,22 +1622,15 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 						onClick={async () => {
 							const postUrl = `${window.location.origin}/console/events/${eventId}/discussion/${postId}`
 							try {
-								if (navigator.share) {
-									await navigator.share({
-										title: post.title,
-										text: post.content.slice(0, 100) + "...",
-										url: postUrl,
-									})
-								} else {
-									await navigator.clipboard.writeText(postUrl)
-									toast({
-										title: "Link copied!",
-										description: "Post link has been copied to clipboard",
-										status: "success",
-										duration: 2000,
-										isClosable: true,
-									})
-								}
+								// Always copy to clipboard as requested
+								await navigator.clipboard.writeText(postUrl)
+								toast({
+									title: "Link copied!",
+									description: "Post link has been copied to clipboard",
+									status: "success",
+									duration: 2000,
+									isClosable: true,
+								})
 							} catch (error) {
 								toast({
 									title: "Share Post",

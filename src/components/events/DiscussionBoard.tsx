@@ -113,24 +113,15 @@ const FeedPostCard = ({
 		const postUrl = `${window.location.origin}/console/events/${post.eventId}/discussion/${post._id}`
 
 		try {
-			if (navigator.share) {
-				// Use native share if available (mobile devices)
-				await navigator.share({
-					title: post.title,
-					text: post.content.slice(0, 100) + "...",
-					url: postUrl,
-				})
-			} else {
-				// Fallback to copy to clipboard
-				await navigator.clipboard.writeText(postUrl)
-				toast({
-					title: "Link copied!",
-					description: "Post link has been copied to clipboard",
-					status: "success",
-					duration: 2000,
-					isClosable: true,
-				})
-			}
+			// Always copy to clipboard as requested
+			await navigator.clipboard.writeText(postUrl)
+			toast({
+				title: "Link copied!",
+				description: "Post link has been copied to clipboard",
+				status: "success",
+				duration: 2000,
+				isClosable: true,
+			})
 		} catch (error) {
 			// If both fail, show the URL in a toast
 			toast({

@@ -71,7 +71,8 @@ export interface DiscussionCommentWithAuthor {
 	parentCommentId?: string | null
 	images?: string[]
 	reactions: {
-		likes: string[]
+		like: string[]
+		helpful: string[]
 	}
 	isEdited: boolean
 	editedAt?: Date
