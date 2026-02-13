@@ -72,7 +72,7 @@ HTTPClient.interceptors.request.use((configs: any) => {
 			configs.headers["Content-Type"] = "multipart/form-data"
 		} else if (isProtected === "external") {
 			configs.headers["Content-Type"] = "application/json"
-		} else {
+		} else if (!configs.headers["Content-Type"]) {
 			configs.headers["Content-Type"] = "application/x-www-form-urlencoded"
 		}
 		if (path) configs.url = path

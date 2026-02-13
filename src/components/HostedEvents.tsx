@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
+import DiscussionBoard from "@/components/events/DiscussionBoard"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -80,6 +81,16 @@ export default function HostedEvents({ event }: Props) {
 	useEffect(() => {
 		if (typeof window !== "undefined") {
 			setShareUrl(window.location.href)
+
+			// Auto focus on discussion section if hash is not present (or unconditional as per request)
+			// Request says "if the event is event and someone tries to view details we should auto focus on the discussion section"
+			// Implementing a slight delay to ensure rendering
+			setTimeout(() => {
+				const discussionSection = document.getElementById("discussion-section");
+				if (discussionSection) {
+					discussionSection.scrollIntoView({ behavior: "smooth" });
+				}
+			}, 1000);
 		}
 	}, [])
 
@@ -237,6 +248,12 @@ export default function HostedEvents({ event }: Props) {
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
 					{clonedEvent && <EventTicketsComponent event={clonedEvent} />}
+
+					{clonedEvent?._id && (
+						<div id="discussion-section" className="max-w-4xl mx-auto mt-8">
+							<DiscussionBoard eventId={clonedEvent._id.toString()} />
+						</div>
+					)}
 				</div>
 				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} />}
 			</>
