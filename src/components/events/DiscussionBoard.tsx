@@ -432,7 +432,8 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 
 	const handleCreatePostClick = () => {
 		if (!session || !session.user) {
-			setIsLoginModalOpen(true)
+			const currentPath = window.location.pathname + window.location.search
+			router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
 			return
 		}
 		onOpen()
@@ -455,45 +456,46 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				</div>
 
 				{/* Create Post Input */}
-				{session && (
-					<Box bg="#2b2b2b" borderRadius="lg" p={4} mb={6}>
-						<Flex gap={3} align="center">
-							<Avatar
-								size="md"
-								name={session.user?.name || "User"}
-								src={session.user?.image || ""}
-							/>
-							<Button
-								flex="1"
-								bg="#1E1E1E"
-								color="#bbbbbb"
-								borderRadius="full"
-								justifyContent="flex-start"
-								pl={4}
-								h="40px"
-								_hover={{ bg: "black" }}
-								onClick={handleCreatePostClick}
-								fontWeight="normal"
-								fontSize="md"
-							>
-								What&apos;s on your mind, {session.user?.name?.split(' ')[0]}?
-							</Button>
-						</Flex>
-						<Divider my={3} borderColor="#434343" />
-						<Flex justify="space-between" px={2}>
-							<Button
-								flex="1"
-								variant="ghost"
-								leftIcon={<Icon as={FiPlus} color="white" boxSize={6} />}
-								color="#bbbbbb"
-								_hover={{ bg: "whiteAlpha.100", color: "white" }}
-								onClick={handleCreatePostClick}
-							>
-								Create Post
-							</Button>
-						</Flex>
-					</Box>
-				)}
+				<Box bg="#2b2b2b" borderRadius="lg" p={4} mb={6}>
+					<Flex gap={3} align="center">
+						<Avatar
+							size="md"
+							name={session?.user?.name || "Guest"}
+							src={session?.user?.image || ""}
+						/>
+						<Button
+							flex="1"
+							bg="#1E1E1E"
+							color="#bbbbbb"
+							borderRadius="full"
+							justifyContent="flex-start"
+							pl={4}
+							h="40px"
+							_hover={{ bg: "black" }}
+							onClick={handleCreatePostClick}
+							fontWeight="normal"
+							fontSize="md"
+						>
+							{session?.user?.name
+								? `What's on your mind, ${session.user.name.split(' ')[0]}?`
+								: "What's on your mind? Login to join the conversation."
+							}
+						</Button>
+					</Flex>
+					<Divider my={3} borderColor="#434343" />
+					<Flex justify="space-between" px={2}>
+						<Button
+							flex="1"
+							variant="ghost"
+							leftIcon={<Icon as={FiPlus} color="white" boxSize={6} />}
+							color="#bbbbbb"
+							_hover={{ bg: "whiteAlpha.100", color: "white" }}
+							onClick={handleCreatePostClick}
+						>
+							Create Post
+						</Button>
+					</Flex>
+				</Box>
 
 				{/* Search and Sort */}
 				<Box bg="#2b2b2b" borderRadius="lg" p={4} mb={6}>
