@@ -179,8 +179,90 @@ export const authOptions: NextAuthOptions = {
           }
           return userData;
         } catch (error: any) {
-          console.error('❌ Authorization error:', error.message || error);
-          // Re-throw the error so NextAuth can handle it properly
+          console.error("❌ Authorization error:", error.message || error);
+          throw error;
+        }
+      },
+    }),
+    CredentialsProvider({
+      id: "firebase-auth",
+      name: "Firebase",
+      credentials: {
+        idToken: { label: "ID Token", type: "text" },
+      },
+      async authorize(credentials, req) {
+        console.log("--- Firebase Auth API Start ---");
+        try {
+          const { idToken } = credentials ?? {};
+          if (!idToken) {
+            console.error("❌ Firebase Auth: No idToken provided");
+            throw new Error("ID Token is required");
+          }
+
+          // Ensure database connection
+          await ensureDbConnected();
+
+          // Verify the token using firebase-admin
+          const { verifyIdToken } = await import("@/configs/firebase-admin");
+          console.log("Firebase Auth: Verifying token...");
+          const decodedToken = await verifyIdToken(idToken);
+
+          if (!decodedToken) {
+            console.error("❌ Firebase Auth: Token verification failed (returned null)");
+            throw new Error("Invalid ID Token");
+          }
+
+          const { email, name, picture, uid } = decodedToken;
+          if (!email) {
+            console.error("❌ Firebase Auth: Email not found in decoded token");
+            throw new Error("Email not found in token");
+          }
+
+          console.log(`Firebase Auth: Decoded token for email: ${email}, UID: ${uid}`);
+
+          // Look for user in both collections
+          console.log("Firebase Auth: Looking for user in database...");
+          let user = await EventUsers.findOne({ email });
+          if (!user) {
+            console.log(`Firebase Auth: User not found in EventUsers, checking Users...`);
+            user = await Users.findOne({ email });
+          }
+
+          // If user doesn't exist, create a new one (Social Signup)
+          if (!user) {
+            console.log(`Firebase Auth: User ${email} not found, creating new account...`);
+            const firstName = name?.split(" ")[0] || "User";
+            const lastName = name?.split(" ").slice(1).join(" ") || "";
+
+            // Create in EventUsers by default
+            user = await EventUsers.create({
+              firstName,
+              lastName,
+              email,
+              image: picture,
+              role: "user",
+              isVerified: true,
+              authProvider: "firebase",
+              firebaseUid: uid,
+            });
+            console.log(`✅ Firebase Auth: New user created: ${user._id}`);
+          } else {
+            console.log(`✅ Firebase Auth: User found: ${user._id}`);
+          }
+
+          console.log("--- Firebase Auth API Success ---");
+          return {
+            _id: user._id.toString(),
+            id: user._id.toString(),
+            fullName: `${user.firstName} ${user.lastName}`,
+            email: user.email,
+            role: user.role,
+            accessToken: null,
+            ...(user.image ? { image: user.image } : {}),
+          };
+        } catch (error: any) {
+          console.error("❌ Firebase Auth error:", error.message);
+          console.error("Error details:", error);
           throw error;
         }
       },

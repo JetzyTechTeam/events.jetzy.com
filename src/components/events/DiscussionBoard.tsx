@@ -69,7 +69,7 @@ const FeedPostCard = ({
 	const toast = useToast()
 	const currentUserId = (session?.user as any)?._id
 	const hasLiked = (post.reactions?.like || (post.reactions as any)?.likes || []).includes(currentUserId || "")
-	const isAuthor = currentUserId === post.userId._id
+	const isAuthor = currentUserId === post.userId?._id
 	// @ts-ignore
 	const userRole = session?.user?.role
 	const isAdmin = userRole === "admin" || userRole === "super admin"
@@ -165,13 +165,13 @@ const FeedPostCard = ({
 				<Flex align="center" gap={3} mb={3}>
 					<Avatar
 						size="md"
-						name={`${post.userId.firstName} ${post.userId.lastName}`}
+						name={post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"}
 						src=""
 					/>
 					<Box flex="1">
 						<Flex align="center" gap={2}>
 							<Text fontWeight="600" color="white">
-								{post.userId.firstName} {post.userId.lastName}
+								{post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"}
 							</Text>
 							{post.isPinned && (
 								<Flex align="center" gap={1} color="#bbbbbb" fontSize="xs">

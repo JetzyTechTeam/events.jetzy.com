@@ -37,18 +37,20 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const dispatcher = useAppDispatch();
 
   // format the event tickets
-  const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : []).map((ticket) => {
-    return {
-      id: ticket._id.toString(),
-      name: ticket.name,
-      price: ticket.price,
-      description: ticket.desc,
-      quantity: 0,
-      isSelected: false,
-      priceId: ticket.stripeProductId,
-      eventId: event._id.toString(),
-    };
-  });
+  const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
+    .filter(t => t && t._id)
+    .map((ticket) => {
+      return {
+        id: ticket._id.toString(),
+        name: ticket.name,
+        price: ticket.price,
+        description: ticket.desc,
+        quantity: 0,
+        isSelected: false,
+        priceId: ticket.stripeProductId,
+        eventId: event._id.toString(),
+      };
+    });
 
   // State for ticket quantities
   const [tickets, setTickets] = useState(ticketsItems);

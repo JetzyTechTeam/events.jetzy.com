@@ -311,14 +311,17 @@ function GuestsList({ eventId }: { eventId: string }) {
 
 				{!isLoading && guests?.data?.data?.length === 0 && <li className="text-gray-500 italic text-sm">No guests found for this event.</li>}
 
-				{guests?.data?.data?.map((guest: { _id: string; name: string }) => (
-					<li key={guest._id} className="flex items-center justify-between bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition">
-						<div className="flex items-center gap-4">
-							<div className="w-9 h-9 rounded-full bg-[#444] flex items-center justify-center text-white font-semibold uppercase">{guest.name.charAt(0)}</div>
-							<span className="text-white font-medium">{guest.name}</span>
-						</div>
-					</li>
-				))}
+				{guests?.data?.data?.map((guest: { _id: string; name: string }) => {
+					if (!guest) return null;
+					return (
+						<li key={guest._id} className="flex items-center justify-between bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition">
+							<div className="flex items-center gap-4">
+								<div className="w-9 h-9 rounded-full bg-[#444] flex items-center justify-center text-white font-semibold uppercase">{guest.name?.charAt(0) || "?"}</div>
+								<span className="text-white font-medium">{guest.name || "Unknown Guest"}</span>
+							</div>
+						</li>
+					);
+				})}
 			</ul>
 		</div>
 	)

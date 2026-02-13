@@ -21,14 +21,30 @@ export const eventUsersSchema = new Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     role: {
       type: String,
       enum: ["admin", "user"],
       default: "user",
-    }
+    },
+    image: {
+      type: String,
+      required: false,
+    },
+    authProvider: {
+      type: String,
+      default: "credentials",
+    },
+    firebaseUid: {
+      type: String,
+      required: false,
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 )

@@ -149,7 +149,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	const { isOpen: isReplyFeelingModalOpen, onOpen: onReplyFeelingModalOpen, onClose: onReplyFeelingModalClose } = useDisclosure()
 	const { isOpen: isEditFeelingModalOpen, onOpen: onEditFeelingModalOpen, onClose: onEditFeelingModalClose } = useDisclosure()
 
-	const isAuthor = currentUserId === comment.userId._id
+	const isAuthor = currentUserId === comment.userId?._id
 	const hasLiked = (comment.reactions?.like || (comment.reactions as any)?.likes || []).includes(currentUserId || "")
 	// Check if user is logged in (ticket requirement removed)
 	const canReply = !!session && !!session.user
@@ -264,12 +264,12 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	return (
 		<Box mb={2}>
 			<Flex gap={2} align="start">
-				<Avatar size="sm" name={`${comment.userId.firstName} ${comment.userId.lastName}`} src="" />
+				<Avatar size="sm" name={comment.userId ? `${comment.userId.firstName} ${comment.userId.lastName}` : "Deleted User"} src="" />
 
 				<Box flex="1">
 					<Box bg="#2b2b2b" borderRadius="2xl" px={3} py={2} width="fit-content" mb={1} maxW="100%">
 						<Text fontWeight="600" fontSize="sm" color="white">
-							{comment.userId.firstName} {comment.userId.lastName}
+							{comment.userId ? `${comment.userId.firstName} ${comment.userId.lastName}` : "Deleted User"}
 						</Text>
 
 						{isEditing ? (
@@ -1238,7 +1238,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		)
 	}
 
-	const isAuthor = currentUserId === post.userId._id
+	const isAuthor = currentUserId === post.userId?._id
 	const hasLiked = (post.reactions?.like || (post.reactions as any)?.likes || []).includes(currentUserId || "")
 	const hasMarkedHelpful = post.reactions.helpful.includes(currentUserId || "")
 
@@ -1255,10 +1255,10 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				{/* Post Header */}
 				<Flex justify="space-between" align="start" mb={4}>
 					<Flex align="center" gap={3}>
-						<Avatar name={`${post.userId.firstName} ${post.userId.lastName}`} src="" size="md" />
+						<Avatar name={post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"} src="" size="md" />
 						<Box>
 							<Heading size="md" color="white">
-								{post.userId.firstName} {post.userId.lastName}
+								{post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"}
 							</Heading>
 							<Flex align="center" gap={2} fontSize="sm" color="#bbbbbb">
 								<Text>{new Date(post.createdAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })}</Text>

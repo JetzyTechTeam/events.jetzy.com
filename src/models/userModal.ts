@@ -23,7 +23,7 @@ export const usersSchema = new Schema(
 
 		password: {
 			type: String,
-			required: true,
+			required: false,
 		},
 
 		role: {
@@ -34,6 +34,18 @@ export const usersSchema = new Schema(
 				message: "Invalid status type",
 			},
 			default: "user",
+		},
+		image: {
+			type: String,
+			required: false,
+		},
+		authProvider: {
+			type: String,
+			default: "credentials",
+		},
+		firebaseUid: {
+			type: String,
+			required: false,
 		},
 	},
 	{ timestamps: true },

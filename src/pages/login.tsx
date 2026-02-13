@@ -12,6 +12,10 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
 import React from "react"
+import { auth } from "@/configs/firebase"
+import { GoogleAuthProvider, OAuthProvider, signInWithPopup } from "firebase/auth"
+import { FcGoogle } from "react-icons/fc"
+import { AiFillApple } from "react-icons/ai"
 
 export default function LoginPage() {
 	const navigation = useRouter()
@@ -79,6 +83,60 @@ export default function LoginPage() {
 		setWaitingForSession(true)
 		// Loader stays on until redirect happens
 	}
+
+	const handleGoogleLogin = async () => {
+		setLoader(true);
+		try {
+			const provider = new GoogleAuthProvider();
+			const result = await signInWithPopup(auth, provider);
+			const idToken = await result.user.getIdToken();
+
+			const res = await signIn("firebase-auth", {
+				idToken,
+				redirect: false,
+			});
+
+			if (res?.error) {
+				console.error("NextAuth SignIn Error:", res.error);
+				throw new Error(res.error || "Authentication failed on the server");
+			}
+
+			setWaitingForSession(true);
+		} catch (error: any) {
+			console.error("Google Login Error:", error);
+			setLoader(false);
+			ServerErrors("Login Failed", {
+				message: error.message || "An unexpected error occurred during Google login."
+			});
+		}
+	};
+
+	const handleAppleLogin = async () => {
+		setLoader(true);
+		try {
+			const provider = new OAuthProvider('apple.com');
+			const result = await signInWithPopup(auth, provider);
+			const idToken = await result.user.getIdToken();
+
+			const res = await signIn("firebase-auth", {
+				idToken,
+				redirect: false,
+			});
+
+			if (res?.error) {
+				console.error("NextAuth SignIn Error:", res.error);
+				throw new Error(res.error || "Authentication failed on the server");
+			}
+
+			setWaitingForSession(true);
+		} catch (error: any) {
+			console.error("Apple Login Error:", error);
+			setLoader(false);
+			ServerErrors("Login Failed", {
+				message: error.message || "An unexpected error occurred during Apple login."
+			});
+		}
+	};
 
 	return (
 		<>
@@ -162,6 +220,37 @@ export default function LoginPage() {
 							</Form>
 						)}
 					</Formik>
+
+					<div className="mt-6">
+						<div className="relative">
+							<div className="absolute inset-0 flex items-center" aria-hidden="true">
+								<div className="w-full border-t border-[#434343]"></div>
+							</div>
+							<div className="relative flex justify-center text-sm font-medium leading-6">
+								<span className="bg-[#1E1E1E] px-6 text-gray-400">Or continue with</span>
+							</div>
+						</div>
+
+						<div className="mt-6 grid grid-cols-2 gap-4">
+							<button
+								onClick={handleGoogleLogin}
+								disabled={isLoading}
+								className="flex w-full items-center justify-center gap-3 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus-visible:ring-transparent disabled:opacity-50"
+							>
+								<FcGoogle className="h-5 w-5" />
+								<span className="text-sm font-semibold leading-6">Google</span>
+							</button>
+
+							<button
+								onClick={handleAppleLogin}
+								disabled={isLoading}
+								className="flex w-full items-center justify-center gap-3 rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-sm ring-1 ring-inset ring-gray-700 hover:bg-gray-900 focus-visible:ring-transparent disabled:opacity-50"
+							>
+								<AiFillApple className="h-5 w-5" />
+								<span className="text-sm font-semibold leading-6">Apple</span>
+							</button>
+						</div>
+					</div>
 
 					<p className="mt-10 text-center text-sm text-gray-500">
 						Don&apos;t have an account?{" "}
