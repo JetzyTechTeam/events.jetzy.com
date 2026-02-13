@@ -390,6 +390,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
 	const [openInEditMode, setOpenInEditMode] = useState(false)
 	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+	const router = useRouter()
 
 	const [sortBy, setSortBy] = useState<string>("recent")
 	const [searchQuery, setSearchQuery] = useState("")
