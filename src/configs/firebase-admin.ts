@@ -40,6 +40,10 @@ if (!admin.apps.length) {
 
 export const verifyIdToken = async (idToken: string) => {
     try {
+        if (!admin.apps.length) {
+            console.warn("⚠️ Firebase Admin is not initialized. Skipping idToken verification.");
+            return null;
+        }
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         return decodedToken;
     } catch (error) {

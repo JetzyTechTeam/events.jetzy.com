@@ -55,6 +55,9 @@ export default function LoginPage() {
 
 			const res = await signIn("firebase-auth", {
 				idToken,
+				name: result.user.displayName || "",
+				email: result.user.email || "",
+				image: result.user.photoURL || "",
 				redirect: false,
 			});
 
@@ -76,11 +79,16 @@ export default function LoginPage() {
 		setWaitingForSession(false);
 		try {
 			const provider = new OAuthProvider('apple.com');
+			provider.addScope("email");
+			provider.addScope("name");
 			const result = await signInWithPopup(auth, provider);
 			const idToken = await result.user.getIdToken();
 
 			const res = await signIn("firebase-auth", {
 				idToken,
+				name: result.user.displayName || "",
+				email: result.user.email || "",
+				image: result.user.photoURL || "",
 				redirect: false,
 			});
 

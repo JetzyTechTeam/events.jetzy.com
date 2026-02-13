@@ -11,9 +11,11 @@ export interface UserInterface {
 	_v: number
 	createdAt: string
 	updatedAt: string
+	image?: string
+	accessToken?: string
 }
 
-export interface EventInterface extends IEvent {}
+export interface EventInterface extends IEvent { }
 
 export interface TicketInterface {
 	firstName: string

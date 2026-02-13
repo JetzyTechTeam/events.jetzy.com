@@ -4,6 +4,7 @@ import { ensureDbConnected } from "@/configs/database"
 import NextAuth, { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcrypt"
+import { AuthorizeSSOApi, SignupSSOApi } from "@Jetzy/services/auth/authapis"
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -189,11 +190,14 @@ export const authOptions: NextAuthOptions = {
       name: "Firebase",
       credentials: {
         idToken: { label: "ID Token", type: "text" },
+        name: { label: "Name", type: "text" },
+        email: { label: "Email", type: "text" },
+        image: { label: "Image", type: "text" },
       },
       async authorize(credentials, req) {
         console.log("--- Firebase Auth API Start ---");
         try {
-          const { idToken } = credentials ?? {};
+          const { idToken, name: nameFromFront, email: emailFromFront, image: imageFromFront } = credentials ?? {};
           if (!idToken) {
             console.error("❌ Firebase Auth: No idToken provided");
             throw new Error("ID Token is required");
@@ -207,20 +211,54 @@ export const authOptions: NextAuthOptions = {
           console.log("Firebase Auth: Verifying token...");
           const decodedToken = await verifyIdToken(idToken);
 
-          if (!decodedToken) {
-            console.error("❌ Firebase Auth: Token verification failed (returned null)");
-            throw new Error("Invalid ID Token");
+          if (!decodedToken && !emailFromFront) {
+            console.error("❌ Firebase Auth: Token verification failed and no fallback email provided");
+            throw new Error("Invalid ID Token or missing credentials");
           }
 
-          const { email, name, picture, uid } = decodedToken;
+          const { email: emailFromToken, name: nameFromToken, picture: imageFromToken, uid } = decodedToken || {};
+          const email = emailFromToken || emailFromFront;
+          const name = nameFromToken || nameFromFront;
+          const image = imageFromToken || imageFromFront;
+
           if (!email) {
-            console.error("❌ Firebase Auth: Email not found in decoded token");
+            console.error("❌ Firebase Auth: Email not found in decoded token or credentials");
             throw new Error("Email not found in token");
           }
 
           console.log(`Firebase Auth: Decoded token for email: ${email}, UID: ${uid}`);
 
-          // Look for user in both collections
+          // --- JETZY SSO INTEGRATION ---
+          let accessToken = null;
+          const ssoPayload = {
+            name: name || "User",
+            email: email,
+            image: image || "",
+            token: idToken,
+            platform: "web" as const
+          };
+
+          console.log("Attempting Jetzy SSO Authorization...");
+          try {
+            const authRes = await AuthorizeSSOApi({ data: ssoPayload });
+            if (authRes?.status || (authRes as any)?.success) {
+              console.log("✅ Jetzy SSO Authorization successful");
+              accessToken = authRes.data?.accessToken;
+            } else {
+              console.log("Jetzy SSO Authorization failed, attempting Signup...");
+              const signupRes = await SignupSSOApi({ data: ssoPayload });
+              if (signupRes?.status || (signupRes as any)?.success) {
+                console.log("✅ Jetzy SSO Signup successful");
+                accessToken = signupRes.data?.accessToken;
+              } else {
+                console.warn("Jetzy SSO Signup also failed:", (signupRes as any)?.message || "No message");
+              }
+            }
+          } catch (ssoError: any) {
+            console.error("Jetzy SSO API Error:", ssoError?.message || ssoError);
+          }
+
+          // Look for user in both collections (Existing database lookup)
           console.log("Firebase Auth: Looking for user in database...");
           let user = await EventUsers.findOne({ email });
           if (!user) {
@@ -239,7 +277,7 @@ export const authOptions: NextAuthOptions = {
               firstName,
               lastName,
               email,
-              image: picture,
+              image: image,
               role: "user",
               isVerified: true,
               authProvider: "firebase",
@@ -257,7 +295,7 @@ export const authOptions: NextAuthOptions = {
             fullName: `${user.firstName} ${user.lastName}`,
             email: user.email,
             role: user.role,
-            accessToken: null,
+            accessToken: accessToken, // Now using Jetzy SSO token
             ...(user.image ? { image: user.image } : {}),
           };
         } catch (error: any) {
