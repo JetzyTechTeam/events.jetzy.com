@@ -476,11 +476,14 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 							onClick={handleCreatePostClick}
 							fontWeight="normal"
 							fontSize="md"
+							overflow="hidden"
 						>
-							{session?.user?.name
-								? `What's on your mind, ${session.user.name.split(' ')[0]}?`
-								: "What's on your mind? Login to join the conversation."
-							}
+							<Text isTruncated>
+								{session?.user?.name
+									? `What's on your mind, ${session.user.name.split(' ')[0]}?`
+									: "What's on your mind? Login to join the conversation."
+								}
+							</Text>
 						</Button>
 					</Flex>
 					<Divider my={3} borderColor="#434343" />
