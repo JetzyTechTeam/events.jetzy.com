@@ -33,13 +33,8 @@ type Props = {
 };
 
 const EventTicketsComponent: React.FC<Props> = ({ event }) => {
-  const isEnded = event?.endsOn ? new Date(event.endsOn).getTime() < Date.now() : false;
-
-  if (isEnded) return null;
-
-  const eventId = event._id.toString();
-
   const session = useSession();
+  const dispatcher = useAppDispatch();
 
   // format the event tickets
   const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : []).map((ticket) => {
@@ -58,14 +53,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   // State for ticket quantities
   const [tickets, setTickets] = useState(ticketsItems);
 
-  // Clone a static verion of the tickets so when increasing the qty the amount is not recalculated from the original price
-  const staticTickets = ticketsItems.copyWithin(0, 0);
-
   // State for loader
   const [isLoading, setLoader] = useState(false);
 
-  // State for checkout modal
-  const dispatcher = useAppDispatch();
+  const isEnded = event?.endsOn ? new Date(event.endsOn).getTime() < Date.now() : false;
+
+  if (isEnded) return null;
+
+  const eventId = event._id.toString();
+
+  // Clone a static verion of the tickets so when increasing the qty the amount is not recalculated from the original price
+  const staticTickets = ticketsItems.copyWithin(0, 0);
 
   // Handle increment/decrement for tickets
   const handleQuantityChange = (id: string, delta: number) => {
