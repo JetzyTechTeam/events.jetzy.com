@@ -32,7 +32,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	}
 
 	const user = {
-		name: session?.user?.name,
+		name: session?.user?.name || (session?.user as any)?.fullName || "User",
 		email: session?.user?.email,
 		imageUrl: session?.user?.image,
 	}

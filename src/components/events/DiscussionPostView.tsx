@@ -617,7 +617,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 					{showReply && !isLocked && (
 						<Box mb={3}>
 							<Flex gap={2} align="flex-start">
-								<Avatar size="xs" src={session?.user?.image || ""} name={session?.user?.name || "User"} mt={1} />
+								<Avatar size="xs" src={session?.user?.image || ""} name={(session?.user as any)?.name || (session?.user as any)?.fullName || "User"} mt={1} />
 								<Box flex="1">
 									<Flex gap={2} align="center">
 										<Box flex="1" position="relative">
@@ -1656,7 +1656,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 						<Box mb={4}>
 							<Flex gap={2} align="flex-start">
 								{session && session.user ? (
-									<Avatar size="sm" name={session.user?.name || "User"} src={session.user?.image || ""} mt={1} />
+									<Avatar size="sm" name={session.user?.name || (session.user as any)?.fullName || "User"} src={session.user?.image || ""} mt={1} />
 								) : (
 									<Avatar size="sm" name="Guest" mt={1} bg="gray.300" />
 								)}

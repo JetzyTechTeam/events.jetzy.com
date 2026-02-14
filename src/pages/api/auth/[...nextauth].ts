@@ -165,6 +165,7 @@ export const authOptions: NextAuthOptions = {
           const userData = {
             _id: user._id.toString(),
             id: user._id.toString(),
+            name: `${user.firstName} ${user.lastName}`,
             fullName: `${user.firstName} ${user.lastName}`,
             email: user.email,
             role: user.role,
@@ -292,6 +293,7 @@ export const authOptions: NextAuthOptions = {
           return {
             _id: user._id.toString(),
             id: user._id.toString(),
+            name: `${user.firstName} ${user.lastName}`,
             fullName: `${user.firstName} ${user.lastName}`,
             email: user.email,
             role: user.role,

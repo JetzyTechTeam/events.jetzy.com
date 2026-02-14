@@ -461,7 +461,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 					<Flex gap={3} align="center">
 						<Avatar
 							size="md"
-							name={session?.user?.name || "Guest"}
+							name={(session?.user as any)?.name || (session?.user as any)?.fullName || "Guest"}
 							src={session?.user?.image || ""}
 						/>
 						<Button
@@ -479,8 +479,8 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 							overflow="hidden"
 						>
 							<Text isTruncated>
-								{session?.user?.name
-									? `What's on your mind, ${session.user.name.split(' ')[0]}?`
+								{(session?.user as any)?.name || (session?.user as any)?.fullName
+									? `What's on your mind, ${((session?.user as any)?.name || (session?.user as any)?.fullName).split(' ')[0]}?`
 									: "What's on your mind? Login to join the conversation."
 								}
 							</Text>
