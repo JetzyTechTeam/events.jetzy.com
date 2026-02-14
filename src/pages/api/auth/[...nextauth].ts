@@ -216,7 +216,7 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Invalid ID Token or missing credentials");
           }
 
-          const { email: emailFromToken, name: nameFromToken, picture: imageFromToken, uid } = decodedToken || {};
+          const { email: emailFromToken, name: nameFromToken, picture: imageFromToken, uid } = (decodedToken as any) || {};
           const email = emailFromToken || emailFromFront;
           const name = nameFromToken || nameFromFront;
           const image = imageFromToken || imageFromFront;
