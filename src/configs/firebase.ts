@@ -13,10 +13,18 @@ const firebaseConfig = {
 
 // Diagnostic logs for client-side Firebase
 if (typeof window !== "undefined") {
-    console.log("Firebase Client: Initializing with Project ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
-    if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
-        console.error("❌ Firebase Client: NEXT_PUBLIC_FIREBASE_API_KEY is missing!");
+    console.log("Firebase Client: Initializing with Project ID:", firebaseConfig.projectId);
+    console.log("Firebase Client: API Key length:", firebaseConfig.apiKey?.length || 0);
+    if (!firebaseConfig.apiKey) {
+        console.error("❌ Firebase Client: apiKey is missing from config!");
+    } else if (firebaseConfig.apiKey.includes("\"") || firebaseConfig.apiKey.includes("'")) {
+        console.warn("⚠️ Firebase Client: apiKey contains quotes, this might cause issues!");
     }
+} else {
+    // Server-side logs
+    console.log("--- Firebase Client Init (Server Side) ---");
+    console.log("Project ID:", firebaseConfig.projectId);
+    console.log("API Key present:", !!firebaseConfig.apiKey);
 }
 
 // Initialize Firebase

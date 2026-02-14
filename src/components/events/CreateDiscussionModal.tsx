@@ -365,18 +365,13 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 						<Flex align="center" gap={3}>
 							<Avatar
 								size="md"
-								name={session?.user?.name || "User"}
+								name={(session?.user as any)?.name || (session?.user as any)?.fullName || "User"}
 								src={session?.user?.image || ""}
 							/>
 							<Box>
 								<Text fontWeight="600" color="white">
-									{session?.user?.name || "User"}
+									{(session?.user as any)?.name || (session?.user as any)?.fullName || "User"}
 								</Text>
-								<Flex align="center" gap={1}>
-									<Box bg="#2b2b2b" px={2} py="2px" borderRadius="md" fontSize="xs" fontWeight="600" color="#bbbbbb">
-										Public
-									</Box>
-								</Flex>
 							</Box>
 						</Flex>
 
