@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect, useMemo } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { useEdgeStore } from "@/lib/edgestore"
@@ -38,6 +38,7 @@ import {
 	Tab,
 	TabPanel,
 } from "@chakra-ui/react"
+import axios from "axios"
 import Image from "next/image"
 import {
 	FiThumbsUp,
@@ -108,6 +109,47 @@ const ACTIVITIES = [
 	{ emoji: "🎮", label: "playing games" },
 ]
 
+const parseMentions = (content: string) => {
+	const mentionRegex = /@\s?\[([^\]]+)\]\(([^)]+)\)/g;
+	const parts = [];
+	let lastIndex = 0;
+	let match;
+
+	while ((match = mentionRegex.exec(content)) !== null) {
+		if (match.index > lastIndex) {
+			parts.push({ type: 'text', content: content.substring(lastIndex, match.index) });
+		}
+		const name = match[1];
+		const userId = match[2];
+
+		parts.push({ type: 'mention', userId, name });
+		lastIndex = match.index + match[0].length;
+	}
+
+	if (lastIndex < content.length) {
+		parts.push({ type: 'text', content: content.substring(lastIndex) });
+	}
+
+	return parts.length > 0 ? parts : [{ type: 'text', content }];
+}
+
+const RenderContent = ({ content }: { content: string }) => {
+	const parts = parseMentions(content);
+	return (
+		<Text color="white" fontSize="sm" whiteSpace="pre-wrap">
+			{parts.map((part, idx) => (
+				part.type === 'mention' ? (
+					<Box as="span" key={idx} color="blue.500" fontWeight="600">
+						@{part.name}
+					</Box>
+				) : (
+					<Box as="span" key={idx}>{part.content}</Box>
+				)
+			))}
+		</Text>
+	);
+}
+
 interface DiscussionPostViewProps {
 	postId: string
 	eventId: string
@@ -137,11 +179,76 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	const [replyFeeling, setReplyFeeling] = useState<string>("")
 	const [replyActivity, setReplyActivity] = useState<string>("")
 	const [uploadingReplyImages, setUploadingReplyImages] = useState(false)
+
 	const [editImages, setEditImages] = useState<string[]>([])
 	const [editFeeling, setEditFeeling] = useState<string>("")
 	const [editActivity, setEditActivity] = useState<string>("")
 	const [uploadingEditImages, setUploadingEditImages] = useState(false)
+
 	const replyFileInputRef = useRef<HTMLInputElement>(null)
+
+	// Tagging states for reply
+	const [mentionSearch, setMentionSearch] = useState("")
+	const [showMentionDropdown, setShowMentionDropdown] = useState(false)
+	const [cursorPosition, setCursorPosition] = useState(0)
+	const [participants, setParticipants] = useState<any[]>([])
+
+	useEffect(() => {
+		if (showReply && comment.eventId) {
+			axios.get(`/api/events/${comment.eventId}/participants`)
+				.then(res => setParticipants(res.data?.data || []))
+				.catch(err => console.error("Error fetching participants:", err))
+		}
+	}, [showReply, comment.eventId])
+
+	const filteredParticipants = useMemo(() => {
+		if (!mentionSearch) return participants
+		return participants.filter((p: any) =>
+			p.name.toLowerCase().includes(mentionSearch.toLowerCase()) ||
+			p.email.toLowerCase().includes(mentionSearch.toLowerCase())
+		)
+	}, [participants, mentionSearch])
+
+	const handleReplyContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+		const value = e.target.value
+		const pos = e.target.selectionStart
+		setReplyText(value)
+		setCursorPosition(pos)
+
+		const textBeforeCursor = value.substring(0, pos)
+		const words = textBeforeCursor.split(/\s/)
+		const lastWord = words[words.length - 1]
+
+		if (lastWord.startsWith("@")) {
+			setMentionSearch(lastWord.substring(1))
+			setShowMentionDropdown(true)
+		} else {
+			setShowMentionDropdown(false)
+		}
+	}
+
+	const handleSelectMention = (participant: any) => {
+		const textBeforeCursor = replyText.substring(0, cursorPosition)
+		const textAfterCursor = replyText.substring(cursorPosition)
+
+		const words = textBeforeCursor.split(/\s/)
+		words[words.length - 1] = `@[${participant.name}](${participant.id}) `
+
+		const newContent = words.join(" ") + textAfterCursor
+		setReplyText(newContent)
+		setShowMentionDropdown(false)
+
+		// Focus back on textarea
+		setTimeout(() => {
+			const textarea = document.getElementById(`reply-textarea-${comment._id}`) as HTMLTextAreaElement
+			if (textarea) {
+				textarea.focus()
+				const newPos = words.join(" ").length
+				textarea.setSelectionRange(newPos, newPos)
+			}
+		}, 10)
+	}
+
 	const editFileInputRef = useRef<HTMLInputElement>(null)
 	const { data: session } = useSession()
 	const { edgestore } = useEdgeStore()
@@ -267,7 +374,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 				<Avatar size="sm" name={comment.userId ? `${comment.userId.firstName} ${comment.userId.lastName}` : "Deleted User"} src="" />
 
 				<Box flex="1">
-					<Box bg="#2b2b2b" borderRadius="2xl" px={3} py={2} width="fit-content" mb={1} maxW="100%">
+					<Box bg="#2b2b2b" borderRadius="2xl" px={{ base: 2, md: 3 }} py={{ base: 1.5, md: 2 }} width="fit-content" mb={1} maxW="100%">
 						<Text fontWeight="600" fontSize="sm" color="white">
 							{comment.userId ? `${comment.userId.firstName} ${comment.userId.lastName}` : "Deleted User"}
 						</Text>
@@ -530,9 +637,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 							</Box>
 						) : (
 							<>
-								<Text color="white" fontSize="sm" whiteSpace="pre-wrap">
-									{comment.comment}
-								</Text>
+								<RenderContent content={comment.comment} />
 
 								{/* Comment Images */}
 								{comment.images && comment.images.length > 0 && (
@@ -622,9 +727,10 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 									<Flex gap={2} align="center">
 										<Box flex="1" position="relative">
 											<Textarea
+												id={`reply-textarea-${comment._id}`}
 												placeholder="Write a reply..."
 												value={replyText}
-												onChange={(e) => setReplyText(e.target.value)}
+												onChange={handleReplyContentChange}
 												bg="#2b2b2b"
 												color="white"
 												border="none"
@@ -635,18 +741,59 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 												px={3}
 												resize="none"
 												fontSize="sm"
-												onKeyPress={(e) => {
+												onKeyDown={(e) => {
 													if (e.key === 'Enter' && !e.shiftKey) {
-														e.preventDefault();
-														if (!session || !session.user) {
-															const currentPath = window.location.pathname + window.location.search
-															router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
-															return
+														if (!showMentionDropdown) {
+															e.preventDefault();
+															if (!session || !session.user) {
+																const currentPath = window.location.pathname + window.location.search
+																router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
+																return
+															}
+															handleReplySubmit();
 														}
-														handleReplySubmit();
 													}
 												}}
 											/>
+											{showMentionDropdown && filteredParticipants.length > 0 && (
+												<Box
+													position="absolute"
+													bottom="100%"
+													left="0"
+													width="100%"
+													maxH="150px"
+													overflowY="auto"
+													bg="gray.800"
+													boxShadow="xl"
+													borderRadius="md"
+													zIndex="10"
+													border="1px solid"
+													borderColor="gray.700"
+													mb="1"
+												>
+													<VStack align="stretch" spacing="0">
+														{filteredParticipants.map((p: any) => (
+															<Box
+																key={p.id}
+																p="2"
+																cursor="pointer"
+																_hover={{ bg: "gray.700" }}
+																onClick={() => handleSelectMention(p)}
+																borderBottom="1px solid"
+																borderColor="gray.700"
+															>
+																<HStack spacing="2">
+																	<Avatar size="2xs" name={p.name} />
+																	<VStack align="start" spacing="0">
+																		<Text fontSize="xs" fontWeight="bold">{p.name}</Text>
+																		<Text fontSize="2xs" color="gray.400">{p.email}</Text>
+																	</VStack>
+																</HStack>
+															</Box>
+														))}
+													</VStack>
+												</Box>
+											)}
 										</Box>
 
 										{/* Send Button */}
@@ -1248,8 +1395,8 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				bg={isModalView ? "transparent" : "#1E1E1E"}
 				borderRadius={isModalView ? "none" : "2xl"}
 				border={isModalView ? "none" : "1px solid #434343"}
-				p={isModalView ? { base: 4, md: 6 } : { base: 4, md: 6 }}
-				pt={isModalView ? 12 : { base: 4, md: 6 }}
+				p={{ base: 2, md: 6 }}
+				pt={isModalView ? { base: 10, md: 12 } : { base: 4, md: 6 }}
 				boxShadow={isModalView ? "none" : "sm"}
 			>
 				{/* Post Header */}
@@ -1500,9 +1647,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 							</Flex>
 						</Box>
 					) : (
-						<Text color="white" fontSize="md" whiteSpace="pre-wrap">
-							{post.content}
-						</Text>
+						<RenderContent content={post.content} />
 					)}
 				</Box>
 

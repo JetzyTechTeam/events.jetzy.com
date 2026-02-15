@@ -34,21 +34,52 @@ export default function LoginPage() {
 
 	// Handle redirect after session is established
 	React.useEffect(() => {
-		if (waitingForSession && status === 'authenticated' && session) {
+		if (navigation.isReady && waitingForSession && status === 'authenticated' && session) {
 			console.log('✅ Session established, redirecting...');
+			const target = _cb ? _cb.toString() : (
+				// @ts-ignore
+				(session?.user?.role === 'admin' || session?.user?.role === 'super admin')
+					? ROUTES.dashboard.events.index
+					: ROUTES.home
+			);
+
+			console.log('🚀 Redirecting to:', target);
+
 			// Small delay to ensure SessionSync has processed the session
 			setTimeout(() => {
-				setTimeout(() => {
-					// @ts-ignore
-					if (session?.user?.role === 'admin' || session?.user?.role === 'super admin') {
-						navigation?.push(_cb ? _cb.toString() : ROUTES.dashboard.events.index)
-					} else {
-						navigation?.push(_cb ? _cb.toString() : ROUTES.home)
-					}
-				}, 300);
-			}, 300);
+				navigation?.push(target);
+			}, 600);
 		}
-	}, [waitingForSession, status, session, navigation, _cb])
+	}, [waitingForSession, status, session, navigation, _cb, navigation.isReady])
+
+	// Automatically try to login if magicToken is present
+	React.useEffect(() => {
+		const { magicToken } = navigation.query;
+		console.log('🔍 [Login] useEffect check - magicToken:', !!magicToken, 'isLoading:', isLoading, 'status:', status, 'waitingForSession:', waitingForSession);
+
+		if (magicToken && !isLoading && !waitingForSession && status !== 'loading') {
+			console.log('✨ [Login] Magic Token detected, attempting auto-login...');
+			setLoader(true);
+
+			signIn("credentials", {
+				magicToken: magicToken.toString(),
+				redirect: false,
+			}).then((res) => {
+				console.log('📡 [Login] signIn response:', res);
+				if (res?.error) {
+					console.error('❌ [Login] Magic Login Error:', res.error);
+					setLoader(false);
+					ServerErrors("Auto-login Failed", { message: "Your one-click link is invalid or has expired." });
+				} else {
+					console.log('✅ [Login] Magic Login successful!');
+					setWaitingForSession(true);
+				}
+			}).catch(err => {
+				console.error('🚨 [Login] Magic Login fatal error:', err);
+				setLoader(false);
+			});
+		}
+	}, [navigation.query, isLoading, status, waitingForSession]);
 
 	const handleSubmit = async (values: SignInFormData) => {
 		setLoader(true)

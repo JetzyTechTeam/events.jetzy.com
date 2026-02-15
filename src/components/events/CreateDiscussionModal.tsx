@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react"
+import React, { useState, useRef, useMemo, useEffect } from "react"
 import {
 	Modal,
 	ModalOverlay,
@@ -40,6 +40,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { CreateDiscussionPostApi, CheckEventTicketApi } from "@/services/events/discussionApis"
+import axios from "axios"
 import { FiPlus, FiSmile, FiImage, FiHash, FiX, FiFile, FiVideo } from "react-icons/fi"
 import { useEdgeStore } from "@/lib/edgestore"
 import dynamic from "next/dynamic"
@@ -98,6 +99,28 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	const [uploadingImages, setUploadingImages] = useState(false)
 	const [feeling, setFeeling] = useState<string>("")
 	const [activity, setActivity] = useState<string>("")
+
+	// Tagging states
+	const [mentionSearch, setMentionSearch] = useState("")
+	const [showMentionDropdown, setShowMentionDropdown] = useState(false)
+	const [cursorPosition, setCursorPosition] = useState(0)
+
+	const { data: participants = [] } = useQuery({
+		queryKey: ["event-participants", eventId],
+		queryFn: async () => {
+			const res = await axios.get(`/api/events/${eventId}/participants`)
+			return res.data?.data || []
+		},
+		enabled: !!eventId && isOpen
+	})
+
+	const filteredParticipants = useMemo(() => {
+		if (!mentionSearch) return participants
+		return participants.filter((p: any) =>
+			p.name.toLowerCase().includes(mentionSearch.toLowerCase()) ||
+			p.email.toLowerCase().includes(mentionSearch.toLowerCase())
+		)
+	}, [participants, mentionSearch])
 
 	// Modals
 	const { isOpen: isTagModalOpen, onOpen: onTagModalOpen, onClose: onTagModalClose } = useDisclosure()
@@ -202,6 +225,46 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			e.preventDefault()
 			handleAddTag()
 		}
+	}
+
+	const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+		const value = e.target.value
+		const pos = e.target.selectionStart
+		setContent(value)
+		setCursorPosition(pos)
+
+		const textBeforeCursor = value.substring(0, pos)
+		const words = textBeforeCursor.split(/\s/)
+		const lastWord = words[words.length - 1]
+
+		if (lastWord.startsWith("@")) {
+			setMentionSearch(lastWord.substring(1))
+			setShowMentionDropdown(true)
+		} else {
+			setShowMentionDropdown(false)
+		}
+	}
+
+	const handleSelectMention = (participant: any) => {
+		const textBeforeCursor = content.substring(0, cursorPosition)
+		const textAfterCursor = content.substring(cursorPosition)
+
+		const words = textBeforeCursor.split(/\s/)
+		words[words.length - 1] = `@[${participant.name}](${participant.id}) `
+
+		const newContent = words.join(" ") + textAfterCursor
+		setContent(newContent)
+		setShowMentionDropdown(false)
+
+		// Focus back on textarea
+		setTimeout(() => {
+			const textarea = document.getElementById("post-content-textarea") as HTMLTextAreaElement
+			if (textarea) {
+				textarea.focus()
+				const newPos = words.join(" ").length
+				textarea.setSelectionRange(newPos, newPos)
+			}
+		}, 10)
 	}
 
 	const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -376,27 +439,71 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 						</Flex>
 
 						{/* Content Input */}
-						<Box>
-							<Textarea
-								placeholder="What's on your mind?"
-								value={content}
-								onChange={(e) => setContent(e.target.value)}
-								variant="unstyled"
-								fontSize="xl"
-								minH="150px"
-								resize="none"
-								p={1}
-								color="white"
-								_placeholder={{ color: "#bbbbbb" }}
-								onKeyDown={(e) => {
-									// Allow Enter to submit if there's content OR images OR feeling/activity
-									if (e.key === 'Enter' && !e.shiftKey && (content.trim() || images.length > 0 || feeling || activity)) {
-										e.preventDefault()
-										handleSubmit()
-									}
-								}}
-							/>
-						</Box>
+						<FormControl>
+							<Box position="relative">
+								<Textarea
+									id="post-content-textarea"
+									placeholder="What's on your mind?"
+									value={content}
+									onChange={handleContentChange}
+									minH="150px"
+									bg="gray.800"
+									border="none"
+									_focus={{ ring: "2px", ringColor: "orange.400" }}
+									borderRadius="xl"
+									fontSize="md"
+									onKeyDown={(e) => {
+										// Allow Enter to submit if there's content OR images OR feeling/activity
+										if (e.key === 'Enter' && !e.shiftKey && (content.trim() || images.length > 0 || feeling || activity)) {
+											// If mention dropdown is NOT open, allow submission
+											if (!showMentionDropdown) {
+												e.preventDefault()
+												handleSubmit()
+											}
+										}
+									}}
+								/>
+								{showMentionDropdown && filteredParticipants.length > 0 && (
+									<Box
+										position="absolute"
+										bottom="100%"
+										left="0"
+										width="100%"
+										maxH="200px"
+										overflowY="auto"
+										bg="gray.800"
+										boxShadow="xl"
+										borderRadius="lg"
+										zIndex="10"
+										border="1px solid"
+										borderColor="gray.700"
+										mb="2"
+									>
+										<VStack align="stretch" spacing="0">
+											{filteredParticipants.map((p: any) => (
+												<Box
+													key={p.id}
+													p="3"
+													cursor="pointer"
+													_hover={{ bg: "gray.700" }}
+													onClick={() => handleSelectMention(p)}
+													borderBottom="1px solid"
+													borderColor="gray.700"
+												>
+													<HStack spacing="3">
+														<Avatar size="xs" name={p.name} />
+														<VStack align="start" spacing="0">
+															<Text fontSize="sm" fontWeight="bold">{p.name}</Text>
+															<Text fontSize="xs" color="gray.400">{p.email}</Text>
+														</VStack>
+													</HStack>
+												</Box>
+											))}
+										</VStack>
+									</Box>
+								)}
+							</Box>
+						</FormControl>
 
 						{/* Feeling/Activity Display */}
 						{(feeling || activity) && (
@@ -722,7 +829,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 					</ModalFooter>
 				</ModalContent>
 			</Modal>
-		</Modal>
+		</Modal >
 	)
 }
 

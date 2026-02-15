@@ -7,6 +7,10 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../../auth/[...nextauth]"
 import zod from "zod"
+import { Events } from "@/models/events"
+import { Bookings } from "@/models/events/bookings"
+import { generateMagicToken } from "@/lib/magicLink"
+import { sendCommentNotification, sendTagNotification } from "@/lib/send-grid"
 
 const schema = zod.object({
     postId: zod.string().nonempty(),
@@ -59,6 +63,86 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         // Populate user details
         await newComment.populate("userId", "firstName lastName image email")
+
+            // Trigger notifications in the background
+            ; (async () => {
+                try {
+                    const event = await Events.findById(post.eventId)
+                    if (!event) return
+
+                    const commenterName = `${(newComment.userId as any).firstName} ${(newComment.userId as any).lastName}`
+                    const commenterEmail = (newComment.userId as any).email
+
+                    // Fetch all unique participants for this event
+                    const participants = await Bookings.find({
+                        eventId: post.eventId,
+                        isDeleted: false,
+                        status: { $in: ['confirmed', 'completed'] }
+                    }).select('customerEmail customerName')
+
+                    const uniqueParticipants = new Map<string, string>()
+                    participants.forEach(p => {
+                        if (p.customerEmail && p.customerEmail.toLowerCase() !== commenterEmail.toLowerCase()) {
+                            uniqueParticipants.set(p.customerEmail.toLowerCase(), p.customerName)
+                        }
+                    })
+
+                    // Also ensure the post author is notified if they aren't in the bookings (e.g. host)
+                    // and they aren't the one commenting
+                    await post.populate("userId", "firstName lastName email")
+                    const authorEmail = (post.userId as any).email
+                    const authorName = `${(post.userId as any).firstName} ${(post.userId as any).lastName}`
+
+                    if (authorEmail && authorEmail.toLowerCase() !== commenterEmail.toLowerCase()) {
+                        uniqueParticipants.set(authorEmail.toLowerCase(), authorName)
+                    }
+
+                    // Detect mentions: @[Name](id) or @ [Name](id)
+                    const mentionRegex = /@\s?\[([^\]]+)\]\(([^)]+)\)/g
+                    const mentionedUserIds = new Set<string>()
+                    let match
+                    while ((match = mentionRegex.exec(content || "")) !== null) {
+                        mentionedUserIds.add(match[2])
+                    }
+
+                    console.log(`[Notification] Processing comment alerts for ${uniqueParticipants.size} people`)
+
+                    for (const [email, name] of uniqueParticipants.entries()) {
+                        const firstName = name.split(' ')[0] || 'Friend'
+                        const lastName = name.split(' ').slice(1).join(' ') || ''
+                        const magicToken = generateMagicToken({ email, firstName, lastName })
+
+                        // If user is mentioned, send tag notification
+                        if (mentionedUserIds.has(email)) {
+                            console.log(`[Notification] Sending tag alert (comment) to: ${email}`)
+                            await sendTagNotification({
+                                email,
+                                firstName,
+                                lastName,
+                                authorName: commenterName, // Using commenter as the one who tagged
+                                eventName: event.name,
+                                eventSlug: event.slug,
+                                magicToken,
+                                postId
+                            })
+                        } else {
+                            // Otherwise send standard curiosity-driven comment notification
+                            await sendCommentNotification({
+                                email,
+                                firstName,
+                                lastName,
+                                commenterName,
+                                eventName: event.name,
+                                eventSlug: event.slug,
+                                magicToken,
+                                postId
+                            })
+                        }
+                    }
+                } catch (notifyError) {
+                    console.error("[Notification] Failed to send comment alerts:", notifyError)
+                }
+            })()
 
         return sendResponse(res, newComment, "Comment created successfully.", true, ResCode.CREATED)
     } catch (error: any) {

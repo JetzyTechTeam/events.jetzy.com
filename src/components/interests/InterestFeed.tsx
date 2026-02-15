@@ -23,8 +23,8 @@ interface InterestFeedProps {
 }
 
 const parseMentions = (content: string, mentions: any[] = []) => {
-    // Parse <mention:USER_ID> and convert to highlighted text
-    const mentionRegex = /<mention:([^>]+)>/g;
+    // Parse both formats: <mention:USER_ID> and @[Name](id)
+    const mentionRegex = /<mention:([^>]+)>|@\s?\[([^\]]+)\]\(([^)]+)\)/g;
     const parts = [];
     let lastIndex = 0;
     let match;
@@ -34,12 +34,20 @@ const parseMentions = (content: string, mentions: any[] = []) => {
         if (match.index > lastIndex) {
             parts.push({ type: 'text', content: content.substring(lastIndex, match.index) });
         }
-        // Add mention
-        const userId = match[1];
-        const mentionedUser = mentions?.find((m: any) => (m._id === userId || m.id === userId));
-        const name = mentionedUser ? `${mentionedUser.firstName || ''} ${mentionedUser.lastName || ''}`.trim() : 'User';
 
-        parts.push({ type: 'mention', userId, name: name || 'User' });
+        if (match[1]) {
+            // Format: <mention:USER_ID>
+            const userId = match[1];
+            const mentionedUser = mentions?.find((m: any) => (m._id === userId || m.id === userId));
+            const name = mentionedUser ? `${mentionedUser.firstName || ''} ${mentionedUser.lastName || ''}`.trim() : 'User';
+            parts.push({ type: 'mention', userId, name: name || 'User' });
+        } else if (match[2] && match[3]) {
+            // Format: @[Name](id)
+            const name = match[2];
+            const userId = match[3];
+            parts.push({ type: 'mention', userId, name });
+        }
+
         lastIndex = match.index + match[0].length;
     }
 
@@ -106,7 +114,7 @@ const CommentItem = ({
                         <p className="text-gray-300 text-xs mt-1">
                             {parseMentions(comment.content || '', comment.mentions || []).map((part: any, idx: number) => (
                                 part.type === 'mention' ? (
-                                    <span key={idx} className="text-app font-medium">@{part.name}</span>
+                                    <span key={idx} className="text-blue-500 font-medium">@{part.name}</span>
                                 ) : (
                                     <span key={idx}>{part.content}</span>
                                 )
@@ -638,7 +646,13 @@ export default function InterestFeed({
                         </div>
 
                         <div className="text-gray-200 mb-4 whitespace-pre-wrap text-sm leading-relaxed">
-                            {post.description || post.content || post.text || post.body || post.post || post.caption}
+                            {parseMentions(post.description || post.content || post.text || post.body || post.post || post.caption || '', post.mentions || []).map((part: any, idx: number) => (
+                                part.type === 'mention' ? (
+                                    <span key={idx} className="text-blue-500 font-medium">@{part.name}</span>
+                                ) : (
+                                    <span key={idx}>{part.content}</span>
+                                )
+                            ))}
                         </div>
 
                         {post.media && post.media.length > 0 && (

@@ -118,6 +118,39 @@ type BlastEmailData = {
   customMessage: string
 }
 
+type DiscussionNotificationData = {
+  email: string
+  firstName: string
+  lastName: string
+  authorName: string
+  eventName: string
+  eventSlug: string
+  magicToken: string
+  postId: string
+}
+
+type TagNotificationData = {
+  email: string
+  firstName: string
+  lastName: string
+  authorName: string
+  eventName: string
+  eventSlug: string
+  magicToken: string
+  postId: string
+}
+
+type CommentNotificationData = {
+  email: string
+  firstName: string
+  lastName: string
+  commenterName: string
+  eventName: string
+  eventSlug: string
+  magicToken: string
+  postId: string
+}
+
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets, paymentUrl }: WaitingListApprovalData) => {
   try {
     const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
@@ -236,7 +269,7 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
   }
-  const eventUrl = `${baseUrl}/events/${eventSlug}`
+  const eventUrl = `${baseUrl}/${eventSlug}`
 
   try {
     await sgMail.send({
@@ -325,7 +358,7 @@ export const sendBlastEmail = async ({
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
   }
-  const eventUrl = `${baseUrl}/events/${eventSlug}`
+  const eventUrl = `${baseUrl}/${eventSlug}`
 
   // Dynamic button text and styling based on email type
   const buttonConfig = {
@@ -1097,6 +1130,216 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
     if (error.response) {
       console.error("[sendBookingCancellation] SendGrid response:", JSON.stringify(error.response.body, null, 2))
     }
+    throw error
+  }
+}
+
+export const sendDiscussionNotification = async ({
+  email,
+  firstName,
+  lastName,
+  authorName,
+  eventName,
+  eventSlug,
+  magicToken,
+  postId,
+}: DiscussionNotificationData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Events",
+      },
+      subject: `${authorName} shared an update in ${decodeHTMLEntities(eventName)}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
+              Hi ${firstName},
+            </p>
+            <p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              <strong>${authorName}</strong> just shared a new post in <strong>${decodeHTMLEntities(eventName)}</strong>.
+            </p>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${discussionUrl}" style="background: #F79432; color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.3);">
+                View Post on Jetzy
+              </a>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
+              <div style="display: inline-block; vertical-align: middle;">
+                <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="text-decoration: none; display: inline-block; margin: 5px;">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                </a>
+                <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="text-decoration: none; display: inline-block; margin: 5px;">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                </a>
+              </div>
+            </div>
+
+            <p style="color: #9CA3AF; font-size: 13px; text-align: center; margin-top: 30px;">
+              See what's new in the community!<br/>The Jetzy Team
+            </p>
+            
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
+              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 0; text-align: center;">
+                You’re receiving this because you’re registered for ${decodeHTMLEntities(eventName)}. To stop receiving updates for this event, <a href="${baseUrl}/${eventSlug}" style="color: #F79432; text-decoration: none;">Manage your notifications</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+      `),
+      text: `${authorName} just shared a new post in ${decodeHTMLEntities(eventName)}.\n\nView Post on Jetzy: ${discussionUrl}\n\nCheers,\nThe Jetzy Team`,
+    })
+    console.log(`✅ Discussion notification sent successfully to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send discussion notification email:", error)
+    throw error
+  }
+}
+
+export const sendCommentNotification = async ({
+  email,
+  firstName,
+  lastName,
+  commenterName,
+  eventName,
+  eventSlug,
+  magicToken,
+  postId,
+}: CommentNotificationData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Events",
+      },
+      subject: `${commenterName} commented on a post in ${decodeHTMLEntities(eventName)}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
+              Hi ${firstName},
+            </p>
+            <p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              <strong>${commenterName}</strong> left a comment on a post in <strong>${decodeHTMLEntities(eventName)}</strong>.
+            </p>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${discussionUrl}" style="background: #F79432; color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.3);">
+                Reply to Comment
+              </a>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
+              <div style="display: inline-block; vertical-align: middle;">
+                <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="text-decoration: none; display: inline-block; margin: 5px;">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                </a>
+                <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="text-decoration: none; display: inline-block; margin: 5px;">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                </a>
+              </div>
+            </div>
+
+            <p style="color: #9CA3AF; font-size: 13px; text-align: center; margin-top: 30px;">
+              Keep the conversation going!<br/>The Jetzy Team
+            </p>
+            
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
+              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 0; text-align: center;">
+                You’re receiving this because you’re following this thread in ${decodeHTMLEntities(eventName)}. To stop receiving updates for this event, <a href="${baseUrl}/${eventSlug}" style="color: #F79432; text-decoration: none;">Manage your notifications</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+      `),
+      text: `${commenterName} left a comment on a post in ${decodeHTMLEntities(eventName)}.\n\nReply to Comment: ${discussionUrl}\n\nSee you there!\nThe Jetzy Team`,
+    })
+    console.log(`✅ Comment notification sent successfully to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send comment notification email:", error)
+    throw error
+  }
+}
+
+export const sendTagNotification = async ({
+  email,
+  firstName,
+  lastName,
+  authorName,
+  eventName,
+  eventSlug,
+  magicToken,
+  postId,
+}: TagNotificationData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Events",
+      },
+      subject: `${authorName} tagged you in ${decodeHTMLEntities(eventName)}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
+              Hi ${firstName},
+            </p>
+            <p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              <strong>${authorName}</strong> tagged you in a discussion in <strong>${decodeHTMLEntities(eventName)}</strong>.
+            </p>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${discussionUrl}" style="background: #F79432; color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.3);">
+                See Tagged Post
+              </a>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
+              <div style="display: inline-block; vertical-align: middle;">
+                <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="text-decoration: none; display: inline-block; margin: 5px;">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                </a>
+                <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="text-decoration: none; display: inline-block; margin: 5px;">
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                </a>
+              </div>
+            </div>
+
+            <p style="color: #9CA3AF; font-size: 13px; text-align: center; margin-top: 30px;">
+              Jump back in and see what others are saying!<br/>The Jetzy Team
+            </p>
+            
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
+              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 0; text-align: center;">
+                You’re receiving this because you’re registered for ${decodeHTMLEntities(eventName)}. To stop receiving updates for this event, <a href="${baseUrl}/${eventSlug}" style="color: #F79432; text-decoration: none;">Manage your notifications</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+      `),
+      text: `${authorName} tagged you in a discussion in ${decodeHTMLEntities(eventName)}.\n\nSee Tagged Post: ${discussionUrl}\n\nSee you there!\nThe Jetzy Team`,
+    })
+    console.log(`✅ Tag notification sent successfully to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send tag notification email:", error)
     throw error
   }
 }

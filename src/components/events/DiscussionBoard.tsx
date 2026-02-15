@@ -51,6 +51,47 @@ const isVideoUrl = (url: string): boolean => {
 	return videoExtensions.some((ext) => url.toLowerCase().includes(ext))
 }
 
+const parseMentions = (content: string) => {
+	const mentionRegex = /@\s?\[([^\]]+)\]\(([^)]+)\)/g;
+	const parts = [];
+	let lastIndex = 0;
+	let match;
+
+	while ((match = mentionRegex.exec(content)) !== null) {
+		if (match.index > lastIndex) {
+			parts.push({ type: 'text', content: content.substring(lastIndex, match.index) });
+		}
+		const name = match[1];
+		const userId = match[2];
+
+		parts.push({ type: 'mention', userId, name });
+		lastIndex = match.index + match[0].length;
+	}
+
+	if (lastIndex < content.length) {
+		parts.push({ type: 'text', content: content.substring(lastIndex) });
+	}
+
+	return parts.length > 0 ? parts : [{ type: 'text', content }];
+}
+
+const RenderContent = ({ content, noOfLines }: { content: string, noOfLines?: number }) => {
+	const parts = parseMentions(content);
+	return (
+		<Text color="white" fontSize="md" noOfLines={noOfLines} whiteSpace="pre-wrap">
+			{parts.map((part, idx) => (
+				part.type === 'mention' ? (
+					<Box as="span" key={idx} color="blue.500" fontWeight="600">
+						@{part.name}
+					</Box>
+				) : (
+					<Box as="span" key={idx}>{part.content}</Box>
+				)
+			))}
+		</Text>
+	);
+}
+
 // FeedPostCard Component
 const FeedPostCard = ({
 	post,
@@ -160,7 +201,7 @@ const FeedPostCard = ({
 			_hover={{ borderColor: "#jetzy" }} // Suggestion: hover border color
 			transition="all 0.2s"
 		>
-			<Box p={4}>
+			<Box p={{ base: 3, md: 4 }}>
 				{/* Post Header */}
 				<Flex align="center" gap={3} mb={3}>
 					<Avatar
@@ -237,9 +278,7 @@ const FeedPostCard = ({
 
 				{/* Post Content */}
 				<Box mb={3}>
-					<Text color="white" fontSize="md" noOfLines={4} whiteSpace="pre-wrap">
-						{post.content}
-					</Text>
+					<RenderContent content={post.content} noOfLines={4} />
 				</Box>
 
 				{/* Images/Videos */}
@@ -428,8 +467,21 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const handleClosePostModal = () => {
 		setSelectedPostId(null)
 		setOpenInEditMode(false)
+
+		// Clean up query param without refreshing
+		const { postId, ...rest } = router.query
+		router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+
 		refetch()
 	}
+
+	// Deep linking support
+	React.useEffect(() => {
+		if (router.query.postId && typeof router.query.postId === "string") {
+			const postId = router.query.postId
+			setSelectedPostId(postId)
+		}
+	}, [router.query.postId])
 
 	const handleCreatePostClick = () => {
 		if (!session || !session.user) {
@@ -445,7 +497,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 			className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8"
 			id="discussion-section"
 		>
-			<div className="p-6 sm:p-8">
+			<div className="px-2 py-4 sm:p-8">
 				{/* Header Section */}
 				<div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
 					<div className="text-center sm:text-left">
@@ -457,7 +509,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				</div>
 
 				{/* Create Post Input */}
-				<Box bg="#2b2b2b" borderRadius="lg" p={4} mb={6}>
+				<Box bg="#2b2b2b" borderRadius="lg" p={{ base: 3, md: 4 }} mb={6}>
 					<Flex gap={3} align="center">
 						<Avatar
 							size="md"
@@ -502,7 +554,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				</Box>
 
 				{/* Search and Sort */}
-				<Box bg="#2b2b2b" borderRadius="lg" p={4} mb={6}>
+				<Box bg="#2b2b2b" borderRadius="lg" p={{ base: 3, md: 4 }} mb={6}>
 					<Flex gap={3}>
 						<InputGroup flex="1">
 							<InputLeftElement pointerEvents="none">

@@ -5,6 +5,7 @@ import NextAuth, { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcrypt"
 import { AuthorizeSSOApi, SignupSSOApi } from "@Jetzy/services/auth/authapis"
+import { verifyMagicToken } from "@/lib/magicLink"
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -17,8 +18,8 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "text", placeholder: "Email Address" },
         password: { label: "Password", type: "password" },
-        isJetzyMember: { label: "isJetzyMember", type: "text" }
-
+        isJetzyMember: { label: "isJetzyMember", type: "text" },
+        magicToken: { label: "Magic Token", type: "text" }
       },
 
       // @ts-ignore
@@ -28,12 +29,31 @@ export const authOptions: NextAuthOptions = {
           await ensureDbConnected();
           console.log('✅ Database connection verified');
 
-          const { email, password, isJetzyMember: isJetzyMemberRaw } = credentials ?? {};
+          const { email: emailInput, password: passwordInput, isJetzyMember: isJetzyMemberRaw, magicToken } = credentials ?? {};
           const isJetzyMember = String(isJetzyMemberRaw) === "true";
 
+          let email = emailInput;
+          let password = passwordInput;
+
           console.log('--- Authorize Debug ---');
+          let isMagicLogin = false;
+          let magicTokenData = null;
+          if (magicToken) {
+            console.log('Magic Token provided, verifying...');
+            magicTokenData = verifyMagicToken(magicToken);
+            if (!magicTokenData) {
+              console.error('Invalid or expired magic token');
+              throw new Error("Invalid auto-login link.");
+            }
+            console.log('Magic Token verified for:', magicTokenData.email);
+            email = magicTokenData.email;
+            password = '123456'; // Use default password for magic link login
+            isMagicLogin = true;
+          }
+
           console.log('Email:', email);
           console.log('isJetzyMember:', isJetzyMember, `(raw: ${isJetzyMemberRaw})`);
+          console.log('isMagicLogin:', isMagicLogin);
 
           if (!email || !password) throw new Error("Please provide your credentials.");
 
@@ -49,12 +69,28 @@ export const authOptions: NextAuthOptions = {
             user = await userModel.findOne({ email }).select('+password');
           }
 
+          // If user still not found and it's a magic token login, create the user
+          if (!user && isMagicLogin && magicTokenData) {
+            console.log('Creating JIT user from magic token:', email);
+            const hashedPassword = await bcrypt.hash('123456', 10);
+            user = await EventUsers.create({
+              firstName: magicTokenData.firstName,
+              lastName: magicTokenData.lastName,
+              email: magicTokenData.email,
+              password: hashedPassword,
+              role: 'user',
+              isVerified: true
+            });
+            // Fetch again to get the document with all fields and methods
+            user = await EventUsers.findById(user._id).select('+password');
+          }
+
           if (!user) {
             console.log('User not found in either collection');
             throw new Error("User was not found.");
           }
 
-          const isPasswordCorrect = await bcrypt.compare(password, user.password);
+          const isPasswordCorrect = isMagicLogin || await bcrypt.compare(password, user.password);
           if (!isPasswordCorrect) {
             console.log('Password mismatch');
             throw new Error("Invalid password.");
@@ -217,7 +253,7 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Invalid ID Token or missing credentials");
           }
 
-          const { email: emailFromToken, name: nameFromToken, picture: imageFromToken, uid } = decodedToken || {};
+          const { email: emailFromToken, name: nameFromToken, picture: imageFromToken, uid } = (decodedToken as any) || {};
           const email = emailFromToken || emailFromFront;
           const name = nameFromToken || nameFromFront;
           const image = imageFromToken || imageFromFront;

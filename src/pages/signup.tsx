@@ -31,20 +31,23 @@ export default function LoginPage() {
 
 	// Handle redirect after session is established
 	React.useEffect(() => {
-		if (waitingForSession && status === 'authenticated' && session) {
+		if (navigate.isReady && waitingForSession && status === 'authenticated' && session) {
 			console.log('✅ Session established, redirecting...');
+			const target = _cb ? _cb.toString() : (
+				// @ts-ignore
+				(session?.user?.role === 'admin' || session?.user?.role === 'super admin')
+					? ROUTES.dashboard.events.index
+					: ROUTES.home
+			);
+
+			console.log('🚀 Redirecting to:', target);
+
+			// Small delay to ensure SessionSync has processed the session
 			setTimeout(() => {
-				setTimeout(() => {
-					// @ts-ignore
-					if (session?.user?.role === 'admin' || session?.user?.role === 'super admin') {
-						navigate?.push(_cb ? _cb.toString() : ROUTES.dashboard.events.index)
-					} else {
-						navigate?.push(_cb ? _cb.toString() : ROUTES.home)
-					}
-				}, 300);
-			}, 300);
+				navigate?.push(target);
+			}, 600);
 		}
-	}, [waitingForSession, status, session, navigate, _cb])
+	}, [waitingForSession, status, session, navigate, _cb, navigate.isReady])
 
 	const handleGoogleLogin = async () => {
 		setWaitingForSession(false);

@@ -62,6 +62,29 @@ export const unauthorizedOnly = async (context: any) => {
 	const _session = await getSession(context)
 
 	if (_session) {
+		const { _cb, magicToken } = context.query;
+
+		// If we have a magic token, we want to allow the user to land on the login page 
+		// even if they are already logged in (to process the token, potentially switching accounts)
+		if (magicToken) {
+			return {
+				props: {
+					session: _session,
+					configs: null,
+				},
+			}
+		}
+
+		// If we have a callback URL, redirect to it instead of home/dashboard
+		if (_cb) {
+			return {
+				redirect: {
+					destination: _cb.toString(),
+					permanent: false,
+				},
+			}
+		}
+
 		// Check user role to redirect appropriately
 		const userRole = (_session.user as any)?.role
 		const isAdmin = userRole === "admin" || userRole === "super admin"
