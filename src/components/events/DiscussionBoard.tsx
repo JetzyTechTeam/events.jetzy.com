@@ -285,7 +285,7 @@ const FeedPostCard = ({
 				{post.images && post.images.length > 0 && post.images[0] && post.images[0].trim() !== "" && (
 					<Box mb={3} borderRadius="lg" overflow="hidden">
 						{post.images.length === 1 ? (
-							<Box position="relative" w="full">
+							<Box position="relative" w="full" bg="#000" display="flex" justifyContent="center">
 								{isVideoUrl(post.images[0]) ? (
 									<video
 										src={post.images[0]}
@@ -293,31 +293,31 @@ const FeedPostCard = ({
 										style={{ width: "100%", maxHeight: "500px", objectFit: "contain", backgroundColor: "#000" }}
 									/>
 								) : (
-									<Box position="relative" w="full" h="400px">
-										<Image
-											src={post.images[0]}
-											alt="Post image"
-											fill
-											style={{ objectFit: "cover" }}
-										/>
-									</Box>
+									<Image
+										src={post.images[0]}
+										alt="Post image"
+										width={0}
+										height={0}
+										sizes="100vw"
+										style={{ width: '100%', height: 'auto', maxHeight: '500px', objectFit: "contain" }}
+									/>
 								)}
 							</Box>
 						) : (
 							<SimpleGrid columns={2} spacing={1}>
 								{post.images.slice(0, 4).filter((img: string) => img && img.trim() !== "").map((img: string, idx: number) => (
-									<Box key={idx} position="relative" w="full" h="200px">
+									<Box key={idx} position="relative" w="full" h="200px" bg="#000">
 										{isVideoUrl(img) ? (
 											<video
 												src={img}
-												style={{ width: "100%", height: "100%", objectFit: "cover" }}
+												style={{ width: "100%", height: "100%", objectFit: "contain" }}
 											/>
 										) : (
 											<Image
 												src={img}
 												alt={`Post image ${idx + 1}`}
 												fill
-												style={{ objectFit: "cover" }}
+												style={{ objectFit: "contain" }}
 											/>
 										)}
 										{idx === 3 && post.images && post.images.length > 4 && (
