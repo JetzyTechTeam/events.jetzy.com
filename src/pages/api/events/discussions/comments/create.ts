@@ -13,8 +13,8 @@ import { generateMagicToken } from "@/lib/magicLink"
 import { sendCommentNotification, sendTagNotification } from "@/lib/send-grid"
 
 const schema = zod.object({
-    postId: zod.string().nonempty(),
-    content: zod.string().nonempty(),
+    discussionPostId: zod.string().nonempty(),
+    comment: zod.string().nonempty(),
     images: zod.array(zod.string()).optional(),
     parentCommentId: zod.string().optional().nullable(),
 })
@@ -32,10 +32,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const validation = schema.safeParse(body)
 
         if (!validation.success) {
+            console.error("Validation error:", validation.error.errors)
             return sendResponse(res, validation.error.errors, "Invalid input data.", false, ResCode.BAD_REQUEST)
         }
 
-        const { postId, content, images, parentCommentId } = validation.data
+        const { discussionPostId, comment, images, parentCommentId } = validation.data
+        const postId = discussionPostId
+        const content = comment
         // @ts-ignore
         const userId = session.user._id
 
