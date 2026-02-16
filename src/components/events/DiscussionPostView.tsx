@@ -643,22 +643,23 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 								{comment.images && comment.images.length > 0 && (
 									<Box mt={2}>
 										{comment.images.length === 1 ? (
-											<Box position="relative" borderRadius="md" overflow="hidden" maxW="300px">
+											<Box position="relative" borderRadius="md" overflow="hidden" maxW="100%" display="flex">
 												{comment.images && comment.images.length > 0 && comment.images[0] && comment.images[0].trim() !== "" && (
 													<>
 														{isVideoUrl(comment.images[0]) ? (
 															<video
 																src={comment.images[0]}
 																controls
-																style={{ width: "100%", maxHeight: "200px", objectFit: "contain" }}
+																style={{ width: "100%", maxHeight: "300px", objectFit: "contain", backgroundColor: "#000", borderRadius: "8px" }}
 															/>
 														) : (
 															<Image
 																src={comment.images[0]}
 																alt="Comment image"
-																width={300}
-																height={200}
-																style={{ objectFit: "cover", borderRadius: "8px" }}
+																width={0}
+																height={0}
+																sizes="100vw"
+																style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '400px', objectFit: "contain", borderRadius: "8px" }}
 															/>
 														)}
 													</>
@@ -667,18 +668,19 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 										) : (
 											<SimpleGrid columns={2} spacing={1} maxW="300px">
 												{comment.images.slice(0, 4).map((img: string, idx: number) => (
-													<Box key={idx} position="relative" w="full" h="100px" borderRadius="md" overflow="hidden">
+													<Box key={idx} position="relative" w="full" h="100px" borderRadius="md" overflow="hidden" bg="black">
 														{isVideoUrl(img) ? (
 															<video
 																src={img}
-																style={{ width: "100%", height: "100%", objectFit: "cover" }}
+																style={{ width: "100%", height: "100%", objectFit: "contain" }}
 															/>
 														) : (
 															<Image
 																src={img}
 																alt={`Comment image ${idx + 1}`}
 																fill
-																style={{ objectFit: "cover" }}
+																sizes="(max-width: 768px) 50vw, 33vw"
+																style={{ objectFit: "contain" }}
 															/>
 														)}
 													</Box>
@@ -1647,20 +1649,23 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 
 							{/* Image Preview */}
 							{editPostImages.length > 0 && (
-								<SimpleGrid columns={editPostImages.length === 1 ? 1 : 2} spacing={2} mb={3}>
-									{editPostImages.map((url, index) => (
-										<Box key={index} position="relative" w="full" h="200px" borderRadius="lg" overflow="hidden" border="1px solid #E4E6EB">
-											{isVideoUrl(url) ? (
+								<Box mb={3}>
+									{editPostImages.length === 1 ? (
+										<Box position="relative" w="full" bg="#000" borderRadius="lg" overflow="hidden" display="flex" justifyContent="center">
+											{isVideoUrl(editPostImages[0]) ? (
 												<video
-													src={url}
-													style={{ width: "100%", height: "100%", objectFit: "cover" }}
+													src={editPostImages[0]}
+													controls
+													style={{ width: "100%", maxHeight: "500px", objectFit: "contain", backgroundColor: "#000" }}
 												/>
 											) : (
 												<Image
-													src={url}
-													alt={`Edit image ${index + 1}`}
-													fill
-													style={{ objectFit: "cover" }}
+													src={editPostImages[0]}
+													alt="Edit image 1"
+													width={0}
+													height={0}
+													sizes="100vw"
+													style={{ width: '100%', height: 'auto', maxHeight: '500px', objectFit: "contain" }}
 												/>
 											)}
 											<IconButton
@@ -1674,11 +1679,44 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 												color="white"
 												borderRadius="full"
 												_hover={{ bg: "blackAlpha.800" }}
-												onClick={() => setEditPostImages(editPostImages.filter((_, i) => i !== index))}
+												onClick={() => setEditPostImages([])}
 											/>
 										</Box>
-									))}
-								</SimpleGrid>
+									) : (
+										<SimpleGrid columns={editPostImages.length === 2 ? 2 : 2} spacing={2}>
+											{editPostImages.map((url, index) => (
+												<Box key={index} position="relative" w="full" h="200px" borderRadius="lg" overflow="hidden" border="1px solid #E4E6EB" bg="black">
+													{isVideoUrl(url) ? (
+														<video
+															src={url}
+															style={{ width: "100%", height: "100%", objectFit: "contain" }}
+														/>
+													) : (
+														<Image
+															src={url}
+															alt={`Edit image ${index + 1}`}
+															fill
+															style={{ objectFit: "contain" }}
+														/>
+													)}
+													<IconButton
+														aria-label="Remove image"
+														icon={<FiX />}
+														size="sm"
+														position="absolute"
+														top={2}
+														right={2}
+														bg="blackAlpha.700"
+														color="white"
+														borderRadius="full"
+														_hover={{ bg: "blackAlpha.800" }}
+														onClick={() => setEditPostImages(editPostImages.filter((_, i) => i !== index))}
+													/>
+												</Box>
+											))}
+										</SimpleGrid>
+									)}
+								</Box>
 							)}
 
 							<Flex gap={2}>
@@ -1724,7 +1762,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				{post.images && post.images.length > 0 && post.images[0] && post.images[0].trim() !== "" && (
 					<Box mb={4} borderRadius="lg" overflow="hidden">
 						{post.images.filter((img: string) => img && img.trim() !== "").length === 1 ? (
-							<Box position="relative" w="full">
+							<Box position="relative" w="full" bg="#000" display="flex" justifyContent="center">
 								{isVideoUrl(post.images[0]) ? (
 									<video
 										src={post.images[0]}
@@ -1732,32 +1770,33 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										style={{ width: "100%", maxHeight: "600px", objectFit: "contain", backgroundColor: "#000" }}
 									/>
 								) : (
-									<Box position="relative" w="full" h="500px">
-										<Image
-											src={post.images[0]}
-											alt="Post image"
-											fill
-											style={{ objectFit: "contain", backgroundColor: "#F0F2F5" }}
-										/>
-									</Box>
+									<Image
+										src={post.images[0]}
+										alt="Post image"
+										width={0}
+										height={0}
+										sizes="100vw"
+										style={{ width: '100%', height: 'auto', maxHeight: '600px', objectFit: "contain" }}
+									/>
 								)}
 							</Box>
 						) : (
 							<SimpleGrid columns={post.images.filter((img: string) => img && img.trim() !== "").length === 2 ? 2 : 2} spacing={2}>
 								{post.images.filter((img: string) => img && img.trim() !== "").map((img: string, idx: number) => (
-									<Box key={idx} position="relative" w="full" h="300px">
+									<Box key={idx} position="relative" w="full" h="300px" bg="#000">
 										{isVideoUrl(img) ? (
 											<video
 												src={img}
 												controls
-												style={{ width: "100%", height: "100%", objectFit: "cover" }}
+												style={{ width: "100%", height: "100%", objectFit: "contain" }}
 											/>
 										) : (
 											<Image
 												src={img}
 												alt={`Post image ${idx + 1}`}
 												fill
-												style={{ objectFit: "cover" }}
+												sizes="(max-width: 768px) 100vw, 50vw"
+												style={{ objectFit: "contain" }}
 											/>
 										)}
 									</Box>

@@ -537,10 +537,17 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 
 						{/* Images Preview */}
 						{images.length > 0 && (
-							<SimpleGrid columns={images.length === 1 ? 1 : 2} spacing={2}>
-								{images.map((url, index) => (
-									<Box key={index} position="relative" borderRadius="lg" overflow="hidden">
-										<Image src={url} alt={`Upload ${index + 1}`} w="full" h="200px" objectFit="cover" />
+							<Box>
+								{images.length === 1 ? (
+									<Box position="relative" borderRadius="lg" overflow="hidden" bg="black" display="flex" justifyContent="center">
+										<Image
+											src={images[0]}
+											alt="Upload 1"
+											maxH="500px"
+											w="auto"
+											maxW="100%"
+											objectFit="contain"
+										/>
 										<IconButton
 											aria-label="Remove image"
 											icon={<FiX />}
@@ -552,11 +559,38 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 											color="white"
 											borderRadius="full"
 											_hover={{ bg: "blackAlpha.800" }}
-											onClick={() => handleRemoveImage(index)}
+											onClick={() => handleRemoveImage(0)}
 										/>
 									</Box>
-								))}
-							</SimpleGrid>
+								) : (
+									<SimpleGrid columns={2} spacing={2}>
+										{images.map((url, index) => (
+											<Box key={index} position="relative" borderRadius="lg" overflow="hidden" h="200px" bg="black">
+												<Image
+													src={url}
+													alt={`Upload ${index + 1}`}
+													w="full"
+													h="full"
+													objectFit="contain"
+												/>
+												<IconButton
+													aria-label="Remove image"
+													icon={<FiX />}
+													size="sm"
+													position="absolute"
+													top={2}
+													right={2}
+													bg="blackAlpha.700"
+													color="white"
+													borderRadius="full"
+													_hover={{ bg: "blackAlpha.800" }}
+													onClick={() => handleRemoveImage(index)}
+												/>
+											</Box>
+										))}
+									</SimpleGrid>
+								)}
+							</Box>
 						)}
 
 						{/* Add to Your Post Box */}
