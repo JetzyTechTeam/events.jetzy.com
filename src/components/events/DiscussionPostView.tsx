@@ -1142,6 +1142,30 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	const [uploadingImages, setUploadingImages] = useState(false)
 	const [commentFeeling, setCommentFeeling] = useState<string>("")
 	const [commentActivity, setCommentActivity] = useState<string>("")
+
+	// Tagging states for new comment
+	const [mentionSearch, setMentionSearch] = useState("")
+	const [showMentionDropdown, setShowMentionDropdown] = useState(false)
+	const [cursorPosition, setCursorPosition] = useState(0)
+
+	// Fetch participants for tagging
+	const { data: participants = [] } = useQuery({
+		queryKey: ["event-participants", eventId],
+		queryFn: async () => {
+			const res = await axios.get(`/api/events/${eventId}/participants`)
+			return res.data?.data || []
+		},
+		enabled: !!eventId
+	})
+
+	const filteredParticipants = useMemo(() => {
+		if (!mentionSearch) return participants
+		return participants.filter((p: any) =>
+			p.name.toLowerCase().includes(mentionSearch.toLowerCase()) ||
+			p.email.toLowerCase().includes(mentionSearch.toLowerCase())
+		)
+	}, [participants, mentionSearch])
+
 	const [isEditingPost, setIsEditingPost] = useState(false)
 	const [editPostContent, setEditPostContent] = useState("")
 	const [editPostImages, setEditPostImages] = useState<string[]>([])
@@ -1305,6 +1329,51 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				commentFileInputRef.current.value = ""
 			}
 		}
+	}
+
+	const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+		if (!session || !session.user) {
+			setIsLoginModalOpen(true)
+			return
+		}
+
+		const value = e.target.value
+		const pos = e.target.selectionStart
+		setNewComment(value)
+		setCursorPosition(pos)
+
+		const textBeforeCursor = value.substring(0, pos)
+		const words = textBeforeCursor.split(/\s/)
+		const lastWord = words[words.length - 1]
+
+		if (lastWord.startsWith("@")) {
+			setMentionSearch(lastWord.substring(1))
+			setShowMentionDropdown(true)
+		} else {
+			setShowMentionDropdown(false)
+		}
+	}
+
+	const handleSelectMention = (participant: any) => {
+		const textBeforeCursor = newComment.substring(0, cursorPosition)
+		const textAfterCursor = newComment.substring(cursorPosition)
+
+		const words = textBeforeCursor.split(/\s/)
+		words[words.length - 1] = `@[${participant.name}](${participant.id}) `
+
+		const updatedComment = words.join(" ") + textAfterCursor
+		setNewComment(updatedComment)
+		setShowMentionDropdown(false)
+
+		// Focus back on textarea
+		setTimeout(() => {
+			const textarea = document.getElementById("commentInput") as HTMLTextAreaElement
+			if (textarea) {
+				textarea.focus()
+				const newPos = words.join(" ").length
+				textarea.setSelectionRange(newPos, newPos)
+			}
+		}, 10)
 	}
 
 	const createCommentMutation = useMutation({
@@ -1812,13 +1881,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 												id="commentInput"
 												placeholder={session && session.user ? "Write a comment..." : "Login to write a comment..."}
 												value={newComment}
-												onChange={(e) => {
-													if (!session || !session.user) {
-														setIsLoginModalOpen(true)
-														return
-													}
-													setNewComment(e.target.value)
-												}}
+												onChange={handleCommentChange}
 												onClick={() => {
 													if (!session || !session.user) {
 														const currentPath = window.location.pathname + window.location.search
@@ -1835,16 +1898,19 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 												px={3}
 												resize="none"
 												fontSize="sm"
-												onKeyPress={(e) => {
+												onKeyDown={(e) => {
+													// Allow Enter to submit if dropdown is NOT open
 													if (e.key === 'Enter' && !e.shiftKey) {
-														e.preventDefault();
-														if (!session || !session.user) {
-															const currentPath = window.location.pathname + window.location.search
-															router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
-															return
-														}
-														if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
-															createCommentMutation.mutate({ comment: newComment, images: commentImages });
+														if (!showMentionDropdown) {
+															e.preventDefault();
+															if (!session || !session.user) {
+																const currentPath = window.location.pathname + window.location.search
+																router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
+																return
+															}
+															if (newComment.trim() || commentImages.length > 0 || commentFeeling || commentActivity) {
+																createCommentMutation.mutate({ comment: newComment, images: commentImages });
+															}
 														}
 													}
 												}}
@@ -1854,6 +1920,45 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 													}
 												}}
 											/>
+											{showMentionDropdown && filteredParticipants.length > 0 && (
+												<Box
+													position="absolute"
+													bottom="100%"
+													left="0"
+													width="100%"
+													maxH="200px"
+													overflowY="auto"
+													bg="#2b2b2b"
+													boxShadow="xl"
+													borderRadius="lg"
+													zIndex="10"
+													border="1px solid"
+													borderColor="#434343"
+													mb="2"
+												>
+													<VStack align="stretch" spacing="0">
+														{filteredParticipants.map((p: any) => (
+															<Box
+																key={p.id}
+																p="3"
+																cursor="pointer"
+																_hover={{ bg: "#3a3a3a" }}
+																onClick={() => handleSelectMention(p)}
+																borderBottom="1px solid"
+																borderColor="#434343"
+															>
+																<HStack spacing="3">
+																	<Avatar size="xs" name={p.name} />
+																	<VStack align="start" spacing="0">
+																		<Text fontSize="sm" fontWeight="bold" color="white">{p.name}</Text>
+																		<Text fontSize="xs" color="#bbbbbb">{p.email}</Text>
+																	</VStack>
+																</HStack>
+															</Box>
+														))}
+													</VStack>
+												</Box>
+											)}
 										</Box>
 
 										{/* Send Button - Always visible on the right */}

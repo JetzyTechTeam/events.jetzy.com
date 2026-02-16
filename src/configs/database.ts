@@ -22,7 +22,7 @@ if (process.env.NODE_ENV === "production") {
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 10000, // Increased to 10s
         socketTimeoutMS: 45000,
-        family: 4,
+        // family: 4,
         bufferCommands: false, // Disable buffering to get immediate errors
     })
 
@@ -50,7 +50,7 @@ if (process.env.NODE_ENV === "production") {
             maxPoolSize: 10,
             serverSelectionTimeoutMS: 10000,
             socketTimeoutMS: 45000,
-            family: 4,
+            // family: 4,
             bufferCommands: false,
         })
 

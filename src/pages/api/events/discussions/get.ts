@@ -14,7 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, null, "Post ID is required.", false, ResCode.BAD_REQUEST)
         }
 
-        const post = await DiscussionPosts.findById(postId).populate("userId", "firstName lastName image email").lean()
+        const post = await DiscussionPosts.findByIdAndUpdate(postId, { $inc: { viewCount: 1 } }, { new: true }).populate("userId", "firstName lastName image email").lean()
 
         if (!post) {
             return sendResponse(res, null, "Post not found.", false, ResCode.NOT_FOUND)

@@ -44,6 +44,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, null, "Post not found.", false, ResCode.NOT_FOUND)
         }
 
+        // Check if user is allowed to comment (participant or host)
+        const event = await Events.findById(post.eventId)
+        if (!event) {
+            return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
+        }
+
+        // Check if user is the host/owner
+        const isHost = (event.ownerId && event.ownerId.toString() === userId.toString())
+
+        if (!isHost) {
+            // Check if user has a confirmed booking
+            const booking = await Bookings.findOne({
+                eventId: post.eventId,
+                userId: userId,
+                status: { $in: ['confirmed', 'completed'] },
+                isDeleted: false
+            })
+
+            if (!booking) {
+                return sendResponse(res, null, "You must be registered for this event to comment.", false, ResCode.FORBIDDEN)
+            }
+        }
+
         const newComment = await DiscussionComments.create({
             eventId: post.eventId,
             discussionPostId: postId,

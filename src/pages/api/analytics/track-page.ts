@@ -98,7 +98,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	} catch (error: any) {
 		console.error("[Analytics Track Page] Error:", error.message)
 		// Return OK to not break frontend
-		return sendResponse(res, null, "Page tracking failed", false, ResCode.INTERNAL_SERVER_ERROR)
+		return sendResponse(res, null, `Page tracking failed: ${error.message}`, false, ResCode.INTERNAL_SERVER_ERROR)
 	}
 }
 
