@@ -56,19 +56,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Check if user is the host/owner
         const isHost = (event.ownerId && event.ownerId.toString() === userId.toString())
 
-        if (!isHost) {
-            // Check if user has a confirmed booking
-            const booking = await Bookings.findOne({
-                eventId: post.eventId,
-                userId: userId,
-                status: { $in: ['confirmed', 'completed'] },
-                isDeleted: false
-            })
+        // if (!isHost) {
+        //     // Check if user has a confirmed booking
+        //     const booking = await Bookings.findOne({
+        //         eventId: post.eventId,
+        //         userId: userId,
+        //         status: { $in: ['confirmed', 'completed'] },
+        //         isDeleted: false
+        //     })
 
-            if (!booking) {
-                return sendResponse(res, null, "You must be registered for this event to comment.", false, ResCode.FORBIDDEN)
-            }
-        }
+        //     if (!booking) {
+        //         return sendResponse(res, null, "You must be registered for this event to comment.", false, ResCode.FORBIDDEN)
+        //     }
+        // }
 
         const newComment = await DiscussionComments.create({
             eventId: post.eventId,
