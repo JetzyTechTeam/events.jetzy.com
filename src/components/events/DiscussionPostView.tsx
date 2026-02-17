@@ -207,11 +207,31 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	}, [showReply, comment.eventId])
 
 	const filteredParticipants = useMemo(() => {
-		if (!mentionSearch) return participants
-		return participants.filter((p: any) =>
-			p.name.toLowerCase().includes(mentionSearch.toLowerCase()) ||
-			p.email.toLowerCase().includes(mentionSearch.toLowerCase())
-		)
+		let results = participants;
+		if (mentionSearch) {
+			results = participants.filter((p: any) =>
+				p.name.toLowerCase().includes(mentionSearch.toLowerCase()) ||
+				p.email.toLowerCase().includes(mentionSearch.toLowerCase())
+			)
+		}
+
+		// Check if mentionSearch triggers email format
+		if (mentionSearch && mentionSearch.includes('@') && mentionSearch.includes('.')) {
+			// Check if already in results
+			const requestEmail = mentionSearch.toLowerCase();
+			const exists = results.some((p: any) => p.email.toLowerCase() === requestEmail);
+			if (!exists) {
+				// Add a "Invite <email>" option
+				return [...results, {
+					id: `email:${requestEmail}`,
+					name: "Guest",
+					email: requestEmail,
+					isExternal: true
+				}]
+			}
+		}
+
+		return results;
 	}, [participants, mentionSearch])
 
 	const handleReplyContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -237,7 +257,13 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 		const textAfterCursor = replyText.substring(cursorPosition)
 
 		const words = textBeforeCursor.split(/\s/)
-		words[words.length - 1] = `@[${participant.name}](${participant.id}) `
+
+		let mentionText = `@[${participant.name}](${participant.id}) `;
+		if (participant.isExternal) {
+			mentionText = `@[${participant.email}](${participant.email}) `;
+		}
+
+		words[words.length - 1] = mentionText
 
 		const newContent = words.join(" ") + textAfterCursor
 		setReplyText(newContent)
@@ -1174,11 +1200,31 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	})
 
 	const filteredParticipants = useMemo(() => {
-		if (!mentionSearch) return participants
-		return participants.filter((p: any) =>
-			p.name.toLowerCase().includes(mentionSearch.toLowerCase()) ||
-			p.email.toLowerCase().includes(mentionSearch.toLowerCase())
-		)
+		let results = participants;
+		if (mentionSearch) {
+			results = participants.filter((p: any) =>
+				p.name.toLowerCase().includes(mentionSearch.toLowerCase()) ||
+				p.email.toLowerCase().includes(mentionSearch.toLowerCase())
+			)
+		}
+
+		// Check if mentionSearch triggers email format
+		if (mentionSearch && mentionSearch.includes('@') && mentionSearch.includes('.')) {
+			// Check if already in results
+			const requestEmail = mentionSearch.toLowerCase();
+			const exists = results.some((p: any) => p.email.toLowerCase() === requestEmail);
+			if (!exists) {
+				// Add a "Invite <email>" option
+				return [...results, {
+					id: `email:${requestEmail}`,
+					name: "Guest",
+					email: requestEmail,
+					isExternal: true
+				}]
+			}
+		}
+
+		return results;
 	}, [participants, mentionSearch])
 
 	const [isEditingPost, setIsEditingPost] = useState(false)
@@ -1425,10 +1471,16 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		const textAfterCursor = newComment.substring(cursorPosition)
 
 		const words = textBeforeCursor.split(/\s/)
-		words[words.length - 1] = `@[${participant.name}](${participant.id}) `
 
-		const updatedComment = words.join(" ") + textAfterCursor
-		setNewComment(updatedComment)
+		let mentionText = `@[${participant.name}](${participant.id}) `;
+		if (participant.isExternal) {
+			mentionText = `@[${participant.email}](${participant.email}) `;
+		}
+
+		words[words.length - 1] = mentionText
+
+		const newContent = words.join(" ") + textAfterCursor
+		setNewComment(newContent)
 		setShowMentionDropdown(false)
 
 		// Focus back on textarea

@@ -127,7 +127,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     const mentionedUserIds = new Set<string>()
                     let match
                     while ((match = mentionRegex.exec(reply || "")) !== null) {
-                        mentionedUserIds.add(match[2])
+                        const idOrEmail = match[2];
+                        mentionedUserIds.add(idOrEmail)
+
+                        // If it looks like an email and isn't in our list yet, add it
+                        if (idOrEmail.includes('@') && idOrEmail.includes('.')) {
+                            const email = idOrEmail.toLowerCase();
+                            if (!uniqueParticipants.has(email) && email !== replierEmail.toLowerCase()) {
+                                uniqueParticipants.set(email, "Friend"); // Default name for external emails
+                            }
+                        }
                     }
 
                     console.log(`[Notification] Processing reply alerts for ${uniqueParticipants.size} people`)
