@@ -9,6 +9,8 @@ export const discussionEndpoints = {
 		pin: "public:/events/discussions/pin",
 		lock: "public:/events/discussions/lock",
 		react: "public:/events/discussions/react",
+		whoReacted: "public:/events/discussions/who-reacted",
+		whoViewed: "public:/events/discussions/who-viewed",
 	},
 	// Discussion Comments
 	comments: {
@@ -18,5 +20,6 @@ export const discussionEndpoints = {
 		edit: "public:/events/discussions/comments/edit",
 		delete: "public:/events/discussions/comments/delete",
 		react: "public:/events/discussions/comments/react",
+		whoReacted: "public:/events/discussions/comments/who-reacted",
 	},
 }

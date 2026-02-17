@@ -99,3 +99,18 @@ export const ReactToDiscussionCommentApi = async (params: RequestParams<{ commen
 export const CheckEventTicketApi = async (params: RequestParams<{ eventId: string }>): Promise<ServerResponse<{ hasTicket: boolean; isAuthenticated: boolean; bookingId?: string | null }, any>> => {
 	return await GET(`/api/events/${params?.data?.eventId}/check-ticket`)
 }
+
+// ========== REACTIONS & VIEWS ==========
+
+export const GetPostReactionsApi = async (params: RequestParams<{ postId: string; reactionType: "like" | "helpful" }>): Promise<ServerResponse<any[], any>> => {
+	return await GET(`${discussionEndpoints.posts.whoReacted}?postId=${params?.data?.postId}&reactionType=${params?.data?.reactionType}`)
+}
+
+export const GetCommentReactionsApi = async (params: RequestParams<{ commentId: string }>): Promise<ServerResponse<any[], any>> => {
+	return await GET(`${discussionEndpoints.comments.whoReacted}?commentId=${params?.data?.commentId}`)
+}
+
+export const GetPostViewersApi = async (params: RequestParams<{ postId: string }>): Promise<ServerResponse<any[], any>> => {
+	return await GET(`${discussionEndpoints.posts.whoViewed}?postId=${params?.data?.postId}`)
+}
+

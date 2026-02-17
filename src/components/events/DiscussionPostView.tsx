@@ -77,10 +77,14 @@ import {
 	DeleteDiscussionCommentApi,
 	ReactToDiscussionCommentApi,
 	CheckEventTicketApi,
+	GetPostReactionsApi,
+	GetCommentReactionsApi,
+	GetPostViewersApi,
 } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor, DiscussionCommentWithAuthor } from "@/types/discussion"
 import { useRouter } from "next/router"
 import LoginModal from "@/components/misc/LoginModal"
+import ReactionsListModal from "@/components/events/ReactionsListModal"
 
 // Helper function to check if URL is a video
 const isVideoUrl = (url: string): boolean => {
@@ -1173,6 +1177,16 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	const [editPostImages, setEditPostImages] = useState<string[]>([])
 	const [editPostFeeling, setEditPostFeeling] = useState<string>("")
 	const [editPostActivity, setEditPostActivity] = useState<string>("")
+
+	// Reactions and viewers modal states
+	const [showLikesModal, setShowLikesModal] = useState(false)
+	const [showViewersModal, setShowViewersModal] = useState(false)
+	const [showCommentLikesModal, setShowCommentLikesModal] = useState(false)
+	const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
+	const [likesList, setLikesList] = useState<any[]>([])
+	const [viewersList, setViewersList] = useState<any[]>([])
+	const [commentLikesList, setCommentLikesList] = useState<any[]>([])
+	const [loadingReactions, setLoadingReactions] = useState(false)
 	const [uploadingEditImages, setUploadingEditImages] = useState(false)
 	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
 	const commentFileInputRef = React.useRef<HTMLInputElement>(null)
@@ -1330,6 +1344,47 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			if (commentFileInputRef.current) {
 				commentFileInputRef.current.value = ""
 			}
+		}
+	}
+
+	// Handlers for reactions and viewers modals
+	const handleShowLikes = async () => {
+		setLoadingReactions(true)
+		setShowLikesModal(true)
+		try {
+			const response = await GetPostReactionsApi({ data: { postId, reactionType: "like" } })
+			setLikesList(response.data || [])
+		} catch (error) {
+			console.error("Error fetching likes:", error)
+		} finally {
+			setLoadingReactions(false)
+		}
+	}
+
+	const handleShowViewers = async () => {
+		setLoadingReactions(true)
+		setShowViewersModal(true)
+		try {
+			const response = await GetPostViewersApi({ data: { postId } })
+			setViewersList(response.data || [])
+		} catch (error) {
+			console.error("Error fetching viewers:", error)
+		} finally {
+			setLoadingReactions(false)
+		}
+	}
+
+	const handleShowCommentLikes = async (commentId: string) => {
+		setLoadingReactions(true)
+		setSelectedCommentId(commentId)
+		setShowCommentLikesModal(true)
+		try {
+			const response = await GetCommentReactionsApi({ data: { commentId } })
+			setCommentLikesList(response.data || [])
+		} catch (error) {
+			console.error("Error fetching comment likes:", error)
+		} finally {
+			setLoadingReactions(false)
 		}
 	}
 
@@ -1831,7 +1886,13 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 					</Flex>
 					<Flex gap={3}>
 						<Text>{post.commentCount} Comments</Text>
-						<Text>{post.viewCount} Views</Text>
+						<Text
+							cursor="pointer"
+							_hover={{ textDecoration: "underline" }}
+							onClick={handleShowViewers}
+						>
+							{post.viewCount} Views
+						</Text>
 					</Flex>
 				</Flex>
 
@@ -2493,6 +2554,32 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 					</ModalFooter>
 				</ModalContent>
 			</Modal>
+
+			{/* Reactions and Viewers Modals */}
+			<ReactionsListModal
+				isOpen={showLikesModal}
+				onClose={() => setShowLikesModal(false)}
+				users={likesList}
+				title="People who liked this"
+				isLoading={loadingReactions}
+			/>
+
+			<ReactionsListModal
+				isOpen={showViewersModal}
+				onClose={() => setShowViewersModal(false)}
+				users={viewersList}
+				title="People who viewed this"
+				isLoading={loadingReactions}
+			/>
+
+			<ReactionsListModal
+				isOpen={showCommentLikesModal}
+				onClose={() => setShowCommentLikesModal(false)}
+				users={commentLikesList}
+				title="People who liked this comment"
+				isLoading={loadingReactions}
+			/>
+
 			{/* Login Modal */}
 			<LoginModal
 				isOpen={isLoginModalOpen}

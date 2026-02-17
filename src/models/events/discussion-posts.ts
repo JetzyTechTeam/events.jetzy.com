@@ -17,6 +17,7 @@ export interface IDiscussionPost {
 		helpful: Schema.Types.ObjectId[]
 	}
 	viewCount: number
+	viewedBy: Schema.Types.ObjectId[]
 	commentCount: number
 	lastActivityAt: Date
 	createdAt?: Date
@@ -84,6 +85,11 @@ const discussionPostSchema = new Schema<IDiscussionPost>(
 		viewCount: {
 			type: Number,
 			default: 0,
+		},
+		viewedBy: {
+			type: [Schema.Types.ObjectId],
+			ref: "Users",
+			default: [],
 		},
 		commentCount: {
 			type: Number,

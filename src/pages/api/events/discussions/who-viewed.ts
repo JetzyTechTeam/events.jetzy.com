@@ -14,23 +14,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, null, "Post ID is required.", false, ResCode.BAD_REQUEST)
         }
 
-        // Update view count and track viewer
-        const post = await DiscussionPosts.findByIdAndUpdate(
-            postId,
-            {
-                $inc: { viewCount: 1 },
-                $addToSet: { viewedBy: req.headers['x-user-id'] } // Add user to viewedBy if not already present
-            },
-            { new: true }
-        ).populate("userId", "firstName lastName image email").lean()
+        const post = await DiscussionPosts.findById(postId)
+            .populate("viewedBy", "firstName lastName image email")
+            .lean()
 
         if (!post) {
             return sendResponse(res, null, "Post not found.", false, ResCode.NOT_FOUND)
         }
 
-        return sendResponse(res, post, "Post fetched successfully.", true, ResCode.OK)
+        const viewers = post.viewedBy || []
+
+        return sendResponse(res, viewers, "Viewers fetched successfully.", true, ResCode.OK)
     } catch (error: any) {
-        console.error("Error fetching discussion post:", error)
-        return sendResponse(res, null, error.message || "Failed to fetch post.", false, ResCode.INTERNAL_SERVER_ERROR)
+        console.error("Error fetching viewers:", error)
+        return sendResponse(res, null, error.message || "Failed to fetch viewers.", false, ResCode.INTERNAL_SERVER_ERROR)
     }
 }
