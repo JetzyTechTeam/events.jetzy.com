@@ -170,11 +170,12 @@ interface CommentItemProps {
 	onEdit: (commentId: string, text: string, images?: string[]) => void
 	onDelete: (commentId: string) => void
 	onReact: (commentId: string) => void
+	onShowCommentLikes: (commentId: string) => void
 	isLocked: boolean
 	onLoginRequired?: () => void
 }
 
-const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, isLocked, onLoginRequired }) => {
+const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, onShowCommentLikes, isLocked, onLoginRequired }) => {
 	const [replyText, setReplyText] = useState("")
 	const [editText, setEditText] = useState(comment.comment)
 	const [showReply, setShowReply] = useState(false)
@@ -716,7 +717,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 							{new Date(comment.createdAt).toLocaleDateString(undefined, { hour: '2-digit', minute: '2-digit' })}
 						</Text>
 						{(comment.reactions?.like?.length || (comment.reactions as any)?.likes?.length || 0) > 0 && (
-							<Flex align="center" gap={1} ml={1}>
+							<Flex
+								align="center"
+								gap={1}
+								ml={1}
+								cursor="pointer"
+								_hover={{ opacity: 0.8 }}
+								onClick={() => onShowCommentLikes(comment._id)}
+							>
 								<Box bg="#1877F2" borderRadius="full" p="2px">
 									<Icon as={FiThumbsUp} color="white" boxSize="8px" />
 								</Box>
@@ -1129,6 +1137,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 								onEdit={onEdit}
 								onDelete={onDelete}
 								onReact={onReact}
+								onShowCommentLikes={onShowCommentLikes}
 								isLocked={isLocked}
 							/>
 						))}
@@ -2256,6 +2265,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 									onEdit={(commentId, text, images) => editCommentMutation.mutate({ commentId, newComment: text, images })}
 									onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
 									onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
+									onShowCommentLikes={handleShowCommentLikes}
 									isLocked={post.isLocked}
 									onLoginRequired={() => setIsLoginModalOpen(true)}
 								/>
