@@ -1885,7 +1885,13 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				<Flex justify="space-between" align="center" py={2} borderBottom="1px solid #434343" fontSize="sm" color="#bbbbbb">
 					<Flex align="center" gap={1}>
 						{(post.reactions?.like?.length || (post.reactions as any)?.likes?.length || 0) > 0 && (
-							<Flex align="center" gap={1}>
+							<Flex
+								align="center"
+								gap={1}
+								cursor="pointer"
+								_hover={{ opacity: 0.8 }}
+								onClick={handleShowLikes}
+							>
 								<Box bg="#jetzy" borderRadius="full" p="3px" display="flex" alignItems="center" justifyContent="center">
 									<Icon as={BsHandThumbsUpFill} color="white" boxSize="10px" />
 								</Box>
