@@ -146,6 +146,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         const firstName = name.split(' ')[0] || 'Friend'
                         const lastName = name.split(' ').slice(1).join(' ') || ''
                         const magicToken = generateMagicToken({ email, firstName, lastName })
+                        const hasImages = !!(newComment.images && newComment.images.length > 0)
 
                         // If user is mentioned, send tag notification
                         if (mentionedUserIds.has(email)) {
@@ -158,7 +159,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                                 eventName: event.name,
                                 eventSlug: event.slug,
                                 magicToken,
-                                postId
+                                postId: post._id.toString(),
+                                hasImages
                             })
                         } else {
                             // Otherwise send standard curiosity-driven comment notification
@@ -170,7 +172,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                                 eventName: event.name,
                                 eventSlug: event.slug,
                                 magicToken,
-                                postId
+                                postId: post._id.toString(),
+                                hasImages
                             })
                         }
                     }

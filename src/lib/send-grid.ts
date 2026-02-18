@@ -127,6 +127,7 @@ type DiscussionNotificationData = {
   eventSlug: string
   magicToken: string
   postId: string
+  hasImages?: boolean
 }
 
 type TagNotificationData = {
@@ -138,6 +139,7 @@ type TagNotificationData = {
   eventSlug: string
   magicToken: string
   postId: string
+  hasImages?: boolean
 }
 
 type CommentNotificationData = {
@@ -149,6 +151,29 @@ type CommentNotificationData = {
   eventSlug: string
   magicToken: string
   postId: string
+  hasImages?: boolean
+}
+
+type ReactionNotificationData = {
+  email: string
+  firstName: string
+  lastName: string
+  reactorName: string
+  eventName: string
+  eventSlug: string
+  magicToken: string
+  postId: string
+}
+
+type ViewMilestoneNotificationData = {
+  email: string
+  firstName: string
+  lastName: string
+  eventName: string
+  eventSlug: string
+  magicToken: string
+  postId: string
+  viewCount: number
 }
 
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets, paymentUrl }: WaitingListApprovalData) => {
@@ -1143,9 +1168,18 @@ export const sendDiscussionNotification = async ({
   eventSlug,
   magicToken,
   postId,
+  hasImages,
 }: DiscussionNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+
+  const subject = hasImages
+    ? `New photos added to ${decodeHTMLEntities(eventName)}`
+    : `${authorName} Posted in ${decodeHTMLEntities(eventName)}`
+
+  const bodyContent = hasImages
+    ? `We've added new photos and videos to <strong>${decodeHTMLEntities(eventName)}</strong>.`
+    : `<strong>${authorName}</strong> Posted in <strong>${decodeHTMLEntities(eventName)}</strong>.`
 
   try {
     await sgMail.send({
@@ -1154,48 +1188,35 @@ export const sendDiscussionNotification = async ({
         email: process.env.SENDGRID_EMAIL_SENDER as string,
         name: "Jetzy Events",
       },
-      subject: `${authorName} shared an update in ${decodeHTMLEntities(eventName)}`,
+      subject,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
-          <div style="background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
             <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
               Hi ${firstName},
             </p>
-            <p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
-              <strong>${authorName}</strong> just shared a new post in <strong>${decodeHTMLEntities(eventName)}</strong>.
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              ${bodyContent}
             </p>
 
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${discussionUrl}" style="background: #F79432; color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.3);">
-                View Post on Jetzy
+            <div style="margin: 30px 0;">
+              <a href="${discussionUrl}" style="color: #F79432; font-weight: 700; font-size: 16px; text-decoration: none;">
+                View it here: [Post Link]
               </a>
             </div>
 
-            <div style="text-align: center; margin: 30px 0;">
-              <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
-              <div style="display: inline-block; vertical-align: middle;">
-                <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="text-decoration: none; display: inline-block; margin: 5px;">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
-                </a>
-                <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="text-decoration: none; display: inline-block; margin: 5px;">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
-                </a>
-              </div>
-            </div>
-
-            <p style="color: #9CA3AF; font-size: 13px; text-align: center; margin-top: 30px;">
-              See what's new in the community!<br/>The Jetzy Team
+            <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
+              — Team Jetzy
             </p>
             
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
-              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 0; text-align: center;">
-                You’re receiving this because you’re registered for ${decodeHTMLEntities(eventName)}. To stop receiving updates for this event, <a href="${baseUrl}/${eventSlug}" style="color: #F79432; text-decoration: none;">Manage your notifications</a>.
-              </p>
+            <div style="margin-top: 40px; display: flex; align-items: center; gap: 10px;">
+              <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
+              <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>
             </div>
           </div>
         </div>
       `),
-      text: `${authorName} just shared a new post in ${decodeHTMLEntities(eventName)}.\n\nView Post on Jetzy: ${discussionUrl}\n\nCheers,\nThe Jetzy Team`,
+      text: `${firstName},\n\n${stripHtml(bodyContent)}\n\nView it here: ${discussionUrl}\n\n— Team Jetzy`,
     })
     console.log(`✅ Discussion notification sent successfully to: ${email}`)
   } catch (error) {
@@ -1224,48 +1245,35 @@ export const sendCommentNotification = async ({
         email: process.env.SENDGRID_EMAIL_SENDER as string,
         name: "Jetzy Events",
       },
-      subject: `${commenterName} commented on a post in ${decodeHTMLEntities(eventName)}`,
+      subject: `${commenterName} commented on your post in ${decodeHTMLEntities(eventName)}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
-          <div style="background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
             <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
               Hi ${firstName},
             </p>
-            <p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
-              <strong>${commenterName}</strong> left a comment on a post in <strong>${decodeHTMLEntities(eventName)}</strong>.
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              <strong>${commenterName}</strong> commented on your post in <strong>${decodeHTMLEntities(eventName)}</strong>.
             </p>
 
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${discussionUrl}" style="background: #F79432; color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.3);">
-                Reply to Comment
+            <div style="margin: 30px 0;">
+              <a href="${discussionUrl}" style="color: #F79432; font-weight: 700; font-size: 16px; text-decoration: none;">
+                View and reply: [Comment Link]
               </a>
             </div>
 
-            <div style="text-align: center; margin: 30px 0;">
-              <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
-              <div style="display: inline-block; vertical-align: middle;">
-                <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="text-decoration: none; display: inline-block; margin: 5px;">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
-                </a>
-                <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="text-decoration: none; display: inline-block; margin: 5px;">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
-                </a>
-              </div>
-            </div>
-
-            <p style="color: #9CA3AF; font-size: 13px; text-align: center; margin-top: 30px;">
-              Keep the conversation going!<br/>The Jetzy Team
+            <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
+              — Team Jetzy
             </p>
             
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
-              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 0; text-align: center;">
-                You’re receiving this because you’re following this thread in ${decodeHTMLEntities(eventName)}. To stop receiving updates for this event, <a href="${baseUrl}/${eventSlug}" style="color: #F79432; text-decoration: none;">Manage your notifications</a>.
-              </p>
+            <div style="margin-top: 40px; display: flex; align-items: center; gap: 10px;">
+              <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
+              <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>
             </div>
           </div>
         </div>
       `),
-      text: `${commenterName} left a comment on a post in ${decodeHTMLEntities(eventName)}.\n\nReply to Comment: ${discussionUrl}\n\nSee you there!\nThe Jetzy Team`,
+      text: `${firstName},\n\n${commenterName} commented on your post in ${decodeHTMLEntities(eventName)}.\n\nView and reply here: ${discussionUrl}\n\n— Team Jetzy`,
     })
     console.log(`✅ Comment notification sent successfully to: ${email}`)
   } catch (error) {
@@ -1283,7 +1291,73 @@ export const sendTagNotification = async ({
   eventSlug,
   magicToken,
   postId,
+  hasImages,
 }: TagNotificationData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+
+  const subject = hasImages
+    ? `${authorName} tagged you in a photo from ${decodeHTMLEntities(eventName)}`
+    : `${authorName} tagged you in ${decodeHTMLEntities(eventName)}`
+
+  const bodyContent = hasImages
+    ? `<strong>${authorName}</strong> tagged you in a photo from <strong>${decodeHTMLEntities(eventName)}</strong>.`
+    : `<strong>${authorName}</strong> tagged you in a discussion in <strong>${decodeHTMLEntities(eventName)}</strong>.`
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Events",
+      },
+      subject,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
+              Hi ${firstName},
+            </p>
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              ${bodyContent}
+            </p>
+
+            <div style="margin: 30px 0;">
+              <a href="${discussionUrl}" style="color: #F79432; font-weight: 700; font-size: 16px; text-decoration: none;">
+                View it here: [Photo Link]
+              </a>
+            </div>
+
+            <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
+              — Team Jetzy
+            </p>
+            
+            <div style="margin-top: 40px; display: flex; align-items: center; gap: 10px;">
+              <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
+              <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>
+            </div>
+          </div>
+        </div>
+      `),
+      text: `${firstName},\n\n${stripHtml(bodyContent)}\n\nView it here: ${discussionUrl}\n\n— Team Jetzy`,
+    })
+    console.log(`✅ Tag notification sent successfully to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send tag notification email:", error)
+    throw error
+  }
+}
+
+export const sendReactionNotification = async ({
+  email,
+  firstName,
+  lastName,
+  reactorName,
+  eventName,
+  eventSlug,
+  magicToken,
+  postId,
+}: ReactionNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
 
@@ -1294,52 +1368,96 @@ export const sendTagNotification = async ({
         email: process.env.SENDGRID_EMAIL_SENDER as string,
         name: "Jetzy Events",
       },
-      subject: `${authorName} tagged you in ${decodeHTMLEntities(eventName)}`,
+      subject: `${reactorName} reacted to your post in ${decodeHTMLEntities(eventName)}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
-          <div style="background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
             <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
               Hi ${firstName},
             </p>
-            <p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
-              <strong>${authorName}</strong> tagged you in a discussion in <strong>${decodeHTMLEntities(eventName)}</strong>.
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              <strong>${reactorName}</strong> Liked your post in <strong>${decodeHTMLEntities(eventName)}</strong>.
             </p>
 
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${discussionUrl}" style="background: #F79432; color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.3);">
-                See Tagged Post
+            <div style="margin: 30px 0;">
+              <a href="${discussionUrl}" style="color: #F79432; font-weight: 700; font-size: 16px; text-decoration: none;">
+                See the update: [Post Link]
               </a>
             </div>
 
-            <div style="text-align: center; margin: 30px 0;">
-              <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
-              <div style="display: inline-block; vertical-align: middle;">
-                <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="text-decoration: none; display: inline-block; margin: 5px;">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
-                </a>
-                <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="text-decoration: none; display: inline-block; margin: 5px;">
-                  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
-                </a>
-              </div>
-            </div>
-
-            <p style="color: #9CA3AF; font-size: 13px; text-align: center; margin-top: 30px;">
-              Jump back in and see what others are saying!<br/>The Jetzy Team
+            <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
+              — Team Jetzy
             </p>
             
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #E5E7EB;">
-              <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 0; text-align: center;">
-                You’re receiving this because you’re registered for ${decodeHTMLEntities(eventName)}. To stop receiving updates for this event, <a href="${baseUrl}/${eventSlug}" style="color: #F79432; text-decoration: none;">Manage your notifications</a>.
-              </p>
+            <div style="margin-top: 40px; display: flex; align-items: center; gap: 10px;">
+              <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
+              <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>
             </div>
           </div>
         </div>
       `),
-      text: `${authorName} tagged you in a discussion in ${decodeHTMLEntities(eventName)}.\n\nSee Tagged Post: ${discussionUrl}\n\nSee you there!\nThe Jetzy Team`,
+      text: `${firstName},\n\n${reactorName} Liked your post in ${decodeHTMLEntities(eventName)}.\n\nSee the update here: ${discussionUrl}\n\n— Team Jetzy`,
     })
-    console.log(`✅ Tag notification sent successfully to: ${email}`)
+    console.log(`✅ Reaction notification sent successfully to: ${email}`)
   } catch (error) {
-    console.error("❌ Failed to send tag notification email:", error)
+    console.error("❌ Failed to send reaction notification email:", error)
+    throw error
+  }
+}
+
+export const sendViewMilestoneNotification = async ({
+  email,
+  firstName,
+  lastName,
+  eventName,
+  eventSlug,
+  magicToken,
+  postId,
+  viewCount,
+}: ViewMilestoneNotificationData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Events",
+      },
+      subject: `Your post in ${decodeHTMLEntities(eventName)} is getting attention`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
+              Hi ${firstName},
+            </p>
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              Your post in <strong>${decodeHTMLEntities(eventName)}</strong> has received <strong>${viewCount}</strong> views.
+            </p>
+
+            <div style="margin: 30px 0;">
+              <a href="${discussionUrl}" style="color: #F79432; font-weight: 700; font-size: 16px; text-decoration: none;">
+                Take a look: [Post Link]
+              </a>
+            </div>
+
+            <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
+              — Team Jetzy
+            </p>
+            
+            <div style="margin-top: 40px; display: flex; align-items: center; gap: 10px;">
+              <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
+              <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>
+            </div>
+          </div>
+        </div>
+      `),
+      text: `${firstName},\n\nYour post in ${decodeHTMLEntities(eventName)} has received ${viewCount} views.\n\nTake a look here: ${discussionUrl}\n\n— Team Jetzy`,
+    })
+    console.log(`✅ View milestone notification sent successfully to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send view milestone notification email:", error)
     throw error
   }
 }
