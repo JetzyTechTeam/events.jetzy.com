@@ -16,6 +16,7 @@ const schema = zod.object({
     discussionPostId: zod.string().nonempty(),
     comment: zod.string().nonempty(),
     images: zod.array(zod.string()).optional(),
+    attachments: zod.array(zod.string()).optional(),
     parentCommentId: zod.string().optional().nullable(),
 })
 
@@ -36,7 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, validation.error.errors, "Invalid input data.", false, ResCode.BAD_REQUEST)
         }
 
-        const { discussionPostId, comment, images, parentCommentId } = validation.data
+        const { discussionPostId, comment, images, attachments, parentCommentId } = validation.data
         const postId = discussionPostId
         const content = comment
         // @ts-ignore
@@ -76,6 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             userId,
             comment: content,
             images: images || [],
+            attachments: attachments || [],
             parentCommentId: parentCommentId || null,
             reactions: {
                 likes: [],
@@ -146,7 +148,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         const firstName = name.split(' ')[0] || 'Friend'
                         const lastName = name.split(' ').slice(1).join(' ') || ''
                         const magicToken = generateMagicToken({ email, firstName, lastName })
-                        const hasImages = !!(newComment.images && newComment.images.length > 0)
+                        const hasImages = !!((newComment.images && newComment.images.length > 0) || (newComment.attachments && newComment.attachments.length > 0))
 
                         // If user is mentioned, send tag notification
                         if (mentionedUserIds.has(email)) {

@@ -9,6 +9,7 @@ export interface IDiscussionComment {
 	comment: string
 	parentCommentId?: Schema.Types.ObjectId | null
 	images?: string[]
+	attachments?: string[]
 	reactions: {
 		likes: Schema.Types.ObjectId[]
 	}
@@ -50,6 +51,10 @@ const discussionCommentSchema = new Schema<IDiscussionComment>(
 			index: true,
 		},
 		images: {
+			type: [String],
+			default: [],
+		},
+		attachments: {
 			type: [String],
 			default: [],
 		},

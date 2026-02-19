@@ -101,7 +101,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         const firstName = name.split(' ')[0] || 'Friend'
                         const lastName = name.split(' ').slice(1).join(' ') || ''
                         const magicToken = generateMagicToken({ email, firstName, lastName })
-                        const hasImages = !!(newPost.images && newPost.images.length > 0)
+                        const hasImages = !!((newPost.images && newPost.images.length > 0) || (newPost.attachments && newPost.attachments.length > 0))
 
                         // If user is mentioned, send tag notification
                         if (mentionedUserIds.has(email)) {

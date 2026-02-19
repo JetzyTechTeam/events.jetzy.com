@@ -1234,9 +1234,18 @@ export const sendCommentNotification = async ({
   eventSlug,
   magicToken,
   postId,
+  hasImages,
 }: CommentNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+
+  const subject = hasImages
+    ? `New photos added to ${decodeHTMLEntities(eventName)}`
+    : `${commenterName} commented on your post in ${decodeHTMLEntities(eventName)}`
+
+  const bodyContent = hasImages
+    ? `We've added new photos and videos to <strong>${decodeHTMLEntities(eventName)}</strong>.`
+    : `<strong>${commenterName}</strong> commented on your post in <strong>${decodeHTMLEntities(eventName)}</strong>.`
 
   try {
     await sgMail.send({
@@ -1245,7 +1254,7 @@ export const sendCommentNotification = async ({
         email: process.env.SENDGRID_EMAIL_SENDER as string,
         name: "Jetzy Events",
       },
-      subject: `${commenterName} commented on your post in ${decodeHTMLEntities(eventName)}`,
+      subject,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
@@ -1258,7 +1267,7 @@ export const sendCommentNotification = async ({
 
             <div style="margin: 30px 0;">
               <a href="${discussionUrl}" style="color: #F79432; font-weight: 700; font-size: 16px; text-decoration: none;">
-                View and reply: [Comment Link]
+                ${hasImages ? "View it here: [Photo Link]" : "View and reply: [Comment Link]"}
               </a>
             </div>
 
@@ -1273,7 +1282,7 @@ export const sendCommentNotification = async ({
           </div>
         </div>
       `),
-      text: `${firstName},\n\n${commenterName} commented on your post in ${decodeHTMLEntities(eventName)}.\n\nView and reply here: ${discussionUrl}\n\n— Team Jetzy`,
+      text: `${firstName},\n\n${stripHtml(bodyContent)}\n\nView it here: ${discussionUrl}\n\n— Team Jetzy`,
     })
     console.log(`✅ Comment notification sent successfully to: ${email}`)
   } catch (error) {
