@@ -114,6 +114,14 @@ const eventsSchema = new Schema<IEvent>(
 			type: Boolean,
 			default: false,
 		},
+		feedbackFormUrl: {
+			type: String,
+			required: false,
+		},
+		thankYouEmailSentAt: {
+			type: Date,
+			required: false,
+		},
 	},
 	{
 		timestamps: true,

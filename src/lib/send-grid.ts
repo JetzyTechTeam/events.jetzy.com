@@ -154,6 +154,16 @@ type CommentNotificationData = {
   hasImages?: boolean
 }
 
+type ThankYouNotificationData = {
+  email: string
+  firstName: string
+  lastName: string
+  eventName: string
+  eventSlug: string
+  magicToken: string
+  formLink: string
+}
+
 type ReactionNotificationData = {
   email: string
   firstName: string
@@ -1467,6 +1477,67 @@ export const sendViewMilestoneNotification = async ({
     console.log(`✅ View milestone notification sent successfully to: ${email}`)
   } catch (error) {
     console.error("❌ Failed to send view milestone notification email:", error)
+    throw error
+  }
+}
+
+export const sendThankYouNotification = async ({
+  email,
+  firstName,
+  lastName,
+  eventName,
+  eventSlug,
+  magicToken,
+  formLink,
+}: ThankYouNotificationData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  const eventUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}`)}`
+
+  const subject = `Thank you for making ${decodeHTMLEntities(eventName)} unforgettable 💫`
+
+  const bodyHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
+        <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
+          Hi ${firstName},
+        </p>
+        <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+          It was a pleasure having you with us — the evening truly came alive because of your energy and presence. We've uploaded the photos and videos from the night on the Jetzy event page: <strong><a href="${eventUrl}" style="color: #F79432; text-decoration: none;">[Event Link]</a></strong>.
+        </p>
+
+        <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 25px 0 25px 0;">
+          We are in the process of curating the next events. Click this link to inform which event you would like to attend <strong><a href="${formLink}" style="color: #F79432; text-decoration: none;">[Form Link]</a></strong>
+        </p>
+
+        <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
+          — Team Jetzy
+        </p>
+        
+        <div style="margin-top: 40px;">
+          <p style="color: #1F2937; font-size: 14px; margin-bottom: 10px; font-weight: 600;">App download options</p>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
+            <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Events",
+      },
+      subject,
+      html: wrapHtml(bodyHtml),
+      text: `${firstName},\n\nIt was a pleasure having you with us — the evening truly came alive because of your energy and presence. We've uploaded the photos and videos from the night on the Jetzy event page: ${eventUrl}\n\nWe are in the process of curating the next events. Click this link to inform which event you would like to attend: ${formLink}\n\n— Team Jetzy`,
+    })
+    console.log(`✅ Thank you notification sent successfully to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send thank you notification email:", error)
     throw error
   }
 }

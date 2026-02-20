@@ -41,6 +41,8 @@ export interface IEvent extends IBaseModelProps {
 		email?: string;
 		phone?: string;
 	}
+	feedbackFormUrl?: string;
+	thankYouEmailSentAt?: Date;
 }
 
 export enum BookingStatus {

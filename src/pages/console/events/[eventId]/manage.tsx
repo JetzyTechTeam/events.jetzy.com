@@ -56,6 +56,9 @@ export default function Manage({ event }: any) {
 	const [inviteGuestsModal, setInviteGuestsModal] = useState(false)
 	const [sendBlastModal, setSendBlastModal] = useState(false)
 	const [showDailyViewsModal, setShowDailyViewsModal] = useState(false)
+	const [feedbackFormUrl, setFeedbackFormUrl] = useState(event.feedbackFormUrl || "")
+	const [isSendingThankYou, setIsSendingThankYou] = useState(false)
+	const toast = useToast()
 	const router = useRouter()
 	const { data: session } = useSession()
 
@@ -69,6 +72,49 @@ export default function Manage({ event }: any) {
 
 	// @ts-ignore
 	if (session?.user?.role === Roles.USER) router.push("/console")
+
+	const onUpdateFeedbackLink = async () => {
+		try {
+			await axios.post(`/api/events/admin/update-feedback-link`, {
+				eventId: event._id,
+				feedbackFormUrl
+			})
+			toast({
+				title: "Feedback link updated!",
+				status: "success",
+				duration: 3000,
+			})
+			// Refresh page to update props (and show the Send Email button)
+			router.replace(router.asPath)
+		} catch (error) {
+			toast({
+				title: "Failed to update link.",
+				status: "error",
+				duration: 3000,
+			})
+		}
+	}
+
+	const onSendThankYouEmails = async () => {
+		setIsSendingThankYou(true)
+		try {
+			await axios.post("/api/events/admin/send-thank-you", { eventId: event._id })
+			toast({
+				title: "Email blast started!",
+				description: "Participants will receive thank you emails shortly.",
+				status: "success",
+				duration: 5000,
+			})
+		} catch (error: any) {
+			toast({
+				title: "Failed to send emails.",
+				description: error.response?.data?.message || "Internal server error.",
+				status: "error",
+				duration: 5000,
+			})
+		}
+		setIsSendingThankYou(false)
+	}
 
 	return (
 		<>
@@ -193,6 +239,60 @@ export default function Manage({ event }: any) {
 									<div className="p-3 flex flex-col gap-y-3">
 										<h4 className="font-bold">Description</h4>
 										<p className="font-semibold text-[#B5B6B7]">{stripHtml(event.desc)}</p>
+									</div>
+
+									{/* Post-Event Section */}
+									<div className="mt-10 p-6 bg-[#181818] rounded-2xl border border-[#3E3E3E]">
+										<h3 className="text-xl font-bold mb-4 text-[#F79432]">Post-Event Thank You</h3>
+										<p className="text-sm text-[#9C9C9C] mb-6">
+											Add a feedback form link (e.g. Google Forms) below. Once added, you can send a thank you email blast to all confirmed participants.
+										</p>
+
+										<Flex gap={4} direction="column">
+											<Box>
+												<Text fontWeight="bold" mb={2} color="white">Feedback Form Link</Text>
+												<Flex gap={2}>
+													<Input
+														bg="#090C10"
+														borderColor="#444444"
+														color="white"
+														placeholder="https://forms.google.com/..."
+														value={feedbackFormUrl}
+														onChange={(e) => setFeedbackFormUrl(e.target.value)}
+													/>
+													<Button
+														onClick={onUpdateFeedbackLink}
+														bg="#3E3E3E"
+														color="white"
+														_hover={{ bg: "#4A4A4A" }}
+													>
+														Save Link
+													</Button>
+												</Flex>
+											</Box>
+
+											{event.feedbackFormUrl && (
+												<Box mt={4} p={4} bg="#252525" rounded="xl" border="1px dashed #F79432">
+													<Text color="#F79432" fontWeight="bold" mb={2}>Ready to Send?</Text>
+													<Button
+														width="full"
+														bg="#F79432"
+														color="black"
+														fontWeight="bold"
+														_hover={{ bg: "#E68422" }}
+														isLoading={isSendingThankYou}
+														onClick={onSendThankYouEmails}
+													>
+														Send Thank You Emails to All Participants
+													</Button>
+													{event.thankYouEmailSentAt && (
+														<Text mt={2} fontSize="xs" color="#9C9C9C">
+															Last sent on: {DateTime.fromISO(event.thankYouEmailSentAt).toLocaleString(DateTime.DATETIME_MED)}
+														</Text>
+													)}
+												</Box>
+											)}
+										</Flex>
 									</div>
 								</div>
 							</div>
