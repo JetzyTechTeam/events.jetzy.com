@@ -1569,14 +1569,16 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
         Your Jetzy account has been successfully created. We're excited to have you join our global community of travelers and explorers!
       </p>
 
+      ${password ? `
       <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #F79432;">
         <h3 style="margin-top: 0; color: #333;">Your Login Credentials</h3>
         <p style="margin-bottom: 5px;"><strong>Email:</strong> ${email}</p>
-        <p style="margin-top: 0;"><strong>Temporary Password:</strong> ${password || '123456'}</p>
+        <p style="margin-top: 0;"><strong>Temporary Password:</strong> ${password}</p>
         <p style="font-size: 14px; color: #888; margin-bottom: 0;">
           <em>Note: We recommend changing your password after your first login.</em>
         </p>
       </div>
+      ` : ''}
 
       <div style="text-align: center; margin: 35px 0;">
         <p style="font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>
@@ -1610,7 +1612,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       },
       subject: "Welcome to Jetzy - Your Account is Ready!",
       html: wrapHtml(html),
-      text: `Welcome to Jetzy!\n\nYour account is ready. Log in with:\nEmail: ${email}\nTemporary Password: ${password || '123456'}\n\nDownload the app: ${DOWNLOAD_LINK}`
+      text: `Welcome to Jetzy!\n\nYour account has been successfully created.${password ? `\n\nYour Temporary Password: ${password}` : ''}\n\nDownload the app: ${DOWNLOAD_LINK}`
     });
     console.log(`✅ Welcome email sent successfully to: ${email}`);
   } catch (error) {

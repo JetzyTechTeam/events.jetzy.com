@@ -17,9 +17,35 @@ import SuccessIllustration from "@Jetzy/assets/qrscanner signup/Email campaign-p
 
 type ViewState = "SIGNUP" | "SUCCESS"
 
+const generateSecurePassword = () => {
+    const length = 10
+    const charset = {
+        upper: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        lower: "abcdefghijklmnopqrstuvwxyz",
+        numbers: "0123456789",
+        special: "!@#$%^&*"
+    }
+
+    // Ensure at least one of each
+    let password = ""
+    password += charset.upper[Math.floor(Math.random() * charset.upper.length)]
+    password += charset.lower[Math.floor(Math.random() * charset.lower.length)]
+    password += charset.numbers[Math.floor(Math.random() * charset.numbers.length)]
+    password += charset.special[Math.floor(Math.random() * charset.special.length)]
+
+    const all = Object.values(charset).join("")
+    for (let i = password.length; i < length; i++) {
+        password += all[Math.floor(Math.random() * all.length)]
+    }
+
+    // Shuffle
+    return password.split('').sort(() => 0.5 - Math.random()).join('')
+}
+
 export default function JetzyQRSignup() {
     const [view, setView] = useState<ViewState>("SIGNUP")
     const [email, setEmail] = useState("")
+    const [password, setPassword] = useState("")
     const [error, setError] = useState("")
     const [isEditing, setIsEditing] = useState(false)
     const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, status, session } = useSignup({ disableAutoRedirect: true })
@@ -57,10 +83,13 @@ export default function JetzyQRSignup() {
 
         try {
             setIsEditing(false)
+            const newPassword = generateSecurePassword()
+            setPassword(newPassword)
+
             const res: any = await handleEmailSignup({
                 email,
-                password: "123456",
-                confirmPassword: "123456",
+                password: newPassword,
+                confirmPassword: newPassword,
                 firstName: "New",
                 lastName: "User",
                 shouldBeAJetzyMember: false
@@ -73,7 +102,7 @@ export default function JetzyQRSignup() {
                 fetch("/api/welcome-email", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email, firstName: "New", lastName: "User", password: "123456" }),
+                    body: JSON.stringify({ email, firstName: "New", lastName: "User", password: newPassword }),
                 }).catch(err => console.error("Failed to send welcome email:", err))
             } else {
                 // Handle specific error messages if needed
@@ -85,11 +114,11 @@ export default function JetzyQRSignup() {
     }
 
     const handleResend = async () => {
-        if (email) {
+        if (email && password) {
             fetch("/api/welcome-email", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, firstName: "New", lastName: "User", password: "123456" }),
+                body: JSON.stringify({ email, firstName: "New", lastName: "User", password }),
             }).then(() => {
                 alert("Welcome email resent to " + email)
             }).catch(err => {
