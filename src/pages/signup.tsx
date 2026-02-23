@@ -1,10 +1,6 @@
-import Logo from "@Jetzy/assets/logo/logo.png"
-import Spinner from "@Jetzy/components/misc/Spinner"
 import { ROUTES } from "@Jetzy/configs/routes"
-import { unauthorizedOnly } from "@Jetzy/lib/authSession"
+import { useSignup } from "@Jetzy/hooks/useSignup"
 import { signupValidation } from "@Jetzy/lib/validator/authValidtor"
-import { CreateUserAccountThunk, getAuthState } from "@Jetzy/redux/reducers/authSlice"
-import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { SignUpFormData } from "@Jetzy/types"
 import { ErrorMessage, Field, Form, Formik } from "formik"
 import { GetServerSideProps } from "next"
@@ -12,102 +8,15 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
 import React from "react"
-import { auth } from "@/configs/firebase"
-import { GoogleAuthProvider, OAuthProvider, signInWithPopup } from "firebase/auth"
 import { FcGoogle } from "react-icons/fc"
 import { AiFillApple } from "react-icons/ai"
-import { signIn, useSession } from "next-auth/react"
-import { ServerErrors } from "@Jetzy/lib/_toaster"
+import { unauthorizedOnly } from "@Jetzy/lib/authSession"
+import Logo from "@Jetzy/assets/logo/logo.png"
+import Spinner from "@Jetzy/components/misc/Spinner"
 
 export default function LoginPage() {
-	const dispatcher = useAppDispatch()
-	const { isLoading } = useAppSelector(getAuthState)
+	const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, _cb } = useSignup()
 	const navigate = useRouter()
-
-	// Get callback URL from query params
-	const { _cb } = navigate?.query
-	const [waitingForSession, setWaitingForSession] = React.useState(false)
-	const { data: session, status } = useSession()
-
-	// Handle redirect after session is established
-	React.useEffect(() => {
-		if (navigate.isReady && waitingForSession && status === 'authenticated' && session) {
-			console.log('✅ Session established, redirecting...');
-			const target = _cb ? _cb.toString() : (
-				// @ts-ignore
-				(session?.user?.role === 'admin' || session?.user?.role === 'super admin')
-					? ROUTES.dashboard.events.index
-					: ROUTES.home
-			);
-
-			console.log('🚀 Redirecting to:', target);
-
-			// Small delay to ensure SessionSync has processed the session
-			setTimeout(() => {
-				navigate?.push(target);
-			}, 600);
-		}
-	}, [waitingForSession, status, session, navigate, _cb, navigate.isReady])
-
-	const handleGoogleLogin = async () => {
-		setWaitingForSession(false);
-		try {
-			const provider = new GoogleAuthProvider();
-			const result = await signInWithPopup(auth, provider);
-			const idToken = await result.user.getIdToken();
-
-			const res = await signIn("firebase-auth", {
-				idToken,
-				name: result.user.displayName || "",
-				email: result.user.email || "",
-				image: result.user.photoURL || "",
-				redirect: false,
-			});
-
-			if (res?.error) {
-				console.error("NextAuth SignIn Error:", res.error);
-				throw new Error(res.error || "Authentication failed on the server");
-			}
-
-			setWaitingForSession(true);
-		} catch (error: any) {
-			console.error("Google Login Error:", error);
-			ServerErrors("Login Failed", {
-				message: error.message || "An unexpected error occurred during Google signup."
-			});
-		}
-	};
-
-	const handleAppleLogin = async () => {
-		setWaitingForSession(false);
-		try {
-			const provider = new OAuthProvider('apple.com');
-			provider.addScope("email");
-			provider.addScope("name");
-			const result = await signInWithPopup(auth, provider);
-			const idToken = await result.user.getIdToken();
-
-			const res = await signIn("firebase-auth", {
-				idToken,
-				name: result.user.displayName || "",
-				email: result.user.email || "",
-				image: result.user.photoURL || "",
-				redirect: false,
-			});
-
-			if (res?.error) {
-				console.error("NextAuth SignIn Error:", res.error);
-				throw new Error(res.error || "Authentication failed on the server");
-			}
-
-			setWaitingForSession(true);
-		} catch (error: any) {
-			console.error("Apple Login Error:", error);
-			ServerErrors("Login Failed", {
-				message: error.message || "An unexpected error occurred during Apple signup."
-			});
-		}
-	};
 
 	const formData: SignUpFormData = {
 		email: "",
@@ -119,19 +28,7 @@ export default function LoginPage() {
 	}
 
 	const handleSubmit = (values: SignUpFormData) => {
-
-		const sanitized = {
-			...values,
-			email: values.email?.trim(),
-			firstName: values.firstName?.trim(),
-			lastName: values.lastName?.trim(),
-			password: values.password?.trim(),
-			confirmPassword: values.confirmPassword?.trim(),
-			shouldBeAJetzyMember: values.shouldBeAJetzyMember,
-
-		};
-
-		dispatcher(CreateUserAccountThunk({ data: sanitized })).then((res: any) => {
+		handleEmailSignup(values).then((res: any) => {
 			if (res?.payload?.status) {
 				// Redirect to login with callback URL preserved
 				const loginUrl = _cb ? `${ROUTES.login}?_cb=${encodeURIComponent(_cb.toString())}` : ROUTES.login

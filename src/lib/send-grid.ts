@@ -186,6 +186,13 @@ type ViewMilestoneNotificationData = {
   viewCount: number
 }
 
+type WelcomeEmailData = {
+  email: string
+  firstName?: string
+  lastName?: string
+  password?: string
+}
+
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets, paymentUrl }: WaitingListApprovalData) => {
   try {
     const totalTickets = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
@@ -1539,5 +1546,75 @@ export const sendThankYouNotification = async ({
   } catch (error) {
     console.error("❌ Failed to send thank you notification email:", error)
     throw error
+  }
+}
+
+export const sendWelcomeEmail = async ({ email, firstName, lastName, password }: WelcomeEmailData) => {
+  const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
+  const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
+  const DOWNLOAD_LINK = "https://jetzyapp.com/download.html";
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <img src="https://events.jetzy.com/favicon.ico" width="50" height="50" alt="Jetzy Logo" />
+      </div>
+      <h1 style="color: #333; text-align: center;">Welcome to Jetzy! 🚀</h1>
+      
+      <p style="font-size: 16px; color: #555; line-height: 1.6;">
+        Hi ${firstName || 'Traveler'},
+      </p>
+      
+      <p style="font-size: 16px; color: #555; line-height: 1.6;">
+        Your Jetzy account has been successfully created. We're excited to have you join our global community of travelers and explorers!
+      </p>
+
+      <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #F79432;">
+        <h3 style="margin-top: 0; color: #333;">Your Login Credentials</h3>
+        <p style="margin-bottom: 5px;"><strong>Email:</strong> ${email}</p>
+        <p style="margin-top: 0;"><strong>Temporary Password:</strong> ${password || '123456'}</p>
+        <p style="font-size: 14px; color: #888; margin-bottom: 0;">
+          <em>Note: We recommend changing your password after your first login.</em>
+        </p>
+      </div>
+
+      <div style="text-align: center; margin: 35px 0;">
+        <p style="font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>
+        <div style="margin-bottom: 20px;">
+          <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px;" />
+          </a>
+          <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px;" />
+          </a>
+        </div>
+        <a href="${DOWNLOAD_LINK}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+          Visit Download Page
+        </a>
+      </div>
+
+      <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+        Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #F79432; text-decoration: none;">marketing@jetzy.com</a>
+        <br />
+        &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+      </p>
+    </div>
+  `;
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy"
+      },
+      subject: "Welcome to Jetzy - Your Account is Ready!",
+      html: wrapHtml(html),
+      text: `Welcome to Jetzy!\n\nYour account is ready. Log in with:\nEmail: ${email}\nTemporary Password: ${password || '123456'}\n\nDownload the app: ${DOWNLOAD_LINK}`
+    });
+    console.log(`✅ Welcome email sent successfully to: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send welcome email:", error);
+    throw error;
   }
 }

@@ -1,5 +1,3 @@
-"use server"
-
 import { IEvent } from "@/models/events/types"
 import { sendTicketConfirmation } from "@Jetzy/lib/send-grid"
 

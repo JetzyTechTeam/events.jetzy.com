@@ -1,5 +1,3 @@
-"use server"
-
 import { CreateAdminActionParams } from "./types"
 
 export async function createAdminAction(userData: CreateAdminActionParams) {

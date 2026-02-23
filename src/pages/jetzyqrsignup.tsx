@@ -1,0 +1,233 @@
+import React, { useState, useEffect } from "react"
+import Head from "next/head"
+import Image from "next/image"
+import { useRouter } from "next/router"
+import { useSignup } from "@Jetzy/hooks/useSignup"
+import { unauthorizedOnly } from "@Jetzy/lib/authSession"
+import { GetServerSideProps } from "next"
+import { FcGoogle } from "react-icons/fc"
+import { AiFillApple } from "react-icons/ai"
+import Spinner from "@Jetzy/components/misc/Spinner"
+
+// Image Assets
+import BgImage from "@Jetzy/assets/qrscanner signup/Rectangle background.png"
+import HeroImage from "@Jetzy/assets/qrscanner signup/Rectangle 6002.png"
+import LogoImage from "@Jetzy/assets/qrscanner signup/jetzy logo 2.png"
+import SuccessIllustration from "@Jetzy/assets/qrscanner signup/Email campaign-pana 1.png"
+
+type ViewState = "SIGNUP" | "SUCCESS"
+
+export default function JetzyQRSignup() {
+    const [view, setView] = useState<ViewState>("SIGNUP")
+    const [email, setEmail] = useState("")
+    const [error, setError] = useState("")
+    const [isEditing, setIsEditing] = useState(false)
+    const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, status, session } = useSignup({ disableAutoRedirect: true })
+    const navigate = useRouter()
+
+    // Handle social login success
+    useEffect(() => {
+        if (status === 'authenticated' && session && view === "SIGNUP" && !isEditing) {
+            const userEmail = session.user?.email || ""
+            if (userEmail) {
+                setEmail(userEmail)
+                // Trigger welcome email for social users too
+                fetch("/api/welcome-email", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        email: userEmail,
+                        firstName: session.user?.name?.split(" ")[0] || "New",
+                        lastName: session.user?.name?.split(" ")[1] || "Social User"
+                    }),
+                }).catch(err => console.error("Failed to send welcome email to social user:", err))
+            }
+            setView("SUCCESS")
+        }
+    }, [status, session, view, isEditing])
+
+    const onSignupSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setError("")
+
+        if (!email || !email.includes("@")) {
+            setError("Please enter a valid email address.")
+            return
+        }
+
+        try {
+            setIsEditing(false)
+            const res: any = await handleEmailSignup({
+                email,
+                password: "123456",
+                confirmPassword: "123456",
+                firstName: "New",
+                lastName: "User",
+                shouldBeAJetzyMember: false
+            })
+
+            // Check if payload status is true (success) or if it's an existing user flow
+            if (res?.payload?.status) {
+                setView("SUCCESS")
+                // Call the welcome email API instead of server action
+                fetch("/api/welcome-email", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, firstName: "New", lastName: "User", password: "123456" }),
+                }).catch(err => console.error("Failed to send welcome email:", err))
+            } else {
+                // Handle specific error messages if needed
+                setError(res?.payload?.message || "Something went wrong. Please try again.")
+            }
+        } catch (err: any) {
+            setError(err.message || "An unexpected error occurred.")
+        }
+    }
+
+    const handleResend = async () => {
+        if (email) {
+            fetch("/api/welcome-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, firstName: "New", lastName: "User", password: "123456" }),
+            }).then(() => {
+                alert("Welcome email resent to " + email)
+            }).catch(err => {
+                console.error("Failed to resend welcome email:", err)
+                alert("Failed to resend email. Please try again later.")
+            })
+        }
+    }
+
+    const handleEditEmail = () => {
+        setIsEditing(true)
+        setView("SIGNUP")
+    }
+
+    return (
+        <div className="relative min-h-screen w-full font-sans text-gray-900 overflow-hidden flex flex-col items-center">
+            <Head>
+                <title>Welcome to Jetzy | Signup</title>
+            </Head>
+
+            {/* Background Image */}
+            <div className="absolute inset-0 z-0 opacity-20">
+                <Image src={BgImage} alt="Background" fill className="object-cover" priority />
+            </div>
+
+            {/* Logo at Top */}
+            <div className="relative z-10 py-8">
+                <Image src={LogoImage} alt="Jetzy Logo" width={80} height={80} className="object-contain" />
+            </div>
+
+            {/* Main Container */}
+            <main className="relative z-10 flex flex-col items-center justify-center p-4 w-full max-w-lg">
+                {view === "SIGNUP" ? (
+                    <div className="bg-white rounded-[2rem] shadow-2xl overflow-hidden w-full transition-all duration-500 animate-in fade-in slide-in-from-bottom-4">
+                        {/* Hero Image */}
+                        <div className="relative h-64 sm:h-72 w-full">
+                            <Image src={HeroImage} alt="Travel Destinations" fill className="object-cover" />
+                        </div>
+
+                        {/* Form Content */}
+                        <div className="p-8 sm:p-10 flex flex-col items-center">
+                            <h1 className="text-3xl font-bold text-center mb-2">Welcome to Jetzy</h1>
+                            <p className="text-gray-500 text-center text-sm mb-8 px-4">
+                                Create your Jetzy account in seconds and unlock a seamless travel experience.
+                            </p>
+
+                            {/* Social Buttons */}
+                            <div className="w-full space-y-4 mb-8">
+                                <button
+                                    onClick={() => { setIsEditing(false); handleGoogleLogin(); }}
+                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm"
+                                >
+                                    <FcGoogle className="h-5 w-5" />
+                                    <span>Signup with Google</span>
+                                </button>
+                                <button
+                                    onClick={() => { setIsEditing(false); handleAppleLogin(); }}
+                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-black text-white px-4 py-3 text-sm font-semibold hover:bg-gray-900 transition-colors shadow-sm"
+                                >
+                                    <AiFillApple className="h-5 w-5" />
+                                    <span>Signup with Apple</span>
+                                </button>
+                            </div>
+
+                            {/* Separator */}
+                            <div className="w-full flex items-center gap-4 mb-8 text-xs font-medium text-gray-400">
+                                <div className="h-px flex-1 bg-gray-100"></div>
+                                <span>Or Signup with Email</span>
+                                <div className="h-px flex-1 bg-gray-100"></div>
+                            </div>
+
+                            {/* Email Form */}
+                            <form onSubmit={onSignupSubmit} className="w-full space-y-4">
+                                <div>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="Enter your email address"
+                                        className="w-full rounded-full border border-gray-200 px-6 py-4 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none transition-all"
+                                        required
+                                    />
+                                    {error && <p className="text-red-500 text-xs mt-2 ml-4">{error}</p>}
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={isLoading}
+                                    className="w-full rounded-full bg-orange-500 py-4 text-sm font-bold text-white shadow-lg hover:bg-orange-600 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center min-h-[56px]"
+                                >
+                                    {isLoading ? <Spinner /> : "Create My Jetzy Account"}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-white rounded-[2rem] shadow-2xl p-8 sm:p-12 flex flex-col items-center w-full transition-all duration-500 animate-in zoom-in-95">
+                        <h1 className="text-3xl font-bold text-center mb-4">Check Your Email</h1>
+                        <p className="text-gray-500 text-center text-sm mb-8 max-w-[280px]">
+                            We&apos;ve sent you a temporary password to get started. Open your inbox and log in to begin your Jetzy experience.
+                        </p>
+
+                        {/* Success Illustration */}
+                        <div className="relative h-60 w-full mb-10">
+                            <Image src={SuccessIllustration} alt="Email Sent" fill className="object-contain" />
+                        </div>
+
+                        <div className="w-full space-y-4">
+                            <div className="text-center mb-6">
+                                <p className="text-xs text-gray-400 font-medium mb-1">Didn&apos;t receive it?</p>
+                                <p className="text-xs text-gray-400 font-medium px-4">Check your spam folder or resend the email.</p>
+                            </div>
+
+                            <button
+                                onClick={handleResend}
+                                className="w-full rounded-full bg-orange-500 py-4 text-sm font-bold text-white shadow-lg hover:bg-orange-600 transition-all active:scale-[0.98]"
+                            >
+                                Resend Email
+                            </button>
+                            <button
+                                onClick={handleEditEmail}
+                                className="w-full rounded-full border-2 border-gray-200 py-3.5 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-all active:scale-[0.98]"
+                            >
+                                Edit Email
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </main>
+
+            <footer className="relative z-10 mt-auto py-8 text-center bg-white sm:bg-transparent w-full">
+                <p className="text-xs text-gray-400">
+                    By creating an account, you agree to our Terms of Service and Privacy Policy.
+                </p>
+            </footer>
+        </div>
+    )
+}
+
+export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
+    return unauthorizedOnly(context)
+}
