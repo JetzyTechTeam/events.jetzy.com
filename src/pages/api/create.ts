@@ -21,9 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
 		const userType = Roles.USER
 
-		console.log(`[Signup API] Hashing for ${email}: L=${password?.length}, First='${password?.[0]}', Last='${password?.[password?.length - 1]}'`)
 		const hashPassword = await bcrypt.hash(password, 10)
-		console.log(`[Signup API] Hash generated for ${email}: ${hashPassword.substring(0, 10)}...`)
 
 		let user = null;
 		// For QR Scanner flow, we want users to be in EventUsers for better isolation
@@ -33,15 +31,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 		const existingUser = existingInEventUsers || existingInUsers;
 
 		if (existingUser) {
-			if (!existingUser.password || existingUser.password === "") {
-				console.log(`[Signup API] Updating password for existing social user in ${existingInEventUsers ? 'EventUsers' : 'Users'}: ${email}`)
-				existingUser.password = hashPassword;
-				await existingUser.save({ validateModifiedOnly: true });
-				return sendResponse(res, existingUser, "User account updated successfully.", true, ResCode.OK);
-			} else {
-				console.log(`[Signup API] User already exists with password in database: ${email}`)
-				return sendResponse(res, null, "User already exists with this email. Please log in with your existing password.", false, ResCode.CONFLICT)
-			}
+			// Allow re-signup by updating the password
+			existingUser.password = hashPassword;
+			await existingUser.save({ validateModifiedOnly: true });
+			return sendResponse(res, existingUser, "User account updated successfully.", true, ResCode.OK);
 		}
 
 		// Create New user in EventUsers

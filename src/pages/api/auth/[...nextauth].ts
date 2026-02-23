@@ -90,10 +90,9 @@ export const authOptions: NextAuthOptions = {
             throw new Error("User was not found.");
           }
 
-          console.log(`[Auth API] Comparing for ${email}: L=${password?.length}, First='${password?.[0]}', Last='${password?.[password?.length - 1]}'`)
           const isPasswordCorrect = isMagicLogin || await bcrypt.compare(password, user.password);
           if (!isPasswordCorrect) {
-            console.log(`[Auth API] Password mismatch for ${email}. DB Hash start: ${user.password.substring(0, 10)}...`)
+            console.log('Password mismatch');
             throw new Error("Invalid password.");
           }
 
