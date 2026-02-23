@@ -105,23 +105,25 @@ export default function JetzyQRSignup() {
     }
 
     return (
-        <div className="relative min-h-screen w-full font-sans text-gray-900 overflow-hidden flex flex-col items-center">
+        <div className="relative min-h-screen w-full font-sans text-gray-900 overflow-hidden flex flex-col items-center bg-[#f8f9fa]">
             <Head>
                 <title>Welcome to Jetzy | Signup</title>
             </Head>
 
             {/* Background Image */}
-            <div className="absolute inset-0 z-0 opacity-20">
+            <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
                 <Image src={BgImage} alt="Background" fill className="object-cover" priority />
             </div>
 
-            {/* Logo at Top */}
-            <div className="relative z-10 py-8">
-                <Image src={LogoImage} alt="Jetzy Logo" width={80} height={80} className="object-contain" />
-            </div>
+            {/* Header with Logo */}
+            <header className="relative z-20 w-full bg-white pt-[13px] pb-[13px] shadow-sm flex justify-center items-center border-b border-gray-50">
+                <div className="relative h-[89px] w-[90px]">
+                    <Image src={LogoImage} alt="Jetzy Logo" fill className="object-contain" />
+                </div>
+            </header>
 
             {/* Main Container */}
-            <main className="relative z-10 flex flex-col items-center justify-center p-4 w-full max-w-lg">
+            <main className="relative z-10 flex flex-col items-center justify-center p-4 w-full max-w-lg mt-12 mb-12">
                 {view === "SIGNUP" ? (
                     <div className="bg-white rounded-[2rem] shadow-2xl overflow-hidden w-full transition-all duration-500 animate-in fade-in slide-in-from-bottom-4">
                         {/* Hero Image */}
@@ -142,23 +144,23 @@ export default function JetzyQRSignup() {
                                     onClick={() => { setIsEditing(false); handleGoogleLogin(); }}
                                     className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm"
                                 >
-                                    <FcGoogle className="h-5 w-5" />
+                                    <FcGoogle className="h-10 w-10" />
                                     <span>Signup with Google</span>
                                 </button>
                                 <button
                                     onClick={() => { setIsEditing(false); handleAppleLogin(); }}
-                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-black text-white px-4 py-3 text-sm font-semibold hover:bg-gray-900 transition-colors shadow-sm"
+                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm"
                                 >
-                                    <AiFillApple className="h-5 w-5" />
+                                    <AiFillApple className="h-10 w-10 text-black" />
                                     <span>Signup with Apple</span>
                                 </button>
                             </div>
 
                             {/* Separator */}
-                            <div className="w-full flex items-center gap-4 mb-8 text-xs font-medium text-gray-400">
-                                <div className="h-px flex-1 bg-gray-100"></div>
+                            <div className="w-full flex items-center gap-4 mb-8 text-[18px] font-normal tracking-[-0.01em] text-[#3B3B3B]">
+                                <div className="h-px flex-1 bg-gray-200"></div>
                                 <span>Or Signup with Email</span>
-                                <div className="h-px flex-1 bg-gray-100"></div>
+                                <div className="h-px flex-1 bg-gray-200"></div>
                             </div>
 
                             {/* Email Form */}
@@ -219,8 +221,8 @@ export default function JetzyQRSignup() {
                 )}
             </main>
 
-            <footer className="relative z-10 mt-auto py-8 text-center bg-white sm:bg-transparent w-full">
-                <p className="text-xs text-gray-400">
+            <footer className="relative z-10 mt-auto py-8 text-center w-full">
+                <p className="text-xs text-gray-500">
                     By creating an account, you agree to our Terms of Service and Privacy Policy.
                 </p>
             </footer>
