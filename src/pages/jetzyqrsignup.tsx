@@ -152,26 +152,26 @@ export default function JetzyQRSignup() {
             </header>
 
             {/* Main Container */}
-            <main className="relative z-10 flex flex-col items-center justify-center p-6 w-full max-w-none flex-1 mb-10">
+            <main className="relative z-10 flex flex-col items-center justify-center p-4 sm:p-6 w-full max-w-none flex-1 mb-10">
                 {view === "SIGNUP" ? (
-                    <div className="bg-white rounded-[20px] shadow-xl overflow-hidden w-[648px] min-h-[828px] transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 flex flex-col">
+                    <div className="bg-white rounded-[20px] shadow-xl overflow-hidden w-full max-w-[648px] md:min-h-[828px] transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 flex flex-col">
                         {/* Hero Image Container (Padding 8px) */}
                         <div className="p-2 w-full pb-0">
-                            <div className="relative w-[632px] h-[245px] overflow-hidden rounded-[10px] mx-auto">
+                            <div className="relative w-full aspect-[632/245] max-w-[632px] overflow-hidden rounded-[10px] mx-auto">
                                 <Image src={HeroImage} alt="Travel Destinations" fill className="object-cover" priority />
                             </div>
                         </div>
 
                         {/* Form Content (Gap 20px - handled by mt-5/mb-5) */}
-                        <div className="px-12 py-8 flex flex-col items-center flex-1">
-                            <h1 className="text-3xl font-bold text-center mb-1 text-[#1A1A1A]">Welcome to Jetzy</h1>
-                            <p className="text-gray-500 text-center text-[15px] mb-8 px-6 leading-relaxed">
+                        <div className="px-6 sm:px-12 py-8 flex flex-col items-center flex-1">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-center mb-1 text-[#1A1A1A]">Welcome to Jetzy</h1>
+                            <p className="text-gray-500 text-center text-[14px] sm:text-[15px] mb-8 px-2 sm:px-6 leading-relaxed">
                                 Create your Jetzy account in seconds and unlock a seamless travel experience.
                             </p>
 
                             {/* Email Form */}
                             <form onSubmit={onSignupSubmit} className="w-full flex flex-col items-center gap-1 mb-8">
-                                <div className="w-[559px]">
+                                <div className="w-full max-w-[559px]">
                                     <input
                                         type="email"
                                         value={email}
@@ -185,21 +185,21 @@ export default function JetzyQRSignup() {
                                 <button
                                     type="submit"
                                     disabled={isLoading}
-                                    className="w-[559px] h-[64px] rounded-full bg-[#f99839] text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center mt-3"
+                                    className="w-full max-w-[559px] h-[64px] rounded-full bg-[#f99839] text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center mt-3"
                                 >
                                     {isLoading ? <Spinner /> : "Create My Jetzy Account"}
                                 </button>
                             </form>
 
                             {/* Separator */}
-                            <div className="w-full flex items-center gap-4 mb-8 text-[14px] font-medium text-gray-300">
+                            <div className="w-full flex items-center gap-4 mb-8 text-[14px] font-medium text-gray-300 max-w-[559px]">
                                 <div className="h-px flex-1 bg-gray-200"></div>
                                 <span className="text-gray-400">Or</span>
                                 <div className="h-px flex-1 bg-gray-200"></div>
                             </div>
 
                             {/* Social Buttons */}
-                            <div className="w-full space-y-4 mb-10">
+                            <div className="w-full space-y-4 mb-10 max-w-[559px]">
                                 <button
                                     onClick={() => { setIsEditing(false); handleGoogleLogin(); }}
                                     className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm"
@@ -218,35 +218,35 @@ export default function JetzyQRSignup() {
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-white rounded-[20px] shadow-xl p-10 sm:p-14 flex flex-col items-center w-[648px] min-h-[828px] transition-all duration-500 animate-in zoom-in-95 flex-1">
-                        <h1 className="text-[32px] font-semibold text-center mb-4 text-[#1A1A1A] tracking-[-0.02em] leading-tight">
+                    <div className="bg-white rounded-[20px] shadow-xl p-6 sm:p-14 flex flex-col items-center w-full max-w-[648px] md:min-h-[828px] transition-all duration-500 animate-in zoom-in-95 flex-1">
+                        <h1 className="text-[28px] sm:text-[32px] font-semibold text-center mb-4 text-[#1A1A1A] tracking-[-0.02em] leading-tight">
                             Check Your Email
                         </h1>
-                        <p className="text-gray-500 text-center text-[18px] font-normal tracking-[-0.01em] mb-8 max-w-[480px] leading-relaxed px-4">
+                        <p className="text-gray-500 text-center text-[16px] sm:text-[18px] font-normal tracking-[-0.01em] mb-8 max-w-[480px] leading-relaxed px-2 sm:px-4">
                             We&apos;ve sent you a temporary password to get started. Open your inbox and log in to begin your Jetzy experience.
                         </p>
 
                         {/* Success Illustration */}
-                        <div className="relative w-[577px] h-[385px] mb-8">
+                        <div className="relative w-full max-w-[577px] aspect-[577/385] h-auto mb-8">
                             <Image src={SuccessIllustration} alt="Email Sent" fill className="object-contain" />
                         </div>
 
                         <div className="w-full flex flex-col items-center mt-auto mb-6">
-                            <div className="text-center mb-8 w-[369px]">
-                                <p className="text-[18px] text-gray-400 font-normal tracking-[-0.01em] leading-relaxed text-center">
+                            <div className="text-center mb-8 w-full max-w-[369px]">
+                                <p className="text-[16px] sm:text-[18px] text-gray-400 font-normal tracking-[-0.01em] leading-relaxed text-center">
                                     Didn&apos;t receive it? Check your spam folder or resend the email.
                                 </p>
                             </div>
 
                             <button
                                 onClick={handleResend}
-                                className="w-[558px] h-[73px] rounded-full bg-[#f99839] text-[18px] font-bold text-white shadow-lg shadow-orange-100 hover:bg-[#faac5a] transition-all active:scale-[0.98] flex items-center justify-center mb-4"
+                                className="w-full max-w-[558px] h-[73px] rounded-full bg-[#f99839] text-[18px] font-bold text-white shadow-lg shadow-orange-100 hover:bg-[#faac5a] transition-all active:scale-[0.98] flex items-center justify-center mb-4"
                             >
                                 Resend Email
                             </button>
                             <button
                                 onClick={handleEditEmail}
-                                className="w-[558px] h-[73px] rounded-full border border-[#161616] text-[18px] font-bold text-gray-600 hover:bg-gray-50 transition-all active:scale-[0.98] flex items-center justify-center"
+                                className="w-full max-w-[558px] h-[73px] rounded-full border border-[#161616] text-[18px] font-bold text-gray-600 hover:bg-gray-50 transition-all active:scale-[0.98] flex items-center justify-center"
                             >
                                 Edit Email
                             </button>
