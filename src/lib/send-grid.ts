@@ -1574,8 +1574,8 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
         <h3 style="margin-top: 0; color: #333;">Your Login Credentials</h3>
         <p style="margin-bottom: 5px;"><strong>Email:</strong> ${email}</p>
         <p style="margin-top: 0;"><strong>Temporary Password:</strong> ${password}</p>
-        <p style="font-size: 14px; color: #888; margin-bottom: 0;">
-          <em>Note: We recommend changing your password after your first login.</em>
+        <p style="font-size: 14px; color: #888; margin-top: 10px; margin-bottom: 0;">
+          <em>Note: You must change this temporary password after your first login.</em>
         </p>
       </div>
       ` : ''}
