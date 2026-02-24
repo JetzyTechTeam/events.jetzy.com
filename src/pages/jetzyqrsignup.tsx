@@ -134,114 +134,116 @@ export default function JetzyQRSignup() {
     }
 
     return (
-        <div className="relative min-h-screen w-full font-sans text-gray-900 overflow-hidden flex flex-col items-center bg-[#f8f9fa]">
+        <div className="relative min-h-screen w-full font-sans text-gray-900 overflow-hidden flex flex-col items-center bg-gradient-to-br from-[#fdf2f8] via-[#f5f3ff] to-[#f0f9ff]">
             <Head>
                 <title>Welcome to Jetzy | Signup</title>
             </Head>
 
-            {/* Background Image */}
-            <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
+            {/* Background Image (Subtle overlay) */}
+            <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
                 <Image src={BgImage} alt="Background" fill className="object-cover" priority />
             </div>
 
             {/* Header with Logo */}
             <header className="relative z-20 w-full bg-white pt-[13px] pb-[13px] shadow-sm flex justify-center items-center border-b border-gray-50">
                 <div className="relative h-[89px] w-[90px]">
-                    <Image src={LogoImage} alt="Jetzy Logo" fill className="object-contain" />
+                    <Image src={LogoImage} alt="Jetzy Logo" fill className="object-contain" priority />
                 </div>
             </header>
 
             {/* Main Container */}
-            <main className="relative z-10 flex flex-col items-center justify-center p-4 w-full max-w-lg mt-12 mb-12">
+            <main className="relative z-10 flex flex-col items-center justify-center p-6 w-full max-w-none flex-1 mb-10">
                 {view === "SIGNUP" ? (
-                    <div className="bg-white rounded-[2rem] shadow-2xl overflow-hidden w-full transition-all duration-500 animate-in fade-in slide-in-from-bottom-4">
-                        {/* Hero Image */}
-                        <div className="relative h-64 sm:h-72 w-full">
-                            <Image src={HeroImage} alt="Travel Destinations" fill className="object-cover" />
+                    <div className="bg-white rounded-[20px] shadow-xl overflow-hidden w-[648px] min-h-[828px] transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 flex flex-col">
+                        {/* Hero Image Container (Padding 8px) */}
+                        <div className="p-2 w-full pb-0">
+                            <div className="relative w-[632px] h-[245px] overflow-hidden rounded-[10px] mx-auto">
+                                <Image src={HeroImage} alt="Travel Destinations" fill className="object-cover" priority />
+                            </div>
                         </div>
 
-                        {/* Form Content */}
-                        <div className="p-8 sm:p-10 flex flex-col items-center">
-                            <h1 className="text-3xl font-bold text-center mb-2">Welcome to Jetzy</h1>
-                            <p className="text-gray-500 text-center text-sm mb-8 px-4">
+                        {/* Form Content (Gap 20px - handled by mt-5/mb-5) */}
+                        <div className="px-12 py-8 flex flex-col items-center flex-1">
+                            <h1 className="text-3xl font-bold text-center mb-1 text-[#1A1A1A]">Welcome to Jetzy</h1>
+                            <p className="text-gray-500 text-center text-[15px] mb-8 px-6 leading-relaxed">
                                 Create your Jetzy account in seconds and unlock a seamless travel experience.
                             </p>
 
-                            {/* Social Buttons */}
-                            <div className="w-full space-y-4 mb-8">
-                                <button
-                                    onClick={() => { setIsEditing(false); handleGoogleLogin(); }}
-                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm"
-                                >
-                                    <FcGoogle className="h-10 w-10" />
-                                    <span>Signup with Google</span>
-                                </button>
-                                <button
-                                    onClick={() => { setIsEditing(false); handleAppleLogin(); }}
-                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm"
-                                >
-                                    <AiFillApple className="h-10 w-10 text-black" />
-                                    <span>Signup with Apple</span>
-                                </button>
-                            </div>
-
-                            {/* Separator */}
-                            <div className="w-full flex items-center gap-4 mb-8 text-[18px] font-normal tracking-[-0.01em] text-[#3B3B3B]">
-                                <div className="h-px flex-1 bg-gray-200"></div>
-                                <span>Or Signup with Email</span>
-                                <div className="h-px flex-1 bg-gray-200"></div>
-                            </div>
-
                             {/* Email Form */}
-                            <form onSubmit={onSignupSubmit} className="w-full space-y-4">
+                            <form onSubmit={onSignupSubmit} className="w-full space-y-4 mb-8">
                                 <div>
                                     <input
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         placeholder="Enter your email address"
-                                        className="w-full rounded-full border border-gray-200 px-6 py-4 text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none transition-all"
+                                        className="w-full rounded-full border border-gray-200 bg-white px-6 py-4 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
                                         required
                                     />
-                                    {error && <p className="text-red-500 text-xs mt-2 ml-4">{error}</p>}
+                                    {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}
                                 </div>
                                 <button
                                     type="submit"
                                     disabled={isLoading}
-                                    className="w-full rounded-full bg-orange-500 py-4 text-sm font-bold text-white shadow-lg hover:bg-orange-600 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center min-h-[56px]"
+                                    className="w-full rounded-full bg-[#f99839] py-4 text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center min-h-[56px]"
                                 >
                                     {isLoading ? <Spinner /> : "Create My Jetzy Account"}
                                 </button>
                             </form>
+
+                            {/* Separator */}
+                            <div className="w-full flex items-center gap-4 mb-8 text-[14px] font-medium text-gray-300">
+                                <div className="h-px flex-1 bg-gray-200"></div>
+                                <span className="text-gray-400">Or</span>
+                                <div className="h-px flex-1 bg-gray-200"></div>
+                            </div>
+
+                            {/* Social Buttons */}
+                            <div className="w-full space-y-4 mb-10">
+                                <button
+                                    onClick={() => { setIsEditing(false); handleGoogleLogin(); }}
+                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm"
+                                >
+                                    <FcGoogle className="h-6 w-6" />
+                                    <span>Signup with Google</span>
+                                </button>
+                                <button
+                                    onClick={() => { setIsEditing(false); handleAppleLogin(); }}
+                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm"
+                                >
+                                    <AiFillApple className="h-6 w-6 text-black" />
+                                    <span>Signup with Apple</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-white rounded-[2rem] shadow-2xl p-8 sm:p-12 flex flex-col items-center w-full transition-all duration-500 animate-in zoom-in-95">
-                        <h1 className="text-3xl font-bold text-center mb-4">Check Your Email</h1>
-                        <p className="text-gray-500 text-center text-sm mb-8 max-w-[280px]">
+                    <div className="bg-white rounded-[20px] shadow-xl p-10 sm:p-14 flex flex-col items-center w-[648px] min-h-[828px] transition-all duration-500 animate-in zoom-in-95">
+                        <h1 className="text-3xl font-bold text-center mb-4 text-[#1A1A1A]">Check Your Email</h1>
+                        <p className="text-gray-500 text-center text-[15px] mb-10 max-w-[320px] leading-relaxed">
                             We&apos;ve sent you a temporary password to get started. Open your inbox and log in to begin your Jetzy experience.
                         </p>
 
                         {/* Success Illustration */}
-                        <div className="relative h-60 w-full mb-10">
+                        <div className="relative h-64 w-full mb-12">
                             <Image src={SuccessIllustration} alt="Email Sent" fill className="object-contain" />
                         </div>
 
                         <div className="w-full space-y-4">
-                            <div className="text-center mb-6">
-                                <p className="text-xs text-gray-400 font-medium mb-1">Didn&apos;t receive it?</p>
-                                <p className="text-xs text-gray-400 font-medium px-4">Check your spam folder or resend the email.</p>
+                            <div className="text-center mb-8">
+                                <p className="text-sm text-gray-400 font-medium mb-1 text-center">Didn&apos;t receive it?</p>
+                                <p className="text-xs text-gray-400 leading-normal px-4 text-center">Check your spam folder or resend the email.</p>
                             </div>
 
                             <button
                                 onClick={handleResend}
-                                className="w-full rounded-full bg-orange-500 py-4 text-sm font-bold text-white shadow-lg hover:bg-orange-600 transition-all active:scale-[0.98]"
+                                className="w-full rounded-full bg-[#f99839] py-4.5 text-[15px] font-bold text-white shadow-lg shadow-orange-100 hover:bg-[#faac5a] transition-all active:scale-[0.98]"
                             >
                                 Resend Email
                             </button>
                             <button
                                 onClick={handleEditEmail}
-                                className="w-full rounded-full border-2 border-gray-200 py-3.5 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-all active:scale-[0.98]"
+                                className="w-full rounded-full border-2 border-gray-100 py-4 text-[15px] font-bold text-gray-600 hover:bg-gray-50 transition-all active:scale-[0.98]"
                             >
                                 Edit Email
                             </button>
