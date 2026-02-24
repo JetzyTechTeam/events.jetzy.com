@@ -170,14 +170,14 @@ export default function JetzyQRSignup() {
                             </p>
 
                             {/* Email Form */}
-                            <form onSubmit={onSignupSubmit} className="w-full space-y-4 mb-8">
-                                <div>
+                            <form onSubmit={onSignupSubmit} className="w-full flex flex-col items-center gap-1 mb-8">
+                                <div className="w-[559px]">
                                     <input
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         placeholder="Enter your email address"
-                                        className="w-full rounded-full border border-gray-200 bg-white px-6 py-4 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
+                                        className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
                                         required
                                     />
                                     {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}
@@ -185,7 +185,7 @@ export default function JetzyQRSignup() {
                                 <button
                                     type="submit"
                                     disabled={isLoading}
-                                    className="w-full rounded-full bg-[#f99839] py-4 text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center min-h-[56px]"
+                                    className="w-[559px] h-[64px] rounded-full bg-[#f99839] text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center mt-3"
                                 >
                                     {isLoading ? <Spinner /> : "Create My Jetzy Account"}
                                 </button>
