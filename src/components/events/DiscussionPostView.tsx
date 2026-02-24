@@ -1953,13 +1953,15 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 					</Flex>
 					<Flex gap={3}>
 						<Text>{post.commentCount} Comments</Text>
-						<Text
-							cursor="pointer"
-							_hover={{ textDecoration: "underline" }}
-							onClick={handleShowViewers}
-						>
-							{post.viewCount} Views
-						</Text>
+						{isAdmin && (
+							<Text
+								cursor="pointer"
+								_hover={{ textDecoration: "underline" }}
+								onClick={handleShowViewers}
+							>
+								{post.viewCount} Views
+							</Text>
+						)}
 					</Flex>
 				</Flex>
 
@@ -2638,6 +2640,20 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				users={viewersList}
 				title="People who viewed this"
 				isLoading={loadingReactions}
+				extraContent={
+					<Box bg="#2b2b2b" p={3} borderRadius="lg" mb={2}>
+						<Flex justify="space-between" align="center" mb={1}>
+							<Text color="#bbbbbb" fontSize="sm">Authenticated Views:</Text>
+							<Text color="white" fontWeight="bold">{viewersList.length}</Text>
+						</Flex>
+						<Flex justify="space-between" align="center">
+							<Text color="#bbbbbb" fontSize="sm">Unauthenticated Views:</Text>
+							<Text color="white" fontWeight="bold">
+								{Math.max(0, (post?.viewCount || 0) - viewersList.length)}
+							</Text>
+						</Flex>
+					</Box>
+				}
 			/>
 
 			<ReactionsListModal

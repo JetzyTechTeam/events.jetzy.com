@@ -28,6 +28,7 @@ interface ReactionsListModalProps {
     users: User[]
     title: string
     isLoading?: boolean
+    extraContent?: React.ReactNode
 }
 
 const ReactionsListModal: React.FC<ReactionsListModalProps> = ({
@@ -36,6 +37,7 @@ const ReactionsListModal: React.FC<ReactionsListModalProps> = ({
     users,
     title,
     isLoading = false,
+    extraContent,
 }) => {
     return (
         <Modal isOpen={isOpen} onClose={onClose} isCentered size="sm">
@@ -48,6 +50,11 @@ const ReactionsListModal: React.FC<ReactionsListModalProps> = ({
                 </ModalHeader>
                 <ModalCloseButton color="white" />
                 <ModalBody py={3} maxH="400px" overflowY="auto">
+                    {extraContent && (
+                        <Box mb={4}>
+                            {extraContent}
+                        </Box>
+                    )}
                     {isLoading ? (
                         <Box display="flex" justifyContent="center" py={8}>
                             <Spinner color="blue.500" />
