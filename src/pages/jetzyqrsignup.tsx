@@ -52,6 +52,7 @@ export default function JetzyQRSignup() {
     const navigate = useRouter()
 
     // Handle social login success
+    /* 
     useEffect(() => {
         if (status === 'authenticated' && session && view === "SIGNUP" && !isEditing) {
             const userEmail = session.user?.email || ""
@@ -71,6 +72,7 @@ export default function JetzyQRSignup() {
             setView("SUCCESS")
         }
     }, [status, session, view, isEditing])
+    */
 
     const onSignupSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -265,5 +267,5 @@ export default function JetzyQRSignup() {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-    return unauthorizedOnly(context)
+    return { props: {} }
 }
