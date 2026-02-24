@@ -218,32 +218,35 @@ export default function JetzyQRSignup() {
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-white rounded-[20px] shadow-xl p-10 sm:p-14 flex flex-col items-center w-[648px] min-h-[828px] transition-all duration-500 animate-in zoom-in-95">
-                        <h1 className="text-3xl font-bold text-center mb-4 text-[#1A1A1A]">Check Your Email</h1>
-                        <p className="text-gray-500 text-center text-[15px] mb-10 max-w-[320px] leading-relaxed">
+                    <div className="bg-white rounded-[20px] shadow-xl p-10 sm:p-14 flex flex-col items-center w-[648px] min-h-[828px] transition-all duration-500 animate-in zoom-in-95 flex-1">
+                        <h1 className="text-[32px] font-semibold text-center mb-4 text-[#1A1A1A] tracking-[-0.02em] leading-tight">
+                            Check Your Email
+                        </h1>
+                        <p className="text-gray-500 text-center text-[18px] font-normal tracking-[-0.01em] mb-8 max-w-[480px] leading-relaxed px-4">
                             We&apos;ve sent you a temporary password to get started. Open your inbox and log in to begin your Jetzy experience.
                         </p>
 
                         {/* Success Illustration */}
-                        <div className="relative h-64 w-full mb-12">
+                        <div className="relative w-[577px] h-[385px] mb-8">
                             <Image src={SuccessIllustration} alt="Email Sent" fill className="object-contain" />
                         </div>
 
-                        <div className="w-full space-y-4">
-                            <div className="text-center mb-8">
-                                <p className="text-sm text-gray-400 font-medium mb-1 text-center">Didn&apos;t receive it?</p>
-                                <p className="text-xs text-gray-400 leading-normal px-4 text-center">Check your spam folder or resend the email.</p>
+                        <div className="w-full flex flex-col items-center mt-auto mb-6">
+                            <div className="text-center mb-8 w-[369px]">
+                                <p className="text-[18px] text-gray-400 font-normal tracking-[-0.01em] leading-relaxed text-center">
+                                    Didn&apos;t receive it? Check your spam folder or resend the email.
+                                </p>
                             </div>
 
                             <button
                                 onClick={handleResend}
-                                className="w-full rounded-full bg-[#f99839] py-4.5 text-[15px] font-bold text-white shadow-lg shadow-orange-100 hover:bg-[#faac5a] transition-all active:scale-[0.98]"
+                                className="w-[558px] h-[73px] rounded-full bg-[#f99839] text-[18px] font-bold text-white shadow-lg shadow-orange-100 hover:bg-[#faac5a] transition-all active:scale-[0.98] flex items-center justify-center mb-4"
                             >
                                 Resend Email
                             </button>
                             <button
                                 onClick={handleEditEmail}
-                                className="w-full rounded-full border-2 border-gray-100 py-4 text-[15px] font-bold text-gray-600 hover:bg-gray-50 transition-all active:scale-[0.98]"
+                                className="w-[558px] h-[73px] rounded-full border border-[#161616] text-[18px] font-bold text-gray-600 hover:bg-gray-50 transition-all active:scale-[0.98] flex items-center justify-center"
                             >
                                 Edit Email
                             </button>
