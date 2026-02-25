@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, Fragment } from "react"
 import Head from "next/head"
 import Image from "next/image"
 import { useRouter } from "next/router"
@@ -7,6 +7,7 @@ import { unauthorizedOnly } from "@Jetzy/lib/authSession"
 import { GetServerSideProps } from "next"
 import { FcGoogle } from "react-icons/fc"
 import { AiFillApple } from "react-icons/ai"
+import { Dialog, Transition } from "@headlessui/react"
 import Spinner from "@Jetzy/components/misc/Spinner"
 
 // Image Assets
@@ -48,6 +49,7 @@ export default function JetzyQRSignup() {
     const [password, setPassword] = useState("")
     const [error, setError] = useState("")
     const [isEditing, setIsEditing] = useState(false)
+    const [showConfirmModal, setShowConfirmModal] = useState(false)
     const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, status, session } = useSignup({ disableAutoRedirect: true })
     const navigate = useRouter()
 
@@ -72,15 +74,28 @@ export default function JetzyQRSignup() {
         }
     }, [status, session, view, isEditing])
 
+    const validateEmail = (email: string) => {
+        return String(email)
+            .toLowerCase()
+            .match(
+                /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+            );
+    };
+
     const onSignupSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError("")
 
-        if (!email || !email.includes("@")) {
-            setError("Please enter a valid email address.")
+        if (!email || !validateEmail(email)) {
+            setError("Please enter a valid email address (e.g., name@domain.com).")
             return
         }
 
+        setShowConfirmModal(true)
+    }
+
+    const createAccount = async () => {
+        setShowConfirmModal(false)
         try {
             setIsEditing(false)
             const newPassword = generateSecurePassword()
@@ -260,6 +275,77 @@ export default function JetzyQRSignup() {
                     By creating an account, you agree to our Terms of Service and Privacy Policy.
                 </p>
             </footer>
+
+            {/* Email Confirmation Modal */}
+            <Transition appear show={showConfirmModal} as={Fragment}>
+                <Dialog as="div" className="relative z-[100]" onClose={() => setShowConfirmModal(false)}>
+                    <Transition.Child
+                        as={Fragment}
+                        enter="ease-out duration-300"
+                        enterFrom="opacity-0"
+                        enterTo="opacity-100"
+                        leave="ease-in duration-200"
+                        leaveFrom="opacity-100"
+                        leaveTo="opacity-0"
+                    >
+                        <div className="fixed inset-0 bg-black/25 backdrop-blur-sm" />
+                    </Transition.Child>
+
+                    <div className="fixed inset-0 overflow-y-auto">
+                        <div className="flex min-h-full items-center justify-center p-4 text-center">
+                            <Transition.Child
+                                as={Fragment}
+                                enter="ease-out duration-300"
+                                enterFrom="opacity-0 scale-95"
+                                enterTo="opacity-100 scale-100"
+                                leave="ease-in duration-200"
+                                leaveFrom="opacity-100 scale-100"
+                                leaveTo="opacity-0 scale-95"
+                            >
+                                <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-8 text-center align-middle shadow-2xl transition-all border border-orange-100">
+                                    <div className="mb-4 flex justify-center">
+                                        <div className="rounded-full bg-orange-50 p-3">
+                                            <svg className="h-8 w-8 text-[#f99839]" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <Dialog.Title as="h3" className="text-xl font-bold leading-6 text-gray-900 mb-2">
+                                        Is this email correct?
+                                    </Dialog.Title>
+
+                                    <div className="mt-2">
+                                        <p className="text-[18px] font-semibold text-[#f99839] break-all bg-orange-50/50 py-3 px-4 rounded-xl border border-orange-100/50">
+                                            {email}
+                                        </p>
+                                        <p className="mt-4 text-sm text-gray-500 leading-relaxed">
+                                            Please double-check for any typos. We will send your temporary password to this address.
+                                        </p>
+                                    </div>
+
+                                    <div className="mt-8 flex flex-col gap-3">
+                                        <button
+                                            type="button"
+                                            className="w-full justify-center rounded-full bg-[#f99839] px-6 py-4 text-[16px] font-bold text-white shadow-lg shadow-orange-100 hover:bg-[#faac5a] transition-all active:scale-[0.98]"
+                                            onClick={createAccount}
+                                        >
+                                            Yes, Continue
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="w-full justify-center rounded-full border border-gray-200 bg-white px-6 py-4 text-[16px] font-bold text-gray-600 hover:bg-gray-50 transition-all active:scale-[0.98]"
+                                            onClick={() => setShowConfirmModal(false)}
+                                        >
+                                            No, Edit Email
+                                        </button>
+                                    </div>
+                                </Dialog.Panel>
+                            </Transition.Child>
+                        </div>
+                    </div>
+                </Dialog>
+            </Transition>
         </div>
     )
 }
