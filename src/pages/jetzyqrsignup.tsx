@@ -54,6 +54,7 @@ export default function JetzyQRSignup() {
     const navigate = useRouter()
 
     // Handle social login success
+    /* 
     useEffect(() => {
         if (status === 'authenticated' && session && view === "SIGNUP" && !isEditing) {
             const userEmail = session.user?.email || ""
@@ -73,6 +74,7 @@ export default function JetzyQRSignup() {
             setView("SUCCESS")
         }
     }, [status, session, view, isEditing])
+    */
 
     const validateEmail = (email: string) => {
         return String(email)
@@ -121,10 +123,20 @@ export default function JetzyQRSignup() {
                 }).catch(err => console.error("Failed to send welcome email:", err))
             } else {
                 // Handle specific error messages if needed
-                setError(res?.payload?.message || "Something went wrong. Please try again.")
+                const message = res?.payload?.message || "Something went wrong. Please try again."
+                if (message.toLowerCase().includes("already a member")) {
+                    setError("You are already a member! Please log in to your account.")
+                } else {
+                    setError(message)
+                }
             }
         } catch (err: any) {
-            setError(err.message || "An unexpected error occurred.")
+            const message = err.message || "An unexpected error occurred."
+            if (message.toLowerCase().includes("already a member")) {
+                setError("You are already a member! Please log in to your account.")
+            } else {
+                setError(message)
+            }
         }
     }
 
@@ -351,5 +363,5 @@ export default function JetzyQRSignup() {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
-    return unauthorizedOnly(context)
+    return { props: {} }
 }

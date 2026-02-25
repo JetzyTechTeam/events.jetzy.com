@@ -31,10 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 		const existingUser = existingInEventUsers || existingInUsers;
 
 		if (existingUser) {
-			// Allow re-signup by updating the password
-			existingUser.password = hashPassword;
-			await existingUser.save({ validateModifiedOnly: true });
-			return sendResponse(res, existingUser, "User account updated successfully.", true, ResCode.OK);
+			return sendResponse(res, null, "You are already a member! Please log in to your account.", false, ResCode.CONFLICT);
 		}
 
 		// Create New user in EventUsers
