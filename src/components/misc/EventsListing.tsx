@@ -270,9 +270,12 @@ const Navbar = () => {
               <MenuItem
                 bg="black"
                 _hover={{ bg: "gray.700" }}
-                onClick={() => router.push("/console")}
+                onClick={() => {
+                  const userId = (user as any)?.id || (user as any)?._id;
+                  router.push(`/profile/${userId}`);
+                }}
               >
-                Dashboard
+                Share Profile
               </MenuItem>
               <MenuItem
                 bg="black"

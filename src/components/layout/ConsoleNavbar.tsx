@@ -28,21 +28,32 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		// Clear Redux session storage first
 		dispatch(destroySession({}))
 		// Then sign out
-		signOut({ callbackUrl: '/' })
+		signOut({ callbackUrl: "/" })
 	}
 
 	const user = {
 		name: session?.user?.name || (session?.user as any)?.fullName || "User",
 		email: session?.user?.email,
 		imageUrl: session?.user?.image,
+		id: (session?.user as any)?._id || (session?.user as any)?.id,
 	}
 
 	// @ts-ignore
-	const userRole = session?.user?.role;
+	const userRole = session?.user?.role
 
-	const filteredNavigation = userRole === Roles.USER
-		? navigation.filter(item => item.name === Pages.Dasshboard)
-		: navigation.filter(item => item.name !== Pages.Dasshboard);
+	const navigation = [
+		{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
+		{ name: "Share Profile", href: `/profile/${user.id}` },
+		{ name: Pages.Events, href: ROUTES.dashboard.events.index },
+		{ name: "Bookings", href: ROUTES.dashboard.bookings.index },
+		{ name: "Analytics", href: "/console/analytics" },
+		{ name: "Create Event", href: ROUTES.dashboard.events.create },
+	]
+
+	const filteredNavigation =
+		userRole === Roles.USER
+			? navigation.filter((item) => item.name === "Share Profile")
+			: navigation.filter((item) => item.name !== Pages.Dasshboard)
 
 	return (
 		<Disclosure as="nav" className="bg-gray-800">
@@ -60,7 +71,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 											<Link
 												key={item.name}
 												href={item.href}
-												className={classNames(item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white", "rounded-md px-3 py-2 text-sm font-medium")}
+												className={classNames(
+													item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+													"rounded-md px-3 py-2 text-sm font-medium",
+												)}
 												aria-current={item.name === page ? "page" : undefined}
 											>
 												{item.name}
@@ -86,10 +100,17 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 											<Menu.Button className="relative flex max-w-xs items-center rounded-full bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800">
 												<span className="absolute -inset-1.5" />
 												<span className="sr-only">Open user menu</span>
-												{user.imageUrl ? <img className="h-10 w-10 rounded-full" src={user.imageUrl} alt="" />
-													:
-													<div className="h-10 w-10 rounded-full bg-gray-500" />
-												}
+												{user.imageUrl ? (
+													<img className="h-10 w-10 rounded-full object-cover" src={user.imageUrl} alt="" />
+												) : (
+													<div className="h-10 w-10 rounded-full bg-app flex items-center justify-center text-black font-bold text-xs uppercase">
+														{user.name
+															?.split(" ")
+															.map((n: string) => n[0])
+															.join("")
+															.substring(0, 2)}
+													</div>
+												)}
 											</Menu.Button>
 										</div>
 										<Transition
@@ -104,13 +125,28 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 											<Menu.Items className="absolute right-0 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
 												<Menu.Item>
 													{({ active }) => (
-														<div>
-															<p className="text-xs text-black pl-2">{user.name}</p>
-															<p className="text-xs text-black pl-2">{user.email}</p>
-															<a onClick={logout} className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}>
-																Logout
-															</a>
+														<div className="border-b border-gray-100 pb-1">
+															<p className="text-[10px] font-bold text-gray-400 px-4 pt-2 uppercase tracking-wider">Signed in as</p>
+															<p className="text-xs text-black px-4 font-semibold truncate">{user.name}</p>
+															<p className="text-[10px] text-gray-500 px-4 pb-2 truncate">{user.email}</p>
 														</div>
+													)}
+												</Menu.Item>
+												<Menu.Item>
+													{({ active }) => (
+														<Link href={`/profile/${user.id}`} className={classNames(active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}>
+															Share Profile
+														</Link>
+													)}
+												</Menu.Item>
+												<Menu.Item>
+													{({ active }) => (
+														<a
+															onClick={logout}
+															className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-red-600 font-medium")}
+														>
+															Logout
+														</a>
 													)}
 												</Menu.Item>
 											</Menu.Items>
@@ -134,9 +170,12 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 							{filteredNavigation.map((item) => (
 								<Disclosure.Button
 									key={item.name}
-									as="a"
+									as={Link}
 									href={item.href}
-									className={classNames(item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white", "block rounded-md px-3 py-2 text-base font-medium")}
+									className={classNames(
+										item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+										"block rounded-md px-3 py-2 text-base font-medium",
+									)}
 									aria-current={item.name === page ? "page" : undefined}
 								>
 									{item.name}
@@ -146,10 +185,17 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 						<div className="border-t border-gray-700 pb-3 pt-4">
 							<div className="flex items-center px-5">
 								<div className="flex-shrink-0">
-									{user.imageUrl ? <img className="h-10 w-10 rounded-full" src={user.imageUrl} alt="" />
-										:
-										<div className="h-10 w-10 rounded-full bg-gray-500" />
-									}
+									{user.imageUrl ? (
+										<img className="h-10 w-10 rounded-full object-cover" src={user.imageUrl} alt="" />
+									) : (
+										<div className="h-10 w-10 rounded-full bg-app flex items-center justify-center text-black font-bold text-xs uppercase">
+											{user.name
+												?.split(" ")
+												.map((n: string) => n[0])
+												.join("")
+												.substring(0, 2)}
+										</div>
+									)}
 								</div>
 								<div className="ml-3">
 									<div className="text-base font-medium leading-none text-white">{user.name}</div>
@@ -165,7 +211,11 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 								</button>
 							</div>
 							<div className="mt-3 space-y-1 px-2">
-								<Disclosure.Button as="button" onClick={logout} className="block rounded-md px-3 py-2 text-base font-medium text-gray-400 hover:bg-gray-700 hover:text-white">
+								<Disclosure.Button
+									as="button"
+									onClick={logout}
+									className="block w-full text-left rounded-md px-3 py-2 text-base font-medium text-red-400 hover:bg-gray-700 hover:text-white"
+								>
 									Logout
 								</Disclosure.Button>
 							</div>
