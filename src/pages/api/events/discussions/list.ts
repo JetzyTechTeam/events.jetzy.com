@@ -2,6 +2,7 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { DiscussionPosts } from "@/models/events/discussion-posts"
+import { Users } from "@/models/userModal"
 import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -21,10 +22,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const query: any = { eventId }
 
         if (search) {
+            // Find users matching the search query
+            const matchingUsers = await Users.find({
+                $or: [
+                    { firstName: { $regex: search, $options: "i" } },
+                    { lastName: { $regex: search, $options: "i" } },
+                ],
+            }, "_id").lean()
+            const userIds = matchingUsers.map((u: any) => u._id)
+
             query.$or = [
                 { title: { $regex: search, $options: "i" } },
                 { content: { $regex: search, $options: "i" } },
                 { tags: { $regex: search, $options: "i" } },
+                { userId: { $in: userIds } },
             ]
         }
 
