@@ -225,3 +225,14 @@ export const stripHTMLAndDecode = (str: string) => {
 	if (!str) return ""
 	return str.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ")
 }
+
+/**
+ * Generates a descriptive, unique-ish slug for a user
+ * Format: firstname + lastname + last 3 chars of Mongo ID
+ */
+export function getUserSlug(user: { firstName: string; lastName: string; _id: string }) {
+	if (!user) return ""
+	const namePart = (user.firstName + user.lastName).toLowerCase().replace(/[^a-z0-9]/g, "")
+	const idPart = user._id ? user._id.toString().slice(-3) : ""
+	return `${namePart}${idPart}`
+}

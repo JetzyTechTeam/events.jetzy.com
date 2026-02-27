@@ -10,6 +10,7 @@ import { signOut, useSession } from "next-auth/react"
 import Link from "next/link"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
+import { getUserSlug } from "@Jetzy/lib/utils"
 
 const navigation = [
 	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
@@ -38,12 +39,17 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		id: (session?.user as any)?._id || (session?.user as any)?.id,
 	}
 
+	const firstName = user.name?.split(" ")[0] || ""
+	const lastName = user.name?.split(" ").slice(1).join(" ") || ""
+	const slug = getUserSlug({ firstName, lastName, _id: user.id })
+	const profileHref = `/profile/${slug || user.id}`
+
 	// @ts-ignore
 	const userRole = session?.user?.role
 
 	const navigation = [
 		{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
-		{ name: "Share Profile", href: `/profile/${user.id}` },
+		{ name: "Share Profile", href: profileHref },
 		{ name: Pages.Events, href: ROUTES.dashboard.events.index },
 		{ name: "Bookings", href: ROUTES.dashboard.bookings.index },
 		{ name: "Analytics", href: "/console/analytics" },
@@ -134,7 +140,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 												</Menu.Item>
 												<Menu.Item>
 													{({ active }) => (
-														<Link href={`/profile/${user.id}`} className={classNames(active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}>
+														<Link href={profileHref} className={classNames(active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}>
 															Share Profile
 														</Link>
 													)}

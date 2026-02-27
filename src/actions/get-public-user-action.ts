@@ -1,5 +1,5 @@
 
-import { dbconn, ensureDbConnected } from "@Jetzy/configs/database"
+import { ensureDbConnected } from "@Jetzy/configs/database"
 import { Users } from "@Jetzy/models/userModal"
 import { isValidObjectId } from "mongoose"
 
@@ -7,16 +7,48 @@ export const getPublicUserAction = async (id: string) => {
     try {
         await ensureDbConnected()
 
-        if (!isValidObjectId(id)) {
-            return { status: false, message: "Invalid user ID" }
-        }
-
         const { EventUsers } = await import("@/models/eventUsersModal")
 
-        let user = await Users.findById(id).select("firstName lastName image email").lean() as any
+        let user: any = null;
 
-        if (!user) {
-            user = await EventUsers.findById(id).select("firstName lastName image email").lean() as any
+        if (isValidObjectId(id)) {
+            // Standard ID lookup
+            user = await Users.findById(id).select("firstName lastName image email").lean()
+            if (!user) {
+                user = await EventUsers.findById(id).select("firstName lastName image email").lean()
+            }
+        } else {
+            // Derived Slug lookup: firstname-lastname-last3id
+            if (id.length < 4) return { status: false, message: "Invalid profile handle" };
+
+            const idSuffix = id.slice(-3).toLowerCase();
+            const namePart = id.slice(0, -3).toLowerCase().replace(/[^a-z0-9]/g, "");
+
+            console.log(`[Slug Lookup] Searching for Suffix: ${idSuffix}, Name: ${namePart}`);
+
+            // Use $expr to search by ID suffix because _id is an ObjectId, not a string
+            const searchBySuffix = {
+                $expr: {
+                    $regexMatch: {
+                        input: { $toString: "$_id" },
+                        regex: `${idSuffix}$`,
+                        options: "i"
+                    }
+                }
+            };
+
+            const potentialUsers = [
+                ...(await Users.find(searchBySuffix).select("firstName lastName image email").lean()),
+                ...(await EventUsers.find(searchBySuffix).select("firstName lastName image email").lean())
+            ];
+
+            console.log(`[Slug Lookup] Found ${potentialUsers.length} potential matches by suffix`);
+
+            user = potentialUsers.find(u => {
+                const derivedName = (u.firstName + u.lastName).toLowerCase().replace(/[^a-z0-9]/g, "");
+                console.log(`[Slug Lookup] Checking user: ${u.firstName} ${u.lastName} -> Derived: ${derivedName}`);
+                return derivedName === namePart;
+            });
         }
 
         if (!user) {

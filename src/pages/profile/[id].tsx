@@ -8,6 +8,7 @@ import { FiShare2, FiDownload, FiCheck, FiCopy } from "react-icons/fi"
 import { FaApple, FaGooglePlay } from "react-icons/fa"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import { toast } from "react-toastify"
+import { getUserSlug } from "@Jetzy/lib/utils"
 
 interface ProfilePageProps {
     user: {
@@ -33,7 +34,8 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
         )
     }
 
-    const profileUrl = `${baseUrl}/profile/${user._id}`
+    const slug = getUserSlug(user as any)
+    const profileUrl = `${baseUrl}/profile/${slug || user?._id || ""}`
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(profileUrl)}`
 
     const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379"

@@ -28,6 +28,7 @@ import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
+import { getUserSlug } from "@/lib/utils";
 
 
 dayjs.extend(utc)
@@ -280,8 +281,12 @@ const Navbar = () => {
                 bg="black"
                 _hover={{ bg: "gray.700" }}
                 onClick={() => {
-                  const userId = (user as any)?.id || (user as any)?._id;
-                  router.push(`/profile/${userId}`);
+                  const userData = user as any;
+                  const userId = userData?.id || userData?._id;
+                  const firstName = userData?.name?.split(" ")[0] || "";
+                  const lastName = userData?.name?.split(" ").slice(1).join(" ") || "";
+                  const slug = getUserSlug({ firstName, lastName, _id: userId });
+                  router.push(`/profile/${slug || userId}`);
                 }}
               >
                 Share Profile
