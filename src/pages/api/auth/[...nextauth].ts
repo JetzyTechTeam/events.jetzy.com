@@ -198,6 +198,16 @@ export const authOptions: NextAuthOptions = {
           }
           console.log('--- Authorize Debug End ---');
 
+          // Search other collections for image if missing in primary
+          let finalImage = user.image;
+          if ((!finalImage || finalImage === "") && email) {
+            const alternativeUser = await Users.findOne({ email, image: { $exists: true, $ne: "" } }).select("image").lean() as any
+              || await EventUsers.findOne({ email, image: { $exists: true, $ne: "" } }).select("image").lean() as any;
+            if (alternativeUser?.image) {
+              finalImage = alternativeUser.image;
+            }
+          }
+
           const userData = {
             _id: user._id.toString(),
             id: user._id.toString(),
@@ -206,7 +216,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             role: user.role,
             accessToken: accessToken,
-            ...(user.image ? { image: user.image } : {}),
+            ...(finalImage ? { image: finalImage } : {}),
           };
 
           console.log('Returning userData, hasToken:', !!accessToken);
@@ -230,11 +240,12 @@ export const authOptions: NextAuthOptions = {
         name: { label: "Name", type: "text" },
         email: { label: "Email", type: "text" },
         image: { label: "Image", type: "text" },
+        photoUrl: { label: "Photo URL", type: "text" },
       },
       async authorize(credentials, req) {
         console.log("--- Firebase Auth API Start ---");
         try {
-          const { idToken, name: nameFromFront, email: emailFromFront, image: imageFromFront } = credentials ?? {};
+          const { idToken, name: nameFromFront, email: emailFromFront, image: imageFromFront, photoUrl: photoUrlFromFront } = credentials ?? {};
           if (!idToken) {
             console.error("❌ Firebase Auth: No idToken provided");
             throw new Error("ID Token is required");
@@ -256,7 +267,7 @@ export const authOptions: NextAuthOptions = {
           const { email: emailFromToken, name: nameFromToken, picture: imageFromToken, uid } = (decodedToken as any) || {};
           const email = emailFromToken || emailFromFront;
           const name = nameFromToken || nameFromFront;
-          const image = imageFromToken || imageFromFront;
+          const image = imageFromToken || imageFromFront || photoUrlFromFront || imageFromToken; // Fallback to multiple sources
 
           if (!email) {
             console.error("❌ Firebase Auth: Email not found in decoded token or credentials");
@@ -321,8 +332,24 @@ export const authOptions: NextAuthOptions = {
               firebaseUid: uid,
             });
             console.log(`✅ Firebase Auth: New user created: ${user._id}`);
-          } else {
-            console.log(`✅ Firebase Auth: User found: ${user._id}`);
+          }
+
+          // Use image from MongoDB first, search other collections if missing.
+          // Fall back to social login image ONLY if no MongoDB image is found anywhere.
+          let sessionImage = user.image;
+
+          // Search other collections for image if missing
+          if ((!sessionImage || sessionImage === "") && email) {
+            const alternativeUser = await Users.findOne({ email, image: { $exists: true, $ne: "" } }).select("image").lean() as any
+              || await EventUsers.findOne({ email, image: { $exists: true, $ne: "" } }).select("image").lean() as any;
+            if (alternativeUser?.image) {
+              sessionImage = alternativeUser.image;
+            }
+          }
+
+          // Finally fall back to social image (session only)
+          if (!sessionImage || sessionImage === "") {
+            sessionImage = image;
           }
 
           console.log("--- Firebase Auth API Success ---");
@@ -334,7 +361,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             role: user.role,
             accessToken: accessToken, // Now using Jetzy SSO token
-            ...(user.image ? { image: user.image } : {}),
+            ...(sessionImage ? { image: sessionImage } : {}),
           };
         } catch (error: any) {
           console.error("❌ Firebase Auth error:", error.message);

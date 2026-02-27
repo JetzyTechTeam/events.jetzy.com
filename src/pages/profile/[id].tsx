@@ -89,11 +89,10 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
                         <div className="relative w-32 h-32 mb-6 p-1 rounded-full bg-gradient-to-tr from-app to-purple-500 shadow-xl shadow-app/20">
                             <div className="w-full h-full rounded-full overflow-hidden bg-[#222]">
                                 {user.image ? (
-                                    <Image
+                                    <img
                                         src={user.image}
                                         alt={`${user.firstName} ${user.lastName}`}
-                                        fill
-                                        className="object-cover"
+                                        className="w-full h-full object-cover"
                                     />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center text-4xl font-bold bg-[#222] text-white/20">

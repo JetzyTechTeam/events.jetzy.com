@@ -11,10 +11,27 @@ export const getPublicUserAction = async (id: string) => {
             return { status: false, message: "Invalid user ID" }
         }
 
-        const user = await Users.findById(id).select("firstName lastName image").lean() as any
+        const { EventUsers } = await import("@/models/eventUsersModal")
+
+        let user = await Users.findById(id).select("firstName lastName image email").lean() as any
+
+        if (!user) {
+            user = await EventUsers.findById(id).select("firstName lastName image email").lean() as any
+        }
 
         if (!user) {
             return { status: false, message: "User not found" }
+        }
+
+        // Search for image in other collection if missing in primary
+        let finalImage = user.image;
+        if ((!finalImage || finalImage === "") && user.email) {
+            const alternativeUser = await Users.findOne({ email: user.email, image: { $exists: true, $ne: "" } }).select("image").lean() as any
+                || await EventUsers.findOne({ email: user.email, image: { $exists: true, $ne: "" } }).select("image").lean() as any;
+
+            if (alternativeUser?.image) {
+                finalImage = alternativeUser.image;
+            }
         }
 
         return {
@@ -22,7 +39,7 @@ export const getPublicUserAction = async (id: string) => {
             data: {
                 firstName: user.firstName,
                 lastName: user.lastName,
-                image: user.image || null,
+                image: finalImage || null,
                 _id: user._id.toString()
             }
         }

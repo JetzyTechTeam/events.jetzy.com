@@ -257,13 +257,22 @@ const Navbar = () => {
           <Menu>
             <MenuButton>
               <Flex align="center" gap={2}>
-                <Avatar
-                  name={user?.name || "User"}
-                  src={user?.image || ""}
-                  size="sm"
-                />
-                {/* @ts-ignore */}
-                <Text>{user?.email}</Text>
+                {user?.image ? (
+                  <img
+                    className="h-8 w-8 rounded-full object-cover border border-gray-700"
+                    src={user.image}
+                    alt={user.name || ""}
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-app flex items-center justify-center text-black font-bold text-[10px] uppercase">
+                    {user?.name
+                      ?.split(" ")
+                      .map((n: string) => n[0])
+                      .join("")
+                      .substring(0, 2)}
+                  </div>
+                )}
+                <Text fontSize="sm" fontWeight="medium" color="gray.300">{user?.email}</Text>
               </Flex>
             </MenuButton>
             <MenuList bg="black" color="white">
