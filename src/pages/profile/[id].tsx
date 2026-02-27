@@ -61,6 +61,22 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
         setTimeout(() => setCopied(false), 2000)
     }
 
+    const handleConnect = () => {
+        const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+
+        if (/iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream) {
+            window.open(APP_STORE_LINK, '_blank');
+            return;
+        }
+
+        if (/android/i.test(userAgent)) {
+            window.open(PLAY_STORE_LINK, '_blank');
+            return;
+        }
+
+        toast.info(`To connect with ${user.firstName}, please download the Jetzy app using the links below!`)
+    }
+
     return (
         <div className="min-h-screen bg-[#0A0A0A] text-white font-sans selection:bg-app/30">
             <Head>
@@ -90,10 +106,21 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
                             <div className="w-full h-full rounded-full overflow-hidden bg-[#222]">
                                 {user.image ? (
                                     <Image
-                                        src={user.image}
+                                        src={user.image.startsWith('http') ? user.image : `https://jetzy-media-prod.s3.us-east-1.amazonaws.com/${user.image.startsWith('/') ? user.image.slice(1) : user.image}`}
                                         alt={`${user.firstName} ${user.lastName}`}
                                         fill
                                         className="object-cover"
+                                        onError={(e) => {
+                                            const target = e.target as HTMLImageElement;
+                                            target.style.display = 'none';
+                                            const parent = target.parentElement;
+                                            if (parent) {
+                                                const fallback = document.createElement('div');
+                                                fallback.className = "w-full h-full flex items-center justify-center text-4xl font-bold bg-[#222] text-white/20";
+                                                fallback.innerText = `${user.firstName[0]}${user.lastName[0]}`;
+                                                parent.appendChild(fallback);
+                                            }
+                                        }}
                                     />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center text-4xl font-bold bg-[#222] text-white/20">
@@ -132,10 +159,10 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
 
                         {/* Connect Button */}
                         <button
-                            onClick={() => toast.info(`To connect with ${user.firstName}, please download the Jetzy app using the links below!`)}
+                            onClick={handleConnect}
                             className="w-full py-4 bg-app hover:bg-app/90 text-black font-bold rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-app/20 mb-4"
                         >
-                            Connect with Member
+                            Connect on Jetzy App
                         </button>
 
                         {/* Share Button */}
