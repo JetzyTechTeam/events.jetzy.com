@@ -121,10 +121,19 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// Validate required custom questions
 			const eventQuestions: any[] = liveEventData?.questions || []
 			for (const q of eventQuestions) {
+				const ans = customAnswers[q.id]
 				if (q.isRequired) {
-					const ans = customAnswers[q.id]
 					if (!ans || (Array.isArray(ans) && ans.length === 0) || ans === '') {
 						Error("Required Question", `Please answer: "${q.title}"`)
+						return
+					}
+				}
+
+				// Validate URL format for social profiles and websites
+				if ((q.type === 'social_profile' || q.type === 'website') && ans && typeof ans === 'string' && ans.trim() !== '') {
+					const urlPattern = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/i;
+					if (!urlPattern.test(ans)) {
+						Error("Invalid URL", `Please enter a valid URL for: "${q.title}" (e.g., https://...)`)
 						return
 					}
 				}
@@ -380,8 +389,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												</label>
 												{(q.type === 'text' || q.type === 'mobile' || q.type === 'website' || q.type === 'social_profile') && (
 													q.responseLength === 'multi-line'
-														? <textarea rows={3} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} username` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white resize-none" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
-														: <input type={q.type === 'mobile' ? 'tel' : q.type === 'website' ? 'url' : 'text'} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} username` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
+														? <textarea rows={3} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white resize-none" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
+														: <input type={q.type === 'mobile' ? 'tel' : q.type === 'website' ? 'url' : 'text'} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
 												)}
 												{q.type === 'options' && q.selectionType === 'single' && (
 													<select className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))}>

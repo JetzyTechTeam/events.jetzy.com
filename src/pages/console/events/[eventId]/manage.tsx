@@ -41,6 +41,7 @@ import {
 import { DateTime } from "luxon"
 import axios from "axios"
 import { useQuery } from "@tanstack/react-query"
+import Image from "next/image"
 import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { useRouter } from "next/router"
@@ -228,8 +229,13 @@ export default function Manage({ event }: any) {
 								</div>
 							</div>
 							<div className="flex h-full gap-x-5">
-								<div className="w-[250px] h-[200px] object-cover object-top rounded-2xl">
-									<img src={event.images[0]} alt={stripHtml(event.name)} className="w-full h-full object-cover object-top rounded-2xl" />
+								<div className="w-[250px] h-[200px] relative rounded-2xl overflow-hidden">
+									<Image 
+										src={event.images[0]} 
+										alt={stripHtml(event.name)} 
+										fill
+										className="object-cover object-top"
+									/>
 								</div>
 								<div className="w-full">
 									<div className="p-3 flex flex-col gap-y-3 border-b border-[#585858] pb-10">
