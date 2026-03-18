@@ -4,7 +4,7 @@ import { IEvent, IEventTicket } from "./types"
 import { EventTracker } from "./event-tracker"
 import { Bookings } from "./bookings"
 
-const eventTciketsSchema = new Schema<IEventTicket>(
+const eventTicketsSchema = new Schema<IEventTicket>(
 	{
 		name: {
 			type: String,
@@ -24,6 +24,24 @@ const eventTciketsSchema = new Schema<IEventTicket>(
 		},
 	},
 	{ timestamps: true },
+)
+
+const customQuestionSchema = new Schema(
+	{
+		id: { type: String, required: true },
+		title: { type: String, required: true },
+		type: { type: String, enum: ['text', 'options', 'social_profile', 'company', 'checkbox', 'terms', 'mobile', 'website'], required: true },
+		isRequired: { type: Boolean, default: false },
+		responseLength: { type: String, enum: ['short', 'multi-line'], required: false },
+		selectionType: { type: String, enum: ['single', 'multiple'], required: false },
+		options: { type: [String], required: false },
+		platform: { type: String, required: false },
+		collectJobTitle: { type: Boolean, required: false },
+		termsContentType: { type: String, enum: ['text', 'link'], required: false },
+		termsContent: { type: String, required: false },
+		collectSignature: { type: Boolean, required: false },
+	},
+	{ _id: false }
 )
 
 // Define the  schema
@@ -106,8 +124,14 @@ const eventsSchema = new Schema<IEvent>(
 		},
 
 		tickets: {
-			type: [eventTciketsSchema],
+			type: [eventTicketsSchema],
 			required: false,
+		},
+
+		questions: {
+			type: [customQuestionSchema],
+			required: false,
+			default: [],
 		},
 
 		isDeleted: {

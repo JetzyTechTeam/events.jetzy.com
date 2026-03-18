@@ -259,7 +259,7 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 					)}
 				</div>
-				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} />}
+				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
 			</>
 		)
 	} catch (error) {

@@ -179,6 +179,16 @@ export default function Manage({ event }: any) {
 						>
 							Referral Codes
 						</Tab>
+						<Tab
+							fontWeight="bold"
+							color="#9C9C9C"
+							_selected={{
+								color: "#F79432",
+								borderBottom: "2px solid #F79432",
+							}}
+						>
+							Custom Questions
+						</Tab>
 					</TabList>
 					<TabPanels>
 						<TabPanel>
@@ -300,12 +310,17 @@ export default function Manage({ event }: any) {
 						<TabPanel>
 							{/* Guests list content goes here */}
 							<div className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3">
-								<GuestsList eventId={event._id} />
+								<GuestsList eventId={event._id} event={event} />
 							</div>
 						</TabPanel>
 						<TabPanel>
 							<div className="bg-[#181818] rounded-xl p-3">
 								<ReferralCodesManager eventId={event._id} />
+							</div>
+						</TabPanel>
+						<TabPanel>
+							<div className="bg-[#181818] rounded-xl p-3">
+								<CustomQuestionsManager event={event} />
 							</div>
 						</TabPanel>
 					</TabPanels>
@@ -516,47 +531,318 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	)
 }
 
-function GuestsList({ eventId }: { eventId: string }) {
+function CustomQuestionsManager({ event }: { event: any }) {
+	const toast = useToast()
+	const [questions, setQuestions] = useState<any[]>(event.questions || [])
+	const [saving, setSaving] = useState(false)
+	const [isModalOpen, setIsModalOpen] = useState(false)
+	const [editingIndex, setEditingIndex] = useState<number | null>(null)
+
+	// Form state for the Add/Edit modal
+	const [form, setForm] = useState<any>({
+		title: '', type: 'text', isRequired: false,
+		responseLength: 'short', selectionType: 'single', options: [],
+		platform: 'instagram', collectJobTitle: false,
+		termsContentType: 'text', termsContent: '', collectSignature: false,
+	})
+	const [optionInput, setOptionInput] = useState('')
+
+	const openAddModal = () => {
+		setForm({ title: '', type: 'text', isRequired: false, responseLength: 'short', selectionType: 'single', options: [], platform: 'instagram', collectJobTitle: false, termsContentType: 'text', termsContent: '', collectSignature: false })
+		setOptionInput('')
+		setEditingIndex(null)
+		setIsModalOpen(true)
+	}
+
+	const openEditModal = (idx: number) => {
+		const q = questions[idx]
+		setForm({ ...q, options: q.options ? [...q.options] : [] })
+		setOptionInput('')
+		setEditingIndex(idx)
+		setIsModalOpen(true)
+	}
+
+	const saveQuestions = async (updated: any[]) => {
+		setSaving(true)
+		try {
+			await axios.post('/api/events/admin/update-questions', { eventId: event._id, questions: updated })
+			setQuestions(updated)
+			toast({ title: 'Questions saved!', status: 'success', duration: 2500, isClosable: true })
+		} catch {
+			toast({ title: 'Failed to save questions.', status: 'error', duration: 3000, isClosable: true })
+		}
+		setSaving(false)
+	}
+
+	const handleSaveQuestion = () => {
+		if (!form.title.trim()) { toast({ title: 'Title is required.', status: 'warning', duration: 2500 }); return }
+		const q = { ...form, id: editingIndex !== null ? questions[editingIndex].id : `q_${Date.now()}` }
+		const updated = editingIndex !== null
+			? questions.map((existing, i) => i === editingIndex ? q : existing)
+			: [...questions, q]
+		setIsModalOpen(false)
+		saveQuestions(updated)
+	}
+
+	const handleDelete = (idx: number) => {
+		const updated = questions.filter((_, i) => i !== idx)
+		saveQuestions(updated)
+	}
+
+	const addOption = () => {
+		const opt = optionInput.trim()
+		if (!opt) return
+		setForm((f: any) => ({ ...f, options: [...(f.options || []), opt] }))
+		setOptionInput('')
+	}
+	const removeOption = (idx: number) => setForm((f: any) => ({ ...f, options: f.options.filter((_: any, i: number) => i !== idx) }))
+
+	const qTypeLabel: Record<string, string> = {
+		text: 'Text', options: 'Options', social_profile: 'Social Profile',
+		company: 'Company', checkbox: 'Checkbox', terms: 'Terms',
+		mobile: 'Mobile Number', website: 'Website',
+	}
+
+	const getTitlePlaceholder = (type: string) => {
+		switch (type) {
+			case 'text': return "E.g. What's your dietary preference?"
+			case 'options': return "E.g. Select your t-shirt size"
+			case 'social_profile': return "E.g. Please share your social profile link"
+			case 'company': return "E.g. Where do you work?"
+			case 'checkbox': return "E.g. I require wheelchair access"
+			case 'terms': return "E.g. I agree to the rules and regulations"
+			case 'mobile': return "E.g. What's the best number to reach you?"
+			case 'website': return "E.g. Share a link to your personal website"
+			default: return "E.g. Enter your question"
+		}
+	}
+
+	return (
+		<Box color="white">
+			<Flex justify="space-between" align="center" mb={4}>
+				<Heading size="md" color="white">Custom Questions</Heading>
+				<Button bg="#F79432" color="black" fontWeight="bold" _hover={{ bg: '#E68422' }} onClick={openAddModal} isLoading={saving}>
+					+ Add Question
+				</Button>
+			</Flex>
+
+			{questions.length === 0 && (
+				<Text color="#9C9C9C" textAlign="center" py={8}>No custom questions yet. Click "Add Question" to create one.</Text>
+			)}
+
+			{questions.map((q: any, idx: number) => (
+				<Flex key={q.id} bg="#1E1E1E" border="1px solid #3E3E3E" rounded="xl" p={4} mb={3} align="center" justify="space-between">
+					<Box>
+						<Text fontWeight="bold">{q.title}</Text>
+						<Text fontSize="sm" color="#9C9C9C">{qTypeLabel[q.type] || q.type}{q.isRequired ? ' · Required' : ' · Optional'}</Text>
+					</Box>
+					<Flex gap={2}>
+						<Button size="sm" variant="outline" colorScheme="orange" onClick={() => openEditModal(idx)}>Edit</Button>
+						<Button size="sm" colorScheme="red" variant="ghost" onClick={() => handleDelete(idx)}>Delete</Button>
+					</Flex>
+				</Flex>
+			))}
+
+			{/* Add/Edit Modal */}
+			<Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} isCentered size="lg">
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white">
+					<ModalHeader>{editingIndex !== null ? 'Edit Question' : 'Add Question'}</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						<Flex direction="column" gap={4}>
+							<Box>
+								<Text mb={1} fontWeight="bold">Question Title</Text>
+								<Input bg="#090C10" borderColor="#444" color="white" value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} placeholder={getTitlePlaceholder(form.type)} />
+							</Box>
+							<Box>
+								<Text mb={1} fontWeight="bold">Question Type</Text>
+								<Select bg="#090C10" borderColor="#444" color="white" value={form.type} onChange={e => setForm((f: any) => ({ ...f, type: e.target.value }))}>
+									{Object.entries(qTypeLabel).map(([val, label]) => (
+										<option key={val} value={val} style={{ backgroundColor: '#090C10' }}>{label}</option>
+									))}
+								</Select>
+							</Box>
+
+							{form.type === 'text' && (
+								<Box>
+									<Text mb={1} fontWeight="bold">Response Length</Text>
+									<Select bg="#090C10" borderColor="#444" color="white" value={form.responseLength} onChange={e => setForm((f: any) => ({ ...f, responseLength: e.target.value }))}>
+										<option value="short" style={{ backgroundColor: '#090C10' }}>Short Answer</option>
+										<option value="multi-line" style={{ backgroundColor: '#090C10' }}>Multi-Line</option>
+									</Select>
+								</Box>
+							)}
+
+							{form.type === 'options' && (
+								<Box>
+									<Text mb={1} fontWeight="bold">Selection Type</Text>
+									<Select bg="#090C10" borderColor="#444" color="white" value={form.selectionType} onChange={e => setForm((f: any) => ({ ...f, selectionType: e.target.value }))}>
+										<option value="single" style={{ backgroundColor: '#090C10' }}>Single Choice</option>
+										<option value="multiple" style={{ backgroundColor: '#090C10' }}>Multiple Choice</option>
+									</Select>
+									<Text mt={3} mb={1} fontWeight="bold">Options</Text>
+									<Flex gap={2} mb={2}>
+										<Input bg="#090C10" borderColor="#444" color="white" value={optionInput} onChange={e => setOptionInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addOption()} placeholder="Add option..." />
+										<Button onClick={addOption} bg="#3E3E3E" color="white" _hover={{ bg: '#4A4A4A' }}>Add</Button>
+									</Flex>
+									{(form.options || []).map((opt: string, i: number) => (
+										<Flex key={i} bg="#2A2A2A" rounded="md" px={3} py={1} mb={1} justify="space-between" align="center">
+											<Text fontSize="sm">{opt}</Text>
+											<Button size="xs" variant="ghost" colorScheme="red" onClick={() => removeOption(i)}>✕</Button>
+										</Flex>
+									))}
+								</Box>
+							)}
+
+							{form.type === 'social_profile' && (
+								<Box>
+									<Text mb={1} fontWeight="bold">Platform</Text>
+									<Select bg="#090C10" borderColor="#444" color="white" value={form.platform} onChange={e => setForm((f: any) => ({ ...f, platform: e.target.value }))}>
+										{['instagram', 'twitter', 'linkedin', 'facebook', 'tiktok', 'youtube', 'github'].map(p => (
+											<option key={p} value={p} style={{ backgroundColor: '#090C10' }}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+										))}
+									</Select>
+								</Box>
+							)}
+
+							{form.type === 'company' && (
+								<Flex align="center" gap={3}>
+									<Text fontWeight="bold">Collect Job Title</Text>
+									<input type="checkbox" checked={form.collectJobTitle} onChange={e => setForm((f: any) => ({ ...f, collectJobTitle: e.target.checked }))} />
+								</Flex>
+							)}
+
+							{form.type === 'terms' && (
+								<Box>
+									<Text mb={1} fontWeight="bold">Terms Content Type</Text>
+									<Select bg="#090C10" borderColor="#444" color="white" value={form.termsContentType} onChange={e => setForm((f: any) => ({ ...f, termsContentType: e.target.value }))}>
+										<option value="text" style={{ backgroundColor: '#090C10' }}>Text</option>
+										<option value="link" style={{ backgroundColor: '#090C10' }}>Link</option>
+									</Select>
+									<Text mt={3} mb={1} fontWeight="bold">Terms Content</Text>
+									<Textarea bg="#090C10" borderColor="#444" color="white" value={form.termsContent} onChange={e => setForm((f: any) => ({ ...f, termsContent: e.target.value }))} placeholder="Enter terms text or URL..." rows={3} />
+									<Flex align="center" gap={3} mt={3}>
+										<Text fontWeight="bold">Collect Signature</Text>
+										<input type="checkbox" checked={form.collectSignature} onChange={e => setForm((f: any) => ({ ...f, collectSignature: e.target.checked }))} />
+									</Flex>
+								</Box>
+							)}
+
+							<Flex align="center" gap={3}>
+								<Text fontWeight="bold">Required</Text>
+								<input type="checkbox" checked={form.isRequired} onChange={e => setForm((f: any) => ({ ...f, isRequired: e.target.checked }))} />
+								<Text fontSize="sm" color="#9C9C9C">Users must answer this before buying a ticket</Text>
+							</Flex>
+
+							<Button bg="#F79432" color="black" fontWeight="bold" _hover={{ bg: '#E68422' }} onClick={handleSaveQuestion} isLoading={saving}>
+								{editingIndex !== null ? 'Save Changes' : 'Add Question'}
+							</Button>
+						</Flex>
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+		</Box>
+	)
+}
+
+function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const fetchGuests = async () => {
 		const res = await axios.get("/api/guests-list", { params: { eventId } })
 		return res.data || []
 	}
 
+	const fetchBookings = async () => {
+		const res = await axios.post("/api/get-bookings", { eventId })
+		return res.data || []
+	}
+
 	const {
 		data: guests = [],
-		isLoading,
-		isError,
+		isLoading: guestsLoading,
+		isError: guestsError,
 	} = useQuery({
 		queryKey: ["guests-list", eventId],
 		queryFn: fetchGuests,
 	})
 
-	if (isLoading) {
-		return <Text>Loading guests...</Text>
+	const {
+		data: bookings = [],
+	} = useQuery({
+		queryKey: ["event-bookings", eventId],
+		queryFn: fetchBookings,
+	})
+
+	// Build a map of all guests by email
+	const guestByEmail: Record<string, any> = {}
+	guests.forEach((g: any) => {
+		if (g.email) guestByEmail[g.email.toLowerCase()] = g
+	})
+
+	// Build a map of all bookings by email
+	const bookingByEmail: Record<string, any> = {}
+	;(bookings as any[]).forEach((b: any) => {
+		if (b.customerEmail) bookingByEmail[b.customerEmail.toLowerCase()] = b
+	})
+
+	const eventQuestions: any[] = event?.questions || []
+
+	const renderAnswer = (qId: string, booking: any) => {
+		if (!booking?.customAnswers) return <Text color="#9C9C9C" fontSize="sm">—</Text>
+		const ans = booking.customAnswers.find((a: any) => a.questionId === qId)
+		if (!ans) return <Text color="#9C9C9C" fontSize="sm">—</Text>
+		const val = Array.isArray(ans.answer) ? ans.answer.join(', ') : String(ans.answer)
+		return <Text fontSize="sm">{val}</Text>
 	}
-	if (isError) {
-		return <Text color="red.500">Failed to load guests.</Text>
-	}
-	if (!guests.length) {
-		return <Text>No guests found.</Text>
-	}
+
+	if (guestsLoading) return <Text>Loading guests...</Text>
+	if (guestsError) return <Text color="red.500">Failed to load guests.</Text>
+	
+	const allEmails = Array.from(new Set([
+		...guests.map((g: any) => g.email?.toLowerCase()).filter(Boolean),
+		...bookings.map((b: any) => b.customerEmail?.toLowerCase()).filter(Boolean)
+	]))
+
+	if (!allEmails.length) return <Text>No guests or bookings found.</Text>
+
 	return (
-		<Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3">
-			<Flex fontWeight="bold" mb={2}>
-				<Box flex="1">Email</Box>
-				<Box flex="1">Status</Box>
-				<Box flex="1">Invited At</Box>
-			</Flex>
-			{guests.map((guest: { email: string; status: string; invitedAt: string }) => (
-				<Flex key={guest.email} borderBottom="1px solid #4B4B4B" py={2}>
-					<Box flex="1">{guest.email}</Box>
-					<Box flex="1">{guest.status}</Box>
-					<Box flex="1">{guest.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "-"}</Box>
-				</Flex>
-			))}
+		<Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3" overflowX="auto">
+			<TableContainer>
+				<Table variant="simple" size="sm">
+					<Thead>
+						<Tr>
+							<Th color="#9C9C9C">Name</Th>
+							<Th color="#9C9C9C">Email</Th>
+							<Th color="#9C9C9C">Status</Th>
+							<Th color="#9C9C9C">Invited At</Th>
+							{eventQuestions.map((q: any) => (
+								<Th key={q.id} color="#F79432">{q.title}{q.isRequired ? ' *' : ''}</Th>
+							))}
+						</Tr>
+					</Thead>
+					<Tbody>
+						{allEmails.map((email: string) => {
+							const guest = guestByEmail[email]
+							const booking = bookingByEmail[email]
+							return (
+								<Tr key={email}>
+									<Td color="white">{booking?.customerName || guest?.name || "—"}</Td>
+									<Td color="white">{email}</Td>
+									<Td color="white">{guest?.status || (booking ? 'Purchased' : '—')}</Td>
+									<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
+									{eventQuestions.map((q: any) => (
+										<Td key={q.id} color="white">{renderAnswer(q.id, booking)}</Td>
+									))}
+								</Tr>
+							)
+						})}
+					</Tbody>
+				</Table>
+			</TableContainer>
 		</Box>
 	)
 }
+
 
 function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: { inviteGuestsModal: boolean; setInviteGuestsModal: (inviteGuestsModal: boolean) => void; event: any }) {
 	const [emails, setEmails] = useState<string[]>([])

@@ -10,6 +10,21 @@ export interface IEventTicket {
 	updatedAt: string
 	createdAt: string
 }
+export interface ICustomQuestion {
+	id: string;
+	title: string;
+	type: 'text' | 'options' | 'social_profile' | 'company' | 'checkbox' | 'terms' | 'mobile' | 'website';
+	isRequired: boolean;
+	responseLength?: 'short' | 'multi-line'; // For text
+	selectionType?: 'single' | 'multiple'; // For options
+	options?: string[]; // For options
+	platform?: string; // For social_profile
+	collectJobTitle?: boolean; // For company
+	termsContentType?: 'text' | 'link'; // For terms
+	termsContent?: string; // For terms
+	collectSignature?: boolean; // For terms
+}
+
 export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
@@ -32,6 +47,7 @@ export interface IEvent extends IBaseModelProps {
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
 	isEnded?: boolean; // UI flag to indicate if event has ended
+	questions?: ICustomQuestion[];
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
 	getBookings(): Promise<IBookings[]>
 	deleteTracker(): Promise<void>
@@ -53,6 +69,11 @@ export enum BookingStatus {
 	FAILED = "failed",
 	REFUNDED = "refunded",
 }
+export interface ICustomAnswer {
+	questionId: string;
+	answer: any; // Can be a string, array of strings, boolean, etc. depending on question type
+}
+
 export interface IBookings extends IBaseModelProps {
 	bookingRef: string
 	eventId: Types.ObjectId
@@ -70,6 +91,7 @@ export interface IBookings extends IBaseModelProps {
 	total: number
 	referralCode?: string
 	discountAmount?: number
+	customAnswers?: ICustomAnswer[];
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }

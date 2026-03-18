@@ -22,6 +22,7 @@ type BodyParams = {
 		phone: string
 	}
 	referralCode?: string
+	customAnswers?: any[]
 }
 
 let stripeInstance: Stripe | null = null
@@ -74,11 +75,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		let tickets: BodyParams["tickets"]
 		let user: BodyParams["user"]
+		let customAnswers: any[] = []
 
 		try {
 			// Handle both stringified and object bodies
 			tickets = typeof req.body.tickets === 'string' ? JSON.parse(req.body.tickets) : req.body.tickets
 			user = typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user
+			if (req.body.customAnswers) {
+				customAnswers = typeof req.body.customAnswers === 'string' ? JSON.parse(req.body.customAnswers) : req.body.customAnswers
+			}
 		} catch (parseError: any) {
 			console.error("[checkout/index] JSON parse error:", parseError.message)
 			return sendResponse(res, null, "Invalid JSON data in request body", false, ResCode.BAD_REQUEST)
@@ -177,6 +182,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
+		// Validate required custom questions
+		if (event.questions && event.questions.length > 0) {
+			const requiredQuestions = event.questions.filter(q => q.isRequired);
+			for (const reqQ of requiredQuestions) {
+				const ans = customAnswers.find(a => a.questionId === reqQ.id);
+				if (!ans || !ans.answer || (Array.isArray(ans.answer) && ans.answer.length === 0)) {
+					return sendResponse(res, null, `Required question "${reqQ.title}" is missing an answer.`, false, ResCode.BAD_REQUEST);
+				}
+			}
+		}
+
 		// Check if event has capacity limit or is closed (capacity = 0)
 		if (event.capacity >= 0) {
 			// Get current booked tickets from event tracker
@@ -251,6 +267,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (referralCodeData) {
 			metadata.referralCode = referralCodeData.code
 			metadata.discountPercentage = referralCodeData.discountPercentage.toString()
+		}
+
+		if (customAnswers && customAnswers.length > 0) {
+			customAnswers.forEach(ans => {
+				const val = typeof ans.answer === 'string' ? ans.answer : JSON.stringify(ans.answer);
+				// Truncate to 500 characters to fit Stripe metadata limits safely
+				metadata[`ans_${ans.questionId}`] = val.slice(0, 500);
+			});
 		}
 
 		// create a checkout session

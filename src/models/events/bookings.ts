@@ -4,6 +4,14 @@ import { dbconn } from "@/configs/database"
 import { EventTracker } from "./event-tracker"
 import { Events } from "."
 
+const customAnswerSchema = new Schema(
+	{
+		questionId: { type: String, required: true },
+		answer: { type: Schema.Types.Mixed, required: true },
+	},
+	{ _id: false }
+)
+
 const bookingSchema = new Schema<IBookings>(
 	{
 		bookingRef: {
@@ -69,6 +77,11 @@ const bookingSchema = new Schema<IBookings>(
 		discountAmount: {
 			type: Number,
 			default: 0,
+		},
+		customAnswers: {
+			type: [customAnswerSchema],
+			required: false,
+			default: [],
 		},
 		isDeleted: {
 			type: Boolean,

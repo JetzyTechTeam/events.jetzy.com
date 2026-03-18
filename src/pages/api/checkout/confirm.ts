@@ -59,6 +59,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// get the tickets from the metadata
 		const tickets = JSON.parse(metadata.tickets) as TicketsProps
 
+		const customAnswers: any[] = [];
+		Object.keys(metadata).forEach(key => {
+			if (key.startsWith('ans_')) {
+				const val = metadata[key as keyof SessionMetadata] as string;
+				try {
+					customAnswers.push({
+						questionId: key.replace('ans_', ''),
+						answer: JSON.parse(val) // parse if it was an array/boolean
+					});
+				} catch (e) {
+					customAnswers.push({
+						questionId: key.replace('ans_', ''),
+						answer: val // fallback to string
+					});
+				}
+			}
+		});
+
 		// Handle referral code tracking
 		let discountAmount = 0
 		if (metadata.referralCode && metadata.discountPercentage) {
@@ -105,6 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				total: session.amount_total ? session.amount_total / 100 : 0,
 				referralCode: metadata.referralCode || undefined,
 				discountAmount: discountAmount,
+				customAnswers: customAnswers,
 			})
 
 			// update the event tracker
