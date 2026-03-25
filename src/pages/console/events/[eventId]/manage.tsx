@@ -633,7 +633,7 @@ function CustomQuestionsManager({ event }: { event: any }) {
 			</Flex>
 
 			{questions.length === 0 && (
-				<Text color="#9C9C9C" textAlign="center" py={8}>No custom questions yet. Click "Add Question" to create one.</Text>
+				<Text color="#9C9C9C" textAlign="center" py={8}>No custom questions yet. Click &quot;Add Question&quot; to create one.</Text>
 			)}
 
 			{questions.map((q: any, idx: number) => (
