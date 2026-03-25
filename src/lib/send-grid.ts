@@ -905,7 +905,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     if (String(event._id) === "69c3f18800c9a06c6042f78b") {
       const EVENT_NAME = "Founder/Investor Happy Hour";
       const VENUE = "Nightingale, 37 Carmine St, New York, NY 10014.";
-      const GOOGLE_MAPS_LINK = "https://share.google/32wgvOaUuAlcTEy5P";
+      const GOOGLE_MAPS_LINK = "https://maps.app.goo.gl/yShTrAwBCDjJVUvP7";
       const TIME = "6:00 PM to 8:00 PM";
       const NOTE = "The ticket covers entry only, with food and drinks available for purchase at the bar.";
       const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
