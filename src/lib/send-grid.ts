@@ -652,7 +652,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
-        subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
+      subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
@@ -731,7 +731,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
-        subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
+      subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
@@ -812,7 +812,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
-        subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
+      subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
@@ -893,7 +893,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
         from: process.env.SENDGRID_EMAIL_SENDER as string,
-        subject: `Jetzy [Booking Confirmation] ${EVENT_NAME}`,
+      subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
@@ -901,11 +901,92 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       return { success: true, message: "Email sent successfully" }
     }
 
+    // Hardcoded check for Founder/Investor Happy Hour
+    if (String(event._id) === "69c3f18800c9a06c6042f78b") {
+      const EVENT_NAME = "Founder/Investor Happy Hour";
+      const VENUE = "Nightingale, 37 Carmine St, New York, NY 10014.";
+      const GOOGLE_MAPS_LINK = "https://share.google/32wgvOaUuAlcTEy5P";
+      const TIME = "6:00 PM to 8:00 PM";
+      const NOTE = "The ticket covers entry only, with food and drinks available for purchase at the bar.";
+      const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
+      const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">Booking Confirmation: ${EVENT_NAME}</h1>
+          
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">Event Information</h2>
+            <p><strong>Event:</strong> ${EVENT_NAME}</p>
+            <p><strong>Time:</strong> ${TIME}</p>
+            <p><strong>Venue:</strong> ${VENUE}</p>
+            <p><a href="${GOOGLE_MAPS_LINK}" style="color: #F79432; text-decoration: none; font-weight: bold;">📍 View on Google Maps</a></p>
+          </div>
+
+          <div style="background-color: #FFF5EB; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #F79432;">
+            <p style="color: #1C1E21; margin: 0; font-weight: bold;">
+              ${NOTE}
+            </p>
+          </div>
+
+          <div style="margin: 20px 0;">
+            <h3 style="color: #333; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">Ticket Details</h3>
+            <p><strong>Order Number:</strong> ${orderNumber}</p>
+            <p><strong>Name:</strong> ${firstName} ${lastName}</p>
+             ${tickets
+          .map(
+            (ticket) => `
+              <div style="background-color: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                <h3 style="color: #333; margin: 0 0 10px 0; font-size: 18px;">${ticket.name}</h3>
+                <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
+                <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
+                <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
+              </div>
+            `,
+          )
+          .join("")}
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
+            <div style="display: inline-block; vertical-align: middle;">
+              <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+              </a>
+              <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+              </a>
+            </div>
+          </div>
+
+          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
+            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+              Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+            </p>
+            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
+              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+            </p>
+          </div>
+        </div>
+      `;
+
+      await sgMail.send({
+        to: [email, "tech@jetzyapp.com"],
+        from: process.env.SENDGRID_EMAIL_SENDER as string,
+        subject: `Booking Confirmation: ${EVENT_NAME}`,
+        html: wrapHtml(html),
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
+      })
+      console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Founder/Investor Happy Hour)`)
+      return { success: true, message: "Email sent successfully" }
+    }
+
 
     const emailPayload = {
       to: [email, "tech@jetzyapp.com"],
       from: process.env.SENDGRID_EMAIL_SENDER as string,
-      subject: `Jetzy [Booking Confirmation] ${decodeHTMLEntities(event.name)}`,
+      subject: `Booking Confirmation: ${decodeHTMLEntities(event.name)}`,
       ...(attachments.length > 0 ? { attachments } : {}),
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
