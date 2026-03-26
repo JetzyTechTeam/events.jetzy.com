@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
+import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
+import { ROUTES } from "@/configs/routes"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -10,7 +12,7 @@ import "slick-carousel/slick/slick-theme.css"
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { IEvent } from "@/models/events/types"
-import { Button, Image } from "@chakra-ui/react"
+import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text } from "@chakra-ui/react"
 import { ShareIcon } from "@heroicons/react/24/outline"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
@@ -255,7 +257,64 @@ export default function HostedEvents({ event }: Props) {
 
 					{clonedEvent?._id && (
 						<div id="discussion-section" className="max-w-4xl mx-auto mt-8">
-							<DiscussionBoard eventId={clonedEvent._id.toString()} />
+							<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden mt-8">
+								<Tabs colorScheme="orange">
+									<TabList borderBottom="1px" borderColor="#434343" px={4} pt={4}>
+										<Tab 
+											_selected={{ color: "#F79432", borderBottomColor: "#F79432" }}
+											fontWeight="medium"
+											px={6}
+											py={3}
+											color="white"
+										>
+											Chat
+										</Tab>
+										<Tab 
+											_selected={{ color: "#F79432", borderBottomColor: "#F79432" }}
+											fontWeight="medium"
+											px={6}
+											py={3}
+											color="white"
+										>
+											Discussion
+										</Tab>
+									</TabList>
+
+									<TabPanels>
+										<TabPanel px={0} py={0}>
+											{session ? (
+												<JetzyChatIntegration 
+													eventId={clonedEvent._id.toString()} 
+													eventName={stripHtml(clonedEvent.name)}
+												/>
+											) : (
+												<Box p={8} textAlign="center">
+													<Text fontSize="lg" fontWeight="bold" color="white" mb={2}>
+														Login Required
+													</Text>
+													<Text color="#bbbbbb" mb={4}>
+														Please login to access the chat.
+													</Text>
+													<Button
+														onClick={() => {
+															const currentUrl = router.asPath
+															router.push(`${ROUTES?.login || '/login'}?_cb=${encodeURIComponent(currentUrl)}`)
+														}}
+														bg="#F79432"
+														color="black"
+														_hover={{ bg: "#e58220" }}
+													>
+														Login
+													</Button>
+												</Box>
+											)}
+										</TabPanel>
+										<TabPanel px={0} py={0}>
+											<DiscussionBoard eventId={clonedEvent._id.toString()} />
+										</TabPanel>
+									</TabPanels>
+								</Tabs>
+							</div>
 						</div>
 					)}
 				</div>
