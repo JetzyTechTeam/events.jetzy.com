@@ -43,7 +43,6 @@
     "moment-timezone": "^0.5.48",
     "mongodb": "^6.13.0",
     "mongoose": "^8.10.0",
-    "next": "^16.0.10",
     "next-auth": "^4.24.7",
     "next-redux-wrapper": "^8.1.0",
     "next-themes": "^0.4.4",

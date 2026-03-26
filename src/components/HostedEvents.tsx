@@ -631,7 +631,6 @@ export default function HostedEvents({ event }: Props) {
 						<Tabs 
 							index={activeTabIndex} 
 							onChange={(index) => {
-								// Chat tab is hidden, so only Discussion tab (index 0) is available
 								setActiveTabIndex(index)
 							}}
 							colorScheme="blue"
@@ -645,23 +644,21 @@ export default function HostedEvents({ event }: Props) {
 								>
 									Discussion
 								</Tab>
-								{/* Chat tab hidden temporarily */}
-								{/* <Tab 
+								<Tab 
 									_selected={{ color: "#1877F2", borderBottomColor: "#1877F2" }}
 									fontWeight="medium"
 									px={6}
 									py={3}
 								>
 									Chat
-								</Tab> */}
+								</Tab>
 							</TabList>
 
 							<TabPanels>
 								<TabPanel px={0} py={0}>
 									<DiscussionBoard eventId={clonedEvent._id.toString()} />
 								</TabPanel>
-								{/* Chat tab panel hidden temporarily */}
-								{/* <TabPanel px={0} py={0}>
+								<TabPanel px={0} py={0}>
 									{session ? (
 										<JetzyChatIntegration 
 											eventId={clonedEvent._id.toString()} 
@@ -688,7 +685,7 @@ export default function HostedEvents({ event }: Props) {
 											</Button>
 										</Box>
 									)}
-								</TabPanel> */}
+								</TabPanel>
 							</TabPanels>
 						</Tabs>
 					</div>
