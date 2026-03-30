@@ -111,6 +111,7 @@ export default function UpdateEventPage({ event }: Props) {
 		description: "",
 		price: 0,
 	});
+	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = React.useState(false);
 
 	// --- Initialize images and tickets on mount ---
 	React.useEffect(() => {
@@ -247,35 +248,70 @@ export default function UpdateEventPage({ event }: Props) {
 				return [];
 			});
 
-		// if (events.length > 0 && (nameChanged || locationChanged || dateTimeChanged)) {
-		// 	const updatePromises = events.map((event: any) =>
-		// 		sendEventUpdate({
-		// 			eventName: values.name,
-		// 			oldEventName: eventDetails.name,
-		// 			location: values.location,
-		// 			oldLocation: eventDetails.location,
-		// 			startDate: values.startDate,
-		// 			oldStartDate: new Date(eventDetails.startsOn).toISOString().slice(0, 10),
-		// 			endDate: values.endDate,
-		// 			oldEndDate: new Date(eventDetails.endsOn).toISOString().slice(0, 10),
-		// 			endTime: values.endTime,
-		// 			oldEndTime: new Date(eventDetails.endsOn).toTimeString().slice(0, 5),
-		// 			startTime: values.startTime,
-		// 			oldStartTime: new Date(eventDetails.startsOn).toTimeString().slice(0, 5),
-		// 			userEmail: event.customerEmail,
-		// 		}))
-		// 	Promise.all(updatePromises)
-		// 		.then((results) => {
-		// 			console.log('All event updates sent successfully:', results);
-		// 		})
-		// 		.catch((error) => {
-		// 			console.error('One or more event updates failed:', error);
-		// 		});
-		// }
-
-
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: eventDetails._id.toString() })).then((res: any) => {
 			if (res?.payload?.status) {
+				if (sendUpdateEmailCheck && events.length > 0) {
+					const changes: string[] = [];
+					
+					const tzString = eventDetails?.timezone || '';
+					const parts = tzString.split(') ');
+					const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess();
+					const oldStart = dayjs(eventDetails.startsOn).tz(extractedTimeZone);
+					const oldEnd = dayjs(eventDetails.endsOn).tz(extractedTimeZone);
+
+					if (values.name !== eventDetails.name) changes.push(`Event Name: ${eventDetails.name} -> ${values.name}`);
+					if (values.location !== eventDetails.location) changes.push(`Location: ${eventDetails.location} -> ${values.location}`);
+					
+					if (values.startDate !== oldStart.format('YYYY-MM-DD') || values.startTime !== oldStart.format('HH:mm')) {
+						changes.push(`Start time was updated to ${values.startDate} ${values.startTime}`);
+					}
+					if (values.endDate !== oldEnd.format('YYYY-MM-DD') || values.endTime !== oldEnd.format('HH:mm')) {
+						changes.push(`End time was updated to ${values.endDate} ${values.endTime}`);
+					}
+					
+					if (values.desc !== stripHtml(eventDetails.desc)) changes.push("Event description was updated");
+					if (values.capacity !== eventDetails.capacity) changes.push(`Event capacity was changed to ${values.capacity}`);
+					
+					// Simple tickets change detection
+					const currentTickets = JSON.stringify(values.tickets.map(t => ({ title: t.title, price: t.price })));
+					const oldTickets = JSON.stringify(eventDetails.tickets.map((t: any) => ({ title: stripHtml(t.name), price: Number(t.price) })));
+					if (currentTickets !== oldTickets) {
+						changes.push("Ticketing options have been revised");
+					}
+
+					if (changes.length > 0) {
+						// Get unique users to prevent multiple emails per user
+						const uniqueUsers = Array.from(new Map(events.map((e: any) => [e.customerEmail, e])).values()) as any[];
+						const origin = typeof window !== 'undefined' ? window.location.origin : '';
+						const eventLink = `${origin}/${eventDetails.slug}`;
+
+						const updatePromises = uniqueUsers.map((event: any) =>
+							sendEventUpdate({
+								eventName: values.name,
+								oldEventName: eventDetails.name,
+								location: values.location,
+								oldLocation: eventDetails.location,
+								startDate: values.startDate,
+								oldStartDate: oldStart.format('YYYY-MM-DD'),
+								endDate: values.endDate,
+								oldEndDate: oldEnd.format('YYYY-MM-DD'),
+								endTime: values.endTime,
+								oldEndTime: oldEnd.format('HH:mm'),
+								startTime: values.startTime,
+								oldStartTime: oldStart.format('HH:mm'),
+								userEmail: event.customerEmail,
+								changes,
+								eventLink
+							}))
+						Promise.all(updatePromises)
+							.then((results) => {
+								console.log('All event updates sent successfully:', results);
+							})
+							.catch((error) => {
+								console.error('One or more event updates failed:', error);
+							});
+					}
+				}
 				navigation.push(ROUTES.dashboard.events.index)
 			}
 		}).finally(() => {
@@ -583,6 +619,19 @@ export default function UpdateEventPage({ event }: Props) {
 											border="none"
 											w="80px"
 											h="30px"
+										/>
+									</Flex>
+									<Flex align="center" justifyContent="space-between" mb="4">
+										<Flex gap="3" alignItems="center">
+											<UserTickSVG />
+											<Text color="gray.400" mr={2}>
+												Send Update Email to Attendees
+											</Text>
+										</Flex>
+										<Switch
+											isChecked={sendUpdateEmailCheck}
+											colorScheme="orange"
+											onChange={(e) => setSendUpdateEmailCheck(e.target.checked)}
 										/>
 									</Flex>
 									<Flex align="center" justifyContent="space-between">

@@ -21,6 +21,8 @@ export interface EmailProps {
   endTime: string
   oldEndTime: string
   userEmail?: string
+  changes?: string[]
+  eventLink?: string
 }
 
 export function eventUpdateEmailTemplate({
@@ -36,35 +38,53 @@ export function eventUpdateEmailTemplate({
   oldEndDate,
   endTime,
   oldEndTime,
+  changes,
+  eventLink,
 }: EmailProps) {
+  const changesHtml = changes && changes.length > 0 
+    ? `<h3>Changes made:</h3><ul>${changes.map(c => `<li>${c}</li>`).join('')}</ul>`
+    : '';
+
+  const linkHtml = eventLink 
+    ? `<p style="margin-top: 20px;"><strong><a href="${eventLink}" style="color: #F79432;">Click here to view the updated event page</a></strong></p>`
+    : '';
+
   const htmlBody = `
       <div style="font-family: Arial, sans-serif; color: #222;">
         <h2>Event Update Notification</h2>
         <p>The event you registered for has been updated. Please review the new details below:</p>
-        <table style="border-collapse: collapse;">
+        
+        ${changesHtml}
+
+        <table style="border-collapse: collapse; margin-top: 15px;">
           <tr>
             <td style="padding: 4px 8px;"><strong>Event Name:</strong></td>
-            <td style="padding: 4px 8px;">${oldEventName} &rarr; <b>${eventName}</b></td>
+            <td style="padding: 4px 8px;"><b>${eventName}</b></td>
           </tr>
           <tr>
             <td style="padding: 4px 8px;"><strong>Location:</strong></td>
-            <td style="padding: 4px 8px;">${oldLocation} &rarr; <b>${location}</b></td>
+            <td style="padding: 4px 8px;"><b>${location}</b></td>
           </tr>
           <tr>
             <td style="padding: 4px 8px;"><strong>Start:</strong></td>
-            <td style="padding: 4px 8px;">${oldStartDate} ${oldStartTime} &rarr; <b>${startDate} ${startTime}</b></td>
+            <td style="padding: 4px 8px;"><b>${startDate} ${startTime}</b></td>
           </tr>
           <tr>
             <td style="padding: 4px 8px;"><strong>End:</strong></td>
-            <td style="padding: 4px 8px;">${oldEndDate} ${oldEndTime} &rarr; <b>${endDate} ${endTime}</b></td>
+            <td style="padding: 4px 8px;"><b>${endDate} ${endTime}</b></td>
           </tr>
         </table>
+        
+        ${linkHtml}
         <p>If you have any questions, please contact us.</p>
         <p>Thank you,<br/>The Jetzy Team</p>
       </div>
     `;
 
-  const textBody = `Event Update: "${oldEventName}" has been updated.\n\nNew Details:\nEvent Name: ${eventName}\nLocation: ${location}\nStart: ${startDate} ${startTime}\nEnd: ${endDate} ${endTime}\n\nThank you,\nThe Jetzy Team`;
+  const changesText = changes && changes.length > 0 ? `\nChanges made:\n- ${changes.join('\n- ')}\n` : '';
+  const linkText = eventLink ? `\nView Event: ${eventLink}\n` : '';
+
+  const textBody = `Event Update: "${oldEventName}" has been updated.\n${changesText}\nNew Details:\nEvent Name: ${eventName}\nLocation: ${location}\nStart: ${startDate} ${startTime}\nEnd: ${endDate} ${endTime}\n${linkText}\nThank you,\nThe Jetzy Team`;
 
   return {
     subject: `Event Update: "${oldEventName}" has changed`,

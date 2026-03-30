@@ -20,7 +20,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       oldEndTime,
       startTime,
       oldStartTime,
-      userEmail
+      userEmail,
+      changes,
+      eventLink
     } = req.body
 
     if (
@@ -44,7 +46,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       oldEndTime,
       startTime,
       oldStartTime,
-      userEmail
+      userEmail,
+      changes,
+      eventLink
     }
 
     await sendUpdateEventEmail(data)
