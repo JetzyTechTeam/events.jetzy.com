@@ -22,11 +22,11 @@ export default function TermsPage() {
 
 				<div className="prose prose-invert max-w-none space-y-6 text-gray-300 text-sm leading-relaxed">
 					<p>
-						The website located at jetzyapp.com, and the mobile application called, "Jetzy" (the "App" and, together with the website, the "Site") and the services offered through the Site (the "Services") are copyrighted works belonging to SZ Global, Inc. ("Company", "us", "our", and "we"). Certain features of the Site or Services may be subject to additional guidelines, terms, or rules, which will be posted on the Site or Services in connection with such features. All such additional terms, guidelines, and rules are incorporated by reference into these Terms. In the event of a conflict between the additional terms and any provision in these Terms, the additional terms will prevail, but only with respect to the Service to which the additional terms apply.
+						The website located at jetzyapp.com, and the mobile application called, &quot;Jetzy&quot; (the &quot;App&quot; and, together with the website, the &quot;Site&quot;) and the services offered through the Site (the &quot;Services&quot;) are copyrighted works belonging to SZ Global, Inc. (&quot;Company&quot;, &quot;us&quot;, &quot;our&quot;, and &quot;we&quot;). Certain features of the Site or Services may be subject to additional guidelines, terms, or rules, which will be posted on the Site or Services in connection with such features. All such additional terms, guidelines, and rules are incorporated by reference into these Terms. In the event of a conflict between the additional terms and any provision in these Terms, the additional terms will prevail, but only with respect to the Service to which the additional terms apply.
 					</p>
 
 					<p className="font-bold text-white uppercase italic">
-						THESE TERMS OF USE ("TERMS") SET FORTH THE LEGALLY BINDING TERMS AND CONDITIONS THAT GOVERN YOUR USE OF THE SITE AND SERVICES. BY ACCESSING OR USING THE SITE OR SERVICES OR DOWNLOADING THE APP, YOU ARE ACCEPTING THESE TERMS (ON BEHALF OF YOURSELF OR THE ENTITY THAT YOU REPRESENT), AND YOU REPRESENT AND WARRANT THAT (1) YOU HAVE READ, UNDERSTAND, AND AGREE TO BE BOUND BY THESE TERMS, (2) YOU ARE OF LEGAL AGE TO FORM A BINDING CONTRACT WITH COMPANY, AND (3) YOU HAVE THE AUTHORITY TO ENTER INTO THE TERMS (ON BEHALF OF YOURSELF OR THE ENTITY THAT YOU REPRESENT). IF YOU DO NOT AGREE WITH ALL OF THE PROVISIONS OF THESE TERMS, DO NOT ACCESS AND/OR USE THE SITE OR SERVICES.
+						THESE TERMS OF USE (&quot;TERMS&quot;) SET FORTH THE LEGALLY BINDING TERMS AND CONDITIONS THAT GOVERN YOUR USE OF THE SITE AND SERVICES. BY ACCESSING OR USING THE SITE OR SERVICES OR DOWNLOADING THE APP, YOU ARE ACCEPTING THESE TERMS (ON BEHALF OF YOURSELF OR THE ENTITY THAT YOU REPRESENT), AND YOU REPRESENT AND WARRANT THAT (1) YOU HAVE READ, UNDERSTAND, AND AGREE TO BE BOUND BY THESE TERMS, (2) YOU ARE OF LEGAL AGE TO FORM A BINDING CONTRACT WITH COMPANY, AND (3) YOU HAVE THE AUTHORITY TO ENTER INTO THE TERMS (ON BEHALF OF YOURSELF OR THE ENTITY THAT YOU REPRESENT). IF YOU DO NOT AGREE WITH ALL OF THE PROVISIONS OF THESE TERMS, DO NOT ACCESS AND/OR USE THE SITE OR SERVICES.
 					</p>
 
 					<p className="font-bold text-white uppercase italic">
@@ -36,7 +36,7 @@ export default function TermsPage() {
 					<h2 className="text-xl font-semibold text-white mt-8 border-b border-gray-800 pb-2">1. Accounts</h2>
 					<p>
 						<span className="font-semibold text-white block mb-1">1.1 Account Creation.</span>
-						In order to use certain features of the Site or Services, you must register for an account ("Account") and provide certain information about yourself as prompted by the account registration form. You represent and warrant that: (a) all required registration information you submit is truthful and accurate; (b) you will maintain the accuracy of such information. You may delete your Account at any time, for any reason, by following the instructions on the Site or Services or uninstalling the App. You may not have more than one Account. You agree not to create an Account or use the Site or Services if you have been previously removed by us or banned from any of the Services. Company reserves the right in its sole discretion to suspend or terminate your Account and refuse any and all current or future use of the Site or Services (or any portion thereof) at any time for any reason.
+						In order to use certain features of the Site or Services, you must register for an account (&quot;Account&quot;) and provide certain information about yourself as prompted by the account registration form. You represent and warrant that: (a) all required registration information you submit is truthful and accurate; (b) you will maintain the accuracy of such information. You may delete your Account at any time, for any reason, by following the instructions on the Site or Services or uninstalling the App. You may not have more than one Account. You agree not to create an Account or use the Site or Services if you have been previously removed by us or banned from any of the Services. Company reserves the right in its sole discretion to suspend or terminate your Account and refuse any and all current or future use of the Site or Services (or any portion thereof) at any time for any reason.
 					</p>
 					<p>
 						<span className="font-semibold text-white block mb-1">1.2 Account Responsibilities.</span>
@@ -60,7 +60,7 @@ export default function TermsPage() {
 					<h2 className="text-xl font-semibold text-white mt-8 border-b border-gray-800 pb-2">3. User Content</h2>
 					<p>
 						<span className="font-semibold text-white block mb-1">3.1 User Content.</span>
-						"User Content" means any and all information and content that a user submits to, or uses with, the Site or Services (e.g., content in the user's profile or postings). You are solely responsible for your User Content. You assume all risks associated with use of your User Content, including any reliance on its accuracy, completeness or usefulness by others.
+						&quot;User Content&quot; means any and all information and content that a user submits to, or uses with, the Site or Services (e.g., content in the user&apos;s profile or postings). You are solely responsible for your User Content. You assume all risks associated with use of your User Content, including any reliance on its accuracy, completeness or usefulness by others.
 					</p>
 
 					<div className="bg-white/5 p-6 rounded-lg border border-app/30 my-8">
@@ -84,12 +84,12 @@ export default function TermsPage() {
 
 					<h2 className="text-xl font-semibold text-white mt-8 border-b border-gray-800 pb-2">5. Rewards</h2>
 					<p>
-						When you interact with the Site and Services while logged into your Account, such as by starting or responding to a chat, posting content or sharing content via an SNS, you will earn points ("Points"). You can use your Points to redeem rewards. Points have no cash value.
+						When you interact with the Site and Services while logged into your Account, such as by starting or responding to a chat, posting content or sharing content via an SNS, you will earn points (&quot;Points&quot;). You can use your Points to redeem rewards. Points have no cash value.
 					</p>
 
 					<h2 className="text-xl font-semibold text-white mt-8 border-b border-gray-800 pb-2">6. Indemnification</h2>
 					<p>
-						You agree to indemnify and hold Company (and its officers, employees, and agents) harmless, including costs and attorneys' fees, from any claim or demand made by any third party due to or arising out of (a) your use of, or inability to use, the Site or Services; (b) your violation of these Terms; (c) your User Content.
+						You agree to indemnify and hold Company (and its officers, employees, and agents) harmless, including costs and attorneys&apos; fees, from any claim or demand made by any third party due to or arising out of (a) your use of, or inability to use, the Site or Services; (b) your violation of these Terms; (c) your User Content.
 					</p>
 
 					<h2 className="text-xl font-semibold text-white mt-8 border-b border-gray-800 pb-2">9. Limitation on Liability</h2>
