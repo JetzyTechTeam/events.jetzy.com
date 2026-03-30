@@ -65,7 +65,7 @@ export default function TermsPage() {
 
 					<div className="bg-white/5 p-6 rounded-lg border border-app/30 my-8">
 						<h3 className="text-lg font-bold text-app mb-4 flex items-center">
-							<span className="mr-2">🚀</span> 3.7 Discussion and Chat Guidelines
+							3.7 Discussion and Chat Guidelines
 						</h3>
 						<p className="mb-4">
 							The Site or Services may include discussion forums, message boards, and/or real-time chat features (including embedded chat) that allow users to communicate with each other. By using these features, you agree to:
