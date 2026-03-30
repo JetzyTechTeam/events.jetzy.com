@@ -56,6 +56,7 @@ import {
 	FiImage,
 	FiX,
 	FiSmile,
+	FiFlag,
 } from "react-icons/fi"
 
 // Dynamic import for EmojiPicker to avoid SSR issues
@@ -80,6 +81,8 @@ import {
 	GetPostReactionsApi,
 	GetCommentReactionsApi,
 	GetPostViewersApi,
+	ReportDiscussionPostApi,
+	ReportDiscussionCommentApi,
 } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor, DiscussionCommentWithAuthor } from "@/types/discussion"
 import { useRouter } from "next/router"
@@ -171,11 +174,12 @@ interface CommentItemProps {
 	onDelete: (commentId: string) => void
 	onReact: (commentId: string) => void
 	onShowCommentLikes: (commentId: string) => void
+	onReport: (commentId: string) => void
 	isLocked: boolean
 	onLoginRequired?: () => void
 }
 
-const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, onShowCommentLikes, isLocked, onLoginRequired }) => {
+const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, currentUserId, onReply, onEdit, onDelete, onReact, onShowCommentLikes, onReport, isLocked, onLoginRequired }) => {
 	const [replyText, setReplyText] = useState("")
 	const [editText, setEditText] = useState(comment.comment)
 	const [showReply, setShowReply] = useState(false)
@@ -724,7 +728,6 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 						)}
 					</Box>
 
-					{/* Interaction Actions */}
 					<Flex gap={3} fontSize="xs" color="#bbbbbb" fontWeight="600" px={2} mb={2} align="center">
 						<Text
 							cursor="pointer"
@@ -741,6 +744,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 						)}
 						<Text fontWeight="normal" color="#bbbbbb">
 							{new Date(comment.createdAt).toLocaleDateString(undefined, { hour: '2-digit', minute: '2-digit' })}
+						</Text>
+						<Text
+							cursor="pointer"
+							_hover={{ textDecoration: "underline" }}
+							color="red.400"
+							onClick={() => window.confirm("Report this comment? It will be hidden for everyone.") && onReport(comment._id)}
+						>
+							Report
 						</Text>
 						{(comment.reactions?.like?.length || (comment.reactions as any)?.likes?.length || 0) > 0 && (
 							<Flex
@@ -1123,30 +1134,48 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 					)}
 				</Box>
 
-				{(isAuthor || isAdmin) && (
-					<Menu>
-						<MenuButton as={IconButton} icon={<FiMoreHorizontal />} size="xs" variant="ghost" borderRadius="full" />
-						<MenuList>
-							{isAuthor && (
-								<MenuItem
-									icon={<FiEdit />}
-									onClick={() => {
-										setEditText(comment.comment)
-										setEditImages(comment.images || [])
-										setEditFeeling("")
-										setEditActivity("")
-										setIsEditing(true)
-									}}
-								>
-									Edit
-								</MenuItem>
-							)}
-							{(isAuthor || isAdmin) && (
-								<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => onDelete(comment._id)}>Delete</MenuItem>
-							)}
-						</MenuList>
-					</Menu>
-				)}
+				<Menu>
+					<MenuButton as={IconButton} icon={<FiMoreHorizontal />} size="xs" variant="ghost" borderRadius="full" color="white" aria-label="More options" />
+					<MenuList bg="#1E1E1E" border="1px solid" borderColor="#434343">
+						{isAuthor && (
+							<MenuItem
+								bg="#1E1E1E"
+								color="white"
+								_hover={{ bg: "#2b2b2b" }}
+								icon={<FiEdit />}
+								onClick={() => {
+									setEditText(comment.comment)
+									setEditImages(comment.images || [])
+									setEditFeeling("")
+									setEditActivity("")
+									setIsEditing(true)
+								}}
+							>
+								Edit
+							</MenuItem>
+						)}
+						{(isAuthor || isAdmin) && (
+							<MenuItem
+								bg="#1E1E1E"
+								color="red.500"
+								_hover={{ bg: "#2b2b2b" }}
+								icon={<FiTrash2 />}
+								onClick={() => onDelete(comment._id)}
+							>
+								Delete
+							</MenuItem>
+						)}
+						<MenuItem
+							bg="#1E1E1E"
+							color="white"
+							_hover={{ bg: "#2b2b2b" }}
+							icon={<FiFlag />}
+							onClick={() => window.confirm("Report this comment? It will be hidden for everyone.") && onReport(comment._id)}
+						>
+							Report
+						</MenuItem>
+					</MenuList>
+				</Menu>
 			</Flex>
 
 			{/* Nested Replies */}
@@ -1164,6 +1193,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 								onDelete={onDelete}
 								onReact={onReact}
 								onShowCommentLikes={onShowCommentLikes}
+								onReport={onReport}
 								isLocked={isLocked}
 							/>
 						))}
@@ -1326,6 +1356,27 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			} else if (!isModalView) {
 				router.push(`/console/events/${eventId}/manage`)
 			}
+		},
+	})
+
+	const reportPostMutation = useMutation({
+		mutationFn: () => ReportDiscussionPostApi({ data: { postId } }),
+		onSuccess: () => {
+			toast({ title: "Post reported and hidden", status: "success", duration: 2000 })
+			if (isModalView && onClose) {
+				onClose()
+			} else if (!isModalView) {
+				router.push(`/console/events/${eventId}/manage`)
+			}
+		},
+	})
+
+	const reportCommentMutation = useMutation({
+		mutationFn: (commentId: string) => ReportDiscussionCommentApi({ data: { commentId } }),
+		onSuccess: () => {
+			refetchComments()
+			refetchPost()
+			toast({ title: "Comment reported and hidden", status: "success", duration: 2000 })
 		},
 	})
 
@@ -1613,43 +1664,71 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 						</Box>
 					</Flex>
 
-					{(isAuthor || isAdmin) && (
-						<Menu>
-							<MenuButton as={IconButton} icon={<FiMoreHorizontal />} variant="ghost" />
-							<MenuList>
-								{isAuthor && (
+					<Menu>
+						<MenuButton as={IconButton} icon={<FiMoreHorizontal />} variant="ghost" color="white" aria-label="More options" />
+						<MenuList bg="#1E1E1E" border="1px solid" borderColor="#434343">
+							{isAuthor && (
+								<MenuItem
+									bg="#1E1E1E"
+									color="white"
+									_hover={{ bg: "#2b2b2b" }}
+									icon={<FiEdit />}
+									onClick={() => {
+										setEditPostContent(post.content)
+										setEditPostImages(post.images || [])
+										// Extract feeling/activity from content if exists
+										setEditPostFeeling("")
+										setEditPostActivity("")
+										setIsEditingPost(true)
+									}}
+								>
+									Edit Post
+								</MenuItem>
+							)}
+							{(isAuthor || isAdmin) && (
+								<MenuItem
+									bg="#1E1E1E"
+									color="red.500"
+									_hover={{ bg: "#2b2b2b" }}
+									icon={<FiTrash2 />}
+									onClick={() => window.confirm("Delete this post?") && deletePostMutation.mutate()}
+								>
+									Delete Post
+								</MenuItem>
+							)}
+							{isAdmin && (
+								<>
 									<MenuItem
-										icon={<FiEdit />}
-										onClick={() => {
-											setEditPostContent(post.content)
-											setEditPostImages(post.images || [])
-											// Extract feeling/activity from content if exists
-											setEditPostFeeling("")
-											setEditPostActivity("")
-											setIsEditingPost(true)
-										}}
+										bg="#1E1E1E"
+										color="white"
+										_hover={{ bg: "#2b2b2b" }}
+										icon={post.isPinned ? <BsPinAngle /> : <BsPinAngleFill />}
+										onClick={() => pinPostMutation.mutate(!post.isPinned)}
 									>
-										Edit Post
+										{post.isPinned ? "Unpin" : "Pin"} Post
 									</MenuItem>
-								)}
-								{(isAuthor || isAdmin) && (
-									<MenuItem icon={<FiTrash2 />} color="red.500" onClick={() => window.confirm("Delete this post?") && deletePostMutation.mutate()}>
-										Delete Post
+									<MenuItem
+										bg="#1E1E1E"
+										color="white"
+										_hover={{ bg: "#2b2b2b" }}
+										icon={post.isLocked ? <FiUnlock /> : <FiLock />}
+										onClick={() => lockPostMutation.mutate(!post.isLocked)}
+									>
+										{post.isLocked ? "Unlock" : "Lock"} Discussion
 									</MenuItem>
-								)}
-								{isAdmin && (
-									<>
-										<MenuItem icon={post.isPinned ? <BsPinAngle /> : <BsPinAngleFill />} onClick={() => pinPostMutation.mutate(!post.isPinned)}>
-											{post.isPinned ? "Unpin" : "Pin"} Post
-										</MenuItem>
-										<MenuItem icon={post.isLocked ? <FiUnlock /> : <FiLock />} onClick={() => lockPostMutation.mutate(!post.isLocked)}>
-											{post.isLocked ? "Unlock" : "Lock"} Discussion
-										</MenuItem>
-									</>
-								)}
-							</MenuList>
-						</Menu>
-					)}
+								</>
+							)}
+							<MenuItem
+								bg="#1E1E1E"
+								color="white"
+								_hover={{ bg: "#2b2b2b" }}
+								icon={<FiFlag />}
+								onClick={() => window.confirm("Report this post? It will be hidden for everyone.") && reportPostMutation.mutate()}
+							>
+								Report Post
+							</MenuItem>
+						</MenuList>
+					</Menu>
 				</Flex>
 
 				{/* Post Content */}
@@ -2030,6 +2109,20 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 					>
 						Share
 					</Button>
+					<Button
+						flex="1"
+						variant="ghost"
+						leftIcon={<FiFlag />}
+						color="red.400"
+						fontWeight="600"
+						_hover={{ bg: "whiteAlpha.100", color: "red.300" }}
+						onClick={() => window.confirm("Report this post? It will be hidden for everyone.") && reportPostMutation.mutate()}
+						height="36px"
+						fontSize="md"
+						borderRadius="md"
+					>
+						Report
+					</Button>
 				</Flex>
 
 				{/* Comments Section */}
@@ -2326,6 +2419,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 									onDelete={(commentId) => window.confirm("Delete this comment?") && deleteCommentMutation.mutate(commentId)}
 									onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
 									onShowCommentLikes={handleShowCommentLikes}
+									onReport={(commentId) => reportCommentMutation.mutate(commentId)}
 									isLocked={post.isLocked}
 									onLoginRequired={() => setIsLoginModalOpen(true)}
 								/>

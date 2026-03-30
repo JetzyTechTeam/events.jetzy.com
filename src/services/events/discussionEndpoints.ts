@@ -11,6 +11,7 @@ export const discussionEndpoints = {
 		react: "public:/events/discussions/react",
 		whoReacted: "public:/events/discussions/who-reacted",
 		whoViewed: "public:/events/discussions/who-viewed",
+		report: "public:/events/discussions/report",
 	},
 	// Discussion Comments
 	comments: {
@@ -21,5 +22,6 @@ export const discussionEndpoints = {
 		delete: "public:/events/discussions/comments/delete",
 		react: "public:/events/discussions/comments/react",
 		whoReacted: "public:/events/discussions/comments/who-reacted",
+		report: "public:/events/discussions/comments/report",
 	},
 }

@@ -14,7 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, null, "Post ID is required.", false, ResCode.BAD_REQUEST)
         }
 
-        const comments = await DiscussionComments.find({ discussionPostId: postId, isDeleted: false })
+        const comments = await DiscussionComments.find({ discussionPostId: postId, isDeleted: false, isReported: { $ne: true } })
             .sort({ createdAt: 1 }) // Chronological order
             .populate("userId", "firstName lastName image email")
             .lean()

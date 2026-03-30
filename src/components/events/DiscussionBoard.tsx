@@ -31,10 +31,10 @@ import {
 	MenuItem,
 	IconButton,
 } from "@chakra-ui/react"
-import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2, FiMoreHorizontal, FiEdit, FiTrash2 } from "react-icons/fi"
+import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2, FiMoreHorizontal, FiEdit, FiTrash2, FiFlag } from "react-icons/fi"
 import { BsPinAngle, BsHandThumbsUpFill } from "react-icons/bs"
 import Image from "next/image"
-import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi, CheckEventTicketApi } from "@/services/events/discussionApis"
+import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi, CheckEventTicketApi, ReportDiscussionPostApi } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor } from "@/types/discussion"
 import CreateDiscussionModal from "./CreateDiscussionModal"
 import DiscussionPostView from "./DiscussionPostView"
@@ -143,6 +143,17 @@ const FeedPostCard = ({
 		},
 	})
 
+	const reportMutation = useMutation({
+		mutationFn: () => ReportDiscussionPostApi({ data: { postId: post._id } }),
+		onSuccess: () => {
+			toast({ title: "Post reported and hidden", status: "success", duration: 2000 })
+			onDeleteSuccess() // Use existing refetch callback
+		},
+		onError: (error: any) => {
+			toast({ title: "Report failed", description: error.message, status: "error", duration: 3000 })
+		},
+	})
+
 	const handleLike = (e: React.MouseEvent) => {
 		e.stopPropagation()
 		reactMutation.mutate()
@@ -226,54 +237,67 @@ const FeedPostCard = ({
 							<Icon as={FiClock} />
 						</Flex>
 					</Box>
-					{(isAuthor || isAdmin) && (
-						<Menu>
-							<MenuButton
-								as={IconButton}
-								icon={<FiMoreHorizontal />}
-								variant="ghost"
-								size="sm"
-								borderRadius="full"
+					<Menu>
+						<MenuButton
+							as={IconButton}
+							icon={<FiMoreHorizontal />}
+							variant="ghost"
+							size="sm"
+							borderRadius="full"
+							color="white"
+							_hover={{ bg: "whiteAlpha.200" }}
+							onClick={(e) => e.stopPropagation()}
+							aria-label="Post options"
+						/>
+						<MenuList onClick={(e) => e.stopPropagation()} bg="#1E1E1E" borderColor="#434343" color="white">
+							{isAuthor && (
+								<MenuItem
+									icon={<FiEdit />}
+									bg="#1E1E1E"
+									_hover={{ bg: "whiteAlpha.100" }}
+									onClick={(e) => {
+										e.stopPropagation()
+										// Open post in edit mode
+										onClick(post._id, true)
+									}}
+								>
+									Edit Post
+								</MenuItem>
+							)}
+							{(isAuthor || isAdmin) && (
+								<MenuItem
+									icon={<FiTrash2 />}
+									color="red.400"
+									bg="#1E1E1E"
+									_hover={{ bg: "whiteAlpha.100" }}
+									onClick={(e) => {
+										e.stopPropagation()
+										if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
+											deleteMutation.mutate()
+										}
+									}}
+									isDisabled={deleteMutation.isPending}
+								>
+									Delete Post
+								</MenuItem>
+							)}
+							<MenuItem
+								icon={<FiFlag />}
 								color="white"
-								_hover={{ bg: "whiteAlpha.200" }}
-								onClick={(e) => e.stopPropagation()}
-								aria-label="Post options"
-							/>
-							<MenuList onClick={(e) => e.stopPropagation()} bg="#1E1E1E" borderColor="#434343" color="white">
-								{isAuthor && (
-									<MenuItem
-										icon={<FiEdit />}
-										bg="#1E1E1E"
-										_hover={{ bg: "whiteAlpha.100" }}
-										onClick={(e) => {
-											e.stopPropagation()
-											// Open post in edit mode
-											onClick(post._id, true)
-										}}
-									>
-										Edit Post
-									</MenuItem>
-								)}
-								{(isAuthor || isAdmin) && (
-									<MenuItem
-										icon={<FiTrash2 />}
-										color="red.400"
-										bg="#1E1E1E"
-										_hover={{ bg: "whiteAlpha.100" }}
-										onClick={(e) => {
-											e.stopPropagation()
-											if (window.confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
-												deleteMutation.mutate()
-											}
-										}}
-										isDisabled={deleteMutation.isPending}
-									>
-										Delete Post
-									</MenuItem>
-								)}
-							</MenuList>
-						</Menu>
-					)}
+								bg="#1E1E1E"
+								_hover={{ bg: "whiteAlpha.100" }}
+								onClick={(e) => {
+									e.stopPropagation()
+									if (window.confirm("Report this post? It will be hidden for everyone.")) {
+										reportMutation.mutate()
+									}
+								}}
+								isDisabled={reportMutation.isPending}
+							>
+								Report Post
+							</MenuItem>
+						</MenuList>
+					</Menu>
 				</Flex>
 
 				{/* Post Content */}
@@ -415,6 +439,23 @@ const FeedPostCard = ({
 						onClick={handleShare}
 					>
 						Share
+					</Button>
+					<Button
+						flex="1"
+						variant="ghost"
+						leftIcon={<FiFlag />}
+						color="red.400"
+						fontWeight="600"
+						_hover={{ bg: "whiteAlpha.100", color: "red.300" }}
+						onClick={(e) => {
+							e.stopPropagation()
+							if (window.confirm("Report this post? It will be hidden for everyone.")) {
+								reportMutation.mutate()
+							}
+						}}
+						isDisabled={reportMutation.isPending}
+					>
+						Report
 					</Button>
 				</Flex>
 			</Box>

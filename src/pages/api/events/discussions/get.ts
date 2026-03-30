@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             { new: true }
         ).populate("userId", "firstName lastName image email")
 
-        if (!post) {
+        if (!post || post.isReported) {
             return sendResponse(res, null, "Post not found.", false, ResCode.NOT_FOUND)
         }
 

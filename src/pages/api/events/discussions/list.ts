@@ -19,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const limitNum = parseInt(limit as string) || 20
         const skip = (pageNum - 1) * limitNum
 
-        const query: any = { eventId }
+        const query: any = { eventId, isReported: { $ne: true } }
 
         if (search) {
             // Find users matching the search query

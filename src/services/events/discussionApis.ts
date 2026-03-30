@@ -60,6 +60,10 @@ export const ReactToDiscussionPostApi = async (params: RequestParams<{ postId: s
 	return await POST(discussionEndpoints.posts.react, params?.data)
 }
 
+export const ReportDiscussionPostApi = async (params: RequestParams<{ postId: string }>): Promise<ServerResponse<any, any>> => {
+	return await POST(discussionEndpoints.posts.report, params?.data)
+}
+
 // ========== DISCUSSION COMMENTS ==========
 
 export const CreateDiscussionCommentApi = async (params: RequestParams<CreateDiscussionCommentData>): Promise<ServerResponse<DiscussionCommentWithAuthor, any>> => {
@@ -92,6 +96,10 @@ export const DeleteDiscussionCommentApi = async (params: RequestParams<{ comment
 
 export const ReactToDiscussionCommentApi = async (params: RequestParams<{ commentId: string }>): Promise<ServerResponse<DiscussionCommentWithAuthor, any>> => {
 	return await POST(discussionEndpoints.comments.react, params?.data)
+}
+
+export const ReportDiscussionCommentApi = async (params: RequestParams<{ commentId: string }>): Promise<ServerResponse<any, any>> => {
+	return await POST(discussionEndpoints.comments.report, params?.data)
 }
 
 // ========== TICKET CHECK ==========

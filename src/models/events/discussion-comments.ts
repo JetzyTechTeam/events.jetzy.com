@@ -16,6 +16,7 @@ export interface IDiscussionComment {
 	isEdited: boolean
 	editedAt?: Date
 	isDeleted: boolean
+	isReported: boolean
 	createdAt?: Date
 	updatedAt?: Date
 }
@@ -75,6 +76,11 @@ const discussionCommentSchema = new Schema<IDiscussionComment>(
 		isDeleted: {
 			type: Boolean,
 			default: false,
+		},
+		isReported: {
+			type: Boolean,
+			default: false,
+			index: true,
 		},
 	},
 	{

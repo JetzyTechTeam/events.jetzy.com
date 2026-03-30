@@ -20,6 +20,7 @@ export interface IDiscussionPost {
 	viewedBy: Schema.Types.ObjectId[]
 	commentCount: number
 	lastActivityAt: Date
+	isReported: boolean
 	createdAt?: Date
 	updatedAt?: Date
 }
@@ -98,6 +99,11 @@ const discussionPostSchema = new Schema<IDiscussionPost>(
 		lastActivityAt: {
 			type: Date,
 			default: Date.now,
+			index: true,
+		},
+		isReported: {
+			type: Boolean,
+			default: false,
 			index: true,
 		},
 	},
