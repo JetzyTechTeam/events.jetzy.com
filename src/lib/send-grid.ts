@@ -585,7 +585,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     if (String(event._id) === "69406b0aecf5f8dab077a1dc") {
       const EVENT_NAME = "New Year's Eve Get Together";
       const VENUE = "Bar Sella, Hyatt Union Square, 134 4th Ave, New York, NY 10003.";
-      const TIME = "7pm to 3am";
+      const TIME = `${start.format('ddd MMM DD YYYY')} (${eventTimezone.replace(/_/g, ' ')}) - 7pm to 3am`;
       const NOTE = "Your ticket covers the entrance fee. You will be able to purchase food and drinks from the venue";
       const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
       const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
@@ -597,7 +597,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Information</h2>
             <p><strong>Event:</strong> ${EVENT_NAME}</p>
-            <p><strong>Time:</strong> ${TIME}</p>
+            <p><strong>Date and Time:</strong> ${TIME}</p>
             <p><strong>Venue:</strong> ${VENUE}</p>
           </div>
 
@@ -654,7 +654,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
-        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id}`)
       return { success: true, message: "Email sent successfully" }
@@ -664,7 +664,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     if (String(event._id) === "697cf23827f6f5f0d7d8c25a") {
       const EVENT_NAME = "Valentine Event";
       const VENUE = "Nightingale, 37 Carmine St, New York, NY 10014.";
-      const TIME = "6:30 PM Onwards";
+      const TIME = `${start.format('ddd MMM DD YYYY')} (${eventTimezone.replace(/_/g, ' ')}) - 6:30 PM Onwards`;
       const NOTE = "The ticket covers entry only, with food and drinks available for purchase at the bar.";
       const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
       const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
@@ -676,7 +676,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Information</h2>
             <p><strong>Event:</strong> ${EVENT_NAME}</p>
-            <p><strong>Time:</strong> ${TIME}</p>
+            <p><strong>Date and Time:</strong> ${TIME}</p>
             <p><strong>Venue:</strong> ${VENUE}</p>
           </div>
 
@@ -733,7 +733,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
-        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Valentine Event)`)
       return { success: true, message: "Email sent successfully" }
@@ -744,7 +744,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       const EVENT_NAME = "Valentine's Event San Francisco";
       const VENUE = "The Vesper, 394 E Campbell Ave, Campbell, CA 95008, United States";
       const GOOGLE_MAPS_LINK = "https://maps.app.goo.gl/VT7pY9YAZgvS6nx17?g_st=iw";
-      const TIME = timestamp;
+      const TIME = `${timestamp} (${eventTimezone.replace(/_/g, ' ')})`;
       const NOTE = "The ticket covers entry only, with food and drinks available for purchase at the bar.";
       const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
       const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
@@ -756,7 +756,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Information</h2>
             <p><strong>Event:</strong> ${EVENT_NAME}</p>
-            <p><strong>Time:</strong> ${TIME}</p>
+            <p><strong>Date and Time:</strong> ${TIME}</p>
             <p><strong>Venue:</strong> ${VENUE}</p>
             <p><a href="${GOOGLE_MAPS_LINK}" style="color: #F79432; text-decoration: none; font-weight: bold;">📍 View on Google Maps</a></p>
           </div>
@@ -814,7 +814,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
-        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Valentine SF)`)
       return { success: true, message: "Email sent successfully" }
@@ -825,7 +825,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       const EVENT_NAME = "Valentine's Event LA";
       const VENUE = "11520 W Pico Blvd, Los Angeles, CA 90064, United States";
       const GOOGLE_MAPS_LINK = "https://maps.app.goo.gl/zS23zQj6uf98CcQb6";
-      const TIME = timestamp;
+      const TIME = `${timestamp} (${eventTimezone.replace(/_/g, ' ')})`;
       const NOTE = "The ticket covers entry only, with food and drinks available for purchase at the bar.";
       const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
       const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
@@ -837,7 +837,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Information</h2>
             <p><strong>Event:</strong> ${EVENT_NAME}</p>
-            <p><strong>Time:</strong> ${TIME}</p>
+            <p><strong>Date and Time:</strong> ${TIME}</p>
             <p><strong>Venue:</strong> ${VENUE}</p>
             <p><a href="${GOOGLE_MAPS_LINK}" style="color: #F79432; text-decoration: none; font-weight: bold;">📍 View on Google Maps</a></p>
           </div>
@@ -895,7 +895,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         from: process.env.SENDGRID_EMAIL_SENDER as string,
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
-        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Valentine LA)`)
       return { success: true, message: "Email sent successfully" }
@@ -906,7 +906,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       const EVENT_NAME = "Founder/Investor Happy Hour";
       const VENUE = "Nightingale, 37 Carmine St, New York, NY 10014.";
       const GOOGLE_MAPS_LINK = "https://maps.app.goo.gl/yShTrAwBCDjJVUvP7";
-      const TIME = "6:00 PM to 8:00 PM";
+      const TIME = `${start.format('ddd MMM DD YYYY')} (${eventTimezone.replace(/_/g, ' ')}) - 6:00 PM to 8:00 PM`;
       const NOTE = "The ticket covers entry only, with food and drinks available for purchase at the bar.";
       const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
       const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
@@ -918,7 +918,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Information</h2>
             <p><strong>Event:</strong> ${EVENT_NAME}</p>
-            <p><strong>Time:</strong> ${TIME}</p>
+            <p><strong>Date and Time:</strong> ${TIME}</p>
             <p><strong>Venue:</strong> ${VENUE}</p>
             <p><a href="${GOOGLE_MAPS_LINK}" style="color: #F79432; text-decoration: none; font-weight: bold;">📍 View on Google Maps</a></p>
           </div>
@@ -976,7 +976,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         from: process.env.SENDGRID_EMAIL_SENDER as string,
         subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
-        text: `Booking Confirmation: ${EVENT_NAME}\n\nTime: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
+        text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
       })
       console.log(`[sendTicketConfirmation] Sent hardcoded email for event ${event._id} (Founder/Investor Happy Hour)`)
       return { success: true, message: "Email sent successfully" }
