@@ -47,6 +47,14 @@ export const usersSchema = new Schema(
 			type: String,
 			required: false,
 		},
+		acceptedTerms: {
+			type: Boolean,
+			default: false,
+		},
+		acceptedTermsAt: {
+			type: Date,
+			required: false,
+		},
 	},
 	{ timestamps: true },
 )

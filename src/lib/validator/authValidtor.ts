@@ -31,6 +31,10 @@ export const signupValidation = yup.object().shape({
     .string()
     .required("Confirm password is required")
     .oneOf([yup.ref("password")], "Password did not match."),
+  acceptedTerms: yup
+    .boolean()
+    .oneOf([true], "You must accept the terms and conditions.")
+    .required("You must accept the terms and conditions."),
 })
 
 export const FgpwdValidatorScheme = yup.object().shape({

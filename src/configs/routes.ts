@@ -24,4 +24,5 @@ export const ROUTES = {
 	// ----------------- Public Routes -----------------
 	home: "/",
 	eventDetails: "/[slug]",
+	terms: "/terms",
 }

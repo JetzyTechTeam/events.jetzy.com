@@ -104,6 +104,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
             password: values.password?.trim(),
             confirmPassword: values.confirmPassword?.trim() || values.password?.trim(),
             shouldBeAJetzyMember: values.shouldBeAJetzyMember ?? false,
+            acceptedTerms: values.acceptedTerms ?? false,
         };
 
         const res = await dispatcher(CreateUserAccountThunk({ data: sanitized }));

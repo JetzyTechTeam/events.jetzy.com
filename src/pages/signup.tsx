@@ -25,6 +25,7 @@ export default function LoginPage() {
 		firstName: "",
 		lastName: "",
 		shouldBeAJetzyMember: false,
+		acceptedTerms: false,
 	}
 
 	const handleSubmit = (values: SignUpFormData) => {
@@ -165,6 +166,26 @@ export default function LoginPage() {
 
 
 
+								</div>
+
+								{/* Terms and Conditions Checkbox */}
+								<div className="flex flex-col mt-4">
+									<div className="flex items-center gap-2">
+										<Field
+											type="checkbox"
+											id="acceptedTerms"
+											name="acceptedTerms"
+											className="h-4 w-4 text-app focus:ring-app border-gray-300 rounded"
+											checked={values?.acceptedTerms}
+										/>
+										<label htmlFor="acceptedTerms" className="block text-sm text-white">
+											I agree to the{" "}
+											<Link href={ROUTES.terms} target="_blank" className="text-app hover:underline">
+												Terms and Conditions
+											</Link>
+										</label>
+									</div>
+									<ErrorMessage name="acceptedTerms" component="span" className="text-red-500 block mt-1 text-xs" />
 								</div>
 
 								<div>

@@ -9,6 +9,7 @@ export type SignUpFormData = {
 	password: string
 	confirmPassword?: string
 	shouldBeAJetzyMember: boolean
+	acceptedTerms: boolean
 }
 
 export type SignInFormData = {

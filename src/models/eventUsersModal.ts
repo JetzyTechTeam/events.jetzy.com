@@ -45,6 +45,14 @@ export const eventUsersSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    acceptedTerms: {
+      type: Boolean,
+      default: false,
+    },
+    acceptedTermsAt: {
+      type: Date,
+      required: false,
+    },
   },
   { timestamps: true }
 )
