@@ -255,7 +255,7 @@ export default function JetzyChatIntegration({ eventId, eventName }: JetzyChatIn
 					borderRadius="md"
 					m={4}
 				>
-					<Text fontWeight="semibold" mb={2}>Error Loading Chat</Text>
+					<Text fontWeight="semibold" mb={2}>Error Loading Discussion</Text>
 					<Text fontSize="sm">{error}</Text>
 				</Box>
 			)}

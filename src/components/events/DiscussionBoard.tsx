@@ -542,7 +542,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				{/* Header Section */}
 				<div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
 					<div className="text-center sm:text-left">
-						<h2 className="text-xl sm:text-2xl font-bold text-white">Discussion</h2>
+						<h2 className="text-xl sm:text-2xl font-bold text-white">Feed</h2>
 						<p className="text-[#bbbbbb] text-sm sm:text-base">
 							Join the conversation.
 						</p>
