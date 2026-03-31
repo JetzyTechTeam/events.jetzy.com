@@ -3,9 +3,10 @@ import crypto from 'crypto';
 const SECRET = process.env.NEXTAUTH_SECRET || 'jetzy-magic-secret';
 
 interface MagicLinkData {
-    email: string;
-    firstName: string;
-    lastName: string;
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    _id?: string;
 }
 
 /**
@@ -26,26 +27,43 @@ export function generateMagicToken(data: MagicLinkData): string {
 
 /**
  * Verifies and parses a magic token.
+ * Supports both 2-part signature tokens and 3-part JWT tokens.
  */
 export function verifyMagicToken(token: string): MagicLinkData | null {
     try {
-        const [base64Data, signature] = token.split('.');
-        if (!base64Data || !signature) return null;
-
-        const expectedSignature = crypto
-            .createHmac('sha256', SECRET)
-            .update(base64Data)
-            .digest('hex');
-
-        if (signature !== expectedSignature) {
-            console.error('[MagicLink] Invalid signature');
-            return null;
+        const parts = token.split('.');
+        
+        // Handle 3-part JWT tokens (standard JWT format)
+        if (parts.length === 3) {
+            console.log('[MagicLink] Detected 3-part JWT token');
+            const payload = parts[1];
+            const dataStr = Buffer.from(payload, 'base64').toString('utf8');
+            return JSON.parse(dataStr) as MagicLinkData;
         }
 
-        const dataStr = Buffer.from(base64Data, 'base64').toString('utf8');
-        return JSON.parse(dataStr) as MagicLinkData;
+        // Handle 2-part signature tokens (custom legacy format)
+        if (parts.length === 2) {
+            const [base64Data, signature] = parts;
+            if (!base64Data || !signature) return null;
+
+            const expectedSignature = crypto
+                .createHmac('sha256', SECRET)
+                .update(base64Data)
+                .digest('hex');
+
+            if (signature !== expectedSignature) {
+                console.error('[MagicLink] Invalid signature');
+                return null;
+            }
+
+            const dataStr = Buffer.from(base64Data, 'base64').toString('utf8');
+            return JSON.parse(dataStr) as MagicLinkData;
+        }
+
+        return null;
     } catch (error) {
         console.error('[MagicLink] Verification failed:', error);
         return null;
     }
 }
+

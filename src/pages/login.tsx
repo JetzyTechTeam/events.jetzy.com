@@ -21,6 +21,8 @@ export default function LoginPage() {
 	const navigation = useRouter()
 	const [isLoading, setLoader] = React.useState(false)
 	const [waitingForSession, setWaitingForSession] = React.useState(false)
+	const [hasAttemptedMagicLink, setHasAttemptedMagicLink] = React.useState(false)
+
 	const { data: session, status } = useSession()
 
 	// The url callback to redirect user to after login
@@ -63,11 +65,13 @@ export default function LoginPage() {
 
 	React.useEffect(() => {
 		const { magicToken, lat, long, eventId } = navigation.query;
-		console.log('🔍 [Login] useEffect check - magicToken:', !!magicToken, 'isLoading:', isLoading, 'status:', status, 'waitingForSession:', waitingForSession);
+		console.log('🔍 [Login] useEffect check - magicToken:', !!magicToken, 'isLoading:', isLoading, 'status:', status, 'hasAttempted:', hasAttemptedMagicLink);
 
-		if (magicToken && !isLoading && !waitingForSession && status !== 'loading') {
+		if (magicToken && !isLoading && !waitingForSession && status !== 'loading' && !hasAttemptedMagicLink) {
 			console.log('✨ [Login] Magic Token detected, attempting auto-login...');
 			setLoader(true);
+			setHasAttemptedMagicLink(true);
+
 
 
 			// Store location if present (marks mobile origin)

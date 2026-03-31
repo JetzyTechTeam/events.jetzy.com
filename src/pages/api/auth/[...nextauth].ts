@@ -45,11 +45,25 @@ export const authOptions: NextAuthOptions = {
               console.error('Invalid or expired magic token');
               throw new Error("Invalid auto-login link.");
             }
-            console.log('Magic Token verified for:', magicTokenData.email);
-            email = magicTokenData.email;
+            console.log('Magic Token verified for:', magicTokenData.email || `ID: ${magicTokenData._id}`);
+            
+            // If email is missing but _id is present, attempt to find user by ID
+            if (!magicTokenData.email && magicTokenData._id) {
+              console.log('Token has no email, searching by _id:', magicTokenData._id);
+              const userById = await EventUsers.findById(magicTokenData._id).lean() 
+                             || await Users.findById(magicTokenData._id).lean();
+              if (userById) {
+                console.log('Found user by ID, using email:', (userById as any).email);
+                email = (userById as any).email;
+              }
+            } else {
+              email = magicTokenData.email;
+            }
+
             password = '123456'; // Use default password for magic link login
             isMagicLogin = true;
           }
+
 
           console.log('Email:', email);
           console.log('isJetzyMember:', isJetzyMember, `(raw: ${isJetzyMemberRaw})`);
