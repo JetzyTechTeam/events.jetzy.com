@@ -1,0 +1,100 @@
+
+> jetzy-events@0.1.0 build
+> next build
+
+  ▲ Next.js 14.2.35
+  - Environments: .env.local, .env
+
+   Linting and checking validity of types ...
+
+Failed to compile.
+
+./src/components/EventCheckoutModel.tsx
+234:5  Warning: React Hook useEffect has a missing dependency: 'eventData?._id'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/console/ReferralCodesManager.tsx
+51:5  Warning: React Hook useEffect has a missing dependency: 'fetchCodes'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/events/AddTickets.tsx
+23:6  Warning: React Hook React.useEffect has a missing dependency: 'props'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/events/DiscussionPostView.tsx
+1303:8  Warning: The 'comments' logical expression could make the dependencies of useMemo Hook (at line 1326) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'comments' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./src/components/events/JetzyChatIntegration.tsx
+166:19  Error: React Hook "useMemo" is called conditionally. React Hooks must be called in the exact same order in every component render. Did you accidentally call a React Hook after an early return?  react-hooks/rules-of-hooks
+
+./src/components/form/DatePicker.tsx
+45:5  Warning: React Hook React.useEffect has a missing dependency: 'ref'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/interests/InterestFeed.tsx
+85:25  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+127:29  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+574:41  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+574:41  Warning: img elements must have an alt prop, either with meaningful text, or an empty string for decorative images.  jsx-a11y/alt-text
+622:37  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+663:45  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+714:49  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/interests/InterestGroupCard.tsx
+28:25  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/interests/InterestGroupHeader.tsx
+24:21  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+38:25  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/interests/InterestMembers.tsx
+106:41  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+140:49  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+208:68  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/interests/InviteMemberModal.tsx
+98:60  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/layout/ConsoleNavbar.tsx
+110:14  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+195:11  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/misc/DragAndDropUploader.tsx
+139:7  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/misc/EventsListing.tsx
+262:19  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/users/PeopleWidget.tsx
+74:33  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+101:41  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/contexts/AnalyticsContext.tsx
+132:5  Warning: React Hook useEffect has a missing dependency: 'trackPageView'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/pages/console/events/[eventId]/analytics.tsx
+189:5  Warning: React Hook useEffect has a missing dependency: 'fetchAnalytics'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/pages/console/events/[eventId]/update.old.tsx
+80:5  Warning: React Hook React.useEffect has missing dependencies: 'eventDetails.images', 'eventDetails.tickets', 'fileUploader', and 'fileUpoaderRemoveImage'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/pages/console/index.tsx
+36:5  Warning: React Hook React.useEffect has a missing dependency: 'dispatcher'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/pages/events/[eventId]/guests/invite.tsx
+107:6  Warning: React Hook React.useEffect has a missing dependency: 'fetchGuestStatus'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/pages/interests/[interestId]/index.tsx
+77:8  Warning: React Hook React.useMemo has a missing dependency: 'router.query'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+208:8  Warning: React Hook useEffect has missing dependencies: 'fetchInterestDetails' and 'fetchMembers'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+219:8  Warning: React Hook useEffect has missing dependencies: 'fetchFeed', 'fetchMembers', and 'fetchRequests'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+886:49  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/pages/interests/create.tsx
+179:37  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/pages/interests/index.tsx
+24:8  Warning: React Hook useEffect has a missing dependency: 'handleResetAndFetch'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+91:8  Warning: React Hook useEffect has a missing dependency: 'loadMore'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/pages/profile/[id].tsx
+110:37  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+143:33  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules

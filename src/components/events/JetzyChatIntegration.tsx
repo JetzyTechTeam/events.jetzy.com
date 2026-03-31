@@ -142,26 +142,6 @@ export default function JetzyChatIntegration({ eventId, eventName }: JetzyChatIn
 	const userEmail = session?.user?.email || ''
 	const userImage = (session?.user as any)?.image || ''
 
-	// Validate required parameters
-	if (!userId || !userEmail) {
-		return (
-			<Box 
-				bg="white" 
-				borderRadius="lg" 
-				boxShadow="sm" 
-				p={8}
-				textAlign="center"
-			>
-				<Text color="red.500" fontSize="lg" mb={2}>
-					Missing User Information
-				</Text>
-				<Text color="gray.600" fontSize="sm">
-					Unable to load chat: User ID or email is missing from session.
-				</Text>
-			</Box>
-		)
-	}
-
 	// Build URL with parameters using useMemo to ensure it updates when token changes
 	const embedUrl = useMemo(() => {
 		const url = new URL(`${jetzyChatUrl}/embed`)
@@ -201,6 +181,26 @@ export default function JetzyChatIntegration({ eventId, eventName }: JetzyChatIn
 		
 		return url
 	}, [jetzyChatUrl, eventId, userId, userEmail, userName, userImage, eventName, apiToken])
+
+	// Validate required parameters
+	if (!userId || !userEmail) {
+		return (
+			<Box 
+				bg="white" 
+				borderRadius="lg" 
+				boxShadow="sm" 
+				p={8}
+				textAlign="center"
+			>
+				<Text color="red.500" fontSize="lg" mb={2}>
+					Missing User Information
+				</Text>
+				<Text color="gray.600" fontSize="sm">
+					Unable to load chat: User ID or email is missing from session.
+				</Text>
+			</Box>
+		)
+	}
 
 	// Show error if no user session
 	if (!session?.user) {

@@ -109,7 +109,8 @@ export default function JetzyQRSignup() {
                 confirmPassword: newPassword,
                 firstName: "New",
                 lastName: "User",
-                shouldBeAJetzyMember: false
+                shouldBeAJetzyMember: false,
+                acceptedTerms: true
             })
 
             // Check if payload status is true (success) or if it's an existing user flow
