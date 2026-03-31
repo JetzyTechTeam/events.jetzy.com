@@ -22,6 +22,7 @@ type OrderItem = {
 type IEvent = {
 	name: string
 	location: string
+	venueName?: string
 	startsOn: string
 	timezone: string
 	slug: string
@@ -152,7 +153,16 @@ const CheckoutSuccessPage: React.FC = () => {
 	}, 0)
 
 	const displayEvent = eventData || parsedEvent
-	const displayLocation = eventData?.location || parsedEvent?.location
+	let displayLocation = eventData?.location || parsedEvent?.location
+
+	// Fallback to venueName if location is still hidden or disclosed
+	const locationLower = (displayLocation || "").toLowerCase();
+	if ((!displayLocation || 
+	     locationLower.includes("disclosed") || 
+	     locationLower.includes("location hidden")) && 
+	    displayEvent?.venueName) {
+		displayLocation = displayEvent.venueName;
+	}
 
 	return (
 		<div className="min-h-screen bg-[#0A0B0F] py-8 px-4 sm:px-6 lg:px-8">
