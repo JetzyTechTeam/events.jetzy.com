@@ -198,7 +198,21 @@ export default function LoginPage() {
 		}
 	};
 
+	if ((navigation.query.magicToken || waitingForSession) && isLoading) {
+		return (
+			<div className="flex min-h-screen flex-col items-center justify-center bg-black">
+				<div className="text-center">
+					<Image className="mx-auto h-24 w-auto mb-8 animate-pulse" src={Logo} alt="Jetzy Life" />
+					<Spinner />
+					<p className="mt-4 text-white font-medium">Authenticating your one-click login...</p>
+					<p className="mt-2 text-gray-400 text-sm">Please wait while we set up your session.</p>
+				</div>
+			</div>
+		)
+	}
+
 	return (
+
 		<>
 			<div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
 				<div className="sm:mx-auto sm:w-full sm:max-w-sm">
