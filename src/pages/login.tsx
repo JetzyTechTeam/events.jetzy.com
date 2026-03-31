@@ -35,13 +35,22 @@ export default function LoginPage() {
 	// Handle redirect after session is established
 	React.useEffect(() => {
 		if (navigation.isReady && waitingForSession && status === 'authenticated' && session) {
-			console.log('✅ Session established, redirecting...');
-			const target = _cb ? _cb.toString() : (
+			const { eventId, magicToken } = navigation.query;
+			console.log('✅ Session established, checking redirect target...');
+
+			let target = _cb ? _cb.toString() : (
 				// @ts-ignore
 				(session?.user?.role === 'admin' || session?.user?.role === 'super admin')
 					? ROUTES.dashboard.events.index
 					: ROUTES.home
 			);
+
+			// Mobile Flow: Forward user to specific event with context if eventId is present
+			if (eventId && magicToken) {
+				target = `/${eventId}?external=true&token=${magicToken}`;
+				console.log('📱 [Mobile Flow] Directing to event page with context');
+			}
+
 
 			console.log('🚀 Redirecting to:', target);
 
@@ -52,19 +61,27 @@ export default function LoginPage() {
 		}
 	}, [waitingForSession, status, session, navigation, _cb, navigation.isReady])
 
-	// Automatically try to login if magicToken is present
 	React.useEffect(() => {
-		const { magicToken } = navigation.query;
+		const { magicToken, lat, long, eventId } = navigation.query;
 		console.log('🔍 [Login] useEffect check - magicToken:', !!magicToken, 'isLoading:', isLoading, 'status:', status, 'waitingForSession:', waitingForSession);
 
 		if (magicToken && !isLoading && !waitingForSession && status !== 'loading') {
 			console.log('✨ [Login] Magic Token detected, attempting auto-login...');
 			setLoader(true);
 
+
+			// Store location if present (marks mobile origin)
+			if (lat && long) {
+				console.log('📍 [Login] Storing location context:', lat, long);
+				sessionStorage.setItem("user_lat", lat.toString());
+				sessionStorage.setItem("user_long", long.toString());
+			}
+
 			signIn("credentials", {
 				magicToken: magicToken.toString(),
 				redirect: false,
 			}).then((res) => {
+
 				console.log('📡 [Login] signIn response:', res);
 				if (res?.error) {
 					console.error('❌ [Login] Magic Login Error:', res.error);

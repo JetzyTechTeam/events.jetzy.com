@@ -6,9 +6,16 @@ export const CreateEventApis = async (params: RequestParams<{ payload: string }>
 	return await POST(eventEndPoints.create, params?.data)
 }
 
-export const ListEventsApis = async (): Promise<ServerResponse<EventInterface[], any>> => {
+export const ListEventsApis = async (params: { lat?: number; long?: number } = {}): Promise<ServerResponse<EventInterface[], any>> => {
+	// If coordinates are provided, we use the external V2 API (Mobile Flow)
+	if (params?.lat && params?.long) {
+		console.log('📍 [API] Switching to External V2 Events API for location:', params.lat, params.long);
+		return await GET("external:/v2/events", { params })
+	}
+	// Default flow (Local Database)
 	return await GET(eventEndPoints.list)
 }
+
 
 export const FetchEventApis = async (params: RequestParams): Promise<ServerResponse<EventInterface, any>> => {
 	return await GET(eventEndPoints.fetch.replace(":slug", params?.id as string))

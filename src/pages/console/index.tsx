@@ -31,9 +31,19 @@ export default function ConsoleDashboard() {
 	const admin = session?.user?.role === "admin";
 
 	React.useEffect(() => {
+		// Detect mobile flow coordinates from session storage
+		const lat = sessionStorage.getItem("user_lat");
+		const long = sessionStorage.getItem("user_long");
+
 		// Dispatcher the event to fetch events list from the server
-		dispatcher(ListEventsThunk())
+		if (lat && long) {
+			console.log("📍 [Console] Requesting location-based events...");
+			dispatcher(ListEventsThunk({ lat: parseFloat(lat), long: parseFloat(long) }));
+		} else {
+			dispatcher(ListEventsThunk());
+		}
 	}, [])
+
 
 	return (
 		<ConsoleLayout page={Pages.Dasshboard} component={

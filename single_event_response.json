@@ -1,0 +1,92 @@
+﻿{
+    "data":  {
+                 "coordinates":  {
+                                     "lat":  40.73061,
+                                     "long":  -73.935242
+                                 },
+                 "isPinned":  false,
+                 "_id":  "69cbdbe6ef2d70e66f4c1235",
+                 "slug":  "IHyWLY98xe",
+                 "name":  "Eid Celebrations Staging",
+                 "privacy":  "public",
+                 "startsOn":  "2026-04-30T16:00:00.000Z",
+                 "endsOn":  "2026-05-01T18:55:00.000Z",
+                 "timezone":  "(UTC-04:00) America/New_York",
+                 "location":  "New York (USA)",
+                 "isPaid":  true,
+                 "desc":  "eid celebration",
+                 "images":  [
+                                "https://jetzy-media-prod.s3.us-east-1.amazonaws.com/posts/2026/03/18/2980e718-a345-4b8b-9b49-67bb8e0408b9.jpeg"
+                            ],
+                 "capacity":  50,
+                 "requireApproval":  false,
+                 "tickets":  [
+                                 {
+                                     "name":  "new ticket",
+                                     "price":  20,
+                                     "desc":  "new",
+                                     "stripeProductId":  "price_1TGlASB7XccR5GE0sqo87pUp",
+                                     "_id":  "69caca20df4dbdbdb0fec1f1",
+                                     "createdAt":  "2026-03-30T19:08:16.064Z",
+                                     "updatedAt":  "2026-03-30T19:08:16.064Z"
+                                 }
+                             ],
+                 "isDeleted":  false,
+                 "createdAt":  "2026-03-18T13:01:21.325Z",
+                 "updatedAt":  "2026-03-30T19:08:16.064Z",
+                 "__v":  0,
+                 "questions":  [
+                                   {
+                                       "id":  "q_1773843920117",
+                                       "title":  "share instagram name or profile url",
+                                       "type":  "social_profile",
+                                       "isRequired":  false,
+                                       "responseLength":  "short",
+                                       "selectionType":  "single",
+                                       "options":  [
+
+                                                   ],
+                                       "platform":  "instagram",
+                                       "collectJobTitle":  false,
+                                       "termsContentType":  "text",
+                                       "termsContent":  "",
+                                       "collectSignature":  false
+                                   },
+                                   {
+                                       "id":  "q_1773843964954",
+                                       "title":  "your phone number.",
+                                       "type":  "mobile",
+                                       "isRequired":  true,
+                                       "responseLength":  "short",
+                                       "selectionType":  "single",
+                                       "options":  [
+
+                                                   ],
+                                       "platform":  "instagram",
+                                       "collectJobTitle":  false,
+                                       "termsContentType":  "text",
+                                       "termsContent":  "",
+                                       "collectSignature":  false
+                                   },
+                                   {
+                                       "id":  "q_1773844000172",
+                                       "title":  "your hobby",
+                                       "type":  "text",
+                                       "isRequired":  false,
+                                       "responseLength":  "short",
+                                       "selectionType":  "single",
+                                       "options":  [
+
+                                                   ],
+                                       "platform":  "instagram",
+                                       "collectJobTitle":  false,
+                                       "termsContentType":  "text",
+                                       "termsContent":  "",
+                                       "collectSignature":  false
+                                   }
+                               ],
+                 "feedbackFormUrl":  "ashdasdjjaskd"
+             },
+    "message":  "Event fetched successfully",
+    "status":  true
+}

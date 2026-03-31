@@ -14,9 +14,10 @@ export const CreateEventThunk = createAsyncThunk("event/createEvent", async (par
 	return res
 })
 
-export const ListEventsThunk = createAsyncThunk("event/listEvents", async () => {
-	return await ListEventsApis()
+export const ListEventsThunk = createAsyncThunk("event/listEvents", async (params?: { lat?: number; long?: number }) => {
+	return await ListEventsApis(params)
 })
+
 
 export const FetchEventThunk = createAsyncThunk("event/fetchEvent", async (params: RequestParams) => {
 	return await FetchEventApis(params)
@@ -94,8 +95,13 @@ export const eventSlice = createSlice({
 
 		builder.addCase(ListEventsThunk.fulfilled, (state, action) => {
 			state.isFetching = false
-			state.dataList = action.payload?.data
+			// Handle external V2 structure: { data: { events: [...] } }
+			// versus local API structure: { data: [...] }
+			const payloadData = action.payload?.data as any
+			state.dataList = Array.isArray(payloadData) ? payloadData : payloadData?.events || []
 		})
+
+
 
 		builder.addCase(ListEventsThunk.rejected, (state, action) => {
 			state.isFetching = false

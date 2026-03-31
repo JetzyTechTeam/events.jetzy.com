@@ -177,9 +177,41 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 
 		if (!event) {
-			console.log(`[Slug Lookup v3] ALL lookups FAILED for: "${slug}"`)
+			console.log(`[Slug Lookup v3] ALL local lookups FAILED for: "${slug}". Checking External API...`);
+
+			const { external, token } = context.query;
+			if (external === 'true' && token) {
+				try {
+					console.log(`[Slug Lookup v3] Fetching from External V2 API: ${slug}`);
+					const externalApiUrl = "https://test.jetzy.com/api/v2/events";
+					const res = await fetch(`${externalApiUrl}/${slug}`, {
+						headers: {
+							'Authorization': `Bearer ${token}`,
+							'Content-Type': 'application/json',
+						}
+					});
+
+					if (res.ok) {
+						const externalData = await res.json();
+						if (externalData?.status && externalData?.data) {
+							console.log(`[Slug Lookup v3] External fetch SUCCESS: ${slug}`);
+							return {
+								props: {
+									event: JSON.stringify(externalData.data)
+								}
+							};
+						}
+					} else {
+						console.warn(`[Slug Lookup v3] External fetch FAILED: ${res.status}`);
+					}
+				} catch (err) {
+					console.error(`[Slug Lookup v3] External fetch ERROR:`, err);
+				}
+			}
+
 			return { notFound: true }
 		}
+
 
 		console.log(`[Slug Lookup v3] Success! Rendering event: ${event.name} (${event._id})`)
 
