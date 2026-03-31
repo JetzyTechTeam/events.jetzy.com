@@ -204,8 +204,11 @@ export default function LoginPage() {
 				<div className="text-center">
 					<Image className="mx-auto h-24 w-auto mb-8 animate-pulse" src={Logo} alt="Jetzy Life" />
 					<Spinner />
-					<p className="mt-4 text-white font-medium">Authenticating your one-click login...</p>
-					<p className="mt-2 text-gray-400 text-sm">Please wait while we set up your session.</p>
+					<p className="mt-4 text-white font-medium text-lg">Getting ready...</p>
+
+
+
+
 				</div>
 			</div>
 		)
