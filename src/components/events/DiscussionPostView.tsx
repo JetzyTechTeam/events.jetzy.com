@@ -1394,10 +1394,27 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			setEditPostActivity("")
 			toast({ title: "Post updated", status: "success", duration: 2000 })
 		},
-		onError: (error: any) => {
-			console.error("❌ Update post error:", error)
-			toast({ title: "Update failed", description: error.message, status: "error", duration: 3000 })
+	})
+
+	const liveUpdatePostImagesMutation = useMutation({
+		mutationFn: (newImages: string[]) => {
+			let finalContent = editPostContent
+			if (editPostFeeling || editPostActivity) {
+				const feelingText = editPostFeeling ? `${editPostFeeling}` : ""
+				const activityText = editPostActivity ? `${editPostActivity}` : ""
+				const separator = editPostFeeling && editPostActivity ? " · " : ""
+				finalContent = `${editPostContent}\n${feelingText}${separator}${activityText}`
+			}
+			return UpdateDiscussionPostApi({ data: { postId, content: finalContent, images: newImages } })
 		},
+		onSuccess: () => {
+			refetchPost()
+			toast({ title: "Images updated", status: "success", duration: 1000 })
+		},
+		onError: (error: any) => {
+			console.error("❌ Live update post images error:", error)
+			toast({ title: "Live update failed", description: error.message, status: "error", duration: 3000 })
+		}
 	})
 
 	const handleEditPostImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1415,7 +1432,10 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			})
 
 			const urls = await Promise.all(uploadPromises)
-			setEditPostImages((prev) => [...prev, ...urls])
+			const newImages = [...editPostImages, ...urls];
+			setEditPostImages(newImages)
+			// Immediate update as requested
+			liveUpdatePostImagesMutation.mutate(newImages);
 		} catch (error: any) {
 			toast({ title: "Upload failed", description: error.message, status: "error", duration: 3000 })
 		} finally {
@@ -1874,7 +1894,10 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 												color="white"
 												borderRadius="full"
 												_hover={{ bg: "blackAlpha.800" }}
-												onClick={() => setEditPostImages([])}
+												onClick={() => {
+													setEditPostImages([])
+													liveUpdatePostImagesMutation.mutate([]);
+												}}
 											/>
 										</Box>
 									) : (
@@ -1905,7 +1928,11 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 														color="white"
 														borderRadius="full"
 														_hover={{ bg: "blackAlpha.800" }}
-														onClick={() => setEditPostImages(editPostImages.filter((_, i) => i !== index))}
+														onClick={() => {
+															const newImages = editPostImages.filter((_, i) => i !== index);
+															setEditPostImages(newImages);
+															liveUpdatePostImagesMutation.mutate(newImages);
+														}}
 													/>
 												</Box>
 											))}
