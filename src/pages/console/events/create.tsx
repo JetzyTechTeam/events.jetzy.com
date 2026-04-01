@@ -174,25 +174,25 @@ const CreateEventPage = () => {
       try {
         const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
         if (!apiKey) {
-           throw new Error("Google API key is missing");
+          throw new globalThis.Error("Google API key is missing");
         }
         const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(values.location)}&key=${apiKey}`);
         const data = await res.json();
-        
+
         if (data.status === "OK" && data.results.length > 0) {
           const loc = data.results[0].geometry.location;
           values.latitude = loc.lat;
           values.longitude = loc.lng;
           values.placeId = data.results[0].place_id;
         } else {
-           setIsSubmitting(false);
-           Error("Validation Error", "Invalid location. Please select a valid address from the dropdown.");
-           return;
+          setIsSubmitting(false);
+          Error("Validation Error", "Invalid location. Please select a valid address from the dropdown.");
+          return;
         }
       } catch (err: any) {
-         setIsSubmitting(false);
-         Error("Validation Error", "Could not verify location. Please select from the dropdown.");
-         return;
+        setIsSubmitting(false);
+        Error("Validation Error", "Could not verify location. Please select from the dropdown.");
+        return;
       }
       setIsSubmitting(false);
     }
