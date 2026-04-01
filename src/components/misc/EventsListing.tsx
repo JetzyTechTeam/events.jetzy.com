@@ -16,7 +16,14 @@ import {
   Avatar,
   MenuList,
   MenuItem,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
 } from "@chakra-ui/react";
+import { calculateDistance } from "@/utils/distance";
 import { IEvent } from "@/models/events/types";
 import Pagination from "./Pagination";
 import { useRouter } from "next/router";
@@ -180,6 +187,99 @@ type EventListProps = {
 const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
   const router = useRouter();
 
+  const [locationState, setLocationState] = React.useState<"ASKING" | "GRANTED" | "SKIPPED" | "LOADING" | null>(null);
+  const [userLocation, setUserLocation] = React.useState<{ lat: number, lng: number } | null>(null);
+
+  React.useEffect(() => {
+    const stored = sessionStorage.getItem("events_location_pref");
+    if (stored === "SKIPPED") {
+      setLocationState("SKIPPED");
+    } else if (stored) {
+      try {
+        const coords = JSON.parse(stored);
+        setUserLocation(coords);
+        setLocationState("GRANTED");
+      } catch (e) {
+        setLocationState("ASKING");
+      }
+    } else {
+      setLocationState("ASKING");
+    }
+  }, []);
+
+  const handleAllowLocation = () => {
+    setLocationState("LOADING");
+    if (!navigator.geolocation) {
+      setLocationState("SKIPPED");
+      sessionStorage.setItem("events_location_pref", "SKIPPED");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setUserLocation(coords);
+        setLocationState("GRANTED");
+        sessionStorage.setItem("events_location_pref", JSON.stringify(coords));
+      },
+      (error) => {
+        setLocationState("SKIPPED");
+        sessionStorage.setItem("events_location_pref", "SKIPPED");
+      }
+    );
+  };
+
+  const handleSkipLocation = () => {
+    setLocationState("SKIPPED");
+    sessionStorage.setItem("events_location_pref", "SKIPPED");
+  }
+
+  const sortedItems = useMemo(() => {
+    if (locationState !== "GRANTED" || !userLocation) {
+      return items;
+    }
+    
+    const now = new Date();
+
+    return [...items].sort((a, b) => {
+      // 1. Check if event is Live or Ended
+      const isALive = a.endsOn ? new Date(a.endsOn).getTime() >= now.getTime() : true;
+      const isBLive = b.endsOn ? new Date(b.endsOn).getTime() >= now.getTime() : true;
+
+      // Primary Sort: Live Events always appear above Ended Events
+      if (isALive !== isBLive) {
+        return isALive ? -1 : 1;
+      }
+
+      // 2. Both are in the same bucket (both live, or both ended). Check coordinates.
+      const aLoc = a.coordinates;
+      const bLoc = b.coordinates;
+      
+      const aHasCoords = aLoc?.lat != null && aLoc?.long != null;
+      const bHasCoords = bLoc?.lat != null && bLoc?.long != null;
+      
+      // Secondary Sort: Events with Location appear above Events without Location
+      if (aHasCoords && !bHasCoords) return -1;
+      if (!aHasCoords && bHasCoords) return 1;
+
+      // Tertiary Sort: Sort by actual distance
+      if (aHasCoords && bHasCoords) {
+        const distA = calculateDistance(userLocation.lat, userLocation.lng, aLoc.lat, aLoc.long);
+        const distB = calculateDistance(userLocation.lat, userLocation.lng, bLoc.lat, bLoc.long);
+        if (distA !== distB) {
+            return distA - distB; 
+        }
+      } 
+      
+      // Fallback: If both lack coordinates (or have the exact same distance), sort chronologically
+      const dateA = a.startsOn ? new Date(a.startsOn).getTime() : 0;
+      const dateB = b.startsOn ? new Date(b.startsOn).getTime() : 0;
+      
+      // For Live events, closest upcoming date matters (Ascending)
+      // For Ended events, most recently ended matters (Descending)
+      return isALive ? dateA - dateB : dateB - dateA;
+    });
+  }, [items, locationState, userLocation]);
+
   const handleEventClick = (event: IEvent): void => {
     // Replace this with navigation or modal display for event details
 
@@ -196,6 +296,24 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
       py={10}
       className="min-h-screen w-full"
     >
+      <Modal isOpen={locationState === "ASKING" || locationState === "LOADING"} onClose={handleSkipLocation} isCentered closeOnOverlayClick={false}>
+        <ModalOverlay backdropFilter="blur(5px)" bg="blackAlpha.700" />
+        <ModalContent bg="#14161B" color="white" mx="4">
+           <ModalHeader>Find Events Near You</ModalHeader>
+           <ModalBody>
+              Would you like to share your location so we can discover the best events physically closest to you?
+           </ModalBody>
+           <ModalFooter>
+              <Button variant="ghost" color="gray.400" _hover={{ color: "white", bg: "whiteAlpha.200" }} mr={3} onClick={handleSkipLocation} isDisabled={locationState === "LOADING"}>
+                 Skip
+              </Button>
+              <Button bg="#F79432" color="black" _hover={{ bg: "#e58221" }} onClick={handleAllowLocation} isLoading={locationState === "LOADING"}>
+                 Allow Location
+              </Button>
+           </ModalFooter>
+        </ModalContent>
+      </Modal>
+
       <Navbar />
       <Box mb="6">
         <Heading>Discover Events</Heading>
@@ -205,14 +323,14 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
         </Text>
       </Box>
       <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>
-        {items.length === 0 && (
+        {sortedItems.length === 0 && (
           <Box>
             <Text fontSize="xl" color="gray.500">
               No events found
             </Text>
           </Box>
         )}
-        {items.map((event) => (
+        {sortedItems.map((event) => (
           <EventCard
             key={event._id.toString()}
             event={event}
