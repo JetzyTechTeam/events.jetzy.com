@@ -174,57 +174,73 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   });
                 }}
               >
-                {ticket.isSelected && (
-                  <span className="absolute top-2 right-2">
-                    <CheckmarkSVG />
-                  </span>
-                )}
-                <div className="flex sm:flex-row justify-between items-center w-full">
-                  <div className="md:text-left xs:text-center">
-                    <h3 className="font-semibold text-lg">{ticket.name}</h3>
-                    <p className="text-xs my-2">
-                      Select your tickets and proceed to checkout
-                    </p>
-                    <p className="text-xs my-2">
-                      <Linkify options={{
-                        target: '_blank',
-                        className: 'text-orange-600 underline hover:text-orange-800',
-                      }}>
-                        {stripHtml(ticket.description)}
-                      </Linkify>
-                    </p>
-                    <div className="flex items-center justify-between w-full">
-                      <p className="text-jetzy font-bold text-xl">
-                        {staticTickets[index].price.toLocaleString("en-US", {
-                          style: "currency",
-                          currency: "usd",
-                        })}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full">
+                  <div className="flex items-start gap-4 text-left w-full sm:w-2/3">
+                    {/* Checkbox indicator */}
+                    <div className="pt-1 flex-shrink-0">
+                      <div className={`w-6 h-6 rounded flex items-center justify-center transition-colors border-2 ${
+                        ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
+                      }`}>
+                        {ticket.isSelected && (
+                          <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex-1">
+                      <h3 className={`font-semibold text-lg ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
+                        {ticket.name}
+                      </h3>
+                      <p className="text-xs text-gray-400 my-1">
+                        Select to proceed to checkout
                       </p>
-                      {event.isPaid && ticket.isSelected && (
-                        <div
-                          className="flex items-center space-x-4 mt-4 sm:mt-0 text-slate-800 absolute bottom-5 right-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            disabled={new Date(event.endsOn).getTime() < Date.now()}
-                            onClick={() => handleQuantityChange(ticket.id, -1)}
-                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            -
-                          </button>
-                          <p className="text-white text-lg font-semibold">
-                            {ticket.quantity}
-                          </p>
-                          <button
-                            disabled={new Date(event.endsOn).getTime() < Date.now()}
-                            onClick={() => handleQuantityChange(ticket.id, 1)}
-                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            +
-                          </button>
-                        </div>
+                      {ticket.description && (
+                        <p className="text-xs text-gray-300 my-2">
+                          <Linkify options={{
+                            target: '_blank',
+                            className: 'text-[#F79432] underline hover:text-orange-400',
+                          }}>
+                            {stripHtml(ticket.description)}
+                          </Linkify>
+                        </p>
                       )}
                     </div>
+                  </div>
+
+                  <div className="flex flex-col items-start sm:items-end w-full sm:w-1/3 mt-4 sm:mt-0 pt-3 sm:pt-0 pl-10 sm:pl-0">
+                    <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                      {staticTickets[index].price.toLocaleString("en-US", {
+                        style: "currency",
+                        currency: "usd",
+                      })}
+                    </p>
+                    
+                    {event.isPaid && ticket.isSelected && (
+                      <div
+                        className="flex items-center space-x-4 mt-3 text-slate-800 bg-[#1e1e1e] p-1.5 rounded-full"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          disabled={new Date(event.endsOn).getTime() < Date.now()}
+                          onClick={() => handleQuantityChange(ticket.id, -1)}
+                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
+                        >
+                          -
+                        </button>
+                        <p className="text-white text-lg font-semibold min-w-[20px] text-center">
+                          {ticket.quantity}
+                        </p>
+                        <button
+                          disabled={new Date(event.endsOn).getTime() < Date.now()}
+                          onClick={() => handleQuantityChange(ticket.id, 1)}
+                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
