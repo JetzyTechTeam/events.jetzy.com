@@ -4,6 +4,7 @@ export interface RequestParams<D = undefined> {
   id?: string
   param?: string
   data?: D
+  skipToast?: boolean
   pager?: {
     perPage: string | number
     page: string | number

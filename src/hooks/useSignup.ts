@@ -37,7 +37,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
         }
     }, [waitingForSession, status, session, navigate, _cb, navigate.isReady, options?.disableAutoRedirect])
 
-    const handleGoogleLogin = async () => {
+    const handleGoogleLogin = async (options?: { skipToast?: boolean }) => {
         setWaitingForSession(false);
         try {
             const provider = new GoogleAuthProvider();
@@ -50,6 +50,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                 email: result.user.email || "",
                 image: result.user.photoURL || "",
                 redirect: false,
+                isSignup: "true",
             });
 
             if (res?.error) {
@@ -57,15 +58,19 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
             }
 
             setWaitingForSession(true);
+            return { success: true };
         } catch (error: any) {
             console.error("Google Login Error:", error);
-            ServerErrors("Login Failed", {
-                message: error.message || "An unexpected error occurred during Google signup."
-            });
+            if (!options?.skipToast) {
+                ServerErrors("Login Failed", {
+                    message: error.message || "An unexpected error occurred during Google signup."
+                });
+            }
+            return { success: false, error: error.message || "Google signup failed." };
         }
     };
 
-    const handleAppleLogin = async () => {
+    const handleAppleLogin = async (options?: { skipToast?: boolean }) => {
         setWaitingForSession(false);
         try {
             const provider = new OAuthProvider('apple.com');
@@ -80,6 +85,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                 email: result.user.email || "",
                 image: result.user.photoURL || "",
                 redirect: false,
+                isSignup: "true",
             });
 
             if (res?.error) {
@@ -87,27 +93,32 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
             }
 
             setWaitingForSession(true);
+            return { success: true };
         } catch (error: any) {
             console.error("Apple Login Error:", error);
-            ServerErrors("Login Failed", {
-                message: error.message || "An unexpected error occurred during Apple signup."
-            });
+            if (!options?.skipToast) {
+                ServerErrors("Login Failed", {
+                    message: error.message || "An unexpected error occurred during Apple signup."
+                });
+            }
+            return { success: false, error: error.message || "Apple signup failed." };
         }
     };
 
-    const handleEmailSignup = async (values: SignUpFormData) => {
+    const handleEmailSignup = async (values: SignUpFormData & { skipToast?: boolean }) => {
+        const { skipToast, ...rest } = values;
         const sanitized = {
-            ...values,
-            email: values.email?.trim(),
-            firstName: values.firstName?.trim() || "User",
-            lastName: values.lastName?.trim() || "Account",
-            password: values.password?.trim(),
-            confirmPassword: values.confirmPassword?.trim() || values.password?.trim(),
-            shouldBeAJetzyMember: values.shouldBeAJetzyMember ?? false,
-            acceptedTerms: values.acceptedTerms ?? false,
+            ...rest,
+            email: rest.email?.trim(),
+            firstName: rest.firstName?.trim() || "User",
+            lastName: rest.lastName?.trim() || "Account",
+            password: rest.password?.trim(),
+            confirmPassword: rest.confirmPassword?.trim() || rest.password?.trim(),
+            shouldBeAJetzyMember: rest.shouldBeAJetzyMember ?? false,
+            acceptedTerms: rest.acceptedTerms ?? false,
         };
 
-        const res = await dispatcher(CreateUserAccountThunk({ data: sanitized }));
+        const res = await dispatcher(CreateUserAccountThunk({ data: sanitized, skipToast }));
         return res;
     }
 

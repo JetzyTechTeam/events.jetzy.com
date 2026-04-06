@@ -42,11 +42,16 @@ const generateSecurePassword = () => {
 }
 
 export default function JetzyQRSignup() {
+    const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, status, session } = useSignup({ disableAutoRedirect: true })
+    const navigate = useRouter()
+
     const [view, setView] = useState<ViewState>("SIGNUP")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [error, setError] = useState("")
     const [isEditing, setIsEditing] = useState(false)
+    const [isGoogleLoading, setIsGoogleLoading] = useState(false)
+    const [isAppleLoading, setIsAppleLoading] = useState(false)
 
     // Location state
     const [locationText, setLocationText] = useState("")
@@ -56,8 +61,7 @@ export default function JetzyQRSignup() {
         placeId: string
     }>({ lat: null, lng: null, placeId: "" })
 
-    const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, status, session } = useSignup({ disableAutoRedirect: true })
-    const navigate = useRouter()
+    const isAnyLoading = isLoading || isGoogleLoading || isAppleLoading
 
     // Google Places Autocomplete — allows both dropdown selection AND manual typing
     const { ref: locationRef } = usePlacesWidget<HTMLInputElement>({
@@ -95,7 +99,7 @@ export default function JetzyQRSignup() {
         }
 
         if (!locationText.trim()) {
-            setError("Please enter your home city or address.")
+            setError("Please enter your address.")
             return
         }
 
@@ -116,6 +120,7 @@ export default function JetzyQRSignup() {
                 lastName: "User",
                 shouldBeAJetzyMember: false,
                 acceptedTerms: true,
+                skipToast: true, // Suppress global unprofessional-looking alert
                 // Location data
                 location: locationText,
                 ...(locationData.lat !== null && { latitude: locationData.lat }),
@@ -123,7 +128,9 @@ export default function JetzyQRSignup() {
                 ...(locationData.placeId && { placeId: locationData.placeId }),
             })
 
-            if (res?.payload?.status) {
+            // Redux thunk returns the action object. If it failed, it has `error`. 
+            // If it used `rejectWithValue`, it's in `payload`.
+            if (res?.meta?.requestStatus === "fulfilled" && res?.payload?.status) {
                 setView("SUCCESS")
                 fetch("/api/welcome-email", {
                     method: "POST",
@@ -131,20 +138,18 @@ export default function JetzyQRSignup() {
                     body: JSON.stringify({ email, firstName: "New", lastName: "User", password: newPassword }),
                 }).catch(err => console.error("Failed to send welcome email:", err))
             } else {
-                const message = res?.payload?.message || "Something went wrong. Please try again."
-                if (message.toLowerCase().includes("already a member")) {
+                // Extract error message from thunk result
+                // Thunk error is often in res.error.message or res.payload.message
+                const errorMessage = res?.payload?.message || res?.error?.message || "Something went wrong. Please try again."
+                
+                if (errorMessage.toLowerCase().includes("already a member")) {
                     setError("You are already a member! Please log in to your account.")
                 } else {
-                    setError(message)
+                    setError(errorMessage)
                 }
             }
         } catch (err: any) {
-            const message = err.message || "An unexpected error occurred."
-            if (message.toLowerCase().includes("already a member")) {
-                setError("You are already a member! Please log in to your account.")
-            } else {
-                setError(message)
-            }
+            setError(err.message || "An unexpected error occurred.")
         }
     }
 
@@ -237,15 +242,21 @@ export default function JetzyQRSignup() {
                                     />
                                 </div>
 
-                                {error && <p className="text-red-500 text-xs mt-1 text-center w-full max-w-[559px]">{error}</p>}
+                                {error && (
+                                    <div className="w-full max-w-[559px] bg-red-50 border border-red-100 rounded-lg p-3 animate-in fade-in zoom-in-95">
+                                        <p className="text-red-600 text-[13px] sm:text-[14px] font-medium text-center leading-relaxed">
+                                            {error}
+                                        </p>
+                                    </div>
+                                )}
 
                                 <button
                                     id="signup-submit"
                                     type="submit"
-                                    disabled={isLoading}
+                                    disabled={isAnyLoading}
                                     className="w-full max-w-[559px] h-[64px] rounded-full bg-[#f99839] text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center mt-1"
                                 >
-                                    {isLoading ? <Spinner /> : "Create My Jetzy Account"}
+                                    {isAnyLoading ? <Spinner /> : "Create My Jetzy Account"}
                                 </button>
                             </form>
 
@@ -260,19 +271,45 @@ export default function JetzyQRSignup() {
                             <div className="w-full space-y-4 mb-10 max-w-[559px]">
                                 <button
                                     id="signup-google"
-                                    onClick={() => { setIsEditing(false); handleGoogleLogin(); }}
-                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm"
+                                    disabled={isAnyLoading}
+                                    onClick={async () => {
+                                        setIsEditing(false);
+                                        setIsGoogleLoading(true);
+                                        const res = await handleGoogleLogin({ skipToast: true });
+                                        setIsGoogleLoading(false);
+                                        if (!res.success) {
+                                            setError(res.error || "Google signup failed. Please try again.");
+                                        }
+                                    }}
+                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
                                 >
-                                    <FcGoogle className="h-6 w-6" />
-                                    <span>Signup with Google</span>
+                                    {isGoogleLoading ? <Spinner /> : (
+                                        <>
+                                            <FcGoogle className="h-6 w-6" />
+                                            <span>Signup with Google</span>
+                                        </>
+                                    )}
                                 </button>
                                 <button
                                     id="signup-apple"
-                                    onClick={() => { setIsEditing(false); handleAppleLogin(); }}
-                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm"
+                                    disabled={isAnyLoading}
+                                    onClick={async () => {
+                                        setIsEditing(false);
+                                        setIsAppleLoading(true);
+                                        const res = await handleAppleLogin({ skipToast: true });
+                                        setIsAppleLoading(false);
+                                        if (!res.success) {
+                                            setError(res.error || "Apple signup failed. Please try again.");
+                                        }
+                                    }}
+                                    className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
                                 >
-                                    <AiFillApple className="h-6 w-6 text-black" />
-                                    <span>Signup with Apple</span>
+                                    {isAppleLoading ? <Spinner /> : (
+                                        <>
+                                            <AiFillApple className="h-6 w-6 text-black" />
+                                            <span>Signup with Apple</span>
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </div>

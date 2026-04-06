@@ -48,7 +48,12 @@ export const authSlice = createSlice({
     builder.addCase(CreateUserAccountThunk.rejected, (state, action) => {
       state.isLoading = false
 
-      ServerErrors("Failed to create user account.", action?.error)
+      // Support skipping the global toast if requested in metadata
+      // @ts-ignore
+      const skipToast = action?.meta?.arg?.skipToast;
+      if (!skipToast) {
+        ServerErrors("Failed to create user account.", action?.error)
+      }
     })
   },
 })

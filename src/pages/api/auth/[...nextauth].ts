@@ -343,6 +343,13 @@ export const authOptions: NextAuthOptions = {
             user = await Users.findOne({ email });
           }
 
+          // If this is a signup attempt but the user already exists, throw error
+          const { isSignup } = (credentials as any) ?? {};
+          if (isSignup === "true" && user) {
+            console.log(`🔴 Social Signup failed: User ${email} already exists.`);
+            throw new Error("You are already a member! Please log in to your account.");
+          }
+
           // If user doesn't exist, create a new one (Social Signup)
           if (!user) {
             console.log(`Firebase Auth: User ${email} not found, creating new account...`);
