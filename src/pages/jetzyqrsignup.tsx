@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from "react"
+import React, { useState } from "react"
 import Head from "next/head"
 import Image from "next/image"
 import { useRouter } from "next/router"
 import { useSignup } from "@Jetzy/hooks/useSignup"
-import { unauthorizedOnly } from "@Jetzy/lib/authSession"
 import { GetServerSideProps } from "next"
 import { FcGoogle } from "react-icons/fc"
 import { AiFillApple } from "react-icons/ai"
-// import { Dialog, Transition } from "@headlessui/react"
+import { HiLocationMarker } from "react-icons/hi"
 import Spinner from "@Jetzy/components/misc/Spinner"
+import { usePlacesWidget } from "react-google-autocomplete"
 
 // Image Assets
 import BgImage from "@Jetzy/assets/qrscanner signup/Rectangle background.png"
@@ -27,7 +27,6 @@ const generateSecurePassword = () => {
         special: "!@#$%^&*"
     }
 
-    // Ensure at least one of each
     let password = ""
     password += charset.upper[Math.floor(Math.random() * charset.upper.length)]
     password += charset.lower[Math.floor(Math.random() * charset.lower.length)]
@@ -39,7 +38,6 @@ const generateSecurePassword = () => {
         password += all[Math.floor(Math.random() * all.length)]
     }
 
-    // Shuffle
     return password.split('').sort(() => 0.5 - Math.random()).join('')
 }
 
@@ -50,39 +48,43 @@ export default function JetzyQRSignup() {
     const [error, setError] = useState("")
     const [isEditing, setIsEditing] = useState(false)
 
+    // Location state
+    const [locationText, setLocationText] = useState("")
+    const [locationData, setLocationData] = useState<{
+        lat: number | null
+        lng: number | null
+        placeId: string
+    }>({ lat: null, lng: null, placeId: "" })
+
     const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, status, session } = useSignup({ disableAutoRedirect: true })
     const navigate = useRouter()
 
-    // Handle social login success
-    /* 
-    useEffect(() => {
-        if (status === 'authenticated' && session && view === "SIGNUP" && !isEditing) {
-            const userEmail = session.user?.email || ""
-            if (userEmail) {
-                setEmail(userEmail)
-                // Trigger welcome email for social users too
-                fetch("/api/welcome-email", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        email: userEmail,
-                        firstName: session.user?.name?.split(" ")[0] || "New",
-                        lastName: session.user?.name?.split(" ")[1] || "Social User"
-                    }),
-                }).catch(err => console.error("Failed to send welcome email to social user:", err))
-            }
-            setView("SUCCESS")
-        }
-    }, [status, session, view, isEditing])
-    */
+    // Google Places Autocomplete — allows both dropdown selection AND manual typing
+    const { ref: locationRef } = usePlacesWidget<HTMLInputElement>({
+        apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+        onPlaceSelected: (place) => {
+            const address = place.formatted_address || place.name || ""
+            const lat = place.geometry?.location?.lat() ?? null
+            const lng = place.geometry?.location?.lng() ?? null
+            const placeId = place.place_id || ""
+
+            setLocationText(address)
+            setLocationData({ lat, lng, placeId })
+        },
+        options: {
+            fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
+            // No `types` restriction — allow cities, addresses, landmarks, anything
+        },
+    })
 
     const validateEmail = (email: string) => {
         return String(email)
             .toLowerCase()
             .match(
-                /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+                /^(([^<>()[\]\\.,;:\s@"]+(.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
             );
     };
+
     const onSignupSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError("")
@@ -92,7 +94,11 @@ export default function JetzyQRSignup() {
             return
         }
 
-        // Call account creation directly
+        if (!locationText.trim()) {
+            setError("Please enter your home city or address.")
+            return
+        }
+
         createAccount()
     }
 
@@ -109,20 +115,22 @@ export default function JetzyQRSignup() {
                 firstName: "New",
                 lastName: "User",
                 shouldBeAJetzyMember: false,
-                acceptedTerms: true
+                acceptedTerms: true,
+                // Location data
+                location: locationText,
+                ...(locationData.lat !== null && { latitude: locationData.lat }),
+                ...(locationData.lng !== null && { longitude: locationData.lng }),
+                ...(locationData.placeId && { placeId: locationData.placeId }),
             })
 
-            // Check if payload status is true (success) or if it's an existing user flow
             if (res?.payload?.status) {
                 setView("SUCCESS")
-                // Call the welcome email API instead of server action
                 fetch("/api/welcome-email", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ email, firstName: "New", lastName: "User", password: newPassword }),
                 }).catch(err => console.error("Failed to send welcome email:", err))
             } else {
-                // Handle specific error messages if needed
                 const message = res?.payload?.message || "Something went wrong. Please try again."
                 if (message.toLowerCase().includes("already a member")) {
                     setError("You are already a member! Please log in to your account.")
@@ -182,24 +190,26 @@ export default function JetzyQRSignup() {
             <main className="relative z-10 flex flex-col items-center justify-center p-4 sm:p-6 w-full max-w-none flex-1 mb-10">
                 {view === "SIGNUP" ? (
                     <div className="bg-white rounded-[20px] shadow-xl overflow-hidden w-full max-w-[648px] md:min-h-[828px] transition-all duration-500 animate-in fade-in slide-in-from-bottom-4 flex flex-col">
-                        {/* Hero Image Container (Padding 8px) */}
+                        {/* Hero Image */}
                         <div className="p-2 w-full pb-0">
                             <div className="relative w-full aspect-[632/245] max-w-[632px] overflow-hidden rounded-[10px] mx-auto">
                                 <Image src={HeroImage} alt="Travel Destinations" fill className="object-cover" priority />
                             </div>
                         </div>
 
-                        {/* Form Content (Gap 20px - handled by mt-5/mb-5) */}
+                        {/* Form Content */}
                         <div className="px-6 sm:px-12 py-8 flex flex-col items-center flex-1">
                             <h1 className="text-2xl sm:text-3xl font-bold text-center mb-1 text-[#1A1A1A]">Welcome to Jetzy</h1>
                             <p className="text-gray-500 text-center text-[14px] sm:text-[15px] mb-8 px-2 sm:px-6 leading-relaxed">
                                 Create your Jetzy account in seconds and unlock a seamless travel experience.
                             </p>
 
-                            {/* Email Form */}
+                            {/* Signup Form */}
                             <form onSubmit={onSignupSubmit} className="w-full flex flex-col items-center gap-1 mb-8">
                                 <div className="w-full max-w-[559px]">
+                                    {/* Email Field */}
                                     <input
+                                        id="signup-email"
                                         type="email"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
@@ -207,12 +217,33 @@ export default function JetzyQRSignup() {
                                         className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
                                         required
                                     />
-                                    {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}
                                 </div>
+
+                                {/* Location Field */}
+                                <div className="w-full max-w-[559px] relative">
+                                    <input
+                                        id="signup-location"
+                                        ref={locationRef}
+                                        type="text"
+                                        value={locationText}
+                                        onChange={(e) => {
+                                            setLocationText(e.target.value)
+                                            // Reset coords if user types manually (no autocomplete selected)
+                                            setLocationData({ lat: null, lng: null, placeId: "" })
+                                        }}
+                                        placeholder="Enter your location"
+                                        className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
+                                        autoComplete="off"
+                                    />
+                                </div>
+
+                                {error && <p className="text-red-500 text-xs mt-1 text-center w-full max-w-[559px]">{error}</p>}
+
                                 <button
+                                    id="signup-submit"
                                     type="submit"
                                     disabled={isLoading}
-                                    className="w-full max-w-[559px] h-[64px] rounded-full bg-[#f99839] text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center mt-3"
+                                    className="w-full max-w-[559px] h-[64px] rounded-full bg-[#f99839] text-[15px] font-bold text-white shadow-lg shadow-orange-200 hover:bg-[#faac5a] transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center mt-1"
                                 >
                                     {isLoading ? <Spinner /> : "Create My Jetzy Account"}
                                 </button>
@@ -228,6 +259,7 @@ export default function JetzyQRSignup() {
                             {/* Social Buttons */}
                             <div className="w-full space-y-4 mb-10 max-w-[559px]">
                                 <button
+                                    id="signup-google"
                                     onClick={() => { setIsEditing(false); handleGoogleLogin(); }}
                                     className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm"
                                 >
@@ -235,6 +267,7 @@ export default function JetzyQRSignup() {
                                     <span>Signup with Google</span>
                                 </button>
                                 <button
+                                    id="signup-apple"
                                     onClick={() => { setIsEditing(false); handleAppleLogin(); }}
                                     className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-3.5 text-[15px] font-semibold text-[#1A1A1A] hover:bg-gray-50 transition-colors shadow-sm"
                                 >
@@ -266,12 +299,14 @@ export default function JetzyQRSignup() {
                             </div>
 
                             <button
+                                id="resend-email"
                                 onClick={handleResend}
                                 className="w-full max-w-[558px] h-[73px] rounded-full bg-[#f99839] text-[18px] font-bold text-white shadow-lg shadow-orange-100 hover:bg-[#faac5a] transition-all active:scale-[0.98] flex items-center justify-center mb-4"
                             >
                                 Resend Email
                             </button>
                             <button
+                                id="edit-email"
                                 onClick={handleEditEmail}
                                 className="w-full max-w-[558px] h-[73px] rounded-full border border-[#161616] text-[18px] font-bold text-gray-600 hover:bg-gray-50 transition-all active:scale-[0.98] flex items-center justify-center"
                             >
@@ -287,8 +322,6 @@ export default function JetzyQRSignup() {
                     By creating an account, you agree to our Terms of Service and Privacy Policy.
                 </p>
             </footer>
-
-
         </div>
     )
 }

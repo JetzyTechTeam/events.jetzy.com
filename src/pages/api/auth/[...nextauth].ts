@@ -104,11 +104,23 @@ export const authOptions: NextAuthOptions = {
             throw new Error("User was not found.");
           }
 
+          // ── Account Safety Checks ─────────────────────────────────────────
+          if ((user as any).emailBounced) {
+            console.log('🔴 Login blocked: email bounced for', email);
+            throw new Error("EMAIL_BOUNCED");
+          }
+          if ((user as any).isBlocked) {
+            console.log('🔴 Login blocked: account blocked for', email);
+            throw new Error("ACCOUNT_BLOCKED");
+          }
+          // ──────────────────────────────────────────────────────────────────
+
           const isPasswordCorrect = isMagicLogin || await bcrypt.compare(password, user.password);
           if (!isPasswordCorrect) {
             console.log('Password mismatch');
             throw new Error("Invalid password.");
           }
+
 
           let accessToken = null;
 
@@ -230,6 +242,9 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             role: user.role,
             accessToken: accessToken,
+            isBlocked: !!(user as any).isBlocked,
+            emailBounced: !!(user as any).emailBounced,
+            requiresVerification: !!(user as any).requiresVerification,
             ...(finalImage ? { image: finalImage } : {}),
           };
 

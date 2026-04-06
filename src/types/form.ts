@@ -10,6 +10,10 @@ export type SignUpFormData = {
 	confirmPassword?: string
 	shouldBeAJetzyMember: boolean
 	acceptedTerms: boolean
+	location?: string
+	latitude?: number
+	longitude?: number
+	placeId?: string
 }
 
 export type SignInFormData = {

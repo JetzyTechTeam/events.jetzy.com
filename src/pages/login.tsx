@@ -22,6 +22,7 @@ export default function LoginPage() {
 	const [isLoading, setLoader] = React.useState(false)
 	const [waitingForSession, setWaitingForSession] = React.useState(false)
 	const [hasAttemptedMagicLink, setHasAttemptedMagicLink] = React.useState(false)
+	const [accountStatus, setAccountStatus] = React.useState<'blocked' | 'bounced' | null>(null)
 
 	const { data: session, status } = useSession()
 
@@ -121,12 +122,19 @@ export default function LoginPage() {
 			console.error('Login Error detail:', res.error);
 			setLoader(false)
 
+			// Account safety checks — surface specific popups
+			if (res.error === 'ACCOUNT_BLOCKED' || res.error.includes('ACCOUNT_BLOCKED')) {
+				setAccountStatus('blocked')
+				return
+			}
+			if (res.error === 'EMAIL_BOUNCED' || res.error.includes('EMAIL_BOUNCED')) {
+				setAccountStatus('bounced')
+				return
+			}
 
 			// format an error message
 			const error = { message: res?.error }
-
 			ServerErrors("Sorry", error)
-
 			return
 		}
 
@@ -217,6 +225,53 @@ export default function LoginPage() {
 	return (
 
 		<>
+			{/* ── Account Safety Popups ── */}
+			{accountStatus && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+					<div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center text-center animate-in zoom-in-95">
+						{accountStatus === 'blocked' ? (
+							<>
+								<div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+									<svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+									</svg>
+								</div>
+								<h2 className="text-xl font-bold text-gray-900 mb-3">Email Not Verified</h2>
+								<p className="text-gray-600 text-sm leading-relaxed mb-6">
+									Your email was not verified. Please verify your email or enter the correct address to proceed. Our admin team will review this account for compliance.
+								</p>
+							</>
+						) : (
+							<>
+								<div className="w-16 h-16 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
+									<svg className="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+									</svg>
+								</div>
+								<h2 className="text-xl font-bold text-gray-900 mb-3">Email Bounced Back</h2>
+								<p className="text-gray-600 text-sm leading-relaxed mb-6">
+									Your email bounced back. Enter your correct email to proceed.
+								</p>
+							</>
+						)}
+						<button
+							onClick={() => {
+								if (accountStatus === 'blocked') {
+									// Get the email from the form input (we'll need a ref or state for this)
+									const emailInput = (document.querySelector('input[name="email"]') as HTMLInputElement)?.value;
+									navigation.push(`/auth/verify?email=${encodeURIComponent(emailInput || "")}`);
+								} else {
+									setAccountStatus(null);
+								}
+							}}
+							className="w-full bg-[#F79432] text-white font-semibold py-3 px-6 rounded-full hover:bg-[#e8842a] transition-colors"
+						>
+							{accountStatus === 'blocked' ? "Verify My Email" : "Try a Different Email"}
+						</button>
+					</div>
+				</div>
+			)}
+
 			<div className="flex min-h-full flex-1 flex-col justify-center px-6 py-12 lg:px-8">
 				<div className="sm:mx-auto sm:w-full sm:max-w-sm">
 					<Image className="mx-auto h-20 w-auto" src={Logo} alt="Jetzy Life" />

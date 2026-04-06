@@ -1634,6 +1634,11 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
   const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
   const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
   const DOWNLOAD_LINK = "https://jetzyapp.com/download.html";
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com";
+
+  // Encode email so the block link is personalized
+  const encodedEmail = encodeURIComponent(email);
+  const blockLink = `${baseUrl}/api/auth/report-abuse?email=${encodedEmail}`;
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
@@ -1647,7 +1652,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       </p>
       
       <p style="font-size: 16px; color: #555; line-height: 1.6;">
-        Your Jetzy account has been successfully created. We're excited to have you join our global community of travelers and explorers!
+        <strong>Thank you for creating your Jetzy account!</strong> We're excited to have you join our global community of travelers and explorers.
       </p>
 
       ${password ? `
@@ -1676,6 +1681,16 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
         </a>
       </div>
 
+      <!-- Account Safety Notice -->
+      <div style="background-color: #FFF3CD; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #FFC107;">
+        <h3 style="margin-top: 0; color: #856404; font-size: 15px;">⚠️ Account Safety Notice</h3>
+        <p style="font-size: 14px; color: #856404; line-height: 1.6; margin: 0;">
+          An account has been created on Jetzy using your email address. If you created this account, no action is needed.<br/><br/>
+          If you did <strong>not</strong> create this account, please 
+          <a href="${blockLink}" style="color: #856404; font-weight: bold; text-decoration: underline;">click here to block this account</a>.
+        </p>
+      </div>
+
       <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
         Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #F79432; text-decoration: none;">marketing@jetzy.com</a>
         <br />
@@ -1693,11 +1708,210 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       },
       subject: "Welcome to Jetzy - Your Account is Ready!",
       html: wrapHtml(html),
-      text: `Welcome to Jetzy!\n\nYour account has been successfully created.${password ? `\n\nYour Temporary Password: ${password}` : ''}\n\nDownload the app: ${DOWNLOAD_LINK}`
+      text: `Welcome to Jetzy!\n\nThank you for creating your Jetzy account!\n\n${password ? `Your Temporary Password: ${password}\n\n` : ''}Download the app: ${DOWNLOAD_LINK}\n\n---\nACCOUNT SAFETY: An account has been created on Jetzy using your email address. If you created this account, no action is needed. If you did NOT create this account, please click here to block it: ${blockLink}`
     });
     console.log(`✅ Welcome email sent successfully to: ${email}`);
   } catch (error) {
     console.error("❌ Failed to send welcome email:", error);
+    throw error;
+  }
+}
+
+export const sendBlockNotificationEmail = async ({ email, blockedAt }: { email: string; blockedAt: string }) => {
+  try {
+    await sgMail.send({
+      to: "fahadzaman664@gmail.com", // TODO: change back to tech@jetzyapp.com after testing
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Security"
+      },
+      subject: `🚨 [COMPLIANCE] Account Blocked - ${email}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 2px solid #DC3545; border-radius: 12px;">
+          <h1 style="color: #DC3545; text-align: center;">🚨 Security Alert: Account Blocked</h1>
+          
+          <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #DC3545;">
+            <h3 style="color: #721c24; margin-top: 0;">Action Required – Compliance Review</h3>
+            <p style="color: #721c24; margin: 0;">
+              A user has reported that they did not create a Jetzy account with their email. The account has been automatically blocked.
+            </p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #333; margin-top: 0;">Account Details</h3>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Blocked At:</strong> ${blockedAt}</p>
+            <p><strong>Reason:</strong> User reported account was created without their consent.</p>
+          </div>
+
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #FFC107;">
+            <h3 style="color: #856404; margin-top: 0;">What has been done automatically:</h3>
+            <ul style="color: #856404;">
+              <li>Account has been flagged as <strong>isBlocked = true</strong></li>
+              <li>Account has been flagged as <strong>requiresVerification = true</strong></li>
+              <li>User will see a verification prompt on next login attempt</li>
+            </ul>
+          </div>
+
+          <p style="color: #333; font-size: 14px;">Please review this account in the database for compliance.</p>
+          
+          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 20px; padding-top: 15px;">
+            &copy; ${new Date().getFullYear()} Jetzy Events, Inc. – Internal Compliance System
+          </p>
+        </div>
+      `),
+      text: `SECURITY ALERT: Account Blocked\n\nEmail: ${email}\nBlocked At: ${blockedAt}\nReason: User reported account was created without their consent.\n\nThe account has been automatically blocked and flagged for compliance review. Please review this account in the admin dashboard.`
+    });
+    console.log(`✅ Block notification sent to tech@jetzyapp.com for: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send block notification:", error);
+    throw error;
+  }
+}
+
+/**
+ * PHASE 2: Mandatory Verification Email
+ */
+export const sendManualVerificationEmail = async ({ email, code }: { email: string; code: string }) => {
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Verification"
+      },
+      subject: `Your Jetzy Verification Code: ${code}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 25px;">
+            <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" style="vertical-align: middle; margin-bottom: 10px;" />
+            <h1 style="color: #333; font-size: 24px; margin: 0;">Verify Your Email</h1>
+          </div>
+          
+          <p style="color: #666; font-size: 16px; line-height: 1.5;">
+            You requested a verification code to reactivate your Jetzy account. Please use the 6-digit code below to proceed:
+          </p>
+          
+          <div style="background-color: #f9f9f9; padding: 30px; text-align: center; border-radius: 12px; margin: 25px 0; border: 1px dashed #F79432;">
+            <span style="font-family: monospace; font-size: 42px; font-weight: 800; color: #F79432; letter-spacing: 12px;">${code}</span>
+          </div>
+          
+          <p style="color: #999; font-size: 14px; line-height: 1.4;">
+            This code will expire in 30 minutes. If you did not request this, please ignore this email.
+          </p>
+          
+          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
+            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+          </p>
+        </div>
+      `),
+      text: `Your Jetzy Verification Code: ${code}\n\nUse this code to verify your email. It expires in 30 minutes.`
+    });
+    console.log(`✅ Manual verification code sent to: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send manual verification email:", error);
+    throw error;
+  }
+}
+
+/**
+ * PHASE 2: Admin Compliance Review Alert
+ */
+export const sendAdminComplianceAlert = async ({ email, unblockToken }: { email: string; unblockToken: string }) => {
+  const adminUrl = `${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/api/admin/compliance/unblock?token=${unblockToken}`;
+  
+  try {
+    await sgMail.send({
+      to: "fahadzaman664@gmail.com", // Keeping test email per user request
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Compliance"
+      },
+      subject: `ACTION REQUIRED: User Verified - Compliance Review for ${email}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
+          <h2 style="color: #F79432; margin-top: 0;">Compliance Review Required</h2>
+          
+          <p style="color: #333; font-size: 16px;">
+            The following user has successfully verified their email address and is requesting their account be unblocked:
+          </p>
+          
+          <div style="background-color: #f4f4f4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+            <p style="margin: 5px 0;"><strong>Status:</strong> Verified (Pending Admin Review)</p>
+          </div>
+          
+          <p style="color: #333;">If you have reviewed this account and everything looks correct, click the button below to <strong>Unblock</strong> the user instantly:</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${adminUrl}" style="background-color: #28a745; color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 18px; display: inline-block;">
+              Approve & Unblock Account
+            </a>
+          </div>
+          
+          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+            This is an automated security notification.
+          </p>
+        </div>
+      `),
+      text: `ACTION REQUIRED: User Verified\n\nEmail: ${email}\n\nThe user has verified their email. Review and unblock using this link:\n${adminUrl}`
+    });
+    console.log(`✅ Admin compliance alert sent for: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send admin compliance alert:", error);
+    throw error;
+  }
+}
+
+/**
+ * PHASE 2: Account Approved & Password Notification
+ */
+export const sendAccountApprovedEmail = async ({ email, password }: { email: string; password?: string }) => {
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        name: "Jetzy Account"
+      },
+      subject: `Your Jetzy Account is Approved! 🎉`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; border-top: 5px solid #28a745;">
+          <div style="text-align: center; margin-bottom: 25px;">
+            <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" style="vertical-align: middle; margin-bottom: 10px;" />
+            <h1 style="color: #28a745; font-size: 26px; margin: 0;">Good News! Your Account is Active</h1>
+          </div>
+          
+          <p style="color: #333; font-size: 16px; line-height: 1.6;">
+            Hi there, <br><br>
+            Our compliance team has reviewed and <strong>Approved</strong> your Jetzy account. You can now log in and access all event features.
+          </p>
+          
+          ${password ? `
+          <div style="background-color: #f8f9fa; padding: 25px; border-radius: 8px; border: 1px solid #e9ecef; margin: 25px 0;">
+            <p style="margin: 0 0 10px 0; font-size: 14px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Your Temporary Password</p>
+            <span style="font-family: monospace; font-size: 24px; font-weight: 700; color: #333;">${password}</span>
+          </div>
+          <p style="color: #F79432; font-size: 14px; font-weight: bold;">Important: Please change your password immediately after logging in for security.</p>
+          ` : ''}
+          
+          <div style="text-align: center; margin: 35px 0;">
+            <a href="${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/login" style="background-color: #F79432; color: white; padding: 14px 35px; text-decoration: none; border-radius: 50px; font-weight: bold; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.2);">
+              Log In Now
+            </a>
+          </div>
+          
+          <p style="color: #999; font-size: 13px; line-height: 1.5; text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+            Welcome to the Jetzy family! We're excited to have you back.<br>
+            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+          </p>
+        </div>
+      `),
+      text: `Good News! Your Jetzy account is approved.\n\n${password ? `Your temporary password is: ${password}\nPlease change it after logging in.` : ''}\n\nLog in here: ${process.env.NEXT_PUBLIC_URL || 'https://events.jetzy.com'}/login`
+    });
+    console.log(`✅ Account approval email sent to: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send account approval email:", error);
     throw error;
   }
 }
