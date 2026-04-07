@@ -118,7 +118,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
         {event.benefits && event.benefits.trim() !== "" && (
           <Flex
             position="absolute"
-            bottom="4"
+            top="4"
             left="4"
             direction="column"
             gap="1"

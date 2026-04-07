@@ -31,7 +31,7 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 						<Image className="w-full h-full object-cover object-top" src={item?.images[0]} alt={item?.name} width={512} height={512} />
 						{/* Benefits Overlay */}
 						{item?.benefits && item.benefits.trim() !== "" && (
-							<div className="absolute bottom-3 left-3 z-10 flex flex-col gap-1 max-w-[80%]">
+							<div className="absolute top-3 left-3 z-10 flex flex-col gap-1 max-w-[80%]">
 								{item.benefits
 									.split(",")
 									.map((b) => b.trim())

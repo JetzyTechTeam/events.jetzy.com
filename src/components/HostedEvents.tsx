@@ -169,13 +169,13 @@ export default function HostedEvents({ event }: Props) {
 								<Slider {...settings}>
 									{clonedEvent.images.map((image, idx) => (
 										<div key={idx} className="!flex !items-center !justify-center w-full md:h-[335px] sm:h-52 bg-black rounded-xl">
-											<Image src={image} alt="Event Banner" className="max-h-full max-w-full object-contain rounded-xl" />
+											<Image src={image} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
 										</div>
 									))}
 								</Slider>
 							) : clonedEvent?.images && Array.isArray(clonedEvent.images) && clonedEvent.images.length === 1 ? (
 								<div className="w-full md:h-[335px] sm:h-52 bg-black flex items-center justify-center rounded-xl">
-									<Image src={clonedEvent.images[0]} alt="Event Banner" className="max-h-full max-w-full object-contain rounded-xl" />
+									<Image src={clonedEvent.images[0]} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
 								</div>
 							) : (
 								<div className="w-full md:h-[335px] sm:h-52 bg-gray-800 flex items-center justify-center rounded-xl">
@@ -185,7 +185,7 @@ export default function HostedEvents({ event }: Props) {
 
 							{/* Benefits Overlay */}
 							{clonedEvent?.benefits && clonedEvent.benefits.trim() !== "" && (
-								<div className="absolute bottom-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
+								<div className="absolute top-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
 									{clonedEvent.benefits
 										.split(",")
 										.map((b) => b.trim())
