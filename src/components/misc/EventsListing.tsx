@@ -183,11 +183,13 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
             </Text>
           </Box>
           <Box display="flex" alignItems="center" justifyContent="space-between " mt=" 2">
-            {/* Show tickets sold for all users */}
-            <Box fontSize="sm" color="gray.400">
-              <Text>Total people: {uniqueGuests}</Text>
-              <Text>Total tickets: {totalTickets}</Text>
-            </Box>
+            {/* Show tickets sold for admin users only */}
+            {isAdmin && (
+              <Box fontSize="sm" color="gray.400">
+                <Text>Total people: {uniqueGuests}</Text>
+                <Text>Total tickets: {totalTickets}</Text>
+              </Box>
+            )}
 
             <Box
               bg="#3E3E3E"
