@@ -429,7 +429,7 @@ const CreateEventPage = () => {
                   </InputGroup>
                 </FormControl>
                 <Text fontWeight="semibold" color="gray.400" mb={2}>
-                  Event Benefits (Max 150 chars)
+                  Event Benefits (Max 23 chars)
                 </Text>
                 <Box bg="#141619" rounded="xl" px="4" py="3" mb={4}>
                   <FormControl>
@@ -446,11 +446,11 @@ const CreateEventPage = () => {
                         border="none"
                         fontSize="sm"
                         pl="10"
-                        maxLength={150}
+                        maxLength={23}
                       />
                     </InputGroup>
                     <Text fontSize="xs" color="gray.500" mt={1} textAlign="right">
-                      {values.benefits?.length || 0}/150
+                      {values.benefits?.length || 0}/23
                     </Text>
                   </FormControl>
                 </Box>

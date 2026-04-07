@@ -47,7 +47,7 @@ const schema = zod.object({
 	),
 	isPaid: zod.boolean(),
 	desc: zod.string().nonempty(),
-	benefits: zod.string().max(150).optional(),
+	benefits: zod.string().max(23).optional(),
 })
 
 // create stripe instance

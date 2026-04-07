@@ -46,7 +46,7 @@ const schema = zod.object({
 	desc: zod.string().nonempty(),
 	timezone: zod.string().nonempty(),
 	feedbackFormUrl: zod.string().optional(),
-	benefits: zod.string().max(150).optional(),
+	benefits: zod.string().max(23).optional(),
 })
 
 // create stripe instance
