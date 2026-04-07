@@ -182,6 +182,37 @@ export default function HostedEvents({ event }: Props) {
 									<p className="text-gray-400">No image available</p>
 								</div>
 							)}
+
+							{/* Benefits Overlay */}
+							{clonedEvent?.benefits && clonedEvent.benefits.trim() !== "" && (
+								<div className="absolute bottom-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
+									{clonedEvent.benefits
+										.split(",")
+										.map((b) => b.trim())
+										.filter((b) => b !== "")
+										.map((benefit, index) => (
+											<div
+												key={index}
+												className="bg-[#F79432] backdrop-blur-md border border-white/20 rounded-lg px-4 py-2 text-black text-sm font-bold shadow-xl transform transition-all duration-300 hover:scale-105"
+												style={{
+													animation: `fadeInUp 0.5s ease-out forwards ${index * 0.1}s`,
+													opacity: 0,
+													transform: "translateY(10px)",
+												}}
+											>
+												{benefit}
+											</div>
+										))}
+								</div>
+							)}
+							<style jsx>{`
+								@keyframes fadeInUp {
+									to {
+										opacity: 1;
+										transform: translateY(0);
+									}
+								}
+							`}</style>
 						</div>
 
 						{/* Content Section */}

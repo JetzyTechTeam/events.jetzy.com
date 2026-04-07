@@ -105,7 +105,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       }}
       onClick={() => onClick(event)}
     >
-      <Box p="2">
+      <Box p="2" position="relative">
         <Image
           src={event.images[0]}
           alt={stripHtml(event.name)}
@@ -114,6 +114,41 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
           h="200px"
           rounded="lg"
         />
+        {/* Benefits Overlay */}
+        {event.benefits && event.benefits.trim() !== "" && (
+          <Flex
+            position="absolute"
+            bottom="4"
+            left="4"
+            direction="column"
+            gap="1"
+            maxW="80%"
+            zIndex="2"
+          >
+            {event.benefits
+              .split(",")
+              .map((b) => b.trim())
+              .filter((b) => b !== "")
+              .slice(0, 2) // Only show first 2 on small cards
+              .map((benefit, index) => (
+                <Box
+                  key={index}
+                  bg="#F79432"
+                  backdropFilter="blur(4px)"
+                  px="2"
+                  py="0.5"
+                  rounded="md"
+                  color="black"
+                  fontSize="xs"
+                  fontWeight="bold"
+                  border="1px"
+                  borderColor="whiteAlpha.300"
+                >
+                  {benefit}
+                </Box>
+              ))}
+          </Flex>
+        )}
       </Box>
       <Box p="2">
         <Stack spacing="3">

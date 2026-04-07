@@ -146,6 +146,10 @@ const eventsSchema = new Schema<IEvent>(
 			type: Date,
 			required: false,
 		},
+		benefits: {
+			type: String,
+			default: "",
+		},
 	},
 	{
 		timestamps: true,

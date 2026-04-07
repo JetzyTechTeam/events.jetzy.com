@@ -27,7 +27,27 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 		<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
 			{items?.map((item) => (
 				<Link href={ROUTES.eventDetails.replace("[slug]", item?.slug)} key={item?._id.toString()} className="bg-[#1E1E1E] shadow-md rounded-lg overflow-hidden relative">
-					<Image className="w-full h-48 object-cover object-top" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+					<div className="relative h-48 w-full">
+						<Image className="w-full h-full object-cover object-top" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+						{/* Benefits Overlay */}
+						{item?.benefits && item.benefits.trim() !== "" && (
+							<div className="absolute bottom-3 left-3 z-10 flex flex-col gap-1 max-w-[80%]">
+								{item.benefits
+									.split(",")
+									.map((b) => b.trim())
+									.filter((b) => b !== "")
+									.slice(0, 2)
+									.map((benefit, index) => (
+										<div
+											key={index}
+											className="bg-[#F79432] backdrop-blur-sm border border-white/10 rounded px-2 py-0.5 text-black text-[10px] font-bold shadow-sm"
+										>
+											{benefit}
+										</div>
+									))}
+							</div>
+						)}
+					</div>
 					<div className="p-4">
 						<h3 className="text-lg font-semibold">{item?.name}</h3>
 						<p className="mt-2 text-sm truncate text-ellipsis overflow-hidden mb-10">{item?.desc}</p>
