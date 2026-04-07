@@ -159,6 +159,16 @@ export default function LoginPage() {
 				redirect: false,
 			});
 
+			if (res?.error === "ACCOUNT_BLOCKED") {
+				setAccountStatus('blocked');
+				setLoader(false);
+				return;
+			}
+			if (res?.error === "EMAIL_BOUNCED") {
+				setAccountStatus('bounced');
+				setLoader(false);
+				return;
+			}
 			if (res?.error) {
 				console.error("NextAuth SignIn Error:", res.error);
 				throw new Error(res.error || "Authentication failed on the server");
@@ -191,6 +201,14 @@ export default function LoginPage() {
 				redirect: false,
 			});
 
+			if (res?.error === "ACCOUNT_BLOCKED") {
+				setAccountStatus('blocked');
+				return;
+			}
+			if (res?.error === "EMAIL_BOUNCED") {
+				setAccountStatus('bounced');
+				return;
+			}
 			if (res?.error) {
 				console.error("NextAuth SignIn Error:", res.error);
 				throw new Error(res.error || "Authentication failed on the server");

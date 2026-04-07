@@ -343,6 +343,19 @@ export const authOptions: NextAuthOptions = {
             user = await Users.findOne({ email });
           }
 
+          // ── Account Safety Checks ─────────────────────────────────────────
+          if (user) {
+            if ((user as any).emailBounced) {
+              console.log('🔴 Social Login blocked: email bounced for', email);
+              throw new Error("EMAIL_BOUNCED");
+            }
+            if ((user as any).isBlocked) {
+              console.log('🔴 Social Login blocked: account blocked for', email);
+              throw new Error("ACCOUNT_BLOCKED");
+            }
+          }
+          // ──────────────────────────────────────────────────────────────────
+
           // If this is a signup attempt but the user already exists, throw error
           const { isSignup } = (credentials as any) ?? {};
           if (isSignup === "true" && user) {

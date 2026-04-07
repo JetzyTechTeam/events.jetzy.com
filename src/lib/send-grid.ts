@@ -1720,7 +1720,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
 export const sendBlockNotificationEmail = async ({ email, blockedAt }: { email: string; blockedAt: string }) => {
   try {
     await sgMail.send({
-      to: "fahadzaman664@gmail.com", // TODO: change back to tech@jetzyapp.com after testing
+      to: process.env.ADMIN_NOTIFICATION_EMAIL || "tech@jetzyapp.com",
       from: {
         email: process.env.SENDGRID_EMAIL_SENDER as string,
         name: "Jetzy Security"
@@ -1822,7 +1822,7 @@ export const sendAdminComplianceAlert = async ({ email, unblockToken }: { email:
   
   try {
     await sgMail.send({
-      to: "fahadzaman664@gmail.com", // Keeping test email per user request
+      to: process.env.ADMIN_NOTIFICATION_EMAIL || "tech@jetzyapp.com",
       from: {
         email: process.env.SENDGRID_EMAIL_SENDER as string,
         name: "Jetzy Compliance"

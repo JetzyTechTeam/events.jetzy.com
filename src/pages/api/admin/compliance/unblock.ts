@@ -1,15 +1,31 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
+import { Users } from "@Jetzy/models/userModal"
 import bcrypt from "bcrypt"
 import { sendAccountApprovedEmail } from "@Jetzy/lib/send-grid"
 
 const generateRandomPassword = (length = 10) => {
-    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
-    let retVal = ""
-    for (let i = 0, n = charset.length; i < length; ++i) {
-        retVal += charset.charAt(Math.floor(Math.random() * n))
+    const charset = {
+        upper: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        lower: "abcdefghijklmnopqrstuvwxyz",
+        numbers: "0123456789",
+        special: "!@#$%^&*"
     }
-    return retVal
+
+    let password = ""
+    // Ensure at least one of each for validation requirements
+    password += charset.upper[Math.floor(Math.random() * charset.upper.length)]
+    password += charset.lower[Math.floor(Math.random() * charset.lower.length)]
+    password += charset.numbers[Math.floor(Math.random() * charset.numbers.length)]
+    password += charset.special[Math.floor(Math.random() * charset.special.length)]
+
+    const all = Object.values(charset).join("")
+    for (let i = password.length; i < length; i++) {
+        password += all[Math.floor(Math.random() * all.length)]
+    }
+
+    // Shuffle final password
+    return password.split('').sort(() => 0.5 - Math.random()).join('')
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -37,20 +53,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const hashedNewPassword = await bcrypt.hash(newPassword, 10)
 
         // UNBLOCK THE USER AND SET NEW PASSWORD
-        await EventUsers.findOneAndUpdate(
-            { adminUnblockToken: token },
-            {
-                $set: {
-                    password: hashedNewPassword, // Reset password
-                    isBlocked: false,
-                    complianceStatus: "approved",
-                    requiresVerification: false,
-                    adminUnblockToken: null, // Clear token after success
-                    blockedAt: null,
-                    blockedReason: null
-                }
-            }
-        )
+        // Update both collections just in case the user exists in both, 
+        // to ensure the new temporary password works regardless of login priority.
+        const updatePayload = {
+            password: hashedNewPassword, // Reset password
+            isBlocked: false,
+            complianceStatus: "approved",
+            requiresVerification: false,
+            adminUnblockToken: null, // Clear token after success
+            blockedAt: null,
+            blockedReason: null
+        };
+
+        await Promise.all([
+          EventUsers.findOneAndUpdate({ email: user.email }, { $set: updatePayload }),
+          Users.findOneAndUpdate({ email: user.email }, { $set: updatePayload })
+        ]);
+        
+        console.log(`✅ User ${user.email} unblocked and password reset in all collections.`);
 
         // Notify the user their account is ready
         try {
