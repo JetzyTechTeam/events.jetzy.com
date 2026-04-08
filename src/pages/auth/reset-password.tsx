@@ -4,6 +4,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
 import Logo from "@Jetzy/assets/logo/logo.png"
+import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai"
 
 export default function ResetPasswordPage() {
     const router = useRouter()
@@ -11,6 +12,8 @@ export default function ResetPasswordPage() {
 
     const [password, setPassword] = useState("")
     const [confirm, setConfirm] = useState("")
+    const [showPassword, setShowPassword] = useState(false)
+    const [showConfirm, setShowConfirm] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState("")
     const [done, setDone] = useState(false)
@@ -68,27 +71,45 @@ export default function ResetPasswordPage() {
                 <div className="bg-[#1E1E1E] py-8 px-6 shadow rounded-2xl border border-[#434343]">
                     {!done ? (
                         <form className="space-y-5" onSubmit={handleSubmit}>
-                            <div>
+                            <div className="relative">
                                 <label className="block text-sm font-medium text-gray-300 mb-1">New Password</label>
-                                <input
-                                    type="password"
-                                    required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="block w-full px-3 py-2.5 bg-black border border-[#434343] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#F79432] focus:border-[#F79432] text-sm"
-                                    placeholder="Minimum 8 characters"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? "text" : "password"}
+                                        required
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="block w-full px-3 py-2.5 bg-black black-autofill border border-[#434343] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#F79432] focus:border-[#F79432] text-sm pr-10"
+                                        placeholder="Minimum 8 characters"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+                                    >
+                                        {showPassword ? <AiOutlineEyeInvisible size={20} /> : <AiOutlineEye size={20} />}
+                                    </button>
+                                </div>
                             </div>
-                            <div>
+                            <div className="relative">
                                 <label className="block text-sm font-medium text-gray-300 mb-1">Confirm Password</label>
-                                <input
-                                    type="password"
-                                    required
-                                    value={confirm}
-                                    onChange={(e) => setConfirm(e.target.value)}
-                                    className="block w-full px-3 py-2.5 bg-black border border-[#434343] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#F79432] focus:border-[#F79432] text-sm"
-                                    placeholder="Re-enter password"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showConfirm ? "text" : "password"}
+                                        required
+                                        value={confirm}
+                                        onChange={(e) => setConfirm(e.target.value)}
+                                        className="block w-full px-3 py-2.5 bg-black black-autofill border border-[#434343] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#F79432] focus:border-[#F79432] text-sm pr-10"
+                                        placeholder="Re-enter password"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirm(!showConfirm)}
+                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+                                    >
+                                        {showConfirm ? <AiOutlineEyeInvisible size={20} /> : <AiOutlineEye size={20} />}
+                                    </button>
+                                </div>
                             </div>
                             {error && <p className="text-red-400 text-sm">{error}</p>}
                             <button

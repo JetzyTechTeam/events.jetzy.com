@@ -9,7 +9,7 @@ import Link from "next/link"
 import { useRouter } from "next/router"
 import React from "react"
 import { FcGoogle } from "react-icons/fc"
-import { AiFillApple } from "react-icons/ai"
+import { AiFillApple, AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai"
 import { unauthorizedOnly } from "@Jetzy/lib/authSession"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
@@ -17,6 +17,8 @@ import Spinner from "@Jetzy/components/misc/Spinner"
 export default function LoginPage() {
 	const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, _cb } = useSignup()
 	const navigate = useRouter()
+	const [showPassword, setShowPassword] = React.useState(false)
+	const [showConfirm, setShowConfirm] = React.useState(false)
 
 	const formData: SignUpFormData = {
 		email: "",
@@ -63,7 +65,7 @@ export default function LoginPage() {
 											onChange={handleChange}
 											type="text"
 											autoComplete="firstName"
-											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
 										<ErrorMessage name="firstName" component="span" className="text-red-500 block mt-1" />
 									</div>
@@ -82,7 +84,7 @@ export default function LoginPage() {
 											onChange={handleChange}
 											type="text"
 											autoComplete="lastName"
-											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
 										<ErrorMessage name="lastName" component="span" className="text-red-500 block mt-1" />
 									</div>
@@ -101,7 +103,7 @@ export default function LoginPage() {
 											onChange={handleChange}
 											type="email"
 											autoComplete="email"
-											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
 										<ErrorMessage name="email" component="span" className="text-red-500 block mt-1" />
 									</div>
@@ -115,15 +117,24 @@ export default function LoginPage() {
 										</label>
 									</div>
 									<div className="mt-2">
-										<Field
-											id="password"
-											name="password"
-											value={values?.password}
-											onChange={handleChange}
-											type="password"
-											autoComplete="current-password"
-											className="bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										/>
+										<div className="relative">
+											<Field
+												id="password"
+												name="password"
+												value={values?.password}
+												onChange={handleChange}
+												type={showPassword ? "text" : "password"}
+												autoComplete="current-password"
+												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3 pr-10"
+											/>
+											<button
+												type="button"
+												onClick={() => setShowPassword(!showPassword)}
+												className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+											>
+												{showPassword ? <AiOutlineEyeInvisible size={20} /> : <AiOutlineEye size={20} />}
+											</button>
+										</div>
 										<ErrorMessage name="password" component="span" className="text-red-500 block mt-1" />
 									</div>
 								</div>
@@ -136,15 +147,24 @@ export default function LoginPage() {
 										</label>
 									</div>
 									<div className="mt-2">
-										<Field
-											id="confirmPassword"
-											name="confirmPassword"
-											value={values?.confirmPassword}
-											onChange={handleChange}
-											type="password"
-											autoComplete="current-password"
-											className="bg-[#1E1E1E] block w-full text-white rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-										/>
+										<div className="relative">
+											<Field
+												id="confirmPassword"
+												name="confirmPassword"
+												value={values?.confirmPassword}
+												onChange={handleChange}
+												type={showConfirm ? "text" : "password"}
+												autoComplete="current-password"
+												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3 pr-10"
+											/>
+											<button
+												type="button"
+												onClick={() => setShowConfirm(!showConfirm)}
+												className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+											>
+												{showConfirm ? <AiOutlineEyeInvisible size={20} /> : <AiOutlineEye size={20} />}
+											</button>
+										</div>
 										<ErrorMessage name="confirmPassword" component="span" className="text-red-500 block mt-1" />
 									</div>
 								</div>
@@ -213,7 +233,7 @@ export default function LoginPage() {
 
 						<div className="mt-6 grid grid-cols-2 gap-4">
 							<button
-								onClick={handleGoogleLogin}
+								onClick={() => handleGoogleLogin({})}
 								disabled={isLoading}
 								className="flex w-full items-center justify-center gap-3 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus-visible:ring-transparent disabled:opacity-50"
 							>
@@ -222,7 +242,7 @@ export default function LoginPage() {
 							</button>
 
 							<button
-								onClick={handleAppleLogin}
+								onClick={() => handleAppleLogin({})}
 								disabled={isLoading}
 								className="flex w-full items-center justify-center gap-3 rounded-md bg-black px-3 py-2 text-sm font-semibold text-white shadow-sm ring-1 ring-inset ring-gray-700 hover:bg-gray-900 focus-visible:ring-transparent disabled:opacity-50"
 							>

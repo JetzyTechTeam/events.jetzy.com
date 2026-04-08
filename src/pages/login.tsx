@@ -15,7 +15,7 @@ import React from "react"
 import { auth } from "@/configs/firebase"
 import { GoogleAuthProvider, OAuthProvider, signInWithPopup } from "firebase/auth"
 import { FcGoogle } from "react-icons/fc"
-import { AiFillApple } from "react-icons/ai"
+import { AiFillApple, AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai"
 
 export default function LoginPage() {
 	const navigation = useRouter()
@@ -23,6 +23,7 @@ export default function LoginPage() {
 	const [waitingForSession, setWaitingForSession] = React.useState(false)
 	const [hasAttemptedMagicLink, setHasAttemptedMagicLink] = React.useState(false)
 	const [accountStatus, setAccountStatus] = React.useState<'blocked' | 'bounced' | null>(null)
+	const [showPassword, setShowPassword] = React.useState(false)
 
 	const { data: session, status } = useSession()
 
@@ -316,7 +317,7 @@ export default function LoginPage() {
 											type="email"
 											autoComplete="email"
 											required
-											className="text-white bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											className="text-white bg-[#1E1E1E] dark-autofill block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 										/>
 										<ErrorMessage name="email" component="span" className="text-red-500 block mt-1" />
 									</div>
@@ -329,17 +330,25 @@ export default function LoginPage() {
 										</label>
 									</div>
 									<div className="mt-2">
-										<Field
-											id="password"
-											name="password"
-											value={values?.password}
-											onChange={handleChange}
-											type="password"
-											autoComplete="current-password"
-											required
-											className="text-white bg-[#1E1E1E] block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
-
-										/>
+										<div className="relative">
+											<Field
+												id="password"
+												name="password"
+												value={values?.password}
+												onChange={handleChange}
+												type={showPassword ? "text" : "password"}
+												autoComplete="current-password"
+												required
+												className="text-white bg-[#1E1E1E] dark-autofill block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3 pr-10"
+											/>
+											<button
+												type="button"
+												onClick={() => setShowPassword(!showPassword)}
+												className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
+											>
+												{showPassword ? <AiOutlineEyeInvisible size={20} /> : <AiOutlineEye size={20} />}
+											</button>
+										</div>
 										<ErrorMessage name="password" component="span" className="text-red-500 block mt-1" />
 									</div>
 								</div>

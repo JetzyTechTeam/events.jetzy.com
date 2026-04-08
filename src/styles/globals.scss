@@ -26,3 +26,20 @@ body {
 	right: 0 !important;
 	z-index: 9999 !important;
 }
+
+/* Fix for Chrome autofill white background bug when password visibility toggles */
+.dark-autofill:-webkit-autofill,
+.dark-autofill:-webkit-autofill:hover, 
+.dark-autofill:-webkit-autofill:focus, 
+.dark-autofill:-webkit-autofill:active{
+    -webkit-box-shadow: 0 0 0 40px #1E1E1E inset !important;
+    -webkit-text-fill-color: white !important;
+}
+
+.black-autofill:-webkit-autofill,
+.black-autofill:-webkit-autofill:hover, 
+.black-autofill:-webkit-autofill:focus, 
+.black-autofill:-webkit-autofill:active{
+    -webkit-box-shadow: 0 0 0 40px #000000 inset !important;
+    -webkit-text-fill-color: white !important;
+}
