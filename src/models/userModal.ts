@@ -55,6 +55,24 @@ export const usersSchema = new Schema(
 			type: Date,
 			required: false,
 		},
+		// Account safety fields
+		isBlocked: {
+			type: Boolean,
+			default: false,
+		},
+		emailBounced: {
+			type: Boolean,
+			default: false,
+		},
+		// Password reset fields
+		passwordResetToken: {
+			type: String,
+			required: false,
+		},
+		passwordResetTokenExpiresAt: {
+			type: Date,
+			required: false,
+		},
 	},
 	{ timestamps: true },
 )

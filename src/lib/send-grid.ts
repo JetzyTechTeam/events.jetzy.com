@@ -1655,16 +1655,9 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
         <strong>Thank you for creating your Jetzy account!</strong> We're excited to have you join our global community of travelers and explorers.
       </p>
 
-      ${password ? `
-      <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #F79432;">
-        <h3 style="margin-top: 0; color: #333;">Your Login Credentials</h3>
-        <p style="margin-bottom: 5px;"><strong>Email:</strong> ${email}</p>
-        <p style="margin-top: 0;"><strong>Temporary Password:</strong> ${password}</p>
-        <p style="font-size: 14px; color: #888; margin-top: 10px; margin-bottom: 0;">
-          <em>Note: You must change this temporary password after your first login.</em>
-        </p>
-      </div>
-      ` : ''}
+      <p style="font-size: 16px; color: #555; line-height: 1.6;">
+        You can log in at any time using your email address and password, or request a one-time login code sent directly to your inbox.
+      </p>
 
       <div style="text-align: center; margin: 35px 0;">
         <p style="font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>

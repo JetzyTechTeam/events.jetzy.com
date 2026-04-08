@@ -110,6 +110,15 @@ export const eventUsersSchema = new Schema(
       type: String,
       required: false,
     },
+    // Password reset fields
+    passwordResetToken: {
+      type: String,
+      required: false,
+    },
+    passwordResetTokenExpiresAt: {
+      type: Date,
+      required: false,
+    },
   },
   { timestamps: true }
 )

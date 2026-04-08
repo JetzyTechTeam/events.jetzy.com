@@ -245,46 +245,47 @@ export default function LoginPage() {
 		<>
 			{/* ── Account Safety Popups ── */}
 			{accountStatus && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-					<div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center text-center animate-in zoom-in-95">
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+					<div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 flex flex-col items-center text-center">
+						<div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-5">
+							<svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+							</svg>
+						</div>
+
 						{accountStatus === 'blocked' ? (
 							<>
-								<div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
-									<svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-									</svg>
-								</div>
 								<h2 className="text-xl font-bold text-gray-900 mb-3">Email Not Verified</h2>
 								<p className="text-gray-600 text-sm leading-relaxed mb-6">
-									Your email was not verified. Please verify your email or enter the correct address to proceed. Our admin team will review this account for compliance.
+									Your email didn't verify. Kindly input your correct email address.
 								</p>
 							</>
 						) : (
 							<>
-								<div className="w-16 h-16 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
-									<svg className="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-									</svg>
-								</div>
 								<h2 className="text-xl font-bold text-gray-900 mb-3">Email Bounced Back</h2>
 								<p className="text-gray-600 text-sm leading-relaxed mb-6">
-									Your email bounced back. Enter your correct email to proceed.
+									Your email bounced back. Kindly input your correct email address.
 								</p>
 							</>
 						)}
+
+						{/* Primary CTA */}
+						<button
+							onClick={() => navigation.push('/jetzyqrsignup')}
+							className="w-full bg-[#F79432] text-white font-semibold py-3 px-6 rounded-full hover:bg-[#e8842a] transition-colors mb-3"
+						>
+							Try a Different Email
+						</button>
+
+						{/* Secondary: Recovery for accidental block */}
 						<button
 							onClick={() => {
-								if (accountStatus === 'blocked') {
-									// Get the email from the form input (we'll need a ref or state for this)
-									const emailInput = (document.querySelector('input[name="email"]') as HTMLInputElement)?.value;
-									navigation.push(`/auth/verify?email=${encodeURIComponent(emailInput || "")}`);
-								} else {
-									setAccountStatus(null);
-								}
+								const emailInput = (document.querySelector('input[name="email"]') as HTMLInputElement)?.value;
+								navigation.push(`/auth/verify?email=${encodeURIComponent(emailInput || '')}&mode=recover`);
 							}}
-							className="w-full bg-[#F79432] text-white font-semibold py-3 px-6 rounded-full hover:bg-[#e8842a] transition-colors"
+							className="w-full text-sm text-gray-500 hover:text-[#F79432] transition-colors underline"
 						>
-							{accountStatus === 'blocked' ? "Verify My Email" : "Try a Different Email"}
+							I accidentally blocked my account — Recover it
 						</button>
 					</div>
 				</div>
@@ -365,7 +366,30 @@ export default function LoginPage() {
 									</button>
 								</div>
 
+								{/* Forgot Password */}
+								<div className="text-center">
+									<Link href="/auth/forgot-password" className="text-sm text-gray-400 hover:text-[#F79432] transition-colors">
+										Forgot your password?
+									</Link>
+								</div>
 
+								{/* OTP Login Option */}
+								<div className="text-center pt-1">
+									<button
+										type="button"
+										onClick={() => {
+											const emailVal = (document.querySelector('input[name="email"]') as HTMLInputElement)?.value;
+											if (emailVal) {
+												navigation.push(`/auth/login-otp?email=${encodeURIComponent(emailVal)}`);
+											} else {
+												navigation.push('/auth/login-otp');
+											}
+										}}
+										className="text-sm text-gray-400 hover:text-[#F79432] transition-colors"
+									>
+										✉️ Send me a login code instead
+									</button>
+								</div>
 
 							</Form>
 						)}

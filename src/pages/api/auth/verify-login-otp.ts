@@ -1,0 +1,41 @@
+import type { NextApiRequest, NextApiResponse } from "next"
+import { EventUsers } from "@/models/eventUsersModal"
+import { generateMagicToken } from "@/lib/magicLink"
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed" })
+    }
+
+    try {
+        const { email, code } = req.body
+        if (!email || !code) return res.status(400).json({ error: "Email and code are required" })
+
+        const decodedEmail = email.toLowerCase().trim()
+
+        // Find user with valid OTP
+        const user = await EventUsers.findOne({
+            email: decodedEmail,
+            manualVerificationCode: code,
+            manualVerificationCodeExpiresAt: { $gt: new Date() }
+        })
+
+        if (!user) {
+            return res.status(400).json({ error: "Invalid or expired login code. Please request a new one." })
+        }
+
+        // Clear the OTP now that it's been used
+        await EventUsers.findOneAndUpdate(
+            { email: decodedEmail },
+            { $set: { manualVerificationCode: null, manualVerificationCodeExpiresAt: null } }
+        )
+
+        // Generate a magic token using the existing system — NextAuth will accept this directly
+        const magicToken = generateMagicToken({ email: user.email })
+
+        return res.status(200).json({ success: true, magicToken })
+    } catch (error: any) {
+        console.error("Error in verify-login-otp:", error.message)
+        return res.status(500).json({ error: "Internal server error" })
+    }
+}
