@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
+import { Users } from "@Jetzy/models/userModal"
 import { sendBlockNotificationEmail } from "@Jetzy/lib/send-grid"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -17,28 +18,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const decodedEmail = decodeURIComponent(email)
 
-        // Find user in EventUsers collection
-        const user = await EventUsers.findOne({ email: decodedEmail })
+        // Find user in BOTH collections — block in whichever one they exist
+        const eventUser = await EventUsers.findOne({ email: decodedEmail })
+        const legacyUser = await Users.findOne({ email: decodedEmail })
 
-        if (!user) {
+        if (!eventUser && !legacyUser) {
             // Even if user not found, redirect gracefully — don't expose system internals
             return res.redirect(302, "/report-abuse?status=success")
         }
 
         const blockedAt = new Date().toISOString()
 
-        // Block and flag for compliance review
-        await EventUsers.findOneAndUpdate(
-            { email: decodedEmail },
-            {
-                $set: {
-                    isBlocked: true,
-                    blockedAt: new Date(),
-                    blockedReason: "User reported account was created without their consent.",
-                    requiresVerification: true,
-                }
+        const blockPayload = {
+            $set: {
+                isBlocked: true,
+                blockedAt: new Date(),
+                blockedReason: "User reported account was created without their consent.",
+                requiresVerification: true,
             }
-        )
+        }
+
+        // Block in whichever collection(s) the user exists in
+        if (eventUser) {
+            await EventUsers.findOneAndUpdate({ email: decodedEmail }, blockPayload)
+        }
+        if (legacyUser) {
+            await Users.findOneAndUpdate({ email: decodedEmail }, blockPayload, { strict: false })
+        }
 
         // Send compliance notification to tech team
         try {

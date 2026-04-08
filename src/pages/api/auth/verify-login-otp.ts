@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
+import { Users } from "@Jetzy/models/userModal"
 import { generateMagicToken } from "@/lib/magicLink"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -13,22 +14,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const decodedEmail = email.toLowerCase().trim()
 
-        // Find user with valid OTP
-        const user = await EventUsers.findOne({
+        const otpQuery = {
             email: decodedEmail,
             manualVerificationCode: code,
             manualVerificationCodeExpiresAt: { $gt: new Date() }
-        })
+        }
+
+        // Search BOTH collections for the OTP — it could be in either one
+        let user = await EventUsers.findOne(otpQuery)
+        let foundIn: "EventUsers" | "Users" = "EventUsers"
+
+        if (!user) {
+            user = await Users.findOne(otpQuery)
+            foundIn = "Users"
+        }
 
         if (!user) {
             return res.status(400).json({ error: "Invalid or expired login code. Please request a new one." })
         }
 
-        // Clear the OTP now that it's been used
-        await EventUsers.findOneAndUpdate(
-            { email: decodedEmail },
-            { $set: { manualVerificationCode: null, manualVerificationCodeExpiresAt: null } }
-        )
+        // Clear the OTP from whichever collection it was stored in
+        const clearOtp = { $set: { manualVerificationCode: null, manualVerificationCodeExpiresAt: null } }
+        if (foundIn === "EventUsers") {
+            await EventUsers.findOneAndUpdate({ email: decodedEmail }, clearOtp)
+        } else {
+            await Users.findOneAndUpdate({ email: decodedEmail }, clearOtp, { strict: false })
+        }
 
         // Generate a magic token using the existing system — NextAuth will accept this directly
         const magicToken = generateMagicToken({ email: user.email })

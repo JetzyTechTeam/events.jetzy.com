@@ -45,11 +45,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             passwordResetTokenExpiresAt: null,
         }
 
-        // Update in both collections to keep in sync
-        await Promise.all([
-            EventUsers.findOneAndUpdate({ email: decodedEmail }, { $set: updatePayload }, { strict: false }),
-            Users.findOneAndUpdate({ email: decodedEmail }, { $set: updatePayload }, { strict: false }),
-        ])
+        // Only update the collection(s) where the user actually exists
+        // Do NOT blindly update both — that can create ghost fields on non-existent records
+        const updates = []
+        const eventUserExists = await EventUsers.findOne({ email: decodedEmail })
+        const legacyUserExists = await Users.findOne({ email: decodedEmail })
+
+        if (eventUserExists) {
+            updates.push(EventUsers.findOneAndUpdate({ email: decodedEmail }, { $set: updatePayload }))
+        }
+        if (legacyUserExists) {
+            updates.push(Users.findOneAndUpdate({ email: decodedEmail }, { $set: updatePayload }, { strict: false }))
+        }
+
+        await Promise.all(updates)
 
         return res.status(200).json({ success: true, message: "Password updated successfully." })
     } catch (error: any) {

@@ -41,8 +41,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).send("<h1>Error: Missing Unblock Token</h1>")
         }
 
-        // Find user by admin unblock token
-        const user = await EventUsers.findOne({ adminUnblockToken: token })
+        // Find user by admin unblock token — check BOTH collections
+        let user: any = await EventUsers.findOne({ adminUnblockToken: token })
+        if (!user) {
+            user = await Users.findOne({ adminUnblockToken: token })
+        }
 
         if (!user) {
             return res.status(404).send("<h1>Error: Invalid or Expired Token</h1><p>Account may have already been unblocked or the token is incorrect.</p>")
@@ -65,10 +68,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             blockedReason: null
         };
 
-        await Promise.all([
-          EventUsers.findOneAndUpdate({ email: user.email }, { $set: updatePayload }),
-          Users.findOneAndUpdate({ email: user.email }, { $set: updatePayload })
-        ]);
+        // Only update collection(s) where the user actually exists
+        const updates = []
+        if (await EventUsers.findOne({ email: user.email })) {
+            updates.push(EventUsers.findOneAndUpdate({ email: user.email }, { $set: updatePayload }))
+        }
+        if (await Users.findOne({ email: user.email })) {
+            updates.push(Users.findOneAndUpdate({ email: user.email }, { $set: updatePayload }, { strict: false }))
+        }
+        await Promise.all(updates);
         
         console.log(`✅ User ${user.email} unblocked and password reset in all collections.`);
 

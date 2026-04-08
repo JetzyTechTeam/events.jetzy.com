@@ -34,18 +34,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const otp = generateOTP()
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
 
-        // Store OTP in EventUsers (or update both)
+        // Store OTP in whichever collection the user actually exists in
+        // IMPORTANT: Never upsert into EventUsers for legacy users — that creates ghost accounts
         if (eventUser) {
             await EventUsers.findOneAndUpdate(
                 { email: decodedEmail },
                 { $set: { manualVerificationCode: otp, manualVerificationCodeExpiresAt: expiresAt } }
             )
         } else if (legacyUser) {
-            // Store in EventUsers as a temp record if not there yet
-            await EventUsers.findOneAndUpdate(
+            // Store OTP directly in the legacy Users collection where the user lives
+            await Users.findOneAndUpdate(
                 { email: decodedEmail },
                 { $set: { manualVerificationCode: otp, manualVerificationCodeExpiresAt: expiresAt } },
-                { upsert: true, new: true }
+                { strict: false }
             )
         }
 

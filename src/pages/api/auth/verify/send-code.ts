@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
+import { Users } from "@Jetzy/models/userModal"
 import { sendManualVerificationEmail } from "@Jetzy/lib/send-grid"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -16,10 +17,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const decodedEmail = decodeURIComponent(email).toLowerCase()
 
-        // Find user
-        const user = await EventUsers.findOne({ email: decodedEmail })
+        // Find user in BOTH collections
+        const eventUser = await EventUsers.findOne({ email: decodedEmail })
+        const legacyUser = !eventUser ? await Users.findOne({ email: decodedEmail }) : null
 
-        if (!user) {
+        if (!eventUser && !legacyUser) {
             // To prevent email enumeration, we return success even if user not found
             // but we don't send any email.
             return res.status(200).json({ success: true, message: "If an account exists, a code has been sent." })
@@ -29,16 +31,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const code = Math.floor(100000 + Math.random() * 900000).toString()
         const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
 
-        // Save to DB
-        await EventUsers.findOneAndUpdate(
-            { email: decodedEmail },
-            {
-                $set: {
-                    manualVerificationCode: code,
-                    manualVerificationCodeExpiresAt: expiresAt
-                }
+        const codePayload = {
+            $set: {
+                manualVerificationCode: code,
+                manualVerificationCodeExpiresAt: expiresAt
             }
-        )
+        }
+
+        // Save to whichever collection the user exists in
+        if (eventUser) {
+            await EventUsers.findOneAndUpdate({ email: decodedEmail }, codePayload)
+        } else if (legacyUser) {
+            await Users.findOneAndUpdate({ email: decodedEmail }, codePayload, { strict: false })
+        }
 
         // Send email
         await sendManualVerificationEmail({ email: decodedEmail, code })
