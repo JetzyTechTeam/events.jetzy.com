@@ -40,6 +40,8 @@ import CreateDiscussionModal from "./CreateDiscussionModal"
 import DiscussionPostView from "./DiscussionPostView"
 import { useRouter } from "next/router"
 import LoginModal from "@/components/misc/LoginModal"
+import QRCodeModal from "./QRCodeModal"
+import { QrCodeIcon } from "@heroicons/react/24/outline"
 
 interface DiscussionBoardProps {
 	eventId: string
@@ -467,9 +469,11 @@ const FeedPostCard = ({
 const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const { data: session } = useSession()
 	const { isOpen, onOpen, onClose } = useDisclosure()
+	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
 	const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
 	const [openInEditMode, setOpenInEditMode] = useState(false)
 	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+	const toast = useToast()
 	const router = useRouter()
 
 	const [sortBy, setSortBy] = useState<string>("recent")
@@ -547,6 +551,43 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 							Join the conversation.
 						</p>
 					</div>
+
+					{/* Admin Share Feed Section */}
+					{(session?.user as any)?.role === "admin" && (
+						<Flex gap={3}>
+							<Button
+								size="sm"
+								leftIcon={<FiShare2 />}
+								bg="whiteAlpha.100"
+								color="white"
+								_hover={{ bg: "whiteAlpha.200" }}
+								borderRadius="full"
+								onClick={() => {
+									const feedUrl = `${window.location.origin}${window.location.pathname}?view=feed`
+									navigator.clipboard.writeText(feedUrl)
+									toast({
+										title: "Feed Link Copied!",
+										description: "Share this link to bring users directly to the feed.",
+										status: "success",
+										duration: 2000,
+										isClosable: true,
+									})
+								}}
+							>
+								Share Feed
+							</Button>
+							<IconButton
+								aria-label="Show Feed QR Code"
+								icon={<Icon as={QrCodeIcon} />}
+								size="sm"
+								bg="whiteAlpha.100"
+								color="white"
+								_hover={{ bg: "whiteAlpha.200" }}
+								borderRadius="full"
+								onClick={onQRModalOpen}
+							/>
+						</Flex>
+					)}
 				</div>
 
 				{/* Create Post Input */}
@@ -727,6 +768,16 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 					isOpen={isLoginModalOpen}
 					onClose={() => setIsLoginModalOpen(false)}
 				/>
+
+				{/* Admin QR Modal for Feed */}
+				{(session?.user as any)?.role === "admin" && (
+					<QRCodeModal 
+						isOpen={isQRModalOpen}
+						onClose={onQRModalClose}
+						url={`${typeof window !== 'undefined' ? window.location.origin : ''}${router.asPath.split('?')[0]}?view=feed`}
+						title="Event Feed"
+					/>
+				)}
 			</div>
 		</div>
 	)

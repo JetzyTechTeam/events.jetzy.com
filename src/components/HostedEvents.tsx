@@ -12,8 +12,9 @@ import "slick-carousel/slick/slick-theme.css"
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { IEvent } from "@/models/events/types"
-import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading } from "@chakra-ui/react"
-import { ShareIcon } from "@heroicons/react/24/outline"
+import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure } from "@chakra-ui/react"
+import { ShareIcon, QrCodeIcon as QrCodeIconOutline } from "@heroicons/react/24/outline"
+import QRCodeModal from "@/components/events/QRCodeModal"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import Link from "next/link"
@@ -56,6 +57,7 @@ type Props = {
 export default function HostedEvents({ event }: Props) {
 	const [shareUrl, setShareUrl] = useState("")
 	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list">("bookings")
+	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
 	const { data: session } = useSession()
 	const router = useRouter()
 
@@ -82,17 +84,23 @@ export default function HostedEvents({ event }: Props) {
 
 	useEffect(() => {
 		if (typeof window !== "undefined") {
-			setShareUrl(window.location.href)
+			// Create a base share URL without the view/scrollTo parameters for the top share/QR buttons
+			const url = new URL(window.location.href);
+			url.searchParams.delete("view");
+			url.searchParams.delete("scrollTo");
+			setShareUrl(url.toString());
 
-			// Auto focus on discussion section if hash is not present
-			setTimeout(() => {
-				const discussionBoard = document.getElementById("discussion-board");
-				if (discussionBoard) {
-					discussionBoard.scrollIntoView({ behavior: "smooth" });
-				}
-			}, 1000);
+			// Auto focus on discussion section only if scroll parameter is present
+			if (router.query.view === "feed" || router.query.scrollTo === "feed") {
+				setTimeout(() => {
+					const discussionBoard = document.getElementById("discussion-board");
+					if (discussionBoard) {
+						discussionBoard.scrollIntoView({ behavior: "smooth" });
+					}
+				}, 1000);
+			}
 		}
-	}, [])
+	}, [router.query.view, router.query.scrollTo])
 
 	const sharer = useWebShare({
 		title: shareTitle,
@@ -241,6 +249,15 @@ export default function HostedEvents({ event }: Props) {
 								</div>
 
 								<div className="flex gap-x-3 sm:items-end">
+									{isAdmin && (
+										<button 
+											onClick={onQRModalOpen} 
+											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
+											title="Show Event QR Code (Admin only)"
+										>
+											<QrCodeIconOutline className="w-6 h-6 text-white inline-block" />
+										</button>
+									)}
 									<button onClick={() => sharer.share()} className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full">
 										<ShareIcon className="w-6 h-6 text-white inline-block" />
 									</button>
@@ -335,6 +352,16 @@ export default function HostedEvents({ event }: Props) {
 					)}
 				</div>
 				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
+				
+				{/* QR Code Modal for Event */}
+				{isAdmin && (
+					<QRCodeModal 
+						isOpen={isQRModalOpen}
+						onClose={onQRModalClose}
+						url={shareUrl}
+						title={`${stripHtml(clonedEvent.name)}`}
+					/>
+				)}
 			</>
 		)
 	} catch (error) {
