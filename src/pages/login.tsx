@@ -258,7 +258,7 @@ export default function LoginPage() {
 							<>
 								<h2 className="text-xl font-bold text-gray-900 mb-3">Email Not Verified</h2>
 								<p className="text-gray-600 text-sm leading-relaxed mb-6">
-									Your email didn't verify. Kindly input your correct email address.
+									Your email didn&apos;t verify. Kindly input your correct email address.
 								</p>
 							</>
 						) : (
