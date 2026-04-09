@@ -152,6 +152,7 @@ type CommentNotificationData = {
   magicToken: string
   postId: string
   hasImages?: boolean
+  isPostAuthor?: boolean // true → "commented on your post", false → "commented in [event]"
 }
 
 type ThankYouNotificationData = {
@@ -1333,17 +1334,25 @@ export const sendCommentNotification = async ({
   magicToken,
   postId,
   hasImages,
+  isPostAuthor = false,
 }: CommentNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
 
+  const decodedEvent = decodeHTMLEntities(eventName)
+
+  // Post author gets personalised "your post" copy; other participants get activity copy
   const subject = hasImages
-    ? `New photos added to ${decodeHTMLEntities(eventName)}`
-    : `${commenterName} commented on your post in ${decodeHTMLEntities(eventName)}`
+    ? `New photos added to ${decodedEvent}`
+    : isPostAuthor
+      ? `${commenterName} commented on your post in ${decodedEvent}`
+      : `${commenterName} commented in ${decodedEvent}`
 
   const bodyContent = hasImages
-    ? `We've added new photos and videos to <strong>${decodeHTMLEntities(eventName)}</strong>.`
-    : `<strong>${commenterName}</strong> commented on your post in <strong>${decodeHTMLEntities(eventName)}</strong>.`
+    ? `We've added new photos and videos to <strong>${decodedEvent}</strong>.`
+    : isPostAuthor
+      ? `<strong>${commenterName}</strong> commented on your post in <strong>${decodedEvent}</strong>.`
+      : `<strong>${commenterName}</strong> commented in <strong>${decodedEvent}</strong>.`
 
   try {
     await sgMail.send({
@@ -1360,7 +1369,7 @@ export const sendCommentNotification = async ({
               Hi ${firstName},
             </p>
             <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
-              <strong>${commenterName}</strong> commented on your post in <strong>${decodeHTMLEntities(eventName)}</strong>.
+              ${bodyContent}
             </p>
 
             <div style="margin: 30px 0;">
@@ -1372,7 +1381,7 @@ export const sendCommentNotification = async ({
             <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
               — Team Jetzy
             </p>
-            
+
             <div style="margin-top: 40px; display: flex; align-items: center; gap: 10px;">
               <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
               <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>

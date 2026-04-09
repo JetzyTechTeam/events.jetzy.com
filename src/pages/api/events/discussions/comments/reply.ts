@@ -143,11 +143,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
                     console.log(`[Notification] Processing reply alerts for ${uniqueParticipants.size} people`)
 
+                    const authorEmailLower = authorEmail?.toLowerCase()
+
                     for (const [email, name] of uniqueParticipants.entries()) {
                         const firstName = name.split(' ')[0] || 'Friend'
                         const lastName = name.split(' ').slice(1).join(' ') || ''
                         const magicToken = generateMagicToken({ email, firstName, lastName })
                         const hasImages = !!((newReply.images && newReply.images.length > 0) || (newReply.attachments && newReply.attachments.length > 0))
+                        const isAuthor = email === authorEmailLower
 
                         // If user is mentioned, send tag notification
                         if (mentionedUserIds.has(email)) {
@@ -174,7 +177,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                                 eventSlug: event.slug,
                                 magicToken,
                                 postId: post._id.toString(),
-                                hasImages
+                                hasImages,
+                                isPostAuthor: isAuthor,
                             })
                         }
                     }

@@ -8,9 +8,9 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../../../auth/[...nextauth]"
 import zod from "zod"
 import { Events } from "@/models/events"
-import { Bookings } from "@/models/events/bookings"
 import { generateMagicToken } from "@/lib/magicLink"
 import { sendCommentNotification, sendTagNotification } from "@/lib/send-grid"
+import { getEventParticipants } from "@/lib/event-participants"
 
 const schema = zod.object({
     discussionPostId: zod.string().nonempty(),
@@ -101,84 +101,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     const commenterName = `${(newComment.userId as any).firstName} ${(newComment.userId as any).lastName}`
                     const commenterEmail = (newComment.userId as any).email
 
-                    // Fetch all unique participants for this event
-                    const participants = await Bookings.find({
-                        eventId: post.eventId,
-                        isDeleted: false,
-                        status: { $in: ['confirmed', 'completed'] }
-                    }).select('customerEmail customerName')
+                    // All confirmed bookings + accepted invitations, excluding the commenter
+                    const uniqueParticipants = await getEventParticipants(post.eventId.toString(), commenterEmail)
 
-                    const uniqueParticipants = new Map<string, string>()
-                    participants.forEach(p => {
-                        if (p.customerEmail && p.customerEmail.toLowerCase() !== commenterEmail.toLowerCase()) {
-                            uniqueParticipants.set(p.customerEmail.toLowerCase(), p.customerName)
-                        }
-                    })
-
-                    // Also ensure the post author is notified if they aren't in the bookings (e.g. host)
-                    // and they aren't the one commenting
+                    // Also ensure the post author is notified even if they have no booking (e.g. admin/host)
                     await post.populate("userId", "firstName lastName email")
-                    const authorEmail = (post.userId as any).email
+                    const authorEmail = (post.userId as any).email?.toLowerCase()
                     const authorName = `${(post.userId as any).firstName} ${(post.userId as any).lastName}`
-
-                    if (authorEmail && authorEmail.toLowerCase() !== commenterEmail.toLowerCase()) {
-                        uniqueParticipants.set(authorEmail.toLowerCase(), authorName)
+                    if (authorEmail && authorEmail !== commenterEmail.toLowerCase() && !uniqueParticipants.has(authorEmail)) {
+                        uniqueParticipants.set(authorEmail, authorName)
                     }
 
-                    // Detect mentions: @[Name](id) or @ [Name](id)
+                    // Detect mentions: @[Name](id) or @[Name](email)
                     const mentionRegex = /@\s?\[([^\]]+)\]\(([^)]+)\)/g
-                    const mentionedUserIds = new Set<string>()
+                    const mentionedIds = new Set<string>()
                     let match
                     while ((match = mentionRegex.exec(content || "")) !== null) {
-                        const idOrEmail = match[2];
-                        mentionedUserIds.add(idOrEmail)
-
-                        // If it looks like an email and isn't in our list yet, add it
+                        const idOrEmail = match[2]
+                        mentionedIds.add(idOrEmail)
+                        // Add email-style mentions that aren't already in the list
                         if (idOrEmail.includes('@') && idOrEmail.includes('.')) {
-                            const email = idOrEmail.toLowerCase();
+                            const email = idOrEmail.toLowerCase()
                             if (!uniqueParticipants.has(email) && email !== commenterEmail.toLowerCase()) {
-                                uniqueParticipants.set(email, "Friend"); // Default name for external emails
+                                uniqueParticipants.set(email, "Friend")
                             }
                         }
                     }
 
                     console.log(`[Notification] Processing comment alerts for ${uniqueParticipants.size} people`)
 
-                    for (const [email, name] of uniqueParticipants.entries()) {
-                        const firstName = name.split(' ')[0] || 'Friend'
-                        const lastName = name.split(' ').slice(1).join(' ') || ''
-                        const magicToken = generateMagicToken({ email, firstName, lastName })
-                        const hasImages = !!((newComment.images && newComment.images.length > 0) || (newComment.attachments && newComment.attachments.length > 0))
+                    const hasImages = !!((newComment.images && newComment.images.length > 0) || (newComment.attachments && newComment.attachments.length > 0))
 
-                        // If user is mentioned, send tag notification
-                        if (mentionedUserIds.has(email)) {
-                            console.log(`[Notification] Sending tag alert (comment) to: ${email}`)
-                            await sendTagNotification({
-                                email,
-                                firstName,
-                                lastName,
-                                authorName: commenterName, // Using commenter as the one who tagged
-                                eventName: event.name,
-                                eventSlug: event.slug,
-                                magicToken,
-                                postId: post._id.toString(),
-                                hasImages
-                            })
-                        } else {
-                            // Otherwise send standard curiosity-driven comment notification
-                            await sendCommentNotification({
-                                email,
-                                firstName,
-                                lastName,
-                                commenterName,
-                                eventName: event.name,
-                                eventSlug: event.slug,
-                                magicToken,
-                                postId: post._id.toString(),
-                                hasImages
-                            })
-                        }
-                    }
+                    await Promise.all(
+                        Array.from(uniqueParticipants.entries()).map(async ([email, name]) => {
+                            const firstName = name.split(' ')[0] || 'Friend'
+                            const lastName = name.split(' ').slice(1).join(' ') || ''
+                            const magicToken = generateMagicToken({ email, firstName, lastName })
+                            const isAuthor = email === authorEmail
+
+                            if (mentionedIds.has(email)) {
+                                console.log(`[Notification] Sending tag alert (comment) to: ${email}`)
+                                await sendTagNotification({
+                                    email, firstName, lastName,
+                                    authorName: commenterName,
+                                    eventName: event.name, eventSlug: event.slug,
+                                    magicToken, postId: post._id.toString(), hasImages,
+                                })
+                            } else {
+                                await sendCommentNotification({
+                                    email, firstName, lastName, commenterName,
+                                    eventName: event.name, eventSlug: event.slug,
+                                    magicToken, postId: post._id.toString(), hasImages,
+                                    isPostAuthor: isAuthor,
+                                })
+                            }
+                        })
+                    )
                 } catch (notifyError) {
                     console.error("[Notification] Failed to send comment alerts:", notifyError)
                 }

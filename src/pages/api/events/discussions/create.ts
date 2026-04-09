@@ -6,10 +6,10 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import zod from "zod"
-import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
 import { generateMagicToken } from "@/lib/magicLink"
 import { sendDiscussionNotification, sendTagNotification } from "@/lib/send-grid"
+import { getEventParticipants } from "@/lib/event-participants"
 
 const schema = zod.object({
     eventId: zod.string().nonempty(),
@@ -72,66 +72,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     const authorName = `${(newPost.userId as any).firstName} ${(newPost.userId as any).lastName}`
                     const authorEmail = (newPost.userId as any).email
 
-                    // Detect mentions: @[Name](id) or @ [Name](id)
+                    // Detect mentions: @[Name](id) or @[Name](email)
                     const mentionRegex = /@\s?\[([^\]]+)\]\(([^)]+)\)/g
-                    const mentionedUserIds = new Set<string>()
+                    const mentionedIds = new Set<string>()
                     let match
                     while ((match = mentionRegex.exec(content || "")) !== null) {
-                        mentionedUserIds.add(match[2])
+                        mentionedIds.add(match[2])
                     }
 
-                    // Fetch all unique participants for this event
-                    const participants = await Bookings.find({
-                        eventId,
-                        isDeleted: false,
-                        status: { $in: ['confirmed', 'completed'] }
-                    }).select('customerEmail customerName')
+                    // All confirmed bookings + accepted invitations, excluding the author
+                    const uniqueParticipants = await getEventParticipants(eventId, authorEmail)
 
-                    const uniqueParticipants = new Map<string, string>()
-                    participants.forEach(p => {
-                        const email = p.customerEmail?.toLowerCase()
-                        if (email && email !== authorEmail.toLowerCase()) {
-                            uniqueParticipants.set(email, p.customerName)
-                        }
-                    })
+                    console.log(`[Notification] Processing alerts for ${uniqueParticipants.size} participants (post)`)
 
-                    console.log(`[Notification] Processing alerts for ${uniqueParticipants.size} participants`)
+                    const hasImages = !!((newPost.images && newPost.images.length > 0) || (newPost.attachments && newPost.attachments.length > 0))
 
-                    for (const [email, name] of uniqueParticipants.entries()) {
-                        const firstName = name.split(' ')[0] || 'Friend'
-                        const lastName = name.split(' ').slice(1).join(' ') || ''
-                        const magicToken = generateMagicToken({ email, firstName, lastName })
-                        const hasImages = !!((newPost.images && newPost.images.length > 0) || (newPost.attachments && newPost.attachments.length > 0))
+                    await Promise.all(
+                        Array.from(uniqueParticipants.entries()).map(async ([email, name]) => {
+                            const firstName = name.split(' ')[0] || 'Friend'
+                            const lastName = name.split(' ').slice(1).join(' ') || ''
+                            const magicToken = generateMagicToken({ email, firstName, lastName })
 
-                        // If user is mentioned, send tag notification
-                        if (mentionedUserIds.has(email)) {
-                            console.log(`[Notification] Sending tag alert to: ${email}`)
-                            await sendTagNotification({
-                                email,
-                                firstName,
-                                lastName,
-                                authorName,
-                                eventName: event.name,
-                                eventSlug: event.slug,
-                                magicToken,
-                                postId: newPost._id.toString(),
-                                hasImages
-                            })
-                        } else {
-                            // Otherwise send standard curiosity-driven notification
-                            await sendDiscussionNotification({
-                                email,
-                                firstName,
-                                lastName,
-                                authorName,
-                                eventName: event.name,
-                                eventSlug: event.slug,
-                                magicToken,
-                                postId: newPost._id.toString(),
-                                hasImages
-                            })
-                        }
-                    }
+                            if (mentionedIds.has(email)) {
+                                console.log(`[Notification] Sending tag alert to: ${email}`)
+                                await sendTagNotification({
+                                    email, firstName, lastName, authorName,
+                                    eventName: event.name, eventSlug: event.slug,
+                                    magicToken, postId: newPost._id.toString(), hasImages,
+                                })
+                            } else {
+                                await sendDiscussionNotification({
+                                    email, firstName, lastName, authorName,
+                                    eventName: event.name, eventSlug: event.slug,
+                                    magicToken, postId: newPost._id.toString(), hasImages,
+                                })
+                            }
+                        })
+                    )
                 } catch (notifyError) {
                     console.error("[Notification] Failed to send discussion alerts:", notifyError)
                 }
