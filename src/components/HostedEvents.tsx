@@ -84,13 +84,11 @@ export default function HostedEvents({ event }: Props) {
 		if (typeof window !== "undefined") {
 			setShareUrl(window.location.href)
 
-			// Auto focus on discussion section if hash is not present (or unconditional as per request)
-			// Request says "if the event is event and someone tries to view details we should auto focus on the discussion section"
-			// Implementing a slight delay to ensure rendering
+			// Auto focus on discussion section if hash is not present
 			setTimeout(() => {
-				const discussionSection = document.getElementById("discussion-section");
-				if (discussionSection) {
-					discussionSection.scrollIntoView({ behavior: "smooth" });
+				const discussionBoard = document.getElementById("discussion-board");
+				if (discussionBoard) {
+					discussionBoard.scrollIntoView({ behavior: "smooth" });
 				}
 			}, 1000);
 		}
@@ -296,8 +294,8 @@ export default function HostedEvents({ event }: Props) {
 						<div id="discussion-section" className="max-w-4xl mx-auto mt-8">
 							<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden mt-8">
 							<Box mt={4} px={4}>
-								{/* Discussion Section (Formerly Chat) */}
-								<Box mb={10}>
+								{/* Discussion Section hidden for now */}
+								{/* <Box mb={10}>
 									<Heading size="md" color="white" mb={4} pl={2}>Discussion</Heading>
 									{session ? (
 										<JetzyChatIntegration 
@@ -325,10 +323,10 @@ export default function HostedEvents({ event }: Props) {
 											</Button>
 										</Box>
 									)}
-								</Box>
+								</Box> */}
 
 								{/* Feed Section (Formerly DiscussionBoard) */}
-								<Box>
+								<Box id="discussion-board">
 									<DiscussionBoard eventId={clonedEvent._id.toString()} />
 								</Box>
 							</Box>
