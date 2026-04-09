@@ -16,6 +16,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [customAnswers, setCustomAnswers] = useState<Record<string, any>>({})
 	const [liveEventData, setLiveEventData] = useState<any>(eventData || null)
 	const [checkoutStep, setCheckoutStep] = useState<"details" | "questions">("details")
+	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -98,7 +99,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	}
 
 	// Handle form submission
-	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
 
 		if (checkoutStep === "details") {
@@ -145,6 +146,36 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			action: "Checkout Form Submitted",
 			label: event,
 		})
+
+		// Detect free ticket flow (total = $0) — skip Stripe and register directly
+		const totalPrice = tickets.reduce((sum, t) => sum + ((t as any).price ?? 0) * ((t as any).quantity ?? 1), 0)
+
+		if (totalPrice === 0) {
+			const eventId = (tickets[0] as any)?.eventId
+			const customAnswersArray = Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
+			try {
+				const response = await fetch('/api/checkout/free-events', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						tickets: JSON.stringify(tickets),
+						user: JSON.stringify(formData),
+						eventId,
+						customAnswers: JSON.stringify(customAnswersArray),
+					}),
+				})
+				const result = await response.json()
+				if (result.status) {
+					setFreeRegistrationSuccess(true)
+				} else {
+					Error("Registration Failed", result.message || "Something went wrong. Please try again.")
+				}
+			} catch (err) {
+				console.error("Free ticket registration error:", err)
+				Error("Error", "Something went wrong. Please try again.")
+			}
+			return
+		}
 
 		dispatch(
 			CreateCheckoutSessionThunk({
@@ -217,7 +248,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 	// Fetch live event data (including questions) every time checkout opens
 	useEffect(() => {
-		if (!showCheckout) return
+		if (!showCheckout) {
+			setFreeRegistrationSuccess(false)
+			return
+		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
 		if (!eventId) return
 		
@@ -251,8 +285,32 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 						</button>
 						{/* <div className="bg-jetzy text-black p-3 rounded-t-2xl text-center font-semibold">This deal is reserved for Jetzy Users Only.</div> */}
 
-						{/* Waiting List UI */}
-						{showWaitingList ? (
+						{/* Free Registration Success UI */}
+						{freeRegistrationSuccess ? (
+							<div className="p-6 space-y-6">
+								<div className="text-center">
+									<div className="w-16 h-16 mx-auto mb-4 bg-green-500/20 rounded-full flex items-center justify-center">
+										<svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+										</svg>
+									</div>
+									<div className="bg-green-500/20 border border-green-500/30 rounded-lg p-6 mb-6">
+										<p className="text-green-400 text-2xl font-bold text-center">Registration Confirmed!</p>
+									</div>
+									<p className="text-white mb-2">
+										You have successfully registered for <strong>&quot;{event}&quot;</strong>.
+									</p>
+									<p className="text-gray-400 text-sm mb-6">A confirmation email has been sent to {formData.email}.</p>
+									<button
+										onClick={() => dispatch(toggleCheckoutForm(false))}
+										className="bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
+									>
+										Close
+									</button>
+								</div>
+							</div>
+						) : /* Waiting List UI */
+						showWaitingList ? (
 							<div className="p-6 space-y-6">
 								<div className="text-center">
 									<div className="w-16 h-16 mx-auto mb-4 bg-[#F79432]/20 rounded-full flex items-center justify-center">

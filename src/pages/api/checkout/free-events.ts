@@ -1,8 +1,13 @@
 import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
 import { uniqueId } from "@/lib/utils"
-import { NextApiRequest } from "next"
-import { NextApiResponse } from "next"
+import { resolveEventLocation } from "@/lib/event-helpers"
+import { sendTicketConfirmation } from "@/lib/send-grid"
+import { ensureDbConnected } from "@/configs/database"
+import { Bookings } from "@/models/events/bookings"
+import { BookingStatus } from "@/models/events/types"
+import { Events } from "@/models/events"
+import { NextApiRequest, NextApiResponse } from "next"
 
 type BodyParams = {
 	tickets: Array<{
@@ -21,6 +26,8 @@ type BodyParams = {
 		email: string
 		phone: string
 	}
+	eventId: string
+	customAnswers?: Array<{ questionId: string; answer: any }>
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -28,12 +35,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, null, "Method not allowed", false, 405)
 	}
 
+	await ensureDbConnected()
+
 	try {
-		// Get request params
 		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
+		const eventId = req.body?.eventId as string
+		const customAnswers: Array<{ questionId: string; answer: any }> = req.body?.customAnswers
+			? JSON.parse(req.body.customAnswers)
+			: []
 
-		// create jetzy user
+		if (!eventId) {
+			return sendResponse(res, null, "Event ID is required", false, 400)
+		}
+
+		// Create or update user profile
 		try {
 			await createOrUpdateUser({
 				firstName: user.firstName,
@@ -44,23 +60,70 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			})
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
-			console.error("Error:", errorMessage)
+			console.error("Error creating user:", errorMessage)
 		}
 
-		// using price api from stripe create price for the tickets selected
-		const prices = tickets.map((ticket) => {
-			return {
-				price: ticket.priceId,
+		// Generate booking reference
+		const reference = uniqueId(20)
+		const bookingRef = `JZ-${reference}`
+
+		const subtotal = tickets.reduce((acc, t) => acc + t.price * t.quantity, 0)
+
+		// Create confirmed booking record
+		const booking = await Bookings.create({
+			status: BookingStatus.CONFIRMED,
+			eventId,
+			bookingRef,
+			customerName: `${user.firstName} ${user.lastName}`,
+			customerEmail: user.email,
+			customerPhone: user.phone,
+			tickets: tickets.map((ticket) => ({
+				ticketId: ticket.id,
 				quantity: ticket.quantity,
-			}
+			})),
+			subTotal: subtotal,
+			total: 0,
+			customAnswers: customAnswers.map((a) => ({
+				questionId: a.questionId,
+				answer: a.answer,
+			})),
 		})
 
-		// generate a reference id
-		const reference = uniqueId(20)
+		// Update event tracker capacity
+		await booking.updateEventTracker()
 
-		// return sendResponse(res, { sessionId: session.id }, "Checkout session created successfully", true)
+		// Fetch event for email
+		const event = await Events.findById(eventId)
+		if (!event) {
+			return sendResponse(res, null, "Event not found", false, 404)
+		}
+
+		await resolveEventLocation(event)
+
+		// Send confirmation email
+		try {
+			await sendTicketConfirmation({
+				event,
+				firstName: user.firstName,
+				lastName: user.lastName,
+				email: user.email,
+				phone: user.phone,
+				tickets: tickets.map((ticket) => ({
+					name: ticket.name,
+					price: ticket.price,
+					quantity: ticket.quantity,
+					desc: ticket.desc,
+				})),
+				orderNumber: bookingRef,
+			})
+		} catch (emailError) {
+			console.error("Failed to send free ticket confirmation email:", emailError)
+			// Don't fail the request if email fails
+		}
+
+		return sendResponse(res, { bookingRef, success: true }, "Registration confirmed!", true, 200)
 	} catch (error) {
-		console.error("Error:", error)
+		console.error("Error in free-events checkout:", error)
 		return sendResponse(res, null, "An unknown error occurred", false, 500)
 	}
 }

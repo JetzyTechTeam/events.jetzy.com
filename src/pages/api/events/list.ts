@@ -4,8 +4,6 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { z } from "zod"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/pages/api/auth/[...nextauth]"
 
 const validationSchema = z.object({
 	limit: z.number().int().positive().optional(),
@@ -15,10 +13,6 @@ const validationSchema = z.object({
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
-		// Check authentication status
-		const session = await getServerSession(req, res, authOptions);
-		const isSignedIn = !!session;
-
 		// run validation
 		const validation = validationSchema.safeParse({
 			limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
@@ -34,13 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// calculate the skip value
 		const skip = (page - 1) * limit
 
-		// Define the query based on authentication status
 		let query: any = { isDeleted: false, location: { $regex: locFilter, $options: "i" } };
-
-		// If user is not signed in, only show events that have not ended
-		if (!isSignedIn) {
-			query.endsOn = { $gte: new Date() };
-		}
 
 		//    get all the events from the database
 		const events = await Events.find(query)

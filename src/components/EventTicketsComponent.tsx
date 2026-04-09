@@ -58,10 +58,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   // State for loader
   const [isLoading, setLoader] = useState(false);
 
-  const isEnded = event?.endsOn ? new Date(event.endsOn).getTime() < Date.now() : false;
-
-  if (isEnded) return null;
-
   const eventId = event._id.toString();
 
   // Clone a static verion of the tickets so when increasing the qty the amount is not recalculated from the original price
@@ -223,9 +219,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
-                          disabled={new Date(event.endsOn).getTime() < Date.now()}
                           onClick={() => handleQuantityChange(ticket.id, -1)}
-                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
+                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
                         >
                           -
                         </button>
@@ -233,9 +228,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                           {ticket.quantity}
                         </p>
                         <button
-                          disabled={new Date(event.endsOn).getTime() < Date.now()}
                           onClick={() => handleQuantityChange(ticket.id, 1)}
-                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
+                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
                         >
                           +
                         </button>
@@ -266,7 +260,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </div>
 
             <button
-              disabled={isLoading || new Date(event.endsOn).getTime() < Date.now()}
+              disabled={isLoading}
               onClick={() => {
                 showCheckoutForm(true)
                 sendGAEvent({
@@ -277,7 +271,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
               }}
               className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? <Spinner /> : new Date(event.endsOn).getTime() < Date.now() ? "Event Ended" : "Checkout"}
+              {isLoading ? <Spinner /> : "Checkout"}
             </button>
           </div>
         </div>
