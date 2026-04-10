@@ -82,7 +82,7 @@ export default function VerifyPage() {
                 </h2>
                 <p className="mt-2 text-center text-sm text-gray-500">
                     {isRecoverMode
-                        ? "Enter your email and we'll send you a code to prove it's really you."
+                        ? "Enter your email and we&apos;ll send you a code to prove it&apos;s really you."
                         : "Enter your email to receive a verification code."}
                 </p>
             </div>
@@ -167,7 +167,7 @@ export default function VerifyPage() {
                             <p className="text-sm text-gray-500">
                                 {isRecoverMode
                                     ? "Your account has been successfully unblocked. You can now log in."
-                                    : "Thank you. Our team will review your request and unblock your account shortly. You'll receive an email once it's done."}
+                                    : "Thank you. Our team will review your request and unblock your account shortly. You&apos;ll receive an email once it&apos;s done."}
                             </p>
                             <button
                                 onClick={() => router.push("/login")}

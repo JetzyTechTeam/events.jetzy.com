@@ -169,7 +169,7 @@ export default function LoginOTPPage() {
                                     disabled={isLoading}
                                     className="text-sm text-gray-400 hover:text-[#F79432] transition-colors"
                                 >
-                                    Didn't receive it? Resend code
+                                    Didn&apos;t receive it? Resend code
                                 </button>
                                 <button
                                     type="button"

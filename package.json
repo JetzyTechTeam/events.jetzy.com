@@ -63,7 +63,7 @@
     "slick-carousel": "^1.8.1",
     "stripe": "^15.4.0",
     "tesseract.js": "^2.1.4",
-    "vercel": "^50.37.3",
+    "vercel": "^50.42.0",
     "yup": "^1.4.0",
     "zod": "^3.23.3"
   },

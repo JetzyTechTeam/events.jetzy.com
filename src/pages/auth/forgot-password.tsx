@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
                 <p className="mt-2 text-center text-sm text-gray-400">
                     {sent
                         ? "If that email is registered, a reset link has been sent."
-                        : "Enter your email and we'll send you a link to reset your password."}
+                        : "Enter your email and we&apos;ll send you a link to reset your password."}
                 </p>
             </div>
 
