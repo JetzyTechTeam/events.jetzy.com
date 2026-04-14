@@ -36,7 +36,7 @@ import {
 import { CheckCircleIcon, CloseIcon, SearchIcon } from "@chakra-ui/icons"
 import axios from "axios"
 import dayjs from "dayjs"
-import Tesseract from "tesseract.js"
+import jsQR from "jsqr"
 
 interface BookingInfo {
 	bookingId: string
@@ -427,143 +427,96 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 		canvas.height = video.videoHeight
 		context.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-		// Set scanning state to show loader
 		setIsScanning(true)
 
-		// Show scanning toast
 		const scanningToast = toast({
-			title: "Scanning Image...",
-			description: "Processing ticket for booking details",
+			title: "Scanning QR Code...",
+			description: "Processing ticket QR code",
 			status: "loading",
-			duration: null, // Don't auto-dismiss
+			duration: null,
 			isClosable: false,
 		})
 
 		try {
-			// Use simpler Tesseract.recognize() approach
-			Tesseract.recognize(canvas, "eng", {
-				logger: (m: any) => {
-					console.log("Tesseract:", m)
-					// Update toast with progress
-					if (m.status === "recognizing text") {
-						toast.update(scanningToast, {
-							title: "Reading Text...",
-							description: `Progress: ${Math.round(m.progress * 100)}%`,
-							status: "loading",
-						})
-					}
-				},
-			})
-				.then(({ data: { text } }) => {
-					console.log("Extracted text:", text)
+			const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+			const code = jsQR(imageData.data, imageData.width, imageData.height)
 
-					// Only look for email addresses
-					const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
-					const emailMatches = text.match(emailPattern)
+			toast.close(scanningToast)
+			setIsScanning(false)
+			stopCamera()
 
-					let foundEmail = null
+			if (code && code.data) {
+				const identifier = code.data.trim()
+				console.log("QR code decoded:", identifier)
 
-					if (emailMatches && emailMatches[0]) {
-						foundEmail = emailMatches[0].toLowerCase()
-						console.log("Found email:", foundEmail)
-					}
+				setIdentifier(identifier)
+				setBookingInfo(null)
+				setError("")
 
-					// Close scanning toast
-					toast.close(scanningToast)
-					setIsScanning(false)
+				toast({
+					title: "QR Code Scanned! ✓",
+					description: `Validating ${identifier}...`,
+					status: "info",
+					duration: 3000,
+					isClosable: true,
+				})
 
-					// Stop camera
-					stopCamera()
+				setIsValidating(true)
+				try {
+					const response = await axios.post("/api/check-in/validate", {
+						eventId,
+						identifier,
+					})
 
-					if (foundEmail) {
-						// Populate the input field
-						setIdentifier(foundEmail)
-						// Clear any previous booking info and errors
-						setBookingInfo(null)
-						setError("")
-
+					if (response.data.status) {
+						setBookingInfo(response.data.data)
 						toast({
-							title: "Email Detected! ✓",
-							description: `Validating ${foundEmail}...`,
-							status: "info",
+							title: "Validation Successful! ✓",
+							description: `Booking found for ${identifier}`,
+							status: "success",
 							duration: 3000,
 							isClosable: true,
 						})
-
-						// Auto-validate the email
-						setTimeout(async () => {
-							setIsValidating(true)
-
-							try {
-								const response = await axios.post("/api/check-in/validate", {
-									eventId,
-									identifier: foundEmail,
-								})
-
-								if (response.data.status) {
-									setBookingInfo(response.data.data)
-									toast({
-										title: "Validation Successful! ✓",
-										description: `Booking found for ${foundEmail}`,
-										status: "success",
-										duration: 3000,
-										isClosable: true,
-									})
-								} else {
-									setError(response.data.message)
-									toast({
-										title: "Validation Failed",
-										description: response.data.message,
-										status: "error",
-										duration: 5000,
-										isClosable: true,
-									})
-								}
-							} catch (err: any) {
-								const errorMsg = err.response?.data?.message || "Failed to validate booking"
-								setError(errorMsg)
-								toast({
-									title: "Validation Error",
-									description: errorMsg,
-									status: "error",
-									duration: 5000,
-									isClosable: true,
-								})
-							} finally {
-								setIsValidating(false)
-							}
-						}, 500)
 					} else {
+						setError(response.data.message)
 						toast({
-							title: "No Email Found",
-							description: "Could not find an email address in the image. Please try again or enter manually.",
+							title: "Validation Failed",
+							description: response.data.message,
 							status: "error",
-							duration: 6000,
+							duration: 5000,
 							isClosable: true,
 						})
 					}
-				})
-				.catch((error: any) => {
-					console.error("OCR Error:", error)
-					setIsScanning(false)
-					toast.close(scanningToast)
-					stopCamera()
+				} catch (err: any) {
+					const errorMsg = err.response?.data?.message || "Failed to validate booking"
+					setError(errorMsg)
 					toast({
-						title: "Scan Failed",
-						description: error.message || "Failed to process image. Please try again.",
+						title: "Validation Error",
+						description: errorMsg,
 						status: "error",
-						duration: 7000,
+						duration: 5000,
 						isClosable: true,
 					})
+				} finally {
+					setIsValidating(false)
+				}
+			} else {
+				toast({
+					title: "No QR Code Found",
+					description: "Could not detect a QR code. Please try again or enter the booking reference manually.",
+					status: "error",
+					duration: 6000,
+					isClosable: true,
 				})
+			}
 		} catch (error: any) {
-			console.error("OCR Setup Error:", error)
+			console.error("QR scan error:", error)
 			setIsScanning(false)
 			toast.close(scanningToast)
 			stopCamera()
 			toast({
 				title: "Scan Failed",
-				description: error.message || "Failed to initialize scanner. Please try again.",
+				description: error.message || "Failed to scan QR code. Please try again.",
 				status: "error",
 				duration: 7000,
 				isClosable: true,

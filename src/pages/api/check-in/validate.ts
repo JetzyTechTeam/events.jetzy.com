@@ -37,19 +37,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event ID and email address are required", false, ResCode.BAD_REQUEST)
 		}
 
-		// Normalize email
-		const normalizedEmail = identifier.trim().toLowerCase()
+		const normalizedIdentifier = identifier.trim()
+		const isBookingRef = normalizedIdentifier.toUpperCase().startsWith("JZ-")
 
-		// Search for ALL bookings by email for this event
+		// Search by bookingRef OR email depending on identifier format
 		const bookings = await Bookings.find({
 			eventId,
 			isDeleted: false,
-			customerEmail: { $regex: new RegExp(`^${normalizedEmail}$`, "i") },
+			...(isBookingRef
+				? { bookingRef: { $regex: new RegExp(`^${normalizedIdentifier}$`, "i") } }
+				: { customerEmail: { $regex: new RegExp(`^${normalizedIdentifier}$`, "i") } }),
 		}).lean()
 
 		if (!bookings || bookings.length === 0) {
-			return sendResponse(res, null, "No booking found for this event with the provided email address", false, ResCode.NOT_FOUND)
+			return sendResponse(res, null, "No booking found for this event with the provided identifier", false, ResCode.NOT_FOUND)
 		}
+
+		const normalizedEmail = isBookingRef ? bookings[0].customerEmail : normalizedIdentifier.toLowerCase()
 
 		// Aggregate data from all bookings
 		let totalTickets = 0

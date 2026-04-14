@@ -3,6 +3,7 @@ import { sendResponse } from "@/lib/helpers"
 import { uniqueId } from "@/lib/utils"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation } from "@/lib/send-grid"
+import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
@@ -102,6 +103,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Send confirmation email
 		try {
+			let qrCodeImageUrl: string | undefined
+			try {
+				qrCodeImageUrl = await generateQRCodeForBooking(bookingRef)
+			} catch (qrError) {
+				console.error("Failed to generate QR code:", qrError)
+			}
 			await sendTicketConfirmation({
 				event,
 				firstName: user.firstName,
@@ -115,6 +122,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					desc: ticket.desc,
 				})),
 				orderNumber: bookingRef,
+				qrCodeImageUrl,
 			})
 		} catch (emailError) {
 			console.error("Failed to send free ticket confirmation email:", emailError)

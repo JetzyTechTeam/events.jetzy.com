@@ -1,7 +1,7 @@
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation } from "@/lib/send-grid"
 import { uniqueId } from "@/lib/utils"
-// import { generateQRCodeForBooking } from "@/lib/qr-generator"
+import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
@@ -140,6 +140,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// send email to the customer
 			try {
 				console.log("Sending ticket confirmation email to:", metadata.email)
+				let qrCodeImageUrl: string | undefined
+				try {
+					qrCodeImageUrl = await generateQRCodeForBooking(`JZ-${session.client_reference_id}`)
+				} catch (qrError) {
+					console.error("Failed to generate QR code:", qrError)
+				}
 				await sendTicketConfirmation({
 					event,
 					firstName: metadata.firstName,
@@ -156,6 +162,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					referralCode: metadata.referralCode,
 					discountAmount: discountAmount > 0 ? discountAmount : undefined,
 					discountPercentage: metadata.discountPercentage ? parseFloat(metadata.discountPercentage) : undefined,
+					qrCodeImageUrl,
 				})
 				console.log("Ticket confirmation email sent successfully")
 			} catch (emailError) {

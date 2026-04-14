@@ -1021,11 +1021,21 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           .join("")}
           </div>
           
+          ${qrCodeValid ? `
+          <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f8f8; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <h3 style="color: #333; margin: 0 0 8px 0; font-size: 16px;">Your Entry QR Code</h3>
+            <p style="color: #666; font-size: 13px; margin: 0 0 15px 0;">
+              Show this QR code at the entrance. Booking Reference: <strong>${orderNumber}</strong>
+            </p>
+            <img src="${hasAttachment ? 'cid:qrCode' : qrCodeImageUrl}" alt="Entry QR Code" style="width: 200px; height: 200px; display: block; margin: 0 auto;" />
+          </div>
+          ` : `
           <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center; border: 1px solid #ffeeba;">
             <p style="color: #856404; font-weight: bold; margin: 0;">
               Please show this email at the entrance for entry
             </p>
           </div>
+          `}
 
           <div style="text-align: center; margin: 30px 0;">
             <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>

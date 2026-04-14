@@ -24,7 +24,7 @@ export default function CheckInPage({ event }: CheckInPageProps) {
 		queryFn: async () => {
 			if (!eventId) return null;
 			const response = await axios.get(`/api/events/${eventId}`)
-			return response.data
+			return response.data.data
 		},
 		initialData: event ? JSON.parse(event) : undefined,
 		enabled: !!eventId && !event
