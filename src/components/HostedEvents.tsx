@@ -12,7 +12,7 @@ import "slick-carousel/slick/slick-theme.css"
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { IEvent } from "@/models/events/types"
-import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure } from "@chakra-ui/react"
+import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast } from "@chakra-ui/react"
 import { ShareIcon, QrCodeIcon as QrCodeIconOutline } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
 import { useQuery } from "@tanstack/react-query"
@@ -29,6 +29,7 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
+import { FiShare2 } from "react-icons/fi"
 
 const settings = {
 	infinite: true,
@@ -58,6 +59,8 @@ export default function HostedEvents({ event }: Props) {
 	const [shareUrl, setShareUrl] = useState("")
 	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list">("bookings")
 	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
+	const { isOpen: isDiscussionQRModalOpen, onOpen: onDiscussionQRModalOpen, onClose: onDiscussionQRModalClose } = useDisclosure()
+	const toast = useToast()
 	const { data: session } = useSession()
 	const router = useRouter()
 
@@ -98,6 +101,11 @@ export default function HostedEvents({ event }: Props) {
 						discussionBoard.scrollIntoView({ behavior: "smooth" });
 					}
 				}, 1000);
+			}
+			if (router.query.view === "discussion") {
+				setTimeout(() => {
+					document.getElementById("discussion-chat")?.scrollIntoView({ behavior: "smooth" })
+				}, 1000)
 			}
 		}
 	}, [router.query.view, router.query.scrollTo])
@@ -311,12 +319,43 @@ export default function HostedEvents({ event }: Props) {
 						<div id="discussion-section" className="max-w-4xl mx-auto mt-8">
 							<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden mt-8">
 							<Box mt={4} px={4}>
-								{/* Discussion Section hidden for now */}
-								{/* <Box mb={10}>
-									<Heading size="md" color="white" mb={4} pl={2}>Discussion</Heading>
+								{/* Discussion/Chat Section */}
+								<Box id="discussion-chat" mb={10}>
+									<Flex justify="space-between" align="center" mb={4} pl={2}>
+										<Heading size="md" color="white">Discussion</Heading>
+										{isAdmin && (
+											<Flex gap={3}>
+												<Button
+													size="sm"
+													leftIcon={<FiShare2 />}
+													bg="whiteAlpha.100"
+													color="white"
+													_hover={{ bg: "whiteAlpha.200" }}
+													borderRadius="full"
+													onClick={() => {
+														const discussionUrl = `${window.location.origin}${window.location.pathname}?view=discussion`
+														navigator.clipboard.writeText(discussionUrl)
+														toast({ title: "Discussion Link Copied!", description: "Share this link to bring users directly to the discussion.", status: "success", duration: 2000, isClosable: true })
+													}}
+												>
+													Share Chat
+												</Button>
+												<IconButton
+													aria-label="Show Chat QR Code"
+													icon={<Icon as={QrCodeIconOutline} />}
+													size="sm"
+													bg="whiteAlpha.100"
+													color="white"
+													_hover={{ bg: "whiteAlpha.200" }}
+													borderRadius="full"
+													onClick={onDiscussionQRModalOpen}
+												/>
+											</Flex>
+										)}
+									</Flex>
 									{session ? (
-										<JetzyChatIntegration 
-											eventId={clonedEvent._id.toString()} 
+										<JetzyChatIntegration
+											eventId={clonedEvent._id.toString()}
 											eventName={stripHtml(clonedEvent.name)}
 										/>
 									) : (
@@ -329,8 +368,7 @@ export default function HostedEvents({ event }: Props) {
 											</Text>
 											<Button
 												onClick={() => {
-													const currentUrl = router.asPath
-													router.push(`${ROUTES?.login || '/login'}?_cb=${encodeURIComponent(currentUrl)}`)
+													router.push(`${ROUTES?.login || '/login'}?_cb=${encodeURIComponent(router.asPath)}`)
 												}}
 												bg="#F79432"
 												color="black"
@@ -340,7 +378,7 @@ export default function HostedEvents({ event }: Props) {
 											</Button>
 										</Box>
 									)}
-								</Box> */}
+								</Box>
 
 								{/* Feed Section (Formerly DiscussionBoard) */}
 								<Box id="discussion-board">
@@ -355,11 +393,21 @@ export default function HostedEvents({ event }: Props) {
 				
 				{/* QR Code Modal for Event */}
 				{isAdmin && (
-					<QRCodeModal 
+					<QRCodeModal
 						isOpen={isQRModalOpen}
 						onClose={onQRModalClose}
 						url={shareUrl}
 						title={`${stripHtml(clonedEvent.name)}`}
+					/>
+				)}
+
+				{/* QR Code Modal for Discussion/Chat */}
+				{isAdmin && (
+					<QRCodeModal
+						isOpen={isDiscussionQRModalOpen}
+						onClose={onDiscussionQRModalClose}
+						url={`${typeof window !== 'undefined' ? window.location.origin : ''}${router.asPath.split('?')[0]}?view=discussion`}
+						title="Event Discussion"
 					/>
 				)}
 			</>
