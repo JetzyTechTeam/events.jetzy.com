@@ -107,7 +107,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
     // make sure the ticket at least one is selected
     const hasSelected = tickets.some((ticket) => ticket.isSelected);
     if (event.isPaid && !hasSelected) {
-      alert("Please select at least one ticket.");
       setLoader(false);
       Error("Ticket Required", "Please select at least one ticket.");
       return;
