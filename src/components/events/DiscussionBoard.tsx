@@ -219,13 +219,13 @@ const FeedPostCard = ({
 				<Flex align="center" gap={3} mb={3}>
 					<Avatar
 						size="md"
-						name={post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"}
-						src=""
+						name={(post.userId?.firstName || post.userId?.lastName) ? `${post.userId.firstName} ${post.userId.lastName}`.trim() : "Deleted User"}
+						src={post.userId?.image || ""}
 					/>
 					<Box flex="1">
 						<Flex align="center" gap={2}>
 							<Text fontWeight="600" color="white">
-								{post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"}
+								{(post.userId?.firstName || post.userId?.lastName) ? `${post.userId.firstName} ${post.userId.lastName}`.trim() : "Deleted User"}
 							</Text>
 							{post.isPinned && (
 								<Flex align="center" gap={1} color="#bbbbbb" fontSize="xs">

@@ -42,6 +42,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         console.log("[API] Parsed Data - Images:", images)
         // @ts-ignore
         const userId = session.user._id
+        if (!userId) {
+            return sendResponse(res, null, "User ID not found in session. Please log in again.", false, ResCode.UNAUTHORIZED)
+        }
 
         const newPost = await DiscussionPosts.create({
             eventId,
@@ -69,7 +72,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     const event = await Events.findById(eventId)
                     if (!event) return
 
-                    const authorName = `${(newPost.userId as any).firstName} ${(newPost.userId as any).lastName}`
+                    const u = newPost.userId as any
+                    const authorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || 'Someone'
                     const authorEmail = (newPost.userId as any).email
 
                     // Detect mentions: @[Name](id) or @[Name](email)

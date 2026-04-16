@@ -3,6 +3,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { DiscussionPosts } from "@/models/events/discussion-posts"
 import { Users } from "@/models/userModal"
+import { EventUsers } from "@/models/eventUsersModal"
 import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -53,15 +54,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 break
         }
 
-        const [posts, total] = await Promise.all([
+        const [postsRaw, total] = await Promise.all([
             DiscussionPosts.find(query)
                 .sort(sortOptions)
                 .skip(skip)
                 .limit(limitNum)
-                .populate("userId", "firstName lastName image email")
                 .lean(),
             DiscussionPosts.countDocuments(query),
         ])
+
+        // Resolve userIds from both Users and EventUsers collections
+        const rawUserIds = [...new Set(postsRaw.map((p: any) => p.userId?.toString()).filter(Boolean))]
+        const [mainUsers, eventUsersData] = await Promise.all([
+            Users.find({ _id: { $in: rawUserIds } }).select('firstName lastName image email').lean(),
+            EventUsers.find({ _id: { $in: rawUserIds } }).select('firstName lastName image email').lean(),
+        ])
+        const userMap: Record<string, any> = {}
+        ;[...mainUsers, ...eventUsersData].forEach((u: any) => { userMap[u._id.toString()] = u })
+        const posts = postsRaw.map((post: any) => ({
+            ...post,
+            userId: post.userId ? (userMap[post.userId.toString()] || null) : null,
+        }))
 
         return sendResponse(
             res,

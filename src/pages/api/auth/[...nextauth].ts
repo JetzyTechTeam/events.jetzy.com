@@ -234,11 +234,12 @@ export const authOptions: NextAuthOptions = {
             }
           }
 
+          const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || ''
           const userData = {
             _id: user._id.toString(),
             id: user._id.toString(),
-            name: `${user.firstName} ${user.lastName}`,
-            fullName: `${user.firstName} ${user.lastName}`,
+            name: displayName,
+            fullName: displayName,
             email: user.email,
             role: user.role,
             accessToken: accessToken,
@@ -402,11 +403,12 @@ export const authOptions: NextAuthOptions = {
           }
 
           console.log("--- Firebase Auth API Success ---");
+          const firebaseDisplayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || ''
           return {
             _id: user._id.toString(),
             id: user._id.toString(),
-            name: `${user.firstName} ${user.lastName}`,
-            fullName: `${user.firstName} ${user.lastName}`,
+            name: firebaseDisplayName,
+            fullName: firebaseDisplayName,
             email: user.email,
             role: user.role,
             accessToken: accessToken, // Now using Jetzy SSO token

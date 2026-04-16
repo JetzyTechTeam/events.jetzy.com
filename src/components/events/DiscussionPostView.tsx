@@ -404,14 +404,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	}
 
 	return (
-		<Box mb={2}>
-			<Flex gap={2} align="start">
-				<Avatar size="sm" name={comment.userId ? `${comment.userId.firstName} ${comment.userId.lastName}` : "Deleted User"} src="" />
+		<Box mb={2} overflow="hidden">
+			<Flex gap={2} align="start" minW={0}>
+				<Avatar size="sm" name={(comment.userId?.firstName || comment.userId?.lastName) ? `${comment.userId.firstName} ${comment.userId.lastName}`.trim() : "Deleted User"} src={comment.userId?.image || ""} />
 
-				<Box flex="1">
+				<Box flex="1" minW={0}>
 					<Box bg="#2b2b2b" borderRadius="2xl" px={{ base: 2, md: 3 }} py={{ base: 1.5, md: 2 }} width="fit-content" mb={1} maxW="100%">
 						<Text fontWeight="600" fontSize="sm" color="white">
-							{comment.userId ? `${comment.userId.firstName} ${comment.userId.lastName}` : "Deleted User"}
+							{(comment.userId?.firstName || comment.userId?.lastName) ? `${comment.userId.firstName} ${comment.userId.lastName}`.trim() : "Deleted User"}
 						</Text>
 
 						{isEditing ? (
@@ -1180,13 +1180,13 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 
 			{/* Nested Replies */}
 			{groupedComments[comment._id]?.length > 0 && (
-				<Box pl={10} mt={1}>
+				<Box pl={{ base: 6, md: 10 }} mt={1} overflowX="hidden">
 					<Stack spacing={2}>
 						{groupedComments[comment._id].map((reply) => (
 							<CommentItem
 								key={reply._id}
 								comment={reply}
-								groupedComments={groupedComments}
+								groupedComments={{}}
 								currentUserId={currentUserId}
 								onReply={onReply}
 								onEdit={onEdit}
@@ -1660,10 +1660,10 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				{/* Post Header */}
 				<Flex justify="space-between" align="start" mb={4}>
 					<Flex align="center" gap={3}>
-						<Avatar name={post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"} src="" size="md" />
+						<Avatar name={(post.userId?.firstName || post.userId?.lastName) ? `${post.userId.firstName} ${post.userId.lastName}`.trim() : "Deleted User"} src={post.userId?.image || ""} size="md" />
 						<Box>
 							<Heading size="md" color="white">
-								{post.userId ? `${post.userId.firstName} ${post.userId.lastName}` : "Deleted User"}
+								{(post.userId?.firstName || post.userId?.lastName) ? `${post.userId.firstName} ${post.userId.lastName}`.trim() : "Deleted User"}
 							</Heading>
 							<Flex align="center" gap={2} fontSize="sm" color="#bbbbbb">
 								<Text>{new Date(post.createdAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })}</Text>
