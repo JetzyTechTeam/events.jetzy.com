@@ -100,12 +100,16 @@ const FeedPostCard = ({
 	onClick,
 	onLikeSuccess,
 	onDeleteSuccess,
+	onCommentToggle,
+	isCommentsExpanded,
 	eventId
 }: {
 	post: DiscussionPostWithAuthor,
 	onClick: (id: string, editMode?: boolean) => void,
 	onLikeSuccess: () => void,
 	onDeleteSuccess: () => void,
+	onCommentToggle: (id: string) => void,
+	isCommentsExpanded: boolean,
 	eventId: string
 }) => {
 	const { data: session } = useSession()
@@ -416,7 +420,7 @@ const FeedPostCard = ({
 						flex="1"
 						variant="ghost"
 						leftIcon={<FiMessageCircle />}
-						color="#bbbbbb"
+						color={isCommentsExpanded ? "#1877F2" : "#bbbbbb"}
 						fontWeight="600"
 						_hover={{ bg: "whiteAlpha.100", color: "white" }}
 						onClick={(e) => {
@@ -426,7 +430,7 @@ const FeedPostCard = ({
 								router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
 								return
 							}
-							onClick(post._id)
+							onCommentToggle(post._id)
 						}}
 					>
 						Comment
@@ -473,6 +477,11 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 	const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
 	const [openInEditMode, setOpenInEditMode] = useState(false)
 	const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+	const [expandedCommentPostId, setExpandedCommentPostId] = useState<string | null>(null)
+
+	const handleCommentToggle = (postId: string) => {
+		setExpandedCommentPostId(prev => prev === postId ? null : postId)
+	}
 	const toast = useToast()
 	const router = useRouter()
 
@@ -689,14 +698,34 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				) : (
 					<Stack spacing={4}>
 						{posts.map((post: DiscussionPostWithAuthor) => (
-							<FeedPostCard
-								key={post._id}
-								post={post}
-								onClick={handlePostClick}
-								onLikeSuccess={refetch}
-								onDeleteSuccess={refetch}
-								eventId={eventId}
-							/>
+							<Box key={post._id}>
+								<FeedPostCard
+									post={post}
+									onClick={handlePostClick}
+									onLikeSuccess={refetch}
+									onDeleteSuccess={refetch}
+									onCommentToggle={handleCommentToggle}
+									isCommentsExpanded={expandedCommentPostId === post._id}
+									eventId={eventId}
+								/>
+								{expandedCommentPostId === post._id && (
+									<Box
+										bg="#1E1E1E"
+										borderRadius="0 0 lg lg"
+										border="1px solid"
+										borderTop="none"
+										borderColor="#434343"
+										mt="-8px"
+										pt={2}
+									>
+										<DiscussionPostView
+											postId={post._id}
+											eventId={eventId}
+											commentsOnly={true}
+										/>
+									</Box>
+								)}
+							</Box>
 						))}
 					</Stack>
 				)}

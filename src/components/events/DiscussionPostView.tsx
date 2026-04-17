@@ -161,6 +161,7 @@ interface DiscussionPostViewProps {
 	postId: string
 	eventId: string
 	isModalView?: boolean
+	commentsOnly?: boolean
 	onClose?: () => void
 	openInEditMode?: boolean
 }
@@ -188,6 +189,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	const [replyFeeling, setReplyFeeling] = useState<string>("")
 	const [replyActivity, setReplyActivity] = useState<string>("")
 	const [uploadingReplyImages, setUploadingReplyImages] = useState(false)
+	const isReplySubmitting = useRef(false)
 
 	const [editImages, setEditImages] = useState<string[]>([])
 	const [editFeeling, setEditFeeling] = useState<string>("")
@@ -325,6 +327,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	const toast = useToast()
 
 	const handleReplySubmit = () => {
+		if (isReplySubmitting.current) return
 		if (!session || !session.user) {
 			const currentPath = window.location.pathname + window.location.search
 			router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
@@ -337,6 +340,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 			return
 		}
 		if (replyText.trim() || replyImages.length > 0 || replyFeeling || replyActivity) {
+			isReplySubmitting.current = true
 			let finalReply = replyText
 			if (replyFeeling || replyActivity) {
 				const feelingText = replyFeeling ? `${replyFeeling}` : ""
@@ -350,6 +354,8 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 			setReplyFeeling("")
 			setReplyActivity("")
 			setShowReply(false)
+			// Reset after a short delay to allow the mutation to fire
+			setTimeout(() => { isReplySubmitting.current = false }, 1000)
 		}
 	}
 
@@ -1178,33 +1184,40 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 				</Menu>
 			</Flex>
 
-			{/* Nested Replies */}
-			{groupedComments[comment._id]?.length > 0 && (
-				<Box pl={{ base: 6, md: 10 }} mt={1} overflowX="hidden">
-					<Stack spacing={2}>
-						{groupedComments[comment._id].map((reply) => (
-							<CommentItem
-								key={reply._id}
-								comment={reply}
-								groupedComments={{}}
-								currentUserId={currentUserId}
-								onReply={onReply}
-								onEdit={onEdit}
-								onDelete={onDelete}
-								onReact={onReact}
-								onShowCommentLikes={onShowCommentLikes}
-								onReport={onReport}
-								isLocked={isLocked}
-							/>
-						))}
-					</Stack>
-				</Box>
-			)}
+			{/* Nested Replies — flatten all descendants to avoid infinite nesting */}
+			{groupedComments[comment._id]?.length > 0 && (() => {
+				const collectDescendants = (parentId: string): DiscussionCommentWithAuthor[] => {
+					const children = groupedComments[parentId] || []
+					return children.flatMap(child => [child, ...collectDescendants(child._id)])
+				}
+				const allReplies = collectDescendants(comment._id)
+				return (
+					<Box pl={{ base: 6, md: 10 }} mt={1} overflowX="hidden">
+						<Stack spacing={2}>
+							{allReplies.map((reply) => (
+								<CommentItem
+									key={reply._id}
+									comment={reply}
+									groupedComments={{}}
+									currentUserId={currentUserId}
+									onReply={onReply}
+									onEdit={onEdit}
+									onDelete={onDelete}
+									onReact={onReact}
+									onShowCommentLikes={onShowCommentLikes}
+									onReport={onReport}
+									isLocked={isLocked}
+								/>
+							))}
+						</Stack>
+					</Box>
+				)
+			})()}
 		</Box>
 	)
 }
 
-const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId, isModalView = false, onClose, openInEditMode = false }) => {
+const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId, isModalView = false, commentsOnly = false, onClose, openInEditMode = false }) => {
 	const { data: session } = useSession()
 	const router = useRouter()
 	const toast = useToast()
@@ -1627,7 +1640,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		onSuccess: () => refetchComments(),
 	})
 
-	if (isLoadingPost) {
+	if (isLoadingPost && !commentsOnly) {
 		return (
 			<Flex justify="center" align="center" h="400px">
 				<ChakraSpinner size="xl" color="#1877F2" />
@@ -1635,7 +1648,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		)
 	}
 
-	if (!post) {
+	if (!post && !commentsOnly) {
 		return (
 			<Box p={6} textAlign="center">
 				<Text>Post not found</Text>
@@ -1643,9 +1656,9 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		)
 	}
 
-	const isAuthor = currentUserId === post.userId?._id
-	const hasLiked = (post.reactions?.like || (post.reactions as any)?.likes || []).includes(currentUserId || "")
-	const hasMarkedHelpful = post.reactions.helpful.includes(currentUserId || "")
+	const isAuthor = currentUserId === post?.userId?._id
+	const hasLiked = (post?.reactions?.like || (post?.reactions as any)?.likes || []).includes(currentUserId || "")
+	const hasMarkedHelpful = (post?.reactions?.helpful || []).includes(currentUserId || "")
 
 	return (
 		<>
@@ -1653,10 +1666,12 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				bg={isModalView ? "transparent" : "#1E1E1E"}
 				borderRadius={isModalView ? "none" : "2xl"}
 				border={isModalView ? "none" : "1px solid #434343"}
-				p={{ base: 2, md: 6 }}
+				p={commentsOnly ? { base: 2, md: 3 } : { base: 2, md: 6 }}
 				pt={isModalView ? { base: 10, md: 12 } : { base: 4, md: 6 }}
 				boxShadow={isModalView ? "none" : "sm"}
 			>
+				{!commentsOnly && post && (
+				<>
 				{/* Post Header */}
 				<Flex justify="space-between" align="start" mb={4}>
 					<Flex align="center" gap={3}>
@@ -1674,7 +1689,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										<Text color="#1877F2" fontWeight="600">Pinned</Text>
 									</>
 								)}
-								{post.isLocked && (
+								{post?.isLocked && (
 									<>
 										<Text>·</Text>
 										<Icon as={FiLock} color="#E41E3F" />
@@ -1731,10 +1746,10 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										bg="#1E1E1E"
 										color="white"
 										_hover={{ bg: "#2b2b2b" }}
-										icon={post.isLocked ? <FiUnlock /> : <FiLock />}
-										onClick={() => lockPostMutation.mutate(!post.isLocked)}
+										icon={post?.isLocked ? <FiUnlock /> : <FiLock />}
+										onClick={() => lockPostMutation.mutate(!post?.isLocked)}
 									>
-										{post.isLocked ? "Unlock" : "Lock"} Discussion
+										{post?.isLocked ? "Unlock" : "Lock"} Discussion
 									</MenuItem>
 								</>
 							)}
@@ -2151,11 +2166,13 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 						Report
 					</Button>
 				</Flex>
+				</>
+				)} {/* end !commentsOnly */}
 
 				{/* Comments Section */}
 				<Box>
 					{/* New Comment Input - Always visible */}
-					{!post.isLocked && (
+					{!post?.isLocked && (
 						<Box mb={4}>
 							<Flex gap={2} align="flex-start">
 								{session && session.user ? (
@@ -2192,6 +2209,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 													if (e.key === 'Enter' && !e.shiftKey) {
 														if (!showMentionDropdown) {
 															e.preventDefault();
+															if (createCommentMutation.isPending) return;
 															if (!session || !session.user) {
 																const currentPath = window.location.pathname + window.location.search
 																router.push(`/login?_cb=${encodeURIComponent(currentPath)}`)
@@ -2417,7 +2435,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 						</Box>
 					)}
 
-					{post.isLocked && (
+					{post?.isLocked && (
 						<Box p={3} bg="#3a3a3a" borderRadius="lg" mb={4}>
 							<Flex align="center" gap={2}>
 								<Icon as={FiLock} color="#bbbbbb" />
@@ -2447,7 +2465,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 									onReact={(commentId) => reactToCommentMutation.mutate(commentId)}
 									onShowCommentLikes={handleShowCommentLikes}
 									onReport={(commentId) => reportCommentMutation.mutate(commentId)}
-									isLocked={post.isLocked}
+									isLocked={post?.isLocked ?? false}
 									onLoginRequired={() => setIsLoginModalOpen(true)}
 								/>
 							))}
