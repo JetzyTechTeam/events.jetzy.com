@@ -38,7 +38,8 @@ export interface DiscussionPostWithAuthor {
 		firstName: string
 		lastName: string
 		email: string
-	}
+		image?: string
+	} | null
 	title: string
 	content: string
 	images?: string[]
@@ -66,7 +67,8 @@ export interface DiscussionCommentWithAuthor {
 		firstName: string
 		lastName: string
 		email: string
-	}
+		image?: string
+	} | null
 	comment: string
 	parentCommentId?: string | null
 	images?: string[]
