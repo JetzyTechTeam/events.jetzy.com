@@ -26,47 +26,44 @@ export const Error = (title?: string, message?: string) => {
 }
 
 export const ServerErrors = (title?: string, error?: any) => {
-  if (!error?.status) {
-    if (error?.data) {
-      toast(
-        () => (
-          <div className="flex flex-col gap-4">
-            <h1 className="font-bold text-md black w-full">{title}</h1>
-            <div className="text-gray-600 p-2">
-              <ul>
-                {error?.data?.map((message: string) => (
-                  <li key={uniqueId()} className="text-rose-400">
-                    {message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ),
-        { type: "error" }
-      )
-    } else {
-      toast(
-        () => (
-          <div className="flex flex-col gap-4">
-            <h1 className="font-bold text-md black w-full">{title}</h1>
-            <p className="text-gray-600 p-2">{error?.message}</p>
-          </div>
-        ),
-        { type: "error" }
-      )
+  // Extract the most useful message from various error shapes
+  const extractMessage = (err: any): string => {
+    if (!err) return "Something went wrong. Please try again."
+    if (typeof err === "string") return err
+    // Server response shape: { status, message, data }
+    if (err?.message && err.message !== "Rejected") return err.message
+    // Zod errors array
+    if (Array.isArray(err?.data) && err.data.length > 0) {
+      return err.data.map((e: any) => e?.message || JSON.stringify(e)).join(", ")
     }
-  } else {
-    toast(
-      () => (
-        <div className="flex flex-col gap-4">
-          <h1 className="font-bold text-md black w-full">{title}</h1>
-          <p className="text-gray-600 p-2">{error?.message ?? error}</p>
-        </div>
-      ),
-      { type: "error" }
-    )
+    if (Array.isArray(err) && err.length > 0) {
+      return err.map((e: any) => e?.message || JSON.stringify(e)).join(", ")
+    }
+    return "Something went wrong. Please try again."
   }
+
+  const message = extractMessage(error)
+  const hasDetailList = Array.isArray(error?.data) && error.data.length > 0
+
+  toast(
+    () => (
+      <div className="flex flex-col gap-2">
+        <h1 className="font-bold text-md text-black w-full">{title}</h1>
+        {hasDetailList ? (
+          <ul className="text-gray-600 p-2 list-disc pl-4">
+            {error.data.map((e: any, i: number) => (
+              <li key={i} className="text-rose-500 text-sm">
+                {e?.message || JSON.stringify(e)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-gray-600 p-2 text-sm">{message}</p>
+        )}
+      </div>
+    ),
+    { type: "error" }
+  )
 }
 
 export const Info = (title?: string, message?: string) => {

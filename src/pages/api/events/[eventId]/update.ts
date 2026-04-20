@@ -20,10 +20,10 @@ dayjs.extend(timezone)
 // create validation schema
 const schema = zod.object({
 	eventId: zod.string().nonempty(),
-	startDate: zod.string().nonempty(),
-	startTime: zod.string().nonempty(),
-	endDate: zod.string().nonempty(),
-	endTime: zod.string().nonempty(),
+	startDate: zod.string().optional(),
+	startTime: zod.string().optional(),
+	endDate: zod.string().optional(),
+	endTime: zod.string().optional(),
 	name: zod.string().nonempty(),
 	location: zod.string().nonempty(),
 	capacity: zod.number().nonnegative(),
@@ -44,7 +44,19 @@ const schema = zod.object({
 	),
 	isPaid: zod.boolean(),
 	desc: zod.string().nonempty(),
-	timezone: zod.string().nonempty(),
+	timezone: zod.string().optional(),
+	locationDisclosedAfterBooking: zod.boolean().optional(),
+	datePoll: zod.object({
+		isActive: zod.boolean(),
+		question: zod.string().optional(),
+		options: zod.array(zod.object({
+			id: zod.string(),
+			date: zod.string(),
+			time: zod.string(),
+			label: zod.string().optional(),
+			votes: zod.array(zod.string()).optional(),
+		})),
+	}).optional(),
 	feedbackFormUrl: zod.string().optional(),
 	benefits: zod.string().max(23).optional(),
 })
@@ -70,15 +82,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits } = params
+		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, datePoll } = params
 
 		// construct datetime for start and end dates
-		const extractedTimeZone = timezone?.split(') ')[1]
-		const start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
-		const end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
+		let start: Date | undefined
+		let end: Date | undefined
+		if (startDate && startTime) {
+			start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		}
+		if (endDate && endTime) {
+			end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		}
 
 		// check if start date is greater than end date
-		if (start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
+		if (start && end && start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
 
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
@@ -101,33 +119,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
 		// Find the event by id and update it
+		const updateDoc: any = {
+			$set: {
+				name,
+				location,
+				desc: formatTextWithLineBreaks(desc),
+				isPaid,
+				capacity,
+				requireApproval,
+				tickets: tickets.map((ticket, index) => ({
+					name: ticket.title,
+					desc: ticket.description,
+					price: ticket.price.toFixed(2),
+					stripeProductId: stripeProducts[index].id,
+				})),
+				images: images.map((image) => image.file),
+				timezone: timezone || 'UTC',
+				privacy,
+				feedbackFormUrl,
+				benefits,
+				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
+				...(datePoll?.isActive && datePoll.options?.length > 0 ? {
+					datePoll: {
+						isActive: true,
+						question: datePoll.question || '',
+						options: datePoll.options.map(opt => ({
+							id: opt.id,
+							date: opt.date,
+							time: opt.time,
+							label: opt.label || '',
+							votes: opt.votes || [],
+						})),
+					},
+				} : { datePoll: { isActive: false, question: '', options: [] } }),
+			},
+		}
+
+		if (start) updateDoc.$set.startsOn = start
+		if (end) updateDoc.$set.endsOn = end
+
+		const unsetDoc: any = {}
+		if (!start) unsetDoc.startsOn = ""
+		if (!end) unsetDoc.endsOn = ""
+		if (Object.keys(unsetDoc).length > 0) updateDoc.$unset = unsetDoc
+
 		const newEvent = await Events.findOneAndUpdate(
 			{
 				_id: new Types.ObjectId(eventId as string),
 			},
-			{
-				$set: {
-					name,
-					location,
-					desc: formatTextWithLineBreaks(desc),
-					startsOn: start,
-					endsOn: end,
-					isPaid,
-					capacity,
-					requireApproval,
-					tickets: tickets.map((ticket, index) => ({
-						name: ticket.title,
-						desc: ticket.description,
-						price: ticket.price.toFixed(2),
-						stripeProductId: stripeProducts[index].id,
-					})),
-					images: images.map((image) => image.file),
-					timezone: timezone,
-					privacy,
-					feedbackFormUrl,
-					benefits
-				},
-			},
+			updateDoc,
 			{ new: true },
 		)
 

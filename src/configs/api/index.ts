@@ -2,19 +2,28 @@ import axios from "axios"
 
 const BaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
 
+// On localhost, use current origin to avoid CORS issues with production API
+const getLocalBaseUrl = (): string => {
+	if (typeof window !== "undefined") {
+		const { hostname, origin } = window.location
+		if (hostname === "localhost" || hostname === "127.0.0.1") {
+			return `${origin}/api`
+		}
+	}
+	return BaseUrl || ""
+}
+
 const HTTPClient = axios.create({
 	responseType: "json",
 })
 
 // request interceptors
 HTTPClient.interceptors.request.use((configs: any) => {
-	// check if authorization token is in session
-
-	configs.baseURL = BaseUrl
+	configs.baseURL = getLocalBaseUrl()
 
 	const url = configs?.url?.split(":")
 	if (url) {
-		/* only add authorization header when access level for that 
+		/* only add authorization header when access level for that
 		resource is protected */
 		const isProtected = url[0]
 		const path = url[1]
@@ -23,8 +32,8 @@ HTTPClient.interceptors.request.use((configs: any) => {
 			if (isProtected === "external") {
 				configs.baseURL = `${process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL}/api`
 			} else {
-				// public and protected use the local API
-				configs.baseURL = process.env.NEXT_PUBLIC_API_BASE_URL || BaseUrl
+				// public and protected: use local origin on localhost, configured URL in prod
+				configs.baseURL = getLocalBaseUrl()
 			}
 
 			if (typeof window !== "undefined") {
@@ -49,7 +58,6 @@ HTTPClient.interceptors.request.use((configs: any) => {
 
 		// Rewrite the api base endpoint for session base request
 		if (isProtected === "session") {
-			// get the nextAuth url
 			configs.baseURL = process.env.NEXTAUTH_URL
 		}
 

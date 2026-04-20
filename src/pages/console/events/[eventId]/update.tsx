@@ -8,7 +8,7 @@ import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { ROUTES } from "@/configs/routes"
 import { uploadFile, deleteFile } from "@/services/upload.service"
-import { CreateEventFormData, Pages, Roles } from "@/types"
+import { CreateEventFormData, DatePollOption, Pages, Roles } from "@/types"
 import { Field, Form, Formik, FormikProps, FieldArray } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
@@ -82,10 +82,6 @@ const updateEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
 	location: z.string().min(1, "Location is required"),
 	desc: z.string().min(1, "Description is required"),
-	startDate: z.string().min(1, "Start date is required"),
-	startTime: z.string().min(1, "Start time is required"),
-	endDate: z.string().min(1, "End date is required"),
-	endTime: z.string().min(1, "End time is required"),
 });
 
 export default function UpdateEventPage({ event }: Props) {
@@ -111,6 +107,8 @@ export default function UpdateEventPage({ event }: Props) {
 		description: "",
 		price: 0,
 	});
+	const [tempPollOption, setTempPollOption] = React.useState<DatePollOption>({ id: "", date: "", time: "", label: "" });
+	const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
 	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = React.useState(false);
 
 	// --- Initialize images and tickets on mount ---
@@ -146,8 +144,8 @@ export default function UpdateEventPage({ event }: Props) {
 		const parts = tzString.split(') ');
 		const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess();
 
-		const start = dayjs(eventDetails.startsOn).tz(extractedTimeZone);
-		const end = dayjs(eventDetails.endsOn).tz(extractedTimeZone);
+		const start = eventDetails.startsOn ? dayjs(eventDetails.startsOn).tz(extractedTimeZone) : null;
+		const end = eventDetails.endsOn ? dayjs(eventDetails.endsOn).tz(extractedTimeZone) : null;
 
 		return {
 			name: stripHtml(eventDetails.name),
@@ -164,13 +162,19 @@ export default function UpdateEventPage({ event }: Props) {
 				description: stripHtml(ticket.desc),
 			})),
 			privacy: eventDetails.privacy,
-			startDate: start.format('YYYY-MM-DD'),
-			startTime: start.format('HH:mm'),
-			endDate: end.format('YYYY-MM-DD'),
-			endTime: end.format('HH:mm'),
+			startDate: start ? start.format('YYYY-MM-DD') : '',
+			startTime: start ? start.format('HH:mm') : '',
+			endDate: end ? end.format('YYYY-MM-DD') : '',
+			endTime: end ? end.format('HH:mm') : '',
 			timezone: eventDetails?.timezone || '',
 			showParticipants: eventDetails.showParticipants || false,
 			benefits: eventDetails.benefits || "",
+			locationDisclosedAfterBooking: eventDetails.locationDisclosedAfterBooking || false,
+			datePoll: eventDetails.datePoll ? {
+				isActive: eventDetails.datePoll.isActive || false,
+				question: eventDetails.datePoll.question || '',
+				options: eventDetails.datePoll.options || [],
+			} : { isActive: false, question: '', options: [] as DatePollOption[] },
 		}
 	}, [eventDetails, uploadedImages])
 
@@ -232,10 +236,10 @@ export default function UpdateEventPage({ event }: Props) {
 
 		const nameChanged = values.name !== eventDetails.name
 		const locationChanged = values.location !== eventDetails.location
-		const startDateChanged = values.startDate !== new Date(eventDetails.startsOn).toISOString().slice(0, 10)
-		const startTimeChanged = values.startTime !== new Date(eventDetails.startsOn).toTimeString().slice(0, 5)
-		const endDateChanged = values.endDate !== new Date(eventDetails.endsOn).toISOString().slice(0, 10)
-		const endTimeChanged = values.endTime !== new Date(eventDetails.endsOn).toTimeString().slice(0, 5)
+		const startDateChanged = eventDetails.startsOn ? values.startDate !== new Date(eventDetails.startsOn).toISOString().slice(0, 10) : !!values.startDate
+		const startTimeChanged = eventDetails.startsOn ? values.startTime !== new Date(eventDetails.startsOn).toTimeString().slice(0, 5) : !!values.startTime
+		const endDateChanged = eventDetails.endsOn ? values.endDate !== new Date(eventDetails.endsOn).toISOString().slice(0, 10) : !!values.endDate
+		const endTimeChanged = eventDetails.endsOn ? values.endTime !== new Date(eventDetails.endsOn).toTimeString().slice(0, 5) : !!values.endTime
 
 		const dateTimeChanged = startDateChanged || startTimeChanged || endDateChanged || endTimeChanged
 
@@ -257,17 +261,30 @@ export default function UpdateEventPage({ event }: Props) {
 					const tzString = eventDetails?.timezone || '';
 					const parts = tzString.split(') ');
 					const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess();
-					const oldStart = dayjs(eventDetails.startsOn).tz(extractedTimeZone);
-					const oldEnd = dayjs(eventDetails.endsOn).tz(extractedTimeZone);
+					const oldStart = eventDetails.startsOn ? dayjs(eventDetails.startsOn).tz(extractedTimeZone) : null;
+					const oldEnd = eventDetails.endsOn ? dayjs(eventDetails.endsOn).tz(extractedTimeZone) : null;
 
 					if (values.name !== eventDetails.name) changes.push(`Event Name: ${eventDetails.name} -> ${values.name}`);
 					if (values.location !== eventDetails.location) changes.push(`Location: ${eventDetails.location} -> ${values.location}`);
 					
-					if (values.startDate !== oldStart.format('YYYY-MM-DD') || values.startTime !== oldStart.format('HH:mm')) {
-						changes.push(`Start time was updated to ${values.startDate} ${values.startTime}`);
+					const oldStartDateStr = oldStart ? oldStart.format('YYYY-MM-DD') : '';
+					const oldStartTimeStr = oldStart ? oldStart.format('HH:mm') : '';
+					if (values.startDate !== oldStartDateStr || values.startTime !== oldStartTimeStr) {
+						if (values.startDate && values.startTime) {
+							changes.push(`Start time was updated to ${values.startDate} ${values.startTime}`);
+						} else {
+							changes.push(`Start time was removed`);
+						}
 					}
-					if (values.endDate !== oldEnd.format('YYYY-MM-DD') || values.endTime !== oldEnd.format('HH:mm')) {
-						changes.push(`End time was updated to ${values.endDate} ${values.endTime}`);
+
+					const oldEndDateStr = oldEnd ? oldEnd.format('YYYY-MM-DD') : '';
+					const oldEndTimeStr = oldEnd ? oldEnd.format('HH:mm') : '';
+					if (values.endDate !== oldEndDateStr || values.endTime !== oldEndTimeStr) {
+						if (values.endDate && values.endTime) {
+							changes.push(`End time was updated to ${values.endDate} ${values.endTime}`);
+						} else {
+							changes.push(`End time was removed`);
+						}
 					}
 					
 					if (values.desc !== stripHtml(eventDetails.desc)) changes.push("Event description was updated");
@@ -293,13 +310,13 @@ export default function UpdateEventPage({ event }: Props) {
 								location: values.location,
 								oldLocation: eventDetails.location,
 								startDate: values.startDate,
-								oldStartDate: oldStart.format('YYYY-MM-DD'),
+								oldStartDate: oldStart ? oldStart.format('YYYY-MM-DD') : '',
 								endDate: values.endDate,
-								oldEndDate: oldEnd.format('YYYY-MM-DD'),
+								oldEndDate: oldEnd ? oldEnd.format('YYYY-MM-DD') : '',
 								endTime: values.endTime,
-								oldEndTime: oldEnd.format('HH:mm'),
+								oldEndTime: oldEnd ? oldEnd.format('HH:mm') : '',
 								startTime: values.startTime,
-								oldStartTime: oldStart.format('HH:mm'),
+								oldStartTime: oldStart ? oldStart.format('HH:mm') : '',
 								userEmail: event.customerEmail,
 								changes,
 								eventLink
@@ -661,6 +678,21 @@ export default function UpdateEventPage({ event }: Props) {
 											onChange={(e) => setSendUpdateEmailCheck(e.target.checked)}
 										/>
 									</Flex>
+									<Flex align="center" justifyContent="space-between" mb="4">
+										<Flex gap="3" alignItems="center">
+											<LocationSVG />
+											<Box>
+												<Text color="gray.400">Disclose Location After Booking</Text>
+												<Text fontSize="xs" color="gray.600">Attendees see real location only in booking email</Text>
+											</Box>
+										</Flex>
+										<Switch
+											name="locationDisclosedAfterBooking"
+											isChecked={values.locationDisclosedAfterBooking}
+											colorScheme="orange"
+											onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)}
+										/>
+									</Flex>
 									<Flex align="center" justifyContent="space-between">
 										<Flex gap="3" alignItems="center">
 											<TicketSVG />
@@ -756,6 +788,74 @@ export default function UpdateEventPage({ event }: Props) {
 											</>
 										)}
 									</FieldArray>
+								</Box>
+								{/* Date Poll Section */}
+								<Text fontWeight="semibold" color="gray.400" mb={2} mt={6}>
+									Date Poll
+								</Text>
+								<Box bg="#141619" rounded="xl" px="3" py="3" mb={4}>
+									<Flex align="center" justifyContent="space-between" mb="3">
+										<Box>
+											<Text color="gray.400">Enable Date Poll</Text>
+											<Text fontSize="xs" color="gray.600">Let attendees vote on preferred event date</Text>
+										</Box>
+										<Switch
+											isChecked={values.datePoll?.isActive}
+											colorScheme="orange"
+											onChange={() => setFieldValue("datePoll.isActive", !values.datePoll?.isActive)}
+										/>
+									</Flex>
+									{values.datePoll?.isActive && (
+										<Box>
+											<FormControl mb="3">
+												<Input
+													placeholder="Poll question (e.g. Which date works for you?)"
+													bg="#1C1F24"
+													color="white"
+													border="none"
+													fontSize="sm"
+													value={values.datePoll?.question || ""}
+													onChange={(e) => setFieldValue("datePoll.question", e.target.value)}
+												/>
+											</FormControl>
+											{(values.datePoll?.options || []).map((opt, idx) => (
+												<Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
+													<Box>
+														<Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
+														{opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
+													</Box>
+													<Button
+														size="xs"
+														variant="ghost"
+														color="red.400"
+														onClick={() => {
+															const updated = [...(values.datePoll?.options || [])];
+															updated.splice(idx, 1);
+															setFieldValue("datePoll.options", updated);
+														}}
+													>
+														Remove
+													</Button>
+												</Flex>
+											))}
+											<Button
+												size="sm"
+												bg="transparent"
+												color="white"
+												border="1px dashed #666"
+												width="100%"
+												mt="1"
+												_hover={{ bg: "#1C1F24" }}
+												onClick={() => {
+													setTempPollOption({ id: "", date: "", time: "", label: "" });
+													onPollModalOpen();
+												}}
+												leftIcon={<PlusSVG />}
+											>
+												Add Date Option
+											</Button>
+										</Box>
+									)}
 								</Box>
 								<Button
 									type="submit"
@@ -874,6 +974,74 @@ export default function UpdateEventPage({ event }: Props) {
 										</Modal>
 									)}
 								</FieldArray>
+
+								{/* Date Poll Option Modal */}
+								<Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
+									<ModalOverlay />
+									<ModalContent bg="#1E1E1E" color="white">
+										<ModalHeader>Add Date Option</ModalHeader>
+										<ModalCloseButton />
+										<ModalBody>
+											<FormControl mb={4}>
+												<FormLabel>Date</FormLabel>
+												<Input
+													type="date"
+													bg="#090C10"
+													border="1px solid #444"
+													color="white"
+													value={tempPollOption.date}
+													onChange={(e) => setTempPollOption({ ...tempPollOption, date: e.target.value })}
+												/>
+											</FormControl>
+											<FormControl mb={4}>
+												<FormLabel>Time</FormLabel>
+												<Input
+													type="time"
+													bg="#090C10"
+													border="1px solid #444"
+													color="white"
+													value={tempPollOption.time}
+													onChange={(e) => setTempPollOption({ ...tempPollOption, time: e.target.value })}
+												/>
+											</FormControl>
+											<FormControl mb={4}>
+												<FormLabel>Label (optional)</FormLabel>
+												<Input
+													placeholder="e.g. Weekend option"
+													bg="#090C10"
+													border="1px solid #444"
+													color="white"
+													value={tempPollOption.label || ""}
+													onChange={(e) => setTempPollOption({ ...tempPollOption, label: e.target.value })}
+												/>
+											</FormControl>
+										</ModalBody>
+										<ModalFooter>
+											<Flex flexDirection="column" w="full" gap="3">
+												<Button
+													bg="#F79432"
+													w="full"
+													color="black"
+													onClick={() => {
+														if (tempPollOption.date && tempPollOption.time) {
+															const newOption: DatePollOption = {
+																...tempPollOption,
+																id: new Date().getTime().toString(),
+																votes: [],
+															};
+															setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
+															onPollModalClose();
+														}
+													}}
+												>
+													Add
+												</Button>
+												<Button variant="unstyled" onClick={onPollModalClose}>Cancel</Button>
+											</Flex>
+										</ModalFooter>
+									</ModalContent>
+								</Modal>
+
 							</Box>
 
 							{/* Right Side: Image Upload */}

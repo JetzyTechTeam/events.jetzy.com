@@ -516,28 +516,30 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
   try {
     // format event start and end time
-    const eventTimezone = event.timezone.split(') ')[1]
-
-    const start = dayjs.utc(event.startsOn).tz(eventTimezone)
-    const end = dayjs.utc(event.endsOn).tz(eventTimezone)
-
-    const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
-    const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
-
-    const subtotal = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
-    const finalTotal = discountAmount && discountAmount > 0 ? subtotal - discountAmount : subtotal
-    const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
+    let timestamp = ""
+    if (!event.startsOn && !event.endsOn && event.datePoll?.isActive) {
+      timestamp = "To be decided after poll ends. We will notify you via email."
+    } else {
+      const eventTimezone = event.timezone ? event.timezone.split(') ')[1] : 'UTC'
+      const start = dayjs.utc(event.startsOn).tz(eventTimezone)
+      const end = dayjs.utc(event.endsOn).tz(eventTimezone)
+      const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
+      const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
+      timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
+    }
+    // Always use real location in emails — locationDisclosedAfterBooking only masks on the public event page
     let location = event.location
     const locationLower = location.toLowerCase()
 
-    // If location contains placeholder text or is empty, try to use venueName
     if ((!location || locationLower.includes("disclosed after registration") || locationLower.includes("location hidden")) && event.venueName) {
       location = event.venueName
     } else if (event.venueName && event.venueName.trim() !== "" && !location.includes(event.venueName)) {
-      // If we have both and they are different, combine them
       location = `${event.venueName}, ${location}`
     }
 
+    const subtotal = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
+    const finalTotal = discountAmount && discountAmount > 0 ? subtotal - discountAmount : subtotal
+    
     console.log("Email details:", { timestamp, location, subtotal, finalTotal, referralCode, discountAmount, tickets })
 
     // Process QR code image for attachment

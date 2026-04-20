@@ -213,14 +213,14 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 							<div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white shadow rounded-lg">
 								<div className="flex-1">
 									<p className="text-md font-medium text-gray-900">
-										{new Date(event.startsOn?.toString())?.toDateString()} {new Date(event.startsOn?.toString())?.toLocaleTimeString()}
+										{event.startsOn ? `${new Date(event.startsOn.toString()).toDateString()} ${new Date(event.startsOn.toString()).toLocaleTimeString()}` : "TBD"}
 									</p>
 									<p className="text-sm text-gray-500">Start Date</p>
 								</div>
 
 								<div className="flex-1">
 									<p className="text-md font-medium text-gray-900">
-										{new Date(event.endsOn?.toString())?.toDateString()} {new Date(event.endsOn?.toString())?.toLocaleTimeString()}
+										{event.endsOn ? `${new Date(event.endsOn.toString()).toDateString()} ${new Date(event.endsOn.toString()).toLocaleTimeString()}` : "TBD"}
 									</p>
 									<p className="text-sm text-gray-500">Start Date</p>
 								</div>

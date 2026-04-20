@@ -14,10 +14,9 @@ import { useRouter } from "next/router"
 
 type Props = {
   bookings: Booking[];
-  event: { _id: string; name: string; startsOn: string; endsOn: string };
+  event: { _id: string; name: string; startsOn: string | null; endsOn: string | null };
   filters: { status?: string; search?: string; date?: string; amount?: string; minTickets?: string; };
   exportable: any[];
-
 };
 
 export default function BookingsEventPage({ bookings, event, filters, exportable }: Props) {
@@ -39,7 +38,7 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
         Event Name : {event.name}
       </Text>
       <Text fontSize={17} fontWeight="semibold">
-        Starts on ({new Date(event.startsOn).toLocaleDateString()}) - Ends on ({new Date(event.endsOn).toLocaleDateString()})
+        Starts on ({event.startsOn ? new Date(event.startsOn).toLocaleDateString() : "TBD"}) - Ends on ({event.endsOn ? new Date(event.endsOn).toLocaleDateString() : "TBD"})
       </Text>
 
       <BookingFilters eventId={event._id} initialFilters={filters} />
@@ -139,8 +138,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
           ...event,
           name: event.name,
           _id: event._id.toString(),
-          startsOn: event.startsOn.toISOString(),
-          endsOn: event.endsOn.toISOString(),
+          startsOn: event.startsOn?.toISOString() ?? null,
+          endsOn: event.endsOn?.toISOString() ?? null,
         },
         bookedTickets
         ,
@@ -155,8 +154,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
       event: {
         ...eventDoc,
         _id: eventDoc._id.toString(),
-        startsOn: eventDoc.startsOn.toISOString(),
-        endsOn: eventDoc.endsOn.toISOString(),
+        startsOn: eventDoc.startsOn?.toISOString() ?? null,
+        endsOn: eventDoc.endsOn?.toISOString() ?? null,
       },
       bookings: bookings.map((b) => ({
         ...b,

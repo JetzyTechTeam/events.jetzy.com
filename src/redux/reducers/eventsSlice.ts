@@ -7,11 +7,15 @@ import { CreateEventApis, DeleteEventApis, DeleteTicketApis, FetchEventApis, Lis
 import { UpdateEventApis } from "../../services/events/eventsapis"
 
 export const CreateEventThunk = createAsyncThunk("event/createEvent", async (params: RequestParams<{ payload: string }>, thunkApi) => {
-	const res = await CreateEventApis(params)
-	if (res?.status) {
-		thunkApi.dispatch(ListEventsThunk())
+	try {
+		const res = await CreateEventApis(params)
+		if (res?.status) {
+			thunkApi.dispatch(ListEventsThunk())
+		}
+		return res
+	} catch (error: any) {
+		return thunkApi.rejectWithValue(error)
 	}
-	return res
 })
 
 export const ListEventsThunk = createAsyncThunk("event/listEvents", async (params?: { lat?: number; long?: number }) => {
@@ -79,12 +83,16 @@ export const eventSlice = createSlice({
 
 			if (action?.payload?.status) {
 				Success("Event created", "Event created successfully.")
+			} else if (action?.payload?.message) {
+				ServerErrors("Failed to create event.", action.payload)
 			}
 		})
 		builder.addCase(CreateEventThunk.rejected, (state, action) => {
 			state.isLoading = false
-
-			ServerErrors("Failed to create event.", action?.error)
+			// action.payload has the actual server response when rejectWithValue is used
+			// action.error has generic "Rejected" for unhandled rejections
+			const serverError = (action.payload as any) || action?.error
+			ServerErrors("Failed to create event.", serverError)
 		})
 
 		// --------------------- [Fetch Events ] ---------------------

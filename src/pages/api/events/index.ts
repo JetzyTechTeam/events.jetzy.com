@@ -12,16 +12,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const events = await Events.find({ isDeleted: false }).lean()
 
 		// Sort events in memory:
-		// 1. Live/Upcoming events (endsOn >= now) sorted by startsOn ASC
-		// 2. Past events (endsOn < now) sorted by endsOn DESC
+		// 1. No start/end dates (Polls/TBD) -> Top
+		// 2. Live/Upcoming events (endsOn >= now) sorted by startsOn ASC
+		// 3. Past events (endsOn < now) sorted by endsOn DESC
 		const now = new Date()
-		const upcomingEvents = events.filter((e: any) => new Date(e.endsOn) >= now)
-		const pastEvents = events.filter((e: any) => new Date(e.endsOn) < now)
+		
+		const noDateEvents = events.filter((e: any) => !e.startsOn && !e.endsOn)
+		const datedEvents = events.filter((e: any) => e.startsOn || e.endsOn)
 
-		upcomingEvents.sort((a: any, b: any) => new Date(a.startsOn).getTime() - new Date(b.startsOn).getTime())
-		pastEvents.sort((a: any, b: any) => new Date(b.endsOn).getTime() - new Date(a.endsOn).getTime())
+		const upcomingEvents = datedEvents.filter((e: any) => !e.endsOn || new Date(e.endsOn) >= now)
+		const pastEvents = datedEvents.filter((e: any) => e.endsOn && new Date(e.endsOn) < now)
 
-		const sortedEvents = [...upcomingEvents, ...pastEvents]
+		upcomingEvents.sort((a: any, b: any) => {
+			const timeA = a.startsOn ? new Date(a.startsOn).getTime() : new Date().getTime()
+			const timeB = b.startsOn ? new Date(b.startsOn).getTime() : new Date().getTime()
+			return timeA - timeB
+		})
+		
+		pastEvents.sort((a: any, b: any) => {
+			const timeA = a.endsOn ? new Date(a.endsOn).getTime() : 0
+			const timeB = b.endsOn ? new Date(b.endsOn).getTime() : 0
+			return timeB - timeA
+		})
+
+		const sortedEvents = [...noDateEvents, ...upcomingEvents, ...pastEvents]
 
 		return sendResponse(res, sortedEvents, "Events retrieved successfully!", true, ResCode.OK)
 	} catch (error: any) {

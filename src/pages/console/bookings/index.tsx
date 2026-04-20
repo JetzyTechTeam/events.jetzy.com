@@ -93,8 +93,8 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const serializedEvents = events.map((e) => ({
 		...e,
 		_id: e._id.toString(),
-		startsOn: e.startsOn.toISOString(),
-		endsOn: e.endsOn.toISOString(),
+		startsOn: e.startsOn?.toISOString() ?? null,
+		endsOn: e.endsOn?.toISOString() ?? null,
 	}));
 
 

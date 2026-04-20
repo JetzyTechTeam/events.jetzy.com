@@ -164,7 +164,11 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
               gap="2"
             >
               <DateTimeSVG />
-              {formattedDate} {formattedTime}
+              {!event?.startsOn && !event?.endsOn && event?.datePoll?.isActive 
+                ? "Date to be decided (Polling)" 
+                : event?.startsOn 
+                ? `${formattedDate} ${formattedTime}`
+                : "Date to be decided"}
             </Text>
             <Text
               fontSize="sm"
@@ -176,10 +180,12 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
               wordBreak="break-word"
               overflowWrap="anywhere"
             >
-              <span>
-                <LocationSVG />
-              </span>
-              {location}
+              {event.locationDisclosedAfterBooking
+                ? "📍 Location will be disclosed after registration"
+                : <>
+                    <span><LocationSVG /></span>
+                    {location}
+                  </>}
             </Text>
           </Box>
           <Box display="flex" alignItems="center" justifyContent="space-between " mt=" 2">

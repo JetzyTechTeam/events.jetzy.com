@@ -165,12 +165,12 @@ export default function GuestsInvited({ event }: { event: string }) {
                   textAlign="center"
                 >
                   <Text>
-                    {new Date(data.startsOn).toTimeString().slice(0, 5)}
+                    {data.startsOn ? new Date(data.startsOn).toTimeString().slice(0, 5) : "--:--"}
                   </Text>
                 </Box>
                 <Box bg="#1D1F23" p="2" rounded="lg" w="175px">
                   <Text>
-                    {new Date(data.startsOn).toISOString().slice(0, 10)}
+                    {data.startsOn ? new Date(data.startsOn).toISOString().slice(0, 10) : "TBD"}
                   </Text>
                 </Box>
               </Flex>
@@ -183,12 +183,12 @@ export default function GuestsInvited({ event }: { event: string }) {
                   textAlign="center"
                 >
                   <Text>
-                    {new Date(data.endsOn).toTimeString().slice(0, 5)}
+                    {data.endsOn ? new Date(data.endsOn).toTimeString().slice(0, 5) : "--:--"}
                   </Text>
                 </Box>
                 <Box bg="#1D1F23" p="2" rounded="lg" w="175px">
                   <Text>
-                    {new Date(data.endsOn).toISOString().slice(0, 10)}
+                    {data.endsOn ? new Date(data.endsOn).toISOString().slice(0, 10) : "TBD"}
                   </Text>
                 </Box>
               </Flex>

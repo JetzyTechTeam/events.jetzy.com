@@ -63,8 +63,8 @@ const BookingTableEvents:React.FC<Props> = ({events , pagination} ) => {
             {events.map((event) => (
                 <Tr key={event._id.toString()}>
                 <Td>{event.name}</Td>
-                <Td>{new Date(event.startsOn).toLocaleString()}</Td>
-                <Td>{new Date(event.endsOn).toLocaleString()}</Td>
+                <Td>{event.startsOn ? new Date(event.startsOn).toLocaleString() : "TBD"}</Td>
+                <Td>{event.endsOn ? new Date(event.endsOn).toLocaleString() : "TBD"}</Td>
                 <Td>
                     <Button
                     onClick={() => router.push(`/console/bookings/${event._id}`)}

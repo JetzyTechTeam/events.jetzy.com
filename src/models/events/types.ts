@@ -25,12 +25,28 @@ export interface ICustomQuestion {
 	collectSignature?: boolean; // For terms
 }
 
+export interface IDatePollOption {
+	id: string;
+	date: string;
+	time: string;
+	label?: string;
+	votes: string[];
+}
+
+export interface IDatePoll {
+	isActive: boolean;
+	question?: string;
+	options: IDatePollOption[];
+}
+
 export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
 	location: string
 	venueName?: string
 	showParticipants: boolean
+	locationDisclosedAfterBooking?: boolean;
+	datePoll?: IDatePoll;
 	coordinates: {
 		long: number
 		lat: number
@@ -39,8 +55,8 @@ export interface IEvent extends IBaseModelProps {
 	desc: string
 	isPaid: boolean
 	images: string[]
-	startsOn: Date
-	endsOn: Date
+	startsOn?: Date
+	endsOn?: Date
 	capacity: number // Number of tickets available
 	requireApproval: boolean // If true, user must be approved before they can attend
 	timezone: string;

@@ -44,6 +44,26 @@ const customQuestionSchema = new Schema(
 	{ _id: false }
 )
 
+const datePollOptionSchema = new Schema(
+	{
+		id: { type: String, required: true },
+		date: { type: String, required: true },
+		time: { type: String, required: true },
+		label: { type: String, required: false },
+		votes: { type: [String], default: [] },
+	},
+	{ _id: false },
+)
+
+const datePollSchema = new Schema(
+	{
+		isActive: { type: Boolean, default: false },
+		question: { type: String, required: false },
+		options: { type: [datePollOptionSchema], default: [] },
+	},
+	{ _id: false },
+)
+
 // Define the  schema
 const eventsSchema = new Schema<IEvent>(
 	{
@@ -65,15 +85,16 @@ const eventsSchema = new Schema<IEvent>(
 		},
 		startsOn: {
 			type: Date,
-			required: true,
+			required: false,
 		},
 		endsOn: {
 			type: Date,
-			required: true,
+			required: false,
 		},
 		timezone: {
 			type: String,
-			required: true,
+			required: false,
+			default: "UTC",
 		},
 		location: {
 			type: String,
@@ -149,6 +170,14 @@ const eventsSchema = new Schema<IEvent>(
 		benefits: {
 			type: String,
 			default: "",
+		},
+		locationDisclosedAfterBooking: {
+			type: Boolean,
+			default: false,
+		},
+		datePoll: {
+			type: datePollSchema,
+			required: false,
 		},
 	},
 	{

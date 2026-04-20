@@ -245,15 +245,32 @@ export default function HostedEvents({ event }: Props) {
 									<h2 className="text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(clonedEvent.name)}</h2>
 									<p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb] break-words">
 										<DateTimeSVG />
-										{formattedDate}, {formattedTime} {clonedEvent?.timezone || ""}
+										{!clonedEvent?.startsOn && !clonedEvent?.endsOn && clonedEvent?.datePoll?.isActive 
+											? "Date to be decided (Polling)" 
+											: clonedEvent?.startsOn 
+											? `${formattedDate}, ${formattedTime} ${clonedEvent?.timezone || ""}`
+											: "Date to be decided"}
 									</p>
 									<p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb] break-words">
-										<LocationSVG />
-										<span className="break-words overflow-wrap-anywhere">{clonedEvent.location}</span>
+										{clonedEvent.locationDisclosedAfterBooking ? (
+											<span className="break-words overflow-wrap-anywhere">
+												📍 Location will be disclosed after registration
+											</span>
+										) : (
+											<>
+												<LocationSVG />
+												<span className="break-words overflow-wrap-anywhere">
+													{clonedEvent.location}
+												</span>
+											</>
+										)}
 									</p>
 
 									<h3 className="text-sm sm:text-base font-semibold ">Description</h3>
 									<EventDescription description={clonedEvent.desc} />
+									{clonedEvent.datePoll?.isActive && (
+										<DatePollWidget event={clonedEvent} isAdmin={isAdmin} />
+									)}
 								</div>
 
 								<div className="flex gap-x-3 sm:items-end">
@@ -738,6 +755,143 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
 						</div>
 					</div>
 				))}
+		</div>
+	)
+}
+
+function DatePollWidget({ event, isAdmin }: { event: IEvent; isAdmin: boolean }) {
+	const [selectedOptionId, setSelectedOptionId] = React.useState<string | null>(null)
+	const [pollData, setPollData] = React.useState<any>(event.datePoll)
+	const [isVoting, setIsVoting] = React.useState(false)
+	const toast = useToast()
+
+	React.useEffect(() => {
+		if (!(event as any)?._id) return
+		fetch(`/api/events/${(event as any)?._id}/poll`)
+			.then((res) => res.json())
+			.then((data) => {
+				if (data?.status && data?.data) {
+					setPollData(data.data)
+					if (data.data.yourVote) setSelectedOptionId(data.data.yourVote)
+				}
+			})
+			.catch(console.error)
+	}, [(event as any)?._id])
+
+	const totalVotes = pollData?.totalVotes || (pollData?.options || []).reduce((sum: number, o: any) => sum + (o.voters?.length || o.voteCount || o.votes?.length || 0), 0)
+
+	const handleVote = async (optionId: string) => {
+		if (isAdmin) return
+		setIsVoting(true)
+		try {
+			const res = await fetch(`/api/events/${(event as any)._id}/poll/vote`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ optionId }),
+			})
+			const data = await res.json()
+			if (data.status) {
+				setSelectedOptionId(optionId)
+				setPollData(data.data)
+				toast({ title: "Vote recorded!", status: "success", duration: 2000 })
+			} else {
+				toast({ 
+					title: "Action Denied", 
+					description: data.message || "Failed to submit vote.", 
+					status: "warning", 
+					position: "top",
+					duration: 4000,
+					isClosable: true
+				})
+			}
+		} catch (error: any) {
+			toast({ title: "Failed to vote.", description: "Network or server error.", status: "error", duration: 2000 })
+		} finally {
+			setIsVoting(false)
+		}
+	}
+
+	if (!pollData?.isActive || !pollData.options?.length) return null
+
+	return (
+		<div className="mt-8 bg-gradient-to-br from-[#1E2024] to-[#141619] rounded-2xl p-5 border border-[#333] shadow-lg">
+			<div className="flex items-center justify-between mb-2">
+				<h4 className="text-base font-bold text-[#F79432]">📅 Event Date Poll</h4>
+				<span className="bg-[#333] text-xs px-2 py-1 rounded text-[#bbb] font-medium">{totalVotes} Vote{totalVotes !== 1 ? 's' : ''}</span>
+			</div>
+			<p className="text-sm text-[#ddd] mb-4">{pollData.question || "Help us decide the best time by voting below!"}</p>
+			
+			<div className="flex flex-col gap-3">
+				{pollData.options.map((opt: any) => {
+					const voteCount = opt.voters?.length || opt.voteCount || opt.votes?.length || 0
+					const pct = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0
+					const isSelected = selectedOptionId === opt.id || opt.hasVoted
+					
+					return (
+						<div key={opt.id} className="relative group">
+							<button
+								onClick={() => handleVote(opt.id)}
+								disabled={isAdmin || isVoting}
+								className={`
+									relative w-full text-left px-4 py-3 rounded-xl border transition-all overflow-hidden flex items-center justify-between
+									${isSelected ? "border-[#F79432] bg-[#F79432]/5" : "border-[#333] bg-[#222]"} 
+									${isAdmin ? "cursor-default" : "cursor-pointer hover:border-[#F79432]/50 hover:bg-[#F79432]/5"}
+								`}
+							>
+								{/* Background Progress Bar */}
+								<div className="absolute inset-y-0 left-0 bg-[#F79432]/15 transition-all duration-500 ease-out z-0" style={{ width: `${pct}%` }} />
+								
+								{/* Content */}
+								<div className="relative z-10 flex items-center gap-3 w-full">
+									{/* Radio Icon Container */}
+									<div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? "border-[#F79432]" : "border-[#666]"}`}>
+										{isSelected && <div className="w-2.5 h-2.5 rounded-full bg-[#F79432]" />}
+									</div>
+									
+									{/* Option Details & Voters */}
+									<div className="flex flex-col w-full">
+										<div className="flex justify-between items-center w-full">
+											<div className="flex items-center gap-2">
+												<span className={`font-semibold text-sm transition-colors ${isSelected ? "text-[#F79432]" : "text-white"}`}>
+													{opt.date} <span className="text-[#888] font-normal mx-1">at</span> {opt.time}
+												</span>
+												{opt.label && <span className="bg-[#333] px-1.5 py-0.5 rounded text-[10px] text-gray-300 font-medium tracking-wide uppercase">{opt.label}</span>}
+											</div>
+											<span className={`text-xs font-bold transition-all ${isSelected ? "text-[#F79432]" : "text-[#888]"}`}>
+												{pct}%
+											</span>
+										</div>
+										
+										{/* Voter Avatars */}
+										{opt.voters && opt.voters.length > 0 && (
+											<div className="flex items-center gap-1 mt-2">
+												<div className="flex -space-x-1.5">
+													{opt.voters.slice(0, 5).map((voter: any, i: number) => (
+														<div 
+															key={i} 
+															className="w-5 h-5 rounded-full bg-[#444] border hover:z-20 cursor-help border-[#222] flex items-center justify-center overflow-hidden"
+															title={voter.name}
+														>
+															{voter.image ? (
+																<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
+															) : (
+																<span className="text-[9px] font-bold text-white uppercase">{voter.name?.charAt(0) || '?'}</span>
+															)}
+														</div>
+													))}
+												</div>
+												{opt.voters.length > 5 && (
+													<span className="text-[10px] text-[#888] ml-1 font-medium">+{opt.voters.length - 5} more</span>
+												)}
+											</div>
+										)}
+									</div>
+								</div>
+							</button>
+						</div>
+					)
+				})}
+			</div>
 		</div>
 	)
 }

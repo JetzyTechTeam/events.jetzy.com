@@ -122,30 +122,35 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								<DateTimeSVG stroke="#F79432" />
 								<div>
 									<div className="text-lg">
-										{new Date(event.startsOn?.toString()).toLocaleDateString('en-US', {
+										{event.startsOn ? new Date(event.startsOn.toString()).toLocaleDateString('en-US', {
 											weekday: 'long',
 											year: 'numeric',
 											month: 'long',
 											day: 'numeric'
-										})}
+										}) : event.datePoll?.isActive ? "Date to be decided (Polling)" : "Date to be decided"}
 									</div>
 									<div className="text-sm text-[#A7A7A7]">
-										{new Date(event.startsOn?.toString()).toLocaleTimeString('en-US', {
-											hour: '2-digit',
-											minute: '2-digit'
-										})} - {new Date(event.endsOn?.toString()).toLocaleTimeString('en-US', {
-											hour: '2-digit',
-											minute: '2-digit'
-										})} ({event.timezone})
+										{event.startsOn ? new Date(event.startsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} - {event.endsOn ? new Date(event.endsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} {event.timezone ? `(${event.timezone})` : ""}
 									</div>
 								</div>
 							</div>
 						</div>
 
 						<div className="space-y-2">
-							<Text className="flex gap-x-2 text-[#A7A7A7]">
-								<LocationSVG />
-								<span>{event.location}</span>
+							<Text className="flex items-center gap-x-2 text-[#A7A7A7]">
+								{event.locationDisclosedAfterBooking ? (
+									<>
+										<span>📍</span> 
+										<span>
+											Disclosed after registration <span className="text-xs text-gray-500 ml-1">(Actual: {event.location})</span>
+										</span>
+									</>
+								) : (
+									<>
+										<LocationSVG />
+										<span>{event.location}</span>
+									</>
+								)}
 							</Text>
 						</div>
 
@@ -252,7 +257,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	// Add active events
 	activeEvents.forEach(event => {
 		const eventData = event.toJSON()
-		eventData.isEnded = new Date(eventData.endsOn) < now
+		eventData.isEnded = eventData.endsOn ? new Date(eventData.endsOn) < now : false
 		allEventsMap.set(eventData._id.toString(), eventData)
 	})
 

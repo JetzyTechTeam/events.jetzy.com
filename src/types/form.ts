@@ -22,6 +22,14 @@ export type SignInFormData = {
 	isJetzyMember: boolean //added
 }
 
+export type DatePollOption = {
+	id: string
+	date: string
+	time: string
+	label?: string
+	votes?: string[]
+}
+
 export type CreateEventFormData = {
 	startDate: string
 	startTime: string
@@ -43,6 +51,12 @@ export type CreateEventFormData = {
 	timezone: string
 	feedbackFormUrl?: string
 	benefits?: string
+	locationDisclosedAfterBooking?: boolean
+	datePoll?: {
+		isActive: boolean
+		question?: string
+		options: DatePollOption[]
+	}
 }
 
 export type CreateTicketFormData = {

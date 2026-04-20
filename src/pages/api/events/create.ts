@@ -19,11 +19,19 @@ dayjs.extend(timezone)
 
 // create validation schema
 
+const datePollOptionSchema = zod.object({
+	id: zod.string(),
+	date: zod.string(),
+	time: zod.string(),
+	label: zod.string().optional(),
+	votes: zod.array(zod.string()).optional(),
+})
+
 const schema = zod.object({
-	startDate: zod.string().nonempty(),
-	startTime: zod.string().nonempty(),
-	endDate: zod.string().nonempty(),
-	endTime: zod.string().nonempty(),
+	startDate: zod.string().optional(),
+	startTime: zod.string().optional(),
+	endDate: zod.string().optional(),
+	endTime: zod.string().optional(),
 	name: zod.string().nonempty(),
 	location: zod.string().nonempty(),
 	longitude: zod.number().optional(),
@@ -48,6 +56,12 @@ const schema = zod.object({
 	isPaid: zod.boolean(),
 	desc: zod.string().nonempty(),
 	benefits: zod.string().max(23).optional(),
+	locationDisclosedAfterBooking: zod.boolean().optional(),
+	datePoll: zod.object({
+		isActive: zod.boolean(),
+		question: zod.string().optional(),
+		options: zod.array(datePollOptionSchema),
+	}).optional(),
 })
 
 // create stripe instance
@@ -70,7 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits } = params
+		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, datePoll } = params
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -81,12 +95,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}]
 		}
 
-		const extractedTimeZone = timezone?.split(') ')[1]
-		const start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
-		const end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		const effectiveTimezone = timezone && timezone.trim() !== '' ? timezone : 'UTC'
+		const extractedTimeZone = effectiveTimezone.split(') ')[1] || effectiveTimezone
+		let start: Date | undefined
+		let end: Date | undefined
 
-		// check if start date is greater than end date
-		if (start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
+		if (startDate && startTime) {
+			start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		}
+		if (endDate && endTime) {
+			end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		}
+
+		if (start && end && start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
 
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
@@ -118,15 +139,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				placeId,
 			},
 			desc: formatTextWithLineBreaks(desc),
-			startsOn: start,
-			endsOn: end,
+			...(start ? { startsOn: start } : {}),
+			...(end ? { endsOn: end } : {}),
 			isPaid,
 			privacy,
 			images: images.map((image) => image.file),
 			capacity,
 			requireApproval,
 			showParticipants,
-			timezone,
+			timezone: effectiveTimezone,
 			tickets: tickets.map((ticket, index) => ({
 				name: ticket.title,
 				desc: ticket.description,
@@ -134,6 +155,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				stripeProductId: stripeProducts[index].id,
 			})),
 			benefits,
+			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
+			datePoll: datePoll?.isActive && datePoll.options.length > 0
+				? {
+					isActive: true,
+					question: datePoll.question || "",
+					options: datePoll.options.map((opt) => ({
+						id: opt.id,
+						date: opt.date,
+						time: opt.time,
+						label: opt.label || "",
+						votes: [],
+					})),
+				}
+				: undefined,
 		})
 
 		if (!newEvent) return sendResponse(res, null, "Failed to create event.", false, ResCode.INTERNAL_SERVER_ERROR)

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(awk -F'\\(' '{print $1}')",
+      "Bash(awk -F'\\(' '{print $1 \"\\(\" $2}')",
+      "Bash(node -e \"const fs=require\\('fs'\\);const c=fs.readFileSync\\('d:/Jetzy/events-jetzy-com/src/pages/api/events/[eventId]/update.ts','utf8'\\);console.log\\('CRLF:',c.includes\\('\\\\r\\\\n'\\),'LF:',!c.includes\\('\\\\r\\\\n'\\)\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const c=fs.readFileSync\\('d:/Jetzy/events-jetzy-com/src/pages/console/events/[eventId]/update.tsx','utf8'\\);console.log\\('CRLF:',c.includes\\('\\\\r\\\\n'\\),'LF:',!c.includes\\('\\\\r\\\\n'\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(node)"
+    ]
+  }
+}

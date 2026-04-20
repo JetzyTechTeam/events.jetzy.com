@@ -24,6 +24,7 @@ import {
   Menu,
   MenuButton,
   IconButton,
+  Badge,
 } from "@chakra-ui/react";
 import {
   Formik,
@@ -33,7 +34,7 @@ import {
   FieldArray,
 } from "formik";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
-import { CreateEventFormData, Pages, Roles } from "@/types";
+import { CreateEventFormData, DatePollOption, Pages, Roles } from "@/types";
 import { usePlacesWidget } from "react-google-autocomplete";
 import {
   DescriptionSVG,
@@ -77,16 +78,18 @@ const initialValues = {
   capacity: 0,
   privacy: "public",
   benefits: "",
+  locationDisclosedAfterBooking: false,
+  datePoll: {
+    isActive: false,
+    question: "",
+    options: [] as DatePollOption[],
+  },
 };
 
 const createEventSchema = z.object({
   name: z.string().min(1, "Event name is required"),
   location: z.string().min(1, "Location is required"),
   desc: z.string().min(1, "Description is required"),
-  startDate: z.string().min(1, "Start date is required"),
-  startTime: z.string().min(1, "Start time is required"),
-  endDate: z.string().min(1, "End date is required"),
-  endTime: z.string().min(1, "End time is required"),
 });
 
 const CreateEventPage = () => {
@@ -109,6 +112,8 @@ const CreateEventPage = () => {
     description: "",
     price: 0,
   });
+  const [tempPollOption, setTempPollOption] = React.useState<DatePollOption>({ id: "", date: "", time: "", label: "" });
+  const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
 
   const { ref } = usePlacesWidget({
     apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
@@ -166,36 +171,23 @@ const CreateEventPage = () => {
     if (values.tickets.length > 0) values.isPaid = true
     else values.isPaid = false
 
+    // Attempt geocoding if coordinates missing, but don't block submission on failure
     if (!values.latitude || !values.longitude) {
-      if (!values.location) {
-        Error("Validation Error", "Location is required");
-        return;
-      }
-      setIsSubmitting(true);
       try {
         const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
-        if (!apiKey) {
-          throw new globalThis.Error("Google API key is missing");
+        if (apiKey && values.location) {
+          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(values.location)}&key=${apiKey}`);
+          const data = await res.json();
+          if (data.status === "OK" && data.results.length > 0) {
+            const loc = data.results[0].geometry.location;
+            values.latitude = loc.lat;
+            values.longitude = loc.lng;
+            values.placeId = data.results[0].place_id;
+          }
         }
-        const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(values.location)}&key=${apiKey}`);
-        const data = await res.json();
-
-        if (data.status === "OK" && data.results.length > 0) {
-          const loc = data.results[0].geometry.location;
-          values.latitude = loc.lat;
-          values.longitude = loc.lng;
-          values.placeId = data.results[0].place_id;
-        } else {
-          setIsSubmitting(false);
-          Error("Validation Error", "Invalid location. Please select a valid address from the dropdown.");
-          return;
-        }
-      } catch (err: any) {
-        setIsSubmitting(false);
-        Error("Validation Error", "Could not verify location. Please select from the dropdown.");
-        return;
+      } catch (_) {
+        // Geocoding failed, proceed without coordinates
       }
-      setIsSubmitting(false);
     }
 
     setIsSubmitting(true);
@@ -515,6 +507,21 @@ const CreateEventPage = () => {
                       h="30px"
                     />
                   </Flex>
+                  <Flex align="center" justifyContent="space-between" mb="4">
+                    <Flex gap="3" alignItems="center">
+                      <LocationSVG />
+                      <Box>
+                        <Text color="gray.400">Disclose Location After Booking</Text>
+                        <Text fontSize="xs" color="gray.600">Attendees see real location only in booking email</Text>
+                      </Box>
+                    </Flex>
+                    <Switch
+                      name="locationDisclosedAfterBooking"
+                      isChecked={values.locationDisclosedAfterBooking}
+                      colorScheme="orange"
+                      onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)}
+                    />
+                  </Flex>
                   <Flex align="center" justifyContent="space-between">
                     <Flex gap="3" alignItems="center">
                       <TicketSVG />
@@ -607,9 +614,78 @@ const CreateEventPage = () => {
                     )}
                   </FieldArray>
                 </Box>
+                {/* Date Poll Section */}
+                <Text fontWeight="semibold" color="gray.400" mb={2} mt={6}>
+                  Date Poll
+                </Text>
+                <Box bg="#141619" rounded="xl" px="3" py="3" mb={4}>
+                  <Flex align="center" justifyContent="space-between" mb="3">
+                    <Box>
+                      <Text color="gray.400">Enable Date Poll</Text>
+                      <Text fontSize="xs" color="gray.600">Let attendees vote on preferred event date</Text>
+                    </Box>
+                    <Switch
+                      isChecked={values.datePoll?.isActive}
+                      colorScheme="orange"
+                      onChange={() => setFieldValue("datePoll.isActive", !values.datePoll?.isActive)}
+                    />
+                  </Flex>
+                  {values.datePoll?.isActive && (
+                    <Box>
+                      <FormControl mb="3">
+                        <Input
+                          placeholder="Poll question (e.g. Which date works for you?)"
+                          bg="#1C1F24"
+                          color="white"
+                          border="none"
+                          fontSize="sm"
+                          value={values.datePoll?.question || ""}
+                          onChange={(e) => setFieldValue("datePoll.question", e.target.value)}
+                        />
+                      </FormControl>
+                      {(values.datePoll?.options || []).map((opt, idx) => (
+                        <Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
+                          <Box>
+                            <Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
+                            {opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
+                          </Box>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            color="red.400"
+                            onClick={() => {
+                              const updated = [...(values.datePoll?.options || [])];
+                              updated.splice(idx, 1);
+                              setFieldValue("datePoll.options", updated);
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </Flex>
+                      ))}
+                      <Button
+                        size="sm"
+                        bg="transparent"
+                        color="white"
+                        border="1px dashed #666"
+                        width="100%"
+                        mt="1"
+                        _hover={{ bg: "#1C1F24" }}
+                        onClick={() => {
+                          setTempPollOption({ id: "", date: "", time: "", label: "" });
+                          onPollModalOpen();
+                        }}
+                        leftIcon={<PlusSVG />}
+                      >
+                        Add Date Option
+                      </Button>
+                    </Box>
+                  )}
+                </Box>
+
                 <Button
                   type="submit"
-                  mt="10"
+                  mt="6"
                   bg="#F79432"
                   size="lg"
                   width="100%"
@@ -620,6 +696,73 @@ const CreateEventPage = () => {
                 >
                   Create Event
                 </Button>
+
+                {/* Date Poll Option Modal */}
+                <Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
+                  <ModalOverlay />
+                  <ModalContent bg="#1E1E1E" color="white">
+                    <ModalHeader>Add Date Option</ModalHeader>
+                    <ModalCloseButton />
+                    <ModalBody>
+                      <FormControl mb={4}>
+                        <FormLabel>Date</FormLabel>
+                        <Input
+                          type="date"
+                          bg="#090C10"
+                          border="1px solid #444"
+                          color="white"
+                          value={tempPollOption.date}
+                          onChange={(e) => setTempPollOption({ ...tempPollOption, date: e.target.value })}
+                        />
+                      </FormControl>
+                      <FormControl mb={4}>
+                        <FormLabel>Time</FormLabel>
+                        <Input
+                          type="time"
+                          bg="#090C10"
+                          border="1px solid #444"
+                          color="white"
+                          value={tempPollOption.time}
+                          onChange={(e) => setTempPollOption({ ...tempPollOption, time: e.target.value })}
+                        />
+                      </FormControl>
+                      <FormControl mb={4}>
+                        <FormLabel>Label (optional)</FormLabel>
+                        <Input
+                          placeholder="e.g. Weekend option"
+                          bg="#090C10"
+                          border="1px solid #444"
+                          color="white"
+                          value={tempPollOption.label || ""}
+                          onChange={(e) => setTempPollOption({ ...tempPollOption, label: e.target.value })}
+                        />
+                      </FormControl>
+                    </ModalBody>
+                    <ModalFooter>
+                      <Flex flexDirection="column" w="full" gap="3">
+                        <Button
+                          bg="#F79432"
+                          w="full"
+                          color="black"
+                          onClick={() => {
+                            if (tempPollOption.date && tempPollOption.time) {
+                              const newOption: DatePollOption = {
+                                ...tempPollOption,
+                                id: new Date().getTime().toString(),
+                                votes: [],
+                              };
+                              setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
+                              onPollModalClose();
+                            }
+                          }}
+                        >
+                          Add
+                        </Button>
+                        <Button variant="unstyled" onClick={onPollModalClose}>Cancel</Button>
+                      </Flex>
+                    </ModalFooter>
+                  </ModalContent>
+                </Modal>
 
                 {/* Tickets Modal */}
                 <FieldArray name="tickets">
