@@ -517,12 +517,15 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
   try {
     // format event start and end time
     let timestamp = ""
+    let eventTimezone = event.timezone ? event.timezone.split(') ')[1] : 'UTC'
+    let start: dayjs.Dayjs | any = null
+    let end: dayjs.Dayjs | any = null
+
     if (!event.startsOn && !event.endsOn && event.datePoll?.isActive) {
       timestamp = "To be decided after poll ends. We will notify you via email."
     } else {
-      const eventTimezone = event.timezone ? event.timezone.split(') ')[1] : 'UTC'
-      const start = dayjs.utc(event.startsOn).tz(eventTimezone)
-      const end = dayjs.utc(event.endsOn).tz(eventTimezone)
+      start = dayjs.utc(event.startsOn).tz(eventTimezone)
+      end = dayjs.utc(event.endsOn).tz(eventTimezone)
       const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
       const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
       timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
