@@ -12,8 +12,8 @@ import "slick-carousel/slick/slick-theme.css"
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { IEvent } from "@/models/events/types"
-import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast } from "@chakra-ui/react"
-import { ShareIcon, QrCodeIcon as QrCodeIconOutline } from "@heroicons/react/24/outline"
+import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
+import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
@@ -60,6 +60,27 @@ export default function HostedEvents({ event }: Props) {
 	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list">("bookings")
 	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
 	const { isOpen: isDiscussionQRModalOpen, onOpen: onDiscussionQRModalOpen, onClose: onDiscussionQRModalClose } = useDisclosure()
+	const { isOpen: isInviteModalOpen, onOpen: onInviteModalOpen, onClose: onInviteModalClose } = useDisclosure()
+	const [inviteSearch, setInviteSearch] = useState("")
+	const [inviteResults, setInviteResults] = useState<{_id:string;firstName:string;lastName:string;email:string;image?:string}[]>([])
+	const [selectedInvitees, setSelectedInvitees] = useState<{_id:string;firstName:string;lastName:string;email:string}[]>([])
+	const [inviteMessage, setInviteMessage] = useState("")
+	const [isSendingInvite, setIsSendingInvite] = useState(false)
+	const [isSearching, setIsSearching] = useState(false)
+
+	useEffect(() => {
+		const q = inviteSearch.trim()
+		if (q.length < 2) { setInviteResults([]); return }
+		const timer = setTimeout(async () => {
+			setIsSearching(true)
+			try {
+				const res = await axios.get(`/api/users/search?q=${encodeURIComponent(q)}`)
+				setInviteResults(res.data?.data || [])
+			} catch { setInviteResults([]) }
+			finally { setIsSearching(false) }
+		}, 400)
+		return () => clearTimeout(timer)
+	}, [inviteSearch])
 	const toast = useToast()
 	const { data: session } = useSession()
 	const router = useRouter()
@@ -286,6 +307,15 @@ export default function HostedEvents({ event }: Props) {
 									<button onClick={() => sharer.share()} className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full">
 										<ShareIcon className="w-6 h-6 text-white inline-block" />
 									</button>
+									{session && (
+										<button
+											onClick={onInviteModalOpen}
+											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
+											title="Invite Friends"
+										>
+											<UserPlusIcon className="w-6 h-6 text-white inline-block" />
+										</button>
+									)}
 
 									<a
 										role="button"
@@ -427,6 +457,158 @@ export default function HostedEvents({ event }: Props) {
 						title="Event Discussion"
 					/>
 				)}
+				{/* Invite Friends Modal */}
+				<Modal
+		isOpen={isInviteModalOpen}
+		onClose={() => { onInviteModalClose(); setInviteSearch(""); setInviteResults([]); setSelectedInvitees([]); setInviteMessage("") }}
+		isCentered
+		size="md"
+		blockScrollOnMount={false}
+	>
+					<ModalOverlay />
+					<ModalContent bg="#1E1E1E" color="white">
+						<ModalHeader>Invite Friends</ModalHeader>
+						<ModalCloseButton />
+						<ModalBody>
+							{/* Search input */}
+							<FormControl mb={3}>
+								<FormLabel fontSize="sm" color="gray.400">Search by name or email</FormLabel>
+								<Input
+									placeholder="Type a name or email..."
+									bg="#090C10"
+									border="1px solid #444"
+									value={inviteSearch}
+									onChange={(e) => setInviteSearch(e.target.value)}
+								/>
+							</FormControl>
+							{/* Search results */}
+							{isSearching && <Text fontSize="sm" color="gray.500" mb={2}>Searching...</Text>}
+							{!isSearching && inviteSearch.trim().length >= 2 && (
+								<Box bg="#090C10" border="1px solid #444" rounded="md" mb={3} maxH="220px" overflowY="auto">
+									{inviteResults.map((u) => {
+										const alreadySelected = selectedInvitees.some((s) => s._id === u._id)
+										return (
+											<Flex
+												key={u._id}
+												align="center"
+												justify="space-between"
+												px={3}
+												py={2}
+												_hover={{ bg: "#1C1F24" }}
+												cursor="pointer"
+												onClick={() => {
+													if (!alreadySelected) {
+														setSelectedInvitees((prev) => [...prev, u])
+													}
+													setInviteSearch("")
+													setInviteResults([])
+												}}
+											>
+												<Flex align="center" gap={2}>
+													{u.image
+														? <img src={u.image} alt="" className="w-7 h-7 rounded-full object-cover" />
+														: <Box w="28px" h="28px" rounded="full" bg="#F79432" display="flex" alignItems="center" justifyContent="center" fontSize="xs" fontWeight="bold" color="black">{u.firstName[0]}{u.lastName[0]}</Box>
+													}
+													<Box>
+														<Text fontSize="sm">{u.firstName} {u.lastName}</Text>
+														<Text fontSize="xs" color="gray.500">{u.email}</Text>
+													</Box>
+												</Flex>
+												{alreadySelected && <Text fontSize="xs" color="green.400">Added</Text>}
+											</Flex>
+										)
+									})}
+									{/* Email fallback: always show if typed value looks like an email */}
+									{/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteSearch.trim()) &&
+										!selectedInvitees.some((s) => s.email === inviteSearch.trim()) && (
+										<Flex
+											align="center"
+											gap={2}
+											px={3}
+											py={2}
+											_hover={{ bg: "#1C1F24" }}
+											cursor="pointer"
+											borderTop={inviteResults.length > 0 ? "1px solid #333" : undefined}
+											onClick={() => {
+												const email = inviteSearch.trim()
+												setSelectedInvitees((prev) => [...prev, { _id: email, firstName: email, lastName: "", email }])
+												setInviteSearch("")
+												setInviteResults([])
+											}}
+										>
+											<Box w="28px" h="28px" rounded="full" bg="#333" display="flex" alignItems="center" justifyContent="center" fontSize="lg" color="#F79432">+</Box>
+											<Box>
+												<Text fontSize="sm" color="#F79432">Invite <strong>{inviteSearch.trim()}</strong></Text>
+												<Text fontSize="xs" color="gray.500">Send invite directly to this email</Text>
+											</Box>
+										</Flex>
+									)}
+									{inviteResults.length === 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteSearch.trim()) && (
+										<Text fontSize="sm" color="gray.500" px={3} py={2}>No users found. Enter a full email address to invite directly.</Text>
+									)}
+								</Box>
+							)}
+							{/* Selected users chips */}
+							{selectedInvitees.length > 0 && (
+								<Box mb={3}>
+									<Text fontSize="xs" color="gray.400" mb={1}>Selected ({selectedInvitees.length})</Text>
+									<Flex flexWrap="wrap" gap={2}>
+										{selectedInvitees.map((u) => (
+											<Flex key={u._id} align="center" gap={1} bg="#2B2B2B" px={2} py={1} rounded="full" fontSize="xs">
+												<Text>{u.lastName ? `${u.firstName} ${u.lastName}` : u.email}</Text>
+												<Box as="button" color="gray.400" _hover={{ color: "red.400" }} onClick={() => setSelectedInvitees((prev) => prev.filter((s) => s._id !== u._id))}>&times;</Box>
+											</Flex>
+										))}
+									</Flex>
+								</Box>
+							)}
+							{/* Optional message */}
+							<FormControl mb={2}>
+								<FormLabel fontSize="sm" color="gray.400">Personal message (optional)</FormLabel>
+								<Textarea
+									placeholder="Hey, join me at this event!"
+									bg="#090C10"
+									border="1px solid #444"
+									rows={3}
+									value={inviteMessage}
+									onChange={(e) => setInviteMessage(e.target.value)}
+								/>
+							</FormControl>
+						</ModalBody>
+						<ModalFooter gap={3}>
+							<Button
+								bg="#F79432"
+								color="black"
+								isDisabled={selectedInvitees.length === 0}
+								isLoading={isSendingInvite}
+								onClick={async () => {
+									if (selectedInvitees.length === 0) return
+									setIsSendingInvite(true)
+									try {
+										await axios.post("/api/send-invites", {
+											emails: selectedInvitees.map((u) => u.email),
+											eventId: clonedEvent._id,
+											eventLink: shareUrl,
+											subject: `You're invited to ${stripHtml(clonedEvent.name)}`,
+											message: inviteMessage || `Join me at ${stripHtml(clonedEvent.name)}!`,
+										})
+										toast({ title: "Invitations sent!", status: "success", duration: 3000, isClosable: true })
+										setSelectedInvitees([])
+										setInviteMessage("")
+										onInviteModalClose()
+									} catch {
+										toast({ title: "Failed to send invitations", status: "error", duration: 3000, isClosable: true })
+									} finally {
+										setIsSendingInvite(false)
+									}
+								}}
+							>
+								Send Invites ({selectedInvitees.length})
+							</Button>
+							<Button variant="ghost" color="white" _hover={{ color: "black", bg: "orange" }} onClick={onInviteModalClose}>Cancel</Button>
+						</ModalFooter>
+					</ModalContent>
+				</Modal>
 			</>
 		)
 	} catch (error) {
