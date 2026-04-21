@@ -4,6 +4,7 @@ import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import { CheckIn } from "@/models/checkIn"
 import { Bookings } from "@/models/events/bookings"
+import { Events } from "@/models/events"
 import { BookingStatus } from "@/models/events/types"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
@@ -27,15 +28,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Unauthorized. Please login.", false, ResCode.UNAUTHORIZED)
 		}
 
-		// @ts-ignore
-		if (session.user?.role !== "admin") {
-			return sendResponse(res, null, "Access denied. Admin only.", false, ResCode.FORBIDDEN)
-		}
+		const userRole = (session.user as any)?.role
+		const userId = (session.user as any)?._id?.toString()
+		const isAdmin = userRole === "admin" || userRole === "super admin"
 
 		const { eventId } = req.query
 
 		if (!eventId) {
 			return sendResponse(res, null, "Event ID is required", false, ResCode.BAD_REQUEST)
+		}
+
+		if (!isAdmin) {
+			const event = await Events.findOne({ _id: new Types.ObjectId(eventId as string), isDeleted: false }, { ownerId: 1 }).lean()
+			if (!event || (event as any).ownerId?.toString() !== userId) {
+				return sendResponse(res, null, "Access denied. You can only view stats for your own events.", false, ResCode.FORBIDDEN)
+			}
 		}
 
 		// Get all confirmed bookings for the event

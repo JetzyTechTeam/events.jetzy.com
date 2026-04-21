@@ -8,7 +8,6 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import { sendThankYouNotification } from "@/lib/send-grid"
 import { generateMagicToken } from "@/lib/magicLink"
-import { Roles } from "@/types"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
@@ -23,10 +22,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, null, "You need to be logged in.", false, ResCode.UNAUTHORIZED)
         }
 
-        // @ts-ignore
-        if (session.user.role !== Roles.ADMIN && session.user.role !== Roles.SUPER_ADMIN) {
-            return sendResponse(res, null, "Unauthorized. Admin only.", false, ResCode.FORBIDDEN)
-        }
+        const userRole = (session.user as any)?.role
+        const userId = (session.user as any)?._id?.toString()
+        const isAdmin = userRole === "admin" || userRole === "super admin"
 
         const { eventId } = req.body
         if (!eventId) {
@@ -36,6 +34,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const event = await Events.findById(eventId)
         if (!event) {
             return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
+        }
+
+        if (!isAdmin && event.ownerId?.toString() !== userId) {
+            return sendResponse(res, null, "Access denied. You can only send emails for your own events.", false, ResCode.FORBIDDEN)
         }
 
         if (!event.feedbackFormUrl) {

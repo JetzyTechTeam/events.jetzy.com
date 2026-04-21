@@ -1,16 +1,44 @@
 import { EventInvitation } from "@/models/events/event-invitations";
 import { Bookings } from "@/models/events/bookings";
+import { Events } from "@/models/events";
 import { ensureDbConnected } from "@/configs/database";
 import { NextApiRequest, NextApiResponse } from "next";
 import sendgrid from "@sendgrid/mail";
 import mongoose from "mongoose";
 import { BookingStatus } from "@/models/events/types";
+import { getServerSession } from "next-auth";
+import { authOptions } from "./auth/[...nextauth]";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
 export default async function sendBlast(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   await ensureDbConnected()
+
+  const session = await getServerSession(req, res, authOptions);
+  if (!session || !session.user) {
+    return res.status(401).json({ error: "Unauthorized. Please login." });
+  }
+
+  const userRole = (session.user as any)?.role;
+  const userId = (session.user as any)?._id?.toString();
+  const isAdmin = userRole === "admin" || userRole === "super admin";
+
   const { status, subject, message, eventLink, event, targetType, emailType } = req.body;
+
+  if (!event?._id) {
+    return res.status(400).json({ error: "Event ID is required." });
+  }
+
+  if (!isAdmin) {
+    const eventDoc = await Events.findOne({ _id: new mongoose.Types.ObjectId(event._id), isDeleted: false }, { ownerId: 1 }).lean();
+    if (!eventDoc || (eventDoc as any).ownerId?.toString() !== userId) {
+      return res.status(403).json({ error: "Access denied. You can only send blasts for your own events." });
+    }
+  }
 
   try {
     let findPeople;

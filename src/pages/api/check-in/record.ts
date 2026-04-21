@@ -5,6 +5,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { CheckIn } from "@/models/checkIn"
 import { EventGuest } from "@/models/eventGuest"
+import { Events } from "@/models/events"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -33,16 +34,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Unauthorized. Please login.", false, ResCode.UNAUTHORIZED)
 		}
 
-		// @ts-ignore
-		if (session.user?.role !== "admin") {
-			return sendResponse(res, null, "Access denied. Admin only.", false, ResCode.FORBIDDEN)
-		}
+		const userRole = (session.user as any)?.role
+		const userId = (session.user as any)?._id?.toString()
+		const isAdmin = userRole === "admin" || userRole === "super admin"
 
 		const { bookingId, eventId, count, guestDetails } = req.body
 
 		// Validate inputs
 		if (!bookingId || !eventId || !count) {
 			return sendResponse(res, null, "Booking ID, Event ID, and count are required", false, ResCode.BAD_REQUEST)
+		}
+
+		if (!isAdmin) {
+			const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false }, { ownerId: 1 }).lean()
+			if (!event || (event as any).ownerId?.toString() !== userId) {
+				return sendResponse(res, null, "Access denied. You can only check in guests for your own events.", false, ResCode.FORBIDDEN)
+			}
 		}
 
 		if (count < 1) {
