@@ -8,10 +8,10 @@ import { ensureDbConnected } from "@/configs/database"
 import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
-import { Roles } from "@/types"
 import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, Heading, Text, useDisclosure } from "@chakra-ui/react"
 import { GetServerSideProps } from "next"
-import { useSession } from "next-auth/react"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/router"
@@ -29,26 +29,22 @@ type Pagination = {
 type Props = {
 	events: string
 	pagination: Pagination
+	isAdmin: boolean
 }
 
-export default function EventsListing({ events, pagination }: Props) {
+export default function EventsListing({ events, pagination, isAdmin }: Props) {
 	const initialData = JSON.parse(events) as IEvent[]
 	const [eventList, setEventList] = React.useState<IEvent[]>(initialData)
-	const { data: session } = useSession()
-	const router = useRouter()
 
 	const handleEventRemoved = (removedEventId: string) => {
 		setEventList((prevList) => prevList.filter((event) => event._id.toString() !== removedEventId))
 	}
 
-	// @ts-ignore
-	if (session?.user?.role === Roles.USER) router.push("/console")
-
 	return (
 		<ConsoleLayout maxW="max-w-[800px]" className="px-0">
 			<div className="max-w-[800px] mx-auto mb-5">
 				<Heading as="h2" fontSize={28}>
-					Events
+					{isAdmin ? "Events" : "My Events"}
 				</Heading>
 			</div>
 
@@ -222,16 +218,22 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
 	await ensureDbConnected()
 	// check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	const authResult = await authorizedOnly(context)
+	if ('redirect' in authResult) return authResult
+
+	const serverSession = await getServerSession(context.req, context.res, authOptions)
+	const userRole = (serverSession?.user as any)?.role
+	const userId = (serverSession?.user as any)?._id
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+	const ownerFilter = isAdmin ? {} : { ownerId: userId }
 
 	// lets paginate the events
 	const limit = 20
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * limit
 
-	// fetch active events (not deleted)
-	const activeEvents = await Events.find({ isDeleted: false }).sort({ createdAt: -1 })
+	// fetch active events (not deleted), filtered by owner if non-admin
+	const activeEvents = await Events.find({ isDeleted: false, ...ownerFilter }).sort({ createdAt: -1 })
 
 	// Get events with bookings to include past events that have activity
 	const { Bookings } = await import("@/models/events/bookings")
@@ -242,13 +244,15 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const pastEventsWithBookings = await Events.find({
 		_id: { $in: eventsWithBookings },
 		isDeleted: false,
-		endsOn: { $lt: now } // Events that have ended
+		endsOn: { $lt: now },
+		...ownerFilter,
 	})
 
-	// If no past events with bookings, include all past events (for admin visibility)
+	// If no past events with bookings, include all past events in scope
 	const pastEventsToInclude = pastEventsWithBookings.length > 0 ? pastEventsWithBookings : await Events.find({
 		isDeleted: false,
-		endsOn: { $lt: now }
+		endsOn: { $lt: now },
+		...ownerFilter,
 	})
 
 	// Combine active events and past events with bookings, remove duplicates
@@ -301,6 +305,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		props: {
 			events: JSON?.stringify(paginatedEvents),
 			pagination,
+			isAdmin,
 		},
 	}
 }

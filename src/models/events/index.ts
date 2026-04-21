@@ -179,6 +179,12 @@ const eventsSchema = new Schema<IEvent>(
 			type: datePollSchema,
 			required: false,
 		},
+		ownerId: {
+			type: Schema.Types.ObjectId,
+			ref: 'User',
+			required: false,
+			index: true,
+		},
 	},
 	{
 		timestamps: true,

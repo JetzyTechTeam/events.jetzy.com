@@ -45,8 +45,6 @@ import Image from "next/image"
 import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { useRouter } from "next/router"
-import { Roles } from "@/types"
-import { redirect } from "next/navigation"
 import { useSession } from "next-auth/react"
 
 export default function Manage({ event }: any) {
@@ -70,9 +68,6 @@ export default function Manage({ event }: any) {
 			return res.data.data
 		},
 	})
-
-	// @ts-ignore
-	if (session?.user?.role === Roles.USER) router.push("/console")
 
 	const onUpdateFeedbackLink = async () => {
 		try {
@@ -1063,19 +1058,18 @@ function EventDateTime({ iso }: { iso: string }) {
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
 	await ensureDbConnected()
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	const authResult = await authorizedOnly(context)
+	if ('redirect' in authResult) return authResult
 
 	const eventId = context.query.eventId as string
-	if (!eventId) return { props: {} }
+	if (!eventId) return { notFound: true }
 
 	const event = await Events.findOne({ _id: eventId, isDeleted: false })
-
-	if (!event) return { props: {} }
+	if (!event) return { notFound: true }
 
 	return {
 		props: {
-			event: JSON?.stringify(event),
+			event: JSON.stringify(event),
 		},
 	}
 }

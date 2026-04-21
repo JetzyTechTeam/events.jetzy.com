@@ -5,6 +5,8 @@ import { ensureDbConnected } from "@/configs/database"
 import { IBookings, IEvent } from "@/models/events/types"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import React from "react"
 import BookingTableEvents from "@/components/bookings/BookingEventsTable"
 
@@ -58,20 +60,23 @@ export default function BookingsPage({ events, pagination }: Props) {
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
 	await ensureDbConnected()
 	//check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	const authResult = await authorizedOnly(context)
+	if ('redirect' in authResult) return authResult
+
+	const serverSession = await getServerSession(context.req, context.res, authOptions)
+	const userRole = (serverSession?.user as any)?.role
+	const userId = (serverSession?.user as any)?._id
+	const isAdmin = userRole === "admin" || userRole === "super admin"
+	const ownerFilter = isAdmin ? {} : { ownerId: userId }
 
 	//pagination
-	//const limit = 5
 	const limit = 10
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * limit
 
-
-
 	//fetch fields
 	const events = await Events.find(
-		{ isDeleted: false },
+		{ isDeleted: false, ...ownerFilter },
 		{ _id: 1, name: 1, startsOn: 1, endsOn: 1 }
 	)
 		.sort({ startsOn: -1 })
@@ -98,7 +103,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}));
 
 
-	const total = await Events.countDocuments({ isDeleted: false })
+	const total = await Events.countDocuments({ isDeleted: false, ...ownerFilter })
 
 
 	//calculate page total and current page

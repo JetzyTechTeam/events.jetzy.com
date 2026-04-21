@@ -118,6 +118,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId as string) })
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
+		// Ownership check — admin can edit any event, user can only edit their own
+		const userRole = (session.user as any)?.role
+		const isAdmin = userRole === "admin" || userRole === "super admin"
+		const userId = (session.user as any)?._id?.toString()
+		if (!isAdmin && event.ownerId?.toString() !== userId) {
+			return sendResponse(res, null, "Forbidden. You can only edit your own events.", false, ResCode.FORBIDDEN)
+		}
+
 		// Find the event by id and update it
 		const updateDoc: any = {
 			$set: {

@@ -8,7 +8,7 @@ import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
 import { FileUploadData } from "@Jetzy/components/misc/DragAndDropUploader"
 import { ROUTES } from "@/configs/routes"
 import { uploadFile, deleteFile } from "@/services/upload.service"
-import { CreateEventFormData, DatePollOption, Pages, Roles } from "@/types"
+import { CreateEventFormData, DatePollOption, Pages } from "@/types"
 import { Field, Form, Formik, FormikProps, FieldArray } from "formik"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
@@ -420,9 +420,6 @@ export default function UpdateEventPage({ event }: Props) {
 		}
 	};
 
-
-	// @ts-ignore 
-	if (session?.user?.role === Roles.USER) router.push('/console')
 
 	return (
 		<ConsoleLayout
@@ -1066,8 +1063,8 @@ export default function UpdateEventPage({ event }: Props) {
 export const getServerSideProps: GetServerSideProps<any, { eventId: string }> = async (context) => {
 	await ensureDbConnected()
 	// check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	const authResult = await authorizedOnly(context)
+	if ('redirect' in authResult) return authResult
 
 	const { eventId } = context.params as { eventId: string }
 

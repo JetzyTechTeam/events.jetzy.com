@@ -34,7 +34,7 @@ import {
   FieldArray,
 } from "formik";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
-import { CreateEventFormData, DatePollOption, Pages, Roles } from "@/types";
+import { CreateEventFormData, DatePollOption, Pages } from "@/types";
 import { usePlacesWidget } from "react-google-autocomplete";
 import {
   DescriptionSVG,
@@ -273,9 +273,6 @@ const CreateEventPage = () => {
       Error("Error", "Failed to delete image");
     }
   };
-
-  // @ts-ignore 
-  if (session?.user?.role === Roles.USER) router.push('/console')
 
   return (
     <ConsoleLayout

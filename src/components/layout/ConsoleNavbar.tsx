@@ -8,6 +8,7 @@ import Image from "next/image"
 import { ROUTES } from "@Jetzy/configs/routes"
 import { signOut, useSession } from "next-auth/react"
 import Link from "next/link"
+import { useRouter } from "next/router"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import { getUserSlug } from "@Jetzy/lib/utils"
@@ -44,6 +45,8 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	const slug = getUserSlug({ firstName, lastName, _id: user.id })
 	const profileHref = `/profile/${slug || user.id}`
 
+	const { pathname } = useRouter()
+
 	// @ts-ignore
 	const userRole = session?.user?.role
 
@@ -56,10 +59,16 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
 	]
 
-	const filteredNavigation =
-		userRole === Roles.USER
-			? navigation.filter((item) => item.name === "Share Profile")
-			: navigation.filter((item) => item.name !== Pages.Dasshboard)
+	const userNavigation = userRole === Roles.USER
+		? [
+			{ name: "My Events", href: ROUTES.dashboard.events.index },
+			{ name: "Create Event", href: ROUTES.dashboard.events.create },
+			{ name: Pages.Bookings, href: ROUTES.dashboard.bookings.index },
+			{ name: "Share Profile", href: profileHref },
+		]
+		: navigation.filter((item) => item.name !== Pages.Dasshboard)
+
+	const filteredNavigation = userNavigation
 
 	return (
 		<Disclosure as="nav" className="bg-gray-800">
@@ -78,10 +87,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 												key={item.name}
 												href={item.href}
 												className={classNames(
-													item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+													pathname === item.href || item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
 													"rounded-md px-3 py-2 text-sm font-medium",
 												)}
-												aria-current={item.name === page ? "page" : undefined}
+												aria-current={pathname === item.href || item.name === page ? "page" : undefined}
 											>
 												{item.name}
 											</Link>
@@ -179,10 +188,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 									as={Link}
 									href={item.href}
 									className={classNames(
-										item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+										pathname === item.href || item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
 										"block rounded-md px-3 py-2 text-base font-medium",
 									)}
-									aria-current={item.name === page ? "page" : undefined}
+									aria-current={pathname === item.href || item.name === page ? "page" : undefined}
 								>
 									{item.name}
 								</Disclosure.Button>

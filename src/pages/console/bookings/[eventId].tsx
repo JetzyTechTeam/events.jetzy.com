@@ -9,6 +9,8 @@ import { Pages } from "@/types";
 //import { Booking } from "..";
 import { Booking } from ".";
 import { authorizedOnly } from "@/lib/authSession"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Text, Flex, Button } from "@chakra-ui/react";
 import { useRouter } from "next/router"
 
@@ -50,10 +52,15 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
   );
 }
 
-export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
+export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
   await ensureDbConnected()
-  const session = await authorizedOnly(ctx)
-  if (!session) return session
+  const authResult = await authorizedOnly(ctx)
+  if ('redirect' in authResult) return authResult
+
+  const serverSession = await getServerSession(ctx.req, ctx.res, authOptions)
+  const userRole = (serverSession?.user as any)?.role
+  const userId = (serverSession?.user as any)?._id?.toString()
+  const isAdmin = userRole === "admin" || userRole === "super admin"
 
   const { eventId } = ctx.params as { eventId: string };
   const { status, date, search, amount, minTickets } = ctx.query;
@@ -64,9 +71,15 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
     name: 1,
     startsOn: 1,
     endsOn: 1,
+    ownerId: 1,
   }).lean();
 
   if (!eventDoc) return { notFound: true };
+
+  // Ownership check — non-admin can only view bookings for their own events
+  if (!isAdmin && (eventDoc as any).ownerId?.toString() !== userId) {
+    return { redirect: { destination: '/console/bookings', permanent: false } }
+  }
 
 
   const filter: any = { eventId };
@@ -149,10 +162,12 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
 
 
 
+  const { ownerId: _ownerId, ...eventForProps } = eventDoc as any
+
   return {
     props: {
       event: {
-        ...eventDoc,
+        ...eventForProps,
         _id: eventDoc._id.toString(),
         startsOn: eventDoc.startsOn?.toISOString() ?? null,
         endsOn: eventDoc.endsOn?.toISOString() ?? null,

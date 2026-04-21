@@ -24,10 +24,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const userRole = (session.user as any)?.role
+		const userId = (session.user as any)?._id?.toString()
 		const isAdmin = userRole === "admin" || userRole === "super admin"
-		if (!isAdmin) {
-			return sendResponse(res, null, "Forbidden - Admin access required", false, ResCode.FORBIDDEN)
-		}
 
 		const { eventId, dateFrom, dateTo, page = "1", limit = "20", groupBy = "day" } = req.query as {
 			eventId?: string
@@ -45,6 +43,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Validate eventId
 		if (!Types.ObjectId.isValid(eventId)) {
 			return sendResponse(res, null, "Invalid event ID", false, ResCode.BAD_REQUEST)
+		}
+
+		// Non-admin must be the event owner to access analytics
+		if (!isAdmin) {
+			const event = await Events.findById(eventId, { ownerId: 1 }).lean()
+			if (!event || (event as any).ownerId?.toString() !== userId) {
+				return sendResponse(res, null, "Access denied. You can only view analytics for your own events.", false, ResCode.FORBIDDEN)
+			}
 		}
 
 		const eventObjectId = new Types.ObjectId(eventId)

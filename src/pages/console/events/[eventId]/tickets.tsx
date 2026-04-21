@@ -46,8 +46,8 @@ type Params = {
 export const getServerSideProps: GetServerSideProps<any, Params> = async (context) => {
 	await ensureDbConnected()
 	// check if user is authorized
-	const session = await authorizedOnly(context)
-	if (!session) return session
+	const authResult = await authorizedOnly(context)
+	if ('redirect' in authResult) return authResult
 
 	const { eventId } = context.params as Params
 

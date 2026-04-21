@@ -20,6 +20,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const event = await Events.findById(eventId)
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
+		// Ownership check — admin can delete any event, user can only delete their own
+		const userRole = (session.user as any)?.role
+		const isAdmin = userRole === "admin" || userRole === "super admin"
+		const userId = (session.user as any)?._id?.toString()
+		if (!isAdmin && event.ownerId?.toString() !== userId) {
+			return sendResponse(res, null, "Forbidden. You can only delete your own events.", false, ResCode.FORBIDDEN)
+		}
+
 		// Now lets make sure the event has not booking and the date is not past
 		const bookings = await event.getBookings()
 		if (bookings.length > 0) {

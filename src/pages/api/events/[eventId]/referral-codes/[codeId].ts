@@ -26,10 +26,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const userRole = (session.user as any)?.role
+		const userId = (session.user as any)?._id?.toString()
 		const isAdmin = userRole === "admin" || userRole === "super admin"
-		if (!isAdmin) {
-			return sendResponse(res, null, "Access denied. Admin only.", false, ResCode.FORBIDDEN)
-		}
 
 		const { eventId, codeId } = req.query
 
@@ -45,6 +43,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
+		}
+
+		// Allow admin or event owner only
+		if (!isAdmin && event.ownerId?.toString() !== userId) {
+			return sendResponse(res, null, "Access denied. Only the event owner can manage referral codes.", false, ResCode.FORBIDDEN)
 		}
 
 		// Find referral code

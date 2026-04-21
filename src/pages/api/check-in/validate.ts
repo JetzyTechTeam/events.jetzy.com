@@ -4,6 +4,7 @@ import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { CheckIn } from "@/models/checkIn"
+import { Events } from "@/models/events"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 
@@ -26,15 +27,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Unauthorized. Please login.", false, ResCode.UNAUTHORIZED)
 		}
 
-		// @ts-ignore
-		if (session.user?.role !== "admin") {
-			return sendResponse(res, null, "Access denied. Admin only.", false, ResCode.FORBIDDEN)
-		}
-
 		const { eventId, identifier } = req.body
 
 		if (!eventId || !identifier) {
 			return sendResponse(res, null, "Event ID and email address are required", false, ResCode.BAD_REQUEST)
+		}
+
+		// Allow admin OR event owner
+		// @ts-ignore
+		const userRole = session.user?.role
+		const isAdmin = userRole === "admin" || userRole === "super admin"
+		if (!isAdmin) {
+			const event = await Events.findById(eventId).lean()
+			// @ts-ignore
+			const userId = (session.user as any)?._id?.toString()
+			if (!event || (event as any).ownerId?.toString() !== userId) {
+				return sendResponse(res, null, "Access denied. Admin or event owner only.", false, ResCode.FORBIDDEN)
+			}
 		}
 
 		const normalizedIdentifier = identifier.trim()

@@ -131,6 +131,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// create event
 		const newEvent = await Events.create({
 			slug: generateRandomId(10),
+			ownerId: (session.user as any)._id,
 			name,
 			location,
 			coordinates: {
