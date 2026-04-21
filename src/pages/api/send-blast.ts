@@ -6,7 +6,7 @@ import sendgrid from "@sendgrid/mail";
 import mongoose from "mongoose";
 import { BookingStatus } from "@/models/events/types";
 
-sendgrid.setApiKey(process.env.SENDGRID_API_KEY as string);
+sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
 export default async function sendBlast(req: NextApiRequest, res: NextApiResponse) {
   await ensureDbConnected()
@@ -120,7 +120,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
 
       await sendgrid.sendMultiple({
         to: (person as any).email || (person as any).customerEmail,
-        from: process.env.SENDGRID_EMAIL_SENDER as string,
+        from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         subject: subject,
         html: personalizedHtml,
       })

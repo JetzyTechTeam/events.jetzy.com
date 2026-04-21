@@ -56,7 +56,7 @@ if (!process.env.SENDGRID_API_KEY) {
   process.exit(1);
 }
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+sgMail.setApiKey(process.env.SENDGRID_API_KEY?.trim());
 
 const emailHtml = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -105,7 +105,7 @@ async function sendEmail() {
     try {
       await sgMail.send({
         to: email,
-        from: process.env.SENDGRID_EMAIL_SENDER || "tech@jetzyapp.com", // Fallback sender
+        from: process.env.SENDGRID_EMAIL_SENDER?.trim() || "tech@jetzyapp.com", // Fallback sender
         subject: `Important Update: ${EVENT_NAME}`,
         html: emailHtml,
       });

@@ -1,7 +1,7 @@
 import sgMail from "@sendgrid/mail"
 
 if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY)
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY.trim())
 }
 
 // Helper function to wrap HTML content in proper tags
@@ -99,7 +99,7 @@ export async function sendUpdateEventEmailLogic(data: EmailProps) {
 
     await sgMail.send({
       to: data.userEmail,
-      from: process.env.SENDGRID_EMAIL_SENDER!,
+      from: process.env.SENDGRID_EMAIL_SENDER!.trim(),
       subject,
       html,
       text

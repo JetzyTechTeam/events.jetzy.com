@@ -7,7 +7,7 @@ import timezone from 'dayjs/plugin/timezone'
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY as string)
+sgMail.setApiKey(process.env.SENDGRID_API_KEY?.trim() as string)
 
 // Helper function to wrap HTML content in proper tags
 const wrapHtml = (html: string) => `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>${html}</body></html>`;
@@ -201,7 +201,7 @@ export const sendWaitingListApproval = async ({ firstName, lastName, email, even
 
     await sgMail.send({
       to: [email, "tech@jetzyapp.com"],
-      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Jetzy [Good News!] Your wait is over - ${decodeHTMLEntities(eventName)}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -260,7 +260,7 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
   try {
     await sgMail.send({
       to: [email, "tech@jetzyapp.com"],
-      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Jetzy [Waiting List] ${decodeHTMLEntities(eventName)}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -318,10 +318,10 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: 'Jetzy Events'
       },
-      replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
+      replyTo: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `${hostName} invited you to ${decodeHTMLEntities(eventName)}`,
       text: `You're invited to ${decodeHTMLEntities(eventName)}!\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event details: ${eventUrl}\n\n--\nThis invitation was sent by ${hostName} via Jetzy Events`,
       html: wrapHtml(`
@@ -418,10 +418,10 @@ export const sendBlastEmail = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
-      replyTo: process.env.SENDGRID_EMAIL_SENDER as string,
+      replyTo: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject,
       text: `${decodeHTMLEntities(eventName)}\n\n${customMessage}\n\nDate & Time: ${eventDate}\nLocation: ${eventLocation}\n\nView event: ${eventUrl}\n\n--\nSent by ${hostName} via Jetzy Events`,
       html: wrapHtml(`
@@ -505,7 +505,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     throw new Error(errorMsg)
   }
 
-  if (!process.env.SENDGRID_EMAIL_SENDER) {
+  if (!process.env.SENDGRID_EMAIL_SENDER?.trim()) {
     const errorMsg = "SENDGRID_EMAIL_SENDER is not set in environment variables"
     console.error("[sendTicketConfirmation] ❌", errorMsg)
     throw new Error(errorMsg)
@@ -657,7 +657,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
-        from: process.env.SENDGRID_EMAIL_SENDER as string,
+        from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
@@ -736,7 +736,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
-        from: process.env.SENDGRID_EMAIL_SENDER as string,
+        from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
@@ -817,7 +817,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
-        from: process.env.SENDGRID_EMAIL_SENDER as string,
+        from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
@@ -898,7 +898,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
-        from: process.env.SENDGRID_EMAIL_SENDER as string,
+        from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
@@ -979,7 +979,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
       await sgMail.send({
         to: [email, "tech@jetzyapp.com"],
-        from: process.env.SENDGRID_EMAIL_SENDER as string,
+        from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         subject: `Booking Confirmation: ${EVENT_NAME}`,
         html: wrapHtml(html),
         text: `Booking Confirmation: ${EVENT_NAME}\n\nDate and Time: ${TIME}\nVenue: ${VENUE}\nOrder Number: ${orderNumber}\n\nThank you for your purchase!`,
@@ -991,7 +991,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
     const emailPayload = {
       to: [email, "tech@jetzyapp.com"],
-      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Booking Confirmation: ${decodeHTMLEntities(event.name)}`,
       ...(attachments.length > 0 ? { attachments } : {}),
       html: wrapHtml(`
@@ -1116,7 +1116,7 @@ export const sendOrganizerSaleNotification = async ({
   try {
     await sgMail.send({
       to: organizerEmail,
-      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `New Ticket Sale! - ${decodeHTMLEntities(event.name)}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -1188,7 +1188,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
 
     await sgMail.send({
       to: [email, "tech@jetzyapp.com"],
-      from: process.env.SENDGRID_EMAIL_SENDER as string,
+      from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
       subject: `Jetzy [Booking Cancelled] ${decodeHTMLEntities(event.name)}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -1299,7 +1299,7 @@ export const sendDiscussionNotification = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
       subject,
@@ -1373,7 +1373,7 @@ export const sendCommentNotification = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
       subject,
@@ -1439,7 +1439,7 @@ export const sendTagNotification = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
       subject,
@@ -1496,7 +1496,7 @@ export const sendReactionNotification = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
       subject: `${reactorName} reacted to your post in ${decodeHTMLEntities(eventName)}`,
@@ -1553,7 +1553,7 @@ export const sendViewMilestoneNotification = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
       subject: `Your post in ${decodeHTMLEntities(eventName)} is getting attention`,
@@ -1640,7 +1640,7 @@ export const sendThankYouNotification = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
       subject,
@@ -1720,7 +1720,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy"
       },
       subject: "Welcome to Jetzy - Your Account is Ready!",
@@ -1739,7 +1739,7 @@ export const sendBlockNotificationEmail = async ({ email, blockedAt }: { email: 
     await sgMail.send({
       to: process.env.ADMIN_NOTIFICATION_EMAIL || "tech@jetzyapp.com",
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Security"
       },
       subject: `🚨 [COMPLIANCE] Account Blocked - ${email}`,
@@ -1794,7 +1794,7 @@ export const sendManualVerificationEmail = async ({ email, code }: { email: stri
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Verification"
       },
       subject: `Your Jetzy Verification Code: ${code}`,
@@ -1841,7 +1841,7 @@ export const sendAdminComplianceAlert = async ({ email, unblockToken }: { email:
     await sgMail.send({
       to: process.env.ADMIN_NOTIFICATION_EMAIL || "tech@jetzyapp.com",
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Compliance"
       },
       subject: `ACTION REQUIRED: User Verified - Compliance Review for ${email}`,
@@ -1888,7 +1888,7 @@ export const sendAccountApprovedEmail = async ({ email, password }: { email: str
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Account"
       },
       subject: `Your Jetzy Account is Approved! 🎉`,
@@ -1960,7 +1960,7 @@ export const sendChatTagNotification = async ({
     await sgMail.send({
       to: email,
       from: {
-        email: process.env.SENDGRID_EMAIL_SENDER as string,
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         name: "Jetzy Events",
       },
       subject,

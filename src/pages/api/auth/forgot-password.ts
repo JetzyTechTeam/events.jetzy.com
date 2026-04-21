@@ -4,7 +4,7 @@ import { Users } from "@Jetzy/models/userModal"
 import crypto from "crypto"
 import sgMail from "@sendgrid/mail"
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY as string)
+sgMail.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim())
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== "POST") {
@@ -51,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await sgMail.send({
             to: decodedEmail,
             from: {
-                email: process.env.SENDGRID_EMAIL_SENDER as string,
+                email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
                 name: "Jetzy Account"
             },
             subject: "Reset Your Jetzy Password",

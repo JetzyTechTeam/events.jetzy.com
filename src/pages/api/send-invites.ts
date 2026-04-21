@@ -3,7 +3,7 @@ import sendgrid from "@sendgrid/mail";
 import { EventInvitation } from "@/models/events/event-invitations";
 import { ensureDbConnected } from "@/configs/database";
 
-sendgrid.setApiKey(process.env.SENDGRID_API_KEY as string);
+sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -28,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const personalizedEventLink = `${eventLink}?email=${encodeURIComponent(email)}`;
         return sendgrid.send({
           to: email,
-          from: process.env.SENDGRID_EMAIL_SENDER as string,
+          from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
           subject: subject || "You're Invited!",
           html: `
           <div style="font-family:Arial,sans-serif;background:#f9f9f9;padding:40px 0;">
