@@ -61,6 +61,7 @@ export default function HostedEvents({ event }: Props) {
 	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
 	const { isOpen: isDiscussionQRModalOpen, onOpen: onDiscussionQRModalOpen, onClose: onDiscussionQRModalClose } = useDisclosure()
 	const { isOpen: isInviteModalOpen, onOpen: onInviteModalOpen, onClose: onInviteModalClose } = useDisclosure()
+	const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure()
 	const [inviteSearch, setInviteSearch] = useState("")
 	const [inviteResults, setInviteResults] = useState<{_id:string;firstName:string;lastName:string;email:string;image?:string}[]>([])
 	const [selectedInvitees, setSelectedInvitees] = useState<{_id:string;firstName:string;lastName:string;email:string}[]>([])
@@ -105,6 +106,7 @@ export default function HostedEvents({ event }: Props) {
 
 	// @ts-ignore
 	const isAdmin = session?.user?.role === "admin"
+	const isDatePollActive = !!(clonedEvent?.datePoll?.isActive && clonedEvent?.datePoll?.options?.length)
 
 	useEffect(() => {
 		if (typeof window !== "undefined") {
@@ -185,7 +187,7 @@ export default function HostedEvents({ event }: Props) {
 		return (
 			<>
 				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
-					<div className="max-w-4xl mx-auto mb-6 flex items-center justify-between">
+					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex items-center justify-between`}>
 						<div className="flex items-center gap-3">
 							<button onClick={() => router.back()} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white flex items-center gap-2">
 								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,7 +207,8 @@ export default function HostedEvents({ event }: Props) {
 							</Link>
 						)}
 					</div>
-					<div className="max-w-4xl mx-auto bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
+					<div className={`${isDatePollActive ? "max-w-6xl mx-auto flex flex-col lg:flex-row lg:gap-6 lg:items-start" : "max-w-4xl mx-auto"}`}>
+					<div className={`${isDatePollActive ? "flex-1 min-w-0" : ""} bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all`}>
 						{/* Banner Image */}
 						<div className="relative p-3">
 							{clonedEvent?.images && Array.isArray(clonedEvent.images) && clonedEvent.images.length > 1 ? (
@@ -260,19 +263,19 @@ export default function HostedEvents({ event }: Props) {
 
 						{/* Content Section */}
 						<div className="p-6 sm:p-8">
-							{/* Header Section */}
-							<div className="flex flex-col sm:flex-row justify-between items-start mb-6 space-y-4 sm:space-y-0">
+							{/* Title + Actions row */}
+							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
 								<div className="text-center sm:text-left">
 									<h2 className="text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(clonedEvent.name)}</h2>
 									<p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb] break-words">
 										<DateTimeSVG />
-										{!clonedEvent?.startsOn && !clonedEvent?.endsOn && clonedEvent?.datePoll?.isActive 
-											? "Date to be decided (Polling)" 
-											: clonedEvent?.startsOn 
+										{!clonedEvent?.startsOn && !clonedEvent?.endsOn && clonedEvent?.datePoll?.isActive
+											? "Date to be decided (Polling)"
+											: clonedEvent?.startsOn
 											? `${formattedDate}, ${formattedTime} ${clonedEvent?.timezone || ""}`
 											: "Date to be decided"}
 									</p>
-									<p className="text-sm sm:text-base mb-5 flex gap-x-2 text-[#bbbbbb] break-words">
+									<p className="text-sm sm:text-base flex gap-x-2 text-[#bbbbbb] break-words">
 										{clonedEvent.locationDisclosedAfterBooking ? (
 											<span className="break-words overflow-wrap-anywhere">
 												📍 Location will be disclosed after registration
@@ -286,18 +289,12 @@ export default function HostedEvents({ event }: Props) {
 											</>
 										)}
 									</p>
-
-									<h3 className="text-sm sm:text-base font-semibold ">Description</h3>
-									<EventDescription description={clonedEvent.desc} />
-									{clonedEvent.datePoll?.isActive && (
-										<DatePollWidget event={clonedEvent} isAdmin={isAdmin} />
-									)}
 								</div>
 
-								<div className="flex gap-x-3 sm:items-end">
+								<div className="flex gap-x-3 sm:items-end flex-shrink-0">
 									{isAdmin && (
-										<button 
-											onClick={onQRModalOpen} 
+										<button
+											onClick={onQRModalOpen}
 											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
 											title="Show Event QR Code (Admin only)"
 										>
@@ -326,11 +323,26 @@ export default function HostedEvents({ event }: Props) {
 									</a>
 								</div>
 							</div>
+
+							{/* Full-width teaser + description below the header row */}
+							<div className="mt-5">
+								{isDatePollActive && (
+									<DatePollTeaser event={clonedEvent} onOpenPoll={onPollModalOpen} />
+								)}
+								<h3 className="text-sm sm:text-base font-semibold">Description</h3>
+								<EventDescription description={clonedEvent.desc} />
+							</div>
 						</div>
+					</div>
+					{isDatePollActive && (
+						<div className="hidden lg:block w-[360px] flex-shrink-0 sticky top-8 self-start">
+							<DatePollSidebar event={clonedEvent} isAdmin={isAdmin} />
+						</div>
+					)}
 					</div>
 
 					{isAdmin && clonedEvent?._id && (
-						<div className="max-w-4xl mx-auto mt-8">
+						<div className={`${isDatePollActive ? "max-w-6xl mx-auto lg:pr-[384px]" : "max-w-4xl mx-auto"} mt-8`}>
 							{/* Admin Tabs */}
 							<div className="bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden">
 								{/* Tab Headers */}
@@ -358,12 +370,13 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 					)}
 
+					<div className={isDatePollActive ? "max-w-6xl mx-auto lg:pr-[384px]" : ""}>
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
 					{clonedEvent && <EventTicketsComponent event={clonedEvent} />}
 
 					{clonedEvent?._id && (
-						<div id="discussion-section" className="max-w-4xl mx-auto mt-8">
+						<div id="discussion-section" className={`${isDatePollActive ? "" : "max-w-4xl mx-auto"} mt-8`}>
 							<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden mt-8">
 							<Box mt={4} px={4}>
 								{/* Discussion/Chat Section */}
@@ -435,6 +448,7 @@ export default function HostedEvents({ event }: Props) {
 							</div>
 						</div>
 					)}
+					</div>
 				</div>
 				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
 				
@@ -458,6 +472,19 @@ export default function HostedEvents({ event }: Props) {
 					/>
 				)}
 				{/* Invite Friends Modal */}
+				{/* Mobile Date Poll Modal */}
+				{isDatePollActive && (
+					<Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered size="lg" blockScrollOnMount={false}>
+						<ModalOverlay />
+						<ModalContent bg="#1a1c20" color="white" borderRadius="2xl" border="1px solid #333" mx={3}>
+							<ModalHeader fontSize="md" pb={0}>Event Date Poll</ModalHeader>
+							<ModalCloseButton />
+							<ModalBody pb={6} px={4}>
+								<DatePollSidebar event={clonedEvent} isAdmin={isAdmin} />
+							</ModalBody>
+						</ModalContent>
+					</Modal>
+				)}
 				<Modal
 		isOpen={isInviteModalOpen}
 		onClose={() => { onInviteModalClose(); setInviteSearch(""); setInviteResults([]); setSelectedInvitees([]); setInviteMessage("") }}
@@ -941,8 +968,9 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
 	)
 }
 
-function DatePollWidget({ event, isAdmin }: { event: IEvent; isAdmin: boolean }) {
-	const [selectedOptionId, setSelectedOptionId] = React.useState<string | null>(null)
+function DatePollSidebar({ event, isAdmin }: { event: IEvent; isAdmin: boolean }) {
+	const [localSelectedId, setLocalSelectedId] = React.useState<string | null>(null)
+	const [submittedId, setSubmittedId] = React.useState<string | null>(null)
 	const [pollData, setPollData] = React.useState<any>(event.datePoll)
 	const [isVoting, setIsVoting] = React.useState(false)
 	const toast = useToast()
@@ -954,39 +982,36 @@ function DatePollWidget({ event, isAdmin }: { event: IEvent; isAdmin: boolean })
 			.then((data) => {
 				if (data?.status && data?.data) {
 					setPollData(data.data)
-					if (data.data.yourVote) setSelectedOptionId(data.data.yourVote)
+					if (data.data.yourVote) {
+						setLocalSelectedId(data.data.yourVote)
+						setSubmittedId(data.data.yourVote)
+					}
 				}
 			})
 			.catch(console.error)
 	}, [(event as any)?._id])
 
 	const totalVotes = pollData?.totalVotes || (pollData?.options || []).reduce((sum: number, o: any) => sum + (o.voters?.length || o.voteCount || o.votes?.length || 0), 0)
+	const allVoters = (pollData?.options || []).flatMap((o: any) => o.voters || [])
 
-	const handleVote = async (optionId: string) => {
-		if (isAdmin) return
+	const handleSubmit = async () => {
+		if (!localSelectedId || isAdmin || isVoting) return
 		setIsVoting(true)
 		try {
 			const res = await fetch(`/api/events/${(event as any)._id}/poll/vote`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ optionId }),
+				body: JSON.stringify({ optionId: localSelectedId }),
 			})
 			const data = await res.json()
 			if (data.status) {
-				setSelectedOptionId(optionId)
+				setSubmittedId(localSelectedId)
 				setPollData(data.data)
 				toast({ title: "Vote recorded!", status: "success", duration: 2000 })
 			} else {
-				toast({ 
-					title: "Action Denied", 
-					description: data.message || "Failed to submit vote.", 
-					status: "warning", 
-					position: "top",
-					duration: 4000,
-					isClosable: true
-				})
+				toast({ title: "Action Denied", description: data.message || "Failed to submit vote.", status: "warning", position: "top", duration: 4000, isClosable: true })
 			}
-		} catch (error: any) {
+		} catch {
 			toast({ title: "Failed to vote.", description: "Network or server error.", status: "error", duration: 2000 })
 		} finally {
 			setIsVoting(false)
@@ -996,85 +1021,183 @@ function DatePollWidget({ event, isAdmin }: { event: IEvent; isAdmin: boolean })
 	if (!pollData?.isActive || !pollData.options?.length) return null
 
 	return (
-		<div className="mt-8 bg-gradient-to-br from-[#1E2024] to-[#141619] rounded-2xl p-5 border border-[#333] shadow-lg">
-			<div className="flex items-center justify-between mb-2">
-				<h4 className="text-base font-bold text-[#F79432]">📅 Event Date Poll</h4>
-				<span className="bg-[#333] text-xs px-2 py-1 rounded text-[#bbb] font-medium">{totalVotes} Vote{totalVotes !== 1 ? 's' : ''}</span>
+		<div className="bg-gradient-to-br from-[#1E2024] to-[#141619] rounded-2xl border border-[#333] shadow-lg overflow-hidden">
+			{/* Header */}
+			<div className="px-5 pt-5 pb-4 border-b border-[#232323]">
+				<div className="flex items-center gap-3">
+					<div className="w-9 h-9 rounded-full bg-[#F79432]/20 flex items-center justify-center flex-shrink-0">
+						<svg className="w-5 h-5 text-[#F79432]" fill="currentColor" viewBox="0 0 20 20">
+							<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+						</svg>
+					</div>
+					<div>
+						<p className="font-bold text-white text-sm leading-tight">Help finalize this event</p>
+						<p className="text-xs text-[#777] mt-0.5">Your vote decides the night</p>
+					</div>
+				</div>
 			</div>
-			<p className="text-sm text-[#ddd] mb-4">{pollData.question || "Help us decide the best time by voting below!"}</p>
-			
-			<div className="flex flex-col gap-3">
-				{pollData.options.map((opt: any) => {
-					const voteCount = opt.voters?.length || opt.voteCount || opt.votes?.length || 0
-					const pct = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0
-					const isSelected = selectedOptionId === opt.id || opt.hasVoted
-					
-					return (
-						<div key={opt.id} className="relative group">
-							<button
-								onClick={() => handleVote(opt.id)}
-								disabled={isAdmin || isVoting}
-								className={`
-									relative w-full text-left px-4 py-3 rounded-xl border transition-all overflow-hidden flex items-center justify-between
-									${isSelected ? "border-[#F79432] bg-[#F79432]/5" : "border-[#333] bg-[#222]"} 
-									${isAdmin ? "cursor-default" : "cursor-pointer hover:border-[#F79432]/50 hover:bg-[#F79432]/5"}
-								`}
-							>
-								{/* Background Progress Bar */}
-								<div className="absolute inset-y-0 left-0 bg-[#F79432]/15 transition-all duration-500 ease-out z-0" style={{ width: `${pct}%` }} />
-								
-								{/* Content */}
-								<div className="relative z-10 flex items-center gap-3 w-full">
-									{/* Radio Icon Container */}
-									<div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? "border-[#F79432]" : "border-[#666]"}`}>
-										{isSelected && <div className="w-2.5 h-2.5 rounded-full bg-[#F79432]" />}
-									</div>
-									
-									{/* Option Details & Voters */}
-									<div className="flex flex-col w-full">
-										<div className="flex justify-between items-center w-full">
-											<div className="flex items-center gap-2">
-												<span className={`font-semibold text-sm transition-colors ${isSelected ? "text-[#F79432]" : "text-white"}`}>
-													{opt.date} <span className="text-[#888] font-normal mx-1">at</span> {opt.time}
-												</span>
-												{opt.label && <span className="bg-[#333] px-1.5 py-0.5 rounded text-[10px] text-gray-300 font-medium tracking-wide uppercase">{opt.label}</span>}
-											</div>
-											<span className={`text-xs font-bold transition-all ${isSelected ? "text-[#F79432]" : "text-[#888]"}`}>
-												{pct}%
-											</span>
+
+			{/* Poll body */}
+			<div className="px-5 py-4">
+				{/* Poll title + count */}
+				<div className="flex items-center justify-between mb-1">
+					<span className="text-sm font-semibold text-white">Event Date Poll</span>
+					<span className="bg-[#2a2a2a] text-xs px-2.5 py-1 rounded-full text-[#aaa] font-medium">{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</span>
+				</div>
+				<p className="text-xs text-[#888] mb-4">{pollData.question || "Which date works best for you?"}</p>
+
+				{/* Options */}
+				<div className="flex flex-col gap-3 mb-4">
+					{pollData.options.map((opt: any) => {
+						const voteCount = opt.voters?.length || opt.voteCount || opt.votes?.length || 0
+						const pct = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0
+						const isSelected = localSelectedId === opt.id
+						let dayLabel = opt.label || ""
+						if (!dayLabel && opt.date) {
+							try {
+								const d = new Date(opt.date)
+								const day = d.getDay()
+								dayLabel = day === 0 || day === 6 ? "Weekend" : "Weekday"
+							} catch {}
+						}
+						return (
+							<div key={opt.id}>
+								<button
+									onClick={() => !isAdmin && setLocalSelectedId(opt.id)}
+									disabled={isAdmin}
+									className={`w-full text-left rounded-xl border transition-all p-3 ${isSelected ? "border-[#F79432] bg-[#F79432]/5" : "border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#444]"} ${isAdmin ? "cursor-default" : "cursor-pointer"}`}
+								>
+									<div className="flex items-start gap-3">
+										<div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center mt-0.5 flex-shrink-0 transition-colors ${isSelected ? "border-[#F79432]" : "border-[#555]"}`}>
+											{isSelected && <div className="w-2 h-2 rounded-full bg-[#F79432]" />}
 										</div>
-										
-										{/* Voter Avatars */}
-										{opt.voters && opt.voters.length > 0 && (
-											<div className="flex items-center gap-1 mt-2">
-												<div className="flex -space-x-1.5">
-													{opt.voters.slice(0, 5).map((voter: any, i: number) => (
-														<div 
-															key={i} 
-															className="w-5 h-5 rounded-full bg-[#444] border hover:z-20 cursor-help border-[#222] flex items-center justify-center overflow-hidden"
-															title={voter.name}
-														>
-															{voter.image ? (
-																<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
-															) : (
-																<span className="text-[9px] font-bold text-white uppercase">{voter.name?.charAt(0) || '?'}</span>
-															)}
-														</div>
-													))}
-												</div>
-												{opt.voters.length > 5 && (
-													<span className="text-[10px] text-[#888] ml-1 font-medium">+{opt.voters.length - 5} more</span>
-												)}
+										<div className="flex-1 min-w-0">
+											<div className="flex items-center justify-between mb-0.5">
+												<span className={`font-semibold text-sm ${isSelected ? "text-[#F79432]" : "text-white"}`}>{opt.date}</span>
+												<span className={`text-xs font-bold ${isSelected ? "text-[#F79432]" : "text-[#888]"}`}>{pct}%</span>
 											</div>
-										)}
+											<div className="flex items-center justify-between mb-2">
+												<div className="flex items-center gap-2">
+													<span className="text-xs text-[#777]">{opt.time}</span>
+													{dayLabel && <span className="text-xs text-[#666] border border-[#333] px-1.5 py-0.5 rounded">{dayLabel}</span>}
+												</div>
+												<span className="text-xs text-[#666]">{voteCount} Vote{voteCount !== 1 ? "s" : ""}</span>
+											</div>
+											<div className="w-full bg-[#252525] rounded-full h-1.5">
+												<div className="bg-[#F79432] h-1.5 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+											</div>
+										</div>
 									</div>
+								</button>
+							</div>
+						)
+					})}
+				</div>
+
+				{/* Submit */}
+				{!isAdmin && (
+					<>
+						<button
+							onClick={handleSubmit}
+							disabled={!localSelectedId || isVoting || localSelectedId === submittedId}
+							className={`w-full py-3 rounded-full font-bold text-sm transition-all mb-2 ${!localSelectedId || localSelectedId === submittedId ? "bg-[#F79432]/40 text-black/50 cursor-not-allowed" : "bg-[#F79432] text-black hover:bg-[#e58220]"}`}
+						>
+							{isVoting ? "Submitting..." : submittedId && submittedId === localSelectedId ? "Voted ✓" : "Submit"}
+						</button>
+						<p className="text-center text-xs text-[#666] mb-4">You can change your vote anytime</p>
+					</>
+				)}
+
+				{/* People voted row */}
+				{allVoters.length > 0 && (
+					<div className="flex items-center gap-3 py-2 border-t border-[#232323] mt-1">
+						<div className="flex -space-x-2">
+							{allVoters.slice(0, 4).map((voter: any, i: number) => (
+								<div key={i} className="w-7 h-7 rounded-full bg-[#444] border-2 border-[#141619] flex items-center justify-center overflow-hidden">
+									{voter.image ? (
+										<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
+									) : (
+										<span className="text-[10px] font-bold text-white uppercase">{voter.name?.charAt(0) || "?"}</span>
+									)}
 								</div>
-							</button>
+							))}
 						</div>
-					)
-				})}
+						<span className="text-sm text-white font-medium flex-1">{totalVotes} people voted</span>
+						<svg className="w-4 h-4 text-[#555]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+						</svg>
+					</div>
+				)}
+			</div>
+
+			{/* Bottom confirmation card */}
+			<div className="mx-4 mb-4 bg-[#0f1013] rounded-xl p-4 border border-[#232323] flex items-start gap-3">
+				<div className="w-8 h-8 rounded-full bg-[#F79432]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+					<svg className="w-4 h-4 text-[#F79432]" fill="currentColor" viewBox="0 0 20 20">
+						<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+					</svg>
+				</div>
+				<div>
+					<p className="text-xs font-semibold text-white leading-snug">We&apos;ll confirm the final date once voting closes.</p>
+					<p className="text-xs text-[#666] mt-0.5">Stay tuned for lineup reveal</p>
+				</div>
 			</div>
 		</div>
+	)
+}
+
+function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () => void }) {
+	const [pollData, setPollData] = React.useState<any>(event.datePoll)
+
+	React.useEffect(() => {
+		if (!(event as any)?._id) return
+		fetch(`/api/events/${(event as any)?._id}/poll`)
+			.then((res) => res.json())
+			.then((data) => {
+				if (data?.status && data?.data) setPollData(data.data)
+			})
+			.catch(console.error)
+	}, [(event as any)?._id])
+
+	if (!pollData?.isActive || !pollData.options?.length) return null
+
+	const totalVotes = pollData?.totalVotes || (pollData?.options || []).reduce((sum: number, o: any) => sum + (o.voters?.length || o.voteCount || o.votes?.length || 0), 0)
+	const allVoters = (pollData.options || []).flatMap((o: any) => o.voters || [])
+
+	return (
+		<button
+			onClick={onOpenPoll}
+			className="w-full text-left bg-[#1E2024] border border-[#2a2a2a] rounded-xl p-4 flex items-center gap-4 mb-5 hover:border-[#F79432]/40 transition-colors group lg:cursor-default lg:pointer-events-none"
+		>
+			<div className="w-10 h-10 rounded-xl bg-[#F79432]/15 flex items-center justify-center flex-shrink-0">
+				<svg className="w-5 h-5 text-[#F79432]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+				</svg>
+			</div>
+			<div className="flex-1 min-w-0">
+				<p className="text-sm font-semibold text-white">Help pick the perfect night</p>
+				<p className="text-xs text-[#888] mt-0.5">Vote now and help finalize the event schedule.</p>
+			</div>
+			<div className="flex items-center gap-2 flex-shrink-0">
+				{allVoters.length > 0 && (
+					<div className="flex -space-x-1.5">
+						{allVoters.slice(0, 3).map((voter: any, i: number) => (
+							<div key={i} className="w-6 h-6 rounded-full bg-[#444] border-2 border-[#1E2024] flex items-center justify-center overflow-hidden">
+								{voter.image ? (
+									<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
+								) : (
+									<span className="text-[9px] font-bold text-white uppercase">{voter.name?.charAt(0) || "?"}</span>
+								)}
+							</div>
+						))}
+					</div>
+				)}
+				<span className="text-xs text-[#888] whitespace-nowrap">{totalVotes} voted</span>
+				<svg className="w-4 h-4 text-[#555] group-hover:text-[#F79432] transition-colors lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+				</svg>
+			</div>
+		</button>
 	)
 }
 
