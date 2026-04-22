@@ -46,6 +46,7 @@ import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icon
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
+import { GetUsersToInviteApi } from "@/services/interests/interestsapis"
 
 export default function Manage({ event }: any) {
 	event = JSON.parse(event)
@@ -60,6 +61,13 @@ export default function Manage({ event }: any) {
 	const toast = useToast()
 	const router = useRouter()
 	const { data: session } = useSession()
+
+	useEffect(() => {
+		if (router.query.invite === "true") {
+			setInviteGuestsModal(true)
+			router.replace(`/console/events/${event._id}/manage`, undefined, { shallow: true })
+		}
+	}, [router.query.invite])
 
 	const { data: analytics } = useQuery({
 		queryKey: ["event-analytics", event._id],
@@ -846,39 +854,36 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 
 
 function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: { inviteGuestsModal: boolean; setInviteGuestsModal: (inviteGuestsModal: boolean) => void; event: any }) {
+	const [inviteMode, setInviteMode] = useState<"email" | "users">("email")
+
+	// Email invite state
 	const [emails, setEmails] = useState<string[]>([])
 	const [step, setStep] = useState(1)
 	const [loading, setLoading] = useState(false)
 	const [message, setMessage] = useState("")
 	const [emailInput, setEmailInput] = useState("")
 	const [emailError, setEmailError] = useState("")
+
+	// Jetzy user search state
+	const [userQuery, setUserQuery] = useState("")
+	const [userResults, setUserResults] = useState<any[]>([])
+	const [searching, setSearching] = useState(false)
+	const [invitingIds, setInvitingIds] = useState<string[]>([])
+
 	const toast = useToast()
 
 	const handleAddEmail = () => {
 		const email = emailInput.trim()
-		if (!email) {
-			setEmailError("Please enter an email")
-			return
-		}
-		// Simple email validation
-		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-			setEmailError("Please enter a valid email")
-			return
-		}
-		if (emails.includes(email)) {
-			setEmailError("Email already added")
-			return
-		}
+		if (!email) { setEmailError("Please enter an email"); return }
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setEmailError("Please enter a valid email"); return }
+		if (emails.includes(email)) { setEmailError("Email already added"); return }
 		setEmails([...emails, email])
 		setEmailInput("")
 		setEmailError("")
 	}
 
 	const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-		if (e.key === "Enter") {
-			e.preventDefault()
-			handleAddEmail()
-		}
+		if (e.key === "Enter") { e.preventDefault(); handleAddEmail() }
 	}
 
 	const handleNext = () => setStep(2)
@@ -899,20 +904,51 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 			setEmails([])
 			setMessage("")
 			setInviteGuestsModal(false)
+			toast({ title: "Invitations sent!", status: "success", duration: 3000, isClosable: true })
+		} catch (error) {
+			setLoading(false)
+			toast({ title: "Failed to send invitations.", status: "error", duration: 3000, isClosable: true })
+		}
+	}
+
+	const handleUserSearch = async (e: React.FormEvent) => {
+		e.preventDefault()
+		if (!userQuery.trim()) return
+		try {
+			setSearching(true)
+			const res = await GetUsersToInviteApi({ data: { interestId: event._id, query: userQuery, page: 1, perPage: 20 } }) as any
+			const docs = res?.data?.docs || res?.data?.users || res?.docs || res?.users || []
+			setUserResults(docs)
+		} catch (err) {
+			console.error(err)
+		} finally {
+			setSearching(false)
+		}
+	}
+
+	const handleInviteUser = async (user: any) => {
+		const userId = user._id
+		setInvitingIds(prev => [...prev, userId])
+		try {
+			const res = await axios.post(`/api/events/${event._id}/invite-jetzy-user`, {
+				userId,
+				userEmail: user.email || user.emailAddress || null,
+				userName: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+			})
+
+			setUserResults(prev => prev.map(u => u._id === userId ? { ...u, isInvited: true } : u))
+			const { emailSent } = res.data?.data || {}
 			toast({
-				title: "Invitations sent!",
+				title: "Invitation sent!",
+				description: emailSent ? "Push notification and email sent." : "Push notification sent. Email not available for this user.",
 				status: "success",
 				duration: 3000,
 				isClosable: true,
 			})
-		} catch (error) {
-			setLoading(false)
-			toast({
-				title: "Failed to send invitations.",
-				status: "error",
-				duration: 3000,
-				isClosable: true,
-			})
+		} catch (err) {
+			toast({ title: "Failed to send invitation.", status: "error", duration: 2000, isClosable: true })
+		} finally {
+			setInvitingIds(prev => prev.filter(id => id !== userId))
 		}
 	}
 
@@ -923,18 +959,44 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 			setMessage("")
 			setEmailInput("")
 			setEmailError("")
+			setUserQuery("")
+			setUserResults([])
+			setInviteMode("email")
 		}
 	}, [inviteGuestsModal])
 
 	return (
-		<Modal isOpen={inviteGuestsModal} onClose={() => setInviteGuestsModal(false)} isCentered size={step === 2 ? "4xl" : "2xl"}>
+		<Modal isOpen={inviteGuestsModal} onClose={() => setInviteGuestsModal(false)} isCentered size={inviteMode === "email" && step === 2 ? "4xl" : "2xl"}>
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
-				<ModalHeader>{step === 1 ? "Invite Guests" : "Review Invited Emails"}</ModalHeader>
+				<ModalHeader>Invite Guests</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
 					<Box display="flex" flexDirection="column" gap={4}>
-						{step === 1 && (
+						{/* Mode tabs */}
+						<Flex gap={2} mb={2}>
+							<Button
+								size="sm"
+								bg={inviteMode === "email" ? "#F79432" : "#383838"}
+								color={inviteMode === "email" ? "black" : "white"}
+								_hover={{ bg: inviteMode === "email" ? "#f78c22" : "#444" }}
+								onClick={() => { setInviteMode("email"); setStep(1) }}
+							>
+								Email Invite
+							</Button>
+							<Button
+								size="sm"
+								bg={inviteMode === "users" ? "#F79432" : "#383838"}
+								color={inviteMode === "users" ? "black" : "white"}
+								_hover={{ bg: inviteMode === "users" ? "#f78c22" : "#444" }}
+								onClick={() => setInviteMode("users")}
+							>
+								Search Jetzy Users
+							</Button>
+						</Flex>
+
+						{/* Email invite flow */}
+						{inviteMode === "email" && step === 1 && (
 							<>
 								<Text fontWeight="bold">Invite your guests by email:</Text>
 								<Flex gap={2}>
@@ -950,11 +1012,7 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 										Add
 									</Button>
 								</Flex>
-								{emailError && (
-									<Text color="red.500" fontSize="sm">
-										{emailError}
-									</Text>
-								)}
+								{emailError && <Text color="red.500" fontSize="sm">{emailError}</Text>}
 								{emails.length > 0 && (
 									<Box mt={2}>
 										<Text fontWeight="bold">Inviting {emails.length} Emails:</Text>
@@ -963,9 +1021,7 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 												<ListItem key={email} className="bg-[#383838] p-2 rounded-lg" my="2">
 													<Flex align="center" justify="space-between">
 														<span>{email}</span>
-														<Button size="xs" colorScheme="red" variant="ghost" ml={2} onClick={() => setEmails(emails.filter((e) => e !== email))}>
-															x
-														</Button>
+														<Button size="xs" colorScheme="red" variant="ghost" ml={2} onClick={() => setEmails(emails.filter((e) => e !== email))}>x</Button>
 													</Flex>
 												</ListItem>
 											))}
@@ -977,25 +1033,19 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 								</Button>
 							</>
 						)}
-						{step === 2 && (
+						{inviteMode === "email" && step === 2 && (
 							<>
 								<Flex align="flex-start" justify="space-between" gap={6} flexWrap="wrap">
 									<Box flex="1">
 										<Text mb={2}>Here are the emails you have entered:</Text>
 										<UnorderedList pl={5}>
-											{emails.map((email) => (
-												<ListItem key={email}>{email}</ListItem>
-											))}
+											{emails.map((email) => (<ListItem key={email}>{email}</ListItem>))}
 										</UnorderedList>
 									</Box>
 									<Box borderWidth="1px" borderRadius="xl" p={4} flex="1" minW="300px">
-										<Text fontWeight="bold" mb={2}>
-											Hi, Jetzy Events invites you to join {event.name}.
-										</Text>
+										<Text fontWeight="bold" mb={2}>Hi, Jetzy Events invites you to join {event.name}.</Text>
 										<Textarea rows={3} placeholder="Enter a custom message here..." value={message} onChange={(e) => setMessage(e.target.value)} mb={2} />
-										<Text fontWeight="bold" mb={1}>
-											RSVP: {process.env.NEXT_PUBLIC_URL}/{event.slug}
-										</Text>
+										<Text fontWeight="bold" mb={1}>RSVP: {process.env.NEXT_PUBLIC_URL}/{event.slug}</Text>
 										<Text fontSize="sm">We will send guests an invitation link to register for the event.</Text>
 									</Box>
 								</Flex>
@@ -1005,6 +1055,59 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 										Send Invitations
 									</Button>
 								</Flex>
+							</>
+						)}
+
+						{/* Jetzy user search */}
+						{inviteMode === "users" && (
+							<>
+								<Text fontSize="sm" color="gray.400">Search Jetzy app users and invite them. They'll receive a push notification and email.</Text>
+								<form onSubmit={handleUserSearch}>
+									<Flex gap={2}>
+										<Input
+											placeholder="Search by name or username..."
+											value={userQuery}
+											onChange={(e) => setUserQuery(e.target.value)}
+										/>
+										<Button type="submit" bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} isLoading={searching} minW="80px">
+											Search
+										</Button>
+									</Flex>
+								</form>
+								<Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
+									{searching ? (
+										<Text color="gray.400" textAlign="center" py={4}>Searching...</Text>
+									) : userResults.length === 0 && userQuery ? (
+										<Text color="gray.500" textAlign="center" py={4}>No users found</Text>
+									) : userResults.length === 0 ? (
+										<Text color="gray.500" textAlign="center" py={4}>Search for Jetzy users to invite</Text>
+									) : (
+										userResults.map((user: any) => (
+											<Flex key={user._id} align="center" justify="space-between" bg="#2a2a2a" p={3} borderRadius="xl" borderWidth="1px" borderColor="#3a3a3a">
+												<Flex align="center" gap={3}>
+													<Box w="40px" h="40px" borderRadius="full" bg="gray.700" overflow="hidden" flexShrink={0}>
+														{user.image && <img src={user.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+													</Box>
+													<Box>
+														<Text fontWeight="medium" fontSize="sm">{user.firstName} {user.lastName}</Text>
+														{user.email && <Text fontSize="xs" color="gray.500">{user.email}</Text>}
+													</Box>
+												</Flex>
+												<Button
+													size="sm"
+													isLoading={invitingIds.includes(user._id)}
+													isDisabled={user.isInvited || user.isMember}
+													bg={user.isInvited ? "green.800" : user.isMember ? "gray.700" : "#F79432"}
+													color={user.isInvited ? "green.300" : user.isMember ? "gray.400" : "black"}
+													_hover={{ bg: user.isInvited || user.isMember ? undefined : "#f78c22" }}
+													onClick={() => handleInviteUser(user)}
+												>
+													{user.isMember ? "Member" : user.isInvited ? "Invited" : "Invite"}
+												</Button>
+											</Flex>
+										))
+									)}
+								</Box>
 							</>
 						)}
 					</Box>

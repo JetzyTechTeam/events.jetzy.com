@@ -114,6 +114,8 @@ const CreateEventPage = () => {
   });
   const [tempPollOption, setTempPollOption] = React.useState<DatePollOption>({ id: "", date: "", time: "", label: "" });
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
+  const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
+  const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
 
   const { ref } = usePlacesWidget({
     apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
@@ -194,7 +196,8 @@ const CreateEventPage = () => {
 
     dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) } })).then((res: any) => {
       if (res?.payload?.status) {
-        navigation.push(`/console/events/${res.payload.data._id}/manage`);
+        setCreatedEventId(res.payload.data._id);
+        onSuccessOpen();
       }
     }).finally(() => {
       setIsSubmitting(false);
@@ -893,6 +896,37 @@ const CreateEventPage = () => {
           </Form>
         )}
       </Formik>
+
+      {/* Post-creation invite prompt */}
+      <Modal isOpen={isSuccessOpen} onClose={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }} isCentered size="md">
+        <ModalOverlay />
+        <ModalContent bg="#1E1E1E" color="white">
+          <ModalHeader>🎉 Event Created!</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={2}>
+            <Text mb={2}>Your event is live. Would you like to invite friends or Jetzy users now?</Text>
+          </ModalBody>
+          <ModalFooter gap={3}>
+            <Button
+              variant="ghost"
+              color="gray.400"
+              _hover={{ bg: "#2a2a2a" }}
+              onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }}
+            >
+              Go to Manage
+            </Button>
+            <Button
+              bg="#F79432"
+              color="black"
+              _hover={{ bg: "#f78c22" }}
+              _active={{ bg: "#e67a10" }}
+              onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage?invite=true`); }}
+            >
+              Invite Friends
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </ConsoleLayout>
   );
 };

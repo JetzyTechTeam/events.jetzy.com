@@ -9,6 +9,7 @@ export const interestEndPoints = {
     invitationAction: "external:/v2/interests/:interestId/invitation/:action",
     members: "external:/v2/interests/:interestId/members",
     invite: "external:/v2/interests/:interestId/members/invite",
+    eventInvite: "external:/v2/events/:eventId/members/invite",
     removeMember: "external:/v2/interests/:interestId/members/remove", // Also used for Leave
     listUsersToInvite: "external:/v2/interests/:interestId/users",
     requests: "external:/v2/interests/:interestId/requests",
