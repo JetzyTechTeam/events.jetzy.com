@@ -35,6 +35,12 @@ const schema = zod.object({
 			file: zod.string().optional(),
 		}),
 	),
+	videos: zod.array(
+		zod.object({
+			id: zod.string().optional(),
+			file: zod.string().optional(),
+		}),
+	).optional(),
 	tickets: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
@@ -84,7 +90,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, datePoll } = params
+		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, datePoll } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -144,6 +150,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					stripeProductId: stripeProducts[index].id,
 				})),
 				images: images.map((image) => image.file),
+				videos: videos?.map((v) => v.file) ?? [],
 				timezone: timezone || 'UTC',
 				privacy,
 				feedbackFormUrl,

@@ -59,6 +59,7 @@ import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
 import ImageUploadBox from "../../../components/image-upload-box";
+import VideoUploadBox from "../../../components/video-upload-box";
 import TimezoneSelect from "../../../components/timezone-select";
 import { useSession } from "next-auth/react";
 import { z } from "zod";
@@ -104,6 +105,9 @@ const CreateEventPage = () => {
   const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([]);
   const [uploadProgress, setUploadProgress] = React.useState(0)
   const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadedVideos, setUploadedVideos] = React.useState<FileUploadData[]>([]);
+  const [videoUploadProgress, setVideoUploadProgress] = React.useState(0);
+  const [isUploadingVideo, setIsUploadingVideo] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [editIndex, setEditIndex] = React.useState<number | null>(null);
   const [tempTicket, setTempTicket] = React.useState<TicketData>({
@@ -169,6 +173,7 @@ const CreateEventPage = () => {
     }
 
     values.images = uploadedImages;
+    values.videos = uploadedVideos;
 
     if (values.tickets.length > 0) values.isPaid = true
     else values.isPaid = false
@@ -263,17 +268,42 @@ const CreateEventPage = () => {
 
   const handleImageDelete = async (imageUrl: string) => {
     try {
-      // Try to delete (may fail if already deleted)
       await deleteFile(imageUrl);
-      console.log("Successfully deleted:", imageUrl);
-
-      // Update local state
       setUploadedImages((prevImages) =>
         prevImages.filter((img) => img.file !== imageUrl)
       );
     } catch (error: any) {
       console.error("Error deleting image", error);
-      Error("Error", "Failed to delete image");
+    }
+  };
+
+  const handleVideoUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0 || isUploadingVideo) return;
+    setIsUploadingVideo(true);
+    setVideoUploadProgress(0);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const res = await uploadFile(file, {
+          onProgressChange: (progress) => setVideoUploadProgress(progress),
+          folder: "posts",
+        });
+        setUploadedVideos((prev) => [...prev, { id: uniqueId(10), file: res.url }]);
+      }
+    } catch (error: any) {
+      console.error("Error uploading video", error);
+    } finally {
+      setIsUploadingVideo(false);
+      setVideoUploadProgress(0);
+    }
+  };
+
+  const handleVideoDelete = async (videoUrl: string) => {
+    try {
+      await deleteFile(videoUrl);
+      setUploadedVideos((prev) => prev.filter((v) => v.file !== videoUrl));
+    } catch (error: any) {
+      console.error("Error deleting video", error);
     }
   };
 
@@ -883,13 +913,21 @@ const CreateEventPage = () => {
               </Box>
               {/* Right Side: Image Upload/Preview */}
               <Box id="images" mb={6}>
-                <FormLabel>Event Image</FormLabel>
+                <FormLabel>Event Images</FormLabel>
                 <ImageUploadBox
                   uploadedImages={uploadedImages}
                   onImageChange={handleImageUpload}
                   isUploading={isUploading}
                   uploadProgress={uploadProgress}
                   handleImageDelete={handleImageDelete}
+                />
+                <FormLabel mt={4}>Event Videos</FormLabel>
+                <VideoUploadBox
+                  uploadedVideos={uploadedVideos}
+                  onVideoChange={handleVideoUpload}
+                  isUploading={isUploadingVideo}
+                  uploadProgress={videoUploadProgress}
+                  handleVideoDelete={handleVideoDelete}
                 />
               </Box>
             </Flex>

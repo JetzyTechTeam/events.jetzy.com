@@ -45,6 +45,12 @@ const schema = zod.object({
 			file: zod.string().nonempty(),
 		}),
 	),
+	videos: zod.array(
+		zod.object({
+			id: zod.string().nonempty(),
+			file: zod.string().nonempty(),
+		}),
+	).optional(),
 	tickets: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
@@ -84,7 +90,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, datePoll } = params
+		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, datePoll } = params
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -145,6 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			isPaid,
 			privacy,
 			images: images.map((image) => image.file),
+			videos: videos?.map((v) => v.file) ?? [],
 			capacity,
 			requireApproval,
 			showParticipants,

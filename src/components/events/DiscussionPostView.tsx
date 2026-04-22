@@ -308,9 +308,6 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 		setUploadingReplyImages(true)
 		try {
 			const uploadPromises = Array.from(files).map(async (file) => {
-				if (file.size > 10 * 1024 * 1024) {
-					throw new Error("File size must be less than 10MB")
-				}
 				const res = await edgestore.publicFiles.upload({ file })
 				return res.url
 			})
@@ -366,9 +363,6 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 		setUploadingEditImages(true)
 		try {
 			const uploadPromises = Array.from(files).map(async (file) => {
-				if (file.size > 10 * 1024 * 1024) {
-					throw new Error("File size must be less than 10MB")
-				}
 				const res = await edgestore.publicFiles.upload({ file })
 				return res.url
 			})
@@ -1437,9 +1431,6 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 		setUploadingEditImages(true)
 		try {
 			const uploadPromises = Array.from(files).map(async (file) => {
-				if (file.size > 10 * 1024 * 1024) {
-					throw new Error("File size must be less than 10MB")
-				}
 				const res = await edgestore.publicFiles.upload({ file })
 				return res.url
 			})
@@ -1465,9 +1456,6 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 			const uploadPromises = Array.from(files).map(async (file) => {
 				if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
 					throw new Error("Only images and videos are allowed")
-				}
-				if (file.size > 10 * 1024 * 1024) {
-					throw new Error("File size must be less than 10MB")
 				}
 				const res = await edgestore.publicFiles.upload({ file })
 				return res.url

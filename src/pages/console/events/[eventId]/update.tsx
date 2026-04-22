@@ -62,6 +62,7 @@ import {
 } from "@/assets/icons";
 import { usePlacesWidget } from "react-google-autocomplete";
 import ImageUploadBox from "../../../../components/image-upload-box"
+import VideoUploadBox from "../../../../components/video-upload-box"
 import TimezoneSelect from "../../../../components/timezone-select"
 import { useSession } from "next-auth/react"
 import { useAppDispatch } from "@/redux/stores"
@@ -99,6 +100,9 @@ export default function UpdateEventPage({ event }: Props) {
 	const [uploadedImages, setUploadedImages] = React.useState<FileUploadData[]>([]);
 	const [uploadProgress, setUploadProgress] = React.useState(0)
 	const [isUploading, setIsUploading] = React.useState(false);
+	const [uploadedVideos, setUploadedVideos] = React.useState<FileUploadData[]>([]);
+	const [videoUploadProgress, setVideoUploadProgress] = React.useState(0);
+	const [isUploadingVideo, setIsUploadingVideo] = React.useState(false);
 	const [isSubmitting, setIsSubmitting] = React.useState(false);
 	const [editIndex, setEditIndex] = React.useState<number | null>(null);
 	const [tempTicket, setTempTicket] = React.useState<TicketData>({
@@ -111,7 +115,7 @@ export default function UpdateEventPage({ event }: Props) {
 	const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
 	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = React.useState(false);
 
-	// --- Initialize images and tickets on mount ---
+	// --- Initialize images, videos and tickets on mount ---
 	React.useEffect(() => {
 		if (eventDetails.images && eventDetails.images.length > 0) {
 			const newUploadedImages: FileUploadData[] = eventDetails.images.map(img => ({
@@ -119,6 +123,14 @@ export default function UpdateEventPage({ event }: Props) {
 				file: img,
 			}))
 			setUploadedImages(newUploadedImages)
+		}
+
+		if ((eventDetails as any).videos && (eventDetails as any).videos.length > 0) {
+			const newUploadedVideos: FileUploadData[] = (eventDetails as any).videos.map((v: string) => ({
+				id: uniqueId(10),
+				file: v,
+			}))
+			setUploadedVideos(newUploadedVideos)
 		}
 
 		// Handle tickets
@@ -228,6 +240,7 @@ export default function UpdateEventPage({ event }: Props) {
 		}
 
 		values.images = uploadedImages;
+		values.videos = uploadedVideos;
 
 		if (values.tickets.length > 0) values.isPaid = true
 		else values.isPaid = false
@@ -397,26 +410,43 @@ export default function UpdateEventPage({ event }: Props) {
 
 	const handleImageDelete = async (imageUrl: string) => {
 		try {
-			// Try to delete from EdgeStore (may fail if already deleted)
-			try {
-				await deleteFile(imageUrl);
-				console.log("Successfully deleted from EdgeStore:", imageUrl);
-			} catch (edgestoreError: any) {
-				// Log but don't fail - file might already be deleted
-				console.warn("EdgeStore deletion failed (file may not exist):", edgestoreError.message);
-			}
-
-			// Delete from database
-			const dbResponse = await axios.post('/api/delete-image', { url: imageUrl });
-			console.log("Database deletion response:", dbResponse.data);
-
-			// Update local state
+			try { await deleteFile(imageUrl); } catch {}
+			await axios.post('/api/delete-image', { url: imageUrl });
 			setUploadedImages((prevImages) =>
 				prevImages.filter((img) => img.file !== imageUrl)
 			);
 		} catch (error: any) {
 			console.error("Error deleting image", error);
-			Error("Error", "Failed to delete image");
+		}
+	};
+
+	const handleVideoUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploadingVideo) return;
+		setIsUploadingVideo(true);
+		setVideoUploadProgress(0);
+		try {
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				const res = await uploadFile(file, {
+					onProgressChange: (progress) => setVideoUploadProgress(progress),
+					folder: "posts",
+				});
+				setUploadedVideos((prev) => [...prev, { id: uniqueId(10), file: res.url }]);
+			}
+		} catch (error: any) {
+			console.error("Error uploading video", error);
+		} finally {
+			setIsUploadingVideo(false);
+			setVideoUploadProgress(0);
+		}
+	};
+
+	const handleVideoDelete = async (videoUrl: string) => {
+		try {
+			try { await deleteFile(videoUrl); } catch {}
+			setUploadedVideos((prev) => prev.filter((v) => v.file !== videoUrl));
+		} catch (error: any) {
+			console.error("Error deleting video", error);
 		}
 	};
 
@@ -1041,15 +1071,23 @@ export default function UpdateEventPage({ event }: Props) {
 
 							</Box>
 
-							{/* Right Side: Image Upload */}
+							{/* Right Side: Image + Video Upload */}
 							<Box id="images" mb={6}>
-								<FormLabel>Event Image</FormLabel>
+								<FormLabel>Event Images</FormLabel>
 								<ImageUploadBox
 									uploadedImages={uploadedImages}
 									onImageChange={handleImageUpload}
 									isUploading={isUploading}
 									uploadProgress={uploadProgress}
 									handleImageDelete={handleImageDelete}
+								/>
+								<FormLabel mt={4}>Event Videos</FormLabel>
+								<VideoUploadBox
+									uploadedVideos={uploadedVideos}
+									onVideoChange={handleVideoUpload}
+									isUploading={isUploadingVideo}
+									uploadProgress={videoUploadProgress}
+									handleVideoDelete={handleVideoDelete}
 								/>
 							</Box>
 						</Flex>

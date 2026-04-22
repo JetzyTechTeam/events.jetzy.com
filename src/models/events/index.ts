@@ -134,6 +134,12 @@ const eventsSchema = new Schema<IEvent>(
 			required: true,
 		},
 
+		videos: {
+			type: [String],
+			default: [],
+			required: false,
+		},
+
 		capacity: {
 			type: Number,
 			default: 0, // 0 means unlimited

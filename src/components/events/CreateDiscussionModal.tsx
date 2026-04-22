@@ -285,11 +285,6 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 					throw new Error("Only images and videos are allowed")
 				}
 
-				// Validate file size (max 10MB)
-				if (file.size > 10 * 1024 * 1024) {
-					throw new Error("File size must be less than 10MB")
-				}
-
 				const res = await edgestore.publicFiles.upload({ file })
 				console.log("[CreateDiscussionModal] Upload complete:", res.url)
 				return res.url

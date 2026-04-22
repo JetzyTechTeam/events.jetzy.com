@@ -1,25 +1,20 @@
-import {Flex , Input , Select ,Button , HStack } from "@chakra-ui/react"
-
-
+import {Flex , Input , Select ,Button } from "@chakra-ui/react"
 import { useRouter } from "next/router"
 import { useState } from "react"
 
 type Props = {
     eventId: string
-    initialFilters: { status?: string; date?: string; search?: string; amount?:string; minTickets?:string; }
+    initialFilters: { status?: string; date?: string; search?: string; amount?:string; minTickets?:string; checkedIn?: string; }
 }
-
 
 export default function BookingFilters({ eventId, initialFilters }: Props) {
     const router = useRouter()
     const [status, setStatus] = useState(initialFilters.status|| "")
-
     const [search, setSearch] = useState(initialFilters.search ||"")
     const [date ,setDate] = useState(initialFilters.date || "")
     const [amount, setAmount] = useState(initialFilters.amount ||"");
     const [minTickets, setMinTickets] = useState(initialFilters.minTickets || "");
-
-
+    const [checkedIn, setCheckedIn] = useState(initialFilters.checkedIn || "");
 
     const applyFilters = () => {
         const params = new URLSearchParams()
@@ -28,9 +23,10 @@ export default function BookingFilters({ eventId, initialFilters }: Props) {
         if (date) params.set("date", date);
         if (amount) params.set("amount", amount.trim());
         if (minTickets) params.set("minTickets", minTickets.trim());
+        if (checkedIn) params.set("checkedIn", checkedIn);
 
         router.push(`/console/bookings/${eventId}?${params.toString()}`)
-        }
+    }
 
     return (
     <Flex gap={2} p={2} wrap="wrap">
@@ -49,7 +45,10 @@ export default function BookingFilters({ eventId, initialFilters }: Props) {
                 <option value="refunded">Refunded</option>
                 <option value="failed">Failed</option>
             </Select>
-            
+            <Select placeholder="Check-in Status" value={checkedIn} onChange={(e) => setCheckedIn(e.target.value)} width="175px">
+                <option value="yes">Checked In</option>
+                <option value="no">Not Checked In</option>
+            </Select>
             <Input placeholder="Tickets (min)"
                 type="number"
                 value={minTickets}
@@ -60,12 +59,10 @@ export default function BookingFilters({ eventId, initialFilters }: Props) {
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 width="180px"
-
             />
         <Button colorScheme="blue" onClick={ applyFilters} height="40px" px={6} fontWeight="semibold">
             Apply
         </Button>
-    
     </Flex>
     )
 }

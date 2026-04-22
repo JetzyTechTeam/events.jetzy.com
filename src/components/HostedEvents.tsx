@@ -209,25 +209,45 @@ export default function HostedEvents({ event }: Props) {
 					</div>
 					<div className={`${isDatePollActive ? "max-w-6xl mx-auto flex flex-col lg:flex-row lg:gap-6 lg:items-start" : "max-w-4xl mx-auto"}`}>
 					<div className={`${isDatePollActive ? "flex-1 min-w-0" : ""} bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all`}>
-						{/* Banner Image */}
+						{/* Banner Media (images + videos combined) */}
 						<div className="relative p-3">
-							{clonedEvent?.images && Array.isArray(clonedEvent.images) && clonedEvent.images.length > 1 ? (
-								<Slider {...settings}>
-									{clonedEvent.images.map((image, idx) => (
-										<div key={idx} className="!flex !items-center !justify-center w-full md:h-[335px] sm:h-52 bg-black rounded-xl">
-											<Image src={image} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
+							{(() => {
+								const allMedia = [
+									...(clonedEvent?.images || []).map((url: string) => ({ url, type: 'image' as const })),
+									...(clonedEvent?.videos || []).map((url: string) => ({ url, type: 'video' as const })),
+								]
+								if (allMedia.length > 1) {
+									return (
+										<Slider {...settings}>
+											{allMedia.map((media, idx) => (
+												<div key={idx} className="!flex !items-center !justify-center w-full md:h-[335px] sm:h-52 bg-black rounded-xl">
+													{media.type === 'video' ? (
+														<video src={media.url} controls className="h-full w-full object-cover rounded-xl" style={{ maxHeight: '335px' }} />
+													) : (
+														<Image src={media.url} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
+													)}
+												</div>
+											))}
+										</Slider>
+									)
+								} else if (allMedia.length === 1) {
+									return (
+										<div className="w-full md:h-[335px] sm:h-52 bg-black flex items-center justify-center rounded-xl">
+											{allMedia[0].type === 'video' ? (
+												<video src={allMedia[0].url} controls className="h-full w-full object-cover rounded-xl" style={{ maxHeight: '335px' }} />
+											) : (
+												<Image src={allMedia[0].url} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
+											)}
 										</div>
-									))}
-								</Slider>
-							) : clonedEvent?.images && Array.isArray(clonedEvent.images) && clonedEvent.images.length === 1 ? (
-								<div className="w-full md:h-[335px] sm:h-52 bg-black flex items-center justify-center rounded-xl">
-									<Image src={clonedEvent.images[0]} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
-								</div>
-							) : (
-								<div className="w-full md:h-[335px] sm:h-52 bg-gray-800 flex items-center justify-center rounded-xl">
-									<p className="text-gray-400">No image available</p>
-								</div>
-							)}
+									)
+								} else {
+									return (
+										<div className="w-full md:h-[335px] sm:h-52 bg-gray-800 flex items-center justify-center rounded-xl">
+											<p className="text-gray-400">No image available</p>
+										</div>
+									)
+								}
+							})()}
 
 							{/* Benefits Overlay */}
 							{clonedEvent?.benefits && clonedEvent.benefits.trim() !== "" && (

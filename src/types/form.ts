@@ -44,6 +44,7 @@ export type CreateEventFormData = {
 	requireApproval: boolean
 	showParticipants?: boolean
 	images: FileUploadData[]
+	videos?: FileUploadData[]
 	tickets: TicketData[]
 	isPaid?: boolean
 	desc: string

@@ -267,9 +267,10 @@ export default function InterestFeed({
     const [comments, setComments] = useState<{ [key: string]: any[] }>({})
     const [loadingComments, setLoadingComments] = useState<{ [key: string]: boolean }>({})
     const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({})
-    const [selectedImages, setSelectedImages] = useState<File[]>([])
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([])
     const [uploadingImage, setUploadingImage] = useState(false)
-    const [imagePreviews, setImagePreviews] = useState<string[]>([])
+    const [filePreviews, setFilePreviews] = useState<string[]>([])
+    const [fileTypes, setFileTypes] = useState<('image' | 'video')[]>([])
     // const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [replyingTo, setReplyingTo] = useState<{ postId: string; commentId: string; userId: string; userName: string } | null>(null)
     const [editingComment, setEditingComment] = useState<{ postId: string; commentId: string; content: string } | null>(null)
@@ -279,18 +280,19 @@ export default function InterestFeed({
 
     const handlePostSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!newPostText.trim() && selectedImages.length === 0) return
+        if (!newPostText.trim() && selectedFiles.length === 0) return
         setPosting(true)
 
-        // Upload images if any
+        // Upload files if any
         let mediaArr: any[] = []
-        if (selectedImages.length > 0) {
+        if (selectedFiles.length > 0) {
             setUploadingImage(true)
             try {
                 const token = typeof window !== 'undefined' ? sessionStorage.getItem('api_token') : null
                 const uploadUrl = 'https://prod-api.jetzy.com/api/v1/uploader/multiple'
 
-                for (const file of selectedImages) {
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i]
                     const uploadData = new FormData()
                     uploadData.append('upload_file', file)
                     uploadData.append('folder', 'posts')
@@ -304,12 +306,12 @@ export default function InterestFeed({
                     if (uploadRes.status && uploadRes.data && uploadRes.data.length > 0) {
                         mediaArr.push({
                             url: uploadRes.data[0].fileUrl,
-                            type: 'image'
+                            type: file.type.startsWith('video/') ? 'video' : 'image'
                         })
                     }
                 }
             } catch (err) {
-                console.error('Post image upload failed:', err)
+                console.error('Post media upload failed:', err)
             } finally {
                 setUploadingImage(false)
             }
@@ -317,8 +319,9 @@ export default function InterestFeed({
 
         await onCreatePost(newPostText, mediaArr)
         setNewPostText('')
-        setSelectedImages([])
-        setImagePreviews([])
+        setSelectedFiles([])
+        setFilePreviews([])
+        setFileTypes([])
         setPosting(false)
     }
 
@@ -326,19 +329,27 @@ export default function InterestFeed({
         const files = Array.from(e.target.files || [])
         if (files.length === 0) return
 
-        setSelectedImages(prev => [...prev, ...files])
+        setSelectedFiles(prev => [...prev, ...files])
         files.forEach(file => {
-            const reader = new FileReader()
-            reader.onload = (e) => {
-                if (e.target?.result) setImagePreviews(prev => [...prev, e.target!.result as string])
+            const isVideo = file.type.startsWith('video/')
+            setFileTypes(prev => [...prev, isVideo ? 'video' : 'image'])
+            if (isVideo) {
+                const url = URL.createObjectURL(file)
+                setFilePreviews(prev => [...prev, url])
+            } else {
+                const reader = new FileReader()
+                reader.onload = (e) => {
+                    if (e.target?.result) setFilePreviews(prev => [...prev, e.target!.result as string])
+                }
+                reader.readAsDataURL(file)
             }
-            reader.readAsDataURL(file)
         })
     }
 
     const removeImage = (index: number) => {
-        setSelectedImages(prev => prev.filter((_, i) => i !== index))
-        setImagePreviews(prev => prev.filter((_, i) => i !== index))
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index))
+        setFilePreviews(prev => prev.filter((_, i) => i !== index))
+        setFileTypes(prev => prev.filter((_, i) => i !== index))
     }
 
     const handleCommentFileChange = (postId: string, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -567,11 +578,15 @@ export default function InterestFeed({
                             className="w-full bg-gray-800 text-white rounded-lg p-3 min-h-[80px] border-none focus:ring-1 focus:ring-app resize-none"
                         />
 
-                        {imagePreviews.length > 0 && (
+                        {filePreviews.length > 0 && (
                             <div className="flex flex-wrap gap-2 mt-3">
-                                {imagePreviews.map((src, idx) => (
+                                {filePreviews.map((src, idx) => (
                                     <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden group">
-                                        <img src={src} className="w-full h-full object-cover" />
+                                        {fileTypes[idx] === 'video' ? (
+                                            <video src={src} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <img src={src} className="w-full h-full object-cover" />
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => removeImage(idx)}
@@ -589,13 +604,13 @@ export default function InterestFeed({
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
-                                <span>Add Photo</span>
-                                <input type="file" multiple accept="image/*" onChange={handleFileChange} className="hidden" />
+                                <span>Add Photo/Video</span>
+                                <input type="file" multiple accept="image/*,video/*" onChange={handleFileChange} className="hidden" />
                             </label>
 
                             <button
                                 type="submit"
-                                disabled={(!newPostText.trim() && selectedImages.length === 0) || posting || uploadingImage}
+                                disabled={(!newPostText.trim() && selectedFiles.length === 0) || posting || uploadingImage}
                                 className="bg-app text-white px-6 py-1.5 rounded-lg font-bold text-sm disabled:opacity-50 hover:bg-app/80 transition-all"
                             >
                                 {posting || uploadingImage ? <Spinner /> : 'Post'}

@@ -243,10 +243,28 @@ export default function Manage({ event }: any) {
 								<div className="w-full">
 									<div className="p-3 flex flex-col gap-y-3 border-b border-[#585858] pb-10">
 										<h4 className="font-bold">When</h4>
-										<p className="font-semibold flex gap-x-2 items-center">
-											<DateTimeSVG stroke="#fff" />
-											{DateTime.fromISO(event.startsOn).toLocal().toFormat("EEE LLL dd yyyy hh:mm:ss a")} {event.timezone}
-										</p>
+										{event.datePoll?.isActive ? (
+											<div>
+												<p className="font-semibold flex gap-x-2 items-center" style={{ color: "#F79432" }}>
+													<DateTimeSVG stroke="#F79432" />
+													Date to be determined via poll
+												</p>
+												{event.datePoll.options?.length > 0 && (
+													<ul className="mt-2 text-sm list-disc pl-4" style={{ color: "#B5B6B7" }}>
+														{event.datePoll.options.map((opt: any, i: number) => (
+															<li key={i}>{opt.date} {opt.time}{opt.label ? ` — ${opt.label}` : ""}</li>
+														))}
+													</ul>
+												)}
+											</div>
+										) : event.startsOn ? (
+											<p className="font-semibold flex gap-x-2 items-center">
+												<DateTimeSVG stroke="#fff" />
+												{DateTime.fromISO(event.startsOn).toLocal().toFormat("EEE LLL dd yyyy hh:mm:ss a")} {event.timezone}
+											</p>
+										) : (
+											<p className="font-semibold" style={{ color: "#B5B6B7" }}>Date to be decided</p>
+										)}
 									</div>
 									<div className="py-10 px-3 flex flex-col gap-y-3 border-b border-[#585858]">
 										<h4 className="font-bold">Where</h4>

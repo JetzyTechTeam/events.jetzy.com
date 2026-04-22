@@ -55,6 +55,7 @@ export interface IEvent extends IBaseModelProps {
 	desc: string
 	isPaid: boolean
 	images: string[]
+	videos?: string[]
 	startsOn?: Date
 	endsOn?: Date
 	capacity: number // Number of tickets available
