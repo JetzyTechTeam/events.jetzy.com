@@ -58,8 +58,7 @@ import { TicketData } from "@/components/events/TicketCard";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
-import ImageUploadBox from "../../../components/image-upload-box";
-import VideoUploadBox from "../../../components/video-upload-box";
+import MediaUploadSection from "../../../components/media-upload-section";
 import TimezoneSelect from "../../../components/timezone-select";
 import { useSession } from "next-auth/react";
 import { z } from "zod";
@@ -911,22 +910,19 @@ const CreateEventPage = () => {
                   )}
                 </FieldArray>
               </Box>
-              {/* Right Side: Image Upload/Preview */}
+              {/* Right Side: Media Upload */}
               <Box id="images" mb={6}>
-                <FormLabel>Event Images</FormLabel>
-                <ImageUploadBox
+                <FormLabel>Event Media</FormLabel>
+                <MediaUploadSection
                   uploadedImages={uploadedImages}
-                  onImageChange={handleImageUpload}
-                  isUploading={isUploading}
-                  uploadProgress={uploadProgress}
-                  handleImageDelete={handleImageDelete}
-                />
-                <FormLabel mt={4}>Event Videos</FormLabel>
-                <VideoUploadBox
                   uploadedVideos={uploadedVideos}
+                  onImageChange={handleImageUpload}
                   onVideoChange={handleVideoUpload}
-                  isUploading={isUploadingVideo}
-                  uploadProgress={videoUploadProgress}
+                  isUploadingImage={isUploading}
+                  isUploadingVideo={isUploadingVideo}
+                  imageUploadProgress={uploadProgress}
+                  videoUploadProgress={videoUploadProgress}
+                  handleImageDelete={handleImageDelete}
                   handleVideoDelete={handleVideoDelete}
                 />
               </Box>
