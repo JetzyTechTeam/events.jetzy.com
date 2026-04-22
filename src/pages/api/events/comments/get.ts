@@ -2,11 +2,13 @@ import { Comments } from "@/models/events/comments";
 import { Users } from "@/models/userModal";
 import mongoose from "mongoose";
 import { NextApiRequest, NextApiResponse } from "next";
+import { ensureDbConnected } from "@/configs/database";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  await ensureDbConnected()
   try {
     const { eventId } = req.query;
 

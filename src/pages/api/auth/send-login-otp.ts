@@ -1,11 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
 import { Users } from "@Jetzy/models/userModal"
+import { ensureDbConnected } from "@/configs/database"
 import { sendManualVerificationEmail } from "@Jetzy/lib/send-grid"
 
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString()
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    await ensureDbConnected()
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method not allowed" })
     }

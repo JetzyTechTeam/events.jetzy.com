@@ -1,9 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
 import { Users } from "@Jetzy/models/userModal"
+import { ensureDbConnected } from "@/configs/database"
 import { sendBlockNotificationEmail } from "@Jetzy/lib/send-grid"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    await ensureDbConnected()
     // Accept both GET (from email link click) and POST
     if (req.method !== "GET" && req.method !== "POST") {
         return res.status(405).json({ error: "Method not allowed" })

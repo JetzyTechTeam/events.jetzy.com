@@ -1,10 +1,12 @@
 import { Comments } from "@/models/events/comments";
 import mongoose from "mongoose";
 import { NextApiRequest, NextApiResponse } from "next";
+import { ensureDbConnected } from "@/configs/database";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  await ensureDbConnected()
   if (req.method !== "DELETE") {
     return res.status(405).json({ message: "Method Not Allowed" });
   }

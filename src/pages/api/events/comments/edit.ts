@@ -1,10 +1,12 @@
 import { Comments } from "@/models/events/comments";
 import { NextApiRequest, NextApiResponse } from "next";
+import { ensureDbConnected } from "@/configs/database";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]";
 import mongoose from "mongoose";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  await ensureDbConnected()
   const session = await getServerSession(req, res, authOptions);
 
   if (!session) {

@@ -3,6 +3,7 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { z } from "zod"
 
 const validationSchema = z.object({
@@ -12,6 +13,7 @@ const validationSchema = z.object({
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	await ensureDbConnected()
 	try {
 		// run validation
 		const validation = validationSchema.safeParse({

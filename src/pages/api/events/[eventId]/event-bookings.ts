@@ -1,10 +1,12 @@
 import { Bookings } from "@/models/events/bookings";
 import { NextApiRequest, NextApiResponse } from "next";
+import { ensureDbConnected } from "@/configs/database";
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  await ensureDbConnected()
   if (req.method !== "GET") {
     return res.status(405).json({ message: "Method not allowed" });
   }

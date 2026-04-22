@@ -2,8 +2,10 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { WaitingList } from "@/models/waitingList"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
+import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	await ensureDbConnected()
 	if (req.method !== "DELETE") {
 		return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
 	}

@@ -1,6 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
@@ -14,6 +15,7 @@ const schema = zod.object({
 // create stripe instance
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	await ensureDbConnected()
 	const session = await getServerSession(req, res, authOptions)
 
 	try {

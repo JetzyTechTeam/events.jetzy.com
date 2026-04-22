@@ -2,8 +2,10 @@ import { sendResponse } from "@/lib/helpers";
 import { ResCode } from "@/lib/responseCodes";
 import { EventInvitation } from "@/models/events/event-invitations";
 import { NextApiRequest, NextApiResponse } from "next";
+import { ensureDbConnected } from "@/configs/database";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  await ensureDbConnected()
   try {
     const { eventId } = req.query;
     if (!eventId) {

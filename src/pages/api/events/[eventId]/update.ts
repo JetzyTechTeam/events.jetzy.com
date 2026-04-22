@@ -3,6 +3,7 @@ import { generateRandomId, sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import zod from "zod"
@@ -65,6 +66,7 @@ const schema = zod.object({
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	await ensureDbConnected()
 	const session = await getServerSession(req, res, authOptions)
 
 	try {

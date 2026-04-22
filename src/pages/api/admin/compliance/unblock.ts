@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
 import { Users } from "@Jetzy/models/userModal"
+import { ensureDbConnected } from "@/configs/database"
 import bcrypt from "bcrypt"
 import { sendAccountApprovedEmail } from "@Jetzy/lib/send-grid"
 
@@ -29,6 +30,7 @@ const generateRandomPassword = (length = 10) => {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    await ensureDbConnected()
     // Admin clicks a link from email, so GET is expected
     if (req.method !== "GET") {
         return res.status(405).json({ error: "Method not allowed" })

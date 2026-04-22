@@ -2,6 +2,7 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { ReferralCodes } from "@/models/events/referral-codes"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -17,6 +18,7 @@ const updateReferralCodeSchema = zod.object({
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	await ensureDbConnected()
 	try {
 		const session = await getServerSession(req, res, authOptions)
 

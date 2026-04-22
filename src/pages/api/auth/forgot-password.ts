@@ -1,12 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
 import { Users } from "@Jetzy/models/userModal"
+import { ensureDbConnected } from "@/configs/database"
 import crypto from "crypto"
 import sgMail from "@sendgrid/mail"
 
 sgMail.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim())
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    await ensureDbConnected()
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method not allowed" })
     }

@@ -1,12 +1,14 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	await ensureDbConnected()
 	const session = await getServerSession(req, res, authOptions)
 
 	const { eventId, ticketId } = req.query

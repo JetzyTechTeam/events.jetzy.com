@@ -1,6 +1,6 @@
 
 import { NextApiRequest, NextApiResponse } from "next"
-import { dbconn } from "@/configs/database"
+import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { ReferralCodes } from "@/models/events/referral-codes"
 import { BookingStatus } from "@/models/events/types"
@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-        await dbconn
+        await ensureDbConnected()
 
         const referralCode = await ReferralCodes.findOne({
             _id: codeId,

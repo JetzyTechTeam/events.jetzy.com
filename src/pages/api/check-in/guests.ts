@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
+import { ensureDbConnected } from "@/configs/database"
 import { EventGuest } from "@/models/eventGuest"
 import { Events } from "@/models/events"
 import { getServerSession } from "next-auth"
@@ -12,6 +13,7 @@ import { Types } from "mongoose"
  * GET /api/check-in/guests?eventId=xxx
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	await ensureDbConnected()
 	if (req.method !== "GET") {
 		return sendResponse(res, null, "Method not allowed", false, ResCode.BAD_REQUEST)
 	}
