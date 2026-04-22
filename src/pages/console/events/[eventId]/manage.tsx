@@ -1061,7 +1061,7 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 						{/* Jetzy user search */}
 						{inviteMode === "users" && (
 							<>
-								<Text fontSize="sm" color="gray.400">Search Jetzy app users and invite them. They'll receive a push notification and email.</Text>
+								<Text fontSize="sm" color="gray.400">Search Jetzy app users and invite them. They&apos;ll receive a push notification and email.</Text>
 								<form onSubmit={handleUserSearch}>
 									<Flex gap={2}>
 										<Input
