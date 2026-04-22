@@ -35,9 +35,14 @@ type Props = {
 export default function EventsListing({ events, pagination, isAdmin }: Props) {
 	const initialData = JSON.parse(events) as IEvent[]
 	const [eventList, setEventList] = React.useState<IEvent[]>(initialData)
+	const router = useRouter()
 
 	const handleEventRemoved = (removedEventId: string) => {
 		setEventList((prevList) => prevList.filter((event) => event._id.toString() !== removedEventId))
+	}
+
+	const goToPage = (p: number) => {
+		router.push({ pathname: router.pathname, query: { page: p } })
 	}
 
 	return (
@@ -55,6 +60,32 @@ export default function EventsListing({ events, pagination, isAdmin }: Props) {
 					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} isEnded={event.isEnded} />
 				))}
 			</div>
+
+			{pagination.totalPages > 1 && (
+				<div className="flex items-center justify-between max-w-[800px] mx-auto mt-8">
+					<Button
+						onClick={() => goToPage(pagination.page - 1)}
+						isDisabled={pagination.page <= 1}
+						variant="outline"
+						colorScheme="orange"
+					>
+						← Prev
+					</Button>
+
+					<Text color="gray.400" fontSize="sm">
+						Page {pagination.page} of {pagination.totalPages} &nbsp;·&nbsp; {pagination.total} total
+					</Text>
+
+					<Button
+						onClick={() => goToPage(pagination.page + 1)}
+						isDisabled={pagination.page >= pagination.totalPages}
+						variant="outline"
+						colorScheme="orange"
+					>
+						Next →
+					</Button>
+				</div>
+			)}
 		</ConsoleLayout>
 	)
 }
@@ -227,10 +258,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const isAdmin = userRole === "admin" || userRole === "super admin"
 	const ownerFilter = isAdmin ? {} : { ownerId: userId }
 
-	// lets paginate the events
-	const limit = 20
+	const LIMIT = 20
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
-	const skip = (page - 1) * limit
+	const skip = (page - 1) * LIMIT
 
 	// fetch active events (not deleted), filtered by owner if non-admin
 	const activeEvents = await Events.find({ isDeleted: false, ...ownerFilter }).sort({ createdAt: -1 })
@@ -283,28 +313,14 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		return Number(new Date(b.startsOn)) - Number(new Date(a.startsOn))
 	})
 
-	// Apply pagination
-	const paginatedEvents = allEvents.slice(skip, skip + limit)
-
-	// get total count of events
+	const paginatedEvents = allEvents.slice(skip, skip + LIMIT)
 	const total = allEvents.length
-
-	// calculate page total and current page
-	const totalPages = Math.ceil(total / limit)
-
-	// pagination object
-	const pagination = {
-		total,
-		page,
-		showing: paginatedEvents.length,
-		limit,
-		totalPages,
-	}
+	const totalPages = Math.ceil(total / LIMIT)
 
 	return {
 		props: {
 			events: JSON?.stringify(paginatedEvents),
-			pagination,
+			pagination: { total, page, showing: paginatedEvents.length, limit: LIMIT, totalPages },
 			isAdmin,
 		},
 	}
