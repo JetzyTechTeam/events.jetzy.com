@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect, useState, useLayoutEffect } from "react"
 import { uploadFile } from "@/services/upload.service"
+import "react-quill/dist/quill.snow.css"
 
 // ─── Custom Image blot — preserves width through Delta round-trips ────────────
 function registerResizableImage(Quill: any) {
@@ -220,7 +221,6 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
   // Client-only load: register custom blot first, then expose component
   useEffect(() => {
     import("react-quill").then((mod) => {
-      import("react-quill/dist/quill.snow.css")
       const Quill = (mod.default as any).Quill
       registerResizableImage(Quill)
       setQuillComp(() => mod.default)
