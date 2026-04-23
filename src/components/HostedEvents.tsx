@@ -232,11 +232,11 @@ export default function HostedEvents({ event }: Props) {
 									return (
 										<Slider {...settings}>
 											{allMedia.map((media, idx) => (
-												<div key={idx} className="!flex !items-center !justify-center w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
+												<div key={idx} className="relative w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
 													{media.type === 'video' ? (
-														<video src={media.url} controls className="w-full h-full object-contain rounded-xl" />
+														<video src={media.url} controls className="absolute inset-0 w-full h-full object-contain" />
 													) : (
-														<Image src={media.url} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
+														<img src={media.url} alt="Event Banner" className="absolute inset-0 w-full h-full object-contain" />
 													)}
 												</div>
 											))}
@@ -244,11 +244,11 @@ export default function HostedEvents({ event }: Props) {
 									)
 								} else if (allMedia.length === 1) {
 									return (
-										<div className="w-full h-52 md:h-[335px] bg-black flex items-center justify-center rounded-xl overflow-hidden">
+										<div className="relative w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
 											{allMedia[0].type === 'video' ? (
-												<video src={allMedia[0].url} controls className="w-full h-full object-contain rounded-xl" />
+												<video src={allMedia[0].url} controls className="absolute inset-0 w-full h-full object-contain" />
 											) : (
-												<Image src={allMedia[0].url} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
+												<img src={allMedia[0].url} alt="Event Banner" className="absolute inset-0 w-full h-full object-contain" />
 											)}
 										</div>
 									)
