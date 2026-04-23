@@ -7,7 +7,7 @@ type Props = {
   defaultDate?: string
 }
 export default function DatePicker({ onChange, defaultDate, placeholder = "Select a date" }: Props) {
-  const ref = React.createRef<HTMLInputElement>()
+  const ref = React.useRef<HTMLInputElement>(null)
 
 	React.useEffect(() => {
 		if (!ref.current) return;

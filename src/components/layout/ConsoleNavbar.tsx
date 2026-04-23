@@ -61,12 +61,13 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 
 	const userNavigation = userRole === Roles.USER
 		? [
+			{ name: "All Events", href: "/" },
 			{ name: "My Events", href: ROUTES.dashboard.events.index },
 			{ name: "Create Event", href: ROUTES.dashboard.events.create },
 			{ name: Pages.Bookings, href: ROUTES.dashboard.bookings.index },
 			{ name: "Share Profile", href: profileHref },
 		]
-		: navigation.filter((item) => item.name !== Pages.Dasshboard)
+		: [{ name: "All Events", href: "/" }, ...navigation.filter((item) => item.name !== Pages.Dasshboard)]
 
 	const filteredNavigation = userNavigation
 

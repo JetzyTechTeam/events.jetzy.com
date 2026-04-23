@@ -817,8 +817,21 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const renderAnswer = (qId: string, booking: any) => {
 		if (!booking?.customAnswers) return <Text color="#9C9C9C" fontSize="sm">—</Text>
 		const ans = booking.customAnswers.find((a: any) => a.questionId === qId)
-		if (!ans) return <Text color="#9C9C9C" fontSize="sm">—</Text>
-		const val = Array.isArray(ans.answer) ? ans.answer.join(', ') : String(ans.answer)
+		if (!ans || ans.answer == null) return <Text color="#9C9C9C" fontSize="sm">—</Text>
+
+		let val: string
+		if (Array.isArray(ans.answer)) {
+			val = ans.answer.join(', ')
+		} else if (typeof ans.answer === 'object') {
+			const parts: string[] = []
+			if (ans.answer.company) parts.push(ans.answer.company)
+			if (ans.answer.jobTitle) parts.push(ans.answer.jobTitle)
+			if (ans.answer.agreed !== undefined) parts.push(ans.answer.agreed ? 'Agreed' : 'Not agreed')
+			if (ans.answer.signature) parts.push(`Signed: ${ans.answer.signature}`)
+			val = parts.join(' · ') || '—'
+		} else {
+			val = String(ans.answer)
+		}
 		return <Text fontSize="sm">{val}</Text>
 	}
 

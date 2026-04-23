@@ -8,7 +8,7 @@ type Props = {
 }
 
 export default function TimePicker({ onChange, placeholder = "Select Time", defaultValue }: Props) {
-	const ref = React.createRef<HTMLInputElement>()
+	const ref = React.useRef<HTMLInputElement>(null)
 	React.useEffect(() => {
 		if (!ref.current) return
 
@@ -17,7 +17,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 			noCalendar: true,
 			time_24hr: false,
 			dateFormat: "H:i",
-			onChange: (selectedDates, dateStr, instance) => {
+			onChange: (selectedDates, dateStr) => {
 				onChange(dateStr)
 			},
 		})
@@ -25,7 +25,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 		return () => {
 			timepicker.destroy()
 		}
-	}, [onChange, ref])
+	}, [onChange])
 
 	return (
 		<input
