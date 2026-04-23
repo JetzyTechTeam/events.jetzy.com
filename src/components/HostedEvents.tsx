@@ -232,9 +232,9 @@ export default function HostedEvents({ event }: Props) {
 									return (
 										<Slider {...settings}>
 											{allMedia.map((media, idx) => (
-												<div key={idx} className="!flex !items-center !justify-center w-full md:h-[335px] sm:h-52 bg-black rounded-xl">
+												<div key={idx} className="!flex !items-center !justify-center w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
 													{media.type === 'video' ? (
-														<video src={media.url} controls className="h-full w-full object-cover rounded-xl" style={{ maxHeight: '335px' }} />
+														<video src={media.url} controls className="w-full h-full object-contain rounded-xl" />
 													) : (
 														<Image src={media.url} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
 													)}
@@ -244,9 +244,9 @@ export default function HostedEvents({ event }: Props) {
 									)
 								} else if (allMedia.length === 1) {
 									return (
-										<div className="w-full md:h-[335px] sm:h-52 bg-black flex items-center justify-center rounded-xl">
+										<div className="w-full h-52 md:h-[335px] bg-black flex items-center justify-center rounded-xl overflow-hidden">
 											{allMedia[0].type === 'video' ? (
-												<video src={allMedia[0].url} controls className="h-full w-full object-cover rounded-xl" style={{ maxHeight: '335px' }} />
+												<video src={allMedia[0].url} controls className="w-full h-full object-contain rounded-xl" />
 											) : (
 												<Image src={allMedia[0].url} alt="Event Banner" className="h-full w-full object-cover rounded-xl" />
 											)}
@@ -254,7 +254,7 @@ export default function HostedEvents({ event }: Props) {
 									)
 								} else {
 									return (
-										<div className="w-full md:h-[335px] sm:h-52 bg-gray-800 flex items-center justify-center rounded-xl">
+										<div className="w-full h-52 md:h-[335px] bg-gray-800 flex items-center justify-center rounded-xl">
 											<p className="text-gray-400">No image available</p>
 										</div>
 									)
