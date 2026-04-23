@@ -8,7 +8,6 @@ import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import zod from "zod"
 import Stripe from "stripe"
-import { formatTextWithLineBreaks } from "@/lib/utils"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
 import dayjs from "dayjs";
@@ -139,7 +138,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			$set: {
 				name,
 				location,
-				desc: formatTextWithLineBreaks(desc),
+				desc: desc,
 				isPaid,
 				capacity,
 				requireApproval,

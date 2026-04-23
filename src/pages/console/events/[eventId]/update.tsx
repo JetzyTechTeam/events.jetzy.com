@@ -18,6 +18,7 @@ import TimePicker from "@/components/form/TimePicker"
 import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
+import RichTextEditor from "@/components/misc/RichTextEditor"
 import { IEvent } from "@/models/events/types"
 import { EmailProps } from "@/lib/email-service"
 import axios from "axios"
@@ -160,7 +161,7 @@ export default function UpdateEventPage({ event }: Props) {
 
 		return {
 			name: stripHtml(eventDetails.name),
-			desc: stripHtml(eventDetails.desc),
+			desc: eventDetails.desc,
 			location: eventDetails.location,
 			capacity: eventDetails.capacity,
 			requireApproval: eventDetails.requireApproval,
@@ -299,7 +300,7 @@ export default function UpdateEventPage({ event }: Props) {
 						}
 					}
 					
-					if (values.desc !== stripHtml(eventDetails.desc)) changes.push("Event description was updated");
+					if (values.desc !== eventDetails.desc) changes.push("Event description was updated");
 					if (values.capacity !== eventDetails.capacity) changes.push(`Event capacity was changed to ${values.capacity}`);
 					
 					// Simple tickets change detection
@@ -586,22 +587,14 @@ export default function UpdateEventPage({ event }: Props) {
 									</InputGroup>
 								</FormControl>
 								<FormControl mb={4}>
-									<InputGroup>
-										<InputLeftElement pointerEvents="none">
-											<DescriptionSVG />
-										</InputLeftElement>
-										<Field
-											as={Textarea}
-											name="desc"
-											placeholder="Add Description"
-											bg="#141619"
-											color="white"
-											border="none"
-											rows="8"
-											pl="10"
-											value={values.desc}
-										/>
-									</InputGroup>
+									<Text fontWeight="semibold" color="gray.400" mb={2}>
+										Description
+									</Text>
+									<RichTextEditor
+										value={values.desc}
+										onChange={(val) => setFieldValue("desc", val)}
+										placeholder="Add Description"
+									/>
 								</FormControl>
 								<Text fontWeight="semibold" color="gray.400" mb={2}>
 									Event Benefits (Max 23 chars)

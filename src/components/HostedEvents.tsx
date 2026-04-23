@@ -29,6 +29,7 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
+import DOMPurify from "dompurify";
 import { FiShare2 } from "react-icons/fi"
 
 const settings = {
@@ -1234,9 +1235,18 @@ function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () =
 }
 
 function EventDescription({ description }: { description: string }) {
-	if (!description) return ""
+	if (!description) return null
+	const isHtml = /<[a-z][\s\S]*>/i.test(description)
+	if (isHtml) {
+		const clean = typeof window !== "undefined" ? DOMPurify.sanitize(description) : stripHtml(description)
+		return (
+			<div
+				className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere rich-content"
+				dangerouslySetInnerHTML={{ __html: clean }}
+			/>
+		)
+	}
 	const lines = description.split("\n")
-
 	return (
 		<div className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere">
 			{lines.map((line, i) => (

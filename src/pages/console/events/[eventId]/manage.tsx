@@ -1,5 +1,6 @@
 "use client"
 import { stripHtml } from "@/utils/text";
+import DOMPurify from "dompurify";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { authorizedOnly } from "@/lib/authSession"
@@ -275,7 +276,14 @@ export default function Manage({ event }: any) {
 									</div>
 									<div className="p-3 flex flex-col gap-y-3">
 										<h4 className="font-bold">Description</h4>
-										<p className="font-semibold text-[#B5B6B7]">{stripHtml(event.desc)}</p>
+										<div
+											className="font-semibold text-[#B5B6B7] rich-content"
+											dangerouslySetInnerHTML={{
+												__html: typeof window !== "undefined"
+													? DOMPurify.sanitize(event.desc)
+													: stripHtml(event.desc)
+											}}
+										/>
 									</div>
 
 									{/* Post-Event Section */}

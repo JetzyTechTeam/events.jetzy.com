@@ -37,9 +37,23 @@ body {
 }
 
 .black-autofill:-webkit-autofill,
-.black-autofill:-webkit-autofill:hover, 
-.black-autofill:-webkit-autofill:focus, 
+.black-autofill:-webkit-autofill:hover,
+.black-autofill:-webkit-autofill:focus,
 .black-autofill:-webkit-autofill:active{
     -webkit-box-shadow: 0 0 0 40px #000000 inset !important;
     -webkit-text-fill-color: white !important;
 }
+
+/* Rich text content rendered from Quill editor */
+.rich-content h1 { font-size: 1.5em; font-weight: bold; margin-bottom: 0.5em; }
+.rich-content h2 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.5em; }
+.rich-content h3 { font-size: 1.1em; font-weight: bold; margin-bottom: 0.4em; }
+.rich-content p { margin-bottom: 0.5em; line-height: 1.6; }
+.rich-content ul { list-style: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
+.rich-content ol { list-style: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
+.rich-content li { margin-bottom: 0.25em; line-height: 1.6; }
+.rich-content blockquote { border-left: 3px solid #F79432; padding-left: 0.75em; color: #9ca3af; margin: 0.5em 0; }
+.rich-content a { color: #F79432; text-decoration: underline; }
+.rich-content strong { font-weight: bold; }
+.rich-content em { font-style: italic; }
+.rich-content s { text-decoration: line-through; }

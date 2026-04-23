@@ -9,7 +9,6 @@ import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import zod from "zod"
 import Stripe from "stripe"
-import { formatTextWithLineBreaks } from "@/lib/utils"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
@@ -145,7 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				lat: latitude,
 				placeId,
 			},
-			desc: formatTextWithLineBreaks(desc),
+			desc: desc,
 			...(start ? { startsOn: start } : {}),
 			...(end ? { endsOn: end } : {}),
 			isPaid,

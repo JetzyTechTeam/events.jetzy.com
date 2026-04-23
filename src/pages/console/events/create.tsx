@@ -62,6 +62,7 @@ import MediaUploadSection from "../../../components/media-upload-section";
 import TimezoneSelect from "../../../components/timezone-select";
 import { useSession } from "next-auth/react";
 import { z } from "zod";
+import RichTextEditor from "@/components/misc/RichTextEditor";
 
 const initialValues = {
   name: "",
@@ -433,21 +434,14 @@ const CreateEventPage = () => {
                   </InputGroup>
                 </FormControl>
                 <FormControl mb={4}>
-                  <InputGroup>
-                    <InputLeftElement pointerEvents="none">
-                      <DescriptionSVG />
-                    </InputLeftElement>
-                    <Field
-                      as={Textarea}
-                      name="desc"
-                      placeholder="Add Description"
-                      bg="#141619"
-                      color="white"
-                      border="none"
-                      rows="8"
-                      pl="10"
-                    />
-                  </InputGroup>
+                  <Text fontWeight="semibold" color="gray.400" mb={2}>
+                    Description
+                  </Text>
+                  <RichTextEditor
+                    value={values.desc}
+                    onChange={(val) => setFieldValue("desc", val)}
+                    placeholder="Add Description"
+                  />
                 </FormControl>
                 <Text fontWeight="semibold" color="gray.400" mb={2}>
                   Event Benefits (Max 23 chars)
