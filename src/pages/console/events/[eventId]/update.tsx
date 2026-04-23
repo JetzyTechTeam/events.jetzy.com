@@ -1014,6 +1014,7 @@ export default function UpdateEventPage({ event }: Props) {
 													bg="#090C10"
 													border="1px solid #444"
 													color="white"
+													sx={{ colorScheme: 'dark' }}
 													value={tempPollOption.date}
 													onChange={(e) => setTempPollOption({ ...tempPollOption, date: e.target.value })}
 												/>
@@ -1025,6 +1026,7 @@ export default function UpdateEventPage({ event }: Props) {
 													bg="#090C10"
 													border="1px solid #444"
 													color="white"
+													sx={{ colorScheme: 'dark' }}
 													value={tempPollOption.time}
 													onChange={(e) => setTempPollOption({ ...tempPollOption, time: e.target.value })}
 												/>
