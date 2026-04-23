@@ -37,6 +37,7 @@ import {
 	Th,
 	Td,
 	TableContainer,
+	Badge,
 } from "@chakra-ui/react"
 import { DateTime } from "luxon"
 import axios from "axios"
@@ -46,7 +47,6 @@ import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icon
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
-import { GetUsersToInviteApi } from "@/services/interests/interestsapis"
 
 export default function Manage({ event }: any) {
 	event = JSON.parse(event)
@@ -800,6 +800,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		queryFn: fetchBookings,
 	})
 
+	const { data: checkIns = [] } = useQuery({
+		queryKey: ["check-in-status", eventId],
+		queryFn: () => axios.get("/api/check-in/booking-status", { params: { eventId } }).then(r => r.data?.data || []),
+	})
+
 	// Build a map of all guests by email
 	const guestByEmail: Record<string, any> = {}
 	guests.forEach((g: any) => {
@@ -810,6 +815,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const bookingByEmail: Record<string, any> = {}
 	;(bookings as any[]).forEach((b: any) => {
 		if (b.customerEmail) bookingByEmail[b.customerEmail.toLowerCase()] = b
+	})
+
+	const checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }> = {}
+	;(checkIns as any[]).forEach((ci: any) => {
+		checkInMap[ci.bookingId] = { checkedInCount: ci.checkedInCount, isFullyCheckedIn: ci.isFullyCheckedIn }
 	})
 
 	const eventQuestions: any[] = event?.questions || []
@@ -855,6 +865,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							<Th color="#9C9C9C">Email</Th>
 							<Th color="#9C9C9C">Status</Th>
 							<Th color="#9C9C9C">Invited At</Th>
+							<Th color="#9C9C9C">Check-In</Th>
 							{eventQuestions.map((q: any) => (
 								<Th key={q.id} color="#F79432">{q.title}{q.isRequired ? ' *' : ''}</Th>
 							))}
@@ -870,6 +881,15 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 									<Td color="white">{email}</Td>
 									<Td color="white">{guest?.status || (booking ? 'Purchased' : '—')}</Td>
 									<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
+									<Td>
+										{(() => {
+											if (!booking?._id) return <Badge colorScheme="gray">N/A</Badge>
+											const ci = checkInMap[booking._id.toString()]
+											if (!ci) return <Badge colorScheme="gray">Not Checked In</Badge>
+											if (ci.isFullyCheckedIn) return <Badge colorScheme="green">Fully Checked In</Badge>
+											return <Badge colorScheme="yellow">Partial ({ci.checkedInCount})</Badge>
+										})()}
+									</Td>
 									{eventQuestions.map((q: any) => (
 										<Td key={q.id} color="white">{renderAnswer(q.id, booking)}</Td>
 									))}
@@ -947,8 +967,11 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 		if (!userQuery.trim()) return
 		try {
 			setSearching(true)
-			const res = await GetUsersToInviteApi({ data: { interestId: event._id, query: userQuery, page: 1, perPage: 20 } }) as any
-			const docs = res?.data?.docs || res?.data?.users || res?.docs || res?.users || []
+			const res = await axios.get(`/api/events/${event._id}/search-users`, {
+				params: { query: userQuery, page: 1, perPage: 20 },
+			})
+			const data = res.data
+			const docs = data?.data?.docs || data?.data?.users || data?.data?.data || data?.docs || data?.users || []
 			setUserResults(docs)
 		} catch (err) {
 			console.error(err)

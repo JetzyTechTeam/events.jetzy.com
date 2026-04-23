@@ -225,7 +225,7 @@ const CheckoutSuccessPage: React.FC = () => {
 					</div>
 
 					<button
-						onClick={() => router.push(`/${displayEvent?.slug || ''}`)}
+						onClick={() => router.replace(`/${displayEvent?.slug || ''}`)}
 						className="mt-6 bg-[#F79432] text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
 					>
 						Back to Event

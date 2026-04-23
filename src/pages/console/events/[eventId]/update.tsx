@@ -453,8 +453,7 @@ export default function UpdateEventPage({ event }: Props) {
 	return (
 		<ConsoleLayout
 			page={Pages.CreateEvent}
-			backBtn={`/ console / events / ${eventDetails._id}/manage`
-			}
+			backBtn={`/console/events/${eventDetails._id}/manage`}
 			maxW="max-w-4xl"
 		>
 			<Formik

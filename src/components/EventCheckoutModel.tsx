@@ -271,7 +271,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		<>
 			{showCheckout && (
 				<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-					<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-md relative">
+					<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-md relative max-h-[90vh] flex flex-col overflow-hidden">
 						{/* Close Button */}
 						<button
 							onClick={() => {
@@ -338,185 +338,190 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 							</div>
 						) : (
 							/* Form */
-							<form onSubmit={handleSubmit} className="p-6 space-y-6">
-								<h2 className="text-2xl font-bold">Checkout</h2>
-								
-								{checkoutStep === "details" && (
-								<div className="space-y-4">
-									<input
-										type="text"
-										name="firstName"
-										placeholder="First Name"
-										value={formData.firstName}
-										onChange={handleInputChange}
-										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-										required
-									/>
-									<input
-										type="text"
-										name="lastName"
-										placeholder="Last Name"
-										value={formData.lastName}
-										onChange={handleInputChange}
-										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-										required
-									/>
-									<input
-										type="email"
-										name="email"
-										placeholder="Email"
-										value={formData.email}
-										onChange={handleInputChange}
-										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-										required
-									/>
-									<input
-										type="tel"
-										name="phone"
-										placeholder="Phone Number"
-										value={formData.phone}
-										onChange={handleInputChange}
-										className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-										required
-										pattern="^\+?[0-9]{7,15}$"
-										title="Enter a valid phone number (e.g., +1234567890)"
-									/>
-									{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
-
-									{/* Referral Code Field */}
-									<div>
-										<label className="block text-sm font-medium text-white mb-1.5">
-											Referral Code <span className="text-gray-400 font-normal">(Optional)</span>
-										</label>
-										<div className="relative">
-											<input
-												type="text"
-												name="referralCode"
-												placeholder="Enter referral code"
-												value={formData.referralCode}
-												onChange={(e) => {
-													handleInputChange(e)
-													// Clear previous timeout
-													if (referralCodeValidationTimeoutRef.current) {
-														clearTimeout(referralCodeValidationTimeoutRef.current)
-													}
-													// Validate after user stops typing (debounce)
-													const value = e.target.value.toUpperCase().trim()
-													if (value) {
-														referralCodeValidationTimeoutRef.current = setTimeout(() => {
-															handleValidateReferralCode(value)
-														}, 500)
-													} else {
-														setReferralCodeValid(null)
-														setReferralCodeDiscount(null)
-													}
-												}}
-												onBlur={() => {
-													if (referralCodeValidationTimeoutRef.current) {
-														clearTimeout(referralCodeValidationTimeoutRef.current)
-													}
-													if (formData.referralCode.trim()) {
-														handleValidateReferralCode(formData.referralCode)
-													}
-												}}
-												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 uppercase text-white"
-												style={{ textTransform: "uppercase" }}
-											/>
-											{validatingReferralCode && (
-												<div className="absolute right-3 top-1/2 -translate-y-1/2">
-													<Spinner />
-												</div>
-											)}
-										</div>
-										{referralCodeValid === true && referralCodeDiscount !== null && (
-											<p className="text-sm text-green-500 mt-1.5 font-medium">✓ Valid! You&apos;ll get {referralCodeDiscount}% off your order</p>
-										)}
-										{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
-									</div>
+							<form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+								{/* Pinned header */}
+								<div className="px-6 pt-6 pb-2 shrink-0">
+									<h2 className="text-2xl font-bold">Checkout</h2>
 								</div>
-								)}
 
-								{/* Custom Questions */}
-								{checkoutStep === "questions" && (liveEventData?.questions || []).length > 0 && (
+								{/* Scrollable content */}
+								<div className="flex-1 overflow-y-auto px-6 py-2 space-y-4">
+									{checkoutStep === "details" && (
 									<div className="space-y-4">
-										<h3 className="font-bold text-white border-t border-[#3E3E3E] pt-4">Additional Questions</h3>
-										{(liveEventData.questions as any[]).map((q: any) => (
-											<div key={q.id}>
-												<label className="block text-sm font-medium text-white mb-1">
-													{q.title}{q.isRequired && <span className="text-red-400 ml-1">*</span>}
-												</label>
-												{(q.type === 'text' || q.type === 'mobile' || q.type === 'website' || q.type === 'social_profile') && (
-													q.responseLength === 'multi-line'
-														? <textarea rows={3} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white resize-none" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
-														: <input type={q.type === 'mobile' ? 'tel' : q.type === 'website' ? 'url' : 'text'} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
-												)}
-												{q.type === 'options' && q.selectionType === 'single' && (
-													<select className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))}>
-														<option value="">Select an option</option>
-														{(q.options || []).map((opt: string) => <option key={opt} value={opt} style={{ backgroundColor: '#090C10' }}>{opt}</option>)}
-													</select>
-												)}
-												{q.type === 'options' && q.selectionType === 'multiple' && (
-													<div className="space-y-1">
-														{(q.options || []).map((opt: string) => (
-															<label key={opt} className="flex items-center gap-2 text-white cursor-pointer">
-																<input type="checkbox" checked={(customAnswers[q.id] || []).includes(opt)} onChange={e => {
-																	const prev: string[] = customAnswers[q.id] || []
-																	setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked ? [...prev, opt] : prev.filter((x: string) => x !== opt) }))
-																}} />
-																{opt}
-															</label>
-														))}
-													</div>
-												)}
-												{q.type === 'checkbox' && (
-													<label className="flex items-center gap-2 text-white cursor-pointer">
-														<input type="checkbox" checked={!!customAnswers[q.id]} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked }))} />
-														{q.title}
-													</label>
-												)}
-												{q.type === 'company' && (
-													<div className="space-y-2">
-														<input type="text" placeholder="Company name" className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={(customAnswers[q.id] || {}).company || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), company: e.target.value } }))} />
-														{q.collectJobTitle && <input type="text" placeholder="Job title" className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={(customAnswers[q.id] || {}).jobTitle || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), jobTitle: e.target.value } }))} />}
-													</div>
-												)}
-												{q.type === 'terms' && (
-													<div className="space-y-2">
-														{q.termsContentType === 'link'
-															? <a href={q.termsContent} target="_blank" rel="noreferrer" className="text-blue-400 underline text-sm">{q.termsContent}</a>
-															: <p className="text-sm text-gray-300 bg-[#090C10] p-3 rounded-lg border border-[#444]">{q.termsContent}</p>
+										<input
+											type="text"
+											name="firstName"
+											placeholder="First Name"
+											value={formData.firstName}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+										/>
+										<input
+											type="text"
+											name="lastName"
+											placeholder="Last Name"
+											value={formData.lastName}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+										/>
+										<input
+											type="email"
+											name="email"
+											placeholder="Email"
+											value={formData.email}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+										/>
+										<input
+											type="tel"
+											name="phone"
+											placeholder="Phone Number"
+											value={formData.phone}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+											pattern="^\+?[0-9]{7,15}$"
+											title="Enter a valid phone number (e.g., +1234567890)"
+										/>
+										{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
+
+										{/* Referral Code Field */}
+										<div>
+											<label className="block text-sm font-medium text-white mb-1.5">
+												Referral Code <span className="text-gray-400 font-normal">(Optional)</span>
+											</label>
+											<div className="relative">
+												<input
+													type="text"
+													name="referralCode"
+													placeholder="Enter referral code"
+													value={formData.referralCode}
+													onChange={(e) => {
+														handleInputChange(e)
+														if (referralCodeValidationTimeoutRef.current) {
+															clearTimeout(referralCodeValidationTimeoutRef.current)
 														}
-														<label className="flex items-center gap-2 text-white cursor-pointer">
-															<input type="checkbox" checked={(customAnswers[q.id] || {}).agreed || false} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), agreed: e.target.checked } }))} />
-															I agree to the terms
-														</label>
-														{q.collectSignature && <input type="text" placeholder="Type your name as signature" className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={(customAnswers[q.id] || {}).signature || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), signature: e.target.value } }))} />}
+														const value = e.target.value.toUpperCase().trim()
+														if (value) {
+															referralCodeValidationTimeoutRef.current = setTimeout(() => {
+																handleValidateReferralCode(value)
+															}, 500)
+														} else {
+															setReferralCodeValid(null)
+															setReferralCodeDiscount(null)
+														}
+													}}
+													onBlur={() => {
+														if (referralCodeValidationTimeoutRef.current) {
+															clearTimeout(referralCodeValidationTimeoutRef.current)
+														}
+														if (formData.referralCode.trim()) {
+															handleValidateReferralCode(formData.referralCode)
+														}
+													}}
+													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 uppercase text-white"
+													style={{ textTransform: "uppercase" }}
+												/>
+												{validatingReferralCode && (
+													<div className="absolute right-3 top-1/2 -translate-y-1/2">
+														<Spinner />
 													</div>
 												)}
 											</div>
-										))}
+											{referralCodeValid === true && referralCodeDiscount !== null && (
+												<p className="text-sm text-green-500 mt-1.5 font-medium">✓ Valid! You&apos;ll get {referralCodeDiscount}% off your order</p>
+											)}
+											{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
+										</div>
 									</div>
-								)}
-								{/* <p className="text-sm text-[#A5A5A5]">By signing up, you create a Jetzy account for exclusive deals. Existing accounts won&apos;t be duplicated.</p> */}
+									)}
 
-								{/* form actions */}
-								{checkoutStep === "questions" ? (
-									<div className="flex gap-3 pt-2">
-										<button type="button" onClick={() => setCheckoutStep("details")} className="w-1/3 border border-[#444] text-white font-bold px-6 py-3 rounded-xl transition-all hover:bg-[#222]">Back</button>
-										<button disabled={isLoading} type="submit" className="w-2/3 bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50">
-											{isLoading ? <Spinner /> : "Submit"}
+									{/* Custom Questions */}
+									{checkoutStep === "questions" && (liveEventData?.questions || []).length > 0 && (
+										<div className="space-y-4">
+											<h3 className="font-bold text-white border-t border-[#3E3E3E] pt-4">Additional Questions</h3>
+											{(liveEventData.questions as any[]).map((q: any) => (
+												<div key={q.id}>
+													<label className="block text-sm font-medium text-white mb-1">
+														{q.title}{q.isRequired && <span className="text-red-400 ml-1">*</span>}
+													</label>
+													{(q.type === 'text' || q.type === 'mobile' || q.type === 'website' || q.type === 'social_profile') && (
+														q.responseLength === 'multi-line'
+															? <textarea rows={3} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white resize-none" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
+															: <input type={q.type === 'mobile' ? 'tel' : q.type === 'website' ? 'url' : 'text'} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
+													)}
+													{q.type === 'options' && q.selectionType === 'single' && (
+														<select className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))}>
+															<option value="">Select an option</option>
+															{(q.options || []).map((opt: string) => <option key={opt} value={opt} style={{ backgroundColor: '#090C10' }}>{opt}</option>)}
+														</select>
+													)}
+													{q.type === 'options' && q.selectionType === 'multiple' && (
+														<div className="space-y-1">
+															{(q.options || []).map((opt: string) => (
+																<label key={opt} className="flex items-center gap-2 text-white cursor-pointer">
+																	<input type="checkbox" checked={(customAnswers[q.id] || []).includes(opt)} onChange={e => {
+																		const prev: string[] = customAnswers[q.id] || []
+																		setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked ? [...prev, opt] : prev.filter((x: string) => x !== opt) }))
+																	}} />
+																	{opt}
+																</label>
+															))}
+														</div>
+													)}
+													{q.type === 'checkbox' && (
+														<label className="flex items-center gap-2 text-white cursor-pointer">
+															<input type="checkbox" checked={!!customAnswers[q.id]} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked }))} />
+															{q.title}
+														</label>
+													)}
+													{q.type === 'company' && (
+														<div className="space-y-2">
+															<input type="text" placeholder="Company name" className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={(customAnswers[q.id] || {}).company || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), company: e.target.value } }))} />
+															{q.collectJobTitle && <input type="text" placeholder="Job title" className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={(customAnswers[q.id] || {}).jobTitle || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), jobTitle: e.target.value } }))} />}
+														</div>
+													)}
+													{q.type === 'terms' && (
+														<div className="space-y-2">
+															{q.termsContentType === 'link'
+																? <a href={q.termsContent} target="_blank" rel="noreferrer" className="text-blue-400 underline text-sm">{q.termsContent}</a>
+																: <p className="text-sm text-gray-300 bg-[#090C10] p-3 rounded-lg border border-[#444]">{q.termsContent}</p>
+															}
+															<label className="flex items-center gap-2 text-white cursor-pointer">
+																<input type="checkbox" checked={(customAnswers[q.id] || {}).agreed || false} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), agreed: e.target.checked } }))} />
+																I agree to the terms
+															</label>
+															{q.collectSignature && <input type="text" placeholder="Type your name as signature" className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={(customAnswers[q.id] || {}).signature || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: { ...(a[q.id] || {}), signature: e.target.value } }))} />}
+														</div>
+													)}
+												</div>
+											))}
+										</div>
+									)}
+								</div>
+
+								{/* Pinned action buttons */}
+								<div className="px-6 py-4 shrink-0 border-t border-[#2E2E2E]">
+									{checkoutStep === "questions" ? (
+										<div className="flex gap-3">
+											<button type="button" onClick={() => setCheckoutStep("details")} className="w-1/3 border border-[#444] text-white font-bold px-6 py-3 rounded-xl transition-all hover:bg-[#222]">Back</button>
+											<button disabled={isLoading} type="submit" className="w-2/3 bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50">
+												{isLoading ? <Spinner /> : "Submit"}
+											</button>
+										</div>
+									) : (
+										<button
+											disabled={isLoading}
+											type="submit"
+											className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
+										>
+											{isLoading ? <Spinner /> : ((liveEventData?.questions || []).length > 0 ? "Next" : "Submit")}
 										</button>
-									</div>
-								) : (
-									<button
-										disabled={isLoading}
-										type="submit"
-										className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 mt-4"
-									>
-										{isLoading ? <Spinner /> : ((liveEventData?.questions || []).length > 0 ? "Next" : "Submit")}
-									</button>
-								)}
+									)}
+								</div>
 							</form>
 						)}
 					</div>
