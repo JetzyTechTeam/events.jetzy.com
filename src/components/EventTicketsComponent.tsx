@@ -157,8 +157,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             {tickets.map((ticket, index) => (
               <div
                 key={ticket.id}
-                className={`relative bg-[#2b2b2b] p-4 rounded-lg cursor-pointer border-2 ${ticket.isSelected ? "border-jetzy" : "border-transparent"
-                  }`}
+                className="flex items-center gap-4 cursor-pointer"
                 onClick={() => {
                   handleTicketSelection(ticket.id)
                   sendGAEvent({
@@ -169,22 +168,25 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   });
                 }}
               >
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full">
-                  <div className="flex items-start gap-4 text-left w-full sm:w-2/3">
-                    {/* Checkbox indicator */}
-                    <div className="pt-1 flex-shrink-0">
-                      <div className={`w-6 h-6 rounded flex items-center justify-center transition-colors border-2 ${
-                        ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
-                      }`}>
-                        {ticket.isSelected && (
-                          <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                    </div>
+                {/* Checkbox — outside left */}
+                <div className="flex-shrink-0 self-center">
+                  <div className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors border-2 ${
+                    ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
+                  }`}>
+                    {ticket.isSelected && (
+                      <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
 
-                    <div className="flex-1">
+                {/* Card */}
+                <div className={`flex-1 relative bg-[#2b2b2b] p-4 rounded-lg border-2 ${
+                  ticket.isSelected ? "border-jetzy" : "border-transparent"
+                }`}>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full">
+                    <div className="text-left w-full sm:w-2/3">
                       <h3 className={`font-semibold text-lg ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
                         {ticket.name}
                       </h3>
@@ -202,38 +204,38 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                         </p>
                       )}
                     </div>
-                  </div>
 
-                  <div className="flex flex-col items-start sm:items-end w-full sm:w-1/3 mt-4 sm:mt-0 pt-3 sm:pt-0 pl-10 sm:pl-0">
-                    <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
-                      {staticTickets[index].price.toLocaleString("en-US", {
-                        style: "currency",
-                        currency: "usd",
-                      })}
-                    </p>
-                    
-                    {event.isPaid && ticket.isSelected && (
-                      <div
-                        className="flex items-center space-x-4 mt-3 text-slate-800 bg-[#1e1e1e] p-1.5 rounded-full"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() => handleQuantityChange(ticket.id, -1)}
-                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
+                    <div className="flex flex-col items-start sm:items-end w-full sm:w-1/3 mt-4 sm:mt-0 pt-3 sm:pt-0">
+                      <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                        {staticTickets[index].price.toLocaleString("en-US", {
+                          style: "currency",
+                          currency: "usd",
+                        })}
+                      </p>
+
+                      {event.isPaid && ticket.isSelected && (
+                        <div
+                          className="flex items-center space-x-4 mt-3 text-slate-800 bg-[#1e1e1e] p-1.5 rounded-full"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          -
-                        </button>
-                        <p className="text-white text-lg font-semibold min-w-[20px] text-center">
-                          {ticket.quantity}
-                        </p>
-                        <button
-                          onClick={() => handleQuantityChange(ticket.id, 1)}
-                          className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
-                        >
-                          +
-                        </button>
-                      </div>
-                    )}
+                          <button
+                            onClick={() => handleQuantityChange(ticket.id, -1)}
+                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
+                          >
+                            -
+                          </button>
+                          <p className="text-white text-lg font-semibold min-w-[20px] text-center">
+                            {ticket.quantity}
+                          </p>
+                          <button
+                            onClick={() => handleQuantityChange(ticket.id, 1)}
+                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
