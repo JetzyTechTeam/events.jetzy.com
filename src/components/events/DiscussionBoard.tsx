@@ -120,7 +120,6 @@ const FeedPostCard = ({
 	// @ts-ignore
 	const userRole = session?.user?.role
 	const isAdmin = userRole === "admin" || userRole === "super admin"
-
 	const router = useRouter()
 	const handlePostClick = async () => {
 		if (!session || !session.user) {
@@ -207,6 +206,7 @@ const FeedPostCard = ({
 	}
 
 	return (
+		<>
 		<Box
 			bg="#2b2b2b" // Dark background like tickets
 			borderRadius="lg"
@@ -320,6 +320,7 @@ const FeedPostCard = ({
 									<video
 										src={post.images[0]}
 										controls
+										onClick={(e) => e.stopPropagation()}
 										style={{ width: "100%", maxHeight: "500px", objectFit: "contain", backgroundColor: "#000" }}
 									/>
 								) : (
@@ -330,6 +331,7 @@ const FeedPostCard = ({
 										height={0}
 										sizes="100vw"
 										style={{ width: '100%', height: 'auto', maxHeight: '500px', objectFit: "contain" }}
+										onClick={handlePostClick}
 									/>
 								)}
 							</Box>
@@ -340,6 +342,7 @@ const FeedPostCard = ({
 										{isVideoUrl(img) ? (
 											<video
 												src={img}
+												onClick={(e) => e.stopPropagation()}
 												style={{ width: "100%", height: "100%", objectFit: "contain" }}
 											/>
 										) : (
@@ -348,6 +351,7 @@ const FeedPostCard = ({
 												alt={`Post image ${idx + 1}`}
 												fill
 												style={{ objectFit: "contain" }}
+												onClick={handlePostClick}
 											/>
 										)}
 										{idx === 3 && post.images && post.images.length > 4 && (
@@ -466,6 +470,8 @@ const FeedPostCard = ({
 				</Flex>
 			</Box>
 		</Box>
+
+		</>
 	)
 }
 
@@ -777,7 +783,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				<Modal isOpen={!!selectedPostId} onClose={handleClosePostModal} size="2xl" isCentered scrollBehavior="inside">
 					<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
 					<ModalContent borderRadius="xl" maxH="90vh" bg="#1E1E1E">
-						<ModalCloseButton zIndex={10} color="white" />
+						<ModalCloseButton zIndex={10} color="white" top={3} right={5} bg="blackAlpha.500" borderRadius="full" />
 						<ModalBody p={0}>
 							{selectedPostId && (
 								<DiscussionPostView

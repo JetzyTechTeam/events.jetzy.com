@@ -1291,6 +1291,7 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	// Check if user is admin or super admin
 	// @ts-ignore
 	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
+	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
 	// Fetch post
 	const { data: postResponse, isLoading: isLoadingPost, refetch: refetchPost } = useQuery({
@@ -2001,7 +2002,8 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 										width={0}
 										height={0}
 										sizes="100vw"
-										style={{ width: '100%', height: 'auto', maxHeight: '600px', objectFit: "contain" }}
+										style={{ width: '100%', height: 'auto', maxHeight: '600px', objectFit: "contain", cursor: 'zoom-in' }}
+										onClick={() => setLightboxSrc(post.images![0])}
 									/>
 								)}
 							</Box>
@@ -2021,7 +2023,8 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 												alt={`Post image ${idx + 1}`}
 												fill
 												sizes="(max-width: 768px) 100vw, 50vw"
-												style={{ objectFit: "contain" }}
+												style={{ objectFit: "contain", cursor: 'zoom-in' }}
+												onClick={() => setLightboxSrc(img)}
 											/>
 										)}
 									</Box>
@@ -2796,6 +2799,40 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				isOpen={isLoginModalOpen}
 				onClose={() => setIsLoginModalOpen(false)}
 			/>
+
+			{/* Image lightbox */}
+			{lightboxSrc && (
+				<Box
+					position="fixed"
+					inset={0}
+					zIndex={9999}
+					bg="blackAlpha.900"
+					display="flex"
+					alignItems="center"
+					justifyContent="center"
+					onClick={() => setLightboxSrc(null)}
+				>
+					<IconButton
+						aria-label="Close"
+						icon={<FiX />}
+						position="absolute"
+						top={4}
+						right={4}
+						color="white"
+						bg="whiteAlpha.200"
+						borderRadius="full"
+						size="lg"
+						_hover={{ bg: "whiteAlpha.400" }}
+						onClick={() => setLightboxSrc(null)}
+					/>
+					<img
+						src={lightboxSrc}
+						alt="Full size"
+						style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }}
+						onClick={(e) => e.stopPropagation()}
+					/>
+				</Box>
+			)}
 		</>
 	)
 }
