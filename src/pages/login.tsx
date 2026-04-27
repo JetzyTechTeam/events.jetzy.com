@@ -194,9 +194,21 @@ export default function LoginPage() {
 			const result = await signInWithPopup(auth, provider);
 			const idToken = await result.user.getIdToken();
 
+			let displayName = result.user.displayName;
+			if (!displayName) {
+				try {
+					const credential = OAuthProvider.credentialFromResult(result);
+					const appleToken = credential?.idToken;
+					if (appleToken) {
+						const payload = JSON.parse(atob(appleToken.split(".")[1]));
+						displayName = [payload.given_name, payload.family_name].filter(Boolean).join(" ") || null;
+					}
+				} catch {}
+			}
+
 			const res = await signIn("firebase-auth", {
 				idToken,
-				name: result.user.displayName || "",
+				name: displayName || "",
 				email: result.user.email || "",
 				image: result.user.photoURL || "",
 				redirect: false,

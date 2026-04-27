@@ -118,14 +118,14 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
                                             if (parent) {
                                                 const fallback = document.createElement('div');
                                                 fallback.className = "w-full h-full flex items-center justify-center text-4xl font-bold bg-[#222] text-white/20";
-                                                fallback.innerText = `${user.firstName[0]}${user.lastName[0]}`;
+                                                fallback.innerText = `${(user.firstName || user.email?.split("@")[0] || "?")[0]}${user.lastName?.[0] || ""}`;
                                                 parent.appendChild(fallback);
                                             }
                                         }}
                                     />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center text-4xl font-bold bg-[#222] text-white/20">
-                                        {user.firstName[0]}{user.lastName[0]}
+                                        {(user.firstName || user.email?.split("@")[0] || "?")[0]}{user.lastName?.[0] || ""}
                                     </div>
                                 )}
                             </div>
@@ -133,7 +133,7 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
 
                         {/* Name */}
                         <h1 className="text-3xl font-bold text-center mb-1 tracking-tight">
-                            {user.firstName} {user.lastName}
+                            {user.firstName || user.email?.split("@")[0] || "Jetzy Member"} {user.lastName || ""}
                         </h1>
                         <p className="text-gray-400 text-sm mb-8">Jetzy Member</p>
 

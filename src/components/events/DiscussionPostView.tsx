@@ -406,12 +406,12 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	return (
 		<Box mb={2} overflow="hidden">
 			<Flex gap={2} align="start" minW={0}>
-				<Avatar size="sm" name={(comment.userId?.firstName || comment.userId?.lastName) ? `${comment.userId.firstName} ${comment.userId.lastName}`.trim() : "Deleted User"} src={comment.userId?.image || ""} />
+				<Avatar size="sm" name={comment.userId ? (`${comment.userId.firstName || ""} ${comment.userId.lastName || ""}`.trim() || comment.userId.email?.split("@")[0] || "User") : "Deleted User"} src={comment.userId?.image || ""} />
 
 				<Box flex="1" minW={0}>
 					<Box bg="#2b2b2b" borderRadius="2xl" px={{ base: 2, md: 3 }} py={{ base: 1.5, md: 2 }} width="fit-content" mb={1} maxW="100%">
 						<Text fontWeight="600" fontSize="sm" color="white">
-							{(comment.userId?.firstName || comment.userId?.lastName) ? `${comment.userId.firstName} ${comment.userId.lastName}`.trim() : "Deleted User"}
+							{comment.userId ? (`${comment.userId.firstName || ""} ${comment.userId.lastName || ""}`.trim() || comment.userId.email?.split("@")[0] || "User") : "Deleted User"}
 						</Text>
 
 						{isEditing ? (
@@ -1664,10 +1664,10 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 				{/* Post Header */}
 				<Flex justify="space-between" align="start" mb={4}>
 					<Flex align="center" gap={3}>
-						<Avatar name={(post.userId?.firstName || post.userId?.lastName) ? `${post.userId.firstName} ${post.userId.lastName}`.trim() : "Deleted User"} src={post.userId?.image || ""} size="md" />
+						<Avatar name={post.userId ? (`${post.userId.firstName || ""} ${post.userId.lastName || ""}`.trim() || post.userId.email?.split("@")[0] || "User") : "Deleted User"} src={post.userId?.image || ""} size="md" />
 						<Box>
 							<Heading size="md" color="white">
-								{(post.userId?.firstName || post.userId?.lastName) ? `${post.userId.firstName} ${post.userId.lastName}`.trim() : "Deleted User"}
+								{post.userId ? (`${post.userId.firstName || ""} ${post.userId.lastName || ""}`.trim() || post.userId.email?.split("@")[0] || "User") : "Deleted User"}
 							</Heading>
 							<Flex align="center" gap={2} fontSize="sm" color="#bbbbbb">
 								<Text>{new Date(post.createdAt).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })}</Text>

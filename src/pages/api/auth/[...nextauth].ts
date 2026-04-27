@@ -384,6 +384,18 @@ export const authOptions: NextAuthOptions = {
             console.log(`✅ Firebase Auth: New user created: ${user._id}`);
           }
 
+          // Backfill name for OAuth users who have empty/default names
+          if (name && (!user.firstName || user.firstName === "User" || user.firstName === "")) {
+            const newFirst = name.split(" ")[0] || email?.split("@")[0] || "User"
+            const newLast  = name.split(" ").slice(1).join(" ") || ""
+            await (user as any).constructor.findByIdAndUpdate(user._id, {
+              firstName: newFirst,
+              lastName:  newLast,
+            })
+            user.firstName = newFirst
+            user.lastName  = newLast
+          }
+
           // Use image from MongoDB first, search other collections if missing.
           // Fall back to social login image ONLY if no MongoDB image is found anywhere.
           let sessionImage = user.image;
