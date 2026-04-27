@@ -52,7 +52,7 @@ export default function Home(props: Props) {
     totalPages: 1
   };
 
-  return <EventListing pagination={paginationData} items={eventsData} />;
+  return <EventListing pagination={paginationData} items={eventsData} onPageChange={setPage} />;
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (

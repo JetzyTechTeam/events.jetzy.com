@@ -226,8 +226,9 @@ type EventListProps = {
     limit: number;
     totalPages: number;
   };
+  onPageChange?: (page: number) => void;
 };
-const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
+const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange }) => {
   const router = useRouter();
 
   const [locationState, setLocationState] = React.useState<"ASKING" | "GRANTED" | "SKIPPED" | "LOADING" | null>(null);
@@ -384,9 +385,9 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
 
       <Pagination
         totalItems={pagination.total}
-        perPageItems={items.length}
+        perPageItems={pagination.limit}
         pageNo={pagination.page}
-        onPageChange={(page) => console.log(page)}
+        onPageChange={(page) => onPageChange?.(page)}
       />
     </Container>
   );

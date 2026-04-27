@@ -41,7 +41,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const sortedEvents = [...upcomingAll, ...pastEvents]
 
-		return sendResponse(res, sortedEvents, "Events retrieved successfully!", true, ResCode.OK)
+		const LIMIT = 20
+		const page = Math.max(1, parseInt(req.query.page as string) || 1)
+		const total = sortedEvents.length
+		const totalPages = Math.ceil(total / LIMIT)
+		const skip = (page - 1) * LIMIT
+		const paginated = sortedEvents.slice(skip, skip + LIMIT)
+
+		return res.status(200).json({
+			data: paginated,
+			pagination: { total, page, showing: paginated.length, limit: LIMIT, totalPages },
+			message: "Events retrieved successfully!",
+			status: true,
+		})
 	} catch (error: any) {
 		console.log("Error:", error.message)
 		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)
