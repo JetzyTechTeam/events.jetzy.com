@@ -7,8 +7,6 @@ import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
 import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetzy/assets/icons"
 
-import "slick-carousel/slick/slick.css"
-import "slick-carousel/slick/slick-theme.css"
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { IEvent } from "@/models/events/types"

@@ -8,6 +8,8 @@ import "flatpickr/dist/flatpickr.min.css";
 import "@Jetzy/styles/globals.scss";
 import "react-toastify/dist/ReactToastify.css"
 import "react-quill/dist/quill.snow.css";
+import "slick-carousel/slick/slick.css";
+import "slick-carousel/slick/slick-theme.css";
 import React from "react";
 import { Analytics } from "@vercel/analytics/react";
 
