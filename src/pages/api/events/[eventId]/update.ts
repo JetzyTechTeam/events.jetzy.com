@@ -13,6 +13,7 @@ import { Types } from "mongoose"
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import { stripHtml } from "@/utils/text"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -83,6 +84,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const params: CreateEventFormData = JSON.parse(body.payload) as CreateEventFormData
 
 		const { eventId } = req.query
+
+		// block empty description (RichTextEditor emits <p></p> when cleared)
+		if (!stripHtml(params.desc || "").trim()) {
+			return sendResponse(res, null, "Description is required.", false, ResCode.BAD_REQUEST)
+		}
 
 		// validate the request body
 		const data = schema.safeParse({ ...params, eventId })

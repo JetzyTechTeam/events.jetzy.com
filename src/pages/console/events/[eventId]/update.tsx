@@ -230,6 +230,11 @@ export default function UpdateEventPage({ event }: Props) {
 	};
 
 	const onSubmit = async (values: CreateEventFormData) => {
+		if (!stripHtml(values.desc || "").trim()) {
+			Error("Validation Error", "Description is required");
+			return;
+		}
+
 		const validation = updateEventSchema.safeParse(values);
 
 		if (!validation.success) {

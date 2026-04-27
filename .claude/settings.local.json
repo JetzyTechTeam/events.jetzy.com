@@ -8,7 +8,8 @@
       "Bash(node -e \"const fs=require\\('fs'\\);const c=fs.readFileSync\\('d:/Jetzy/events-jetzy-com/src/pages/console/events/[eventId]/update.tsx','utf8'\\);console.log\\('CRLF:',c.includes\\('\\\\r\\\\n'\\),'LF:',!c.includes\\('\\\\r\\\\n'\\)\\)\")",
       "Bash(node -e ' *)",
       "Bash(node)",
-      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(git diff *)"
     ]
   }
 }
