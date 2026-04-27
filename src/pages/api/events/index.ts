@@ -24,8 +24,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const pastEvents = datedEvents.filter((e: any) => e.endsOn && new Date(e.endsOn) < now)
 
 		upcomingEvents.sort((a: any, b: any) => {
-			const timeA = a.startsOn ? new Date(a.startsOn).getTime() : new Date().getTime()
-			const timeB = b.startsOn ? new Date(b.startsOn).getTime() : new Date().getTime()
+			const timeA = a.startsOn
+				? new Date(a.startsOn).getTime()
+				: a.endsOn ? new Date(a.endsOn).getTime() : new Date().getTime()
+			const timeB = b.startsOn
+				? new Date(b.startsOn).getTime()
+				: b.endsOn ? new Date(b.endsOn).getTime() : new Date().getTime()
 			return timeA - timeB
 		})
 		

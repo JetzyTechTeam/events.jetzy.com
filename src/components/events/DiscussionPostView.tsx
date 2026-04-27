@@ -294,7 +294,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, groupedComments, cur
 	const { isOpen: isEditFeelingModalOpen, onOpen: onEditFeelingModalOpen, onClose: onEditFeelingModalClose } = useDisclosure()
 
 	const isAuthor = currentUserId === comment.userId?._id
-	const hasLiked = (comment.reactions?.like || (comment.reactions as any)?.likes || []).includes(currentUserId || "")
+	const hasLiked = (comment.reactions?.like || (comment.reactions as any)?.likes || []).some((id: any) => id?.toString() === (currentUserId || ""))
 	// Check if user is logged in (ticket requirement removed)
 	const canReply = !!session && !!session.user
 	// @ts-ignore
@@ -1646,8 +1646,8 @@ const DiscussionPostView: React.FC<DiscussionPostViewProps> = ({ postId, eventId
 	}
 
 	const isAuthor = currentUserId === post?.userId?._id
-	const hasLiked = (post?.reactions?.like || (post?.reactions as any)?.likes || []).includes(currentUserId || "")
-	const hasMarkedHelpful = (post?.reactions?.helpful || []).includes(currentUserId || "")
+	const hasLiked = (post?.reactions?.like || (post?.reactions as any)?.likes || []).some((id: any) => id?.toString() === (currentUserId || ""))
+	const hasMarkedHelpful = (post?.reactions?.helpful || []).some((id: any) => id?.toString() === (currentUserId || ""))
 
 	return (
 		<>

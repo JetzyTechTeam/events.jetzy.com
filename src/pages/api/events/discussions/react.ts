@@ -35,34 +35,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // @ts-ignore
         const userId = session.user._id
 
-        const post = await DiscussionPosts.findById(postId)
+        const post = await DiscussionPosts.findById(postId).lean()
         if (!post) {
             return sendResponse(res, null, "Post not found.", false, ResCode.NOT_FOUND)
         }
 
-        // Toggle reaction
         // @ts-ignore
-        const reactions = post.reactions[reactionType] as any[] // mongoose array
-        const existingIndex = reactions.findIndex((id: any) => id.toString() === userId.toString())
+        const reactionIds = (post.reactions?.[reactionType] || []) as any[]
+        const alreadyReacted = reactionIds.some((id: any) => id.toString() === userId.toString())
 
-        if (existingIndex > -1) {
-            // Remove reaction
-            reactions.splice(existingIndex, 1)
+        if (alreadyReacted) {
+            await DiscussionPosts.findByIdAndUpdate(postId, {
+                $pull: { [`reactions.${reactionType}`]: userId },
+            })
         } else {
-            // Add reaction
-            reactions.push(userId)
+            await DiscussionPosts.findByIdAndUpdate(postId, {
+                $addToSet: { [`reactions.${reactionType}`]: userId },
+            })
 
             // Trigger notification for 'like' reactions
             if (reactionType === "like") {
                 ; (async () => {
                     try {
-                        const author = await post.populate("userId", "firstName lastName email")
-                        const authorUser = author.userId as any
+                        const postDoc = await DiscussionPosts.findById(postId)
+                            .populate("userId", "firstName lastName email")
+                        if (!postDoc) return
+                        const authorUser = postDoc.userId as any
 
                         // Don't notify if reacting to own post
                         if (authorUser._id.toString() === userId.toString()) return
 
-                        const event = await Events.findById(post.eventId)
+                        const event = await Events.findById(postDoc.eventId)
                         if (!event) return
 
                         const reactor = session.user as any
@@ -77,7 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                             eventName: event.name,
                             eventSlug: event.slug,
                             magicToken,
-                            postId: post._id.toString(),
+                            postId: postDoc._id.toString(),
                         })
                     } catch (error) {
                         console.error("Failed to send reaction notification:", error)
@@ -86,12 +89,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             }
         }
 
-        await post.save()
+        const updated = await DiscussionPosts.findById(postId)
+            .populate("userId", "firstName lastName image email")
 
-        // Populate for return
-        await post.populate("userId", "firstName lastName image email")
-
-        return sendResponse(res, post, "Reaction updated successfully.", true, ResCode.OK)
+        return sendResponse(res, updated, "Reaction updated successfully.", true, ResCode.OK)
     } catch (error: any) {
         console.error("Error reacting to discussion post:", error)
         return sendResponse(res, null, error.message || "Failed to update reaction.", false, ResCode.INTERNAL_SERVER_ERROR)

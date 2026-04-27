@@ -31,37 +31,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // @ts-ignore
         const userId = session.user._id
 
-        const comment = await DiscussionComments.findById(commentId)
+        const comment = await DiscussionComments.findById(commentId).lean()
         if (!comment) {
             return sendResponse(res, null, "Comment not found.", false, ResCode.NOT_FOUND)
         }
 
-        // Toggle like reaction
-        // Handle both 'like' and 'likes' for backward compatibility
         const likesArray = (comment.reactions?.likes || (comment.reactions as any)?.like || []) as any[]
-        const existingIndex = likesArray.findIndex((id: any) => id.toString() === userId.toString())
+        const alreadyLiked = likesArray.some((id: any) => id.toString() === userId.toString())
 
-        if (existingIndex > -1) {
-            // Remove like
-            likesArray.splice(existingIndex, 1)
+        if (alreadyLiked) {
+            await DiscussionComments.findByIdAndUpdate(commentId, {
+                $pull: { "reactions.likes": userId },
+            })
         } else {
-            // Add like
-            likesArray.push(userId)
+            await DiscussionComments.findByIdAndUpdate(commentId, {
+                $addToSet: { "reactions.likes": userId },
+            })
         }
 
-        // Update the likes array (support both field names)
-        if (comment.reactions?.likes !== undefined) {
-            comment.reactions.likes = likesArray as any
-        } else if ((comment.reactions as any)?.like !== undefined) {
-            (comment.reactions as any).like = likesArray
-        }
+        const updated = await DiscussionComments.findById(commentId)
+            .populate("userId", "firstName lastName image email")
 
-        await comment.save()
-
-        // Populate for return
-        await comment.populate("userId", "firstName lastName image email")
-
-        return sendResponse(res, comment, "Reaction updated successfully.", true, ResCode.OK)
+        return sendResponse(res, updated, "Reaction updated successfully.", true, ResCode.OK)
     } catch (error: any) {
         console.error("Error reacting to comment:", error)
         return sendResponse(res, null, error.message || "Failed to update reaction.", false, ResCode.INTERNAL_SERVER_ERROR)

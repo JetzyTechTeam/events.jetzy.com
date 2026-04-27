@@ -234,7 +234,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
   const [userLocation, setUserLocation] = React.useState<{ lat: number, lng: number } | null>(null);
 
   React.useEffect(() => {
-    const stored = sessionStorage.getItem("events_location_pref");
+    const stored = localStorage.getItem("events_location_pref");
     if (stored === "SKIPPED") {
       setLocationState("SKIPPED");
     } else if (stored) {
@@ -254,7 +254,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
     setLocationState("LOADING");
     if (!navigator.geolocation) {
       setLocationState("SKIPPED");
-      sessionStorage.setItem("events_location_pref", "SKIPPED");
+      localStorage.setItem("events_location_pref", "SKIPPED");
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -262,18 +262,18 @@ const EventList: React.FC<EventListProps> = ({ items, pagination }) => {
         const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
         setUserLocation(coords);
         setLocationState("GRANTED");
-        sessionStorage.setItem("events_location_pref", JSON.stringify(coords));
+        localStorage.setItem("events_location_pref", JSON.stringify(coords));
       },
       (error) => {
         setLocationState("SKIPPED");
-        sessionStorage.setItem("events_location_pref", "SKIPPED");
+        localStorage.setItem("events_location_pref", "SKIPPED");
       }
     );
   };
 
   const handleSkipLocation = () => {
     setLocationState("SKIPPED");
-    sessionStorage.setItem("events_location_pref", "SKIPPED");
+    localStorage.setItem("events_location_pref", "SKIPPED");
   }
 
   const sortedItems = useMemo(() => {
@@ -531,7 +531,7 @@ const Navbar = () => {
                   _hover={{ bg: "gray.700" }}
                   color="red.400"
                   onClick={() => {
-                    sessionStorage?.clear();
+                    localStorage?.clear();
                     signOut({ callbackUrl: "/" });
                   }}
                 >

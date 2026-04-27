@@ -79,7 +79,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 						<div className="flex h-16 items-center justify-between">
 							<div className="flex items-center">
 								<div className="flex-shrink-0">
-									<Image className="h-10 w-10" src={Logo} alt="Your Company" />
+									<Link href="/"><Image className="h-10 w-10 cursor-pointer" src={Logo} alt="Jetzy Events" /></Link>
 								</div>
 								<div className="hidden md:block">
 									<div className="ml-10 flex items-baseline space-x-4">

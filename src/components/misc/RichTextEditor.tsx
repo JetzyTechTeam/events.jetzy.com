@@ -252,6 +252,14 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
         const t = e.target as HTMLElement
         setSelectedImg(t.tagName === "IMG" ? (t as HTMLImageElement) : null)
       })
+
+      const handleClipboard = () => {
+        const y = window.scrollY
+        setTimeout(() => requestAnimationFrame(() => window.scrollTo(0, y)), 50)
+      }
+      editor.root.addEventListener("copy", handleClipboard)
+      editor.root.addEventListener("paste", handleClipboard)
+      editor.root.addEventListener("cut", handleClipboard)
     }
     trySetup()
   }, [QuillComp])

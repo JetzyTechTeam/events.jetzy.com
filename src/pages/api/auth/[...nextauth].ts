@@ -367,7 +367,7 @@ export const authOptions: NextAuthOptions = {
           // If user doesn't exist, create a new one (Social Signup)
           if (!user) {
             console.log(`Firebase Auth: User ${email} not found, creating new account...`);
-            const firstName = name?.split(" ")[0] || "User";
+            const firstName = name?.split(" ")[0] || email?.split("@")[0] || "User";
             const lastName = name?.split(" ").slice(1).join(" ") || "";
 
             // Create in EventUsers by default
