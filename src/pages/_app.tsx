@@ -6,7 +6,8 @@ import { Provider as ReduxProvider } from "react-redux";
 import { ToastContainer } from "react-toastify";
 import "flatpickr/dist/flatpickr.min.css";
 import "@Jetzy/styles/globals.scss";
-import "react-toastify/dist/ReactToastify.css";
+import "react-toastify/dist/ReactToastify.css"
+import "react-quill/dist/quill.snow.css";
 import React from "react";
 import { Analytics } from "@vercel/analytics/react";
 

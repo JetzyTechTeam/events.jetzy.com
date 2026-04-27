@@ -1,6 +1,5 @@
 import { useRef, useCallback, useEffect, useState, useLayoutEffect } from "react"
 import { uploadFile } from "@/services/upload.service"
-import "react-quill/dist/quill.snow.css"
 
 // ─── Custom Image blot — preserves width through Delta round-trips ────────────
 function registerResizableImage(Quill: any) {
