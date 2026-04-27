@@ -420,17 +420,20 @@ const CreateEventPage = () => {
                     <InputLeftElement pointerEvents="none">
                       <LocationSVG />
                     </InputLeftElement>
-                    <Field
-                      innerRef={ref}
-                      as={Input}
-                      id="location"
-                      name="location"
-                      placeholder="Choose Location"
-                      bg="#141619"
-                      color="white"
-                      border="none"
-                      pl="10"
-                    />
+                    <Field name="location">
+                      {({ field }: any) => (
+                        <Input
+                          {...field}
+                          ref={ref}
+                          id="location"
+                          placeholder="Choose Location"
+                          bg="#141619"
+                          color="white"
+                          border="none"
+                          pl="10"
+                        />
+                      )}
+                    </Field>
                   </InputGroup>
                 </FormControl>
                 <FormControl mb={4}>
