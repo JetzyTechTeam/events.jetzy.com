@@ -34,7 +34,7 @@ import {
 import { FiSearch, FiPlus, FiMessageCircle, FiThumbsUp, FiEye, FiClock, FiShare2, FiMoreHorizontal, FiEdit, FiTrash2, FiFlag } from "react-icons/fi"
 import { BsPinAngle, BsHandThumbsUpFill } from "react-icons/bs"
 import Image from "next/image"
-import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi, CheckEventTicketApi, ReportDiscussionPostApi } from "@/services/events/discussionApis"
+import { ListDiscussionPostsApi, ReactToDiscussionPostApi, DeleteDiscussionPostApi, CheckEventTicketApi, ReportDiscussionPostApi, GetPostReactionsApi } from "@/services/events/discussionApis"
 import type { DiscussionPostWithAuthor } from "@/types/discussion"
 import CreateDiscussionModal from "./CreateDiscussionModal"
 import DiscussionPostView from "./DiscussionPostView"
@@ -121,6 +121,10 @@ const FeedPostCard = ({
 	const userRole = session?.user?.role
 	const isAdmin = userRole === "admin" || userRole === "super admin"
 	const router = useRouter()
+	const [showReactors, setShowReactors] = useState(false)
+	const [reactors, setReactors] = useState<any[]>([])
+	const [reactorsLoading, setReactorsLoading] = useState(false)
+
 	const handlePostClick = async () => {
 		if (!session || !session.user) {
 			const currentPath = window.location.pathname + window.location.search
@@ -128,6 +132,19 @@ const FeedPostCard = ({
 			return
 		}
 		onClick(post._id)
+	}
+
+	const handleReactionBadgeClick = async (e: React.MouseEvent) => {
+		e.stopPropagation()
+		setShowReactors(true)
+		if (reactors.length === 0) {
+			setReactorsLoading(true)
+			try {
+				const res = await GetPostReactionsApi({ data: { postId: post._id, reactionType: "like" } })
+				setReactors(res?.data ?? [])
+			} catch { setReactors([]) }
+			finally { setReactorsLoading(false) }
+		}
 	}
 
 	const reactMutation = useMutation({
@@ -392,7 +409,13 @@ const FeedPostCard = ({
 				<Flex justify="space-between" align="center" py={2} borderBottom="1px solid #434343" fontSize="sm" color="#bbbbbb">
 					<Flex align="center" gap={1}>
 						{(post.reactions?.like?.length || (post.reactions as any)?.likes?.length || 0) > 0 && (
-							<Flex align="center" gap={1}>
+							<Flex
+								align="center"
+								gap={1}
+								cursor="pointer"
+								onClick={handleReactionBadgeClick}
+								_hover={{ opacity: 0.8 }}
+							>
 								<Box bg="#jetzy" borderRadius="full" p="3px" display="flex" alignItems="center" justifyContent="center">
 									<Icon as={BsHandThumbsUpFill} color="white" boxSize="10px" />
 								</Box>
@@ -471,6 +494,38 @@ const FeedPostCard = ({
 			</Box>
 		</Box>
 
+		{/* Reactors Modal */}
+		{showReactors && (
+			<Modal isOpen={showReactors} onClose={() => setShowReactors(false)} isCentered size="sm">
+				<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(5px)" />
+				<ModalContent borderRadius="xl" bg="#1E1E1E">
+					<ModalCloseButton color="white" />
+					<ModalBody p={4}>
+						<Text fontWeight="600" color="white" mb={3}>People who liked this</Text>
+						{reactorsLoading ? (
+							<Flex justify="center" py={4}><ChakraSpinner color="#jetzy" /></Flex>
+						) : reactors.length === 0 ? (
+							<Text color="#bbbbbb" fontSize="sm">No reactions yet.</Text>
+						) : (
+							<Stack spacing={3}>
+								{reactors.map((user: any) => (
+									<Flex key={user._id} align="center" gap={3}>
+										<Avatar
+											size="sm"
+											name={`${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email}
+											src={user.image || ""}
+										/>
+										<Text color="white" fontSize="sm">
+											{`${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email}
+										</Text>
+									</Flex>
+								))}
+							</Stack>
+						)}
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+		)}
 		</>
 	)
 }
