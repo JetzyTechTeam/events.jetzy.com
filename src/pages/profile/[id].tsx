@@ -15,6 +15,7 @@ interface ProfilePageProps {
         firstName: string
         lastName: string
         image?: string
+        email?: string
         _id: string
     } | null
     baseUrl: string

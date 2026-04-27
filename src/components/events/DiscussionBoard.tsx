@@ -512,11 +512,11 @@ const FeedPostCard = ({
 									<Flex key={user._id} align="center" gap={3}>
 										<Avatar
 											size="sm"
-											name={`${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email}
+											name={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "?"}
 											src={user.image || ""}
 										/>
 										<Text color="white" fontSize="sm">
-											{`${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email}
+											{`${user.firstName || ""} ${user.lastName || ""}`.trim() || "Jetzy Member"}
 										</Text>
 									</Flex>
 								))}
