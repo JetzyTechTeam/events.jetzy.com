@@ -810,6 +810,8 @@ function CustomQuestionsManager({ event }: { event: any }) {
 }
 
 function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
+	const [selectedGuest, setSelectedGuest] = useState<{ guest: any; booking: any; checkIn: any } | null>(null)
+
 	const fetchGuests = async () => {
 		const res = await axios.get("/api/guests-list", { params: { eventId } })
 		return res.data || []
@@ -841,13 +843,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		queryFn: () => axios.get("/api/check-in/booking-status", { params: { eventId } }).then(r => r.data?.data || []),
 	})
 
-	// Build a map of all guests by email
 	const guestByEmail: Record<string, any> = {}
 	guests.forEach((g: any) => {
 		if (g.email) guestByEmail[g.email.toLowerCase()] = g
 	})
 
-	// Build a map of all bookings by email
 	const bookingByEmail: Record<string, any> = {}
 	;(bookings as any[]).forEach((b: any) => {
 		if (b.customerEmail) bookingByEmail[b.customerEmail.toLowerCase()] = b
@@ -860,30 +860,25 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 
 	const eventQuestions: any[] = event?.questions || []
 
-	const renderAnswer = (qId: string, booking: any) => {
-		if (!booking?.customAnswers) return <Text color="#9C9C9C" fontSize="sm">—</Text>
+	const formatAnswer = (qId: string, booking: any): string => {
+		if (!booking?.customAnswers) return '—'
 		const ans = booking.customAnswers.find((a: any) => a.questionId === qId)
-		if (!ans || ans.answer == null) return <Text color="#9C9C9C" fontSize="sm">—</Text>
-
-		let val: string
-		if (Array.isArray(ans.answer)) {
-			val = ans.answer.join(', ')
-		} else if (typeof ans.answer === 'object') {
+		if (!ans || ans.answer == null) return '—'
+		if (Array.isArray(ans.answer)) return ans.answer.length ? ans.answer.join(', ') : '—'
+		if (typeof ans.answer === 'object') {
 			const parts: string[] = []
 			if (ans.answer.company) parts.push(ans.answer.company)
 			if (ans.answer.jobTitle) parts.push(ans.answer.jobTitle)
 			if (ans.answer.agreed !== undefined) parts.push(ans.answer.agreed ? 'Agreed' : 'Not agreed')
 			if (ans.answer.signature) parts.push(`Signed: ${ans.answer.signature}`)
-			val = parts.join(' · ') || '—'
-		} else {
-			val = String(ans.answer)
+			return parts.join(' · ') || '—'
 		}
-		return <Text fontSize="sm">{val}</Text>
+		return String(ans.answer) || '—'
 	}
 
 	if (guestsLoading) return <Text>Loading guests...</Text>
 	if (guestsError) return <Text color="red.500">Failed to load guests.</Text>
-	
+
 	const allEmails = Array.from(new Set([
 		...guests.map((g: any) => g.email?.toLowerCase()).filter(Boolean),
 		...bookings.map((b: any) => b.customerEmail?.toLowerCase()).filter(Boolean)
@@ -892,50 +887,110 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	if (!allEmails.length) return <Text>No guests or bookings found.</Text>
 
 	return (
-		<Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3" overflowX="auto">
-			<TableContainer>
-				<Table variant="simple" size="sm">
-					<Thead>
-						<Tr>
-							<Th color="#9C9C9C">Name</Th>
-							<Th color="#9C9C9C">Email</Th>
-							<Th color="#9C9C9C">Status</Th>
-							<Th color="#9C9C9C">Invited At</Th>
-							<Th color="#9C9C9C">Check-In</Th>
-							{eventQuestions.map((q: any) => (
-								<Th key={q.id} color="#F79432">{q.title}{q.isRequired ? ' *' : ''}</Th>
-							))}
-						</Tr>
-					</Thead>
-					<Tbody>
-						{allEmails.map((email: string) => {
-							const guest = guestByEmail[email]
-							const booking = bookingByEmail[email]
-							return (
-								<Tr key={email}>
-									<Td color="white">{booking?.customerName || guest?.name || "—"}</Td>
-									<Td color="white">{email}</Td>
-									<Td color="white">{guest?.status || (booking ? 'Purchased' : '—')}</Td>
-									<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
-									<Td>
-										{(() => {
-											if (!booking?._id) return <Badge colorScheme="gray">N/A</Badge>
-											const ci = checkInMap[booking._id.toString()]
-											if (!ci) return <Badge colorScheme="gray">Not Checked In</Badge>
-											if (ci.isFullyCheckedIn) return <Badge colorScheme="green">Fully Checked In</Badge>
-											return <Badge colorScheme="yellow">Partial ({ci.checkedInCount})</Badge>
-										})()}
-									</Td>
-									{eventQuestions.map((q: any) => (
-										<Td key={q.id} color="white">{renderAnswer(q.id, booking)}</Td>
-									))}
-								</Tr>
-							)
-						})}
-					</Tbody>
-				</Table>
-			</TableContainer>
-		</Box>
+		<>
+			<Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3" overflowX="auto">
+				<TableContainer>
+					<Table variant="simple" size="sm">
+						<Thead>
+							<Tr>
+								<Th color="#9C9C9C">Name</Th>
+								<Th color="#9C9C9C">Email</Th>
+								<Th color="#9C9C9C">Status</Th>
+								<Th color="#9C9C9C">Invited At</Th>
+								<Th color="#9C9C9C">Check-In</Th>
+								<Th color="#9C9C9C"></Th>
+							</Tr>
+						</Thead>
+						<Tbody>
+							{allEmails.map((email: string) => {
+								const guest = guestByEmail[email]
+								const booking = bookingByEmail[email]
+								const ci = booking?._id ? checkInMap[booking._id.toString()] : null
+								return (
+									<Tr key={email}>
+										<Td color="white">{booking?.customerName || guest?.name || "—"}</Td>
+										<Td color="white">{email}</Td>
+										<Td color="white">{guest?.status || (booking ? 'Purchased' : '—')}</Td>
+										<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
+										<Td>
+											{!booking?._id
+												? <Badge colorScheme="gray">N/A</Badge>
+												: !ci
+												? <Badge colorScheme="gray">Not Checked In</Badge>
+												: ci.isFullyCheckedIn
+												? <Badge colorScheme="green">Fully Checked In</Badge>
+												: <Badge colorScheme="yellow">Partial ({ci.checkedInCount})</Badge>
+											}
+										</Td>
+										<Td>
+											<Button
+												size="sm"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: '#2A2A2A' }}
+												leftIcon={<EyeIcon style={{ width: 14, height: 14 }} />}
+												onClick={() => setSelectedGuest({ guest, booking, checkIn: ci })}
+											>
+												View Details
+											</Button>
+										</Td>
+									</Tr>
+								)
+							})}
+						</Tbody>
+					</Table>
+				</TableContainer>
+			</Box>
+
+			{/* Guest Detail Modal */}
+			<Modal isOpen={!!selectedGuest} onClose={() => setSelectedGuest(null)} isCentered size="2xl">
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white">
+					<ModalHeader borderBottom="1px solid #3E3E3E">Guest Details</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						{selectedGuest && (
+							<Flex direction="column" gap={5}>
+								{/* Basic info */}
+								<Flex gap={6} wrap="wrap">
+									<Box>
+										<Text fontSize="xs" color="#9C9C9C">Name</Text>
+										<Text fontWeight="semibold">{selectedGuest.booking?.customerName || selectedGuest.guest?.name || '—'}</Text>
+									</Box>
+									<Box>
+										<Text fontSize="xs" color="#9C9C9C">Email</Text>
+										<Text fontWeight="semibold">{selectedGuest.booking?.customerEmail || selectedGuest.guest?.email || '—'}</Text>
+									</Box>
+									<Box>
+										<Text fontSize="xs" color="#9C9C9C">Status</Text>
+										<Text fontWeight="semibold">{selectedGuest.guest?.status || (selectedGuest.booking ? 'Purchased' : '—')}</Text>
+									</Box>
+									<Box>
+										<Text fontSize="xs" color="#9C9C9C">Invited At</Text>
+										<Text fontWeight="semibold">{selectedGuest.guest?.invitedAt ? DateTime.fromISO(selectedGuest.guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : '—'}</Text>
+									</Box>
+								</Flex>
+
+								{/* Questions */}
+								{eventQuestions.length > 0 && (
+									<Box>
+										<Heading size="sm" mb={3} color="white">Questions</Heading>
+										<Flex direction="column" gap={2}>
+											{eventQuestions.map((q: any) => (
+												<Box key={q.id} bg="#2A2A2A" rounded="lg" px={4} py={3}>
+													<Text fontSize="sm" color="#F79432" fontWeight="semibold" mb={1}>{q.title}{q.isRequired ? ' *' : ''}</Text>
+													<Text fontSize="sm" color="white">{formatAnswer(q.id, selectedGuest.booking)}</Text>
+												</Box>
+											))}
+										</Flex>
+									</Box>
+								)}
+							</Flex>
+						)}
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+		</>
 	)
 }
 
