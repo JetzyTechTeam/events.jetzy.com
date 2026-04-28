@@ -95,7 +95,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	const [content, setContent] = useState("")
 	const [tags, setTags] = useState<string[]>([])
 	const [tagInput, setTagInput] = useState("")
-	const [images, setImages] = useState<string[]>([])
+	const [media, setMedia] = useState<{ url: string; isVideo: boolean }[]>([])
 	const [uploadingImages, setUploadingImages] = useState(false)
 	const [feeling, setFeeling] = useState<string>("")
 	const [activity, setActivity] = useState<string>("")
@@ -202,7 +202,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 		setContent("")
 		setTags([])
 		setTagInput("")
-		setImages([])
+		setMedia([])
 		setFeeling("")
 		setActivity("")
 		onClose()
@@ -280,22 +280,21 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			const uploadPromises = Array.from(files).map(async (file) => {
 				console.log("[CreateDiscussionModal] Uploading file:", file.name, file.type, file.size)
 
-				// Validate file type
 				if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
 					throw new Error("Only images and videos are allowed")
 				}
 
 				const res = await edgestore.publicFiles.upload({ file })
 				console.log("[CreateDiscussionModal] Upload complete:", res.url)
-				return res.url
+				return { url: res.url, isVideo: file.type.startsWith("video/") }
 			})
 
-			const uploadedUrls = await Promise.all(uploadPromises)
-			console.log("[CreateDiscussionModal] All uploads complete:", uploadedUrls)
+			const uploaded = await Promise.all(uploadPromises)
+			console.log("[CreateDiscussionModal] All uploads complete:", uploaded)
 
-			const newImages = [...images, ...uploadedUrls]
-			setImages(newImages)
-			console.log("[CreateDiscussionModal] Images state updated:", newImages)
+			const newMedia = [...media, ...uploaded]
+			setMedia(newMedia)
+			console.log("[CreateDiscussionModal] Media state updated:", newMedia)
 
 			toast({
 				title: "Images uploaded successfully",
@@ -319,7 +318,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	}
 
 	const handleRemoveImage = (index: number) => {
-		setImages(images.filter((_, i) => i !== index))
+		setMedia(media.filter((_, i) => i !== index))
 	}
 
 	const handleSelectFeeling = (emoji: string, label: string) => {
@@ -338,11 +337,11 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	const handleSubmit = () => {
 		console.log("[CreateDiscussionModal] Submit clicked", {
 			contentLength: content.trim().length,
-			imagesCount: images.length,
-			images: images,
-			tags: tags,
-			feeling: feeling,
-			activity: activity,
+			mediaCount: media.length,
+			media,
+			tags,
+			feeling,
+			activity,
 		})
 
 		if (!session || !session.user) {
@@ -368,7 +367,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 		}
 
 		// Allow posting if there's content, images, feeling, or activity
-		if (!content.trim() && images.length === 0 && !feeling && !activity) {
+		if (!content.trim() && media.length === 0 && !feeling && !activity) {
 			toast({
 				description: "Please enter some content, add images, or select a feeling/activity for your post",
 				status: "warning",
@@ -378,11 +377,10 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 			return
 		}
 
-		// Pass current state values as parameters to avoid stale closure
 		createMutation.mutate({
 			postContent: content,
 			postTags: tags,
-			postImages: images,
+			postImages: media.map(m => m.url),
 			postFeeling: feeling,
 			postActivity: activity,
 		})
@@ -449,7 +447,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 									fontSize="md"
 									onKeyDown={(e) => {
 										// Allow Enter to submit if there's content OR images OR feeling/activity
-										if (e.key === 'Enter' && !e.shiftKey && (content.trim() || images.length > 0 || feeling || activity)) {
+										if (e.key === 'Enter' && !e.shiftKey && (content.trim() || media.length > 0 || feeling || activity)) {
 											// If mention dropdown is NOT open, allow submission
 											if (!showMentionDropdown) {
 												e.preventDefault()
@@ -530,21 +528,18 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 							</Flex>
 						)}
 
-						{/* Images Preview */}
-						{images.length > 0 && (
+						{/* Media Preview */}
+						{media.length > 0 && (
 							<Box>
-								{images.length === 1 ? (
-									<Box position="relative" borderRadius="lg" overflow="hidden" bg="black" display="flex" justifyContent="center">
-										<Image
-											src={images[0]}
-											alt="Upload 1"
-											maxH="500px"
-											w="auto"
-											maxW="100%"
-											objectFit="contain"
-										/>
+								{media.length === 1 ? (
+									<Box position="relative" borderRadius="lg" overflow="hidden" bg="black" minH="120px" display="flex" justifyContent="center" alignItems="center">
+										{media[0].isVideo ? (
+											<video src={media[0].url} controls style={{ maxHeight: 400, maxWidth: "100%", borderRadius: 8 }} />
+										) : (
+											<Image src={media[0].url} alt="Upload 1" maxH="400px" w="auto" maxW="100%" objectFit="contain" />
+										)}
 										<IconButton
-											aria-label="Remove image"
+											aria-label="Remove"
 											icon={<FiX />}
 											size="sm"
 											position="absolute"
@@ -559,17 +554,15 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 									</Box>
 								) : (
 									<SimpleGrid columns={2} spacing={2}>
-										{images.map((url, index) => (
-											<Box key={index} position="relative" borderRadius="lg" overflow="hidden" h="200px" bg="black">
-												<Image
-													src={url}
-													alt={`Upload ${index + 1}`}
-													w="full"
-													h="full"
-													objectFit="contain"
-												/>
+										{media.map((item, index) => (
+											<Box key={index} position="relative" borderRadius="lg" overflow="hidden" h="200px" bg="black" display="flex" alignItems="center" justifyContent="center">
+												{item.isVideo ? (
+													<video src={item.url} controls style={{ maxHeight: "100%", maxWidth: "100%", borderRadius: 8 }} />
+												) : (
+													<Image src={item.url} alt={`Upload ${index + 1}`} w="full" h="full" objectFit="contain" />
+												)}
 												<IconButton
-													aria-label="Remove image"
+													aria-label="Remove"
 													icon={<FiX />}
 													size="sm"
 													position="absolute"
@@ -652,7 +645,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 							size="lg"
 							_hover={{ bg: "#166FE5" }}
 							_active={{ transform: "scale(0.98)" }}
-							isDisabled={!content.trim() && images.length === 0 && !feeling && !activity}
+							isDisabled={!content.trim() && media.length === 0 && !feeling && !activity}
 							w="full"
 						>
 							Post
