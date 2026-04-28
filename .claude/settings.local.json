@@ -9,7 +9,8 @@
       "Bash(node -e ' *)",
       "Bash(node)",
       "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Bash(xargs basename *)"
     ]
   }
 }

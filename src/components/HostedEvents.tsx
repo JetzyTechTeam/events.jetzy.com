@@ -1004,6 +1004,7 @@ function DatePollSidebar({ event, isAdmin }: { event: IEvent; isAdmin: boolean }
 	const [submittedId, setSubmittedId] = React.useState<string | null>(null)
 	const [pollData, setPollData] = React.useState<any>(event.datePoll)
 	const [isVoting, setIsVoting] = React.useState(false)
+	const [showVotesModal, setShowVotesModal] = React.useState(false)
 	const toast = useToast()
 
 	React.useEffect(() => {
@@ -1141,7 +1142,10 @@ function DatePollSidebar({ event, isAdmin }: { event: IEvent; isAdmin: boolean }
 
 				{/* People voted row */}
 				{allVoters.length > 0 && (
-					<div className="flex items-center gap-3 py-2 border-t border-[#232323] mt-1">
+					<button
+						onClick={() => setShowVotesModal(true)}
+						className="w-full flex items-center gap-3 py-2 border-t border-[#232323] mt-1 hover:opacity-80 transition-opacity text-left"
+					>
 						<div className="flex -space-x-2">
 							{allVoters.slice(0, 4).map((voter: any, i: number) => (
 								<div key={i} className="w-7 h-7 rounded-full bg-[#444] border-2 border-[#141619] flex items-center justify-center overflow-hidden">
@@ -1154,10 +1158,10 @@ function DatePollSidebar({ event, isAdmin }: { event: IEvent; isAdmin: boolean }
 							))}
 						</div>
 						<span className="text-sm text-white font-medium flex-1">{totalVotes} people voted</span>
-						<svg className="w-4 h-4 text-[#555]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<svg className="w-4 h-4 text-[#F79432]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
 						</svg>
-					</div>
+					</button>
 				)}
 			</div>
 
@@ -1173,6 +1177,48 @@ function DatePollSidebar({ event, isAdmin }: { event: IEvent; isAdmin: boolean }
 					<p className="text-xs text-[#666] mt-0.5">Stay tuned for lineup reveal</p>
 				</div>
 			</div>
+
+			{/* Votes Modal */}
+			<Modal isOpen={showVotesModal} onClose={() => setShowVotesModal(false)} isCentered size="sm">
+				<ModalOverlay bg="blackAlpha.700" />
+				<ModalContent bg="#1E2024" color="white" border="1px solid #333" rounded="2xl" mx={4}>
+					<ModalHeader borderBottom="1px solid #2a2a2a" pb={3}>
+						<div className="flex items-center justify-between">
+							<button onClick={() => setShowVotesModal(false)} className="text-[#888] hover:text-white transition-colors mr-3">
+								<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+								</svg>
+							</button>
+							<span className="text-white font-bold text-base flex-1">Votes</span>
+							<span className="bg-[#F79432] text-black text-xs font-bold px-2.5 py-1 rounded-full">{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</span>
+						</div>
+					</ModalHeader>
+					<ModalBody py={4} px={4}>
+						<div className="flex flex-col gap-3">
+							{(pollData?.options || []).flatMap((opt: any) =>
+								(opt.voters || []).map((voter: any) => ({ voter, date: opt.date, label: opt.label }))
+							).map(({ voter, date, label }: any, i: number) => (
+								<div key={i} className="flex items-center gap-3">
+									<div className="w-9 h-9 rounded-full bg-[#333] border border-[#444] flex items-center justify-center overflow-hidden flex-shrink-0">
+										{voter.image ? (
+											<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
+										) : (
+											<span className="text-sm font-bold text-white uppercase">{voter.name?.charAt(0) || "?"}</span>
+										)}
+									</div>
+									<span className="text-sm text-white font-medium flex-1">{voter.name || "Guest"}</span>
+									<span className="bg-[#F79432] text-black text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">
+										{label || date}
+									</span>
+								</div>
+							))}
+							{totalVotes === 0 && (
+								<p className="text-center text-sm text-[#666] py-4">No votes yet.</p>
+							)}
+						</div>
+					</ModalBody>
+				</ModalContent>
+			</Modal>
 		</div>
 	)
 }
