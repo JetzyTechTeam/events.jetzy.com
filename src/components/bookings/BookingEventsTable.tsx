@@ -81,25 +81,43 @@ const BookingTableEvents:React.FC<Props> = ({events , pagination} ) => {
         <Tfoot>
             <Tr>
                 <Td colSpan={7}>
-                    <Flex justify="center" align="center" mt={4}>
+                    <Flex justify="center" align="center" gap={2} mt={4} flexWrap="wrap">
                         <Button
-                            variant="link"
+                            size="sm"
+                            bg="#2A2A2A"
+                            color="white"
+                            border="1px solid #444"
+                            _hover={{ bg: '#3A3A3A' }}
+                            _disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
                             onClick={handlePrev}
-                            disabled={pagination.page === 1}
-                            mr={2}
+                            isDisabled={pagination.page <= 1}
                         >
-                            &lt;Prev
+                            &lt; Prev
                         </Button>
-                        <Text fontSize="sm" color="gray.600">
-                            Page {pagination.page} | showing {pagination.showing} of {pagination.total}
-                        </Text>
+                        {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map(p => (
+                            <Button
+                                key={p}
+                                size="sm"
+                                bg={p === pagination.page ? '#F79432' : '#2A2A2A'}
+                                color={p === pagination.page ? 'black' : 'white'}
+                                border="1px solid #444"
+                                _hover={{ bg: p === pagination.page ? '#e6832a' : '#3A3A3A' }}
+                                onClick={() => router.push(`/console/bookings?page=${p}`)}
+                            >
+                                {p}
+                            </Button>
+                        ))}
                         <Button
-                            variant="link"
+                            size="sm"
+                            bg="#2A2A2A"
+                            color="white"
+                            border="1px solid #444"
+                            _hover={{ bg: '#3A3A3A' }}
+                            _disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
                             onClick={handleNext}
-                            disabled={pagination.page === pagination.totalPages}
-                            ml={2}
+                            isDisabled={pagination.page >= pagination.totalPages}
                         >
-                            Next&gt;
+                            Next &gt;
                         </Button>
                     </Flex>
                 </Td>
