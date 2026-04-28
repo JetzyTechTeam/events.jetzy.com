@@ -809,8 +809,11 @@ function CustomQuestionsManager({ event }: { event: any }) {
 	)
 }
 
+const GUESTS_PAGE_SIZE = 10
+
 function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const [selectedGuest, setSelectedGuest] = useState<{ guest: any; booking: any; checkIn: any } | null>(null)
+	const [page, setPage] = useState(1)
 
 	const fetchGuests = async () => {
 		const res = await axios.get("/api/guests-list", { params: { eventId } })
@@ -886,6 +889,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 
 	if (!allEmails.length) return <Text>No guests or bookings found.</Text>
 
+	const totalPages = Math.ceil(allEmails.length / GUESTS_PAGE_SIZE)
+	const pagedEmails = allEmails.slice((page - 1) * GUESTS_PAGE_SIZE, page * GUESTS_PAGE_SIZE)
+
 	return (
 		<>
 			<Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3" overflowX="auto">
@@ -902,7 +908,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							</Tr>
 						</Thead>
 						<Tbody>
-							{allEmails.map((email: string) => {
+							{pagedEmails.map((email: string) => {
 								const guest = guestByEmail[email]
 								const booking = bookingByEmail[email]
 								const ci = booking?._id ? checkInMap[booking._id.toString()] : null
@@ -940,6 +946,44 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 						</Tbody>
 					</Table>
 				</TableContainer>
+
+				{totalPages > 1 && (
+					<Flex justify="center" align="center" gap={2} mt={3} flexWrap="wrap">
+						<Button
+							size="sm"
+							bg="#2A2A2A" color="white" border="1px solid #444"
+							_hover={{ bg: '#3A3A3A' }}
+							_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
+							isDisabled={page <= 1}
+							onClick={() => setPage(p => p - 1)}
+						>
+							&lt; Prev
+						</Button>
+						{Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+							<Button
+								key={p}
+								size="sm"
+								bg={p === page ? '#F79432' : '#2A2A2A'}
+								color={p === page ? 'black' : 'white'}
+								border="1px solid #444"
+								_hover={{ bg: p === page ? '#e6832a' : '#3A3A3A' }}
+								onClick={() => setPage(p)}
+							>
+								{p}
+							</Button>
+						))}
+						<Button
+							size="sm"
+							bg="#2A2A2A" color="white" border="1px solid #444"
+							_hover={{ bg: '#3A3A3A' }}
+							_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
+							isDisabled={page >= totalPages}
+							onClick={() => setPage(p => p + 1)}
+						>
+							Next &gt;
+						</Button>
+					</Flex>
+				)}
 			</Box>
 
 			{/* Guest Detail Modal */}
