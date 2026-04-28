@@ -175,6 +175,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
           _id: event._id.toString(),
           startsOn: event.startsOn?.toISOString() ?? null,
           endsOn: event.endsOn?.toISOString() ?? null,
+          ownerId: event.ownerId?.toString() ?? null,
         },
         bookedTickets,
       };
