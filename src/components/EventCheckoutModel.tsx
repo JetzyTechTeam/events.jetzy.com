@@ -169,6 +169,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				const result = await response.json()
 				if (result.status) {
 					setFreeRegistrationSuccess(true)
+					setTimeout(() => window.location.reload(), 2500)
 				} else {
 					Error("Registration Failed", result.message || "Something went wrong. Please try again.")
 				}
