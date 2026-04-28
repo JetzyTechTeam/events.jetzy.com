@@ -14,6 +14,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [showWaitingList, setShowWaitingList] = useState(false)
 	const [waitingListRegistered, setWaitingListRegistered] = useState(false)
 	const [customAnswers, setCustomAnswers] = useState<Record<string, any>>({})
+	const [noAccount, setNoAccount] = useState<Record<string, boolean>>({})
+	const [noAccountNote, setNoAccountNote] = useState<Record<string, string>>({})
 	const [liveEventData, setLiveEventData] = useState<any>(eventData || null)
 	const [checkoutStep, setCheckoutStep] = useState<"details" | "questions">("details")
 	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
@@ -130,8 +132,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					}
 				}
 
-				// Validate URL format for social profiles and websites
-				if ((q.type === 'social_profile' || q.type === 'website') && ans && typeof ans === 'string' && ans.trim() !== '') {
+				// Validate URL format for social profiles and websites (skip if user opted out of social)
+				if ((q.type === 'social_profile' || q.type === 'website') && !noAccount[q.id] && ans && typeof ans === 'string' && ans.trim() !== '') {
 					const urlPattern = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/i;
 					if (!urlPattern.test(ans)) {
 						Error("Invalid URL", `Please enter a valid URL for: "${q.title}" (e.g., https://...)`)
@@ -271,7 +273,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		<>
 			{showCheckout && (
 				<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-					<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-md relative max-h-[90vh] flex flex-col overflow-hidden">
+					<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-lg relative max-h-[90vh] flex flex-col overflow-hidden">
 						{/* Close Button */}
 						<button
 							onClick={() => {
@@ -448,10 +450,51 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													<label className="block text-sm font-medium text-white mb-1">
 														{q.title}{q.isRequired && <span className="text-red-400 ml-1">*</span>}
 													</label>
-													{(q.type === 'text' || q.type === 'mobile' || q.type === 'website' || q.type === 'social_profile') && (
+													{(q.type === 'text' || q.type === 'mobile' || q.type === 'website') && (
 														q.responseLength === 'multi-line'
-															? <textarea rows={3} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white resize-none" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
-															: <input type={q.type === 'mobile' ? 'tel' : q.type === 'website' ? 'url' : 'text'} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : q.type === 'social_profile' ? `${q.platform} profile URL (e.g. https://)` : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
+															? <textarea rows={3} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white resize-none" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
+															: <input type={q.type === 'mobile' ? 'tel' : q.type === 'website' ? 'url' : 'text'} placeholder={q.type === 'mobile' ? 'Phone number' : q.type === 'website' ? 'https://' : 'Your answer'} className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))} />
+													)}
+													{q.type === 'social_profile' && (
+														<div className="space-y-2">
+															<input
+																type="text"
+																placeholder={`${q.platform ? q.platform.charAt(0).toUpperCase() + q.platform.slice(1) : 'Social'} profile URL (e.g. https://)`}
+																disabled={!!noAccount[q.id]}
+																className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white disabled:opacity-40"
+																value={noAccount[q.id] ? '' : (customAnswers[q.id] || '')}
+																onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))}
+															/>
+															<label className="flex items-center gap-2 text-white cursor-pointer text-sm">
+																<input
+																	type="checkbox"
+																	checked={!!noAccount[q.id]}
+																	onChange={e => {
+																		const checked = e.target.checked
+																		setNoAccount(s => ({ ...s, [q.id]: checked }))
+																		if (checked) {
+																			setCustomAnswers(a => ({ ...a, [q.id]: noAccountNote[q.id] || `I don't have ${q.platform}` }))
+																		} else {
+																			setCustomAnswers(a => ({ ...a, [q.id]: '' }))
+																		}
+																	}}
+																/>
+																{`I don't have ${q.platform ? q.platform.charAt(0).toUpperCase() + q.platform.slice(1) : 'this'}`}
+															</label>
+															{noAccount[q.id] && (
+																<input
+																	type="text"
+																	placeholder={`Optional: let the host know (e.g. I prefer not to share)`}
+																	className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none text-white"
+																	value={noAccountNote[q.id] || ''}
+																	onChange={e => {
+																		const note = e.target.value
+																		setNoAccountNote(s => ({ ...s, [q.id]: note }))
+																		setCustomAnswers(a => ({ ...a, [q.id]: note || `I don't have ${q.platform}` }))
+																	}}
+																/>
+															)}
+														</div>
 													)}
 													{q.type === 'options' && q.selectionType === 'single' && (
 														<select className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg text-white" value={customAnswers[q.id] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.value }))}>
@@ -472,11 +515,36 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															))}
 														</div>
 													)}
+													{q.type === 'multiple_choice' && (
+														<div className="space-y-1">
+															{(q.options || []).map((opt: string) => (
+																<label key={opt} className="flex items-center gap-2 text-white cursor-pointer">
+																	<input type="checkbox" checked={(customAnswers[q.id] || []).includes(opt)} onChange={e => {
+																		const prev: string[] = customAnswers[q.id] || []
+																		setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked ? [...prev, opt] : prev.filter((x: string) => x !== opt) }))
+																	}} />
+																	{opt}
+																</label>
+															))}
+														</div>
+													)}
 													{q.type === 'checkbox' && (
-														<label className="flex items-center gap-2 text-white cursor-pointer">
-															<input type="checkbox" checked={!!customAnswers[q.id]} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked }))} />
-															{q.title}
-														</label>
+														q.options && q.options.length > 0
+															? <div className="space-y-1">
+																{q.options.map((opt: string) => (
+																	<label key={opt} className="flex items-center gap-2 text-white cursor-pointer">
+																		<input type="checkbox" checked={(customAnswers[q.id] || []).includes(opt)} onChange={e => {
+																			const prev: string[] = customAnswers[q.id] || []
+																			setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked ? [...prev, opt] : prev.filter((x: string) => x !== opt) }))
+																		}} />
+																		{opt}
+																	</label>
+																))}
+															</div>
+															: <label className="flex items-center gap-2 text-white cursor-pointer">
+																<input type="checkbox" checked={!!customAnswers[q.id]} onChange={e => setCustomAnswers(a => ({ ...a, [q.id]: e.target.checked }))} />
+																{q.title}
+															</label>
 													)}
 													{q.type === 'company' && (
 														<div className="space-y-2">

@@ -633,15 +633,16 @@ function CustomQuestionsManager({ event }: { event: any }) {
 	const removeOption = (idx: number) => setForm((f: any) => ({ ...f, options: f.options.filter((_: any, i: number) => i !== idx) }))
 
 	const qTypeLabel: Record<string, string> = {
-		text: 'Text', options: 'Options', social_profile: 'Social Profile',
-		company: 'Company', checkbox: 'Checkbox', terms: 'Terms',
-		mobile: 'Mobile Number', website: 'Website',
+		text: 'Text', options: 'Options', multiple_choice: 'Multiple Choice (Checkboxes)',
+		social_profile: 'Social Profile', company: 'Company', checkbox: 'Checkbox',
+		terms: 'Terms', mobile: 'Mobile Number', website: 'Website',
 	}
 
 	const getTitlePlaceholder = (type: string) => {
 		switch (type) {
 			case 'text': return "E.g. What's your dietary preference?"
 			case 'options': return "E.g. Select your t-shirt size"
+			case 'multiple_choice': return "E.g. Which sessions will you attend?"
 			case 'social_profile': return "E.g. Please share your social profile link"
 			case 'company': return "E.g. Where do you work?"
 			case 'checkbox': return "E.g. I require wheelchair access"
@@ -692,7 +693,15 @@ function CustomQuestionsManager({ event }: { event: any }) {
 							</Box>
 							<Box>
 								<Text mb={1} fontWeight="bold">Question Type</Text>
-								<Select bg="#090C10" borderColor="#444" color="white" value={form.type} onChange={e => setForm((f: any) => ({ ...f, type: e.target.value }))}>
+								<Select bg="#090C10" borderColor="#444" color="white" value={form.type} onChange={e => {
+									const newType = e.target.value
+									setForm((f: any) => {
+										const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+										const autoTitle = newType === 'social_profile' ? `Add your ${cap(f.platform)}` : f.title
+										const shouldAutoTitle = newType === 'social_profile' && (!f.title || /^add your /i.test(f.title))
+										return { ...f, type: newType, title: shouldAutoTitle ? autoTitle : f.title }
+									})
+								}}>
 									{Object.entries(qTypeLabel).map(([val, label]) => (
 										<option key={val} value={val} style={{ backgroundColor: '#090C10' }}>{label}</option>
 									))}
@@ -709,14 +718,25 @@ function CustomQuestionsManager({ event }: { event: any }) {
 								</Box>
 							)}
 
-							{form.type === 'options' && (
+							{(form.type === 'options' || form.type === 'multiple_choice' || form.type === 'checkbox') && (
 								<Box>
-									<Text mb={1} fontWeight="bold">Selection Type</Text>
-									<Select bg="#090C10" borderColor="#444" color="white" value={form.selectionType} onChange={e => setForm((f: any) => ({ ...f, selectionType: e.target.value }))}>
-										<option value="single" style={{ backgroundColor: '#090C10' }}>Single Choice</option>
-										<option value="multiple" style={{ backgroundColor: '#090C10' }}>Multiple Choice</option>
-									</Select>
-									<Text mt={3} mb={1} fontWeight="bold">Options</Text>
+									{form.type === 'options' && (
+										<>
+											<Text mb={1} fontWeight="bold">Selection Type</Text>
+											<Select bg="#090C10" borderColor="#444" color="white" value={form.selectionType} onChange={e => setForm((f: any) => ({ ...f, selectionType: e.target.value }))}>
+												<option value="single" style={{ backgroundColor: '#090C10' }}>Single Choice</option>
+												<option value="multiple" style={{ backgroundColor: '#090C10' }}>Multiple Choice</option>
+											</Select>
+										</>
+									)}
+									<Text mt={form.type === 'options' ? 3 : 0} mb={1} fontWeight="bold">Options</Text>
+									<Text fontSize="sm" color="#9C9C9C" mb={2}>
+										{form.type === 'checkbox'
+											? 'Add checkbox options (leave empty for a single agree/disagree checkbox)'
+											: form.type === 'multiple_choice'
+											? 'Add options — attendees can select multiple'
+											: 'Add selectable options'}
+									</Text>
 									<Flex gap={2} mb={2}>
 										<Input bg="#090C10" borderColor="#444" color="white" value={optionInput} onChange={e => setOptionInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addOption()} placeholder="Add option..." />
 										<Button onClick={addOption} bg="#3E3E3E" color="white" _hover={{ bg: '#4A4A4A' }}>Add</Button>
@@ -733,7 +753,15 @@ function CustomQuestionsManager({ event }: { event: any }) {
 							{form.type === 'social_profile' && (
 								<Box>
 									<Text mb={1} fontWeight="bold">Platform</Text>
-									<Select bg="#090C10" borderColor="#444" color="white" value={form.platform} onChange={e => setForm((f: any) => ({ ...f, platform: e.target.value }))}>
+									<Select bg="#090C10" borderColor="#444" color="white" value={form.platform} onChange={e => {
+										const p = e.target.value
+										const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+										setForm((f: any) => ({
+											...f,
+											platform: p,
+											title: (!f.title || /^add your /i.test(f.title)) ? `Add your ${cap(p)}` : f.title,
+										}))
+									}}>
 										{['instagram', 'twitter', 'linkedin', 'facebook', 'tiktok', 'youtube', 'github'].map(p => (
 											<option key={p} value={p} style={{ backgroundColor: '#090C10' }}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
 										))}

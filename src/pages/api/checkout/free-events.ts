@@ -64,6 +64,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.error("Error creating user:", errorMessage)
 		}
 
+		// Validate required custom questions
+		const event = await Events.findById(eventId)
+		if (!event) {
+			return sendResponse(res, null, "Event not found", false, 404)
+		}
+		if (event.questions && event.questions.length > 0) {
+			const requiredQuestions = event.questions.filter((q: any) => q.isRequired)
+			for (const reqQ of requiredQuestions) {
+				const ans = customAnswers.find((a: any) => a.questionId === reqQ.id)
+				if (!ans || !ans.answer || (Array.isArray(ans.answer) && ans.answer.length === 0)) {
+					return sendResponse(res, null, `Required question "${reqQ.title}" is missing an answer.`, false, 400)
+				}
+			}
+		}
+
 		// Generate booking reference
 		const reference = uniqueId(20)
 		const bookingRef = `JZ-${reference}`
@@ -93,8 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Update event tracker capacity
 		await booking.updateEventTracker()
 
-		// Fetch event for email
-		const event = await Events.findById(eventId)
+		// event already fetched above for validation
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, 404)
 		}

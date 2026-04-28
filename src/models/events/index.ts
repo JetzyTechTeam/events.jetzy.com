@@ -30,7 +30,7 @@ const customQuestionSchema = new Schema(
 	{
 		id: { type: String, required: true },
 		title: { type: String, required: true },
-		type: { type: String, enum: ['text', 'options', 'social_profile', 'company', 'checkbox', 'terms', 'mobile', 'website'], required: true },
+		type: { type: String, enum: ['text', 'options', 'multiple_choice', 'social_profile', 'company', 'checkbox', 'terms', 'mobile', 'website'], required: true },
 		isRequired: { type: Boolean, default: false },
 		responseLength: { type: String, enum: ['short', 'multi-line'], required: false },
 		selectionType: { type: String, enum: ['single', 'multiple'], required: false },

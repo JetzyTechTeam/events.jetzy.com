@@ -13,7 +13,7 @@ export interface IEventTicket {
 export interface ICustomQuestion {
 	id: string;
 	title: string;
-	type: 'text' | 'options' | 'social_profile' | 'company' | 'checkbox' | 'terms' | 'mobile' | 'website';
+	type: 'text' | 'options' | 'multiple_choice' | 'social_profile' | 'company' | 'checkbox' | 'terms' | 'mobile' | 'website';
 	isRequired: boolean;
 	responseLength?: 'short' | 'multi-line'; // For text
 	selectionType?: 'single' | 'multiple'; // For options
