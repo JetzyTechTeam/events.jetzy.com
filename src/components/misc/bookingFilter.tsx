@@ -37,17 +37,17 @@ export default function BookingFilters({ eventId, initialFilters }: Props) {
                 onChange={(e) => setAmount(e.target.value)}
                 width="175px"
             />
-            <Select placeholder="Status" value={status} onChange={(e) => setStatus(e.target.value)}  width="150px">
-                <option value="confirmed">Confirmed</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="refunded">Refunded</option>
-                <option value="failed">Failed</option>
+            <Select placeholder="Status" value={status} onChange={(e) => setStatus(e.target.value)} width="150px" bg="#1a1a1a" color="white" borderColor="#444" _focus={{ borderColor: "#F79432" }} sx={{ option: { background: "#1a1a1a", color: "white" } }}>
+                <option value="confirmed" style={{ background: "#1a1a1a", color: "white" }}>Confirmed</option>
+                <option value="pending" style={{ background: "#1a1a1a", color: "white" }}>Pending</option>
+                <option value="approved" style={{ background: "#1a1a1a", color: "white" }}>Approved</option>
+                <option value="cancelled" style={{ background: "#1a1a1a", color: "white" }}>Cancelled</option>
+                <option value="refunded" style={{ background: "#1a1a1a", color: "white" }}>Refunded</option>
+                <option value="failed" style={{ background: "#1a1a1a", color: "white" }}>Failed</option>
             </Select>
-            <Select placeholder="Check-in Status" value={checkedIn} onChange={(e) => setCheckedIn(e.target.value)} width="175px">
-                <option value="yes">Checked In</option>
-                <option value="no">Not Checked In</option>
+            <Select placeholder="Check-in Status" value={checkedIn} onChange={(e) => setCheckedIn(e.target.value)} width="175px" bg="#1a1a1a" color="white" borderColor="#444" _focus={{ borderColor: "#F79432" }} sx={{ option: { background: "#1a1a1a", color: "white" } }}>
+                <option value="yes" style={{ background: "#1a1a1a", color: "white" }}>Checked In</option>
+                <option value="no" style={{ background: "#1a1a1a", color: "white" }}>Not Checked In</option>
             </Select>
             <Input placeholder="Tickets (min)"
                 type="number"
