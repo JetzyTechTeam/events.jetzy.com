@@ -117,6 +117,8 @@ const CreateEventPage = () => {
     price: 0,
   });
   const [tempPollOption, setTempPollOption] = React.useState<DatePollOption>({ id: "", date: "", time: "", label: "" });
+  const pollDateRef = React.useRef<HTMLInputElement>(null)
+  const pollTimeRef = React.useRef<HTMLInputElement>(null)
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
   const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
   const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
@@ -733,25 +735,29 @@ const CreateEventPage = () => {
                       <FormControl mb={4}>
                         <FormLabel>Date</FormLabel>
                         <Input
+                          ref={pollDateRef}
                           type="date"
                           bg="#090C10"
                           border="1px solid #444"
                           color="white"
-                          sx={{ colorScheme: 'dark' }}
+                          sx={{ colorScheme: 'dark', WebkitAppearance: 'none', minHeight: '42px', px: 3, fontSize: 'md' }}
                           value={tempPollOption.date}
-                          onChange={(e) => setTempPollOption({ ...tempPollOption, date: e.target.value })}
+                          onChange={(e) => setTempPollOption(p => ({ ...p, date: e.target.value }))}
+                          onInput={(e) => setTempPollOption(p => ({ ...p, date: (e.target as HTMLInputElement).value }))}
                         />
                       </FormControl>
                       <FormControl mb={4}>
                         <FormLabel>Time</FormLabel>
                         <Input
+                          ref={pollTimeRef}
                           type="time"
                           bg="#090C10"
                           border="1px solid #444"
                           color="white"
-                          sx={{ colorScheme: 'dark' }}
+                          sx={{ colorScheme: 'dark', WebkitAppearance: 'none', minHeight: '42px', px: 3, fontSize: 'md' }}
                           value={tempPollOption.time}
-                          onChange={(e) => setTempPollOption({ ...tempPollOption, time: e.target.value })}
+                          onChange={(e) => setTempPollOption(p => ({ ...p, time: e.target.value }))}
+                          onInput={(e) => setTempPollOption(p => ({ ...p, time: (e.target as HTMLInputElement).value }))}
                         />
                       </FormControl>
                       <FormControl mb={4}>
@@ -773,13 +779,18 @@ const CreateEventPage = () => {
                           w="full"
                           color="black"
                           onClick={() => {
-                            if (tempPollOption.date && tempPollOption.time) {
+                            const date = tempPollOption.date || pollDateRef.current?.value || ""
+                            const time = tempPollOption.time || pollTimeRef.current?.value || ""
+                            if (date && time) {
                               const newOption: DatePollOption = {
                                 ...tempPollOption,
                                 id: new Date().getTime().toString(),
+                                date,
+                                time,
                                 votes: [],
                               };
                               setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
+                              setTempPollOption({ id: "", date: "", time: "", label: "" });
                               onPollModalClose();
                             }
                           }}
