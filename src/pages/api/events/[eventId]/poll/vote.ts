@@ -63,8 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Add vote to selected option
 		event.datePoll.options[optionIndex].votes.push(voterIdentifier)
-		event.markModified("datePoll")
-		await event.save()
+		await Events.updateOne({ _id: eventId }, { $set: { datePoll: event.datePoll } })
 
 		// Collect all unique, valid ObjectIds for lookup
 		const allVoterIds = new Set<string>()
