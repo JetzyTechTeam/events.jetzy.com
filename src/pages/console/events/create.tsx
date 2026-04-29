@@ -117,8 +117,8 @@ const CreateEventPage = () => {
     price: 0,
   });
   const [tempPollOption, setTempPollOption] = React.useState<DatePollOption>({ id: "", date: "", time: "", label: "" });
-  const pollDateRef = React.useRef<HTMLInputElement>(null)
-  const pollTimeRef = React.useRef<HTMLInputElement>(null)
+  const [pollDate, setPollDate] = React.useState("")
+  const [pollTime, setPollTime] = React.useState("")
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
   const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
   const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
@@ -751,22 +751,18 @@ const CreateEventPage = () => {
                     <ModalBody>
                       <FormControl mb={4}>
                         <FormLabel>Date</FormLabel>
-                        <input
-                          ref={pollDateRef}
-                          type="date"
-                          defaultValue=""
-                          className="poll-date-input"
-                          style={{ width: '100%', background: '#090C10', border: '1px solid #444', color: 'white', borderRadius: 6, padding: '10px 12px', fontSize: 16, minHeight: 42, boxSizing: 'border-box', colorScheme: 'dark' } as any}
+                        <DatePicker
+                          key={`poll-date-${isPollModalOpen}`}
+                          onChange={(d) => setPollDate(d)}
+                          placeholder="Select date"
                         />
                       </FormControl>
                       <FormControl mb={4}>
                         <FormLabel>Time</FormLabel>
-                        <input
-                          ref={pollTimeRef}
-                          type="time"
-                          defaultValue=""
-                          className="poll-date-input"
-                          style={{ width: '100%', background: '#090C10', border: '1px solid #444', color: 'white', borderRadius: 6, padding: '10px 12px', fontSize: 16, minHeight: 42, boxSizing: 'border-box', colorScheme: 'dark' } as any}
+                        <TimePicker
+                          key={`poll-time-${isPollModalOpen}`}
+                          onChange={(t) => setPollTime(t)}
+                          placeholder="Select time"
                         />
                       </FormControl>
                       <FormControl mb={4}>
@@ -789,28 +785,26 @@ const CreateEventPage = () => {
                           color="black"
                           type="button"
                           onClick={() => {
-                            const date = pollDateRef.current?.value || ""
-                            const time = pollTimeRef.current?.value || ""
                             const label = tempPollOption.label || ""
-                            if (date && time) {
+                            if (pollDate && pollTime) {
                               const newOption: DatePollOption = {
                                 id: Date.now().toString(),
-                                date,
-                                time,
+                                date: pollDate,
+                                time: pollTime,
                                 label,
                                 votes: [],
                               };
                               setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
                               setTempPollOption({ id: "", date: "", time: "", label: "" });
-                              if (pollDateRef.current) pollDateRef.current.value = ""
-                              if (pollTimeRef.current) pollTimeRef.current.value = ""
+                              setPollDate("")
+                              setPollTime("")
                               onPollModalClose();
                             }
                           }}
                         >
                           Add
                         </Button>
-                        <Button variant="unstyled" onClick={onPollModalClose}>Cancel</Button>
+                        <Button variant="unstyled" onClick={() => { setPollDate(""); setPollTime(""); onPollModalClose(); }}>Cancel</Button>
                       </Flex>
                     </ModalFooter>
                   </ModalContent>
