@@ -45,6 +45,7 @@ import { QrCodeIcon } from "@heroicons/react/24/outline"
 
 interface DiscussionBoardProps {
 	eventId: string
+	canManage?: boolean
 }
 
 // Helper function to check if URL is a video
@@ -531,7 +532,7 @@ const FeedPostCard = ({
 }
 
 // Main DiscussionBoard Component
-const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
+const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = false }) => {
 	const { data: session } = useSession()
 	const { isOpen, onOpen, onClose } = useDisclosure()
 	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
@@ -623,7 +624,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 					</div>
 
 					{/* Admin Share Feed Section */}
-					{(session?.user as any)?.role === "admin" && (
+					{(canManage || (session?.user as any)?.role === "admin" || (session?.user as any)?.role === "super admin") && (
 						<Flex gap={3}>
 							<Button
 								size="sm"
@@ -860,7 +861,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId }) => {
 				/>
 
 				{/* Admin QR Modal for Feed */}
-				{(session?.user as any)?.role === "admin" && (
+				{(canManage || (session?.user as any)?.role === "admin" || (session?.user as any)?.role === "super admin") && (
 					<QRCodeModal 
 						isOpen={isQRModalOpen}
 						onClose={onQRModalClose}

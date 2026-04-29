@@ -106,7 +106,10 @@ export default function HostedEvents({ event }: Props) {
 	const shareDesc = clonedEvent?.desc || ""
 
 	// @ts-ignore
-	const isAdmin = session?.user?.role === "admin"
+	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
+	const userId = (session?.user as any)?._id?.toString()
+	const isOwner = !!userId && event?.ownerId?.toString() === userId
+	const canManage = isAdmin || isOwner
 	const isDatePollActive = !!(clonedEvent?.datePoll?.isActive && clonedEvent?.datePoll?.options?.length)
 
 	useEffect(() => {
@@ -323,11 +326,11 @@ export default function HostedEvents({ event }: Props) {
 								</div>
 
 								<div className="flex gap-x-3 sm:items-end flex-shrink-0">
-									{isAdmin && (
+									{canManage && (
 										<button
 											onClick={onQRModalOpen}
 											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
-											title="Show Event QR Code (Admin only)"
+											title="Show Event QR Code"
 										>
 											<QrCodeIconOutline className="w-6 h-6 text-white inline-block" />
 										</button>
@@ -414,7 +417,7 @@ export default function HostedEvents({ event }: Props) {
 								<Box id="discussion-chat" mb={10}>
 									<Flex justify="space-between" align="center" mb={4} pl={2}>
 										<Heading size="md" color="white">Discussion</Heading>
-										{isAdmin && (
+										{canManage && (
 											<Flex gap={3}>
 												<Button
 													size="sm"
@@ -473,7 +476,7 @@ export default function HostedEvents({ event }: Props) {
 
 								{/* Feed Section (Formerly DiscussionBoard) */}
 								<Box id="discussion-board">
-									<DiscussionBoard eventId={clonedEvent._id.toString()} />
+									<DiscussionBoard eventId={clonedEvent._id.toString()} canManage={canManage} />
 								</Box>
 							</Box>
 							</div>
@@ -484,7 +487,7 @@ export default function HostedEvents({ event }: Props) {
 				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
 				
 				{/* QR Code Modal for Event */}
-				{isAdmin && (
+				{canManage && (
 					<QRCodeModal
 						isOpen={isQRModalOpen}
 						onClose={onQRModalClose}
@@ -494,7 +497,7 @@ export default function HostedEvents({ event }: Props) {
 				)}
 
 				{/* QR Code Modal for Discussion/Chat */}
-				{isAdmin && (
+				{canManage && (
 					<QRCodeModal
 						isOpen={isDiscussionQRModalOpen}
 						onClose={onDiscussionQRModalClose}
