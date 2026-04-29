@@ -359,11 +359,11 @@ export default function UpdateEventPage({ event }: Props) {
 
 	const handleStartDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
-			if (date) {
+			if (date !== undefined) {
 				formikRef.current.setFieldValue("startDate", date);
 			}
 
-			if (time) {
+			if (time !== undefined) {
 				formikRef.current.setFieldValue("startTime", time);
 			}
 		}
@@ -371,11 +371,11 @@ export default function UpdateEventPage({ event }: Props) {
 
 	const handleEndDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
-			if (date) {
+			if (date !== undefined) {
 				formikRef.current.setFieldValue("endDate", date);
 			}
 
-			if (time) {
+			if (time !== undefined) {
 				formikRef.current.setFieldValue("endTime", time);
 			}
 		}
@@ -512,10 +512,12 @@ export default function UpdateEventPage({ event }: Props) {
 									gap={4}
 									alignItems="center"
 									justifyContent="space-between"
-									mb="4"
+									mb={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 1 : 4}
 									bg="#14161B"
 									rounded="xl"
 									p="2"
+									opacity={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 0.4 : 1}
+									pointerEvents={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? "none" : "auto"}
 								>
 									<Box pl="3" className="relative">
 										<Box className="absolute top-5 left-4">
@@ -574,6 +576,11 @@ export default function UpdateEventPage({ event }: Props) {
 										</Box>
 									</Flex>
 								</Flex>
+								{!!(values.datePoll?.isActive || values.datePoll?.options?.length) && (
+									<Text fontSize="xs" color="orange.400" mb={3}>
+										Remove date poll to set a fixed start/end date
+									</Text>
+								)}
 								<FormControl mb={4}>
 									<InputGroup>
 										<InputLeftElement pointerEvents="none">
@@ -814,8 +821,17 @@ export default function UpdateEventPage({ event }: Props) {
 										)}
 									</FieldArray>
 								</Box>
+								<Box
+									opacity={!!(values.startDate || values.endDate) ? 0.4 : 1}
+									pointerEvents={!!(values.startDate || values.endDate) ? "none" : "auto"}
+								>
+								{!!(values.startDate || values.endDate) && (
+									<Text fontSize="xs" color="orange.400" mt={6} mb={1}>
+										Remove start/end date to enable date poll
+									</Text>
+								)}
 								{/* Date Poll Section */}
-								<Text fontWeight="semibold" color="gray.400" mb={2} mt={6}>
+								<Text fontWeight="semibold" color="gray.400" mb={2} mt={!!(values.startDate || values.endDate) ? 1 : 6}>
 									Date Poll
 								</Text>
 								<Box bg="#141619" rounded="xl" px="3" py="3" mb={4}>
@@ -881,6 +897,7 @@ export default function UpdateEventPage({ event }: Props) {
 											</Button>
 										</Box>
 									)}
+								</Box>
 								</Box>
 								<Button
 									type="submit"
@@ -1009,30 +1026,22 @@ export default function UpdateEventPage({ event }: Props) {
 										<ModalBody>
 											<FormControl mb={4}>
 												<FormLabel>Date</FormLabel>
-												<Input
+												<input
 													ref={pollDateRef}
 													type="date"
-													bg="#090C10"
-													border="1px solid #444"
-													color="white"
-													sx={{ colorScheme: 'dark', WebkitAppearance: 'none', minHeight: '42px', px: 3, fontSize: 'md' }}
-													value={tempPollOption.date}
-													onChange={(e) => setTempPollOption(p => ({ ...p, date: e.target.value }))}
-													onInput={(e) => setTempPollOption(p => ({ ...p, date: (e.target as HTMLInputElement).value }))}
+													defaultValue=""
+													className="poll-date-input"
+													style={{ width: '100%', background: '#090C10', border: '1px solid #444', color: 'white', borderRadius: 6, padding: '10px 12px', fontSize: 16, minHeight: 42, boxSizing: 'border-box', colorScheme: 'dark' } as any}
 												/>
 											</FormControl>
 											<FormControl mb={4}>
 												<FormLabel>Time</FormLabel>
-												<Input
+												<input
 													ref={pollTimeRef}
 													type="time"
-													bg="#090C10"
-													border="1px solid #444"
-													color="white"
-													sx={{ colorScheme: 'dark', WebkitAppearance: 'none', minHeight: '42px', px: 3, fontSize: 'md' }}
-													value={tempPollOption.time}
-													onChange={(e) => setTempPollOption(p => ({ ...p, time: e.target.value }))}
-													onInput={(e) => setTempPollOption(p => ({ ...p, time: (e.target as HTMLInputElement).value }))}
+													defaultValue=""
+													className="poll-date-input"
+													style={{ width: '100%', background: '#090C10', border: '1px solid #444', color: 'white', borderRadius: 6, padding: '10px 12px', fontSize: 16, minHeight: 42, boxSizing: 'border-box', colorScheme: 'dark' } as any}
 												/>
 											</FormControl>
 											<FormControl mb={4}>
@@ -1053,19 +1062,23 @@ export default function UpdateEventPage({ event }: Props) {
 													bg="#F79432"
 													w="full"
 													color="black"
+													type="button"
 													onClick={() => {
-														const date = tempPollOption.date || pollDateRef.current?.value || ""
-														const time = tempPollOption.time || pollTimeRef.current?.value || ""
+														const date = pollDateRef.current?.value || ""
+														const time = pollTimeRef.current?.value || ""
+														const label = tempPollOption.label || ""
 														if (date && time) {
 															const newOption: DatePollOption = {
-																...tempPollOption,
-																id: new Date().getTime().toString(),
+																id: Date.now().toString(),
 																date,
 																time,
+																label,
 																votes: [],
 															};
 															setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
 															setTempPollOption({ id: "", date: "", time: "", label: "" });
+															if (pollDateRef.current) pollDateRef.current.value = ""
+															if (pollTimeRef.current) pollTimeRef.current.value = ""
 															onPollModalClose();
 														}
 													}}
