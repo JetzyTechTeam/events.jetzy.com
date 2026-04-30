@@ -78,6 +78,7 @@ const initialValues = {
   timezone: "",
   capacity: 0,
   privacy: "public",
+  status: "published" as 'draft' | 'published',
   benefits: "",
   locationDisclosedAfterBooking: false,
   datePoll: {
@@ -728,6 +729,19 @@ const CreateEventPage = () => {
                 </Box>
                 </Box>
 
+                <Flex align="center" justifyContent="space-between" mt="4">
+                  <Text color="gray.400">Status</Text>
+                  <Field
+                    as="select"
+                    name="status"
+                    value={values?.status}
+                    className="bg-[#1E1E1E] block w-[130px] h-10 rounded-md border-0 py-1 shadow-sm sm:text-sm sm:leading-6 p-3"
+                  >
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                  </Field>
+                </Flex>
+
                 <Button
                   type="submit"
                   mt="6"
@@ -739,7 +753,7 @@ const CreateEventPage = () => {
                   isLoading={isSubmitting}
                   isDisabled={isSubmitting || isUploading}
                 >
-                  Create Event
+                  {values.status === 'draft' ? 'Save as Draft' : 'Create Event'}
                 </Button>
 
                 {/* Date Poll Option Modal */}

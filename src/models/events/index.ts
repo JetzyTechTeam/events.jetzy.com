@@ -83,6 +83,12 @@ const eventsSchema = new Schema<IEvent>(
 			default: 'public',
 			required: true,
 		},
+		status: {
+			type: String,
+			enum: ['draft', 'published'],
+			default: 'published',
+			required: false,
+		},
 		startsOn: {
 			type: Date,
 			required: false,

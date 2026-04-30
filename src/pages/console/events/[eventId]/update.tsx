@@ -176,6 +176,7 @@ export default function UpdateEventPage({ event }: Props) {
 				description: stripHtml(ticket.desc),
 			})),
 			privacy: eventDetails.privacy,
+			status: (eventDetails.status ?? 'published') as 'draft' | 'published',
 			startDate: start ? start.format('YYYY-MM-DD') : '',
 			startTime: start ? start.format('HH:mm') : '',
 			endDate: end ? end.format('YYYY-MM-DD') : '',
@@ -899,9 +900,22 @@ export default function UpdateEventPage({ event }: Props) {
 									)}
 								</Box>
 								</Box>
+								<Flex align="center" justifyContent="space-between" mt="6">
+									<Text color="gray.400">Status</Text>
+									<Field
+										as="select"
+										name="status"
+										value={values?.status}
+										className="bg-[#1E1E1E] block w-[130px] h-10 rounded-md border-0 py-1 shadow-sm sm:text-sm sm:leading-6 p-3"
+									>
+										<option value="published">Published</option>
+										<option value="draft">Draft</option>
+									</Field>
+								</Flex>
+
 								<Button
 									type="submit"
-									mt="10"
+									mt="4"
 									bg="#F79432"
 									size="lg"
 									width="100%"
@@ -910,7 +924,7 @@ export default function UpdateEventPage({ event }: Props) {
 									isLoading={isSubmitting}
 									isDisabled={isSubmitting || isUploading}
 								>
-									Update Event
+									{values.status === 'draft' ? 'Save as Draft' : 'Update Event'}
 								</Button>
 
 								{/* Tickets Modal */}

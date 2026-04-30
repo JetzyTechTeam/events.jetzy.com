@@ -140,6 +140,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 										ENDED EVENT
 									</span>
 								)}
+								{event.status === 'draft' && (
+									<span className="inline-block mt-1 ml-2 px-2 py-1 bg-[#2A1F00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
+										DRAFT
+									</span>
+								)}
 							</div>
 						</div>
 

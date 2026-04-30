@@ -66,6 +66,7 @@ const schema = zod.object({
 	}).optional(),
 	feedbackFormUrl: zod.string().optional(),
 	benefits: zod.string().max(23).optional(),
+	status: zod.enum(['draft', 'published']).optional(),
 })
 
 // create stripe instance
@@ -95,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, datePoll } = params
+		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, datePoll, status } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -160,6 +161,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				privacy,
 				feedbackFormUrl,
 				benefits,
+				status: status ?? 'published',
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 				...(datePoll?.isActive && datePoll.options?.length > 0 ? {
 					datePoll: {

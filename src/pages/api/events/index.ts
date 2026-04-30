@@ -9,7 +9,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		await ensureDbConnected()
 		// Get all events from the database
-		const events = await Events.find({ isDeleted: false }).lean()
+		const events = await Events.find({ isDeleted: false, status: { $ne: 'draft' } }).lean()
 
 		// Sort events in memory:
 		// 1. No start/end dates (Polls/TBD) -> Top
