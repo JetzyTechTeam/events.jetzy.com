@@ -31,19 +31,19 @@ const schema = zod.object({
 	startTime: zod.string().optional(),
 	endDate: zod.string().optional(),
 	endTime: zod.string().optional(),
-	name: zod.string().nonempty(),
-	location: zod.string().nonempty(),
+	name: zod.string().optional().default(''),
+	location: zod.string().optional().default(''),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
-	capacity: zod.number().nonnegative(),
-	requireApproval: zod.boolean(),
+	capacity: zod.number().nonnegative().optional().default(0),
+	requireApproval: zod.boolean().optional().default(false),
 	images: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
 			file: zod.string().nonempty(),
 		}),
-	),
+	).optional().default([]),
 	videos: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
@@ -57,9 +57,9 @@ const schema = zod.object({
 			price: zod.number().nonnegative(),
 			description: zod.string().optional(),
 		}),
-	),
-	isPaid: zod.boolean(),
-	desc: zod.string().nonempty(),
+	).optional().default([]),
+	isPaid: zod.boolean().optional().default(false),
+	desc: zod.string().optional().default(''),
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	status: zod.enum(['draft', 'published']).optional().default('published'),
@@ -115,11 +115,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (start && end && start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
 
-		// check if the event has tickets
-		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
+		const isDraft = (status ?? 'published') === 'draft'
 
-		// check if the event has images
-		if (images.length === 0) return sendResponse(res, null, "You need to add at least one image to an event.", false, ResCode.BAD_REQUEST)
+		if (!name?.trim()) return sendResponse(res, null, "Event name is required.", false, ResCode.BAD_REQUEST)
+
+		if (!isDraft) {
+			if (!location?.trim()) return sendResponse(res, null, "Location is required.", false, ResCode.BAD_REQUEST)
+			if (!desc?.trim()) return sendResponse(res, null, "Description is required.", false, ResCode.BAD_REQUEST)
+			if (!images || images.length === 0) return sendResponse(res, null, "You need to add at least one image to an event.", false, ResCode.BAD_REQUEST)
+			if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
+		}
 
 		// If event is paid and has tickets, lets format the tickets and create stripe prices for each ticket
 		const formattedTickets: Stripe.PriceCreateParams[] = tickets.map((ticket) => ({

@@ -155,13 +155,28 @@ const CreateEventPage = () => {
   });
 
   const onSubmit = async (values: CreateEventFormData) => {
-    const validation = createEventSchema.safeParse(values);
+    const isDraft = values.status === 'draft'
 
-    if (!validation.success) {
-      const fieldErrors = validation.error.flatten().fieldErrors;
-      const errorMessages = Object.values(fieldErrors).flat().join("\n");
-      Error("Validation Error", errorMessages || "Please fix the form errors");
-      return;
+    values.images = uploadedImages;
+    values.videos = uploadedVideos;
+
+    if (isDraft) {
+      if (!values.name?.trim()) {
+        Error("Validation Error", "Event name is required to save as draft");
+        return;
+      }
+    } else {
+      const validation = createEventSchema.safeParse(values);
+      if (!validation.success) {
+        const fieldErrors = validation.error.flatten().fieldErrors;
+        const errorMessages = Object.values(fieldErrors).flat().join("\n");
+        Error("Validation Error", errorMessages || "Please fix the form errors");
+        return;
+      }
+      if (uploadedImages.length === 0) {
+        Error("Validation Error", "At least one image is required to publish");
+        return;
+      }
     }
 
     if (values.tickets.length === 0) {
@@ -174,9 +189,6 @@ const CreateEventPage = () => {
         },
       ]
     }
-
-    values.images = uploadedImages;
-    values.videos = uploadedVideos;
 
     if (values.tickets.length > 0) values.isPaid = true
     else values.isPaid = false
@@ -202,10 +214,15 @@ const CreateEventPage = () => {
 
     setIsSubmitting(true);
 
+    const wasDraft = values.status === 'draft'
     dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) } })).then((res: any) => {
       if (res?.payload?.status) {
-        setCreatedEventId(res.payload.data._id);
-        onSuccessOpen();
+        if (wasDraft) {
+          navigation.push('/console/events')
+        } else {
+          setCreatedEventId(res.payload.data._id);
+          onSuccessOpen();
+        }
       }
     }).finally(() => {
       setIsSubmitting(false);

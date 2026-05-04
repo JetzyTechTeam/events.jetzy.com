@@ -104,7 +104,8 @@ const eventsSchema = new Schema<IEvent>(
 		},
 		location: {
 			type: String,
-			required: true,
+			required: false,
+			default: '',
 		},
 		venueName: {
 			type: String,
@@ -132,12 +133,13 @@ const eventsSchema = new Schema<IEvent>(
 
 		desc: {
 			type: String,
-			required: true,
+			required: false,
+			default: '',
 		},
 
 		images: {
 			type: [String],
-			required: true,
+			required: false,
 		},
 
 		videos: {

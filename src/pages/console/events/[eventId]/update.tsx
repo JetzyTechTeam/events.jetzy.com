@@ -233,22 +233,33 @@ export default function UpdateEventPage({ event }: Props) {
 	};
 
 	const onSubmit = async (values: CreateEventFormData) => {
-		if (!stripHtml(values.desc || "").trim()) {
-			Error("Validation Error", "Description is required");
-			return;
-		}
-
-		const validation = updateEventSchema.safeParse(values);
-
-		if (!validation.success) {
-			const fieldErrors = validation.error.flatten().fieldErrors;
-			const errorMessages = Object.values(fieldErrors).flat().join("\n");
-			Error("Validation Error", errorMessages || "Please fix the form errors");
-			return;
-		}
+		const isDraft = values.status === 'draft'
 
 		values.images = uploadedImages;
 		values.videos = uploadedVideos;
+
+		if (isDraft) {
+			if (!values.name?.trim()) {
+				Error("Validation Error", "Event name is required to save as draft");
+				return;
+			}
+		} else {
+			if (!stripHtml(values.desc || "").trim()) {
+				Error("Validation Error", "Description is required");
+				return;
+			}
+			const validation = updateEventSchema.safeParse(values);
+			if (!validation.success) {
+				const fieldErrors = validation.error.flatten().fieldErrors;
+				const errorMessages = Object.values(fieldErrors).flat().join("\n");
+				Error("Validation Error", errorMessages || "Please fix the form errors");
+				return;
+			}
+			if (uploadedImages.length === 0) {
+				Error("Validation Error", "At least one image is required to publish");
+				return;
+			}
+		}
 
 		if (values.tickets.length > 0) values.isPaid = true
 		else values.isPaid = false

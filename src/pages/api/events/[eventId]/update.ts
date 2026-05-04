@@ -25,16 +25,16 @@ const schema = zod.object({
 	startTime: zod.string().optional(),
 	endDate: zod.string().optional(),
 	endTime: zod.string().optional(),
-	name: zod.string().nonempty(),
-	location: zod.string().nonempty(),
-	capacity: zod.number().nonnegative(),
-	requireApproval: zod.boolean(),
+	name: zod.string().optional().default(''),
+	location: zod.string().optional().default(''),
+	capacity: zod.number().nonnegative().optional().default(0),
+	requireApproval: zod.boolean().optional().default(false),
 	images: zod.array(
 		zod.object({
 			id: zod.string().optional(),
 			file: zod.string().optional(),
 		}),
-	),
+	).optional().default([]),
 	videos: zod.array(
 		zod.object({
 			id: zod.string().optional(),
@@ -48,9 +48,9 @@ const schema = zod.object({
 			price: zod.number().nonnegative(),
 			description: zod.string().optional(),
 		}),
-	),
-	isPaid: zod.boolean(),
-	desc: zod.string().nonempty(),
+	).optional().default([]),
+	isPaid: zod.boolean().optional().default(false),
+	desc: zod.string().optional().default(''),
 	timezone: zod.string().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	datePoll: zod.object({
@@ -86,14 +86,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const { eventId } = req.query
 
-		// block empty description (RichTextEditor emits <p></p> when cleared)
-		if (!stripHtml(params.desc || "").trim()) {
-			return sendResponse(res, null, "Description is required.", false, ResCode.BAD_REQUEST)
-		}
+		const isDraft = (params.status ?? 'published') === 'draft'
 
 		// validate the request body
 		const data = schema.safeParse({ ...params, eventId })
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
+
+		if (!params.name?.trim()) return sendResponse(res, null, "Event name is required.", false, ResCode.BAD_REQUEST)
+
+		if (!isDraft) {
+			if (!stripHtml(params.desc || "").trim()) return sendResponse(res, null, "Description is required.", false, ResCode.BAD_REQUEST)
+			if (!params.location?.trim()) return sendResponse(res, null, "Location is required.", false, ResCode.BAD_REQUEST)
+			if (!params.images || params.images.length === 0) return sendResponse(res, null, "You need to add at least one image to an event.", false, ResCode.BAD_REQUEST)
+		}
 
 		// Desctructure the request body
 		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, datePoll, status } = params
