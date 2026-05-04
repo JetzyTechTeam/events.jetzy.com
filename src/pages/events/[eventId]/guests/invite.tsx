@@ -3,7 +3,7 @@ import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { authorizedOnly } from "@/lib/authSession";
 import { Events } from "@/models/events";
 import { IEvent } from "@/models/events/types";
-import { Box, Button, Flex, FormControl, FormLabel, Heading, Input, Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalOverlay, Text, useToast } from "@chakra-ui/react";
+import { Alert, AlertDescription, AlertIcon, Box, Button, Flex, FormControl, FormLabel, Heading, Input, Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalOverlay, Text, useToast } from "@chakra-ui/react";
 import axios from "axios";
 import { GetServerSideProps } from "next";
 import Image from "next/image";
@@ -13,12 +13,13 @@ import mongoose from "mongoose";
 
 export default function GuestsInvited({ event }: { event: string }) {
   const data = JSON.parse(event) as IEvent;
-  const [isModalOpen, setIsModalOpen] = React.useState(false); 
+  const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [name, setName] = React.useState(''); 
+  const [name, setName] = React.useState('');
   const [guestStatus, setGuestStatus] = React.useState<string | null>(null);
-  const [isStatusLoading, setIsStatusLoading] = React.useState(true); 
+  const [isStatusLoading, setIsStatusLoading] = React.useState(true);
+  const [isRegistered, setIsRegistered] = React.useState(false);
 
   const toast = useToast();
   const router = useRouter();
@@ -51,20 +52,16 @@ export default function GuestsInvited({ event }: { event: string }) {
        await axios.post(`/api/guests/invite/accept?eventId=${data._id}&email=${email}`, {
         name: name,
       });
-      toast({
-        title: "Registration Successful",
-        status: "success",
-        duration: 3000,
-        isClosable: true,
-      });
-
-      await fetchGuestStatus();
-      handleCloseModal();
+      setIsRegistered(true);
+      setTimeout(() => {
+        handleCloseModal();
+        router.push(`/${data.slug}`);
+      }, 2000);
     } catch (err: any) {
       setError(err.message || "Registration failed");
       toast({
         title: "Registration Failed",
-        description: err.message || "An error occurred.",
+        description: err.response?.data?.message || err.message || "An error occurred.",
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -92,7 +89,7 @@ export default function GuestsInvited({ event }: { event: string }) {
       setError(err.message || "Decline failed");
       toast({
         title: "Decline Failed",
-        description: err.message || "An error occurred.",
+        description: err.response?.data?.message || err.message || "An error occurred.",
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -207,18 +204,37 @@ export default function GuestsInvited({ event }: { event: string }) {
             <DescriptionSVG />
             </Box>
             <Text className="font-medium text-[#FFFFFFA3]">
-              {data.desc.slice(0, 200)}...
+              {(() => {
+                const plain = data.desc.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+                return plain.length > 200 ? plain.slice(0, 200) + '...' : plain
+              })()}
             </Text>
           </Flex>
 
-          <Flex gap={4} mt={5}>
-            <Button colorScheme="orange" color='black' w='full' onClick={handleOpenModal} disabled={isButtonDisabled}> 
-              Accept
-            </Button>
-            <Button bg='#3E3E3E' color='white' w='full' _hover={{ bg: '#3E3E3E'}} _active={{bg: '#3E3E3E'}} onClick={handleDecline} isLoading={isLoading} disabled={isButtonDisabled}>
-              Decline
-            </Button>
-          </Flex>
+          {!isStatusLoading && isAccepted && (
+            <Alert status="success" borderRadius="lg" mt={5} bg="#1a3a2a" color="white">
+              <AlertIcon color="green.300" />
+              <AlertDescription>You&apos;re already registered for this event.</AlertDescription>
+            </Alert>
+          )}
+
+          {!isStatusLoading && isDeclined && (
+            <Alert status="warning" borderRadius="lg" mt={5} bg="#3a2a1a" color="white">
+              <AlertIcon color="orange.300" />
+              <AlertDescription>You have declined this invitation.</AlertDescription>
+            </Alert>
+          )}
+
+          {!isAccepted && !isDeclined && (
+            <Flex gap={4} mt={5}>
+              <Button colorScheme="orange" color='black' w='full' onClick={handleOpenModal} disabled={isButtonDisabled}>
+                Accept
+              </Button>
+              <Button bg='#3E3E3E' color='white' w='full' _hover={{ bg: '#3E3E3E'}} _active={{bg: '#3E3E3E'}} onClick={handleDecline} isLoading={isLoading} disabled={isButtonDisabled}>
+                Decline
+              </Button>
+            </Flex>
+          )}
         </div>
       </div>
       {/* Registration Modal */}
@@ -229,25 +245,37 @@ export default function GuestsInvited({ event }: { event: string }) {
             <Heading fontSize={30}>Your Info</Heading>
             <Text fontSize={15} color='#A5A5A5'>Please provide your details to register</Text>
           </ModalHeader>
-          <ModalCloseButton />
+          {!isRegistered && <ModalCloseButton />}
           <ModalBody pb={6}>
-            <FormControl>
-              <FormLabel>Name</FormLabel>
-              <Input required bg='#090C10' border='1px solid #444444' placeholder="Full Name" value={name} 
-                onChange={(e) => setName(e.target.value)}/>
-            </FormControl>
+            {isRegistered ? (
+              <Flex direction="column" align="center" py={4} gap={3}>
+                <Text fontSize="4xl">🎉</Text>
+                <Heading fontSize={22} textAlign="center">You&apos;re registered!</Heading>
+                <Text color="#A5A5A5" textAlign="center">Redirecting you to the event page...</Text>
+              </Flex>
+            ) : (
+              <>
+                <FormControl>
+                  <FormLabel>Name</FormLabel>
+                  <Input required bg='#090C10' border='1px solid #444444' placeholder="Full Name" value={name}
+                    onChange={(e) => setName(e.target.value)}/>
+                </FormControl>
 
-            <FormControl mt={4}>
-              <FormLabel>Email</FormLabel>
-              <Input type="email" placeholder="Email Address" bg='#090C10' border='1px solid #444444' value={email} />
-            </FormControl>
+                <FormControl mt={4}>
+                  <FormLabel>Email</FormLabel>
+                  <Input type="email" placeholder="Email Address" bg='#090C10' border='1px solid #444444' value={email} readOnly />
+                </FormControl>
+              </>
+            )}
           </ModalBody>
 
-          <ModalFooter>
-            <Button w='full' color='black' colorScheme="orange" mr={3} onClick={handleRegister} isLoading={isLoading} disabled={isLoading || isAccepted || isDeclined}>
-              Register
-            </Button>
-          </ModalFooter>
+          {!isRegistered && (
+            <ModalFooter>
+              <Button w='full' color='black' colorScheme="orange" mr={3} onClick={handleRegister} isLoading={isLoading} disabled={isLoading || isAccepted || isDeclined}>
+                Register
+              </Button>
+            </ModalFooter>
+          )}
         </ModalContent>
       </Modal>
     </ConsoleLayout>
