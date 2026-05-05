@@ -68,7 +68,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       <div style="max-width: 600px; margin: auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 32px;">
         <h2 style="color: #2B6CB0; margin-bottom: 16px;">${subject}</h2>
         <p style="font-size: 16px; color: #333; margin-bottom: 16px;">
-          You are registered for <strong>${event.name}${event.name === 'Chinese Mid-Autumn Rooftop Celebration' ? ' on October 23rd between 6:00 PM and 9:00 PM New York time' : ''}</strong> with email
+          You are registered for <strong>${event.name}</strong> with email
         </p>
         <p style="font-size: 18px; color: #333; margin-bottom: 16px; font-weight: bold;">
           {{userEmail}}
@@ -101,20 +101,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       <div style="max-width: 600px; margin: auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 32px;">
         <h2 style="color: #2B6CB0; margin-bottom: 16px;">${subject}</h2>
         <p style="font-size: 16px; color: #333; margin-bottom: 16px;">
-          You are registered for <strong>${event.name}${event.name === 'Chinese Mid-Autumn Rooftop Celebration' ? ' on October 23rd between 6:00 PM and 9:00 PM New York time' : ''}</strong> with email
+          Hi {{userEmail}},
         </p>
-        <p style="font-size: 18px; color: #333; margin-bottom: 16px; font-weight: bold;">
-          {{userEmail}}
-        </p>
-        <p style="font-size: 16px; color: #333; margin-bottom: 16px;">
-          This event is now full.<br/>
-          If you can not attend, kindly cancel to make room for people on waitlist.
-        </p>
-        <div style="text-align: center; margin-bottom: 24px;">
-          <a href="${process.env.NEXT_PUBLIC_URL}/cancel-booking?bookingRef={{bookingRef}}" style="display: inline-block; padding: 20px 40px; background: #dc3545; color: #fff; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 20px;">
-            Cancel My Booking
-          </a>
-        </div>
         <p style="font-size: 16px; color: #333; margin-bottom: 24px;">
           ${message}
         </p>
@@ -131,28 +119,29 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     </div>
   `;
 
-    findPeople.forEach(async (person) => {
-      // Create personalized HTML with booking reference if available
+    await Promise.all(findPeople.map(async (person) => {
       let personalizedHtml = html;
 
-      // Replace user email placeholder
       const userEmail = (person as any).email || (person as any).customerEmail;
       personalizedHtml = personalizedHtml.replace('{{userEmail}}', userEmail);
 
       if (targetType === 'bookings' && 'bookingRef' in person && person.bookingRef) {
         personalizedHtml = personalizedHtml.replace('{{bookingRef}}', person.bookingRef);
       } else {
-        // Remove the cancel section for non-booking targets
-        personalizedHtml = personalizedHtml.replace(/<div style="background: #f8f9fa; border-left: 4px solid #dc3545; padding: 16px; margin: 24px 0; border-radius: 4px;">[\s\S]*?<\/div>/g, '');
+        // Strip the cancel booking button block for non-booking targets
+        personalizedHtml = personalizedHtml.replace(
+          /<div style="text-align: center; margin-bottom: 24px;">\s*<a href="[^"]*cancel-booking[^"]*"[\s\S]*?<\/a>\s*<\/div>/g,
+          ''
+        );
       }
 
-      await sendgrid.sendMultiple({
-        to: (person as any).email || (person as any).customerEmail,
+      await sendgrid.send({
+        to: userEmail,
         from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
         subject: subject,
         html: personalizedHtml,
       })
-    })
+    }))
 
     return res.status(200).json({ message: "Blast sent successfully" });
 

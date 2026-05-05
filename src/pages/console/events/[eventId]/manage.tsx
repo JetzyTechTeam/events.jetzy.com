@@ -376,6 +376,17 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 
 	const toast = useToast()
 
+	useEffect(() => {
+		if (!sendBlastModal) {
+			setSubject("")
+			setMessage("")
+			setStatus("")
+			setTargetType("invitations")
+			setEmailType("custom")
+			setError("")
+		}
+	}, [sendBlastModal])
+
 	const onSendBlast = async () => {
 		if (!status || !subject.trim() || !message.trim()) {
 			setError("All fields are required.")
