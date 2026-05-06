@@ -19,6 +19,7 @@ import { TicketData } from "@/components/events/TicketCard"
 import { uniqueId } from "@/lib/utils"
 import { Error } from "@/lib/_toaster"
 import RichTextEditor from "@/components/misc/RichTextEditor"
+import InterestsSelector from "@/components/events/InterestsSelector"
 import { IEvent } from "@/models/events/types"
 import { EmailProps } from "@/lib/email-service"
 import axios from "axios"
@@ -190,6 +191,7 @@ export default function UpdateEventPage({ event }: Props) {
 				question: eventDetails.datePoll.question || '',
 				options: eventDetails.datePoll.options || [],
 			} : { isActive: false, question: '', options: [] as DatePollOption[] },
+			interests: ((eventDetails.interests ?? []) as any[]).map((id: any) => id?.toString?.() ?? id),
 		}
 	}, [eventDetails, uploadedImages])
 
@@ -622,6 +624,10 @@ export default function UpdateEventPage({ event }: Props) {
 										placeholder="Add Description"
 									/>
 								</FormControl>
+								<InterestsSelector
+									selected={values.interests ?? []}
+									onChange={(ids) => setFieldValue("interests", ids)}
+								/>
 								<Text fontWeight="semibold" color="gray.400" mb={2}>
 									Event Benefits (Max 23 chars)
 								</Text>

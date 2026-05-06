@@ -78,6 +78,7 @@ export interface IEvent extends IBaseModelProps {
 	feedbackFormUrl?: string;
 	thankYouEmailSentAt?: Date;
 	benefits?: string;
+	interests?: Types.ObjectId[] | string[];
 }
 
 export enum BookingStatus {

@@ -199,6 +199,11 @@ const eventsSchema = new Schema<IEvent>(
 			required: false,
 			index: true,
 		},
+		interests: {
+			type: [Schema.Types.ObjectId],
+			required: false,
+			default: [],
+		},
 	},
 	{
 		timestamps: true,

@@ -59,6 +59,7 @@ export type CreateEventFormData = {
 		question?: string
 		options: DatePollOption[]
 	}
+	interests?: string[]
 }
 
 export type CreateTicketFormData = {

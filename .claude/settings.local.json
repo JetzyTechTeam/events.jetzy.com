@@ -10,7 +10,8 @@
       "Bash(node)",
       "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
       "Bash(git diff *)",
-      "Bash(xargs basename *)"
+      "Bash(xargs basename *)",
+      "Bash(curl -s -X GET 'https://prod-api.jetzy.com/api/v1/interests/bulk-categories?perPage=10&page=1&search=' -H 'Content-Type: application/json' -H 'Accept: application/json' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2NzgzZGFkNmU3YmNiYzE1MTFmOGRlMmYiLCJyb2xlIjoidXNlciIsImlhdCI6MTc3ODAwNjIwNX0.onL2zD7ZYGiV9HEPU5hhmBeclaPchKKy9HsV3Nh7_oc')"
     ]
   }
 }

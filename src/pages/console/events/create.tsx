@@ -63,6 +63,7 @@ import TimezoneSelect from "../../../components/timezone-select";
 import { useSession } from "next-auth/react";
 import { z } from "zod";
 import RichTextEditor from "@/components/misc/RichTextEditor";
+import InterestsSelector from "@/components/events/InterestsSelector";
 
 const initialValues = {
   name: "",
@@ -86,6 +87,7 @@ const initialValues = {
     question: "",
     options: [] as DatePollOption[],
   },
+  interests: [] as string[],
 };
 
 const createEventSchema = z.object({
@@ -473,6 +475,10 @@ const CreateEventPage = () => {
                     placeholder="Add Description"
                   />
                 </FormControl>
+                <InterestsSelector
+                  selected={values.interests ?? []}
+                  onChange={(ids) => setFieldValue("interests", ids)}
+                />
                 <Text fontWeight="semibold" color="gray.400" mb={2}>
                   Event Benefits (Max 23 chars)
                 </Text>
