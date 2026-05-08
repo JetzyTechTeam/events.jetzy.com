@@ -36,7 +36,7 @@ const schema = zod.object({
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
-	capacity: zod.number().nonnegative().optional().default(0),
+	capacity: zod.coerce.number().nonnegative().optional().default(0),
 	requireApproval: zod.boolean().optional().default(false),
 	images: zod.array(
 		zod.object({
