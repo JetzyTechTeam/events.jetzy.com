@@ -84,7 +84,13 @@ const EventsTableComponent: React.FC<Props> = ({ rows, pagination }) => {
 									{/* image and event name */}
 									<Flex align="center" gap={2} justifyContent={"flex-start"} alignItems={"center"}>
 										<Box display={{ base: "none", md: "block" }}>
-											<Image src={row.images[0]} alt={row.name} width={50} height={50} />
+											{row.images && row.images.length > 0 ? (
+												<Image src={row.images[0]} alt={row.name} width={50} height={50} style={{ objectFit: "cover", borderRadius: "6px" }} />
+											) : (
+												<Box w="50px" h="50px" bg="#2A2D35" borderRadius="6px" display="flex" alignItems="center" justifyContent="center" fontSize="xl">
+													🖼️
+												</Box>
+											)}
 										</Box>
 										<Button
 											onClick={() => {

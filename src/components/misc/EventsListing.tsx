@@ -106,14 +106,31 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       onClick={() => onClick(event)}
     >
       <Box p="2" position="relative">
-        <Image
-          src={event.images[0]}
-          alt={stripHtml(event.name)}
-          objectFit="cover"
-          w="100%"
-          h="200px"
-          rounded="lg"
-        />
+        {event.images && event.images.length > 0 ? (
+          <Image
+            src={event.images[0]}
+            alt={stripHtml(event.name)}
+            objectFit="cover"
+            w="100%"
+            h="200px"
+            rounded="lg"
+          />
+        ) : (
+          <Box
+            w="100%"
+            h="200px"
+            rounded="lg"
+            bg="#2A2D35"
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            flexDirection="column"
+            gap="2"
+          >
+            <Text fontSize="3xl">🖼️</Text>
+            <Text fontSize="sm" color="gray.500">No image</Text>
+          </Box>
+        )}
         {/* Benefits Overlay */}
         {event.benefits && event.benefits.trim() !== "" && (
           <Flex
