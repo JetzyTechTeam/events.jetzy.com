@@ -25,18 +25,20 @@ type Props = {
 export default function Home(props: Props) {
   // Use props if available (SSR/fallback), otherwise fetch
   const [page, setPage] = React.useState(1);
+  const [search, setSearch] = React.useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["events", page],
+    queryKey: ["events", page, search],
     queryFn: async () => {
-      const response = await axios.get(`/api/events?page=${page}`);
+      const url = `/api/events?page=${page}${search ? `&search=${encodeURIComponent(search)}` : ""}`;
+      const response = await axios.get(url);
       return response.data;
     },
-    initialData: props.events ? {
+    initialData: props.events && !search ? {
       data: JSON.parse(props.events) as IEvent[],
       pagination: props.pagination
     } : undefined,
-    enabled: !props.events
+    enabled: !props.events || !!search
   });
 
   if (isLoading) return <Center h="100vh"><Spinner /></Center>;
@@ -52,7 +54,15 @@ export default function Home(props: Props) {
     totalPages: 1
   };
 
-  return <EventListing pagination={paginationData} items={eventsData} onPageChange={setPage} />;
+  return (
+    <EventListing
+      pagination={paginationData}
+      items={eventsData}
+      onPageChange={setPage}
+      search={search}
+      onSearch={(q) => { setSearch(q); setPage(1); }}
+    />
+  );
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (

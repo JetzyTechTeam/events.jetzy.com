@@ -8,8 +8,18 @@ import { ensureDbConnected } from "@/configs/database"
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
 		await ensureDbConnected()
-		// Get all events from the database
-		const events = await Events.find({ isDeleted: false, status: { $ne: 'draft' } }).lean()
+
+		const search = (req.query.search as string)?.trim() || ""
+		const filter: any = { isDeleted: false, status: { $ne: 'draft' } }
+		if (search) {
+			filter.$or = [
+				{ name: { $regex: search, $options: "i" } },
+				{ location: { $regex: search, $options: "i" } },
+				{ "host.name": { $regex: search, $options: "i" } },
+			]
+		}
+
+		const events = await Events.find(filter).lean()
 
 		// Sort events in memory:
 		// 1. No start/end dates (Polls/TBD) -> Top

@@ -22,6 +22,7 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
+  Input,
 } from "@chakra-ui/react";
 import { calculateDistance } from "@/utils/distance";
 import { IEvent } from "@/models/events/types";
@@ -244,9 +245,15 @@ type EventListProps = {
     totalPages: number;
   };
   onPageChange?: (page: number) => void;
+  search?: string;
+  onSearch?: (q: string) => void;
 };
-const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange }) => {
+const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, search, onSearch }) => {
   const router = useRouter();
+
+  const [inputValue, setInputValue] = React.useState(search ?? "");
+
+  React.useEffect(() => { setInputValue(search ?? ""); }, [search]);
 
   const [locationState, setLocationState] = React.useState<"ASKING" | "GRANTED" | "SKIPPED" | "LOADING" | null>(null);
   const [userLocation, setUserLocation] = React.useState<{ lat: number, lng: number } | null>(null);
@@ -382,12 +389,55 @@ const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange }
           Discover exciting events where you can enjoy activities that match
           your interests and passions!
         </Text>
+        <Flex
+          mt={5}
+          maxW="520px"
+          bg="#1e1e1e"
+          border="1px solid #434343"
+          borderRadius="full"
+          align="center"
+          px={3}
+          py="5px"
+          gap={2}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#718096" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: "4px" }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onSearch?.(inputValue)}
+            placeholder="Search events, hosts, places..."
+            bg="transparent"
+            border="none"
+            color="white"
+            _placeholder={{ color: "gray.500" }}
+            _focus={{ boxShadow: "none", border: "none" }}
+            p={0}
+            h="34px"
+            flex={1}
+          />
+          <Button
+            onClick={() => onSearch?.(inputValue)}
+            bg="#F79432"
+            color="black"
+            borderRadius="full"
+            px={6}
+            h="34px"
+            fontWeight="semibold"
+            _hover={{ bg: "#e58221" }}
+            flexShrink={0}
+            size="sm"
+          >
+            Search
+          </Button>
+        </Flex>
       </Box>
       <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>
         {sortedItems.length === 0 && (
           <Box>
             <Text fontSize="xl" color="gray.500">
-              No events found
+              {search ? `No events found for "${search}"` : "No events found"}
             </Text>
           </Box>
         )}
