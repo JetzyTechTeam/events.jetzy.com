@@ -91,6 +91,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	const toast = useToast()
 	const { edgestore } = useEdgeStore()
 	const fileInputRef = useRef<HTMLInputElement>(null)
+	const uploadAbortControllerRef = useRef<AbortController | null>(null)
 
 	const [content, setContent] = useState("")
 	const [tags, setTags] = useState<string[]>([])
@@ -199,6 +200,8 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 	})
 
 	const handleClose = () => {
+		uploadAbortControllerRef.current?.abort()
+		uploadAbortControllerRef.current = null
 		setContent("")
 		setTags([])
 		setTagInput("")
@@ -275,6 +278,8 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 		}
 
 		console.log("[CreateDiscussionModal] Starting upload for", files.length, "files")
+		const controller = new AbortController()
+		uploadAbortControllerRef.current = controller
 		setUploadingImages(true)
 		try {
 			const uploadPromises = Array.from(files).map(async (file) => {
@@ -284,7 +289,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 					throw new Error("Only images and videos are allowed")
 				}
 
-				const res = await edgestore.publicFiles.upload({ file })
+				const res = await edgestore.publicFiles.upload({ file, signal: controller.signal })
 				console.log("[CreateDiscussionModal] Upload complete:", res.url)
 				return { url: res.url, isVideo: file.type.startsWith("video/") }
 			})
@@ -302,14 +307,19 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 				duration: 2000,
 			})
 		} catch (error: any) {
-			console.error("[CreateDiscussionModal] Upload error:", error)
-			toast({
-				title: "Upload failed",
-				description: error.message || "Failed to upload images",
-				status: "error",
-				duration: 3000,
-			})
+			if (error?.name === "CanceledError" || error?.code === "ERR_CANCELED") {
+				toast({ title: "Upload cancelled", status: "info", duration: 2000 })
+			} else {
+				console.error("[CreateDiscussionModal] Upload error:", error)
+				toast({
+					title: "Upload failed",
+					description: error.message || "Failed to upload images",
+					status: "error",
+					duration: 3000,
+				})
+			}
 		} finally {
+			uploadAbortControllerRef.current = null
 			setUploadingImages(false)
 			if (fileInputRef.current) {
 				fileInputRef.current.value = ""
@@ -603,6 +613,18 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 								>
 									<FiImage size={20} />
 								</Button>
+								{uploadingImages && (
+									<IconButton
+										aria-label="Cancel upload"
+										icon={<FiX />}
+										size="sm"
+										variant="ghost"
+										borderRadius="full"
+										color="red.400"
+										title="Cancel upload"
+										onClick={() => uploadAbortControllerRef.current?.abort()}
+									/>
+								)}
 								<Button
 									size="sm"
 									variant="ghost"
@@ -645,7 +667,7 @@ const CreateDiscussionModal: React.FC<CreateDiscussionModalProps> = ({ isOpen, o
 							size="lg"
 							_hover={{ bg: "#166FE5" }}
 							_active={{ transform: "scale(0.98)" }}
-							isDisabled={!content.trim() && media.length === 0 && !feeling && !activity}
+							isDisabled={uploadingImages || (!content.trim() && media.length === 0 && !feeling && !activity)}
 							w="full"
 						>
 							Post
