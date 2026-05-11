@@ -12,11 +12,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const search = (req.query.search as string)?.trim() || ""
 		const filter: any = { isDeleted: false, status: { $ne: 'draft' } }
 		if (search) {
-			filter.$or = [
+			const orClauses: any[] = [
 				{ name: { $regex: search, $options: "i" } },
 				{ location: { $regex: search, $options: "i" } },
 				{ "host.name": { $regex: search, $options: "i" } },
+				{ benefits: { $regex: search, $options: "i" } },
 			]
+
+			// Try to resolve interest IDs from the Jetzy API by name (best-effort, no auth)
+			try {
+				const externalBase = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://test.jetzy.com"
+				const interestRes = await fetch(
+					`${externalBase}/api/v1/interests/bulk-categories?perPage=10000&page=1&search=`,
+					{ headers: { "Content-Type": "application/json", Accept: "application/json" } }
+				)
+				if (interestRes.ok) {
+					const interestData = await interestRes.json()
+					const categories: any[] = interestData?.data?.data ?? []
+					const matchingIds: string[] = []
+					const lc = search.toLowerCase()
+					for (const cat of categories) {
+						if (cat.name?.toLowerCase().includes(lc)) {
+							matchingIds.push(cat._id)
+							;(cat.subCategories ?? []).forEach((s: any) => matchingIds.push(s.id))
+						}
+						for (const sub of cat.subCategories ?? []) {
+							if (sub.name?.toLowerCase().includes(lc)) matchingIds.push(sub.id)
+						}
+					}
+					if (matchingIds.length > 0) orClauses.push({ interests: { $in: matchingIds } })
+				}
+			} catch (_) {
+				// external API unavailable — interest name search skipped
+			}
+
+			filter.$or = orClauses
 		}
 
 		const events = await Events.find(filter).lean()
