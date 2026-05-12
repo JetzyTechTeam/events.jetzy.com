@@ -1,4 +1,5 @@
 import { EventInvitation } from "@/models/events/event-invitations";
+import { ensureDbConnected } from "@/configs/database";
 import mongoose from "mongoose";
 import { NextApiRequest, NextApiResponse } from "next";
 
@@ -10,6 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    await ensureDbConnected();
     const guest = await EventInvitation.findOne({
       eventId: new mongoose.Types.ObjectId(eventId as string),
       email,

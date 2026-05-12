@@ -23,6 +23,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(500).json({ message: "Email service not configured." });
     }
 
+    await EventInvitation.create(
+      emails.map((email: string) => ({ email, eventId }))
+    );
+
     await Promise.all(
       emails.map((email: string) => {
         const personalizedEventLink = `${eventLink}?email=${encodeURIComponent(email)}`;
@@ -55,10 +59,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           </div>`,
         });
       })
-    );
-
-    await EventInvitation.create(
-      emails.map((email: string) => ({ email, eventId }))
     );
 
     return res.status(200).json({ message: "Invitations sent successfully" });
