@@ -35,7 +35,7 @@ export default function GuestsInvited({ event }: { event: string }) {
     }
     setIsStatusLoading(true);
     try {
-      const response = await axios.get(`/api/guests/find-by-email?eventId=${data._id}&email=${email}`);
+      const response = await axios.get(`/api/guests/find-by-email?eventId=${data._id}&email=${encodeURIComponent(email as string)}`);
       setGuestStatus(response.data?.status || null); 
     } catch (err) {
       console.error("Failed to fetch guest status:", err);
@@ -49,7 +49,7 @@ export default function GuestsInvited({ event }: { event: string }) {
     setIsLoading(true);
     setError(null);
     try {
-       await axios.post(`/api/guests/invite/accept?eventId=${data._id}&email=${email}`, {
+       await axios.post(`/api/guests/invite/accept?eventId=${data._id}&email=${encodeURIComponent(email as string)}`, {
         name: name,
       });
       setIsRegistered(true);
@@ -75,7 +75,7 @@ export default function GuestsInvited({ event }: { event: string }) {
     setIsLoading(true);
     setError(null);
     try {
-      await axios.post(`/api/guests/invite/decline?eventId=${data._id}&email=${email}`);
+      await axios.post(`/api/guests/invite/decline?eventId=${data._id}&email=${encodeURIComponent(email as string)}`);
       toast({
         title: "Invitation Declined",
         status: "info",
