@@ -1687,10 +1687,10 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
         <p style="font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>
         <div style="margin-bottom: 20px;">
           <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px;" />
+            <img src="${baseUrl}/email/appstore-badge.png" alt="Download on the App Store" style="height: 40px;" />
           </a>
           <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px;" />
+            <img src="${baseUrl}/email/googleplay-badge.png" alt="Get it on Google Play" style="height: 40px;" />
           </a>
         </div>
         <a href="${DOWNLOAD_LINK}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">

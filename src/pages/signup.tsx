@@ -33,7 +33,12 @@ export default function LoginPage() {
 	const handleSubmit = (values: SignUpFormData) => {
 		handleEmailSignup(values).then((res: any) => {
 			if (res?.payload?.status) {
-				// Redirect to login with callback URL preserved
+				fetch("/api/welcome-email", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ email: values.email, firstName: values.firstName, lastName: values.lastName }),
+				}).catch(err => console.error("Failed to send welcome email:", err))
+
 				const loginUrl = _cb ? `${ROUTES.login}?_cb=${encodeURIComponent(_cb.toString())}` : ROUTES.login
 				navigate.push(loginUrl)
 			}
