@@ -193,9 +193,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
-		// Check if event has capacity limit or is closed (capacity = 0)
-		if (event.capacity >= 0) {
-			// Get current booked tickets from event tracker
+		// capacity 0 = unlimited (per schema). Only enforce when capacity > 0.
+		if (event.capacity > 0) {
 			const { EventTracker } = await import("@/models/events/event-tracker")
 			const eventTracker = await EventTracker.findOne({ eventId: event._id })
 
@@ -203,21 +202,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const totalTicketsRequested = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
 				const availableCapacity = event.capacity - eventTracker.bookedTickets
 
-				// If capacity is 0 (closed) or if available capacity is insufficient
-				if (event.capacity === 0 || availableCapacity < totalTicketsRequested) {
-					const message = event.capacity === 0
-						? "This event is currently closed. Would you like to join the waiting list?"
-						: "Event capacity reached. Would you like to join the waiting list?"
-
-					console.info("[checkout/index] Event at capacity or closed")
+				if (availableCapacity < totalTicketsRequested) {
+					console.info("[checkout/index] Event at capacity")
 					return sendResponse(res, {
 						atCapacity: true,
 						availableCapacity,
 						requestedTickets: totalTicketsRequested,
 						eventName: event.name,
 						eventId: event._id,
-						isClosed: event.capacity === 0,
-					}, message, true, ResCode.OK)
+						isClosed: false,
+					}, "Event capacity reached. Would you like to join the waiting list?", true, ResCode.OK)
 				}
 			}
 		}
