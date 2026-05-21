@@ -60,6 +60,7 @@ const schema = zod.object({
 	),
 	isPaid: zod.boolean(),
 	desc: zod.string().nonempty(),
+	privacy: zod.enum(['public', 'private']).optional().default('public'),
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	datePoll: zod.object({

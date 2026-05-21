@@ -64,6 +64,7 @@ const schema = zod.object({
 			votes: zod.array(zod.string()).optional(),
 		})),
 	}).optional(),
+	privacy: zod.enum(['public', 'private']).optional(),
 	feedbackFormUrl: zod.string().optional(),
 	benefits: zod.string().max(23).optional(),
 })
