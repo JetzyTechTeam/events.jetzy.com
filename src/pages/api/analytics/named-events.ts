@@ -82,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					},
 				},
 			},
-			{ $sort: { totalEvents: -1 } },
+			{ $sort: { totalEvents: -1 as const } },
 		]
 
 		const queries: Promise<any[]>[] = [
@@ -120,7 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						},
 					},
 				},
-				{ $sort: { totalEvents: -1 } },
+				{ $sort: { totalEvents: -1 as const } },
 			]),
 		]
 
