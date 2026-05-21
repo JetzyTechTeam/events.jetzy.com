@@ -1537,7 +1537,7 @@ export default function AnalyticsPage() {
 																)}
 															</>
 														) : (
-															<Text color="#9C9C9C" fontSize="sm">No data yet. Add <Text as="code" bg="#2a2a2a" px={1} borderRadius="sm">data-track="label"</Text> attributes to CTAs to see named click events here.</Text>
+															<Text color="#9C9C9C" fontSize="sm">No data yet. Add <Text as="code" bg="#2a2a2a" px={1} borderRadius="sm">data-track=&quot;label&quot;</Text> attributes to CTAs to see named click events here.</Text>
 														)}
 													</Box>
 												)
