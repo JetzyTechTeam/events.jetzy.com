@@ -636,10 +636,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
             <div style="display: inline-block; vertical-align: middle;">
               <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                <img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" style="height: 40px; width: auto;" />
               </a>
               <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
               </a>
             </div>
           </div>
@@ -715,10 +715,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
             <div style="display: inline-block; vertical-align: middle;">
               <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                <img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" style="height: 40px; width: auto;" />
               </a>
               <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
               </a>
             </div>
           </div>
@@ -796,10 +796,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
             <div style="display: inline-block; vertical-align: middle;">
               <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                <img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" style="height: 40px; width: auto;" />
               </a>
               <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
               </a>
             </div>
           </div>
@@ -877,10 +877,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
             <div style="display: inline-block; vertical-align: middle;">
               <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                <img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" style="height: 40px; width: auto;" />
               </a>
               <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
               </a>
             </div>
           </div>
@@ -958,10 +958,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
             <div style="display: inline-block; vertical-align: middle;">
               <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                <img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" style="height: 40px; width: auto;" />
               </a>
               <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
               </a>
             </div>
           </div>
@@ -1046,10 +1046,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <p style="margin-bottom: 15px; font-weight: bold; color: #F79432; font-size: 20px;">Download the Jetzy App Now</p>
             <div style="display: inline-block; vertical-align: middle;">
               <a href="https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Download_on_the_App_Store_Badge.svg/320px-Download_on_the_App_Store_Badge.svg.png" alt="Download on the App Store" style="height: 40px; width: auto;" />
+                <img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" style="height: 40px; width: auto;" />
               </a>
               <a href="https://play.google.com/store/apps/details?id=com.icreon.travelconnect" style="text-decoration: none; display: inline-block; margin: 5px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/320px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
+                <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto;" />
               </a>
             </div>
           </div>

@@ -557,7 +557,8 @@ const CreateEventPage = () => {
                       as={Input}
                       type="number"
                       min={0}
-                      value={values.capacity || 0}
+                      value={values.capacity ?? ""}
+                      placeholder="0"
                       name="capacity"
                       bg="#1C1F24"
                       color="white"
@@ -700,17 +701,6 @@ const CreateEventPage = () => {
                   </Flex>
                   {values.datePoll?.isActive && (
                     <Box>
-                      <FormControl mb="3">
-                        <Input
-                          placeholder="Poll question (e.g. Which date works for you?)"
-                          bg="#1C1F24"
-                          color="white"
-                          border="none"
-                          fontSize="sm"
-                          value={values.datePoll?.question || ""}
-                          onChange={(e) => setFieldValue("datePoll.question", e.target.value)}
-                        />
-                      </FormControl>
                       {(values.datePoll?.options || []).map((opt, idx) => (
                         <Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
                           <Box>

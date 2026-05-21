@@ -16,7 +16,8 @@
       "Bash(grep -A1 -n '<MetricsCard$' \"d:/Jetzy/events-jetzy-com/src/pages/console/analytics.tsx\")",
       "Bash(grep -v \"^--$\")",
       "Bash(grep -v \"<MetricsCard$\")",
-      "Bash(awk 'NR==1083' \"d:/Jetzy/events-jetzy-com/src/pages/console/analytics.tsx\")"
+      "Bash(awk 'NR==1083' \"d:/Jetzy/events-jetzy-com/src/pages/console/analytics.tsx\")",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|html\\)$\")"
     ]
   }
 }

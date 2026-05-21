@@ -1079,7 +1079,6 @@ function DatePollSidebar({ event, isAdmin }: { event: IEvent; isAdmin: boolean }
 					<span className="text-sm font-semibold text-white">Event Date Poll</span>
 					<span className="bg-[#2a2a2a] text-xs px-2.5 py-1 rounded-full text-[#aaa] font-medium">{totalVotes} vote{totalVotes !== 1 ? "s" : ""}</span>
 				</div>
-				<p className="text-xs text-[#888] mb-4">{pollData.question || "Which date works best for you?"}</p>
 
 				{/* Options */}
 				<div className="flex flex-col gap-3 mb-4">

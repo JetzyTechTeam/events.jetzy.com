@@ -185,7 +185,7 @@ const FeedPostCard = ({
 	const handleShare = async (e: React.MouseEvent) => {
 		e.stopPropagation()
 
-		const postUrl = `${window.location.origin}/console/events/${post.eventId}/discussion/${post._id}`
+		const postUrl = window.location.origin + window.location.pathname + "?postId=" + post._id
 
 		try {
 			// Always copy to clipboard as requested
@@ -591,13 +591,15 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = 
 		refetch()
 	}
 
-	// Deep linking support
+	// Deep linking: scroll to shared post after posts load
 	React.useEffect(() => {
-		if (router.query.postId && typeof router.query.postId === "string") {
-			const postId = router.query.postId
-			setSelectedPostId(postId)
+		if (!router.query.postId || typeof router.query.postId !== "string") return
+		if (isLoading || posts.length === 0) return
+		const el = document.getElementById(`post-${router.query.postId}`)
+		if (el) {
+			setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 300)
 		}
-	}, [router.query.postId])
+	}, [router.query.postId, isLoading, posts])
 
 	const handleCreatePostClick = () => {
 		if (!session || !session.user) {
@@ -760,7 +762,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = 
 				) : (
 					<Stack spacing={4}>
 						{posts.map((post: DiscussionPostWithAuthor) => (
-							<Box key={post._id}>
+							<Box key={post._id} id={`post-${post._id}`}>
 								<FeedPostCard
 									post={post}
 									onClick={handlePostClick}
