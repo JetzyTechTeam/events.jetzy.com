@@ -119,7 +119,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     </div>
   `;
 
-    await Promise.all(findPeople.map(async (person) => {
+    const results = await Promise.allSettled(findPeople.map(async (person) => {
       let personalizedHtml = html;
 
       const userEmail = (person as any).email || (person as any).customerEmail;
@@ -143,9 +143,25 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       })
     }))
 
-    return res.status(200).json({ message: "Blast sent successfully" });
+    const succeeded = results.filter(r => r.status === 'fulfilled').length
+    const failed = results.filter(r => r.status === 'rejected').length
 
-  } catch (error) {
-    return res.status(500).json({ error: "Failed to send blast" });
+    if (succeeded === 0) {
+      const firstError = (results[0] as PromiseRejectedResult).reason
+      const detail = firstError?.response?.body?.errors?.[0]?.message
+      console.error("Send blast all failed:", firstError?.response?.body || firstError)
+      return res.status(500).json({ error: detail || "Failed to send blast. No emails were delivered." })
+    }
+
+    if (failed > 0) {
+      return res.status(207).json({ message: `Blast partially sent. ${succeeded} delivered, ${failed} failed.`, sent: succeeded, failed })
+    }
+
+    return res.status(200).json({ message: "Blast sent successfully", sent: succeeded });
+
+  } catch (error: any) {
+    console.error("Send blast error:", error?.response?.body || error)
+    const detail = error?.response?.body?.errors?.[0]?.message
+    return res.status(500).json({ error: detail || "Failed to send blast" });
   }
 }

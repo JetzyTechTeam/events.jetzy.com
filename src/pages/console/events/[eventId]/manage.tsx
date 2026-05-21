@@ -402,7 +402,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 		setError("")
 		setLoading(true)
 		try {
-			await axios.post("/api/send-blast", {
+			const res = await axios.post("/api/send-blast", {
 				event,
 				message,
 				subject,
@@ -412,22 +412,33 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
 			})
 
-			toast({
-				title: "Blast sent!",
-				status: "success",
-				duration: 3000,
-				isClosable: true,
-			})
-		} catch (error) {
+			if (res.status === 207) {
+				toast({
+					title: "Partially sent",
+					description: res.data.message,
+					status: "warning",
+					duration: 5000,
+					isClosable: true,
+				})
+			} else {
+				toast({
+					title: "Blast sent!",
+					status: "success",
+					duration: 3000,
+					isClosable: true,
+				})
+			}
+			setSendBlastModal(false)
+		} catch (error: any) {
 			toast({
 				title: "Failed to send blast.",
+				description: error.response?.data?.error || "An unexpected error occurred.",
 				status: "error",
-				duration: 3000,
+				duration: 5000,
 				isClosable: true,
 			})
 		}
 		setLoading(false)
-		setSendBlastModal(false)
 	}
 
 	return (
