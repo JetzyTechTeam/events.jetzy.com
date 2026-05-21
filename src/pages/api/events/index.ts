@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		await ensureDbConnected()
 
 		const search = (req.query.search as string)?.trim() || ""
-		const filter: any = { isDeleted: false, status: { $ne: 'draft' } }
+		const filter: any = { isDeleted: false, status: { $ne: 'draft' }, privacy: { $ne: 'private' } }
 		if (search) {
 			const orClauses: any[] = [
 				{ name: { $regex: search, $options: "i" } },
