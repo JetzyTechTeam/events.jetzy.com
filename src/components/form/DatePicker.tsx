@@ -34,8 +34,13 @@ export default function DatePicker({ onChange, defaultDate, placeholder = "Selec
           const day = String(selectedDate.getDate()).padStart(2, "0");
 
           const formatted = `${year}-${month}-${day}`;
-          onChange(formatted); 
+          onChange(formatted);
+        } else {
+          onChange("");
         }
+      },
+      onClose: (dates) => {
+        if (dates.length === 0) onChange("");
       },
     });
 	

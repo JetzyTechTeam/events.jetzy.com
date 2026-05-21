@@ -22,6 +22,7 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
+  Input,
 } from "@chakra-ui/react";
 import { calculateDistance } from "@/utils/distance";
 import { IEvent } from "@/models/events/types";
@@ -30,6 +31,8 @@ import { useRouter } from "next/router";
 import { ROUTES } from "@/configs/routes";
 import { DateTimeSVG, LocationSVG } from "@/assets/icons";
 import { signOut, useSession } from "next-auth/react";
+import { useAppDispatch } from "@Jetzy/redux/stores";
+import { destroySession } from "@Jetzy/redux/reducers/appSlice";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
@@ -106,14 +109,31 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       onClick={() => onClick(event)}
     >
       <Box p="2" position="relative">
-        <Image
-          src={event.images[0]}
-          alt={stripHtml(event.name)}
-          objectFit="cover"
-          w="100%"
-          h="200px"
-          rounded="lg"
-        />
+        {event.images && event.images.length > 0 ? (
+          <Image
+            src={event.images[0]}
+            alt={stripHtml(event.name)}
+            objectFit="cover"
+            w="100%"
+            h="200px"
+            rounded="lg"
+          />
+        ) : (
+          <Box
+            w="100%"
+            h="200px"
+            rounded="lg"
+            bg="#2A2D35"
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            flexDirection="column"
+            gap="2"
+          >
+            <Text fontSize="3xl">🖼️</Text>
+            <Text fontSize="sm" color="gray.500">No image</Text>
+          </Box>
+        )}
         {/* Benefits Overlay */}
         {event.benefits && event.benefits.trim() !== "" && (
           <Flex
@@ -227,9 +247,15 @@ type EventListProps = {
     totalPages: number;
   };
   onPageChange?: (page: number) => void;
+  search?: string;
+  onSearch?: (q: string) => void;
 };
-const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange }) => {
+const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, search, onSearch }) => {
   const router = useRouter();
+
+  const [inputValue, setInputValue] = React.useState(search ?? "");
+
+  React.useEffect(() => { setInputValue(search ?? ""); }, [search]);
 
   const [locationState, setLocationState] = React.useState<"ASKING" | "GRANTED" | "SKIPPED" | "LOADING" | null>(null);
   const [userLocation, setUserLocation] = React.useState<{ lat: number, lng: number } | null>(null);
@@ -365,12 +391,55 @@ const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange }
           Discover exciting events where you can enjoy activities that match
           your interests and passions!
         </Text>
+        <Flex
+          mt={5}
+          maxW="520px"
+          bg="#1e1e1e"
+          border="1px solid #434343"
+          borderRadius="full"
+          align="center"
+          px={3}
+          py="5px"
+          gap={2}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#718096" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: "4px" }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onSearch?.(inputValue)}
+            placeholder="Search events, hosts, places..."
+            bg="transparent"
+            border="none"
+            color="white"
+            _placeholder={{ color: "gray.500" }}
+            _focus={{ boxShadow: "none", border: "none" }}
+            p={0}
+            h="34px"
+            flex={1}
+          />
+          <Button
+            onClick={() => onSearch?.(inputValue)}
+            bg="#F79432"
+            color="black"
+            borderRadius="full"
+            px={6}
+            h="34px"
+            fontWeight="semibold"
+            _hover={{ bg: "#e58221" }}
+            flexShrink={0}
+            size="sm"
+          >
+            Search
+          </Button>
+        </Flex>
       </Box>
       <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>
         {sortedItems.length === 0 && (
           <Box>
             <Text fontSize="xl" color="gray.500">
-              No events found
+              {search ? `No events found for "${search}"` : "No events found"}
             </Text>
           </Box>
         )}
@@ -398,6 +467,7 @@ export default EventList;
 const Navbar = () => {
   const router = useRouter();
   const session = useSession();
+  const dispatch = useAppDispatch();
 
   const authenticated = session.status === "authenticated";
   const user = session.data?.user;
@@ -531,8 +601,14 @@ const Navbar = () => {
                   bg="#1a1a1a"
                   _hover={{ bg: "gray.700" }}
                   color="red.400"
+                  data-analytics-ignore=""
                   onClick={() => {
-                    localStorage?.clear();
+                    try { sessionStorage.removeItem("api_token") } catch {}
+                    try { sessionStorage.removeItem("analytics_session_id") } catch {}
+                    try { localStorage.removeItem("analytics_anon_id") } catch {}
+                    try { localStorage.removeItem("events_location_pref") } catch {}
+                    try { localStorage.removeItem("visitor_id") } catch {}
+                    dispatch(destroySession({}));
                     signOut({ callbackUrl: "/" });
                   }}
                 >

@@ -83,6 +83,12 @@ const eventsSchema = new Schema<IEvent>(
 			default: 'public',
 			required: true,
 		},
+		status: {
+			type: String,
+			enum: ['draft', 'published'],
+			default: 'published',
+			required: false,
+		},
 		startsOn: {
 			type: Date,
 			required: false,
@@ -98,7 +104,8 @@ const eventsSchema = new Schema<IEvent>(
 		},
 		location: {
 			type: String,
-			required: true,
+			required: false,
+			default: '',
 		},
 		venueName: {
 			type: String,
@@ -126,12 +133,13 @@ const eventsSchema = new Schema<IEvent>(
 
 		desc: {
 			type: String,
-			required: true,
+			required: false,
+			default: '',
 		},
 
 		images: {
 			type: [String],
-			required: true,
+			required: false,
 		},
 
 		videos: {
@@ -190,6 +198,11 @@ const eventsSchema = new Schema<IEvent>(
 			ref: 'User',
 			required: false,
 			index: true,
+		},
+		interests: {
+			type: [Schema.Types.ObjectId],
+			required: false,
+			default: [],
 		},
 	},
 	{

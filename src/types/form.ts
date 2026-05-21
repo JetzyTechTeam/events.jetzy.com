@@ -49,6 +49,7 @@ export type CreateEventFormData = {
 	isPaid?: boolean
 	desc: string
 	privacy: 'public' | 'private'
+	status?: 'draft' | 'published'
 	timezone: string
 	feedbackFormUrl?: string
 	benefits?: string
@@ -58,6 +59,7 @@ export type CreateEventFormData = {
 		question?: string
 		options: DatePollOption[]
 	}
+	interests?: string[]
 }
 
 export type CreateTicketFormData = {

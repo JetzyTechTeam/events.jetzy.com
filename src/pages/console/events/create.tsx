@@ -63,6 +63,7 @@ import TimezoneSelect from "../../../components/timezone-select";
 import { useSession } from "next-auth/react";
 import { z } from "zod";
 import RichTextEditor from "@/components/misc/RichTextEditor";
+import InterestsSelector from "@/components/events/InterestsSelector";
 
 const initialValues = {
   name: "",
@@ -78,6 +79,7 @@ const initialValues = {
   timezone: "",
   capacity: 0,
   privacy: "public",
+  status: "published" as 'draft' | 'published',
   benefits: "",
   locationDisclosedAfterBooking: false,
   datePoll: {
@@ -85,6 +87,7 @@ const initialValues = {
     question: "",
     options: [] as DatePollOption[],
   },
+  interests: [] as string[],
 };
 
 const createEventSchema = z.object({
@@ -117,8 +120,8 @@ const CreateEventPage = () => {
     price: 0,
   });
   const [tempPollOption, setTempPollOption] = React.useState<DatePollOption>({ id: "", date: "", time: "", label: "" });
-  const pollDateRef = React.useRef<HTMLInputElement>(null)
-  const pollTimeRef = React.useRef<HTMLInputElement>(null)
+  const [pollDate, setPollDate] = React.useState("")
+  const [pollTime, setPollTime] = React.useState("")
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
   const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
   const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
@@ -154,13 +157,28 @@ const CreateEventPage = () => {
   });
 
   const onSubmit = async (values: CreateEventFormData) => {
-    const validation = createEventSchema.safeParse(values);
+    const isDraft = values.status === 'draft'
 
-    if (!validation.success) {
-      const fieldErrors = validation.error.flatten().fieldErrors;
-      const errorMessages = Object.values(fieldErrors).flat().join("\n");
-      Error("Validation Error", errorMessages || "Please fix the form errors");
-      return;
+    values.images = uploadedImages;
+    values.videos = uploadedVideos;
+
+    if (isDraft) {
+      if (!values.name?.trim()) {
+        Error("Validation Error", "Event name is required to save as draft");
+        return;
+      }
+    } else {
+      const validation = createEventSchema.safeParse(values);
+      if (!validation.success) {
+        const fieldErrors = validation.error.flatten().fieldErrors;
+        const errorMessages = Object.values(fieldErrors).flat().join("\n");
+        Error("Validation Error", errorMessages || "Please fix the form errors");
+        return;
+      }
+      if (uploadedImages.length === 0) {
+        Error("Validation Error", "At least one image is required to publish");
+        return;
+      }
     }
 
     if (values.tickets.length === 0) {
@@ -173,9 +191,6 @@ const CreateEventPage = () => {
         },
       ]
     }
-
-    values.images = uploadedImages;
-    values.videos = uploadedVideos;
 
     if (values.tickets.length > 0) values.isPaid = true
     else values.isPaid = false
@@ -201,10 +216,15 @@ const CreateEventPage = () => {
 
     setIsSubmitting(true);
 
+    const wasDraft = values.status === 'draft'
     dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) } })).then((res: any) => {
       if (res?.payload?.status) {
-        setCreatedEventId(res.payload.data._id);
-        onSuccessOpen();
+        if (wasDraft) {
+          navigation.push('/console/events')
+        } else {
+          setCreatedEventId(res.payload.data._id);
+          onSuccessOpen();
+        }
       }
     }).finally(() => {
       setIsSubmitting(false);
@@ -213,22 +233,22 @@ const CreateEventPage = () => {
 
   const handleStartDateChange = (date?: string, time?: string) => {
     if (formikRef?.current) {
-      if (date) {
+      if (date !== undefined) {
         formikRef.current.setFieldValue("startDate", date);
       }
 
-      if (time) {
+      if (time !== undefined) {
         formikRef.current.setFieldValue("startTime", time);
       }
     }
   };
   const handleEndDateChange = (date?: string, time?: string) => {
     if (formikRef?.current) {
-      if (date) {
+      if (date !== undefined) {
         formikRef.current.setFieldValue("endDate", date);
       }
 
-      if (time) {
+      if (time !== undefined) {
         formikRef.current.setFieldValue("endTime", time);
       }
     }
@@ -359,10 +379,12 @@ const CreateEventPage = () => {
                   gap={4}
                   alignItems="center"
                   justifyContent="space-between"
-                  mb="4"
+                  mb={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 1 : 4}
                   bg="#14161B"
                   rounded="xl"
                   p="2"
+                  opacity={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 0.4 : 1}
+                  pointerEvents={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? "none" : "auto"}
                 >
                   <Box pl="3" className="relative">
                     <Box className="absolute top-5 left-4">
@@ -417,6 +439,11 @@ const CreateEventPage = () => {
                     </Box>
                   </Flex>
                 </Flex>
+                {!!(values.datePoll?.isActive || values.datePoll?.options?.length) && (
+                  <Text fontSize="xs" color="orange.400" mb={3}>
+                    Remove date poll to set a fixed start/end date
+                  </Text>
+                )}
                 <FormControl mb={4}>
                   <InputGroup>
                     <InputLeftElement pointerEvents="none">
@@ -448,6 +475,10 @@ const CreateEventPage = () => {
                     placeholder="Add Description"
                   />
                 </FormControl>
+                <InterestsSelector
+                  selected={values.interests ?? []}
+                  onChange={(ids) => setFieldValue("interests", ids)}
+                />
                 <Text fontWeight="semibold" color="gray.400" mb={2}>
                   Event Benefits (Max 23 chars)
                 </Text>
@@ -526,7 +557,8 @@ const CreateEventPage = () => {
                       as={Input}
                       type="number"
                       min={0}
-                      value={values.capacity || 0}
+                      value={values.capacity ?? ""}
+                      placeholder="0"
                       name="capacity"
                       bg="#1C1F24"
                       color="white"
@@ -642,8 +674,17 @@ const CreateEventPage = () => {
                     )}
                   </FieldArray>
                 </Box>
+                <Box
+                  opacity={!!(values.startDate || values.endDate) ? 0.4 : 1}
+                  pointerEvents={!!(values.startDate || values.endDate) ? "none" : "auto"}
+                >
+                {!!(values.startDate || values.endDate) && (
+                  <Text fontSize="xs" color="orange.400" mt={6} mb={1}>
+                    Remove start/end date to enable date poll
+                  </Text>
+                )}
                 {/* Date Poll Section */}
-                <Text fontWeight="semibold" color="gray.400" mb={2} mt={6}>
+                <Text fontWeight="semibold" color="gray.400" mb={2} mt={!!(values.startDate || values.endDate) ? 1 : 6}>
                   Date Poll
                 </Text>
                 <Box bg="#141619" rounded="xl" px="3" py="3" mb={4}>
@@ -660,17 +701,6 @@ const CreateEventPage = () => {
                   </Flex>
                   {values.datePoll?.isActive && (
                     <Box>
-                      <FormControl mb="3">
-                        <Input
-                          placeholder="Poll question (e.g. Which date works for you?)"
-                          bg="#1C1F24"
-                          color="white"
-                          border="none"
-                          fontSize="sm"
-                          value={values.datePoll?.question || ""}
-                          onChange={(e) => setFieldValue("datePoll.question", e.target.value)}
-                        />
-                      </FormControl>
                       {(values.datePoll?.options || []).map((opt, idx) => (
                         <Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
                           <Box>
@@ -710,6 +740,20 @@ const CreateEventPage = () => {
                     </Box>
                   )}
                 </Box>
+                </Box>
+
+                <Flex align="center" justifyContent="space-between" mt="4">
+                  <Text color="gray.400">Status</Text>
+                  <Field
+                    as="select"
+                    name="status"
+                    value={values?.status}
+                    className="bg-[#1E1E1E] block w-[130px] h-10 rounded-md border-0 py-1 shadow-sm sm:text-sm sm:leading-6 p-3"
+                  >
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                  </Field>
+                </Flex>
 
                 <Button
                   type="submit"
@@ -722,7 +766,7 @@ const CreateEventPage = () => {
                   isLoading={isSubmitting}
                   isDisabled={isSubmitting || isUploading}
                 >
-                  Create Event
+                  {values.status === 'draft' ? 'Save as Draft' : 'Create Event'}
                 </Button>
 
                 {/* Date Poll Option Modal */}
@@ -734,30 +778,18 @@ const CreateEventPage = () => {
                     <ModalBody>
                       <FormControl mb={4}>
                         <FormLabel>Date</FormLabel>
-                        <Input
-                          ref={pollDateRef}
-                          type="date"
-                          bg="#090C10"
-                          border="1px solid #444"
-                          color="white"
-                          sx={{ colorScheme: 'dark', WebkitAppearance: 'none', minHeight: '42px', px: 3, fontSize: 'md' }}
-                          value={tempPollOption.date}
-                          onChange={(e) => setTempPollOption(p => ({ ...p, date: e.target.value }))}
-                          onInput={(e) => setTempPollOption(p => ({ ...p, date: (e.target as HTMLInputElement).value }))}
+                        <DatePicker
+                          key={`poll-date-${isPollModalOpen}`}
+                          onChange={(d) => setPollDate(d)}
+                          placeholder="Select date"
                         />
                       </FormControl>
                       <FormControl mb={4}>
                         <FormLabel>Time</FormLabel>
-                        <Input
-                          ref={pollTimeRef}
-                          type="time"
-                          bg="#090C10"
-                          border="1px solid #444"
-                          color="white"
-                          sx={{ colorScheme: 'dark', WebkitAppearance: 'none', minHeight: '42px', px: 3, fontSize: 'md' }}
-                          value={tempPollOption.time}
-                          onChange={(e) => setTempPollOption(p => ({ ...p, time: e.target.value }))}
-                          onInput={(e) => setTempPollOption(p => ({ ...p, time: (e.target as HTMLInputElement).value }))}
+                        <TimePicker
+                          key={`poll-time-${isPollModalOpen}`}
+                          onChange={(t) => setPollTime(t)}
+                          placeholder="Select time"
                         />
                       </FormControl>
                       <FormControl mb={4}>
@@ -778,26 +810,28 @@ const CreateEventPage = () => {
                           bg="#F79432"
                           w="full"
                           color="black"
+                          type="button"
                           onClick={() => {
-                            const date = tempPollOption.date || pollDateRef.current?.value || ""
-                            const time = tempPollOption.time || pollTimeRef.current?.value || ""
-                            if (date && time) {
+                            const label = tempPollOption.label || ""
+                            if (pollDate && pollTime) {
                               const newOption: DatePollOption = {
-                                ...tempPollOption,
-                                id: new Date().getTime().toString(),
-                                date,
-                                time,
+                                id: Date.now().toString(),
+                                date: pollDate,
+                                time: pollTime,
+                                label,
                                 votes: [],
                               };
                               setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
                               setTempPollOption({ id: "", date: "", time: "", label: "" });
+                              setPollDate("")
+                              setPollTime("")
                               onPollModalClose();
                             }
                           }}
                         >
                           Add
                         </Button>
-                        <Button variant="unstyled" onClick={onPollModalClose}>Cancel</Button>
+                        <Button variant="unstyled" onClick={() => { setPollDate(""); setPollTime(""); onPollModalClose(); }}>Cancel</Button>
                       </Flex>
                     </ModalFooter>
                   </ModalContent>

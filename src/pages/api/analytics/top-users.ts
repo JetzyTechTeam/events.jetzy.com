@@ -63,57 +63,51 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			analyticsMatch.timestamp = dateFilter
 		}
 
-		// Get all users
-		const allUsers = await Users.find({}).select("_id firstName lastName email role lastActiveAt createdAt").lean()
-
-		// Aggregate sessions by user
-		const sessionsByUser = await UserSession.aggregate([
-			{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? { startTime: dateFilter } : {}) } },
-			{
-				$group: {
-					_id: "$userId",
-					totalSessions: { $sum: 1 },
-					totalDuration: { $sum: "$duration" },
-					lastSessionStart: { $max: "$startTime" },
+		// Run all data fetches in parallel
+		const [allUsers, sessionsByUser, pageViewsByUser, actionsByUser, eventInteractionsByUser] = await Promise.all([
+			Users.find({}).select("_id firstName lastName email role lastActiveAt createdAt").lean(),
+			UserSession.aggregate([
+				{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? { startTime: dateFilter } : {}) } },
+				{
+					$group: {
+						_id: "$userId",
+						totalSessions: { $sum: 1 },
+						totalDuration: { $sum: "$duration" },
+						lastSessionStart: { $max: "$startTime" },
+					},
 				},
-			},
-		])
-
-		// Aggregate page views by user
-		const pageViewsByUser = await PageView.aggregate([
-			{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? analyticsMatch : {}) } },
-			{
-				$group: {
-					_id: "$userId",
-					totalPageViews: { $sum: 1 },
-					uniquePages: { $addToSet: "$page" },
-					lastPageView: { $max: "$timestamp" },
+			]),
+			PageView.aggregate([
+				{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? analyticsMatch : {}) } },
+				{
+					$group: {
+						_id: "$userId",
+						totalPageViews: { $sum: 1 },
+						uniquePages: { $addToSet: "$page" },
+						lastPageView: { $max: "$timestamp" },
+					},
 				},
-			},
-		])
-
-		// Aggregate actions by user
-		const actionsByUser = await UserAction.aggregate([
-			{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? analyticsMatch : {}) } },
-			{
-				$group: {
-					_id: "$userId",
-					totalActions: { $sum: 1 },
-					actionTypes: { $addToSet: "$actionType" },
+			]),
+			UserAction.aggregate([
+				{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? analyticsMatch : {}) } },
+				{
+					$group: {
+						_id: "$userId",
+						totalActions: { $sum: 1 },
+						actionTypes: { $addToSet: "$actionType" },
+					},
 				},
-			},
-		])
-
-		// Aggregate event interactions by user
-		const eventInteractionsByUser = await EventInteraction.aggregate([
-			{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? analyticsMatch : {}) } },
-			{
-				$group: {
-					_id: "$userId",
-					totalInteractions: { $sum: 1 },
-					uniqueEvents: { $addToSet: "$eventId" },
+			]),
+			EventInteraction.aggregate([
+				{ $match: { userId: { $exists: true, $ne: null }, ...(Object.keys(analyticsMatch).length > 0 ? analyticsMatch : {}) } },
+				{
+					$group: {
+						_id: "$userId",
+						totalInteractions: { $sum: 1 },
+						uniqueEvents: { $addToSet: "$eventId" },
+					},
 				},
-			},
+			]),
 		])
 
 		// Create maps for quick lookup

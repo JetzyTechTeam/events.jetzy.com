@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { adminOnly } from "@/lib/authSession"
 import { getServerSession } from "next-auth"
@@ -28,13 +28,23 @@ import {
 	Button,
 	HStack,
 	IconButton,
+	Tabs,
+	TabList,
+	Tab,
+	TabPanels,
+	TabPanel,
 } from "@chakra-ui/react"
 import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiChevronLeft, FiChevronRight } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
+import ClickHeatmap from "@/components/analytics/ClickHeatmap"
 import NextLink from "next/link"
 import SafeHTML from "@/components/misc/SafeHTML"
 import { stripHTMLAndDecode } from "@/lib/utils"
+
+interface FunnelStage { stage: string; label: string; count: number; dropOffPct: number; conversionPct: number }
+interface DwellRow { page: string; views: number; avgTimeSec: number; p50Sec: number; p90Sec: number; avgScrollDepthPct: number | null }
+interface HeatTopTarget { text: string | null; dataTrack: string | null; count: number; rageCount: number }
 
 interface EventAnalyticsData {
 	event: {
@@ -140,6 +150,85 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const [currentPage, setCurrentPage] = useState(1)
 	const router = useRouter()
 	const toast = useToast()
+
+	const [tabIndex, setTabIndex] = useState(0)
+	const [journeyLoaded, setJourneyLoaded] = useState(false)
+	const [journeyLoading, setJourneyLoading] = useState(false)
+	const [funnel, setFunnel] = useState<FunnelStage[]>([])
+	const [dwell, setDwell] = useState<DwellRow[]>([])
+	const [heatPoints, setHeatPoints] = useState<any[]>([])
+	const [topTargets, setTopTargets] = useState<HeatTopTarget[]>([])
+
+	const [namedEventsLoaded, setNamedEventsLoaded] = useState(false)
+	const [namedEventsLoading, setNamedEventsLoading] = useState(false)
+	const [namedEventsRows, setNamedEventsRows] = useState<Array<{ category: string; eventName: string; totalEvents: number; uniqueUsers: number }>>([])
+	const [namedEventsCategory, setNamedEventsCategory] = useState<string>("all")
+	const [namedEventsPage, setNamedEventsPage] = useState(1)
+	const NAMED_EVENTS_PER_PAGE = 20
+
+	const exportNamedEventsCSV = () => {
+		const rows = namedEventsRows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
+		const header = "Category,Event Name,Total Events,Unique Users"
+		const lines = rows.map((r) => `"${r.category}","${r.eventName.replace(/"/g, '""')}",${r.totalEvents},${r.uniqueUsers}`)
+		const csv = "﻿" + [header, ...lines].join("\n")
+		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+		const url = URL.createObjectURL(blob)
+		const a = document.createElement("a")
+		a.href = url
+		a.download = `named-events-${stripHTMLAndDecode(eventData.name).slice(0, 30).replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`
+		document.body.appendChild(a)
+		a.click()
+		document.body.removeChild(a)
+		URL.revokeObjectURL(url)
+	}
+
+	const loadJourney = async () => {
+		if (journeyLoaded || journeyLoading) return
+		setJourneyLoading(true)
+		try {
+			const eid = eventData._id
+			const [f, d, h] = await Promise.all([
+				fetch(`/api/analytics/journey/funnel?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
+				fetch(`/api/analytics/journey/dwell?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
+				fetch(`/api/analytics/journey/heat?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
+			])
+			if (f?.status) setFunnel(f.data.funnel || [])
+			if (d?.status) setDwell(d.data.pages || [])
+			if (h?.status) {
+				setHeatPoints(h.data.clicks || [])
+				setTopTargets(h.data.topTargets || [])
+			}
+			setJourneyLoaded(true)
+		} catch (e: any) {
+			toast({ title: "Failed to load journey data", description: e.message, status: "error" })
+		} finally {
+			setJourneyLoading(false)
+		}
+	}
+
+	const loadNamedEvents = async () => {
+		if (namedEventsLoaded || namedEventsLoading) return
+		setNamedEventsLoading(true)
+		try {
+			const params = new URLSearchParams({ eventId: eventData._id })
+			if (dateFrom) params.append("dateFrom", dateFrom.toISOString())
+			if (dateTo) params.append("dateTo", dateTo.toISOString())
+			const res = await fetch(`/api/analytics/named-events?${params.toString()}`, { credentials: "include" })
+			const json = await res.json()
+			if (json?.status) setNamedEventsRows(json.data.rows || [])
+			setNamedEventsLoaded(true)
+		} catch (e: any) {
+			toast({ title: "Failed to load named events", description: e.message, status: "error" })
+		} finally {
+			setNamedEventsLoading(false)
+		}
+	}
+
+	useEffect(() => {
+		if (tabIndex === 1) loadJourney()
+		if (tabIndex === 2) loadNamedEvents()
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tabIndex])
 
 	const fetchAnalytics = async (from: Date | null, to: Date | null, page: number = 1) => {
 		setIsLoading(true)
@@ -385,7 +474,14 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 							<Spinner size="xl" color="#1877F2" />
 						</Center>
 					) : analyticsData ? (
-						<>
+						<Tabs variant="line" index={tabIndex} onChange={setTabIndex} isLazy>
+							<TabList mb={4} borderBottom="2px solid #2a2a2a">
+								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Overview</Tab>
+								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Journey</Tab>
+								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Named Events</Tab>
+							</TabList>
+							<TabPanels>
+								<TabPanel px={0}>
 							{/* Summary Metrics */}
 							<Box mb={6}>
 								<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
@@ -587,7 +683,173 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									</Flex>
 								)}
 							</Box>
-						</>
+								</TabPanel>
+								<TabPanel px={0}>
+									{journeyLoading ? (
+										<Center py={20}><Spinner size="xl" color="#F79432" /></Center>
+									) : (
+										<>
+											<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Conversion Funnel</Text>
+												{funnel.length === 0 ? (
+													<Text color="#9C9C9C" fontSize="sm">No funnel data yet.</Text>
+												) : (
+													funnel.map((stage, i) => {
+														const maxCount = funnel[0]?.count || 1
+														const w = Math.max(8, (stage.count / maxCount) * 100)
+														return (
+															<Box key={stage.stage} mb={3}>
+																<Flex justify="space-between" mb={1}>
+																	<Text fontSize="sm" color="white">{stage.label}</Text>
+																	<Text fontSize="sm" color="#9C9C9C">{stage.count.toLocaleString()} · {stage.conversionPct}%{i > 0 ? ` · drop ${stage.dropOffPct}%` : ""}</Text>
+																</Flex>
+																<Box h="24px" bg="#2a2a2a" borderRadius="md" overflow="hidden">
+																	<Box h="100%" w={`${w}%`} bg="#F79432" />
+																</Box>
+															</Box>
+														)
+													})
+												)}
+											</Box>
+
+											<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Page Dwell &amp; Scroll Depth</Text>
+												<TableContainer>
+													<Table size="sm">
+														<Thead>
+															<Tr>
+																<Th color="#9C9C9C" borderColor="#2a2a2a">Page</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Views</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Avg time (s)</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>p50</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>p90</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Avg scroll %</Th>
+															</Tr>
+														</Thead>
+														<Tbody>
+															{dwell.length === 0 ? (
+																<Tr><Td colSpan={6} borderColor="#2a2a2a"><Text color="#9C9C9C" fontSize="sm">No dwell data yet.</Text></Td></Tr>
+															) : dwell.map((r) => (
+																<Tr key={r.page} _hover={{ bg: "#262626" }}>
+																	<Td borderColor="#2a2a2a"><Text fontSize="xs" color="white" maxW="400px" isTruncated>{r.page}</Text></Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.views}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.avgTimeSec}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.p50Sec}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.p90Sec}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.avgScrollDepthPct ?? "—"}</Td>
+																</Tr>
+															))}
+														</Tbody>
+													</Table>
+												</TableContainer>
+											</Box>
+
+											<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={6}>
+												<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+													<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Click Heatmap</Text>
+													<ClickHeatmap points={heatPoints} width={600} height={400} />
+												</Box>
+												<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+													<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Top Click Targets</Text>
+													<TableContainer>
+														<Table size="sm">
+															<Thead><Tr><Th color="#9C9C9C" borderColor="#2a2a2a">Target</Th><Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Clicks</Th><Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Rage</Th></Tr></Thead>
+															<Tbody>
+																{topTargets.length === 0 ? (
+																	<Tr><Td colSpan={3} borderColor="#2a2a2a"><Text color="#9C9C9C" fontSize="sm">No clicks yet.</Text></Td></Tr>
+																) : topTargets.map((t, idx) => (
+																	<Tr key={idx} _hover={{ bg: "#262626" }}>
+																		<Td borderColor="#2a2a2a"><Text fontSize="xs" color="white" maxW="280px" isTruncated>{t.dataTrack || t.text || "—"}</Text></Td>
+																		<Td color="white" borderColor="#2a2a2a" isNumeric>{t.count}</Td>
+																		<Td color="white" borderColor="#2a2a2a" isNumeric>{t.rageCount > 0 ? <Badge colorScheme="red">{t.rageCount}</Badge> : 0}</Td>
+																	</Tr>
+																))}
+															</Tbody>
+														</Table>
+													</TableContainer>
+												</Box>
+											</SimpleGrid>
+										</>
+									)}
+								</TabPanel>
+								<TabPanel px={0}>
+									{namedEventsLoading ? (
+										<Center py={20}><Spinner size="xl" color="#F79432" /></Center>
+									) : (() => {
+										const filteredRows = namedEventsRows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
+										const totalPages = Math.max(1, Math.ceil(filteredRows.length / NAMED_EVENTS_PER_PAGE))
+										const safePage = Math.min(namedEventsPage, totalPages)
+										const paginatedRows = filteredRows.slice((safePage - 1) * NAMED_EVENTS_PER_PAGE, safePage * NAMED_EVENTS_PER_PAGE)
+										return (
+											<Box bg="#1a1a1a" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Flex justify="space-between" align="center" mb={4} wrap="wrap" gap={3}>
+													<Box>
+														<Text fontWeight="bold" fontSize="lg" color="white">Named Events</Text>
+														<Text fontSize="sm" color="#9C9C9C">Category / Event Name / Total Events / Unique Users</Text>
+													</Box>
+													<HStack spacing={2} flexWrap="wrap">
+														{["all", "Event Interactions", "CTA Clicks", "Form Events"].map((cat) => (
+															<Button
+																key={cat}
+																size="xs"
+																onClick={() => { setNamedEventsCategory(cat); setNamedEventsPage(1) }}
+																bg={namedEventsCategory === cat ? "#F79432" : "#2a2a2a"}
+																color={namedEventsCategory === cat ? "black" : "#9C9C9C"}
+																_hover={{ bg: namedEventsCategory === cat ? "#E68422" : "#333" }}
+																borderRadius="full"
+																px={3}
+															>
+																{cat === "all" ? "All" : cat}
+															</Button>
+														))}
+														{filteredRows.length > 0 && (
+															<Button size="xs" onClick={exportNamedEventsCSV} bg="#2a2a2a" color="#9C9C9C" _hover={{ bg: "#333", color: "white" }} borderRadius="full" px={3}>
+																Export CSV
+															</Button>
+														)}
+													</HStack>
+												</Flex>
+												{filteredRows.length > 0 ? (
+													<>
+														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+															<Table variant="simple" size="sm">
+																<Thead><Tr>
+																	<Th>Category</Th>
+																	<Th>Event Name</Th>
+																	<Th isNumeric>Total Events</Th>
+																	<Th isNumeric>Unique Users</Th>
+																</Tr></Thead>
+																<Tbody>
+																	{paginatedRows.map((row, idx) => (
+																		<Tr key={idx} _hover={{ bg: "#262626" }}>
+																			<Td><Badge colorScheme={row.category === "Event Interactions" ? "blue" : row.category === "CTA Clicks" ? "orange" : "green"}>{row.category}</Badge></Td>
+																			<Td><Text fontSize="sm">{row.eventName}</Text></Td>
+																			<Td isNumeric><Text fontWeight="semibold">{row.totalEvents.toLocaleString()}</Text></Td>
+																			<Td isNumeric><Badge colorScheme="teal">{row.uniqueUsers.toLocaleString()}</Badge></Td>
+																		</Tr>
+																	))}
+																</Tbody>
+															</Table>
+														</TableContainer>
+														{totalPages > 1 && (
+															<Flex justify="space-between" align="center" mt={4}>
+																<Text fontSize="sm" color="#9C9C9C">Page {safePage} of {totalPages} ({filteredRows.length} total)</Text>
+																<HStack spacing={2}>
+																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }} aria-label="Previous page" icon={<FiChevronLeft />} size="sm" onClick={() => setNamedEventsPage((p) => Math.max(1, p - 1))} isDisabled={safePage <= 1} />
+																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }} aria-label="Next page" icon={<FiChevronRight />} size="sm" onClick={() => setNamedEventsPage((p) => Math.min(totalPages, p + 1))} isDisabled={safePage >= totalPages} />
+																</HStack>
+															</Flex>
+														)}
+													</>
+												) : (
+													<Text color="#9C9C9C" fontSize="sm">No interactions recorded for this event yet.</Text>
+												)}
+											</Box>
+										)
+									})()}
+								</TabPanel>
+							</TabPanels>
+						</Tabs>
 					) : (
 						<Center py={20}>
 							<Text color="#65676B">No data available</Text>

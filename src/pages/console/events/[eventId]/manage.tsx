@@ -42,7 +42,7 @@ import {
 } from "@chakra-ui/react"
 import { DateTime } from "luxon"
 import axios from "axios"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import Image from "next/image"
 import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
@@ -62,6 +62,8 @@ export default function Manage({ event }: any) {
 	const toast = useToast()
 	const router = useRouter()
 	const { data: session } = useSession()
+	const userRole = (session?.user as any)?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
 
 	useEffect(() => {
 		if (router.query.invite === "true") {
@@ -127,6 +129,11 @@ export default function Manage({ event }: any) {
 				page={stripHtml(event.name) as any}
 				component={
 					<div className="flex gap-2">
+						{isAdmin && (
+							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
+								View Analytics
+							</Button>
+						)}
 						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} onClick={() => router.push(`/console/events/${event._id}/check-in`)} fontWeight="bold">
 							Check-In Portal
 						</Button>
@@ -375,6 +382,17 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	const [error, setError] = useState("")
 
 	const toast = useToast()
+
+	useEffect(() => {
+		if (!sendBlastModal) {
+			setSubject("")
+			setMessage("")
+			setStatus("")
+			setTargetType("invitations")
+			setEmailType("custom")
+			setError("")
+		}
+	}, [sendBlastModal])
 
 	const onSendBlast = async () => {
 		if (!status || !subject.trim() || !message.trim()) {
@@ -814,6 +832,27 @@ const GUESTS_PAGE_SIZE = 10
 function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const [selectedGuest, setSelectedGuest] = useState<{ guest: any; booking: any; checkIn: any } | null>(null)
 	const [page, setPage] = useState(1)
+	const [deletingEmail, setDeletingEmail] = useState<string | null>(null)
+	const queryClient = useQueryClient()
+
+	const handleDeleteGuest = async (email: string, guest: any, booking: any) => {
+		if (!confirm(`Remove ${booking?.customerName || guest?.name || "this guest"}? This cannot be undone.`)) return
+		setDeletingEmail(email)
+		try {
+			if (booking?.bookingRef) {
+				await axios.post("/api/bookings/delete", { bookingRef: booking.bookingRef })
+			}
+			if (guest?._id) {
+				await axios.post("/api/guests/delete", { guestId: guest._id })
+			}
+			queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
+		} catch {
+			alert("Failed to delete guest.")
+		} finally {
+			setDeletingEmail(null)
+		}
+	}
 
 	const fetchGuests = async () => {
 		const res = await axios.get("/api/guests-list", { params: { eventId } })
@@ -938,6 +977,17 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												onClick={() => setSelectedGuest({ guest, booking, checkIn: ci })}
 											>
 												View Details
+											</Button>
+											<Button
+												size="sm"
+												variant="ghost"
+												color="red.400"
+												_hover={{ bg: '#2A2A2A' }}
+												isLoading={deletingEmail === email}
+												onClick={() => handleDeleteGuest(email, guest, booking)}
+												ml={1}
+											>
+												Delete
 											</Button>
 										</Td>
 									</Tr>

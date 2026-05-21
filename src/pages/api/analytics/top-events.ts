@@ -60,67 +60,66 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			dateFilter.$lte = toDate
 		}
 
-		// Get all events
-		const allEvents = await Events.find({ isDeleted: false }).select("_id name slug images").lean()
-
-		// Build match filter for bookings
+		// Build all match filters up front
 		const bookingMatch: any = { isDeleted: false, status: BookingStatus.CONFIRMED }
 		if (Object.keys(dateFilter).length > 0) {
 			bookingMatch.createdAt = dateFilter
 		}
 
-		// Aggregate revenue and bookings by event
-		const revenueByEvent = await BookingsModel.aggregate([
-			{ $match: bookingMatch },
-			{
-				$group: {
-					_id: "$eventId",
-					totalRevenue: { $sum: "$total" },
-					totalDiscounts: { $sum: "$discountAmount" },
-					bookingCount: { $sum: 1 },
-					totalTickets: {
-						$sum: {
-							$reduce: {
-								input: "$tickets",
-								initialValue: 0,
-								in: { $add: ["$$value", "$$this.quantity"] },
-							},
-						},
-					},
-				},
-			},
-		])
-
-		// Get check-ins by event
 		const checkInMatch: any = {}
 		if (Object.keys(dateFilter).length > 0) {
 			checkInMatch.createdAt = dateFilter
 		}
-		const checkInsByEvent = await CheckIn.aggregate([
-			{ $match: checkInMatch },
-			{
-				$group: {
-					_id: "$eventId",
-					totalCheckedIn: { $sum: "$checkedInCount" },
-				},
-			},
-		])
 
-		// Get event views/interactions
 		const viewMatch: any = { interactionType: "view" }
 		if (Object.keys(dateFilter).length > 0) {
 			viewMatch.timestamp = dateFilter
 		}
-		const viewsByEvent = await EventInteraction.aggregate([
-			{ $match: viewMatch },
-			{
-				$group: {
-					_id: "$eventId",
-					viewCount: { $sum: 1 },
-					uniqueViewers: { $addToSet: "$userId" },
+
+		// Run all queries in parallel
+		const [allEvents, revenueByEvent, checkInsByEvent, viewsByEvent_raw] = await Promise.all([
+			Events.find({ isDeleted: false }).select("_id name slug images").lean(),
+			BookingsModel.aggregate([
+				{ $match: bookingMatch },
+				{
+					$group: {
+						_id: "$eventId",
+						totalRevenue: { $sum: "$total" },
+						totalDiscounts: { $sum: "$discountAmount" },
+						bookingCount: { $sum: 1 },
+						totalTickets: {
+							$sum: {
+								$reduce: {
+									input: "$tickets",
+									initialValue: 0,
+									in: { $add: ["$$value", "$$this.quantity"] },
+								},
+							},
+						},
+					},
 				},
-			},
+			]),
+			CheckIn.aggregate([
+				{ $match: checkInMatch },
+				{
+					$group: {
+						_id: "$eventId",
+						totalCheckedIn: { $sum: "$checkedInCount" },
+					},
+				},
+			]),
+			EventInteraction.aggregate([
+				{ $match: viewMatch },
+				{
+					$group: {
+						_id: "$eventId",
+						viewCount: { $sum: 1 },
+						uniqueViewers: { $addToSet: "$userId" },
+					},
+				},
+			]),
 		])
+		const viewsByEvent = viewsByEvent_raw
 
 		// Create maps for quick lookup
 		const revenueMap = new Map(revenueByEvent.map((item) => [item._id.toString(), item]))

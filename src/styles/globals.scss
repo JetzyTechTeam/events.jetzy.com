@@ -27,6 +27,18 @@ body {
 	z-index: 9999 !important;
 }
 
+/* Dark theme for date/time picker icons */
+.poll-date-input {
+	color-scheme: dark;
+}
+.poll-date-input::-webkit-calendar-picker-indicator {
+	cursor: pointer;
+	opacity: 0.8;
+}
+.poll-date-input::-webkit-calendar-picker-indicator:hover {
+	opacity: 1;
+}
+
 /* Fix for Chrome autofill white background bug when password visibility toggles */
 .dark-autofill:-webkit-autofill,
 .dark-autofill:-webkit-autofill:hover, 

@@ -28,7 +28,14 @@ const CardGroup: React.FC<CardGroupProps> = ({ items }) => {
 			{items?.map((item) => (
 				<Link href={ROUTES.eventDetails.replace("[slug]", item?.slug)} key={item?._id.toString()} className="bg-[#1E1E1E] shadow-md rounded-lg overflow-hidden relative">
 					<div className="relative h-48 w-full">
-						<Image className="w-full h-full object-cover object-top" src={item?.images[0]} alt={item?.name} width={512} height={512} />
+						{item?.images && item.images.length > 0 ? (
+							<Image className="w-full h-full object-cover object-top" src={item.images[0]} alt={item?.name} width={512} height={512} />
+						) : (
+							<div className="w-full h-full bg-[#2A2D35] flex flex-col items-center justify-center gap-1">
+								<span className="text-3xl">🖼️</span>
+								<span className="text-xs text-gray-500">No image</span>
+							</div>
+						)}
 						{/* Benefits Overlay */}
 						{item?.benefits && item.benefits.trim() !== "" && (
 							<div className="absolute top-3 left-3 z-10 flex flex-col gap-1 max-w-[80%]">

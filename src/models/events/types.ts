@@ -63,6 +63,7 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	status?: 'draft' | 'published';
 	isEnded?: boolean; // UI flag to indicate if event has ended
 	questions?: ICustomQuestion[];
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>
@@ -77,6 +78,7 @@ export interface IEvent extends IBaseModelProps {
 	feedbackFormUrl?: string;
 	thankYouEmailSentAt?: Date;
 	benefits?: string;
+	interests?: Types.ObjectId[] | string[];
 }
 
 export enum BookingStatus {

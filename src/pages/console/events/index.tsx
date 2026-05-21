@@ -140,6 +140,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 										ENDED EVENT
 									</span>
 								)}
+								{event.status === 'draft' && (
+									<span className="inline-block mt-1 ml-2 px-2 py-1 bg-[#2A1F00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
+										DRAFT
+									</span>
+								)}
 							</div>
 						</div>
 
@@ -202,13 +207,20 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 					{/* IMAGE SECTION */}
 					<div className="ml-4">
-						<Image
-							src={event && event?.images[0]}
-							alt={stripHtml(event.name)}
-							className={`w-[180px] h-[150px] rounded-xl ${props.isEnded ? 'opacity-60' : ''}`}
-							width={180}
-							height={150}
-						/>
+						{event?.images && event.images.length > 0 ? (
+							<Image
+								src={event.images[0]}
+								alt={stripHtml(event.name)}
+								className={`w-[180px] h-[150px] rounded-xl object-cover ${props.isEnded ? 'opacity-60' : ''}`}
+								width={180}
+								height={150}
+							/>
+						) : (
+							<div className={`w-[180px] h-[150px] rounded-xl bg-[#2A2D35] flex flex-col items-center justify-center gap-1 ${props.isEnded ? 'opacity-60' : ''}`}>
+								<span className="text-3xl">🖼️</span>
+								<span className="text-xs text-gray-500">No image</span>
+							</div>
+						)}
 					</div>
 				</div>
 			</div>

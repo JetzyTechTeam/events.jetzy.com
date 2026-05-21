@@ -6,6 +6,7 @@ interface DateRangeSelectorProps {
 	dateFrom: Date | null
 	dateTo: Date | null
 	onDateChange: (from: Date | null, to: Date | null) => void
+	dark?: boolean
 }
 
 const formatDateForInput = (date: Date | null) => {
@@ -16,7 +17,16 @@ const formatDateForInput = (date: Date | null) => {
 	return `${year}-${month}-${day}`
 }
 
-export default function DateRangeSelector({ dateFrom, dateTo, onDateChange }: DateRangeSelectorProps) {
+export default function DateRangeSelector({ dateFrom, dateTo, onDateChange, dark = false }: DateRangeSelectorProps) {
+	const labelColor = dark ? "#9C9C9C" : "#65676B"
+	const inputBg = dark ? "#0f0f0f" : "white"
+	const inputColor = dark ? "white" : "inherit"
+	const inputBorder = dark ? "#2a2a2a" : "#E4E6EB"
+	const focusBorder = dark ? "#F79432" : "#1877F2"
+	const presetBtnProps = dark
+		? { bg: "#1a1a1a", color: "white", borderColor: "#2a2a2a", _hover: { bg: "#262626" } }
+		: {}
+	const applyBtnScheme = dark ? "orange" : "blue"
 	// Local state for input values (don't trigger API calls until Apply is clicked)
 	const [localDateFrom, setLocalDateFrom] = useState<string>("")
 	const [localDateTo, setLocalDateTo] = useState<string>("")
@@ -117,7 +127,7 @@ export default function DateRangeSelector({ dateFrom, dateTo, onDateChange }: Da
 				{/* Custom Date Inputs */}
 				<HStack spacing={2} flexWrap="wrap" flex={1}>
 					<Box>
-						<Text fontSize="xs" color="#65676B" mb={1}>
+						<Text fontSize="xs" color={labelColor} mb={1}>
 							Start Date
 						</Text>
 						<Input
@@ -126,12 +136,15 @@ export default function DateRangeSelector({ dateFrom, dateTo, onDateChange }: Da
 							onChange={handleDateFromInputChange}
 							size="sm"
 							max={localDateTo || maxDate}
-							borderColor="#E4E6EB"
-							_focus={{ borderColor: "#1877F2", boxShadow: "0 0 0 1px #1877F2" }}
+							bg={inputBg}
+							color={inputColor}
+							borderColor={inputBorder}
+							sx={dark ? { colorScheme: "dark" } : undefined}
+							_focus={{ borderColor: focusBorder, boxShadow: `0 0 0 1px ${focusBorder}` }}
 						/>
 					</Box>
 					<Box>
-						<Text fontSize="xs" color="#65676B" mb={1}>
+						<Text fontSize="xs" color={labelColor} mb={1}>
 							End Date
 						</Text>
 						<Input
@@ -141,16 +154,19 @@ export default function DateRangeSelector({ dateFrom, dateTo, onDateChange }: Da
 							size="sm"
 							min={localDateFrom}
 							max={maxDate}
-							borderColor="#E4E6EB"
-							_focus={{ borderColor: "#1877F2", boxShadow: "0 0 0 1px #1877F2" }}
+							bg={inputBg}
+							color={inputColor}
+							borderColor={inputBorder}
+							sx={dark ? { colorScheme: "dark" } : undefined}
+							_focus={{ borderColor: focusBorder, boxShadow: `0 0 0 1px ${focusBorder}` }}
 						/>
 					</Box>
 					<Box alignSelf="flex-end" pt={6}>
 						<HStack spacing={2}>
-							<Button size="sm" colorScheme="blue" onClick={handleApply}>
+							<Button size="sm" colorScheme={applyBtnScheme} onClick={handleApply}>
 								Apply
 							</Button>
-							<Button size="sm" variant="outline" onClick={handleClear}>
+							<Button size="sm" variant="outline" {...presetBtnProps} onClick={handleClear}>
 								Clear
 							</Button>
 						</HStack>
@@ -159,26 +175,26 @@ export default function DateRangeSelector({ dateFrom, dateTo, onDateChange }: Da
 
 				{/* Preset Buttons */}
 				<HStack spacing={2} flexWrap="wrap">
-					<Button size="sm" variant="outline" onClick={() => handlePreset(24)}>
+					<Button size="sm" variant="outline" {...presetBtnProps} onClick={() => handlePreset(24)}>
 						Last 24 hours
 					</Button>
-					<Button size="sm" variant="outline" onClick={() => handlePreset(168)}>
+					<Button size="sm" variant="outline" {...presetBtnProps} onClick={() => handlePreset(168)}>
 						Last 7 days
 					</Button>
-					<Button size="sm" variant="outline" onClick={() => handlePreset(720)}>
+					<Button size="sm" variant="outline" {...presetBtnProps} onClick={() => handlePreset(720)}>
 						Last 30 days
 					</Button>
-					<Button size="sm" variant="outline" onClick={() => handlePreset(2160)}>
+					<Button size="sm" variant="outline" {...presetBtnProps} onClick={() => handlePreset(2160)}>
 						Last 90 days
 					</Button>
-					<Button size="sm" variant="outline" onClick={() => handlePreset(null)}>
+					<Button size="sm" variant="outline" {...presetBtnProps} onClick={() => handlePreset(null)}>
 						All Time
 					</Button>
 				</HStack>
 			</Flex>
 
 			{/* Display Selected Range */}
-			<Text fontSize="sm" color="#65676B">
+			<Text fontSize="sm" color={labelColor}>
 				{dateFrom && dateTo ? `${formatDate(dateFrom)} - ${formatDate(dateTo)}` : "All Time"}
 			</Text>
 		</VStack>

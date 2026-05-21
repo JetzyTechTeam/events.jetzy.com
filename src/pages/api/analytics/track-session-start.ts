@@ -17,7 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
-		const { sessionId, referrer, entryPage, userAgent, deviceType } = req.body
+		const { sessionId, anonId, referrer, entryPage, userAgent, deviceType } = req.body
 
 		// Generate sessionId if not provided
 		const finalSessionId = sessionId || randomUUID()
@@ -29,6 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		UserSession.create({
 			sessionId: finalSessionId,
 			userId: userId,
+			anonId: anonId || undefined,
 			startTime: new Date(),
 			pageCount: 1,
 			isLoggedIn: !!userId,

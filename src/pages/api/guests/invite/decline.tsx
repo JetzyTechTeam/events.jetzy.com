@@ -1,4 +1,6 @@
 import { EventInvitation } from "@/models/events/event-invitations";
+import { ensureDbConnected } from "@/configs/database";
+import mongoose from "mongoose";
 import { NextApiRequest, NextApiResponse } from "next";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -8,19 +10,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ message: "Missing eventId or email" });
   }
 
-  console.log({eventId, email});
-
   try {
+    await ensureDbConnected();
     const guest = await EventInvitation.findOne({
-      eventId, 
+      eventId: new mongoose.Types.ObjectId(eventId as string),
       email,
-      status: "pending"
     })
 
-    console.log({guest});
-
     if (!guest) {
-      return res.status(404).json({ message: "Guest not found" });
+      return res.status(404).json({ message: "Invitation not found" });
+    }
+
+    if (guest.status === "declined") {
+      return res.status(200).json({ message: "Already declined" });
     }
 
     guest.status = "declined";

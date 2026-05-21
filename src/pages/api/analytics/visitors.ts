@@ -65,52 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				break
 		}
 
-		// Aggregate sessions by date
-		const sessionsByDate = await UserSession.aggregate([
-			{ $match: matchStage },
-			{
-				$group: {
-					_id: dateFormat,
-					totalSessions: { $sum: 1 },
-					loggedInSessions: {
-						$sum: {
-							$cond: [{ $eq: ["$isLoggedIn", true] }, 1, 0],
-						},
-					},
-					anonymousSessions: {
-						$sum: {
-							$cond: [{ $eq: ["$isLoggedIn", false] }, 1, 0],
-						},
-					},
-					uniqueVisitors: { $addToSet: "$sessionId" },
-					uniqueLoggedInUsers: {
-						$addToSet: {
-							$cond: [{ $ne: ["$userId", null] }, "$userId", "$$REMOVE"],
-						},
-					},
-				},
-			},
-			{
-				$project: {
-					date: "$_id",
-					totalSessions: 1,
-					loggedInSessions: 1,
-					anonymousSessions: 1,
-					uniqueVisitors: { $size: "$uniqueVisitors" },
-					uniqueLoggedInUsers: {
-						$size: {
-							$filter: {
-								input: "$uniqueLoggedInUsers",
-								cond: { $ne: ["$$this", null] },
-							},
-						},
-					},
-				},
-			},
-			{ $sort: { date: 1 } },
-		])
-
-		// Get page views by date
+		// Build page view match and date format before parallelising
 		const pageViewMatch: any = {}
 		if (Object.keys(dateFilter).length > 0) {
 			pageViewMatch.timestamp = dateFilter
@@ -130,23 +85,69 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				break
 		}
 
-		const pageViewsByDate = await PageView.aggregate([
-			{ $match: pageViewMatch },
-			{
-				$group: {
-					_id: pageViewDateFormat,
-					totalPageViews: { $sum: 1 },
-					uniquePages: { $addToSet: "$page" },
+		// Aggregate sessions and page views in parallel
+		const [sessionsByDate, pageViewsByDate] = await Promise.all([
+			UserSession.aggregate([
+				{ $match: matchStage },
+				{
+					$group: {
+						_id: dateFormat,
+						totalSessions: { $sum: 1 },
+						loggedInSessions: {
+							$sum: {
+								$cond: [{ $eq: ["$isLoggedIn", true] }, 1, 0],
+							},
+						},
+						anonymousSessions: {
+							$sum: {
+								$cond: [{ $eq: ["$isLoggedIn", false] }, 1, 0],
+							},
+						},
+						uniqueVisitors: { $addToSet: "$sessionId" },
+						uniqueLoggedInUsers: {
+							$addToSet: {
+								$cond: [{ $ne: ["$userId", null] }, "$userId", "$$REMOVE"],
+							},
+						},
+					},
 				},
-			},
-			{
-				$project: {
-					date: "$_id",
-					totalPageViews: 1,
-					uniquePages: { $size: "$uniquePages" },
+				{
+					$project: {
+						date: "$_id",
+						totalSessions: 1,
+						loggedInSessions: 1,
+						anonymousSessions: 1,
+						uniqueVisitors: { $size: "$uniqueVisitors" },
+						uniqueLoggedInUsers: {
+							$size: {
+								$filter: {
+									input: "$uniqueLoggedInUsers",
+									cond: { $ne: ["$$this", null] },
+								},
+							},
+						},
+					},
 				},
-			},
-			{ $sort: { date: 1 } },
+				{ $sort: { date: 1 } },
+			]),
+			PageView.aggregate([
+				{ $match: pageViewMatch },
+				{
+					$group: {
+						_id: pageViewDateFormat,
+						totalPageViews: { $sum: 1 },
+						uniquePages: { $addToSet: "$page" },
+					},
+				},
+				{
+					$project: {
+						date: "$_id",
+						totalPageViews: 1,
+						uniquePages: { $size: "$uniquePages" },
+					},
+				},
+				{ $sort: { date: 1 } },
+			]),
 		])
 
 		// Merge session and page view data
@@ -175,16 +176,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const mergedData = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date))
 
-		// Get totals
-		const totalSessions = await UserSession.countDocuments(matchStage)
-		const totalLoggedInSessions = await UserSession.countDocuments({ ...matchStage, isLoggedIn: true })
-		const totalAnonymousSessions = await UserSession.countDocuments({ ...matchStage, isLoggedIn: false })
-		const totalUniqueVisitors = await UserSession.distinct("sessionId", matchStage).then((ids) => ids.length)
-		const totalUniqueLoggedInUsers = await UserSession.distinct("userId", {
-			...matchStage,
-			userId: { $ne: null },
-		}).then((ids) => ids.length)
-		const totalPageViews = await PageView.countDocuments(pageViewMatch)
+		// Get totals — run in parallel, avoid distinct() which loads all IDs into memory
+		const [
+			totalSessions,
+			totalLoggedInSessions,
+			totalAnonymousSessions,
+			uniqueLoggedInResult,
+			totalPageViews,
+		] = await Promise.all([
+			UserSession.countDocuments(matchStage),
+			UserSession.countDocuments({ ...matchStage, isLoggedIn: true }),
+			UserSession.countDocuments({ ...matchStage, isLoggedIn: false }),
+			UserSession.aggregate([
+				{ $match: { ...matchStage, userId: { $ne: null } } },
+				{ $group: { _id: "$userId" } },
+				{ $count: "count" },
+			]),
+			PageView.countDocuments(pageViewMatch),
+		])
+
+		// sessionId is unique per session row, so count == unique count
+		const totalUniqueVisitors = totalSessions
+		const totalUniqueLoggedInUsers = (uniqueLoggedInResult as any[])[0]?.count || 0
 
 		const response = {
 			totals: {

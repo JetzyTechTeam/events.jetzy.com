@@ -5,7 +5,6 @@ import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import mongoose from "mongoose"
 import { Users } from "@/models/userModal"
-import { Bookings } from "@/models/events/bookings"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../../auth/[...nextauth]"
 import zod from "zod"
@@ -33,21 +32,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	const voterIdentifier: string = session?.user?.id
 	if (!voterIdentifier) return sendResponse(res, null, "You must be logged in to vote.", false, ResCode.BAD_REQUEST)
 
-	const userEmail = session?.user?.email
-	if (!userEmail) return sendResponse(res, null, "We could not verify your email address.", false, ResCode.BAD_REQUEST)
-	
-	const hasBooked = await Bookings.exists({
-		eventId,
-		customerEmail: userEmail,
-		isDeleted: false,
-		status: { $in: ["confirmed", "approved", "pending"] }
-	})
-
-	if (!hasBooked) {
-		// Try to see if waitlist? The user said "book ticket they the can poll only" so strict Bookings.
-		return sendResponse(res, null, "Only attendees who have booked a ticket can vote in this poll.", false, ResCode.BAD_REQUEST)
-	}
-
 	try {
 		const event = await Events.findById(eventId)
 		if (!event) return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
@@ -63,8 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Add vote to selected option
 		event.datePoll.options[optionIndex].votes.push(voterIdentifier)
-		event.markModified("datePoll")
-		await event.save()
+		await Events.updateOne({ _id: eventId }, { $set: { datePoll: event.datePoll } })
 
 		// Collect all unique, valid ObjectIds for lookup
 		const allVoterIds = new Set<string>()

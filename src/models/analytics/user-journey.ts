@@ -14,6 +14,7 @@ export interface IUserJourney {
 	_id: Types.ObjectId
 	sessionId: string
 	userId?: Types.ObjectId
+	anonId?: string
 	journey: IJourneyStep[]
 	createdAt: Date
 	updatedAt: Date
@@ -63,6 +64,11 @@ const userJourneySchema = new Schema<IUserJourney>(
 			required: false,
 			index: true,
 			ref: "Users",
+		},
+		anonId: {
+			type: String,
+			required: false,
+			index: true,
 		},
 		journey: {
 			type: [journeyStepSchema],

@@ -12,7 +12,7 @@ const EdgeStoreProvider = ({ children }: { children: React.ReactNode }) => {
 const useEdgeStore = () => {
     const edgestore = {
         publicFiles: {
-            upload: async ({ file, onProgressChange, options }: { file: File; onProgressChange?: (progress: number) => void; options?: any }) => {
+            upload: async ({ file, onProgressChange, signal, options }: { file: File; onProgressChange?: (progress: number) => void; signal?: AbortSignal; options?: any }) => {
                 const formData = new FormData()
                 formData.append("upload_file", file)
                 // Use folder from options if provided, otherwise default to "posts"
@@ -25,6 +25,7 @@ const useEdgeStore = () => {
                         headers: {
                             "Content-Type": "multipart/form-data",
                         },
+                        signal,
                         onUploadProgress: (progressEvent) => {
                             if (onProgressChange && progressEvent.total) {
                                 const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)

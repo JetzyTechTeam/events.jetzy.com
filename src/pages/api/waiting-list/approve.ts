@@ -46,8 +46,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Calculate total tickets requested by this waiting list user
 		const requestedTickets = waitingListEntry.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
 
-		// Check if adding these tickets would exceed capacity
-		if (eventTracker.bookedTickets + requestedTickets > eventTracker.eventCapacity) {
+		// Check if adding these tickets would exceed capacity (0 = unlimited)
+		if (eventTracker.eventCapacity > 0 && eventTracker.bookedTickets + requestedTickets > eventTracker.eventCapacity) {
 			return sendResponse(res, null, "Cannot approve: Event is at full capacity", false, ResCode.BAD_REQUEST)
 		}
 

@@ -302,6 +302,23 @@ interface TopUsersData {
 	pagination: PaginationData
 }
 
+interface NamedEventRow {
+	category: string
+	eventName: string
+	totalEvents: number
+	uniqueUsers: number
+}
+
+interface NamedEventsData {
+	rows: NamedEventRow[]
+	summary: {
+		eventInteractionsCount: number
+		ctaClicksCount: number
+		pageViewsCount: number
+		formEventsCount: number
+	}
+}
+
 export default function AnalyticsPage() {
 	const [overviewData, setOverviewData] = useState<OverviewData | null>(null)
 	const [visitorData, setVisitorData] = useState<VisitorData | null>(null)
@@ -312,6 +329,10 @@ export default function AnalyticsPage() {
 	const [utmData, setUtmData] = useState<UTMData | null>(null)
 	const [deviceData, setDeviceData] = useState<DeviceData | null>(null)
 	const [pageData, setPageData] = useState<PageData | null>(null)
+	const [namedEventsData, setNamedEventsData] = useState<NamedEventsData | null>(null)
+	const [namedEventsCategory, setNamedEventsCategory] = useState<string>("all")
+	const [namedEventsPage, setNamedEventsPage] = useState(1)
+	const NAMED_EVENTS_PER_PAGE = 20
 	const [isLoading, setIsLoading] = useState(true)
 	const [dateFrom, setDateFrom] = useState<Date | null>(null)
 	const [dateTo, setDateTo] = useState<Date | null>(null)
@@ -332,7 +353,7 @@ export default function AnalyticsPage() {
 			if (to) params.append("dateTo", to.toISOString())
 
 			// Fetch all analytics data in parallel
-			const [overviewRes, visitorsRes, bookingsRes, topEventsRes, topUsersRes, referrersRes, utmRes, devicesRes, pagesRes] = await Promise.all([
+			const [overviewRes, visitorsRes, bookingsRes, topEventsRes, topUsersRes, referrersRes, utmRes, devicesRes, pagesRes, namedEventsRes] = await Promise.all([
 				fetch(`/api/analytics/overview?${params.toString()}`, {
 					method: "GET",
 					credentials: "include",
@@ -374,6 +395,11 @@ export default function AnalyticsPage() {
 					headers: { "Content-Type": "application/json" },
 				}),
 				fetch(`/api/analytics/pages?${params.toString()}&limit=20&page=${pagesPageNum}`, {
+					method: "GET",
+					credentials: "include",
+					headers: { "Content-Type": "application/json" },
+				}),
+				fetch(`/api/analytics/named-events?${params.toString()}`, {
 					method: "GET",
 					credentials: "include",
 					headers: { "Content-Type": "application/json" },
@@ -458,6 +484,14 @@ export default function AnalyticsPage() {
 				}
 			}
 
+			// Process named events data
+			if (namedEventsRes.ok) {
+				const namedEventsResult = await namedEventsRes.json()
+				if (namedEventsResult.status && namedEventsResult.data) {
+					setNamedEventsData(namedEventsResult.data)
+				}
+			}
+
 			// Check if any critical request failed
 			if (!overviewRes.ok || !visitorsRes.ok || !bookingsRes.ok || !topEventsRes.ok) {
 				throw new Error("Failed to fetch some analytics data")
@@ -508,6 +542,48 @@ export default function AnalyticsPage() {
 		return `${Math.round(seconds / 3600)}h`
 	}
 
+	const exportNamedEventsCSV = () => {
+		if (!namedEventsData) return
+		const rows = namedEventsData.rows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
+		const header = "Category,Event Name,Total Events,Unique Users"
+		const lines = rows.map((r) => `"${r.category}","${r.eventName.replace(/"/g, '""')}",${r.totalEvents},${r.uniqueUsers}`)
+		const csv = "﻿" + [header, ...lines].join("\n")
+		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+		const url = URL.createObjectURL(blob)
+		const a = document.createElement("a")
+		a.href = url
+		a.download = `named-events-${new Date().toISOString().slice(0, 10)}.csv`
+		document.body.appendChild(a)
+		a.click()
+		document.body.removeChild(a)
+		URL.revokeObjectURL(url)
+	}
+
+	const pagePathToLabel = (path: string): string => {
+		const map: Record<string, string> = {
+			"/": "Home",
+			"/login": "Login",
+			"/register": "Sign Up",
+			"/forgot-password": "Forgot Password",
+			"/console/events": "My Events",
+			"/console/events/create": "Create Event",
+			"/console/bookings": "My Bookings",
+			"/console/analytics": "Analytics Dashboard",
+			"/console/analytics/journey": "Journey Analytics",
+			"/console/profile": "Profile Settings",
+		}
+		if (map[path]) return map[path]
+		if (/^\/[^/]+$/.test(path) && !path.startsWith("/console") && !path.startsWith("/api")) return `Event Page (${path})`
+		if (path.includes("/[slug]") || path === "/[slug]") return "Event Detail Page"
+		if (path.includes("/manage")) return "Event Management"
+		if (path.includes("/analytics")) return "Event Analytics"
+		if (path.includes("/bookings")) return "Event Bookings"
+		if (path.includes("/checkin") || path.includes("/check-in")) return "Check-in Portal"
+		if (path.includes("/booking")) return "Booking Flow"
+		if (path.includes("/console/events/")) return "Event Console Page"
+		return path
+	}
+
 	return (
 		<>
 			<Head>
@@ -518,25 +594,29 @@ export default function AnalyticsPage() {
 			<ConsoleLayout page={Pages.Analytics} maxW="100%">
 				<Box maxW="1400px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
 					{/* Date Range Selector */}
-					<Box bg="white" color="gray.800" p={4} borderRadius="lg" boxShadow="sm" mb={6}>
-						<DateRangeSelector dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
-					</Box>
+					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
+						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
+						<NextLink href="/console/analytics/journey" passHref legacyBehavior>
+							<Button as="a" colorScheme="orange" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} size="sm">View Journey Analytics</Button>
+						</NextLink>
+					</Flex>
 
 					{/* Loading State */}
 					{isLoading ? (
 						<Center py={20}>
-							<Spinner size="xl" color="#1877F2" />
+							<Spinner size="xl" color="#F79432" />
 						</Center>
 					) : overviewData ? (
 						<>
-							<Tabs colorScheme="blue">
-								<TabList>
-									<Tab>Overview</Tab>
-									<Tab>Visitors & Sessions</Tab>
-									<Tab>Bookings & Revenue</Tab>
-									<Tab>Users</Tab>
-									<Tab>Traffic Sources</Tab>
-									<Tab>Devices & Pages</Tab>
+							<Tabs variant="line">
+								<TabList borderBottom="2px solid #2a2a2a" mb={4}>
+									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Overview</Tab>
+									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Visitors & Sessions</Tab>
+									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Bookings & Revenue</Tab>
+									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Users</Tab>
+									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Traffic Sources</Tab>
+									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Devices & Pages</Tab>
+									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Named Events</Tab>
 								</TabList>
 
 								<TabPanels>
@@ -548,24 +628,28 @@ export default function AnalyticsPage() {
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
+													dark
 													title="Total Events"
 													value={formatNumber(overviewData.events.total)}
 													icon={FiCalendar}
 													subtitle={`${overviewData.events.public} public, ${overviewData.events.private} private`}
 												/>
 												<MetricsCard
+													dark
 													title="Total Bookings"
 													value={formatNumber(overviewData.bookings.total)}
 													icon={FiUsers}
 													subtitle={`${overviewData.bookings.confirmed} confirmed`}
 												/>
 												<MetricsCard
+													dark
 													title="Total Revenue"
 													value={formatCurrency(overviewData.revenue.total)}
 													icon={FiDollarSign}
 													subtitle={`Net: ${formatCurrency(overviewData.revenue.netRevenue)}`}
 												/>
 												<MetricsCard
+													dark
 													title="Tickets Sold"
 													value={formatNumber(overviewData.tickets.totalSold)}
 													icon={FiShoppingCart}
@@ -581,29 +665,34 @@ export default function AnalyticsPage() {
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
+													dark
 													title="Total Sessions"
 													value={formatNumber(overviewData.visitors.totalSessions)}
 													icon={FiEye}
 													subtitle={`${overviewData.visitors.loggedInSessions} logged in`}
 												/>
 												<MetricsCard
+													dark
 													title="Unique Visitors"
 													value={formatNumber(overviewData.visitors.uniqueVisitors)}
 													icon={FiUsers}
 													subtitle={`${overviewData.visitors.uniqueLoggedInUsers} logged in`}
 												/>
 												<MetricsCard
+													dark
 													title="Avg Session Duration"
 													value={formatDuration(overviewData.sessions.averageDuration)}
 													icon={FiTrendingUp}
 												/>
 												<MetricsCard
+													dark
 													title="Total Page Views"
 													value={formatNumber(overviewData.pageViews.total)}
 													icon={FiEye}
 												/>
 												{overviewData.bounceRate !== undefined && (
 													<MetricsCard
+														dark
 														title="Bounce Rate"
 														value={`${overviewData.bounceRate.toFixed(1)}%`}
 														icon={FiTrendingUp}
@@ -621,24 +710,28 @@ export default function AnalyticsPage() {
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
+													dark
 													title="Paid Events"
 													value={formatNumber(overviewData.events.paid)}
 													bgColor="#E8F5E9"
 													iconColor="#4CAF50"
 												/>
 												<MetricsCard
+													dark
 													title="Free Events"
 													value={formatNumber(overviewData.events.free)}
 													bgColor="#E3F2FD"
 													iconColor="#2196F3"
 												/>
 												<MetricsCard
+													dark
 													title="Upcoming Events"
 													value={formatNumber(overviewData.events.upcoming)}
 													bgColor="#FFF3E0"
 													iconColor="#FF9800"
 												/>
 												<MetricsCard
+													dark
 													title="Past Events"
 													value={formatNumber(overviewData.events.past)}
 													bgColor="#F3E5F5"
@@ -654,6 +747,7 @@ export default function AnalyticsPage() {
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
+													dark
 													title="Confirmed"
 													value={formatNumber(overviewData.bookings.confirmed)}
 													bgColor="#E8F5E9"
@@ -661,6 +755,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.confirmed / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
 												/>
 												<MetricsCard
+													dark
 													title="Pending"
 													value={formatNumber(overviewData.bookings.pending)}
 													bgColor="#FFF3E0"
@@ -668,6 +763,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.pending / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
 												/>
 												<MetricsCard
+													dark
 													title="Cancelled"
 													value={formatNumber(overviewData.bookings.cancelled)}
 													bgColor="#FFEBEE"
@@ -675,6 +771,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.cancelled / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
 												/>
 												<MetricsCard
+													dark
 													title="Failed"
 													value={formatNumber(overviewData.bookings.failed)}
 													bgColor="#FCE4EC"
@@ -691,6 +788,7 @@ export default function AnalyticsPage() {
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
+													dark
 													title="Net Revenue"
 													value={formatCurrency(overviewData.revenue.netRevenue)}
 													icon={FiDollarSign}
@@ -699,16 +797,19 @@ export default function AnalyticsPage() {
 													subtitle={`After ${formatCurrency(overviewData.revenue.totalDiscounts)} discounts`}
 												/>
 												<MetricsCard
+													dark
 													title="Avg per Event"
 													value={formatCurrency(overviewData.revenue.averagePerEvent)}
 													icon={FiTrendingUp}
 												/>
 												<MetricsCard
+													dark
 													title="Avg per Booking"
 													value={formatCurrency(overviewData.revenue.averagePerBooking)}
 													icon={FiShoppingCart}
 												/>
 												<MetricsCard
+													dark
 													title="Check-in Rate"
 													value={`${overviewData.checkIns.checkInRate.toFixed(1)}%`}
 													icon={FiUsers}
@@ -726,12 +827,14 @@ export default function AnalyticsPage() {
 											</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={4}>
 												<MetricsCard
+													dark
 													title="Total Users"
 													value={formatNumber(overviewData.users.total)}
 													icon={FiUsers}
 													subtitle={`${overviewData.users.admins} admins, ${overviewData.users.regular} regular`}
 												/>
 												<MetricsCard
+													dark
 													title="Active Users"
 													value={formatNumber(overviewData.users.active)}
 													icon={FiUsers}
@@ -740,6 +843,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.users.activeRate.toFixed(1)}% of total`}
 												/>
 												<MetricsCard
+													dark
 													title="Inactive Users"
 													value={formatNumber(overviewData.users.inactive)}
 													icon={FiUsers}
@@ -748,6 +852,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.users.inactiveRate.toFixed(1)}% of total`}
 												/>
 												<MetricsCard
+													dark
 													title="Referral Codes"
 													value={formatNumber(overviewData.referralCodes.total)}
 													icon={FiShoppingCart}
@@ -756,6 +861,7 @@ export default function AnalyticsPage() {
 											</SimpleGrid>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
+													dark
 													title="Active Admins"
 													value={formatNumber(overviewData.users.activeAdmins)}
 													bgColor="#E3F2FD"
@@ -763,6 +869,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.users.admins > 0 ? ((overviewData.users.activeAdmins / overviewData.users.admins) * 100).toFixed(1) : 0}% of admins`}
 												/>
 												<MetricsCard
+													dark
 													title="Active Regular Users"
 													value={formatNumber(overviewData.users.activeRegular)}
 													bgColor="#E8F5E9"
@@ -770,6 +877,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.users.regular > 0 ? ((overviewData.users.activeRegular / overviewData.users.regular) * 100).toFixed(1) : 0}% of regular users`}
 												/>
 												<MetricsCard
+													dark
 													title="Inactive Admins"
 													value={formatNumber(overviewData.users.inactiveAdmins)}
 													bgColor="#FFF3E0"
@@ -777,6 +885,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.users.admins > 0 ? ((overviewData.users.inactiveAdmins / overviewData.users.admins) * 100).toFixed(1) : 0}% of admins`}
 												/>
 												<MetricsCard
+													dark
 													title="Code Usage"
 													value={formatNumber(overviewData.referralCodes.totalUsage)}
 													icon={FiTrendingUp}
@@ -790,8 +899,8 @@ export default function AnalyticsPage() {
 									{/* Visitors & Sessions Tab */}
 									<TabPanel px={0}>
 										{visitorData && visitorData.byDate.length > 0 && (
-											<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 													Visitor Trends
 												</Text>
 												<VisitorChart data={visitorData.byDate} />
@@ -800,23 +909,27 @@ export default function AnalyticsPage() {
 
 										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
 											<MetricsCard
+												dark
 												title="Total Sessions"
 												value={formatNumber(overviewData.visitors.totalSessions)}
 												icon={FiEye}
 												subtitle={`${overviewData.visitors.loggedInSessions} logged in`}
 											/>
 											<MetricsCard
+												dark
 												title="Unique Visitors"
 												value={formatNumber(overviewData.visitors.uniqueVisitors)}
 												icon={FiUsers}
 												subtitle={`${overviewData.visitors.uniqueLoggedInUsers} logged in`}
 											/>
 											<MetricsCard
+												dark
 												title="Avg Session Duration"
 												value={formatDuration(overviewData.sessions.averageDuration)}
 												icon={FiTrendingUp}
 											/>
 											<MetricsCard
+												dark
 												title="Total Page Views"
 												value={formatNumber(overviewData.pageViews.total)}
 												icon={FiEye}
@@ -827,8 +940,8 @@ export default function AnalyticsPage() {
 									{/* Bookings & Revenue Tab */}
 									<TabPanel px={0}>
 										{bookingData && bookingData.byDate.length > 0 && (
-											<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 													Booking & Revenue Trends
 												</Text>
 												<BookingTrendsChart data={bookingData.byDate} />
@@ -837,23 +950,27 @@ export default function AnalyticsPage() {
 
 										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
 											<MetricsCard
+												dark
 												title="Total Revenue"
 												value={formatCurrency(overviewData.revenue.total)}
 												icon={FiDollarSign}
 												subtitle={`Net: ${formatCurrency(overviewData.revenue.netRevenue)}`}
 											/>
 											<MetricsCard
+												dark
 												title="Total Bookings"
 												value={formatNumber(overviewData.bookings.total)}
 												icon={FiUsers}
 												subtitle={`${overviewData.bookings.confirmed} confirmed`}
 											/>
 											<MetricsCard
+												dark
 												title="Avg Booking Value"
 												value={formatCurrency(overviewData.revenue.averagePerBooking)}
 												icon={FiTrendingUp}
 											/>
 											<MetricsCard
+												dark
 												title="Tickets Sold"
 												value={formatNumber(overviewData.tickets.totalSold)}
 												icon={FiShoppingCart}
@@ -865,6 +982,7 @@ export default function AnalyticsPage() {
 											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>Booking Status Breakdown</Text>
 											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
 												<MetricsCard
+													dark
 													title="Confirmed"
 													value={formatNumber(overviewData.bookings.confirmed)}
 													bgColor="#E8F5E9"
@@ -872,6 +990,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.confirmed / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
 												/>
 												<MetricsCard
+													dark
 													title="Pending"
 													value={formatNumber(overviewData.bookings.pending)}
 													bgColor="#FFF3E0"
@@ -879,6 +998,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.pending / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
 												/>
 												<MetricsCard
+													dark
 													title="Cancelled"
 													value={formatNumber(overviewData.bookings.cancelled)}
 													bgColor="#FFEBEE"
@@ -886,6 +1006,7 @@ export default function AnalyticsPage() {
 													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.cancelled / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
 												/>
 												<MetricsCard
+													dark
 													title="Failed"
 													value={formatNumber(overviewData.bookings.failed)}
 													bgColor="#FCE4EC"
@@ -899,11 +1020,11 @@ export default function AnalyticsPage() {
 									{/* Users Tab */}
 									<TabPanel px={0}>
 										{topUsersData && topUsersData.users.length > 0 && (
-											<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 													Most Active Users
 												</Text>
-												<TableContainer>
+												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 													<Table variant="simple">
 														<Thead>
 															<Tr>
@@ -924,7 +1045,7 @@ export default function AnalyticsPage() {
 																			<Text fontWeight="semibold">
 																				{user.firstName} {user.lastName}
 																			</Text>
-																			<Text fontSize="sm" color="gray.500">
+																			<Text fontSize="sm" color="#9C9C9C">
 																				{user.email}
 																			</Text>
 																			<Badge colorScheme={user.role === "admin" ? "purple" : "blue"} size="sm">
@@ -958,18 +1079,20 @@ export default function AnalyticsPage() {
 									{/* Traffic Sources Tab */}
 									<TabPanel px={0}>
 										{referrerData && (
-											<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 													Traffic Sources
 												</Text>
 												<SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mb={6}>
 													<MetricsCard
+														dark
 														title="Direct Traffic"
 														value={formatNumber(referrerData.directTraffic.pageViews)}
 														icon={FiEye}
 														subtitle={`${referrerData.directTraffic.percentage.toFixed(1)}% of total`}
 													/>
 													<MetricsCard
+														dark
 														title="Referral Traffic"
 														value={formatNumber(referrerData.total - referrerData.directTraffic.pageViews)}
 														icon={FiTrendingUp}
@@ -978,7 +1101,7 @@ export default function AnalyticsPage() {
 												</SimpleGrid>
 												{referrerData.referrers.length > 0 && (
 													<>
-														<TableContainer>
+														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 															<Table variant="simple">
 																<Thead>
 																	<Tr>
@@ -998,7 +1121,7 @@ export default function AnalyticsPage() {
 																					<Text fontWeight="medium" isTruncated maxW="300px">
 																						{ref.domain}
 																					</Text>
-																					<Text fontSize="xs" color="gray.500" isTruncated maxW="300px">
+																					<Text fontSize="xs" color="#9C9C9C" isTruncated maxW="300px">
 																						{ref.referrer}
 																					</Text>
 																				</Box>
@@ -1030,18 +1153,18 @@ export default function AnalyticsPage() {
 														{/* Pagination */}
 														{referrerData.pagination && referrerData.pagination.totalPages > 1 && (
 															<Flex justify="space-between" align="center" mt={4}>
-																<Text fontSize="sm" color="#65676B">
+																<Text fontSize="sm" color="#9C9C9C">
 																	Page {referrerData.pagination.page} of {referrerData.pagination.totalPages} ({formatNumber(referrerData.pagination.total)} total)
 																</Text>
 																<HStack spacing={2}>
-																	<IconButton
+																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
 																		aria-label="Previous page"
 																		icon={<FiChevronLeft />}
 																		size="sm"
 																		onClick={() => setReferrersPage((p) => Math.max(1, p - 1))}
 																		isDisabled={!referrerData.pagination.hasPreviousPage}
 																	/>
-																	<IconButton
+																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
 																		aria-label="Next page"
 																		icon={<FiChevronRight />}
 																		size="sm"
@@ -1057,11 +1180,11 @@ export default function AnalyticsPage() {
 										)}
 
 										{utmData && utmData.grouped.length > 0 && (
-											<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 													UTM Campaign Performance
 												</Text>
-												<TableContainer>
+												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 													<Table variant="simple">
 														<Thead>
 															<Tr>
@@ -1105,12 +1228,12 @@ export default function AnalyticsPage() {
 									<TabPanel px={0}>
 										{deviceData && (
 											<>
-												<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-													<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+												<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+													<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 														Device Breakdown
 													</Text>
 													{deviceData.devices.length > 0 && (
-														<TableContainer mb={6}>
+														<TableContainer mb={6} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 															<Table variant="simple">
 																<Thead>
 																	<Tr>
@@ -1141,10 +1264,10 @@ export default function AnalyticsPage() {
 													)}
 													{deviceData.browsers.length > 0 && (
 														<>
-															<Text fontSize="lg" fontWeight="semibold" color="#1C1E21" mb={4}>
+															<Text fontSize="lg" fontWeight="semibold" color="white" mb={4}>
 																Browser Breakdown
 															</Text>
-															<TableContainer>
+															<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 																<Table variant="simple">
 																	<Thead>
 																		<Tr>
@@ -1179,11 +1302,11 @@ export default function AnalyticsPage() {
 										{pageData && (
 											<>
 												{pageData.entryPages.length > 0 && (
-													<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-														<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+														<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 															Entry Pages
 														</Text>
-														<TableContainer>
+														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 															<Table variant="simple">
 																<Thead>
 																	<Tr>
@@ -1213,11 +1336,11 @@ export default function AnalyticsPage() {
 												)}
 
 												{pageData.exitPages.length > 0 && (
-													<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-														<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+														<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 															Exit Pages
 														</Text>
-														<TableContainer>
+														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 															<Table variant="simple">
 																<Thead>
 																	<Tr>
@@ -1245,11 +1368,11 @@ export default function AnalyticsPage() {
 												)}
 
 												{pageData.mostViewedPages.length > 0 && (
-													<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-														<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+														<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 															Most Viewed Pages
 														</Text>
-														<TableContainer>
+														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 															<Table variant="simple">
 																<Thead>
 																	<Tr>
@@ -1284,18 +1407,18 @@ export default function AnalyticsPage() {
 														{/* Pagination - for most viewed pages table */}
 														{pageData.pagination.mostViewedPages && pageData.pagination.mostViewedPages.totalPages > 1 && (
 															<Flex justify="space-between" align="center" mt={4}>
-																<Text fontSize="sm" color="#65676B">
+																<Text fontSize="sm" color="#9C9C9C">
 																	Page {pageData.pagination.mostViewedPages.page} of {pageData.pagination.mostViewedPages.totalPages} ({formatNumber(pageData.pagination.mostViewedPages.total)} total)
 																</Text>
 																<HStack spacing={2}>
-																	<IconButton
+																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
 																		aria-label="Previous page"
 																		icon={<FiChevronLeft />}
 																		size="sm"
 																		onClick={() => setPagesPage((p) => Math.max(1, p - 1))}
 																		isDisabled={!pageData.pagination.mostViewedPages.hasPreviousPage}
 																	/>
-																	<IconButton
+																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
 																		aria-label="Next page"
 																		icon={<FiChevronRight />}
 																		size="sm"
@@ -1310,16 +1433,126 @@ export default function AnalyticsPage() {
 											</>
 										)}
 									</TabPanel>
+										{/* Named Events Tab */}
+										<TabPanel px={0}>
+											{(() => {
+												const filteredRows = namedEventsData
+													? namedEventsData.rows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
+													: []
+												const totalPages = Math.max(1, Math.ceil(filteredRows.length / NAMED_EVENTS_PER_PAGE))
+												const safePage = Math.min(namedEventsPage, totalPages)
+												const paginatedRows = filteredRows.slice((safePage - 1) * NAMED_EVENTS_PER_PAGE, safePage * NAMED_EVENTS_PER_PAGE)
+												return (
+													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+														<Flex justify="space-between" align="center" mb={4} wrap="wrap" gap={3}>
+															<Box>
+																<Text fontSize="xl" fontWeight="bold" color="white">Named Events</Text>
+																<Text fontSize="sm" color="#9C9C9C">Category / Event Name / Total Events / Unique Users</Text>
+															</Box>
+															<HStack spacing={2} flexWrap="wrap">
+																{["all", "Event Interactions", "CTA Clicks", "Form Events", "Page Views"].map((cat) => (
+																	<Button
+																		key={cat}
+																		size="xs"
+																		onClick={() => { setNamedEventsCategory(cat); setNamedEventsPage(1) }}
+																		bg={namedEventsCategory === cat ? "#F79432" : "#2a2a2a"}
+																		color={namedEventsCategory === cat ? "black" : "#9C9C9C"}
+																		_hover={{ bg: namedEventsCategory === cat ? "#E68422" : "#333" }}
+																		borderRadius="full"
+																		px={3}
+																	>
+																		{cat === "all" ? "All" : cat}
+																	</Button>
+																))}
+																{namedEventsData && filteredRows.length > 0 && (
+																	<Button size="xs" onClick={exportNamedEventsCSV} bg="#2a2a2a" color="#9C9C9C" _hover={{ bg: "#333", color: "white" }} borderRadius="full" px={3}>
+																		Export CSV
+																	</Button>
+																)}
+															</HStack>
+														</Flex>
+
+														{namedEventsData && namedEventsData.summary && (
+															<SimpleGrid columns={{ base: 2, sm: 4 }} spacing={3} mb={6}>
+																<MetricsCard dark title="Event Interactions" value={formatNumber(namedEventsData.summary.eventInteractionsCount)} subtitle="distinct types" />
+																<MetricsCard dark title="CTA Clicks" value={formatNumber(namedEventsData.summary.ctaClicksCount)} subtitle="labeled elements" />
+																<MetricsCard dark title="Form Events" value={formatNumber(namedEventsData.summary.formEventsCount)} subtitle="form/action pairs" />
+																<MetricsCard dark title="Page Views" value={formatNumber(namedEventsData.summary.pageViewsCount)} subtitle="distinct pages" />
+															</SimpleGrid>
+														)}
+
+														{filteredRows.length > 0 ? (
+															<>
+																<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+																	<Table variant="simple">
+																		<Thead>
+																			<Tr>
+																				<Th>Category</Th>
+																				<Th>Event Name</Th>
+																				<Th isNumeric>Total Events</Th>
+																				<Th isNumeric>Unique Users</Th>
+																			</Tr>
+																		</Thead>
+																		<Tbody>
+																			{paginatedRows.map((row, idx) => (
+																				<Tr key={idx}>
+																					<Td>
+																						<Badge colorScheme={row.category === "Event Interactions" ? "blue" : row.category === "CTA Clicks" ? "orange" : row.category === "Form Events" ? "green" : "purple"}>
+																							{row.category}
+																						</Badge>
+																					</Td>
+																					<Td>
+																						<Text fontSize="sm">
+																							{row.category === "Page Views" ? pagePathToLabel(row.eventName) : row.eventName}
+																						</Text>
+																						{row.category === "Page Views" && pagePathToLabel(row.eventName) !== row.eventName && (
+																							<Text fontSize="xs" color="#9C9C9C" fontFamily="mono">{row.eventName}</Text>
+																						)}
+																					</Td>
+																					<Td isNumeric><Text fontWeight="semibold">{formatNumber(row.totalEvents)}</Text></Td>
+																					<Td isNumeric><Badge colorScheme="teal">{formatNumber(row.uniqueUsers)}</Badge></Td>
+																				</Tr>
+																			))}
+																		</Tbody>
+																	</Table>
+																</TableContainer>
+																{totalPages > 1 && (
+																	<Flex justify="space-between" align="center" mt={4}>
+																		<Text fontSize="sm" color="#9C9C9C">
+																			Page {safePage} of {totalPages} ({formatNumber(filteredRows.length)} total)
+																		</Text>
+																		<HStack spacing={2}>
+																			<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
+																				aria-label="Previous page" icon={<FiChevronLeft />} size="sm"
+																				onClick={() => setNamedEventsPage((p) => Math.max(1, p - 1))}
+																				isDisabled={safePage <= 1}
+																			/>
+																			<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
+																				aria-label="Next page" icon={<FiChevronRight />} size="sm"
+																				onClick={() => setNamedEventsPage((p) => Math.min(totalPages, p + 1))}
+																				isDisabled={safePage >= totalPages}
+																			/>
+																		</HStack>
+																	</Flex>
+																)}
+															</>
+														) : (
+															<Text color="#9C9C9C" fontSize="sm">No data yet. Add <Text as="code" bg="#2a2a2a" px={1} borderRadius="sm">data-track=&quot;label&quot;</Text> attributes to CTAs to see named click events here.</Text>
+														)}
+													</Box>
+												)
+											})()}
+										</TabPanel>
 								</TabPanels>
 							</Tabs>
 
 							{/* Top Performing Events Table */}
 							{topEventsData && topEventsData.events.length > 0 && (
-								<Box bg="white" color="gray.800" p={6} borderRadius="lg" boxShadow="sm" mt={6}>
-									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
+								<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mt={6}>
+									<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
 										Top Performing Events (by Revenue)
 									</Text>
-									<TableContainer>
+									<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 										<Table variant="simple">
 											<Thead>
 												<Tr>
@@ -1347,16 +1580,16 @@ export default function AnalyticsPage() {
 																	/>
 																)}
 																<Box>
-																	<Link as={NextLink} href={`/${event.slug}`} color="blue.500" fontWeight="medium" _hover={{ textDecoration: "underline" }}>
+																	<Link as={NextLink} href={`/${event.slug}`} color="#F79432" fontWeight="medium" _hover={{ textDecoration: "underline" }}>
 																		<SafeHTML html={event.name} />
 																	</Link>
 																</Box>
 															</Flex>
 														</Td>
 														<Td isNumeric>
-															<Text fontWeight="semibold" color="gray.800">{formatCurrency(event.revenue.net)}</Text>
+															<Text fontWeight="semibold" color="white">{formatCurrency(event.revenue.net)}</Text>
 															{event.revenue.discounts > 0 && (
-																<Text fontSize="xs" color="gray.500">
+																<Text fontSize="xs" color="#9C9C9C">
 																	After {formatCurrency(event.revenue.discounts)} discounts
 																</Text>
 															)}
@@ -1382,18 +1615,18 @@ export default function AnalyticsPage() {
 									{/* Pagination */}
 									{topEventsData.pagination && topEventsData.pagination.totalPages > 1 && (
 										<Flex justify="space-between" align="center" mt={4}>
-											<Text fontSize="sm" color="#65676B">
+											<Text fontSize="sm" color="#9C9C9C">
 												Page {topEventsData.pagination.page} of {topEventsData.pagination.totalPages} ({formatNumber(topEventsData.pagination.total)} total)
 											</Text>
 											<HStack spacing={2}>
-												<IconButton
+												<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
 													aria-label="Previous page"
 													icon={<FiChevronLeft />}
 													size="sm"
 													onClick={() => setTopEventsPage((p) => Math.max(1, p - 1))}
 													isDisabled={!topEventsData.pagination.hasPreviousPage}
 												/>
-												<IconButton
+												<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
 													aria-label="Next page"
 													icon={<FiChevronRight />}
 													size="sm"
@@ -1408,7 +1641,7 @@ export default function AnalyticsPage() {
 						</>
 					) : (
 						<Center py={20}>
-							<Text color="#65676B">No data available</Text>
+							<Text color="#9C9C9C">No data available</Text>
 						</Center>
 					)}
 				</Box>

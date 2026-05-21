@@ -15,7 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
-		const { sessionId, page, pageTitle, referrer, timeSpent, utmSource, utmMedium, utmCampaign, deviceType } = req.body
+		const { sessionId, anonId, page, pageTitle, referrer, timeSpent, utmSource, utmMedium, utmCampaign, deviceType } = req.body
 
 		if (!sessionId || !page) {
 			return sendResponse(res, null, "Session ID and page are required", false, ResCode.BAD_REQUEST)
@@ -84,6 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				$setOnInsert: {
 					sessionId,
 					userId: userId,
+					anonId: anonId || undefined,
 				},
 				$push: {
 					journey: journeyStep,

@@ -10,10 +10,14 @@ type Props = {
 	rows: Booking[]
 	exportable: Exportable[]
 	checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }>
+	isAdmin?: boolean
+	onDeleteSuccess?: () => void
 }
 
-const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap }) => {
+const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, isAdmin, onDeleteSuccess }) => {
 	const [loading, setLoading] = useState(false)
+	const [deletingRef, setDeletingRef] = useState<string | null>(null)
+	const [localRows, setLocalRows] = useState(rows)
 
 	const exportTableHeaders = ["Reference", "Event", "Amount", "Status", "Customer", "Tickets", "Check-in", "Date"]
 
@@ -39,6 +43,29 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap }
 				body: exportTableData,
 			},
 		})
+	}
+
+	const handleDelete = async (bookingRef: string) => {
+		if (!confirm(`Delete booking ${bookingRef}? This cannot be undone.`)) return
+		setDeletingRef(bookingRef)
+		try {
+			const res = await fetch("/api/bookings/delete", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ bookingRef }),
+			})
+			const data = await res.json()
+			if (data.status) {
+				setLocalRows(prev => prev.filter(r => r.bookingRef !== bookingRef))
+				onDeleteSuccess?.()
+			} else {
+				alert(data.message || "Failed to delete booking.")
+			}
+		} catch {
+			alert("Network error.")
+		} finally {
+			setDeletingRef(null)
+		}
 	}
 
 	if (loading) {
@@ -67,10 +94,11 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap }
 							<Th>Customer</Th>
 							<Th>Check-in</Th>
 							<Th>Date</Th>
+							{isAdmin && <Th></Th>}
 						</Tr>
 					</Thead>
 					<Tbody>
-						{rows.map((row) => {
+						{localRows.map((row) => {
 							const ci = checkInMap[row._id.toString()]
 							return (
 								<Tr key={row._id.toString()}>
@@ -107,6 +135,19 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap }
 										)}
 									</Td>
 									<Td>{new Date(row.createdAt).toLocaleString()}</Td>
+									{isAdmin && (
+										<Td>
+											<Button
+												size="xs"
+												colorScheme="red"
+												variant="ghost"
+												isLoading={deletingRef === row.bookingRef}
+												onClick={() => handleDelete(row.bookingRef)}
+											>
+												Delete
+											</Button>
+										</Td>
+									)}
 								</Tr>
 							)
 						})}

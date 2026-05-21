@@ -21,9 +21,10 @@ type Props = {
   filters: { status?: string; search?: string; date?: string; amount?: string; minTickets?: string; checkedIn?: string };
   exportable: any[];
   checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }>;
+  isAdmin: boolean;
 };
 
-export default function BookingsEventPage({ bookings, event, filters, exportable, checkInMap }: Props) {
+export default function BookingsEventPage({ bookings, event, filters, exportable, checkInMap, isAdmin }: Props) {
   const router = useRouter()
   return (
     <ConsoleLayout page={Pages.Bookings}>
@@ -48,7 +49,13 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
       <BookingFilters eventId={event._id} initialFilters={filters} />
 
       <div className="overflow-auto mt-4 border rounded" style={{ maxHeight: "70vh" }}>
-        <BookingTableComponent rows={bookings} exportable={exportable} checkInMap={checkInMap} />
+        <BookingTableComponent
+          rows={bookings}
+          exportable={exportable}
+          checkInMap={checkInMap}
+          isAdmin={isAdmin}
+          onDeleteSuccess={() => router.replace(router.asPath)}
+        />
       </div>
     </ConsoleLayout>
   );
@@ -212,6 +219,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
         minTickets: (minTickets as string) || "",
         checkedIn: (checkedIn as string) || "",
       },
+      isAdmin,
     },
   };
 };

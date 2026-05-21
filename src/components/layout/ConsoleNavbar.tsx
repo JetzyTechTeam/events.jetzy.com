@@ -1,4 +1,4 @@
-import React, { Fragment } from "react"
+import React, { Fragment, useState } from "react"
 import { Disclosure, Menu, Transition } from "@headlessui/react"
 import { Bars3Icon, BellIcon, XMarkIcon } from "@heroicons/react/24/outline"
 import { classNames } from "@Jetzy/lib/utils"
@@ -12,6 +12,7 @@ import { useRouter } from "next/router"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import { getUserSlug } from "@Jetzy/lib/utils"
+import QRCodeModal from "@Jetzy/components/events/QRCodeModal"
 
 const navigation = [
 	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
@@ -49,6 +50,8 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 
 	// @ts-ignore
 	const userRole = session?.user?.role
+	const [isSignupQROpen, setIsSignupQROpen] = useState(false)
+	const signupQRUrl = typeof window !== "undefined" ? `${window.location.origin}/jetzyqrsignup` : "/jetzyqrsignup"
 
 	const navigation = [
 		{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
@@ -56,6 +59,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: Pages.Events, href: ROUTES.dashboard.events.index },
 		{ name: "Bookings", href: ROUTES.dashboard.bookings.index },
 		{ name: "Analytics", href: "/console/analytics" },
+		{ name: "Jetzy User Signup", href: "/jetzyqrsignup" },
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
 	]
 
@@ -72,6 +76,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	const filteredNavigation = userNavigation
 
 	return (
+		<>
 		<Disclosure as="nav" className="bg-gray-800">
 			{({ open }) => (
 				<>
@@ -83,19 +88,32 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 								</div>
 								<div className="hidden md:block">
 									<div className="ml-10 flex items-baseline space-x-4">
-										{filteredNavigation.map((item) => (
-											<Link
-												key={item.name}
-												href={item.href}
-												className={classNames(
-													pathname === item.href || item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
-													"rounded-md px-3 py-2 text-sm font-medium",
-												)}
-												aria-current={pathname === item.href || item.name === page ? "page" : undefined}
-											>
-												{item.name}
-											</Link>
-										))}
+										{filteredNavigation.map((item) =>
+											item.name === "Jetzy User Signup" ? (
+												<button
+													key={item.name}
+													onClick={() => setIsSignupQROpen(true)}
+													className={classNames(
+														"text-gray-300 hover:bg-gray-700 hover:text-white",
+														"rounded-md px-3 py-2 text-sm font-medium",
+													)}
+												>
+													{item.name}
+												</button>
+											) : (
+												<Link
+													key={item.name}
+													href={item.href}
+													className={classNames(
+														pathname === item.href || item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+														"rounded-md px-3 py-2 text-sm font-medium",
+													)}
+													aria-current={pathname === item.href || item.name === page ? "page" : undefined}
+												>
+													{item.name}
+												</Link>
+											)
+										)}
 									</div>
 								</div>
 							</div>
@@ -159,6 +177,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 													{({ active }) => (
 														<a
 															onClick={logout}
+															data-analytics-ignore=""
 															className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-red-600 font-medium")}
 														>
 															Logout
@@ -183,20 +202,34 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 
 					<Disclosure.Panel className="md:hidden">
 						<div className="space-y-1 px-2 pb-3 pt-2 sm:px-3">
-							{filteredNavigation.map((item) => (
-								<Disclosure.Button
-									key={item.name}
-									as={Link}
-									href={item.href}
-									className={classNames(
-										pathname === item.href || item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
-										"block rounded-md px-3 py-2 text-base font-medium",
-									)}
-									aria-current={pathname === item.href || item.name === page ? "page" : undefined}
-								>
-									{item.name}
-								</Disclosure.Button>
-							))}
+							{filteredNavigation.map((item) =>
+								item.name === "Jetzy User Signup" ? (
+									<Disclosure.Button
+										key={item.name}
+										as="button"
+										onClick={() => setIsSignupQROpen(true)}
+										className={classNames(
+											"text-gray-300 hover:bg-gray-700 hover:text-white",
+											"block w-full text-left rounded-md px-3 py-2 text-base font-medium",
+										)}
+									>
+										{item.name}
+									</Disclosure.Button>
+								) : (
+									<Disclosure.Button
+										key={item.name}
+										as={Link}
+										href={item.href}
+										className={classNames(
+											pathname === item.href || item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+											"block rounded-md px-3 py-2 text-base font-medium",
+										)}
+										aria-current={pathname === item.href || item.name === page ? "page" : undefined}
+									>
+										{item.name}
+									</Disclosure.Button>
+								)
+							)}
 						</div>
 						<div className="border-t border-gray-700 pb-3 pt-4">
 							<div className="flex items-center px-5">
@@ -230,6 +263,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 								<Disclosure.Button
 									as="button"
 									onClick={logout}
+									data-analytics-ignore=""
 									className="block w-full text-left rounded-md px-3 py-2 text-base font-medium text-red-400 hover:bg-gray-700 hover:text-white"
 								>
 									Logout
@@ -240,5 +274,12 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 				</>
 			)}
 		</Disclosure>
+		<QRCodeModal
+			isOpen={isSignupQROpen}
+			onClose={() => setIsSignupQROpen(false)}
+			url={signupQRUrl}
+			title="Jetzy User Signup"
+		/>
+		</>
 	)
 }
