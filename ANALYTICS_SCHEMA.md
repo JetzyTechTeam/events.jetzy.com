@@ -138,6 +138,150 @@ All new collections include `sessionId`, `userId?`, `anonId?`, `page`, `eventId?
 
 ---
 
+## Named-Event Tracking (hotel-style: Category / Event Name / Total Events / Unique Users)
+
+Our system captures the equivalent of GA4/Firebase "custom events" spread across four collections. The table below maps the hotel-project spreadsheet columns to our data:
+
+| Hotel column | Our equivalent | Collection | Field |
+|---|---|---|---|
+| Category | Interaction domain | — | see rows below |
+| Event Name | Action identifier | `eventinteractions` | `interactionType` (`view`, `ticket_select`, `booking_start`, `share`, `click`) |
+| Event Name | Named CTA click | `analytics_web_clicks` | `dataTrack` (set via `data-track="..."` on any element) |
+| Event Name | Page visited | `pageviews` | `page` (URL path) |
+| Event Name | Form action | `analytics_web_forms` | `formName` + `interactionType` |
+| Total Events | Raw occurrence count | any | `$sum: 1` |
+| Unique Users | Auth + anonymous visitors | any | distinct `userId` ∪ distinct `anonId` |
+
+### Query 1 — Event interactions table (maps 1:1 to hotel spreadsheet)
+```js
+db.eventinteractions.aggregate([
+  // add { $match: { timestamp: { $gte: startDate } } } for date filtering
+  {
+    $group: {
+      _id: "$interactionType",
+      totalEvents: { $sum: 1 },
+      uniqueAuthUsers: { $addToSet: "$userId" },
+      uniqueAnonUsers: { $addToSet: "$anonId" },
+    }
+  },
+  {
+    $project: {
+      category: { $literal: "Event Interactions" },
+      eventName: "$_id",
+      totalEvents: 1,
+      uniqueUsers: {
+        $size: {
+          $setUnion: [
+            { $filter: { input: "$uniqueAuthUsers", cond: { $ne: ["$$this", null] } } },
+            { $filter: { input: "$uniqueAnonUsers",  cond: { $ne: ["$$this", null] } } },
+          ]
+        }
+      }
+    }
+  },
+  { $sort: { totalEvents: -1 } }
+])
+```
+
+### Query 2 — CTA click named table (requires `data-track` labels on elements)
+```js
+db.analytics_web_clicks.aggregate([
+  { $match: { dataTrack: { $ne: null } } },
+  {
+    $group: {
+      _id: "$dataTrack",
+      totalEvents: { $sum: 1 },
+      uniqueAuthUsers: { $addToSet: "$userId" },
+      uniqueAnonUsers: { $addToSet: "$anonId" },
+    }
+  },
+  {
+    $project: {
+      category: { $literal: "CTA Clicks" },
+      eventName: "$_id",
+      totalEvents: 1,
+      uniqueUsers: {
+        $size: {
+          $setUnion: [
+            { $filter: { input: "$uniqueAuthUsers", cond: { $ne: ["$$this", null] } } },
+            { $filter: { input: "$uniqueAnonUsers",  cond: { $ne: ["$$this", null] } } },
+          ]
+        }
+      }
+    }
+  },
+  { $sort: { totalEvents: -1 } }
+])
+```
+
+### Query 3 — Combined cross-collection table (all categories, hotel-spreadsheet format)
+
+Requires MongoDB 4.4+ for `$unionWith`. Alternatively run the per-collection queries in `Promise.all` and merge in application code.
+
+```js
+db.eventinteractions.aggregate([
+  {
+    $group: {
+      _id: "$interactionType",
+      category: { $first: "Event Interactions" },
+      total: { $sum: 1 },
+      users: { $addToSet: { $ifNull: ["$userId", "$anonId"] } }
+    }
+  },
+  {
+    $unionWith: {
+      coll: "analytics_web_clicks",
+      pipeline: [
+        { $match: { dataTrack: { $ne: null } } },
+        { $group: { _id: "$dataTrack", category: { $first: "CTA Clicks" },
+            total: { $sum: 1 }, users: { $addToSet: { $ifNull: ["$userId", "$anonId"] } } } }
+      ]
+    }
+  },
+  {
+    $unionWith: {
+      coll: "pageviews",
+      pipeline: [
+        { $group: { _id: "$page", category: { $first: "Page Views" },
+            total: { $sum: 1 }, users: { $addToSet: { $ifNull: ["$userId", "$anonId"] } } } }
+      ]
+    }
+  },
+  {
+    $unionWith: {
+      coll: "analytics_web_forms",
+      pipeline: [
+        { $group: { _id: { form: "$formName", type: "$interactionType" },
+            category: { $first: "Form Events" },
+            total: { $sum: 1 }, users: { $addToSet: { $ifNull: ["$userId", "$anonId"] } } } },
+        { $project: { _id: { $concat: ["$_id.form", " / ", "$_id.type"] },
+            category: 1, total: 1, users: 1 } }
+      ]
+    }
+  },
+  {
+    $project: {
+      category: 1,
+      eventName: "$_id",
+      totalEvents: "$total",
+      uniqueUsers: { $size: "$users" }
+    }
+  },
+  { $sort: { totalEvents: -1 } }
+])
+```
+
+### Instrumenting new named events
+
+To add a named event to the **CTA Clicks** category, add `data-track="your-label"` to any button or link. The SDK captures it automatically and stores it in `analytics_web_clicks.dataTrack`. No backend changes required. Examples:
+
+```html
+<button data-track="book-now-hero">Book Now</button>
+<a data-track="share-event-copy-link" href="...">Copy Link</a>
+```
+
+---
+
 ## Recommended Mongo queries
 
 ### Per-event funnel (sessions per stage)
