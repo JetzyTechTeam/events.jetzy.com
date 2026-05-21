@@ -50,6 +50,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 
 	// @ts-ignore
 	const userRole = session?.user?.role
+	const userName = session?.user?.name || (session?.user as any)?.fullName
+	const isSuperAdmin =
+		userRole === "super admin" ||
+		userName?.toLowerCase() === "super admin"
 	const [isSignupQROpen, setIsSignupQROpen] = useState(false)
 	const signupQRUrl = typeof window !== "undefined" ? `${window.location.origin}/jetzyqrsignup` : "/jetzyqrsignup"
 
@@ -63,17 +67,9 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
 	]
 
-	const userNavigation = userRole === Roles.USER
-		? [
-			{ name: "All Events", href: "/" },
-			{ name: "My Events", href: ROUTES.dashboard.events.index },
-			{ name: "Create Event", href: ROUTES.dashboard.events.create },
-			{ name: Pages.Bookings, href: ROUTES.dashboard.bookings.index },
-			{ name: "Share Profile", href: profileHref },
-		]
-		: [{ name: "All Events", href: "/" }, ...navigation.filter((item) => item.name !== Pages.Dasshboard)]
-
-	const filteredNavigation = userNavigation
+	const filteredNavigation = isSuperAdmin
+		? [{ name: "All Events", href: "/" }, ...navigation.filter((item) => item.name !== Pages.Dasshboard)]
+		: [{ name: "Share Profile", href: profileHref }]
 
 	return (
 		<>

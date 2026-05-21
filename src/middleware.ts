@@ -19,7 +19,6 @@ export function middleware(req: NextRequest) {
 	const isDev = process.env.NODE_ENV === "development"
 	const allow = isDev ? "*" : (ALLOWED_ORIGINS.includes(origin) ? origin : "")
 
-	// CORS preflight
 	if (req.method === "OPTIONS") {
 		const res = new NextResponse(null, { status: 204 })
 		if (allow) {
@@ -34,7 +33,6 @@ export function middleware(req: NextRequest) {
 	return res
 }
 
-// Only apply to API routes
 export const config = {
 	matcher: ["/api/:path*"],
 }
