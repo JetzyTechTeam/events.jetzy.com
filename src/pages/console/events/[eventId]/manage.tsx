@@ -62,6 +62,8 @@ export default function Manage({ event }: any) {
 	const toast = useToast()
 	const router = useRouter()
 	const { data: session } = useSession()
+	const userRole = (session?.user as any)?.role
+	const isAdmin = userRole === "admin" || userRole === "super admin"
 
 	useEffect(() => {
 		if (router.query.invite === "true") {
@@ -127,6 +129,11 @@ export default function Manage({ event }: any) {
 				page={stripHtml(event.name) as any}
 				component={
 					<div className="flex gap-2">
+						{isAdmin && (
+							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
+								View Analytics
+							</Button>
+						)}
 						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} onClick={() => router.push(`/console/events/${event._id}/check-in`)} fontWeight="bold">
 							Check-In Portal
 						</Button>

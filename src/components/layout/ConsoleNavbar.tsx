@@ -177,6 +177,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 													{({ active }) => (
 														<a
 															onClick={logout}
+															data-analytics-ignore=""
 															className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-red-600 font-medium")}
 														>
 															Logout
@@ -262,6 +263,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 								<Disclosure.Button
 									as="button"
 									onClick={logout}
+									data-analytics-ignore=""
 									className="block w-full text-left rounded-md px-3 py-2 text-base font-medium text-red-400 hover:bg-gray-700 hover:text-white"
 								>
 									Logout

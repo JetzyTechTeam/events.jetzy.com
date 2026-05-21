@@ -28,13 +28,23 @@ import {
 	Button,
 	HStack,
 	IconButton,
+	Tabs,
+	TabList,
+	Tab,
+	TabPanels,
+	TabPanel,
 } from "@chakra-ui/react"
 import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiChevronLeft, FiChevronRight } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
+import ClickHeatmap from "@/components/analytics/ClickHeatmap"
 import NextLink from "next/link"
 import SafeHTML from "@/components/misc/SafeHTML"
 import { stripHTMLAndDecode } from "@/lib/utils"
+
+interface FunnelStage { stage: string; label: string; count: number; dropOffPct: number; conversionPct: number }
+interface DwellRow { page: string; views: number; avgTimeSec: number; p50Sec: number; p90Sec: number; avgScrollDepthPct: number | null }
+interface HeatTopTarget { text: string | null; dataTrack: string | null; count: number; rageCount: number }
 
 interface EventAnalyticsData {
 	event: {
@@ -140,6 +150,43 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const [currentPage, setCurrentPage] = useState(1)
 	const router = useRouter()
 	const toast = useToast()
+
+	const [tabIndex, setTabIndex] = useState(0)
+	const [journeyLoaded, setJourneyLoaded] = useState(false)
+	const [journeyLoading, setJourneyLoading] = useState(false)
+	const [funnel, setFunnel] = useState<FunnelStage[]>([])
+	const [dwell, setDwell] = useState<DwellRow[]>([])
+	const [heatPoints, setHeatPoints] = useState<any[]>([])
+	const [topTargets, setTopTargets] = useState<HeatTopTarget[]>([])
+
+	const loadJourney = async () => {
+		if (journeyLoaded || journeyLoading) return
+		setJourneyLoading(true)
+		try {
+			const eid = eventData._id
+			const [f, d, h] = await Promise.all([
+				fetch(`/api/analytics/journey/funnel?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
+				fetch(`/api/analytics/journey/dwell?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
+				fetch(`/api/analytics/journey/heat?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
+			])
+			if (f?.status) setFunnel(f.data.funnel || [])
+			if (d?.status) setDwell(d.data.pages || [])
+			if (h?.status) {
+				setHeatPoints(h.data.clicks || [])
+				setTopTargets(h.data.topTargets || [])
+			}
+			setJourneyLoaded(true)
+		} catch (e: any) {
+			toast({ title: "Failed to load journey data", description: e.message, status: "error" })
+		} finally {
+			setJourneyLoading(false)
+		}
+	}
+
+	useEffect(() => {
+		if (tabIndex === 1) loadJourney()
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tabIndex])
 
 	const fetchAnalytics = async (from: Date | null, to: Date | null, page: number = 1) => {
 		setIsLoading(true)
@@ -385,7 +432,13 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 							<Spinner size="xl" color="#1877F2" />
 						</Center>
 					) : analyticsData ? (
-						<>
+						<Tabs variant="line" index={tabIndex} onChange={setTabIndex} isLazy>
+							<TabList mb={4} borderBottom="2px solid #2a2a2a">
+								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Overview</Tab>
+								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Journey</Tab>
+							</TabList>
+							<TabPanels>
+								<TabPanel px={0}>
 							{/* Summary Metrics */}
 							<Box mb={6}>
 								<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
@@ -587,7 +640,97 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									</Flex>
 								)}
 							</Box>
-						</>
+								</TabPanel>
+								<TabPanel px={0}>
+									{journeyLoading ? (
+										<Center py={20}><Spinner size="xl" color="#F79432" /></Center>
+									) : (
+										<>
+											<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Conversion Funnel</Text>
+												{funnel.length === 0 ? (
+													<Text color="#9C9C9C" fontSize="sm">No funnel data yet.</Text>
+												) : (
+													funnel.map((stage, i) => {
+														const maxCount = funnel[0]?.count || 1
+														const w = Math.max(8, (stage.count / maxCount) * 100)
+														return (
+															<Box key={stage.stage} mb={3}>
+																<Flex justify="space-between" mb={1}>
+																	<Text fontSize="sm" color="white">{stage.label}</Text>
+																	<Text fontSize="sm" color="#9C9C9C">{stage.count.toLocaleString()} · {stage.conversionPct}%{i > 0 ? ` · drop ${stage.dropOffPct}%` : ""}</Text>
+																</Flex>
+																<Box h="24px" bg="#2a2a2a" borderRadius="md" overflow="hidden">
+																	<Box h="100%" w={`${w}%`} bg="#F79432" />
+																</Box>
+															</Box>
+														)
+													})
+												)}
+											</Box>
+
+											<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
+												<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Page Dwell &amp; Scroll Depth</Text>
+												<TableContainer>
+													<Table size="sm">
+														<Thead>
+															<Tr>
+																<Th color="#9C9C9C" borderColor="#2a2a2a">Page</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Views</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Avg time (s)</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>p50</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>p90</Th>
+																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Avg scroll %</Th>
+															</Tr>
+														</Thead>
+														<Tbody>
+															{dwell.length === 0 ? (
+																<Tr><Td colSpan={6} borderColor="#2a2a2a"><Text color="#9C9C9C" fontSize="sm">No dwell data yet.</Text></Td></Tr>
+															) : dwell.map((r) => (
+																<Tr key={r.page} _hover={{ bg: "#262626" }}>
+																	<Td borderColor="#2a2a2a"><Text fontSize="xs" color="white" maxW="400px" isTruncated>{r.page}</Text></Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.views}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.avgTimeSec}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.p50Sec}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.p90Sec}</Td>
+																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.avgScrollDepthPct ?? "—"}</Td>
+																</Tr>
+															))}
+														</Tbody>
+													</Table>
+												</TableContainer>
+											</Box>
+
+											<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={6}>
+												<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+													<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Click Heatmap</Text>
+													<ClickHeatmap points={heatPoints} width={600} height={400} />
+												</Box>
+												<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+													<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Top Click Targets</Text>
+													<TableContainer>
+														<Table size="sm">
+															<Thead><Tr><Th color="#9C9C9C" borderColor="#2a2a2a">Target</Th><Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Clicks</Th><Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Rage</Th></Tr></Thead>
+															<Tbody>
+																{topTargets.length === 0 ? (
+																	<Tr><Td colSpan={3} borderColor="#2a2a2a"><Text color="#9C9C9C" fontSize="sm">No clicks yet.</Text></Td></Tr>
+																) : topTargets.map((t, idx) => (
+																	<Tr key={idx} _hover={{ bg: "#262626" }}>
+																		<Td borderColor="#2a2a2a"><Text fontSize="xs" color="white" maxW="280px" isTruncated>{t.dataTrack || t.text || "—"}</Text></Td>
+																		<Td color="white" borderColor="#2a2a2a" isNumeric>{t.count}</Td>
+																		<Td color="white" borderColor="#2a2a2a" isNumeric>{t.rageCount > 0 ? <Badge colorScheme="red">{t.rageCount}</Badge> : 0}</Td>
+																	</Tr>
+																))}
+															</Tbody>
+														</Table>
+													</TableContainer>
+												</Box>
+											</SimpleGrid>
+										</>
+									)}
+								</TabPanel>
+							</TabPanels>
+						</Tabs>
 					) : (
 						<Center py={20}>
 							<Text color="#65676B">No data available</Text>

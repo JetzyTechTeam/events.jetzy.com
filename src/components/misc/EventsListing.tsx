@@ -31,6 +31,8 @@ import { useRouter } from "next/router";
 import { ROUTES } from "@/configs/routes";
 import { DateTimeSVG, LocationSVG } from "@/assets/icons";
 import { signOut, useSession } from "next-auth/react";
+import { useAppDispatch } from "@Jetzy/redux/stores";
+import { destroySession } from "@Jetzy/redux/reducers/appSlice";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
@@ -465,6 +467,7 @@ export default EventList;
 const Navbar = () => {
   const router = useRouter();
   const session = useSession();
+  const dispatch = useAppDispatch();
 
   const authenticated = session.status === "authenticated";
   const user = session.data?.user;
@@ -598,8 +601,14 @@ const Navbar = () => {
                   bg="#1a1a1a"
                   _hover={{ bg: "gray.700" }}
                   color="red.400"
+                  data-analytics-ignore=""
                   onClick={() => {
-                    localStorage?.clear();
+                    try { sessionStorage.removeItem("api_token") } catch {}
+                    try { sessionStorage.removeItem("analytics_session_id") } catch {}
+                    try { localStorage.removeItem("analytics_anon_id") } catch {}
+                    try { localStorage.removeItem("events_location_pref") } catch {}
+                    try { localStorage.removeItem("visitor_id") } catch {}
+                    dispatch(destroySession({}));
                     signOut({ callbackUrl: "/" });
                   }}
                 >

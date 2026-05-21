@@ -36,213 +36,188 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (req.query.dateFrom) {
 			dateFrom = new Date(req.query.dateFrom as string)
-			dateFrom.setHours(0, 0, 0, 0) // Start of day
+			dateFrom.setHours(0, 0, 0, 0)
 		}
 
 		if (req.query.dateTo) {
 			dateTo = new Date(req.query.dateTo as string)
-			dateTo.setHours(23, 59, 59, 999) // End of day
+			dateTo.setHours(23, 59, 59, 999)
 		}
 
-		// Build date filter
 		const dateFilter: any = {}
 		if (dateFrom) dateFilter.$gte = dateFrom
 		if (dateTo) dateFilter.$lte = dateTo
 
 		const now = new Date()
 
-		// 1. EVENT METRICS
-		const totalEvents = await Events.countDocuments({ isDeleted: false })
-		const publicEvents = await Events.countDocuments({ isDeleted: false, privacy: "public" })
-		const privateEvents = await Events.countDocuments({ isDeleted: false, privacy: "private" })
-		const paidEvents = await Events.countDocuments({ isDeleted: false, isPaid: true })
-		const freeEvents = await Events.countDocuments({ isDeleted: false, isPaid: false })
-		const upcomingEvents = await Events.countDocuments({ isDeleted: false, startsOn: { $gt: now } })
-		const pastEvents = await Events.countDocuments({ isDeleted: false, endsOn: { $lt: now } })
-
-		// 2. BOOKING METRICS
+		// Build query matchers up front
 		const bookingMatch: any = { isDeleted: false }
-		if (dateFrom || dateTo) {
-			bookingMatch.createdAt = dateFilter
-		}
+		if (dateFrom || dateTo) bookingMatch.createdAt = dateFilter
 
-		const totalBookings = await BookingsModel.countDocuments(bookingMatch)
-		const confirmedBookings = await BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.CONFIRMED })
-		const pendingBookings = await BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.PENDING })
-		const cancelledBookings = await BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.CANCELLED })
-		const failedBookings = await BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.FAILED })
-		const refundedBookings = await BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.REFUNDED })
-
-		// Get booking totals (revenue and tickets)
-		const bookingStats = await BookingsModel.aggregate([
-			{ $match: { ...bookingMatch, status: BookingStatus.CONFIRMED } },
-			{
-				$group: {
-					_id: null,
-					totalRevenue: { $sum: "$total" },
-					totalTickets: {
-						$sum: {
-							$reduce: {
-								input: "$tickets",
-								initialValue: 0,
-								in: { $add: ["$$value", "$$this.quantity"] },
-							},
-						},
-					},
-					totalDiscounts: { $sum: "$discountAmount" },
-					uniqueEvents: { $addToSet: "$eventId" },
-				},
-			},
-		])
-
-		const revenueData = bookingStats[0] || { totalRevenue: 0, totalTickets: 0, totalDiscounts: 0, uniqueEvents: [] }
-		const eventsWithBookings = revenueData.uniqueEvents?.length || 0
-
-		// 3. CHECK-IN METRICS
 		const checkInMatch: any = {}
-		if (dateFrom || dateTo) {
-			checkInMatch.createdAt = dateFilter
-		}
+		if (dateFrom || dateTo) checkInMatch.createdAt = dateFilter
 
-		const checkInStats = await CheckIn.aggregate([
-			{ $match: checkInMatch },
-			{
-				$group: {
-					_id: null,
-					totalCheckedIn: { $sum: "$checkedInCount" },
-					totalTicketsPurchased: { $sum: "$totalTickets" },
-				},
-			},
-		])
+		const sessionMatch: any = {}
+		if (dateFrom || dateTo) sessionMatch.startTime = dateFilter
 
-		const checkInData = checkInStats[0] || { totalCheckedIn: 0, totalTicketsPurchased: 0 }
-		const checkInRate =
-			checkInData.totalTicketsPurchased > 0
-				? (checkInData.totalCheckedIn / checkInData.totalTicketsPurchased) * 100
-				: 0
+		const pageViewMatch: any = {}
+		if (dateFrom || dateTo) pageViewMatch.timestamp = dateFilter
 
-		// 4. USER METRICS
-		// NOTE: Users are entities, not time-series data, so we show ALL users regardless of creation date
-		// Only active users are filtered by lastActiveAt based on date range
-		const totalUsers = await Users.countDocuments({})
-		const adminUsers = await Users.countDocuments({ role: "admin" })
-		const regularUsers = await Users.countDocuments({ role: "user" })
+		const referralMatch: any = { isDeleted: false }
 
-		// Calculate active vs inactive users using lastActiveAt field (fast, indexed query)
-		// Active users = users with lastActiveAt within the last 30 days (or within date range if specified)
 		const activeUserPeriod = dateTo || new Date()
 		const activeUserPeriodStart = new Date(activeUserPeriod)
 		if (dateFrom) {
 			activeUserPeriodStart.setTime(dateFrom.getTime())
 		} else {
-			// Default to last 30 days if no date range specified
 			activeUserPeriodStart.setDate(activeUserPeriodStart.getDate() - 30)
 		}
 		activeUserPeriodStart.setHours(0, 0, 0, 0)
+		const activeUserFilter = { lastActiveAt: { $gte: activeUserPeriodStart, $lte: activeUserPeriod } }
 
-		// Count active users using lastActiveAt field (fast indexed query, no aggregation needed)
-		// Active users = users who were active within the date range (or last 30 days if no range specified)
-		const activeUsers = await Users.countDocuments({
-			lastActiveAt: { $gte: activeUserPeriodStart, $lte: activeUserPeriod },
-		})
-
-		// Count active admins and active regular users separately (fast indexed queries)
-		const activeAdmins = await Users.countDocuments({
-			role: "admin",
-			lastActiveAt: { $gte: activeUserPeriodStart, $lte: activeUserPeriod },
-		})
-
-		const activeRegular = await Users.countDocuments({
-			role: "user",
-			lastActiveAt: { $gte: activeUserPeriodStart, $lte: activeUserPeriod },
-		})
-
-		// Inactive users = total users - active users
-		const inactiveUsers = Math.max(0, totalUsers - activeUsers)
-		const activeUserRate = totalUsers > 0 ? (activeUsers / totalUsers) * 100 : 0
-		const inactiveUserRate = totalUsers > 0 ? (inactiveUsers / totalUsers) * 100 : 0
-
-		// Calculate inactive users by role
-		const inactiveAdmins = Math.max(0, adminUsers - activeAdmins)
-		const inactiveRegular = Math.max(0, regularUsers - activeRegular)
-
-		// 5. REFERRAL CODE METRICS
-		// NOTE: Referral codes are entities, not time-series data, so we show ALL codes regardless of creation date
-		// Usage count shows total usage across all time (usageCount is cumulative)
-		const referralMatch: any = { isDeleted: false }
-
-		const totalReferralCodes = await ReferralCodes.countDocuments(referralMatch)
-		const activeReferralCodes = await ReferralCodes.countDocuments({ ...referralMatch, isActive: true })
-		const inactiveReferralCodes = await ReferralCodes.countDocuments({ ...referralMatch, isActive: false })
-
-		// Get total usage count (cumulative across all time)
-		const referralStats = await ReferralCodes.aggregate([
-			{ $match: referralMatch },
-			{
-				$group: {
-					_id: null,
-					totalUsage: { $sum: "$usageCount" },
+		// Run all independent queries in parallel
+		const [
+			// Events (7)
+			totalEvents,
+			publicEvents,
+			privateEvents,
+			paidEvents,
+			freeEvents,
+			upcomingEvents,
+			pastEvents,
+			// Bookings (6 + 1 aggregation)
+			totalBookings,
+			confirmedBookings,
+			pendingBookings,
+			cancelledBookings,
+			failedBookings,
+			refundedBookings,
+			bookingStats,
+			// Check-in (1 aggregation)
+			checkInStats,
+			// Users (6)
+			totalUsers,
+			adminUsers,
+			regularUsers,
+			activeUsers,
+			activeAdmins,
+			activeRegular,
+			// Referrals (3 + 1 aggregation)
+			totalReferralCodes,
+			activeReferralCodes,
+			inactiveReferralCodes,
+			referralStats,
+			// Sessions (3 + 1 distinct + 1 distinct + 1 aggregation)
+			totalSessions,
+			loggedInSessions,
+			anonymousSessions,
+			uniqueVisitors,
+			uniqueLoggedInUsers,
+			avgSessionDuration,
+			// Page views (1 + 1 bounce)
+			totalPageViews,
+			bouncedSessions,
+		] = await Promise.all([
+			// Events
+			Events.countDocuments({ isDeleted: false }),
+			Events.countDocuments({ isDeleted: false, privacy: "public" }),
+			Events.countDocuments({ isDeleted: false, privacy: "private" }),
+			Events.countDocuments({ isDeleted: false, isPaid: true }),
+			Events.countDocuments({ isDeleted: false, isPaid: false }),
+			Events.countDocuments({ isDeleted: false, startsOn: { $gt: now } }),
+			Events.countDocuments({ isDeleted: false, endsOn: { $lt: now } }),
+			// Bookings
+			BookingsModel.countDocuments(bookingMatch),
+			BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.CONFIRMED }),
+			BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.PENDING }),
+			BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.CANCELLED }),
+			BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.FAILED }),
+			BookingsModel.countDocuments({ ...bookingMatch, status: BookingStatus.REFUNDED }),
+			BookingsModel.aggregate([
+				{ $match: { ...bookingMatch, status: BookingStatus.CONFIRMED } },
+				{
+					$group: {
+						_id: null,
+						totalRevenue: { $sum: "$total" },
+						totalTickets: {
+							$sum: {
+								$reduce: {
+									input: "$tickets",
+									initialValue: 0,
+									in: { $add: ["$$value", "$$this.quantity"] },
+								},
+							},
+						},
+						totalDiscounts: { $sum: "$discountAmount" },
+						uniqueEvents: { $addToSet: "$eventId" },
+					},
 				},
-			},
+			]),
+			// Check-in
+			CheckIn.aggregate([
+				{ $match: checkInMatch },
+				{
+					$group: {
+						_id: null,
+						totalCheckedIn: { $sum: "$checkedInCount" },
+						totalTicketsPurchased: { $sum: "$totalTickets" },
+					},
+				},
+			]),
+			// Users
+			Users.countDocuments({}),
+			Users.countDocuments({ role: "admin" }),
+			Users.countDocuments({ role: "user" }),
+			Users.countDocuments(activeUserFilter),
+			Users.countDocuments({ role: "admin", ...activeUserFilter }),
+			Users.countDocuments({ role: "user", ...activeUserFilter }),
+			// Referrals
+			ReferralCodes.countDocuments(referralMatch),
+			ReferralCodes.countDocuments({ ...referralMatch, isActive: true }),
+			ReferralCodes.countDocuments({ ...referralMatch, isActive: false }),
+			ReferralCodes.aggregate([
+				{ $match: referralMatch },
+				{ $group: { _id: null, totalUsage: { $sum: "$usageCount" } } },
+			]),
+			// Sessions — use countDocuments instead of distinct (sessionId is unique, same result)
+			UserSession.countDocuments(sessionMatch),
+			UserSession.countDocuments({ ...sessionMatch, isLoggedIn: true }),
+			UserSession.countDocuments({ ...sessionMatch, isLoggedIn: false }),
+			// uniqueVisitors: sessionId is unique per row, so count == distinct count
+			UserSession.countDocuments(sessionMatch),
+			// uniqueLoggedInUsers: count distinct users via aggregation (avoids loading all IDs into memory)
+			UserSession.aggregate([
+				{ $match: { ...sessionMatch, userId: { $ne: null } } },
+				{ $group: { _id: "$userId" } },
+				{ $count: "count" },
+			]).then((r: any[]) => r[0]?.count || 0),
+			UserSession.aggregate([
+				{ $match: { ...sessionMatch, duration: { $exists: true, $ne: null } } },
+				{ $group: { _id: null, avgDuration: { $avg: "$duration" } } },
+			]),
+			// Page views
+			PageView.countDocuments(pageViewMatch),
+			UserSession.countDocuments({ ...sessionMatch, pageCount: { $lte: 1 } }),
 		])
 
-		const referralUsage = referralStats[0]?.totalUsage || 0
+		// Derived values
+		const revenueData = (bookingStats as any[])[0] || { totalRevenue: 0, totalTickets: 0, totalDiscounts: 0, uniqueEvents: [] }
+		const eventsWithBookings = revenueData.uniqueEvents?.length || 0
+		const checkInData = (checkInStats as any[])[0] || { totalCheckedIn: 0, totalTicketsPurchased: 0 }
+		const checkInRate = checkInData.totalTicketsPurchased > 0 ? (checkInData.totalCheckedIn / checkInData.totalTicketsPurchased) * 100 : 0
+		const referralUsage = (referralStats as any[])[0]?.totalUsage || 0
+		const avgDuration = (avgSessionDuration as any[])[0]?.avgDuration || 0
+		const bounceRate = (totalSessions as number) > 0 ? ((bouncedSessions as number) / (totalSessions as number)) * 100 : 0
 
-		// 6. VISITOR & SESSION METRICS (from analytics models)
-		const sessionMatch: any = {}
-		if (dateFrom || dateTo) {
-			sessionMatch.startTime = dateFilter
-		}
+		const inactiveUsers = Math.max(0, (totalUsers as number) - (activeUsers as number))
+		const activeUserRate = (totalUsers as number) > 0 ? ((activeUsers as number) / (totalUsers as number)) * 100 : 0
+		const inactiveUserRate = (totalUsers as number) > 0 ? (inactiveUsers / (totalUsers as number)) * 100 : 0
+		const inactiveAdmins = Math.max(0, (adminUsers as number) - (activeAdmins as number))
+		const inactiveRegular = Math.max(0, (regularUsers as number) - (activeRegular as number))
+		const avgRevenuePerEvent = eventsWithBookings > 0 ? revenueData.totalRevenue / eventsWithBookings : 0
+		const avgTicketsPerBooking = (confirmedBookings as number) > 0 ? revenueData.totalTickets / (confirmedBookings as number) : 0
+		const avgBookingValue = (confirmedBookings as number) > 0 ? revenueData.totalRevenue / (confirmedBookings as number) : 0
 
-		const totalSessions = await UserSession.countDocuments(sessionMatch)
-		const loggedInSessions = await UserSession.countDocuments({ ...sessionMatch, isLoggedIn: true })
-		const anonymousSessions = await UserSession.countDocuments({ ...sessionMatch, isLoggedIn: false })
-
-		// Get unique visitors (distinct sessionIds or userIds)
-		const uniqueVisitors = await UserSession.distinct("sessionId", sessionMatch).then((ids) => ids.length)
-		const uniqueLoggedInUsers = await UserSession.distinct("userId", {
-			...sessionMatch,
-			userId: { $ne: null },
-		}).then((ids) => ids.length)
-
-		// Average session duration
-		const avgSessionDuration = await UserSession.aggregate([
-			{ $match: { ...sessionMatch, duration: { $exists: true, $ne: null } } },
-			{
-				$group: {
-					_id: null,
-					avgDuration: { $avg: "$duration" },
-				},
-			},
-		])
-
-		const avgDuration = avgSessionDuration[0]?.avgDuration || 0
-
-		// 7. PAGE VIEW METRICS
-		const pageViewMatch: any = {}
-		if (dateFrom || dateTo) {
-			pageViewMatch.timestamp = dateFilter
-		}
-
-		const totalPageViews = await PageView.countDocuments(pageViewMatch)
-
-		// Calculate bounce rate (sessions with only 1 page view)
-		const bouncedSessions = await UserSession.countDocuments({
-			...sessionMatch,
-			pageCount: { $lte: 1 },
-		})
-		const bounceRate = totalSessions > 0 ? (bouncedSessions / totalSessions) * 100 : 0
-
-		// 8. CALCULATE AVERAGES
-		// Average revenue per event = total revenue / events with bookings in date range (or all events if no date filter)
-		const avgRevenuePerEvent =
-			eventsWithBookings > 0 ? revenueData.totalRevenue / eventsWithBookings : 0
-		const avgTicketsPerBooking =
-			confirmedBookings > 0 ? revenueData.totalTickets / confirmedBookings : 0
-		const avgBookingValue =
-			confirmedBookings > 0 ? revenueData.totalRevenue / confirmedBookings : 0
-
-		// Build response
 		const overview = {
 			bounceRate: Math.round(bounceRate * 100) / 100,
 			events: {
@@ -283,7 +258,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			checkIns: {
 				totalCheckedIn: checkInData.totalCheckedIn,
 				totalTicketsPurchased: checkInData.totalTicketsPurchased,
-				checkInRate: Math.round(checkInRate * 100) / 100, // Round to 2 decimal places
+				checkInRate: Math.round(checkInRate * 100) / 100,
 			},
 			users: {
 				total: totalUsers,
@@ -313,7 +288,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			},
 			sessions: {
 				total: totalSessions,
-				averageDuration: Math.round(avgDuration), // in seconds
+				averageDuration: Math.round(avgDuration),
 			},
 			pageViews: {
 				total: totalPageViews,
@@ -330,4 +305,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, null, error.message || "Failed to fetch analytics overview", false, ResCode.INTERNAL_SERVER_ERROR)
 	}
 }
-

@@ -5,6 +5,7 @@ export interface IUserSession {
 	_id: Types.ObjectId
 	sessionId: string
 	userId?: Types.ObjectId
+	anonId?: string
 	startTime: Date
 	endTime?: Date
 	duration?: number // in seconds
@@ -34,6 +35,11 @@ const userSessionSchema = new Schema<IUserSession>(
 			required: false,
 			index: true,
 			ref: "Users",
+		},
+		anonId: {
+			type: String,
+			required: false,
+			index: true,
 		},
 		startTime: {
 			type: Date,

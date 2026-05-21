@@ -78,9 +78,13 @@ Fields: eventId, firstName, lastName, email, phone, tickets[] (ticketId/quantity
 ### `src/models/interestV2.ts` — InterestI
 Fields: name, type (public/private), description, image, createdBy, status (active/pending/deleted), dataType (group/activity), location (description/lat/lng), startDate, endDate, price, capacity, interests[], eventId
 
-### `src/models/analytics/` (6 models)
-user-session.ts (IUserSession): sessionId, userId, startTime, endTime, duration, pageCount, isLoggedIn, deviceType, browserType, referrer, entryPage, exitPage, userAgent, ipAddress
-page-view.ts, user-action.ts, event-interaction.ts, user-journey.ts, index.ts
+### `src/models/analytics/` (9 models)
+user-session.ts (IUserSession): sessionId, userId, anonId, startTime, endTime, duration, pageCount, isLoggedIn, deviceType, browserType, referrer, entryPage, exitPage, userAgent, ipAddress
+page-view.ts, user-action.ts, event-interaction.ts, user-journey.ts (also has anonId), index.ts
+web-click.ts (IWebClick) → collection `analytics_web_clicks` — generic click tracking with x/y, element semantics, rage/dead-click flags, optional eventId
+web-scroll.ts (IWebScroll) → collection `analytics_web_scroll` — scroll depth per (sessionId, page) with milestones [25,50,75,100]
+web-form.ts (IWebForm) → collection `analytics_web_forms` — form focus/submit, never stores field values
+Full schema reference + cross-portal query recipes in `ANALYTICS_SCHEMA.md`.
 
 ### Other models
 events/discussion-comments.ts, events/comments.ts, events/event-invitations.ts, events/event-tracker.ts, events/event-traffic.ts, eventTicketsModel.ts, eventUsersModal.ts, messages.ts, transactionModel.ts
@@ -168,7 +172,11 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 |--------|-------|--------|
 | GET | `/api/analytics/events` | admin OR owner (own event only for users) |
 | GET | `/api/analytics/overview\|journey\|pages\|devices\|referrers\|visitors\|bookings\|utm\|top-events\|top-users` | admin only |
-| POST | `/api/analytics/track\|track-action\|track-event-interaction\|track-page\|track-session-start\|track-session-end` | public tracking |
+| POST | `/api/analytics/track\|track-action\|track-event-interaction\|track-page\|track-session-start\|track-session-end\|track-click\|track-scroll\|track-form` | public tracking (anonymous OK) |
+| GET | `/api/analytics/journey/sessions\|guests` | admin only |
+| GET | `/api/analytics/journey/session/[sessionId]\|funnel\|heat\|dwell` | admin OR event owner (when eventId scope applies) |
+
+**Perf pattern:** `overview.ts`, `visitors.ts`, `top-users.ts`, `top-events.ts` run all independent DB queries in one `Promise.all` (not sequentially). Earlier sequential version stalled the dashboard for 30+ seconds on Atlas. Also: prefer `countDocuments` over `.distinct()` for unique counts; for distinct counts use `aggregate([{$group:{_id:"$field"}},{$count:"count"}])` (avoids loading all IDs into Node memory). Connection pool `maxPoolSize: 10` + `bufferCommands: false` (see `src/configs/database.ts`).
 
 ### Auth
 `/api/auth/[...nextauth]`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/send-login-otp`, `/api/auth/verify-login-otp`, `/api/auth/verify/send-code`, `/api/auth/verify/confirm-code`, `/api/auth/report-abuse`
@@ -210,11 +218,12 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | Edit event | `src/pages/console/events/[eventId]/update.tsx` | admin OR owner |
 | Manage event | `src/pages/console/events/[eventId]/manage.tsx` | admin OR owner (about/guests/waitlist/referrals/discussion) |
 | Check-in | `src/pages/console/events/[eventId]/check-in.tsx` | admin OR owner |
-| Event analytics | `src/pages/console/events/[eventId]/analytics.tsx` | admin only |
+| Event analytics | `src/pages/console/events/[eventId]/analytics.tsx` | admin only — Overview tab (existing metrics) + Journey tab (funnel/heatmap/dwell/top targets) |
 | Ticket mgmt | `src/pages/console/events/[eventId]/tickets.tsx` | — |
 | Bookings list | `src/pages/console/bookings/index.tsx` | admin=all, user=own events |
 | Booking detail | `src/pages/console/bookings/[eventId].tsx` | admin OR owner (strips ownerId from props) |
-| Platform analytics | `src/pages/console/analytics.tsx` | admin only |
+| Platform analytics | `src/pages/console/analytics.tsx` | admin only — dark themed (orange `#F79432` accent, `#1a1a1a` cards). Links to Journey page. |
+| Journey analytics | `src/pages/console/analytics/journey.tsx` | admin only — dark themed. Sessions / Guests vs Auth / Heatmap / Funnels tabs |
 
 ---
 
