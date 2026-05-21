@@ -45,7 +45,6 @@ export default function Home({ isSuperAdmin, ...props }: Props) {
   if (!isSuperAdmin) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center text-center px-4">
-        <img src="/logo.png" alt="Jetzy" className="h-12 mb-10 opacity-90" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
         <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">Coming Soon</h1>
         <p className="text-gray-400 text-lg max-w-md">
           Something exciting is on the way. Stay tuned.
