@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { Spinner, Center } from "@chakra-ui/react";
 import { getSession } from "next-auth/react";
+import Navbar from "@/components/misc/Navbar";
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), {
   ssr: false,
@@ -44,11 +45,14 @@ export default function Home({ isSuperAdmin, ...props }: Props) {
 
   if (!isSuperAdmin) {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-center px-4">
-        <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">Coming Soon</h1>
-        <p className="text-gray-400 text-lg max-w-md">
-          Something exciting is on the way. Stay tuned.
-        </p>
+      <div className="min-h-screen bg-black flex flex-col">
+        <Navbar hideEventNav />
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
+          <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">Coming Soon</h1>
+          <p className="text-gray-400 text-lg max-w-md">
+            Something exciting is on the way. Stay tuned.
+          </p>
+        </div>
       </div>
     );
   }
