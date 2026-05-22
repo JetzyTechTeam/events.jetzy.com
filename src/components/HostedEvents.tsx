@@ -173,12 +173,6 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 						<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Event Not Found</h1>
 						<p className="text-gray-600 mb-6">We couldn&apos;t find the event you were looking for. Please try again or contact the event organizer for more information.</p>
-						<button
-							onClick={() => (window.location.href = "/")}
-							className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
-						>
-							See All Events
-						</button>
 					</div>
 				</div>
 			</div>
@@ -194,14 +188,7 @@ export default function HostedEvents({ event }: Props) {
 					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex items-center justify-between`}>
 						<div className="flex items-center gap-3">
 							<button
-								onClick={() => {
-									const hasPaymentParams = router.query.payment_intent || router.query.success
-									if (hasPaymentParams) {
-										router.push('/')
-									} else {
-										router.back()
-									}
-								}}
+								onClick={() => router.back()}
 								className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white flex items-center gap-2"
 							>
 								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,11 +196,6 @@ export default function HostedEvents({ event }: Props) {
 								</svg>
 								Back
 							</button>
-							{!isAdmin && (
-								<Link href="/" className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white">
-									All Events
-								</Link>
-							)}
 						</div>
 						{isAdmin && (
 							<Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">

@@ -6,12 +6,15 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { Spinner, Center } from "@chakra-ui/react";
+import { getSession } from "next-auth/react";
+import Navbar from "@/components/misc/Navbar";
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), {
   ssr: false,
 });
 
 type Props = {
+  isSuperAdmin: boolean;
   events: string | null;
   pagination: {
     total: number;
@@ -22,8 +25,7 @@ type Props = {
   };
 };
 
-export default function Home(props: Props) {
-  // Use props if available (SSR/fallback), otherwise fetch
+export default function Home({ isSuperAdmin, ...props }: Props) {
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
 
@@ -38,8 +40,22 @@ export default function Home(props: Props) {
       data: JSON.parse(props.events) as IEvent[],
       pagination: props.pagination
     } : undefined,
-    enabled: !props.events || !!search
+    enabled: isSuperAdmin && (!props.events || !!search),
   });
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col">
+        <Navbar hideEventNav />
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
+          <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">Coming Soon</h1>
+          <p className="text-gray-400 text-lg max-w-md">
+            Something exciting is on the way. Stay tuned.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) return <Center h="100vh"><Spinner /></Center>;
 
@@ -65,13 +81,17 @@ export default function Home(props: Props) {
   );
 }
 
-export const getServerSideProps: GetServerSideProps<any, any> = async (
-  context
-) => {
-  // Return empty props to bypass build-time DB connection issues
-  // Data will be fetched on client side
+export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
+  const session = await getSession(context);
+  const user = (session?.user as any) ?? {};
+  const isSuperAdmin =
+    user.role === 'super admin' ||
+    user.name?.toLowerCase() === 'super admin' ||
+    user.fullName?.toLowerCase() === 'super admin';
+
   return {
     props: {
+      isSuperAdmin,
       events: null,
       pagination: {
         total: 0,
