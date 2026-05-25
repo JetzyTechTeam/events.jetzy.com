@@ -112,6 +112,58 @@ export default function HostedEvents({ event }: Props) {
 	const canManage = isAdmin || isOwner
 	const isDatePollActive = !!(clonedEvent?.datePoll?.isActive && clonedEvent?.datePoll?.options?.length)
 
+	// Cancel-own-booking flow (free events only)
+	// Treat event as free if isPaid is not true OR every ticket price is 0
+	const isFreeEvent = !!clonedEvent && (
+		clonedEvent.isPaid !== true ||
+		(Array.isArray(clonedEvent.tickets) && clonedEvent.tickets.length > 0 && clonedEvent.tickets.every((t: any) => Number(t?.price) === 0))
+	)
+	const { data: myBookingResp, refetch: refetchMyBooking } = useQuery({
+		queryKey: ["myBookingForEvent", clonedEvent?._id?.toString()],
+		queryFn: () => axios.get(`/api/bookings/my-for-event?eventId=${clonedEvent?._id}`).then((r) => r.data),
+		enabled: !!session && !!clonedEvent?._id && isFreeEvent,
+	})
+	const myBooking = myBookingResp?.data ?? null
+	const [isCancelling, setIsCancelling] = useState(false)
+
+	const handleCancelBooking = async () => {
+		// Not logged in → push to login with callback
+		if (!session) {
+			toast({ title: "Please log in to cancel your booking", status: "info" })
+			const cb = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/"
+			router.push(`/login?_cb=${encodeURIComponent(cb)}`)
+			return
+		}
+
+		// Logged in but no matching booking
+		if (!myBooking?.bookingRef) {
+			toast({
+				title: "No active booking found",
+				description:
+					"If you booked as a guest, use the cancel link in your confirmation email.",
+				status: "warning",
+			})
+			return
+		}
+
+		if (!window.confirm("Cancel your booking for this event? This cannot be undone.")) return
+
+		setIsCancelling(true)
+		try {
+			const res = await axios.post("/api/bookings/cancel", { bookingRef: myBooking.bookingRef })
+			if (res.data?.status) {
+				toast({ title: "Booking cancelled", status: "success" })
+				await refetchMyBooking()
+			} else {
+				toast({ title: res.data?.message || "Cancel failed", status: "error" })
+			}
+		} catch (e: any) {
+			toast({ title: e?.response?.data?.message || "Cancel failed", status: "error" })
+		} finally {
+			setIsCancelling(false)
+		}
+	}
+
 	useEffect(() => {
 		if (typeof window !== "undefined") {
 			// Create a base share URL without the view/scrollTo parameters for the top share/QR buttons
@@ -337,6 +389,15 @@ export default function HostedEvents({ event }: Props) {
 									>
 										Get Tickets
 									</a>
+									{isFreeEvent && (
+										<button
+											onClick={handleCancelBooking}
+											disabled={isCancelling}
+											className="bg-[#7C1D1D] text-white font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+										>
+											{isCancelling ? "Cancelling..." : "Cancel Booking"}
+										</button>
+									)}
 								</div>
 							</div>
 

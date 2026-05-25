@@ -98,6 +98,7 @@ export interface IBookings extends IBaseModelProps {
 	bookingRef: string
 	eventId: Types.ObjectId
 	event: IEvent
+	bookerUserId?: Types.ObjectId
 	tickets: Array<{
 		ticketId: Types.ObjectId
 		quantity: number

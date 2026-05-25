@@ -9,6 +9,8 @@ import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
 import { Events } from "@/models/events"
 import { NextApiRequest, NextApiResponse } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
 
 type BodyParams = {
 	tickets: Array<{
@@ -85,11 +87,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const subtotal = tickets.reduce((acc, t) => acc + t.price * t.quantity, 0)
 
+		// Capture logged-in user (if any) so they can later cancel even when booking email differs
+		const session = await getServerSession(req, res, authOptions)
+		const bookerUserId = (session?.user as any)?._id || (session?.user as any)?.id
+
 		// Create confirmed booking record
 		const booking = await Bookings.create({
 			status: BookingStatus.CONFIRMED,
 			eventId,
 			bookingRef,
+			...(bookerUserId ? { bookerUserId } : {}),
 			customerName: `${user.firstName} ${user.lastName}`,
 			customerEmail: user.email,
 			customerPhone: user.phone,
