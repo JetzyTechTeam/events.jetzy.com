@@ -63,6 +63,7 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	showOnMobile?: boolean;
 	status?: 'draft' | 'published';
 	isEnded?: boolean; // UI flag to indicate if event has ended
 	questions?: ICustomQuestion[];

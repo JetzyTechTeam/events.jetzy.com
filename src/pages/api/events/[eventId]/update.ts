@@ -53,6 +53,7 @@ const schema = zod.object({
 	desc: zod.string().optional().default(''),
 	timezone: zod.string().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
+	showOnMobile: zod.boolean().optional(),
 	datePoll: zod.object({
 		isActive: zod.boolean(),
 		question: zod.string().optional(),
@@ -103,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -171,6 +172,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				status: status ?? 'published',
 				interests: interests ?? [],
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
+				showOnMobile: showOnMobile ?? false,
 				...(datePoll?.isActive && datePoll.options?.length > 0 ? {
 					datePoll: {
 						isActive: true,

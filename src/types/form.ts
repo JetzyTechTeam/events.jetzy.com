@@ -54,6 +54,7 @@ export type CreateEventFormData = {
 	feedbackFormUrl?: string
 	benefits?: string
 	locationDisclosedAfterBooking?: boolean
+	showOnMobile?: boolean
 	datePoll?: {
 		isActive: boolean
 		question?: string

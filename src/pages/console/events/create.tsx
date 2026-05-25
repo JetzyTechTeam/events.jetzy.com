@@ -82,6 +82,7 @@ const initialValues = {
   status: "published" as 'draft' | 'published',
   benefits: "",
   locationDisclosedAfterBooking: false,
+  showOnMobile: false,
   datePoll: {
     isActive: false,
     question: "",
@@ -580,6 +581,20 @@ const CreateEventPage = () => {
                       isChecked={values.locationDisclosedAfterBooking}
                       colorScheme="orange"
                       onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)}
+                    />
+                  </Flex>
+                  <Flex align="center" justifyContent="space-between" mb="4">
+                    <Flex gap="3" alignItems="center">
+                      <Box>
+                        <Text color="gray.400">Show on Mobile</Text>
+                        <Text fontSize="xs" color="gray.600">Display this event in the Jetzy mobile app</Text>
+                      </Box>
+                    </Flex>
+                    <Switch
+                      name="showOnMobile"
+                      isChecked={values.showOnMobile}
+                      colorScheme="orange"
+                      onChange={() => setFieldValue("showOnMobile", !values.showOnMobile)}
                     />
                   </Flex>
                   <Flex align="center" justifyContent="space-between">
