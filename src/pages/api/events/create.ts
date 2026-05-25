@@ -63,6 +63,9 @@ const schema = zod.object({
 	privacy: zod.enum(['public', 'private']).optional().default('public'),
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
+	showOnMobile: zod.boolean().optional().default(false),
+	status: zod.enum(['draft', 'published']).optional().default('published'),
+	interests: zod.array(zod.string()).optional().default([]),
 	datePoll: zod.object({
 		isActive: zod.boolean(),
 		question: zod.string().optional(),
@@ -90,7 +93,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, datePoll } = params
+		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -164,6 +167,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			})),
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
+			showOnMobile: showOnMobile ?? false,
+			status: status ?? 'published',
+			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0
 				? {
 					isActive: true,

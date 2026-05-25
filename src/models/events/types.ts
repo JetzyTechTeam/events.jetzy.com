@@ -63,6 +63,7 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	showOnMobile?: boolean;
 	status?: 'draft' | 'published';
 	isEnded?: boolean; // UI flag to indicate if event has ended
 	questions?: ICustomQuestion[];
@@ -98,6 +99,7 @@ export interface IBookings extends IBaseModelProps {
 	bookingRef: string
 	eventId: Types.ObjectId
 	event: IEvent
+	bookerUserId?: Types.ObjectId
 	tickets: Array<{
 		ticketId: Types.ObjectId
 		quantity: number

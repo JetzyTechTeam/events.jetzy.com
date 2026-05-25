@@ -25,6 +25,11 @@ const bookingSchema = new Schema<IBookings>(
 			required: true,
 			index: true,
 		},
+		bookerUserId: {
+			type: Schema.Types.ObjectId,
+			required: false,
+			index: true,
+		},
 		tickets: [
 			{
 				ticketId: {

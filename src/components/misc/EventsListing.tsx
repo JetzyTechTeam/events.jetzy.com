@@ -37,6 +37,7 @@ import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
+import Link from "next/link";
 
 
 dayjs.extend(utc)
@@ -58,7 +59,13 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 
   const { data: session } = useSession();
   // @ts-ignore
-  const isAdmin = session?.user?.role === "admin";
+  const role = session?.user?.role;
+  // @ts-ignore
+  const userName = session?.user?.name || session?.user?.fullName;
+  const isAdmin =
+    role === "admin" ||
+    role === "super admin" ||
+    userName?.toLowerCase() === "super admin";
 
   const totalTickets = totals?.data?.totalTickets ?? 0;
   const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
@@ -131,6 +138,29 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
             <Text fontSize="3xl">🖼️</Text>
             <Text fontSize="sm" color="gray.500">No image</Text>
           </Box>
+        )}
+        {/* Edit button for admin */}
+        {isAdmin && (
+          <Link
+            href={`/console/events/${event._id}/update`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: "absolute", top: "16px", right: "16px", zIndex: 3 }}
+          >
+            <Box
+              bg="#3E3E3E"
+              _hover={{ bg: "#4E4E4E" }}
+              px="3"
+              py="1"
+              rounded="md"
+              fontSize="xs"
+              fontWeight="semibold"
+              color="white"
+              border="1px"
+              borderColor="whiteAlpha.300"
+            >
+              Edit
+            </Box>
+          </Link>
         )}
         {/* Benefits Overlay */}
         {event.benefits && event.benefits.trim() !== "" && (
