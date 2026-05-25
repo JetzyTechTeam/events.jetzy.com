@@ -28,7 +28,8 @@ export default function ConsoleDashboard() {
 	const { data: session } = useSession();
 
 	// @ts-ignore
-	const admin = session?.user?.role === "admin";
+	const role = session?.user?.role;
+	const admin = role === "admin" || role === "super admin";
 
 	React.useEffect(() => {
 		// Detect mobile flow coordinates from session storage

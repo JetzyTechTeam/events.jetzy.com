@@ -17,6 +17,8 @@ import Link from "next/link"
 import { useRouter } from "next/router"
 import React, { useRef, useState } from "react"
 import { toast } from "react-toastify"
+import { useQuery } from "@tanstack/react-query"
+import axios from "axios"
 
 type Pagination = {
 	total: number
@@ -99,6 +101,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 	const cancelRef = useRef(null)
 	const [selectedEvent, setSelectedEvent] = useState<IEvent | null>(null)
 
+	const { data: totals } = useQuery({
+		queryKey: ["eventTotals", event._id],
+		queryFn: () => axios.get(`/api/events/${event._id}/totals`).then((r) => r.data),
+	})
+	const totalTickets = totals?.totalTickets ?? 0
+	const uniqueGuests = totals?.uniqueGuests ?? 0
+
 	const handleRemove = (item: IEvent) => {
 		setLoading(true)
 		dispatcher(DeleteEventThunk({ id: item._id.toString() }))
@@ -145,6 +154,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 										DRAFT
 									</span>
 								)}
+								{(event as any).privacy === 'private' && (
+									<span className="inline-block mt-1 ml-2 px-2 py-1 bg-[#7C1D1D] text-white border border-red-500/40 text-xs rounded-full font-medium">
+										PRIVATE
+									</span>
+								)}
 							</div>
 						</div>
 
@@ -172,7 +186,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							<Text className="flex items-center gap-x-2 text-[#A7A7A7]">
 								{event.locationDisclosedAfterBooking ? (
 									<>
-										<span>📍</span> 
+										<span>📍</span>
 										<span>
 											Disclosed after registration <span className="text-xs text-gray-500 ml-1">(Actual: {event.location})</span>
 										</span>
@@ -184,6 +198,17 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 									</>
 								)}
 							</Text>
+						</div>
+
+						<div className="flex items-center gap-x-4 text-sm text-gray-300">
+							<span className="flex items-center gap-1">
+								<span>🎟️</span>
+								<span>{totalTickets} tickets</span>
+							</span>
+							<span className="flex items-center gap-1">
+								<span>👥</span>
+								<span>{uniqueGuests} guests</span>
+							</span>
 						</div>
 
 						<div className="flex items-center gap-x-3">

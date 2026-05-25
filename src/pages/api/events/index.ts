@@ -4,13 +4,24 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
 		await ensureDbConnected()
 
+		const session = await getServerSession(req, res, authOptions)
+		const role = (session?.user as any)?.role
+		const name = (session?.user as any)?.name || (session?.user as any)?.fullName
+		const isAdmin =
+			role === "admin" ||
+			role === "super admin" ||
+			name?.toLowerCase() === "super admin"
+
 		const search = (req.query.search as string)?.trim() || ""
-		const filter: any = { isDeleted: false, status: { $ne: 'draft' }, privacy: { $ne: 'private' } }
+		const filter: any = { isDeleted: false, status: { $ne: 'draft' } }
+		if (!isAdmin) filter.privacy = { $ne: 'private' }
 		if (search) {
 			const orClauses: any[] = [
 				{ name: { $regex: search, $options: "i" } },
