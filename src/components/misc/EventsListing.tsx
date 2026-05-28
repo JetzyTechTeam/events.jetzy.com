@@ -301,7 +301,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, 
         setLocationState("ASKING");
       }
     } else {
-      setLocationState("ASKING");
+      setLocationState("SKIPPED");
     }
   }, []);
 
