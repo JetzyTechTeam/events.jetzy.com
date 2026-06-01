@@ -620,9 +620,6 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = 
 				<div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
 					<div className="text-center sm:text-left">
 						<h2 className="text-xl sm:text-2xl font-bold text-white">Feed</h2>
-						<p className="text-[#bbbbbb] text-sm sm:text-base">
-							Share photos and videos.
-						</p>
 					</div>
 
 					{/* Admin Share Feed Section */}
@@ -694,9 +691,8 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = 
 						</Button>
 					</Flex>
 					<Divider my={3} borderColor="#434343" />
-					<Flex justify="space-between" px={2}>
+					<Flex justify="space-between" align="center" px={2} gap={3} wrap="wrap">
 						<Button
-							flex="1"
 							variant="ghost"
 							leftIcon={<Icon as={FiPlus} color="white" boxSize={6} />}
 							color="#bbbbbb"
@@ -705,6 +701,9 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = 
 						>
 							Create Post
 						</Button>
+						<Text color="#bbbbbb" fontSize="sm">
+							Share photos and videos
+						</Text>
 					</Flex>
 				</Box>
 

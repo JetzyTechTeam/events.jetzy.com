@@ -17,7 +17,9 @@
       "Bash(grep -v \"^--$\")",
       "Bash(grep -v \"<MetricsCard$\")",
       "Bash(awk 'NR==1083' \"d:/Jetzy/events-jetzy-com/src/pages/console/analytics.tsx\")",
-      "Bash(grep -E \"\\\\.\\(ts|tsx|html\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|tsx|html\\)$\")",
+      "Bash(git checkout *)",
+      "Bash(git cherry-pick *)"
     ]
   }
 }

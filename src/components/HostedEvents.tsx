@@ -463,18 +463,21 @@ export default function HostedEvents({ event }: Props) {
 								{/* Discussion/Chat Section */}
 								<Box id="discussion-chat" mb={10}>
 									<Flex justify="space-between" align="center" mb={4} pl={2}>
-										<Flex
-											align="center"
-											gap={2}
+										<Box
 											cursor="pointer"
 											onClick={() => setIsChatExpanded((v) => !v)}
 											role="button"
 											aria-expanded={isChatExpanded}
 											aria-controls="discussion-chat-body"
 										>
-											<Heading size="md" color="white">Discussion</Heading>
-											<Icon as={isChatExpanded ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
-										</Flex>
+											<Flex align="center" gap={2}>
+												<Heading size="md" color="white">Discussion</Heading>
+												<Icon as={isChatExpanded ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
+											</Flex>
+											<Text color="#bbbbbb" fontSize="sm" mt={1}>
+												Chat with other attendees.
+											</Text>
+										</Box>
 										{canManage && (
 											<Flex gap={3}>
 												<Button
