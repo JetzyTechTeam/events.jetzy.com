@@ -28,7 +28,7 @@ dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
 import DOMPurify from "dompurify";
-import { FiShare2 } from "react-icons/fi"
+import { FiShare2, FiChevronDown, FiChevronUp } from "react-icons/fi"
 
 const settings = {
 	infinite: true,
@@ -69,6 +69,7 @@ export default function HostedEvents({ event }: Props) {
 	const [inviteMessage, setInviteMessage] = useState("")
 	const [isSendingInvite, setIsSendingInvite] = useState(false)
 	const [isSearching, setIsSearching] = useState(false)
+	const [isChatExpanded, setIsChatExpanded] = useState(false)
 
 	useEffect(() => {
 		const q = inviteSearch.trim()
@@ -182,6 +183,7 @@ export default function HostedEvents({ event }: Props) {
 				}, 1000);
 			}
 			if (router.query.view === "discussion") {
+				setIsChatExpanded(true)
 				setTimeout(() => {
 					document.getElementById("discussion-chat")?.scrollIntoView({ behavior: "smooth" })
 				}, 1000)
@@ -461,7 +463,18 @@ export default function HostedEvents({ event }: Props) {
 								{/* Discussion/Chat Section */}
 								<Box id="discussion-chat" mb={10}>
 									<Flex justify="space-between" align="center" mb={4} pl={2}>
-										<Heading size="md" color="white">Discussion</Heading>
+										<Flex
+											align="center"
+											gap={2}
+											cursor="pointer"
+											onClick={() => setIsChatExpanded((v) => !v)}
+											role="button"
+											aria-expanded={isChatExpanded}
+											aria-controls="discussion-chat-body"
+										>
+											<Heading size="md" color="white">Discussion</Heading>
+											<Icon as={isChatExpanded ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
+										</Flex>
 										{canManage && (
 											<Flex gap={3}>
 												<Button
@@ -492,39 +505,44 @@ export default function HostedEvents({ event }: Props) {
 											</Flex>
 										)}
 									</Flex>
-									{session ? (
-										<JetzyChatIntegration
-											eventId={clonedEvent._id.toString()}
-											eventName={stripHtml(clonedEvent.name)}
-										/>
-									) : (
-										<Box p={8} textAlign="center" bg="#2b2b2b" borderRadius="lg" border="1px solid" borderColor="#434343">
-											<Text fontSize="lg" fontWeight="bold" color="white" mb={2}>
-												Login Required
-											</Text>
-											<Text color="#bbbbbb" mb={4}>
-												Please login to access the discussion.
-											</Text>
-											<Button
-												onClick={() => {
-													router.push(`${ROUTES?.login || '/login'}?_cb=${encodeURIComponent(router.asPath)}`)
-												}}
-												bg="#F79432"
-												color="black"
-												_hover={{ bg: "#e58220" }}
-											>
-												Login
-											</Button>
+									{isChatExpanded && (
+										<Box id="discussion-chat-body">
+											{session ? (
+												<JetzyChatIntegration
+													eventId={clonedEvent._id.toString()}
+													eventName={stripHtml(clonedEvent.name)}
+												/>
+											) : (
+												<Box p={8} textAlign="center" bg="#2b2b2b" borderRadius="lg" border="1px solid" borderColor="#434343">
+													<Text fontSize="lg" fontWeight="bold" color="white" mb={2}>
+														Login Required
+													</Text>
+													<Text color="#bbbbbb" mb={4}>
+														Please login to access the discussion.
+													</Text>
+													<Button
+														onClick={() => {
+															router.push(`${ROUTES?.login || '/login'}?_cb=${encodeURIComponent(router.asPath)}`)
+														}}
+														bg="#F79432"
+														color="black"
+														_hover={{ bg: "#e58220" }}
+													>
+														Login
+													</Button>
+												</Box>
+											)}
 										</Box>
 									)}
 								</Box>
 
-								{/* Feed Section (Formerly DiscussionBoard) */}
-								<Box id="discussion-board">
-									<DiscussionBoard eventId={clonedEvent._id.toString()} canManage={canManage} />
-								</Box>
 							</Box>
 							</div>
+
+							{/* Feed Section (Formerly DiscussionBoard) */}
+							<Box id="discussion-board">
+								<DiscussionBoard eventId={clonedEvent._id.toString()} canManage={canManage} />
+							</Box>
 						</div>
 					)}
 					</div>

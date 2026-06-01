@@ -621,7 +621,7 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = 
 					<div className="text-center sm:text-left">
 						<h2 className="text-xl sm:text-2xl font-bold text-white">Feed</h2>
 						<p className="text-[#bbbbbb] text-sm sm:text-base">
-							Join the conversation.
+							Share photos and videos.
 						</p>
 					</div>
 
@@ -687,8 +687,8 @@ const DiscussionBoard: React.FC<DiscussionBoardProps> = ({ eventId, canManage = 
 						>
 							<Text isTruncated>
 								{(session?.user as any)?.name || (session?.user as any)?.fullName
-									? `What's on your mind, ${((session?.user as any)?.name || (session?.user as any)?.fullName).split(' ')[0]}?`
-									: "What's on your mind? Login to join the conversation."
+									? `Share photos and videos, ${((session?.user as any)?.name || (session?.user as any)?.fullName).split(' ')[0]}`
+									: "Share photos and videos. Login to join the conversation."
 								}
 							</Text>
 						</Button>
