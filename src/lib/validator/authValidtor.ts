@@ -13,6 +13,31 @@ export const loginValidatorScheme = yup.object().shape({
     .min(8, "Passowrd must be at least 8 characters long"),
 })
 
+export const startSignupValidation = yup.object().shape({
+  name: yup.string().trim().required("Name is required."),
+  email: yup.string().email("Email must be a valid email address.").required("Email is required"),
+  acceptedTerms: yup
+    .boolean()
+    .oneOf([true], "You must accept the terms and conditions.")
+    .required("You must accept the terms and conditions."),
+})
+
+export const completeSignupValidation = yup.object().shape({
+  password: yup
+    .string()
+    .required("Password is required")
+    .trim("Password must not have empty space")
+    .matches(/\w*[a-z]\w*/, "Password must have a small letter")
+    .matches(/\w*[A-Z]\w*/, "Password must have a capital letter")
+    .matches(/\d/, "Password must have a number")
+    .matches(/[!@#$%^&*()\-_"=+{}; :,<.>]/, "Password must have a special character")
+    .min(8, "Passowrd must be at least 8 characters long"),
+  confirmPassword: yup
+    .string()
+    .required("Confirm password is required")
+    .oneOf([yup.ref("password")], "Password did not match."),
+})
+
 export const signupValidation = yup.object().shape({
   firstName: yup.string().required("First name is required."),
   lastName: yup.string().required("Last name is required."),

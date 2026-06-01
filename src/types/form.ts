@@ -16,6 +16,12 @@ export type SignUpFormData = {
 	placeId?: string
 }
 
+export type StartSignupFormData = {
+	name: string
+	email: string
+	acceptedTerms: boolean
+}
+
 export type SignInFormData = {
 	email: string
 	password: string

@@ -13,7 +13,8 @@ export const usersSchema = new Schema(
 
 		lastName: {
 			type: String,
-			required: true,
+			required: false,
+			default: "",
 		},
 		email: {
 			type: String,
@@ -70,6 +71,20 @@ export const usersSchema = new Schema(
 			required: false,
 		},
 		passwordResetTokenExpiresAt: {
+			type: Date,
+			required: false,
+		},
+		// Email verification (signup verify-link flow)
+		emailVerified: {
+			type: Boolean,
+			default: true,
+		},
+		verifyToken: {
+			type: String,
+			required: false,
+			index: true,
+		},
+		verifyTokenExpiresAt: {
 			type: Date,
 			required: false,
 		},

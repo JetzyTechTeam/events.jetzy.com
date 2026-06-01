@@ -39,11 +39,15 @@ export default function TermsPage() {
 						In order to use certain features of the Site or Services, you must register for an account (&quot;Account&quot;) and provide certain information about yourself as prompted by the account registration form. You represent and warrant that: (a) all required registration information you submit is truthful and accurate; (b) you will maintain the accuracy of such information. You may delete your Account at any time, for any reason, by following the instructions on the Site or Services or uninstalling the App. You may not have more than one Account. You agree not to create an Account or use the Site or Services if you have been previously removed by us or banned from any of the Services. Company reserves the right in its sole discretion to suspend or terminate your Account and refuse any and all current or future use of the Site or Services (or any portion thereof) at any time for any reason.
 					</p>
 					<p>
-						<span className="font-semibold text-white block mb-1">1.2 Account Responsibilities.</span>
+						<span className="font-semibold text-white block mb-1">1.2 Jetzy Membership.</span>
+						By creating an Account, you also agree to become a Jetzy member and to receive Jetzy-related communications (including event updates, product news, and marketing emails). You may opt out of marketing emails at any time via the unsubscribe link in any email; transactional and account-related messages will continue to be sent.
+					</p>
+					<p>
+						<span className="font-semibold text-white block mb-1">1.3 Account Responsibilities.</span>
 						You are responsible for maintaining the confidentiality of your Account login information and are fully responsible for all activities that occur under your Account. You agree to immediately notify Company at contact@jetzyapp.com of any unauthorized use, or suspected unauthorized use of your Account or any other breach of security. Company cannot and will not be liable for any loss or damage arising from your failure to comply with the above requirements.
 					</p>
 					<p>
-						<span className="font-semibold text-white block mb-1">1.3 Social Networking Sites.</span>
+						<span className="font-semibold text-white block mb-1">1.4 Social Networking Sites.</span>
 						The Services may allow users to connect with various SNSs. By connecting your SNS account, you represent that you are entitled to grant us access to your SNS account without breach by you of any SNS terms and conditions and without obligating us to pay any fees or making us subject to any usage limitations.
 					</p>
 

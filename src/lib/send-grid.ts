@@ -1709,7 +1709,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       </div>
 
       <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-        Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #F79432; text-decoration: none;">marketing@jetzy.com</a>
+        Questions? Contact us at <a href="mailto:contact@jetzyapp.com" style="color: #F79432; text-decoration: none;">contact@jetzyapp.com</a>
         <br />
         &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
       </p>
@@ -1720,8 +1720,8 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
     await sgMail.send({
       to: email,
       from: {
-        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
-        name: "Jetzy"
+        email: (process.env.SENDGRID_FROM_WELCOME as string)?.trim(),
+        name: "Jetzy Life"
       },
       subject: "Welcome to Jetzy - Your Account is Ready!",
       html: wrapHtml(html),
@@ -1731,6 +1731,74 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
   } catch (error) {
     console.error("❌ Failed to send welcome email:", error);
     throw error;
+  }
+}
+
+export const sendVerificationEmail = async ({
+  email,
+  firstName,
+  token,
+}: {
+  email: string
+  firstName?: string
+  token: string
+}) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  const verifyUrl = `${baseUrl}/auth/verify-signup?token=${encodeURIComponent(token)}`
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <img src="https://events.jetzy.com/favicon.ico" width="50" height="50" alt="Jetzy Logo" />
+      </div>
+      <h1 style="color: #333; text-align: center;">Verify your email</h1>
+
+      <p style="font-size: 16px; color: #555; line-height: 1.6;">
+        Hi ${firstName || "there"},
+      </p>
+
+      <p style="font-size: 16px; color: #555; line-height: 1.6;">
+        Tap the button below to verify your email and finish creating your Jetzy account. You'll choose a password on the next screen.
+      </p>
+
+      <div style="text-align: center; margin: 35px 0;">
+        <a href="${verifyUrl}" style="background-color: #F79432; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 16px;">
+          Verify Email
+        </a>
+      </div>
+
+      <p style="font-size: 14px; color: #777; line-height: 1.6;">
+        Or paste this link into your browser:<br/>
+        <a href="${verifyUrl}" style="color: #F79432; word-break: break-all;">${verifyUrl}</a>
+      </p>
+
+      <p style="font-size: 13px; color: #999; line-height: 1.6; margin-top: 20px;">
+        If you didn't request this, you can safely ignore this email.
+      </p>
+
+      <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+        Questions? Contact us at <a href="mailto:contact@jetzyapp.com" style="color: #F79432; text-decoration: none;">contact@jetzyapp.com</a>
+        <br />
+        &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+      </p>
+    </div>
+  `
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: (process.env.SENDGRID_FROM_WELCOME as string)?.trim(),
+        name: "Jetzy Life",
+      },
+      subject: "Verify your email — Jetzy Life",
+      html: wrapHtml(html),
+      text: `Hi ${firstName || "there"},\n\nVerify your email and finish creating your Jetzy account:\n${verifyUrl}\n\nIf you didn't request this, ignore this email.`,
+    })
+    console.log(`✅ Verification email sent to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send verification email:", error)
+    throw error
   }
 }
 

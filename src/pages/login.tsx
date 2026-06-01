@@ -365,19 +365,6 @@ export default function LoginPage() {
 									</div>
 								</div>
 
-								<div className="flex items-center">
-									<Field
-										id="isJetzyMember"
-										name="isJetzyMember"
-										type="checkbox"
-										className="h-4 w-4 text-app focus:ring-app border-gray-300 rounded"
-									/>
-									<label htmlFor="isJetzyMember" className="ml-2 block text-sm text-gray-300">
-										I am a Jetzy member
-									</label>
-								</div>
-
-
 								<div>
 									<button
 										type="submit"
@@ -387,15 +374,8 @@ export default function LoginPage() {
 									</button>
 								</div>
 
-								{/* Forgot Password */}
-								<div className="text-center">
-									<Link href="/auth/forgot-password" className="text-sm text-gray-400 hover:text-[#F79432] transition-colors">
-										Forgot your password?
-									</Link>
-								</div>
-
 								{/* OTP Login Option */}
-								<div className="text-center pt-1">
+								<div className="text-center">
 									<button
 										type="button"
 										onClick={() => {
@@ -406,10 +386,18 @@ export default function LoginPage() {
 												navigation.push('/auth/login-otp');
 											}
 										}}
-										className="text-sm text-gray-400 hover:text-[#F79432] transition-colors"
+										className="inline-flex items-center justify-center gap-2 w-full rounded-md border border-app/60 bg-app/10 px-3 py-2 text-sm font-semibold text-app hover:bg-app/20 transition-colors"
 									>
-										✉️ Send me a login code instead
+										<span aria-hidden="true">✉️</span>
+										Send me a login code instead
 									</button>
+								</div>
+
+								{/* Forgot Password */}
+								<div className="text-center pt-1">
+									<Link href="/auth/forgot-password" className="text-sm text-gray-400 hover:text-[#F79432] transition-colors">
+										Forgot your password?
+									</Link>
 								</div>
 
 							</Form>

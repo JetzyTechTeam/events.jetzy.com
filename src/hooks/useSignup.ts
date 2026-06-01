@@ -2,7 +2,7 @@ import { ROUTES } from "@Jetzy/configs/routes"
 import { signupValidation } from "@Jetzy/lib/validator/authValidtor"
 import { CreateUserAccountThunk, getAuthState } from "@Jetzy/redux/reducers/authSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
-import { SignUpFormData } from "@Jetzy/types"
+import { SignUpFormData, StartSignupFormData } from "@Jetzy/types"
 import { useRouter } from "next/router"
 import React from "react"
 import { auth } from "@/configs/firebase"
@@ -117,6 +117,24 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
         }
     };
 
+    const handleStartSignup = async (values: StartSignupFormData) => {
+        try {
+            const res = await fetch("/api/auth/start-signup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: values.name?.trim(),
+                    email: values.email?.trim(),
+                    acceptedTerms: values.acceptedTerms,
+                }),
+            })
+            const json = await res.json().catch(() => ({}))
+            return { ok: res.ok, status: res.status, code: json?.code, message: json?.message }
+        } catch (err: any) {
+            return { ok: false, status: 0, code: "NETWORK_ERROR", message: err?.message || "Network error" }
+        }
+    }
+
     const handleEmailSignup = async (values: SignUpFormData & { skipToast?: boolean }) => {
         const { skipToast, ...rest } = values;
         const sanitized = {
@@ -139,6 +157,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
         handleGoogleLogin,
         handleAppleLogin,
         handleEmailSignup,
+        handleStartSignup,
         status,
         session,
         _cb
