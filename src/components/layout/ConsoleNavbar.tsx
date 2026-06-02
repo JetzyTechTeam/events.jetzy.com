@@ -68,7 +68,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	]
 
 	const filteredNavigation = isSuperAdmin
-		? [{ name: "All Events", href: "/" }, ...navigation.filter((item) => item.name !== Pages.Dasshboard)]
+		? navigation.filter((item) => item.name !== Pages.Dasshboard)
 		: [{ name: "Share Profile", href: profileHref }]
 
 	return (

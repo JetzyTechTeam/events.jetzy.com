@@ -89,6 +89,11 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
     user.name?.toLowerCase() === 'super admin' ||
     user.fullName?.toLowerCase() === 'super admin';
 
+  // Admins have their own console; keep them off the public all-events home page.
+  if (isSuperAdmin) {
+    return { redirect: { destination: "/console/events", permanent: false } };
+  }
+
   return {
     props: {
       isSuperAdmin,

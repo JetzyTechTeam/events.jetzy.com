@@ -135,3 +135,18 @@ export interface IReferralCode extends IBaseModelProps {
 	createdBy?: Types.ObjectId
 	isDeleted: boolean
 }
+
+export interface IBlast extends IBaseModelProps {
+	eventId: Types.ObjectId
+	subject: string
+	message: string
+	targetType: "all" | "bookings" | "invitations"
+	status: string
+	emailType: "custom" | "availability"
+	recipientCount: number
+	succeededCount: number
+	failedCount: number
+	sentBy?: Types.ObjectId
+	sentAt: Date
+	isDeleted: boolean
+}

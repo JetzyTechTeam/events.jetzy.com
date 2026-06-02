@@ -60,6 +60,9 @@ Fields: bookingRef (unique), eventId, tickets[], status (pending/approved/confir
 ### `src/models/events/referral-codes.ts` — IReferralCode
 Fields: eventId, code (unique, uppercase), discountPercentage (0-100), commissionPercentage (0-100), isActive, usageCount, maxUses, createdBy, isDeleted
 
+### `src/models/events/blast.ts` — IBlast
+Blast email history (Luma-style Blasts tab). Fields: eventId, subject, message, targetType (all/bookings/invitations), status, emailType (custom/availability), recipientCount, succeededCount, failedCount, sentBy, sentAt, isDeleted. Created automatically by `/api/send-blast` after a successful send.
+
 ### `src/models/events/discussion-posts.ts` — IDiscussionPost
 Fields: eventId, userId, title, content, images[], attachments[], isPinned, isLocked, tags[], reactions (like/helpful arrays), viewCount, viewedBy[], commentCount, lastActivityAt, isReported
 
@@ -184,7 +187,9 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 ### Messaging
 | Method | Route | Access |
 |--------|-------|--------|
-| POST | `/api/send-blast` | admin OR owner |
+| POST | `/api/send-blast` | admin OR owner | (persists a Blast history record on success) |
+| GET | `/api/events/[eventId]/blasts` | admin OR owner |
+| PATCH/DELETE | `/api/events/[eventId]/blasts/[blastId]` | admin OR owner | (PATCH edits stored record; DELETE soft-deletes) |
 | POST | `/api/send-invites` | — |
 | POST | `/api/send-email` | — |
 | POST | `/api/send-thank-you` | — |
@@ -216,7 +221,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | Events list | `src/pages/console/events/index.tsx` | admin=all, user=own (ownerId filter) |
 | Create event | `src/pages/console/events/create.tsx` | authenticated |
 | Edit event | `src/pages/console/events/[eventId]/update.tsx` | admin OR owner |
-| Manage event | `src/pages/console/events/[eventId]/manage.tsx` | admin OR owner (about/guests/waitlist/referrals/discussion) |
+| Manage event | `src/pages/console/events/[eventId]/manage.tsx` | admin OR owner. Tabs: Overview, Guests, Referral Codes, Custom Questions, Blasts (composer + sent history w/ edit/delete; "Advanced options" opens full SendBlastModal) |
 | Check-in | `src/pages/console/events/[eventId]/check-in.tsx` | admin OR owner |
 | Event analytics | `src/pages/console/events/[eventId]/analytics.tsx` | admin only — Overview tab (existing metrics) + Journey tab (funnel/heatmap/dwell/top targets) |
 | Ticket mgmt | `src/pages/console/events/[eventId]/tickets.tsx` | — |

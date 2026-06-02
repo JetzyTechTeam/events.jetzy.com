@@ -201,6 +201,16 @@ export default function Manage({ event }: any) {
 						>
 							Custom Questions
 						</Tab>
+						<Tab
+							fontWeight="bold"
+							color="#9C9C9C"
+							_selected={{
+								color: "#F79432",
+								borderBottom: "2px solid #F79432",
+							}}
+						>
+							Blasts
+						</Tab>
 					</TabList>
 					<TabPanels>
 						<TabPanel>
@@ -365,6 +375,11 @@ export default function Manage({ event }: any) {
 								<CustomQuestionsManager event={event} />
 							</div>
 						</TabPanel>
+						<TabPanel>
+							<div className="bg-[#181818] rounded-xl p-3">
+								<BlastsManager event={event} onOpenAdvanced={() => setSendBlastModal(true)} />
+							</div>
+						</TabPanel>
 					</TabPanels>
 				</Tabs>
 			</ConsoleLayout>
@@ -375,19 +390,19 @@ export default function Manage({ event }: any) {
 function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlastModal: boolean; setSendBlastModal: (sendBlastModal: boolean) => void; event: any }) {
 	const [subject, setSubject] = useState("")
 	const [message, setMessage] = useState("")
-	const [status, setStatus] = useState("")
+	const [status, setStatus] = useState("all")
 	const [targetType, setTargetType] = useState("invitations")
 	const [emailType, setEmailType] = useState("custom")
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState("")
 
-	const toast = useToast()
+	const toast = useToast({ position: "top" })
 
 	useEffect(() => {
 		if (!sendBlastModal) {
 			setSubject("")
 			setMessage("")
-			setStatus("")
+			setStatus("all")
 			setTargetType("invitations")
 			setEmailType("custom")
 			setError("")
@@ -442,7 +457,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	}
 
 	return (
-		<Modal isOpen={sendBlastModal} onClose={() => setSendBlastModal(false)} isCentered size="xl">
+		<Modal isOpen={sendBlastModal} onClose={() => setSendBlastModal(false)} isCentered size="xl" scrollBehavior="inside">
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
 				<ModalHeader>Send a Blast</ModalHeader>
@@ -452,9 +467,12 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						<Text fontWeight="bold">Target Audience</Text>
 						<Select
 							mb={4}
-							placeholder="Select target audience"
 							value={targetType}
-							onChange={(e) => setTargetType(e.target.value)}
+							onChange={(e) => {
+								setTargetType(e.target.value)
+								// Reset status to "All" — valid first option in every target branch.
+								setStatus("all")
+							}}
 							isRequired
 							bg="#090C10"
 							borderColor="#444444"
@@ -470,6 +488,9 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 								borderColor: "#666",
 							}}
 						>
+							<option style={{ backgroundColor: "#090C10", color: "white" }} value="all">
+								All
+							</option>
 							<option style={{ backgroundColor: "#090C10", color: "white" }} value="invitations">
 								Event Invitations
 							</option>
@@ -481,7 +502,6 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						<Text fontWeight="bold">Email Type</Text>
 						<Select
 							mb={4}
-							placeholder="Select email type"
 							value={emailType}
 							onChange={(e) => setEmailType(e.target.value)}
 							isRequired
@@ -509,7 +529,6 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						<Text fontWeight="bold">Status</Text>
 						<Select
 							mb={4}
-							placeholder="Select a Status"
 							value={status}
 							onChange={(e) => setStatus(e.target.value)}
 							isRequired
@@ -527,10 +546,14 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 								borderColor: "#666",
 							}}
 						>
-							{targetType === "bookings" ? (
+							{targetType === "all" ? (
+								<option style={{ backgroundColor: "#090C10", color: "white" }} value="all">
+									All
+								</option>
+							) : targetType === "bookings" ? (
 								<>
 									<option style={{ backgroundColor: "#090C10", color: "white" }} value="all">
-										All Bookings
+										All
 									</option>
 									<option style={{ backgroundColor: "#090C10", color: "white" }} value="pending">
 										Pending
@@ -544,6 +567,9 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 								</>
 							) : (
 								<>
+									<option style={{ backgroundColor: "#090C10", color: "white" }} value="all">
+										All
+									</option>
 									<option style={{ backgroundColor: "#090C10", color: "white" }} value="pending">
 										Pending
 									</option>
@@ -592,6 +618,326 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				</ModalBody>
 			</ModalContent>
 		</Modal>
+	)
+}
+
+function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: () => void }) {
+	const toast = useToast({ position: "top" })
+	const queryClient = useQueryClient()
+	const [subject, setSubject] = useState("")
+	const [message, setMessage] = useState("")
+	const [sending, setSending] = useState(false)
+
+	const [editing, setEditing] = useState<any | null>(null)
+	const [editSubject, setEditSubject] = useState("")
+	const [editMessage, setEditMessage] = useState("")
+	const [savingEdit, setSavingEdit] = useState(false)
+
+	// Confirm modals (replace native window.confirm)
+	const [pendingResend, setPendingResend] = useState<{ blast: any; subject: string; message: string } | null>(null)
+	const [resending, setResending] = useState(false)
+	const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
+	const [deleting, setDeleting] = useState(false)
+
+	const { data: blasts = [], isLoading } = useQuery({
+		queryKey: ["blasts", event._id],
+		queryFn: async () => {
+			const res = await axios.get(`/api/events/${event._id}/blasts`)
+			return res.data?.data || []
+		},
+	})
+
+	const refresh = () => queryClient.invalidateQueries({ queryKey: ["blasts", event._id] })
+
+	// Client-side pagination for the Sent history
+	const PAGE_SIZE = 5
+	const [page, setPage] = useState(1)
+	const totalPages = Math.ceil(blasts.length / PAGE_SIZE)
+	const pagedBlasts = blasts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+	useEffect(() => {
+		// Keep page in range after deletes/refresh
+		const max = totalPages || 1
+		if (page > max) setPage(max)
+	}, [totalPages, page])
+
+	const onSend = async () => {
+		if (!message.trim()) {
+			toast({ title: "Message is required.", status: "error", duration: 3000 })
+			return
+		}
+		setSending(true)
+		try {
+			const res = await axios.post("/api/send-blast", {
+				event,
+				subject: subject.trim() || `New message in ${event.name}`,
+				message,
+				status: "all",
+				targetType: "all",
+				emailType: "custom",
+				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+			})
+			toast({
+				title: res.status === 207 ? "Partially sent" : "Blast sent!",
+				description: res.data?.message,
+				status: res.status === 207 ? "warning" : "success",
+				duration: 4000,
+			})
+			setSubject("")
+			setMessage("")
+			refresh()
+		} catch (error: any) {
+			toast({ title: "Failed to send blast.", description: error.response?.data?.error || "An unexpected error occurred.", status: "error", duration: 5000 })
+		}
+		setSending(false)
+	}
+
+	const openEdit = (b: any) => {
+		setEditing(b)
+		setEditSubject(b.subject || "")
+		setEditMessage(b.message || "")
+	}
+
+	const onSaveEdit = async () => {
+		if (!editMessage.trim()) {
+			toast({ title: "Message is required.", status: "error", duration: 3000 })
+			return
+		}
+		setSavingEdit(true)
+		try {
+			const blast = editing
+			await axios.patch(`/api/events/${event._id}/blasts/${blast._id}`, {
+				subject: editSubject,
+				message: editMessage,
+			})
+			refresh()
+			setEditing(null)
+			// Offer to resend the edited blast to the same audience (themed modal).
+			setPendingResend({ blast, subject: editSubject, message: editMessage })
+		} catch (error: any) {
+			toast({ title: "Failed to save blast.", description: error.response?.data?.message || "An unexpected error occurred.", status: "error", duration: 5000 })
+		}
+		setSavingEdit(false)
+	}
+
+	const doResend = async () => {
+		if (!pendingResend) return
+		const { blast, subject: rSubject, message: rMessage } = pendingResend
+		setResending(true)
+		try {
+			const res = await axios.post("/api/send-blast", {
+				event,
+				subject: rSubject.trim() || `New message in ${event.name}`,
+				message: rMessage,
+				status: blast.status || "all",
+				targetType: blast.targetType || "all",
+				emailType: blast.emailType || "custom",
+				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+			})
+			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
+			refresh()
+		} catch (error: any) {
+			toast({ title: "Failed to re-send blast.", description: error.response?.data?.error || "An unexpected error occurred.", status: "error", duration: 5000 })
+		}
+		setResending(false)
+		setPendingResend(null)
+	}
+
+	const doDelete = async () => {
+		if (!deleteTarget) return
+		setDeleting(true)
+		try {
+			await axios.delete(`/api/events/${event._id}/blasts/${deleteTarget._id}`)
+			toast({ title: "Blast deleted.", status: "success", duration: 2500 })
+			refresh()
+		} catch (error: any) {
+			toast({ title: "Failed to delete blast.", status: "error", duration: 4000 })
+		}
+		setDeleting(false)
+		setDeleteTarget(null)
+	}
+
+	const targetLabel = (b: any) => (b.targetType === "all" ? "All guests" : b.targetType === "bookings" ? "Bookings" : "Invitations")
+
+	return (
+		<Box>
+			{/* Composer */}
+			<Box bg="#1E1E1E" border="1px solid #434343" borderRadius="2xl" p={4} mb={6}>
+				<Input
+					placeholder="Subject (optional)"
+					value={subject}
+					onChange={(e) => setSubject(e.target.value)}
+					mb={3}
+					bg="#090C10"
+					borderColor="#444444"
+					color="white"
+					_placeholder={{ color: "gray.400" }}
+				/>
+				<Textarea
+					rows={4}
+					placeholder="Send a blast to your guests..."
+					value={message}
+					onChange={(e) => setMessage(e.target.value)}
+					mb={3}
+					bg="#090C10"
+					borderColor="#444444"
+					color="white"
+					_placeholder={{ color: "gray.400" }}
+				/>
+				<Flex justify="space-between" align="center">
+					<Text as="button" type="button" onClick={onOpenAdvanced} color="#F79432" fontSize="sm" fontWeight="bold">
+						↗ Advanced options
+					</Text>
+					<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={sending} onClick={onSend}>
+						Send to all
+					</Button>
+				</Flex>
+			</Box>
+
+			{/* Sent history */}
+			<Text fontWeight="bold" color="#9C9C9C" mb={3}>
+				Sent
+			</Text>
+			{isLoading ? (
+				<Text color="#9C9C9C">Loading…</Text>
+			) : blasts.length === 0 ? (
+				<Text color="#9C9C9C">No blasts sent yet.</Text>
+			) : (
+				<Box display="flex" flexDirection="column" gap={3}>
+					{pagedBlasts.map((b: any) => (
+						<Box key={b._id} bg="#1E1E1E" border="1px solid #434343" borderRadius="xl" p={4}>
+							<Flex justify="space-between" align="start" gap={3}>
+								<Box flex="1">
+									<Text fontWeight="bold" color="white">
+										{b.subject || "(no subject)"}
+									</Text>
+									<Text color="#B5B6B7" fontSize="sm" noOfLines={2} mt={1}>
+										{b.message}
+									</Text>
+									<Flex gap={3} mt={2} wrap="wrap" align="center">
+										<Badge colorScheme="orange">{targetLabel(b)}</Badge>
+										<Text color="#9C9C9C" fontSize="xs">
+											{b.succeededCount}/{b.recipientCount} delivered
+										</Text>
+										{b.sentAt && (
+											<Text color="#9C9C9C" fontSize="xs">
+												{DateTime.fromISO(b.sentAt).toLocaleString(DateTime.DATETIME_MED)}
+											</Text>
+										)}
+									</Flex>
+								</Box>
+								<Flex gap={2} flexShrink={0}>
+									<Button size="sm" bg="#3E3E3E" color="white" _hover={{ bg: "#4A4A4A" }} onClick={() => openEdit(b)}>
+										Edit
+									</Button>
+									<Button size="sm" bg="#351919" color="#EC5E5E" _hover={{ bg: "#451919" }} onClick={() => setDeleteTarget(b)}>
+										Delete
+									</Button>
+								</Flex>
+							</Flex>
+						</Box>
+					))}
+				</Box>
+			)}
+
+			{totalPages > 1 && (
+				<Flex align="center" justify="space-between" mt={5}>
+					<Button onClick={() => setPage((p) => p - 1)} isDisabled={page <= 1} variant="outline" colorScheme="orange" size="sm">
+						← Prev
+					</Button>
+					<Text color="#9C9C9C" fontSize="sm">
+						Page {page} of {totalPages}
+					</Text>
+					<Button onClick={() => setPage((p) => p + 1)} isDisabled={page >= totalPages} variant="outline" colorScheme="orange" size="sm">
+						Next →
+					</Button>
+				</Flex>
+			)}
+
+			{/* Edit modal */}
+			<Modal isOpen={!!editing} onClose={() => setEditing(null)} isCentered size="xl">
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white">
+					<ModalHeader>Edit Blast</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						<Text fontWeight="bold" mb={2}>
+							Subject
+						</Text>
+						<Input
+							value={editSubject}
+							onChange={(e) => setEditSubject(e.target.value)}
+							mb={4}
+							bg="#090C10"
+							borderColor="#444444"
+							color="white"
+							_placeholder={{ color: "gray.400" }}
+							placeholder="Subject (optional)"
+						/>
+						<Text fontWeight="bold" mb={2}>
+							Message
+						</Text>
+						<Textarea
+							rows={6}
+							value={editMessage}
+							onChange={(e) => setEditMessage(e.target.value)}
+							mb={4}
+							bg="#090C10"
+							borderColor="#444444"
+							color="white"
+							_placeholder={{ color: "gray.400" }}
+						/>
+						<Button w="full" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={savingEdit} onClick={onSaveEdit}>
+							Save
+						</Button>
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+
+			{/* Resend confirm modal */}
+			<Modal isOpen={!!pendingResend} onClose={() => setPendingResend(null)} isCentered>
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white">
+					<ModalHeader>Send again?</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						<Text color="#B5B6B7" mb={6}>
+							Blast saved. Would you like to send it again to the same audience?
+						</Text>
+						<Flex justify="flex-end" gap={3}>
+							<Button bg="#3E3E3E" color="white" _hover={{ bg: "#4A4A4A" }} onClick={() => setPendingResend(null)} isDisabled={resending}>
+								Skip
+							</Button>
+							<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={resending} onClick={doResend}>
+								Send again
+							</Button>
+						</Flex>
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+
+			{/* Delete confirm modal */}
+			<Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} isCentered>
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white">
+					<ModalHeader>Delete Blast</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						<Text color="#B5B6B7" mb={6}>
+							Delete this blast from history? This won&apos;t affect emails already sent.
+						</Text>
+						<Flex justify="flex-end" gap={3}>
+							<Button bg="#3E3E3E" color="white" _hover={{ bg: "#4A4A4A" }} onClick={() => setDeleteTarget(null)} isDisabled={deleting}>
+								Cancel
+							</Button>
+							<Button bg="#351919" color="#EC5E5E" _hover={{ bg: "#451919" }} isLoading={deleting} onClick={doDelete}>
+								Delete
+							</Button>
+						</Flex>
+					</ModalBody>
+				</ModalContent>
+			</Modal>
+		</Box>
 	)
 }
 

@@ -35,9 +35,14 @@ type Props = {
 }
 
 export default function EventsListing({ events, pagination, isAdmin }: Props) {
-	const initialData = JSON.parse(events) as IEvent[]
-	const [eventList, setEventList] = React.useState<IEvent[]>(initialData)
+	const [eventList, setEventList] = React.useState<IEvent[]>(() => JSON.parse(events) as IEvent[])
 	const router = useRouter()
+
+	// getServerSideProps re-runs on page navigation, but the component stays
+	// mounted — re-sync the list whenever the server sends new events.
+	React.useEffect(() => {
+		setEventList(JSON.parse(events) as IEvent[])
+	}, [events])
 
 	const handleEventRemoved = (removedEventId: string) => {
 		setEventList((prevList) => prevList.filter((event) => event._id.toString() !== removedEventId))
@@ -232,9 +237,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 					{/* IMAGE SECTION */}
 					<div className="ml-4">
-						{event?.images && event.images.length > 0 ? (
+						{(() => {
+							const firstImage = event?.images?.[0]
+							// next/image needs an absolute URL or root-relative path; guard bad/seed data ("string", "", etc.)
+							const isValidImage = typeof firstImage === "string" && (firstImage.startsWith("/") || firstImage.startsWith("http"))
+							return isValidImage ? (
 							<Image
-								src={event.images[0]}
+								src={firstImage}
 								alt={stripHtml(event.name)}
 								className={`w-[180px] h-[150px] rounded-xl object-cover ${props.isEnded ? 'opacity-60' : ''}`}
 								width={180}
@@ -245,7 +254,8 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								<span className="text-3xl">🖼️</span>
 								<span className="text-xs text-gray-500">No image</span>
 							</div>
-						)}
+							)
+						})()}
 					</div>
 				</div>
 			</div>
