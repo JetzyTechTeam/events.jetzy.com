@@ -627,6 +627,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 	const [subject, setSubject] = useState("")
 	const [message, setMessage] = useState("")
 	const [sending, setSending] = useState(false)
+	const [sendResult, setSendResult] = useState<{ type: "success" | "warning" | "error"; text: string } | null>(null)
 
 	const [editing, setEditing] = useState<any | null>(null)
 	const [editSubject, setEditSubject] = useState("")
@@ -661,9 +662,16 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 		if (page > max) setPage(max)
 	}, [totalPages, page])
 
+	// Show an inline result under the composer body; auto-dismiss after 5s.
+	const flashResult = (type: "success" | "warning" | "error", text: string) => {
+		setSendResult({ type, text })
+		setTimeout(() => setSendResult(null), 5000)
+	}
+
 	const onSend = async () => {
+		setSendResult(null)
 		if (!message.trim()) {
-			toast({ title: "Message is required.", status: "error", duration: 3000 })
+			flashResult("error", "Message is required.")
 			return
 		}
 		setSending(true)
@@ -784,6 +792,11 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 					color="white"
 					_placeholder={{ color: "gray.400" }}
 				/>
+				{sendResult && (
+					<Text fontSize="sm" mb={3} color={sendResult.type === "success" ? "#48BB78" : sendResult.type === "warning" ? "#F79432" : "#FC8181"}>
+						{sendResult.text}
+					</Text>
+				)}
 				<Flex justify="space-between" align="center">
 					<Text as="button" type="button" onClick={onOpenAdvanced} color="#F79432" fontSize="sm" fontWeight="bold">
 						↗ Advanced options
