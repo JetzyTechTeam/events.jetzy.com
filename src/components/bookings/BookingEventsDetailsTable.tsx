@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Table, Thead, Tbody, Tr, Th, Td, TableCaption, TableContainer, Flex, Button, Text, Box, Badge, Spinner } from "@chakra-ui/react"
 import { PlusCircleIcon } from "@heroicons/react/24/outline"
 
@@ -18,6 +18,12 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 	const [loading, setLoading] = useState(false)
 	const [deletingRef, setDeletingRef] = useState<string | null>(null)
 	const [localRows, setLocalRows] = useState(rows)
+
+	// Re-sync when SSR returns new rows (e.g. after applying search/filters);
+	// the component stays mounted on client navigation so useState won't reseed.
+	useEffect(() => {
+		setLocalRows(rows)
+	}, [rows])
 
 	const exportTableHeaders = ["Reference", "Event", "Amount", "Status", "Customer", "Tickets", "Check-in", "Date"]
 

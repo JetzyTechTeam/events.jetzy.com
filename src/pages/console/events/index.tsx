@@ -8,7 +8,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
-import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, Heading, Text, useDisclosure } from "@chakra-ui/react"
+import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, Heading, Text, useDisclosure, Input, Flex } from "@chakra-ui/react"
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -32,10 +32,12 @@ type Props = {
 	events: string
 	pagination: Pagination
 	isAdmin: boolean
+	search: string
 }
 
-export default function EventsListing({ events, pagination, isAdmin }: Props) {
+export default function EventsListing({ events, pagination, isAdmin, search }: Props) {
 	const [eventList, setEventList] = React.useState<IEvent[]>(() => JSON.parse(events) as IEvent[])
+	const [searchInput, setSearchInput] = useState(search || "")
 	const router = useRouter()
 
 	// getServerSideProps re-runs on page navigation, but the component stays
@@ -44,12 +46,26 @@ export default function EventsListing({ events, pagination, isAdmin }: Props) {
 		setEventList(JSON.parse(events) as IEvent[])
 	}, [events])
 
+	React.useEffect(() => {
+		setSearchInput(search || "")
+	}, [search])
+
 	const handleEventRemoved = (removedEventId: string) => {
 		setEventList((prevList) => prevList.filter((event) => event._id.toString() !== removedEventId))
 	}
 
 	const goToPage = (p: number) => {
-		router.push({ pathname: router.pathname, query: { page: p } })
+		router.push({ pathname: router.pathname, query: { page: p, ...(search ? { search } : {}) } })
+	}
+
+	const runSearch = () => {
+		const q = searchInput.trim()
+		router.push({ pathname: router.pathname, query: { ...(q ? { search: q } : {}), page: 1 } })
+	}
+
+	const clearSearch = () => {
+		setSearchInput("")
+		router.push({ pathname: router.pathname, query: { page: 1 } })
 	}
 
 	return (
@@ -59,6 +75,27 @@ export default function EventsListing({ events, pagination, isAdmin }: Props) {
 					{isAdmin ? "Events" : "My Events"}
 				</Heading>
 			</div>
+
+			<Flex className="max-w-[800px] mx-auto" gap={2} mb={5}>
+				<Input
+					placeholder="Search events by name or location..."
+					value={searchInput}
+					onChange={(e) => setSearchInput(e.target.value)}
+					onKeyDown={(e) => e.key === "Enter" && runSearch()}
+					bg="#1E1E1E"
+					borderColor="#444444"
+					color="white"
+					_placeholder={{ color: "gray.400" }}
+				/>
+				<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={runSearch} px={6}>
+					Search
+				</Button>
+				{search && (
+					<Button variant="outline" colorScheme="orange" onClick={clearSearch}>
+						Clear
+					</Button>
+				)}
+			</Flex>
 
 			<div className="space-y-5 max-w-[800px] mx-auto">
 				{!eventList.length && <p>No events found.</p>}
@@ -309,8 +346,14 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * LIMIT
 
+	// Optional search by event name or location (case-insensitive)
+	const search = (context.query.search as string)?.trim() || ""
+	const searchFilter = search
+		? { $or: [{ name: { $regex: search, $options: "i" } }, { location: { $regex: search, $options: "i" } }] }
+		: {}
+
 	// fetch active events (not deleted), filtered by owner if non-admin
-	const activeEvents = await Events.find({ isDeleted: false, ...ownerFilter }).sort({ createdAt: -1 })
+	const activeEvents = await Events.find({ isDeleted: false, ...ownerFilter, ...searchFilter }).sort({ createdAt: -1 })
 
 	// Get events with bookings to include past events that have activity
 	const { Bookings } = await import("@/models/events/bookings")
@@ -323,6 +366,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		isDeleted: false,
 		endsOn: { $lt: now },
 		...ownerFilter,
+		...searchFilter,
 	})
 
 	// If no past events with bookings, include all past events in scope
@@ -330,6 +374,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		isDeleted: false,
 		endsOn: { $lt: now },
 		...ownerFilter,
+		...searchFilter,
 	})
 
 	// Combine active events and past events with bookings, remove duplicates
@@ -369,6 +414,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			events: JSON?.stringify(paginatedEvents),
 			pagination: { total, page, showing: paginatedEvents.length, limit: LIMIT, totalPages },
 			isAdmin,
+			search,
 		},
 	}
 }

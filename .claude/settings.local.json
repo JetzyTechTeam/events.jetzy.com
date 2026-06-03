@@ -22,7 +22,8 @@
       "Bash(git cherry-pick *)",
       "Bash(git -C d:/Jetzy/events-jetzy-com log --oneline -5)",
       "Bash(git -C d:/Jetzy/events-jetzy-com status --short)",
-      "Bash(git -C d:/Jetzy/events-jetzy-com branch -a)"
+      "Bash(git -C d:/Jetzy/events-jetzy-com branch -a)",
+      "Bash(git --no-pager diff src/lib/send-grid.ts)"
     ]
   }
 }
