@@ -7,20 +7,22 @@ import { useState ,useEffect} from "react"
 type Props = {
     events: IEvent[]
     pagination:Pagination
+    search?: string
 }
-//a component to show all unique events. 
-const BookingTableEvents:React.FC<Props> = ({events , pagination} ) => {
+//a component to show all unique events.
+const BookingTableEvents:React.FC<Props> = ({events , pagination, search} ) => {
     const [loading, setLoading] = useState(false)
     const router = useRouter()
+	const suffix = search ? `&search=${encodeURIComponent(search)}` : ""
 	const handlePrev = () => {
 		if (pagination.page > 1) {
-			router.push(`/console/bookings?page=${pagination.page - 1}`);
+			router.push(`/console/bookings?page=${pagination.page - 1}${suffix}`);
 		}
 	};
 
 	const handleNext = () => {
 		if (pagination.page < pagination.totalPages) {
-			router.push(`/console/bookings?page=${pagination.page + 1}`);
+			router.push(`/console/bookings?page=${pagination.page + 1}${suffix}`);
 		}
 	};
     
@@ -102,7 +104,7 @@ const BookingTableEvents:React.FC<Props> = ({events , pagination} ) => {
                                 color={p === pagination.page ? 'black' : 'white'}
                                 border="1px solid #444"
                                 _hover={{ bg: p === pagination.page ? '#e6832a' : '#3A3A3A' }}
-                                onClick={() => router.push(`/console/bookings?page=${p}`)}
+                                onClick={() => router.push(`/console/bookings?page=${p}${suffix}`)}
                             >
                                 {p}
                             </Button>

@@ -7,7 +7,9 @@ import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
-import React from "react"
+import React, { useState } from "react"
+import { useRouter } from "next/router"
+import { Input, Flex, Button } from "@chakra-ui/react"
 import BookingTableEvents from "@/components/bookings/BookingEventsTable"
 
 
@@ -20,6 +22,7 @@ type Props = {
 		limit: number
 		totalPages: number
 	}
+	search: string
 }
 export type Booking = {
 	_id: string;
@@ -40,20 +43,53 @@ export type Exportable = {
 	bookedTickets: string[]
 }
 
-export default function BookingsPage({ events, pagination }: Props) {
-	if (!events) {
-		return (
-			<ConsoleLayout page={Pages.Bookings}>
-				<div>No bookings found</div>
-			</ConsoleLayout>
+export default function BookingsPage({ events, pagination, search }: Props) {
+	const router = useRouter()
+	const [searchInput, setSearchInput] = useState(search || "")
 
-		)
+	React.useEffect(() => {
+		setSearchInput(search || "")
+	}, [search])
+
+	const runSearch = () => {
+		const q = searchInput.trim()
+		router.push({ pathname: "/console/bookings", query: { ...(q ? { search: q } : {}), page: 1 } })
+	}
+
+	const clearSearch = () => {
+		setSearchInput("")
+		router.push({ pathname: "/console/bookings", query: { page: 1 } })
 	}
 
 	return (
 		<ConsoleLayout page={Pages.Bookings}>
+			<Flex gap={2} mb={4} px={2}>
+				<Input
+					placeholder="Search events by name or location..."
+					value={searchInput}
+					onChange={(e) => setSearchInput(e.target.value)}
+					onKeyDown={(e) => e.key === "Enter" && runSearch()}
+					bg="#1E1E1E"
+					borderColor="#444444"
+					color="white"
+					_placeholder={{ color: "gray.400" }}
+					maxW="450px"
+				/>
+				<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={runSearch} px={6}>
+					Search
+				</Button>
+				{search && (
+					<Button variant="outline" colorScheme="orange" onClick={clearSearch}>
+						Clear
+					</Button>
+				)}
+			</Flex>
 
-			<BookingTableEvents events={events} pagination={pagination} />
+			{!events || events.length === 0 ? (
+				<div>No events found.</div>
+			) : (
+				<BookingTableEvents events={events} pagination={pagination} search={search} />
+			)}
 		</ConsoleLayout>
 	)
 }
@@ -74,9 +110,16 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const page = context.query.page ? parseInt(context.query.page as string) : 1
 	const skip = (page - 1) * limit
 
+	// Optional search by event name or location (case-insensitive)
+	const search = (context.query.search as string)?.trim() || ""
+	const searchFilter = search
+		? { $or: [{ name: { $regex: search, $options: "i" } }, { location: { $regex: search, $options: "i" } }] }
+		: {}
+	const baseFilter = { isDeleted: false, ...ownerFilter, ...searchFilter }
+
 	//fetch fields
 	const events = await Events.find(
-		{ isDeleted: false, ...ownerFilter },
+		baseFilter,
 		{ _id: 1, name: 1, startsOn: 1, endsOn: 1 }
 	)
 		.sort({ startsOn: -1 })
@@ -89,6 +132,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			props: {
 				events: [],
 				pagination: { total: 0, page, showing: 0, limit, totalPages: 0 },
+				search,
 			},
 		};
 	}
@@ -103,7 +147,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}));
 
 
-	const total = await Events.countDocuments({ isDeleted: false, ...ownerFilter })
+	const total = await Events.countDocuments(baseFilter)
 
 
 	//calculate page total and current page
@@ -123,6 +167,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			//bookings: JSON.stringify(data),
 			events: serializedEvents,
 			pagination,
+			search,
 			//exportable: JSON.stringify(exportable),
 		},
 	}
