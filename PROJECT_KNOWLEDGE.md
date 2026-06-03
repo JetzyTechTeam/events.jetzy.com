@@ -145,6 +145,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | GET | `/api/events/[eventId]` | get event details |
 | PUT | `/api/events/[eventId]/update` | admin OR owner |
 | DELETE | `/api/events/[eventId]/delete` | admin OR owner |
+| POST | `/api/events/[eventId]/clone` | admin OR owner — duplicates event as draft, new slug + fresh stripe prices, resets poll votes, no bookings |
 | GET | `/api/events/[eventId]/event-bookings` | event bookings |
 | GET | `/api/events/[eventId]/participants` | participants |
 | GET | `/api/events/[eventId]/totals` | totals |

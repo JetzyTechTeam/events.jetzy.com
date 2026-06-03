@@ -138,6 +138,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 	const event = props
 	const dispatcher = useAppDispatch()
 	const [loading, setLoading] = React.useState(false)
+	const [cloning, setCloning] = React.useState(false)
 	const router = useRouter()
 	const { isOpen, onOpen, onClose } = useDisclosure()
 	const cancelRef = useRef(null)
@@ -171,6 +172,27 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 	const confirmDelete = (event: IEvent) => {
 		setSelectedEvent(event)
 		onOpen()
+	}
+
+	const handleClone = () => {
+		setCloning(true)
+		axios
+			.post(`/api/events/${event._id}/clone`)
+			.then((res) => {
+				const newId = res?.data?.data?._id
+				toast.success("Event cloned successfully!")
+				if (newId) {
+					router.push(`/console/events/${newId}/update`)
+				} else {
+					router.replace(router.asPath)
+				}
+			})
+			.catch((err) => {
+				toast.error(err?.response?.data?.message || "Failed to clone event.")
+			})
+			.finally(() => {
+				setCloning(false)
+			})
 	}
 
 	return (
@@ -260,6 +282,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							<Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 								Edit Event
 							</Link>
+							<div
+								onClick={() => !cloning && handleClone()}
+								className={`bg-[#3E3E3E] p-2 rounded-md text-sm cursor-pointer hover:bg-[#4E4E4E] transition-colors ${cloning ? "opacity-50 cursor-not-allowed" : ""}`}
+								style={{ pointerEvents: cloning ? "none" : "auto" }}
+							>
+								{cloning ? "Cloning..." : "Clone Event"}
+							</div>
 							{!props.isEnded && (
 								<div
 									onClick={() => confirmDelete(event)}
