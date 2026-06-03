@@ -19,7 +19,10 @@
       "Bash(awk 'NR==1083' \"d:/Jetzy/events-jetzy-com/src/pages/console/analytics.tsx\")",
       "Bash(grep -E \"\\\\.\\(ts|tsx|html\\)$\")",
       "Bash(git checkout *)",
-      "Bash(git cherry-pick *)"
+      "Bash(git cherry-pick *)",
+      "Bash(git -C d:/Jetzy/events-jetzy-com log --oneline -5)",
+      "Bash(git -C d:/Jetzy/events-jetzy-com status --short)",
+      "Bash(git -C d:/Jetzy/events-jetzy-com branch -a)"
     ]
   }
 }

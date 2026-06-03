@@ -138,7 +138,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
         </div>
         <h1 style="color: #333; text-align: center;">${subject}</h1>
         <p style="font-size: 16px; color: #555; line-height: 1.6;">
-          Hi {{userEmail}},
+          Hi {{userName}},
         </p>
         <p style="font-size: 16px; color: #555; line-height: 1.6;">
           ${message}
@@ -162,6 +162,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       let personalizedHtml = html;
 
       const userEmail = (person as any).email || (person as any).customerEmail;
+      const userName = ((person as any).customerName || (person as any).name || "").trim() || userEmail?.split("@")[0] || "there";
+      personalizedHtml = personalizedHtml.replace('{{userName}}', userName);
       personalizedHtml = personalizedHtml.replace('{{userEmail}}', userEmail);
 
       if (targetType === 'bookings' && 'bookingRef' in person && person.bookingRef) {
