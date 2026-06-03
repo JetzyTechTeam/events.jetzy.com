@@ -9,6 +9,10 @@ dayjs.extend(timezone)
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY?.trim() as string)
 
+// Contact address shown in email footers — driven by the sender env var so a
+// single change propagates everywhere. Falls back if the env var is missing.
+const CONTACT_EMAIL = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim() || "contact@jetzyapp.com"
+
 // Helper function to wrap HTML content in proper tags
 const wrapHtml = (html: string) => `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>${html}</body></html>`;
 
@@ -646,7 +650,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
           <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
             <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
             </p>
             <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
               &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -725,7 +729,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
           <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
             <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
             </p>
             <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
               &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -806,7 +810,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
           <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
             <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
             </p>
             <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
               &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -887,7 +891,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
           <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
             <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
             </p>
             <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
               &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -968,7 +972,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
           <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
             <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
             </p>
             <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
               &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -1060,7 +1064,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           
           <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
             <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
             </p>
             <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
               &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -1250,7 +1254,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
           
           <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
             <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-              Questions? Contact us at <a href="mailto:events@jetzy.com" style="color: #1877F2; text-decoration: none;">events@jetzy.com</a>
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
             </p>
             <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
               &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -1709,7 +1713,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       </div>
 
       <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-        Questions? Contact us at <a href="mailto:contact@jetzyapp.com" style="color: #F79432; text-decoration: none;">contact@jetzyapp.com</a>
+        Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #F79432; text-decoration: none;">${CONTACT_EMAIL}</a>
         <br />
         &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
       </p>
@@ -1777,7 +1781,7 @@ export const sendVerificationEmail = async ({
       </p>
 
       <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-        Questions? Contact us at <a href="mailto:contact@jetzyapp.com" style="color: #F79432; text-decoration: none;">contact@jetzyapp.com</a>
+        Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #F79432; text-decoration: none;">${CONTACT_EMAIL}</a>
         <br />
         &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
       </p>

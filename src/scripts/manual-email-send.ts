@@ -89,7 +89,7 @@ const emailHtml = `
 
   <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
     <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
-      Questions? Contact us at <a href="mailto:marketing@jetzy.com" style="color: #1877F2; text-decoration: none;">marketing@jetzy.com</a>
+      Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #1877F2; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>
     </p>
     <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
       &copy; ${new Date().getFullYear()} Jetzy Events, Inc.

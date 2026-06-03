@@ -117,7 +117,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           </a>
         </div>
         <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          Questions? Contact us at <a href="mailto:contact@jetzyapp.com" style="color: #F79432; text-decoration: none;">contact@jetzyapp.com</a>
+          Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #F79432; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>
           <br />
           &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
         </p>
@@ -149,7 +149,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           </a>
         </div>
         <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          Questions? Contact us at <a href="mailto:contact@jetzyapp.com" style="color: #F79432; text-decoration: none;">contact@jetzyapp.com</a>
+          Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #F79432; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>
           <br />
           &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
         </p>
