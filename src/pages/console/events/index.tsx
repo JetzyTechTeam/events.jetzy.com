@@ -8,12 +8,15 @@ import { ensureDbConnected } from "@/configs/database"
 import { IEvent } from "@/models/events/types"
 import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
 import { useAppDispatch } from "@/redux/stores"
-import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, Heading, Text, useDisclosure, Input, Flex } from "@chakra-ui/react"
+import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, Heading, Text, useDisclosure, Input, InputGroup, InputLeftElement, Flex } from "@chakra-ui/react"
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import Image from "next/image"
+import { Roboto } from "next/font/google"
 import Link from "next/link"
+
+const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 import { useRouter } from "next/router"
 import React, { useRef, useState } from "react"
 import { toast } from "react-toastify"
@@ -28,14 +31,24 @@ type Pagination = {
 	totalPages: number
 }
 
+type FilterKey = "all" | "upcoming" | "ended" | "tbd"
+
 type Props = {
 	events: string
 	pagination: Pagination
 	isAdmin: boolean
 	search: string
+	filter: FilterKey
 }
 
-export default function EventsListing({ events, pagination, isAdmin, search }: Props) {
+const FILTERS: { key: FilterKey; label: string }[] = [
+	{ key: "all", label: "All" },
+	{ key: "upcoming", label: "Upcoming" },
+	{ key: "ended", label: "Ended" },
+	{ key: "tbd", label: "TBD" },
+]
+
+export default function EventsListing({ events, pagination, isAdmin, search, filter }: Props) {
 	const [eventList, setEventList] = React.useState<IEvent[]>(() => JSON.parse(events) as IEvent[])
 	const [searchInput, setSearchInput] = useState(search || "")
 	const router = useRouter()
@@ -54,48 +67,84 @@ export default function EventsListing({ events, pagination, isAdmin, search }: P
 		setEventList((prevList) => prevList.filter((event) => event._id.toString() !== removedEventId))
 	}
 
+	const filterQuery = filter && filter !== "all" ? { filter } : {}
+
 	const goToPage = (p: number) => {
-		router.push({ pathname: router.pathname, query: { page: p, ...(search ? { search } : {}) } })
+		router.push({ pathname: router.pathname, query: { page: p, ...(search ? { search } : {}), ...filterQuery } })
 	}
 
 	const runSearch = () => {
 		const q = searchInput.trim()
-		router.push({ pathname: router.pathname, query: { ...(q ? { search: q } : {}), page: 1 } })
+		router.push({ pathname: router.pathname, query: { ...(q ? { search: q } : {}), ...filterQuery, page: 1 } })
 	}
 
 	const clearSearch = () => {
 		setSearchInput("")
-		router.push({ pathname: router.pathname, query: { page: 1 } })
+		router.push({ pathname: router.pathname, query: { ...filterQuery, page: 1 } })
+	}
+
+	const setFilter = (key: FilterKey) => {
+		router.push({
+			pathname: router.pathname,
+			query: { ...(search ? { search } : {}), ...(key !== "all" ? { filter: key } : {}), page: 1 },
+		})
 	}
 
 	return (
 		<ConsoleLayout maxW="max-w-[800px]" className="px-0">
 			<div className="max-w-[800px] mx-auto mb-5">
 				<Heading as="h2" fontSize={28}>
-					{isAdmin ? "Events" : "My Events"}
+					{isAdmin ? "Events" : "My Events"} ({pagination.total})
 				</Heading>
 			</div>
 
-			<Flex className="max-w-[800px] mx-auto" gap={2} mb={5}>
-				<Input
-					placeholder="Search events by name or location..."
-					value={searchInput}
-					onChange={(e) => setSearchInput(e.target.value)}
-					onKeyDown={(e) => e.key === "Enter" && runSearch()}
-					bg="#1E1E1E"
-					borderColor="#444444"
-					color="white"
-					_placeholder={{ color: "gray.400" }}
-				/>
-				<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={runSearch} px={6}>
+			<Flex className="max-w-[800px] mx-auto" gap={2} mb={4}>
+				<InputGroup>
+					<InputLeftElement pointerEvents="none">
+						<SearchSVG />
+					</InputLeftElement>
+					<Input
+						placeholder="Search"
+						value={searchInput}
+						onChange={(e) => setSearchInput(e.target.value)}
+						onKeyDown={(e) => e.key === "Enter" && runSearch()}
+						bg="#1E1E1E"
+						borderColor="#444444"
+						borderRadius="full"
+						color="white"
+						pl={10}
+						_placeholder={{ color: "gray.400" }}
+					/>
+				</InputGroup>
+				<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} borderRadius="full" onClick={runSearch} px={6}>
 					Search
 				</Button>
 				{search && (
-					<Button variant="outline" colorScheme="orange" onClick={clearSearch}>
+					<Button variant="outline" colorScheme="orange" borderRadius="full" onClick={clearSearch}>
 						Clear
 					</Button>
 				)}
 			</Flex>
+
+			{/* FILTER CHIPS */}
+			<div className="flex items-center gap-2 max-w-[800px] mx-auto mb-5">
+				{FILTERS.map(({ key, label }) => {
+					const active = filter === key
+					return (
+						<button
+							key={key}
+							onClick={() => setFilter(key)}
+							className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+								active
+									? "bg-white text-black"
+									: "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
+							}`}
+						>
+							{label}
+						</button>
+					)
+				})}
+			</div>
 
 			<div className="space-y-5 max-w-[800px] mx-auto">
 				{!eventList.length && <p>No events found.</p>}
@@ -131,6 +180,61 @@ export default function EventsListing({ events, pagination, isAdmin, search }: P
 				</div>
 			)}
 		</ConsoleLayout>
+	)
+}
+
+const SearchSVG = () => (
+	<svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+		<path
+			d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16ZM19 19l-4.35-4.35"
+			stroke="#A7A7A7"
+			strokeWidth="1.6"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
+	</svg>
+)
+
+// Figma date-number spec: Roboto 700, 120px, line-height 100%, letter-spacing -3%
+// fontFamily comes from the loaded `roboto` next/font className on the element.
+const dayNumberStyle: React.CSSProperties = {
+	fontWeight: 700,
+	fontSize: "120px",
+	lineHeight: "100%",
+	letterSpacing: "-0.03em",
+}
+
+// Figma weekday/month label spec: Roboto 400, 24px, line-height 100%, letter-spacing 2%, uppercase
+const labelStyle: React.CSSProperties = {
+	fontWeight: 400,
+	fontSize: "24px",
+	lineHeight: "100%",
+	letterSpacing: "0.02em",
+	textTransform: "uppercase",
+	color: "#9F9F9F",
+}
+
+const DateBlock = ({ startsOn, isEnded }: { startsOn?: any; isEnded?: boolean }) => {
+	const accent = isEnded ? "text-gray-500" : "text-white"
+	if (!startsOn) {
+		return (
+			<div className="w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
+				<span className={roboto.className} style={labelStyle}>--</span>
+				<span className={`my-1 ${roboto.className} ${accent}`} style={{ ...dayNumberStyle, fontSize: "64px" }}>TBD</span>
+				<span className={roboto.className} style={labelStyle}>--</span>
+			</div>
+		)
+	}
+	const d = new Date(startsOn.toString())
+	const weekday = d.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase()
+	const day = d.toLocaleDateString("en-US", { day: "numeric" })
+	const monthYear = d.toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase()
+	return (
+		<div className="w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
+			<span className={roboto.className} style={labelStyle}>{weekday}</span>
+			<span className={`my-1 ${roboto.className} ${accent}`} style={dayNumberStyle}>{day}</span>
+			<span className={roboto.className} style={labelStyle}>{monthYear}</span>
+		</div>
 	)
 }
 
@@ -197,131 +301,115 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 	return (
 		<>
-			<div className="space-y-5">
-				<div className={`flex items-center justify-between rounded-xl p-5 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
-					{/* CONTENT SECTION  */}
-					<div className="space-y-4 flex-1">
-						<div className="flex items-start justify-between">
-							<div className="flex-1">
-								<Link href={`/${event.slug}`}>
-									<Heading as="h3" fontSize={20} cursor="pointer" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
-										{stripHtml(event.name)}
-									</Heading>
-								</Link>
-								{props.isEnded && (
-									<span className="inline-block mt-1 px-2 py-1 bg-[#444444] text-[#A7A7A7] text-xs rounded-full font-medium">
-										ENDED EVENT
-									</span>
-								)}
-								{event.status === 'draft' && (
-									<span className="inline-block mt-1 ml-2 px-2 py-1 bg-[#2A1F00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
-										DRAFT
-									</span>
-								)}
-								{(event as any).privacy === 'private' && (
-									<span className="inline-block mt-1 ml-2 px-2 py-1 bg-[#7C1D1D] text-white border border-red-500/40 text-xs rounded-full font-medium">
-										PRIVATE
-									</span>
-								)}
-							</div>
-						</div>
+			<div className={`flex items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
+				{/* DATE BLOCK */}
+				<DateBlock startsOn={event.startsOn} isEnded={props.isEnded} />
 
-						{/* PROMINENT DATE/TIME SECTION */}
-						<div className="bg-[#2A2A2A] rounded-lg p-3 border border-[#444444]">
-							<div className="flex items-center gap-x-3 text-white font-medium">
-								<DateTimeSVG stroke="#F79432" />
-								<div>
-									<div className="text-lg">
-										{event.startsOn ? new Date(event.startsOn.toString()).toLocaleDateString('en-US', {
-											weekday: 'long',
-											year: 'numeric',
-											month: 'long',
-											day: 'numeric'
-										}) : event.datePoll?.isActive ? "Date to be decided (Polling)" : "Date to be decided"}
-									</div>
-									<div className="text-sm text-[#A7A7A7]">
-										{event.startsOn ? new Date(event.startsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} - {event.endsOn ? new Date(event.endsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} {event.timezone ? `(${event.timezone})` : ""}
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div className="space-y-2">
-							<Text className="flex items-center gap-x-2 text-[#A7A7A7]">
-								{event.locationDisclosedAfterBooking ? (
-									<>
-										<span>📍</span>
-										<span>
-											Disclosed after registration <span className="text-xs text-gray-500 ml-1">(Actual: {event.location})</span>
-										</span>
-									</>
-								) : (
-									<>
-										<LocationSVG />
-										<span>{event.location}</span>
-									</>
-								)}
-							</Text>
-						</div>
-
-						<div className="flex items-center gap-x-4 text-sm text-gray-300">
-							<span className="flex items-center gap-1">
-								<span>🎟️</span>
-								<span>{totalTickets} tickets</span>
-							</span>
-							<span className="flex items-center gap-1">
-								<span>👥</span>
-								<span>{uniqueGuests} guests</span>
-							</span>
-						</div>
-
-						<div className="flex items-center gap-x-3">
-							<Link href={`/console/events/${event._id}/manage`} className="bg-[#3E3E3E] p-2 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
-								Manage Event
-							</Link>
-							<Link href={`/console/events/${event._id}/update`} className="bg-[#3E3E3E] p-2 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
-								Edit Event
-							</Link>
-							<div
-								onClick={() => !cloning && handleClone()}
-								className={`bg-[#3E3E3E] p-2 rounded-md text-sm cursor-pointer hover:bg-[#4E4E4E] transition-colors ${cloning ? "opacity-50 cursor-not-allowed" : ""}`}
-								style={{ pointerEvents: cloning ? "none" : "auto" }}
-							>
-								{cloning ? "Cloning..." : "Clone Event"}
-							</div>
-							{!props.isEnded && (
-								<div
-									onClick={() => confirmDelete(event)}
-									className={`w-max bg-[#351919] text-[#EC5E5E] p-2 rounded-md text-sm cursor-pointer hover:bg-[#451919] transition-colors ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
-									style={{ pointerEvents: loading ? "none" : "auto" }}
-								>
-									{loading ? "Deleting..." : "Delete Event"}
-								</div>
-							)}
-						</div>
-					</div>
-
-					{/* IMAGE SECTION */}
-					<div className="ml-4">
-						{(() => {
-							const firstImage = event?.images?.[0]
-							// next/image needs an absolute URL or root-relative path; guard bad/seed data ("string", "", etc.)
-							const isValidImage = typeof firstImage === "string" && (firstImage.startsWith("/") || firstImage.startsWith("http"))
-							return isValidImage ? (
+				{/* THUMBNAIL */}
+				<div className="shrink-0">
+					{(() => {
+						const firstImage = event?.images?.[0]
+						// next/image needs an absolute URL or root-relative path; guard bad/seed data ("string", "", etc.)
+						const isValidImage = typeof firstImage === "string" && (firstImage.startsWith("/") || firstImage.startsWith("http"))
+						return isValidImage ? (
 							<Image
 								src={firstImage}
 								alt={stripHtml(event.name)}
-								className={`w-[180px] h-[150px] rounded-xl object-cover ${props.isEnded ? 'opacity-60' : ''}`}
-								width={180}
-								height={150}
+								className={`w-[150px] h-[120px] rounded-lg object-cover ${props.isEnded ? 'opacity-60' : ''}`}
+								width={150}
+								height={120}
 							/>
 						) : (
-							<div className={`w-[180px] h-[150px] rounded-xl bg-[#2A2D35] flex flex-col items-center justify-center gap-1 ${props.isEnded ? 'opacity-60' : ''}`}>
+							<div className={`w-[150px] h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
 								<span className="text-3xl">🖼️</span>
 								<span className="text-xs text-gray-500">No image</span>
 							</div>
-							)
-						})()}
+						)
+					})()}
+				</div>
+
+				{/* INFO */}
+				<div className="flex-1 min-w-0 space-y-1.5">
+					<div className="flex items-center gap-2 flex-wrap">
+						<Link href={`/${event.slug}`}>
+							<Heading as="h3" fontSize={18} cursor="pointer" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
+								{stripHtml(event.name)}
+							</Heading>
+						</Link>
+						{props.isEnded && (
+							<span className="px-2 py-0.5 bg-[#444444] text-[#A7A7A7] text-xs rounded-full font-medium">
+								ENDED
+							</span>
+						)}
+						{event.status === 'draft' && (
+							<span className="px-2 py-0.5 bg-[#2A1F00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
+								DRAFT
+							</span>
+						)}
+						{(event as any).privacy === 'private' && (
+							<span className="px-2 py-0.5 bg-[#7C1D1D] text-white border border-red-500/40 text-xs rounded-full font-medium">
+								PRIVATE
+							</span>
+						)}
+					</div>
+
+					{/* TIME ROW */}
+					<div className="flex items-center gap-x-2 text-sm text-[#A7A7A7]">
+						<DateTimeSVG width={16} height={16} stroke="#F79432" />
+						<span>
+							{event.startsOn ? new Date(event.startsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} – {event.endsOn ? new Date(event.endsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} {event.timezone ? `(${event.timezone})` : ""}
+						</span>
+					</div>
+
+					{/* LOCATION ROW */}
+					<div className="flex items-center gap-x-2 text-sm text-[#A7A7A7]">
+						{event.locationDisclosedAfterBooking ? (
+							<>
+								<span>📍</span>
+								<span>
+									Disclosed after registration <span className="text-xs text-gray-500 ml-1">(Actual: {event.location})</span>
+								</span>
+							</>
+						) : (
+							<>
+								<LocationSVG width={15} height={16} stroke="#EC5E5E" />
+								<span className="truncate">{event.location}</span>
+							</>
+						)}
+					</div>
+
+					{/* COUNTS */}
+					<div className="flex items-center gap-x-4 text-xs text-gray-400">
+						<span className="flex items-center gap-1">🎟️ {totalTickets} tickets</span>
+						<span className="flex items-center gap-1">👥 {uniqueGuests} guests</span>
+					</div>
+				</div>
+
+				{/* ACTIONS */}
+				<div className="shrink-0 flex flex-col gap-2 w-[180px]">
+					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
+						✏️ Manage Event
+					</Link>
+					{!props.isEnded && (
+						<div
+							onClick={() => !loading && confirmDelete(event)}
+							className={`flex items-center justify-center gap-1 bg-[#351919] text-[#EC5E5E] py-2 px-3 rounded-md text-sm cursor-pointer hover:bg-[#451919] transition-colors ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
+							style={{ pointerEvents: loading ? "none" : "auto" }}
+						>
+							🗑️ {loading ? "Deleting..." : "Delete Event"}
+						</div>
+					)}
+					<div className="flex gap-2">
+						<Link href={`/console/events/${event._id}/update`} className="flex-1 flex items-center justify-center gap-1 bg-[#2A2A2A] border border-[#444444] py-2 px-3 rounded-md text-sm hover:bg-[#3A3A3A] transition-colors">
+							Edit
+						</Link>
+						<div
+							onClick={() => !cloning && handleClone()}
+							className={`flex-1 flex items-center justify-center gap-1 bg-[#2A2A2A] border border-[#444444] py-2 px-3 rounded-md text-sm cursor-pointer hover:bg-[#3A3A3A] transition-colors ${cloning ? "opacity-50 cursor-not-allowed" : ""}`}
+							style={{ pointerEvents: cloning ? "none" : "auto" }}
+						>
+							{cloning ? "..." : "Clone"}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -434,8 +522,26 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		return Number(new Date(b.startsOn)) - Number(new Date(a.startsOn))
 	})
 
-	const paginatedEvents = allEvents.slice(skip, skip + LIMIT)
-	const total = allEvents.length
+	// Apply status filter chip (server-side) before pagination
+	const allowedFilters = ["all", "upcoming", "ended", "tbd"]
+	const rawFilter = (context.query.filter as string) || "all"
+	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
+
+	const filteredEvents = allEvents.filter((e) => {
+		switch (filter) {
+			case "upcoming":
+				return !e.isEnded && !!e.startsOn
+			case "ended":
+				return !!e.isEnded
+			case "tbd":
+				return !e.isEnded && !e.startsOn
+			default:
+				return true
+		}
+	})
+
+	const paginatedEvents = filteredEvents.slice(skip, skip + LIMIT)
+	const total = filteredEvents.length
 	const totalPages = Math.ceil(total / LIMIT)
 
 	return {
@@ -444,6 +550,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			pagination: { total, page, showing: paginatedEvents.length, limit: LIMIT, totalPages },
 			isAdmin,
 			search,
+			filter,
 		},
 	}
 }
