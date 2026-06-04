@@ -103,8 +103,6 @@ export default function HostedEvents({ event }: Props) {
 		}
 	}, [event, isValidEvent])
 
-	const shareTitle = stripHtml(clonedEvent?.name || "")
-	const shareDesc = clonedEvent?.desc || ""
 
 	// @ts-ignore
 	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
@@ -191,9 +189,9 @@ export default function HostedEvents({ event }: Props) {
 		}
 	}, [router.query.view, router.query.scrollTo])
 
+	// Share the URL only (no title/description) so mobile native share matches
+	// desktop behaviour — copying the bare event link, not the description text.
 	const sharer = useWebShare({
-		title: shareTitle,
-		text: shareDesc,
 		url: shareUrl,
 	})
 
