@@ -209,6 +209,16 @@ export default function Manage({ event }: any) {
 								borderBottom: "2px solid #F79432",
 							}}
 						>
+							Responses
+						</Tab>
+						<Tab
+							fontWeight="bold"
+							color="#9C9C9C"
+							_selected={{
+								color: "#F79432",
+								borderBottom: "2px solid #F79432",
+							}}
+						>
 							Blasts
 						</Tab>
 					</TabList>
@@ -373,6 +383,11 @@ export default function Manage({ event }: any) {
 						<TabPanel>
 							<div className="bg-[#181818] rounded-xl p-3">
 								<CustomQuestionsManager event={event} />
+							</div>
+						</TabPanel>
+						<TabPanel>
+							<div className="bg-[#181818] rounded-xl p-3">
+								<ResponsesList eventId={event._id} event={event} />
 							</div>
 						</TabPanel>
 						<TabPanel>
@@ -1455,6 +1470,117 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				</ModalContent>
 			</Modal>
 		</>
+	)
+}
+
+
+function ResponsesList({ eventId, event }: { eventId: string; event?: any }) {
+	const [page, setPage] = useState(1)
+	const questions: any[] = event?.questions || []
+
+	const { data: bookings = [], isLoading, isError } = useQuery({
+		queryKey: ["event-bookings", eventId],
+		queryFn: () => axios.post("/api/get-bookings", { eventId }).then(r => r.data || []),
+	})
+
+	const formatAnswer = (qId: string, booking: any): string => {
+		if (!booking?.customAnswers) return '—'
+		const ans = booking.customAnswers.find((a: any) => a.questionId === qId)
+		if (!ans || ans.answer == null) return '—'
+		if (Array.isArray(ans.answer)) return ans.answer.length ? ans.answer.join(', ') : '—'
+		if (typeof ans.answer === 'object') {
+			const parts: string[] = []
+			if (ans.answer.company) parts.push(ans.answer.company)
+			if (ans.answer.jobTitle) parts.push(ans.answer.jobTitle)
+			if (ans.answer.agreed !== undefined) parts.push(ans.answer.agreed ? 'Agreed' : 'Not agreed')
+			if (ans.answer.signature) parts.push(`Signed: ${ans.answer.signature}`)
+			if (ans.answer.url) parts.push(ans.answer.url)
+			if (ans.answer.note) parts.push(ans.answer.note)
+			return parts.join(' · ') || '—'
+		}
+		return String(ans.answer) || '—'
+	}
+
+	if (!questions.length) return <Text color="#9C9C9C">No custom questions for this event. Add questions in the Custom Questions tab.</Text>
+	if (isLoading) return <Text>Loading responses...</Text>
+	if (isError) return <Text color="red.500">Failed to load responses.</Text>
+
+	// Only users who actually filled at least one custom answer
+	const respondents = (bookings as any[]).filter(
+		(b) => Array.isArray(b.customAnswers) && b.customAnswers.some((a: any) => a.answer != null && a.answer !== '' && !(Array.isArray(a.answer) && a.answer.length === 0))
+	)
+
+	if (!respondents.length) return <Text color="#9C9C9C">No responses yet — no guest has filled the custom questions.</Text>
+
+	const totalPages = Math.ceil(respondents.length / GUESTS_PAGE_SIZE)
+	const paged = respondents.slice((page - 1) * GUESTS_PAGE_SIZE, page * GUESTS_PAGE_SIZE)
+
+	return (
+		<Box overflowX="auto">
+			<Text color="#9C9C9C" fontSize="sm" mb={3}>{respondents.length} guest{respondents.length === 1 ? '' : 's'} responded</Text>
+			<TableContainer>
+				<Table variant="simple" size="sm">
+					<Thead>
+						<Tr>
+							<Th color="#9C9C9C">Name</Th>
+							<Th color="#9C9C9C">Email</Th>
+							{questions.map((q: any) => (
+								<Th key={q.id} color="#9C9C9C">{stripHtml(q.title || '')}{q.isRequired ? ' *' : ''}</Th>
+							))}
+						</Tr>
+					</Thead>
+					<Tbody>
+						{paged.map((booking: any) => (
+							<Tr key={booking._id || booking.bookingRef || booking.customerEmail}>
+								<Td color="white" whiteSpace="nowrap">{booking.customerName || '—'}</Td>
+								<Td color="white" whiteSpace="nowrap">{booking.customerEmail || '—'}</Td>
+								{questions.map((q: any) => (
+									<Td key={q.id} color="white" whiteSpace="normal" maxW="260px">{formatAnswer(q.id, booking)}</Td>
+								))}
+							</Tr>
+						))}
+					</Tbody>
+				</Table>
+			</TableContainer>
+
+			{totalPages > 1 && (
+				<Flex justify="center" align="center" gap={2} mt={3} flexWrap="wrap">
+					<Button
+						size="sm"
+						bg="#2A2A2A" color="white" border="1px solid #444"
+						_hover={{ bg: '#3A3A3A' }}
+						_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
+						isDisabled={page <= 1}
+						onClick={() => setPage(p => p - 1)}
+					>
+						&lt; Prev
+					</Button>
+					{Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+						<Button
+							key={p}
+							size="sm"
+							bg={p === page ? '#F79432' : '#2A2A2A'}
+							color={p === page ? 'black' : 'white'}
+							border="1px solid #444"
+							_hover={{ bg: p === page ? '#e6832a' : '#3A3A3A' }}
+							onClick={() => setPage(p)}
+						>
+							{p}
+						</Button>
+					))}
+					<Button
+						size="sm"
+						bg="#2A2A2A" color="white" border="1px solid #444"
+						_hover={{ bg: '#3A3A3A' }}
+						_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
+						isDisabled={page >= totalPages}
+						onClick={() => setPage(p => p + 1)}
+					>
+						Next &gt;
+					</Button>
+				</Flex>
+			)}
+		</Box>
 	)
 }
 
