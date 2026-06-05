@@ -65,7 +65,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		}
 
 		// Get eventId from tickets (tickets have eventId but TypeScript type doesn't include it)
-		const eventId = (tickets[0] as any)?.eventId
+		const eventId = (tickets[0] as any)?.eventId || eventData?._id
 		if (!eventId) {
 			return
 		}
@@ -153,7 +153,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		const totalPrice = tickets.reduce((sum, t) => sum + ((t as any).price ?? 0) * ((t as any).quantity ?? 1), 0)
 
 		if (totalPrice === 0) {
-			const eventId = (tickets[0] as any)?.eventId
+			const eventId = (tickets[0] as any)?.eventId || eventData?._id
 			const customAnswersArray = Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 			try {
 				const response = await fetch('/api/checkout/free-events', {

@@ -251,11 +251,16 @@ export default function HostedEvents({ event }: Props) {
 								</button>
 							)}
 						</div>
-						{isAdmin && (
-							<Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
-								Edit Event
+						<div className="flex items-center gap-2">
+							<Link href="/login" className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
+								Login
 							</Link>
-						)}
+							{isAdmin && (
+								<Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
+									Edit Event
+								</Link>
+							)}
+						</div>
 					</div>
 					<div className={`${isDatePollActive ? "max-w-6xl mx-auto flex flex-col lg:flex-row lg:gap-6 lg:items-start" : "max-w-4xl mx-auto"}`}>
 					<div className={`${isDatePollActive ? "flex-1 min-w-0" : ""} bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all`}>
@@ -901,13 +906,17 @@ function EventBookings({ eventId }: { eventId: string }) {
 
 						<div className="mt-3">
 							<p className="font-semibold text-white text-sm">Tickets:</p>
-							<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
-								{booking.tickets.map((ticket) => (
-									<li key={ticket._id}>
-										Quantity: <span className="text-white">{ticket.quantity}</span>
-									</li>
-								))}
-							</ul>
+							{booking.tickets.length > 0 ? (
+								<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
+									{booking.tickets.map((ticket) => (
+										<li key={ticket._id}>
+											Quantity: <span className="text-white">{ticket.quantity}</span>
+										</li>
+									))}
+								</ul>
+							) : (
+								<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
+							)}
 						</div>
 
 						<div className="flex items-center gap-6 text-sm mt-3 text-[#bbbbbb]">
@@ -1041,13 +1050,17 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
 
 								<div className="mt-3">
 									<p className="font-semibold text-white text-sm">Requested Tickets:</p>
-									<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
-										{user.tickets.map((ticket: any, index: number) => (
-											<li key={index}>
-												{ticket.quantity} x {ticket.name} (${ticket.price} each)
-											</li>
-										))}
-									</ul>
+									{user.tickets.length > 0 ? (
+										<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
+											{user.tickets.map((ticket: any, index: number) => (
+												<li key={index}>
+													{ticket.quantity} x {ticket.name} (${ticket.price} each)
+												</li>
+											))}
+										</ul>
+									) : (
+										<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
+									)}
 								</div>
 							</div>
 

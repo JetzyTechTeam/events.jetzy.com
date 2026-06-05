@@ -33,7 +33,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 		row.booking.total.toLocaleString("en-US", { style: "currency", currency: "USD" }),
 		row.booking.status,
 		`${row.booking.customerName} | ${row.booking.customerEmail} | ${row.booking.customerPhone}`,
-		row.bookedTickets.join(", "),
+		row.bookedTickets.length > 0 ? row.bookedTickets.join(", ") : "No-ticket event",
 		checkInMap[row.booking._id?.toString()]?.checkedInCount > 0
 			? (checkInMap[row.booking._id?.toString()].isFullyCheckedIn ? "Fully Checked In" : `Partial (${checkInMap[row.booking._id?.toString()].checkedInCount})`)
 			: "Not Checked In",
@@ -126,9 +126,18 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 											<Text>{row.customerName}</Text>
 											<Text fontSize={"small"}>{row.customerEmail}</Text>
 											<Text fontSize={"smaller"}>{row.customerPhone}</Text>
-											<Badge colorScheme="blue" fontSize={"smaller"}>
-												{row.tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)} tickets
-											</Badge>
+											{(() => {
+												const qty = row.tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)
+												return qty > 0 ? (
+													<Badge colorScheme="blue" fontSize={"smaller"}>
+														{qty} tickets
+													</Badge>
+												) : (
+													<Badge colorScheme="purple" fontSize={"smaller"}>
+														No-ticket event
+													</Badge>
+												)
+											})()}
 										</Box>
 									</Td>
 									<Td>
