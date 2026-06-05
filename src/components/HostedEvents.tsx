@@ -252,9 +252,11 @@ export default function HostedEvents({ event }: Props) {
 							)}
 						</div>
 						<div className="flex items-center gap-2">
-							<Link href="/login" className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
-								Login
-							</Link>
+							{isAdmin && (
+								<Link href="/login" className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
+									Login
+								</Link>
+							)}
 							{isAdmin && (
 								<Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
 									Edit Event
