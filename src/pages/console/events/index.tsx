@@ -2,13 +2,10 @@ import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
-import { deleteFile } from "@/services/upload.service"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { IEvent } from "@/models/events/types"
-import { DeleteEventThunk } from "@/redux/reducers/eventsSlice"
-import { useAppDispatch } from "@/redux/stores"
-import { AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, Button, Heading, Text, useDisclosure, Input, InputGroup, InputLeftElement, Flex } from "@chakra-ui/react"
+import { Button, Heading, Text, Input, InputGroup, InputLeftElement, Flex } from "@chakra-ui/react"
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -18,7 +15,7 @@ import Link from "next/link"
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 import { useRouter } from "next/router"
-import React, { useRef, useState } from "react"
+import React, { useState } from "react"
 import { toast } from "react-toastify"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
@@ -240,13 +237,6 @@ const DateBlock = ({ startsOn, isEnded }: { startsOn?: any; isEnded?: boolean })
 
 const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isEnded?: boolean }) => {
 	const event = props
-	const dispatcher = useAppDispatch()
-	const [loading, setLoading] = React.useState(false)
-	const [cloning, setCloning] = React.useState(false)
-	const router = useRouter()
-	const { isOpen, onOpen, onClose } = useDisclosure()
-	const cancelRef = useRef(null)
-	const [selectedEvent, setSelectedEvent] = useState<IEvent | null>(null)
 
 	const { data: totals } = useQuery({
 		queryKey: ["eventTotals", event._id],
@@ -254,50 +244,6 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 	})
 	const totalTickets = totals?.totalTickets ?? 0
 	const uniqueGuests = totals?.uniqueGuests ?? 0
-
-	const handleRemove = (item: IEvent) => {
-		setLoading(true)
-		dispatcher(DeleteEventThunk({ id: item._id.toString() }))
-			.then((res: any) => {
-				// delete the images from edge store server
-				if (item.images.length > 0) {
-					item.images.forEach((image) => {
-						deleteFile(image)
-					})
-				}
-				toast.success("Event deleted successfully!")
-				props.onEventRemoved(item._id.toString())
-			})
-			.finally(() => {
-				setLoading(false)
-			})
-	}
-
-	const confirmDelete = (event: IEvent) => {
-		setSelectedEvent(event)
-		onOpen()
-	}
-
-	const handleClone = () => {
-		setCloning(true)
-		axios
-			.post(`/api/events/${event._id}/clone`)
-			.then((res) => {
-				const newId = res?.data?.data?._id
-				toast.success("Event cloned successfully!")
-				if (newId) {
-					router.push(`/console/events/${newId}/update`)
-				} else {
-					router.replace(router.asPath)
-				}
-			})
-			.catch((err) => {
-				toast.error(err?.response?.data?.message || "Failed to clone event.")
-			})
-			.finally(() => {
-				setCloning(false)
-			})
-	}
 
 	return (
 		<>
@@ -387,62 +333,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 				{/* ACTIONS */}
 				<div className="shrink-0 flex flex-col gap-2 w-[180px]">
-					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
+					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>
-					{!props.isEnded && (
-						<div
-							onClick={() => !loading && confirmDelete(event)}
-							className={`flex items-center justify-center gap-1 bg-[#351919] text-[#EC5E5E] py-2 px-3 rounded-md text-sm cursor-pointer hover:bg-[#451919] transition-colors ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
-							style={{ pointerEvents: loading ? "none" : "auto" }}
-						>
-							🗑️ {loading ? "Deleting..." : "Delete Event"}
-						</div>
-					)}
-					<div className="flex gap-2">
-						<Link href={`/console/events/${event._id}/update`} className="flex-1 flex items-center justify-center gap-1 bg-[#2A2A2A] border border-[#444444] py-2 px-3 rounded-md text-sm hover:bg-[#3A3A3A] transition-colors">
-							Edit
-						</Link>
-						<div
-							onClick={() => !cloning && handleClone()}
-							className={`flex-1 flex items-center justify-center gap-1 bg-[#2A2A2A] border border-[#444444] py-2 px-3 rounded-md text-sm cursor-pointer hover:bg-[#3A3A3A] transition-colors ${cloning ? "opacity-50 cursor-not-allowed" : ""}`}
-							style={{ pointerEvents: cloning ? "none" : "auto" }}
-						>
-							{cloning ? "..." : "Clone"}
-						</div>
-					</div>
 				</div>
 			</div>
-			<AlertDialog isOpen={isOpen} leastDestructiveRef={cancelRef} onClose={onClose}>
-				<AlertDialogOverlay>
-					<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
-						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
-							Delete Event
-						</AlertDialogHeader>
-
-						<AlertDialogBody color="white">Are you sure you want to delete this event? This action cannot be undone.</AlertDialogBody>
-
-						<AlertDialogFooter>
-							<Button ref={cancelRef} onClick={onClose}>
-								Cancel
-							</Button>
-							<Button
-								colorScheme="red"
-								onClick={() => {
-									if (selectedEvent) {
-										handleRemove(selectedEvent)
-										onClose()
-									}
-								}}
-								ml={3}
-								isLoading={loading}
-							>
-								Delete
-							</Button>
-						</AlertDialogFooter>
-					</AlertDialogContent>
-				</AlertDialogOverlay>
-			</AlertDialog>
 		</>
 	)
 }

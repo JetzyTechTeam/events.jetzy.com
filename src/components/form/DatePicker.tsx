@@ -5,8 +5,9 @@ type Props = {
   onChange: (date: string) => void
   placeholder?: string
   defaultDate?: string
+  className?: string
 }
-export default function DatePicker({ onChange, defaultDate, placeholder = "Select a date" }: Props) {
+export default function DatePicker({ onChange, defaultDate, placeholder = "Select a date", className }: Props) {
   const ref = React.useRef<HTMLInputElement>(null)
 
 	React.useEffect(() => {
@@ -55,7 +56,7 @@ export default function DatePicker({ onChange, defaultDate, placeholder = "Selec
       type="text"
       placeholder={placeholder}
       defaultValue={defaultDate}
-      className="bg-[#1D1F24] block w-full h-10 rounded-md border-0 py-1.5 shadow-sm placeholder:text-gray-400 sm:text-sm sm:leading-6 p-3"
+      className={className ?? "bg-[#1D1F24] block w-full h-10 rounded-md border-0 py-1.5 shadow-sm placeholder:text-gray-400 sm:text-sm sm:leading-6 p-3"}
     />
   )
 }

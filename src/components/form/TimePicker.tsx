@@ -5,9 +5,10 @@ type Props = {
 	onChange: (time: string) => void
 	placeholder?: string
 	defaultValue?: string
+	className?: string
 }
 
-export default function TimePicker({ onChange, placeholder = "Select Time", defaultValue }: Props) {
+export default function TimePicker({ onChange, placeholder = "Select Time", defaultValue, className }: Props) {
 	const ref = React.useRef<HTMLInputElement>(null)
 	React.useEffect(() => {
 		if (!ref.current) return
@@ -16,7 +17,11 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 			enableTime: true,
 			noCalendar: true,
 			time_24hr: false,
+			// Store 24h (H:i) so saved value stays "HH:mm"; display 12h with AM/PM via altInput
 			dateFormat: "H:i",
+			altInput: true,
+			altFormat: "h:i K",
+			defaultDate: defaultValue || undefined,
 			onChange: (selectedDates, dateStr) => {
 				onChange(dateStr)
 			},
@@ -25,7 +30,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 		return () => {
 			timepicker.destroy()
 		}
-	}, [onChange])
+	}, [onChange, defaultValue])
 
 	return (
 		<input
@@ -33,7 +38,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 			type="text"
 			placeholder={placeholder}
 			defaultValue={defaultValue}
-			className="bg-[#1D1F24] block w-[100px] h-10 rounded-md border-0 py-1.5 shadow-sm placeholder:text-gray-400 sm:text-sm sm:leading-6 p-3"
+			className={className ?? "bg-[#1D1F24] block w-[100px] h-10 rounded-md border-0 py-1.5 shadow-sm placeholder:text-gray-400 sm:text-sm sm:leading-6 p-3"}
 		/>
 	)
 }

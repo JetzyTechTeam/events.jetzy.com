@@ -1,6 +1,5 @@
 "use client"
 import { stripHtml } from "@/utils/text";
-import DOMPurify from "dompurify";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { authorizedOnly } from "@/lib/authSession"
@@ -39,20 +38,86 @@ import {
 	Td,
 	TableContainer,
 	Badge,
+	Switch,
+	FormControl,
+	FormLabel,
+	InputGroup,
+	InputLeftElement,
+	InputRightElement,
+	useDisclosure,
+	Menu,
+	MenuButton,
+	MenuList,
+	MenuItem,
+	IconButton,
+	ModalFooter,
+	AlertDialog,
+	AlertDialogBody,
+	AlertDialogContent,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogOverlay,
 } from "@chakra-ui/react"
 import { DateTime } from "luxon"
 import axios from "axios"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import Image from "next/image"
-import { DateTimeSVG, LocationSVG, MessageSVG, UserPlusSVG } from "@/assets/icons"
+import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
+import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon } from "@heroicons/react/24/outline"
+import { MinusCircleIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
+import { Formik, Form, Field, FormikProps, FieldArray } from "formik"
+import { usePlacesWidget } from "react-google-autocomplete"
+import DatePicker from "@/components/form/DatePicker"
+import TimePicker from "@/components/form/TimePicker"
+import RichTextEditor from "@/components/misc/RichTextEditor"
+import InterestsSelector from "@/components/events/InterestsSelector"
+import MediaUploadSection from "@/components/media-upload-section"
+import TimezoneSelect from "@/components/timezone-select"
+import { uploadFile, deleteFile } from "@/services/upload.service"
+import { uniqueId } from "@/lib/utils"
+import { Error } from "@/lib/_toaster"
+import { ROUTES } from "@/configs/routes"
+import { useAppDispatch } from "@/redux/stores"
+import { UpdateEventThunk, DeleteEventThunk } from "@/redux/reducers/eventsSlice"
+import { CreateEventFormData, DatePollOption } from "@/types"
+import { TicketData } from "@/components/events/TicketCard"
+import { FileUploadData } from "@/components/misc/DragAndDropUploader"
+import { EmailProps } from "@/lib/email-service"
+import { z } from "zod"
+import { Roboto } from "next/font/google"
+import dayjs from "dayjs"
+import utc from "dayjs/plugin/utc"
+import timezone from "dayjs/plugin/timezone"
 
-export default function Manage({ event }: any) {
-	event = JSON.parse(event)
+dayjs.extend(utc)
+dayjs.extend(timezone)
+
+const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
+
+// Shared dark field styling (Figma: bg #090C10, 1px #343536 border, rounded, Roboto 14px)
+const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-sm placeholder:text-gray-500 focus:outline-none"
+const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`
+const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`
+
+// Brighten any icon SVGs (stroke or fill based) within a container for better visibility
+const iconBrighten = {
+	"& [stroke]": { stroke: "#E6E6E6" },
+	"& [fill]:not([fill='none'])": { fill: "#E6E6E6", fillOpacity: 1 },
+} as const
+
+const updateEventSchema = z.object({
+	name: z.string().min(1, "Event name is required"),
+	location: z.string().min(1, "Location is required"),
+	desc: z.string().min(1, "Description is required"),
+})
+
+export default function Manage({ event: eventProp }: any) {
+	const event = React.useMemo(() => JSON.parse(eventProp), [eventProp])
 
 	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion">("about")
+	const [tabIndex, setTabIndex] = useState(0)
 	const [shareModal, setShareModal] = useState(false)
 	const [inviteGuestsModal, setInviteGuestsModal] = useState(false)
 	const [sendBlastModal, setSendBlastModal] = useState(false)
@@ -123,22 +188,343 @@ export default function Manage({ event }: any) {
 		setIsSendingThankYou(false)
 	}
 
+	// ===== Inline edit form (ported from update.tsx — reuse verbatim) =====
+	const dispatcher = useAppDispatch()
+	const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null)
+	const { isOpen, onOpen, onClose } = useDisclosure()
+	const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure()
+	const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure()
+	const cancelRef = React.useRef<any>(null)
+
+	const [uploadedImages, setUploadedImages] = useState<FileUploadData[]>([])
+	const [uploadProgress, setUploadProgress] = useState(0)
+	const [isUploading, setIsUploading] = useState(false)
+	const [uploadedVideos, setUploadedVideos] = useState<FileUploadData[]>([])
+	const [videoUploadProgress, setVideoUploadProgress] = useState(0)
+	const [isUploadingVideo, setIsUploadingVideo] = useState(false)
+	const [isSubmitting, setIsSubmitting] = useState(false)
+	const [isDeleting, setIsDeleting] = useState(false)
+	const [isCloning, setIsCloning] = useState(false)
+	const [editIndex, setEditIndex] = useState<number | null>(null)
+	const [tempTicket, setTempTicket] = useState<TicketData>({ id: "", title: "", description: "", price: 0 })
+	const [tempPollOption, setTempPollOption] = useState<DatePollOption>({ id: "", date: "", time: "", label: "" })
+	const [pollDate, setPollDate] = useState("")
+	const [pollTime, setPollTime] = useState("")
+	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = useState(false)
+	const [benefitInput, setBenefitInput] = useState("")
+
+	// Initialize images, videos and tickets on mount
+	useEffect(() => {
+		if (event.images && event.images.length > 0) {
+			setUploadedImages(event.images.map((img: string) => ({ id: uniqueId(10), file: img })))
+		}
+		if (event.videos && event.videos.length > 0) {
+			setUploadedVideos(event.videos.map((v: string) => ({ id: uniqueId(10), file: v })))
+		}
+		if (event.tickets && event.tickets.length > 0 && formikRef.current) {
+			formikRef.current.setFieldValue("tickets", event.tickets.map((ticket: any) => ({
+				id: ticket._id?.toString() || uniqueId(10),
+				title: ticket.name,
+				price: Number(ticket.price),
+				description: ticket.desc,
+			})))
+		}
+	}, [event])
+
+	const initialValues: CreateEventFormData = React.useMemo(() => {
+		const tzString = event?.timezone || ""
+		const parts = tzString.split(") ")
+		const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess()
+		const start = event.startsOn ? dayjs(event.startsOn).tz(extractedTimeZone) : null
+		const end = event.endsOn ? dayjs(event.endsOn).tz(extractedTimeZone) : null
+
+		return {
+			name: stripHtml(event.name),
+			desc: event.desc,
+			location: event.location,
+			capacity: event.capacity,
+			requireApproval: event.requireApproval,
+			isPaid: event.isPaid,
+			images: uploadedImages,
+			tickets: (event.tickets || []).map((ticket: any) => ({
+				id: ticket._id?.toString() || uniqueId(10),
+				title: stripHtml(ticket.name),
+				price: Number(ticket.price),
+				description: stripHtml(ticket.desc),
+			})),
+			privacy: event.privacy,
+			status: (event.status ?? "published") as "draft" | "published",
+			startDate: start ? start.format("YYYY-MM-DD") : "",
+			startTime: start ? start.format("HH:mm") : "",
+			endDate: end ? end.format("YYYY-MM-DD") : "",
+			endTime: end ? end.format("HH:mm") : "",
+			timezone: event?.timezone || "",
+			showParticipants: event.showParticipants || false,
+			benefits: event.benefits || "",
+			locationDisclosedAfterBooking: event.locationDisclosedAfterBooking || false,
+			showOnMobile: event.showOnMobile || false,
+			datePoll: event.datePoll ? {
+				isActive: event.datePoll.isActive || false,
+				question: event.datePoll.question || "",
+				options: event.datePoll.options || [],
+			} : { isActive: false, question: "", options: [] as DatePollOption[] },
+			interests: ((event.interests ?? []) as any[]).map((id: any) => id?.toString?.() ?? id),
+		} as CreateEventFormData
+	}, [event, uploadedImages])
+
+	const { ref: placesRef } = usePlacesWidget({
+		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+		onPlaceSelected: (place) => {
+			if (formikRef.current) {
+				formikRef.current?.setFieldValue("location", place.formatted_address)
+				const lat = place.geometry.location.lat()
+				const lng = place.geometry.location.lng()
+				formikRef.current?.setFieldValue("latitude", lat)
+				formikRef.current?.setFieldValue("longitude", lng)
+				formikRef.current?.setFieldValue("placeId", place.place_id)
+			}
+		},
+		options: {
+			fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
+			types: ["establishment"],
+		},
+	})
+
+	const sendEventUpdate = (eventData: EmailProps) => {
+		return axios.post("/api/send-update-event-email", eventData)
+			.then((response) => response.data)
+			.catch((error) => {
+				console.error("Error calling update event API:", error)
+				throw error
+			})
+	}
+
+	const onSubmit = async (values: CreateEventFormData) => {
+		const isDraft = values.status === "draft"
+		values.images = uploadedImages
+		values.videos = uploadedVideos
+
+		if (isDraft) {
+			if (!values.name?.trim()) {
+				Error("Validation Error", "Event name is required to save as draft")
+				return
+			}
+		} else {
+			if (!stripHtml(values.desc || "").trim()) {
+				Error("Validation Error", "Description is required")
+				return
+			}
+			const validation = updateEventSchema.safeParse(values)
+			if (!validation.success) {
+				const fieldErrors = validation.error.flatten().fieldErrors
+				const errorMessages = Object.values(fieldErrors).flat().join("\n")
+				Error("Validation Error", errorMessages || "Please fix the form errors")
+				return
+			}
+			if (uploadedImages.length === 0) {
+				Error("Validation Error", "At least one image is required to publish")
+				return
+			}
+		}
+
+		if (values.tickets.length > 0) values.isPaid = true
+		else values.isPaid = false
+
+		setIsSubmitting(true)
+
+		const events = await axios.post(`/api/get-bookings`, { eventId: event._id })
+			.then(response => response.data)
+			.catch(error => {
+				console.error("Error fetching bookings:", error)
+				return []
+			})
+
+		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: event._id.toString() })).then((res: any) => {
+			if (res?.payload?.status) {
+				if (sendUpdateEmailCheck && events.length > 0) {
+					const changes: string[] = []
+					const tzString = event?.timezone || ""
+					const parts = tzString.split(") ")
+					const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess()
+					const oldStart = event.startsOn ? dayjs(event.startsOn).tz(extractedTimeZone) : null
+					const oldEnd = event.endsOn ? dayjs(event.endsOn).tz(extractedTimeZone) : null
+
+					if (values.name !== event.name) changes.push(`Event Name: ${event.name} -> ${values.name}`)
+					if (values.location !== event.location) changes.push(`Location: ${event.location} -> ${values.location}`)
+
+					const oldStartDateStr = oldStart ? oldStart.format("YYYY-MM-DD") : ""
+					const oldStartTimeStr = oldStart ? oldStart.format("HH:mm") : ""
+					if (values.startDate !== oldStartDateStr || values.startTime !== oldStartTimeStr) {
+						if (values.startDate && values.startTime) changes.push(`Start time was updated to ${values.startDate} ${values.startTime}`)
+						else changes.push(`Start time was removed`)
+					}
+					const oldEndDateStr = oldEnd ? oldEnd.format("YYYY-MM-DD") : ""
+					const oldEndTimeStr = oldEnd ? oldEnd.format("HH:mm") : ""
+					if (values.endDate !== oldEndDateStr || values.endTime !== oldEndTimeStr) {
+						if (values.endDate && values.endTime) changes.push(`End time was updated to ${values.endDate} ${values.endTime}`)
+						else changes.push(`End time was removed`)
+					}
+					if (values.desc !== event.desc) changes.push("Event description was updated")
+					if (values.capacity !== event.capacity) changes.push(`Event capacity was changed to ${values.capacity}`)
+
+					const currentTickets = JSON.stringify(values.tickets.map(t => ({ title: t.title, price: t.price })))
+					const oldTickets = JSON.stringify((event.tickets || []).map((t: any) => ({ title: stripHtml(t.name), price: Number(t.price) })))
+					if (currentTickets !== oldTickets) changes.push("Ticketing options have been revised")
+
+					if (changes.length > 0) {
+						const uniqueUsers = Array.from(new Map(events.map((e: any) => [e.customerEmail, e])).values()) as any[]
+						const origin = typeof window !== "undefined" ? window.location.origin : ""
+						const eventLink = `${origin}/${event.slug}`
+						const updatePromises = uniqueUsers.map((bk: any) =>
+							sendEventUpdate({
+								eventName: values.name,
+								oldEventName: event.name,
+								location: values.location,
+								oldLocation: event.location,
+								startDate: values.startDate,
+								oldStartDate: oldStart ? oldStart.format("YYYY-MM-DD") : "",
+								endDate: values.endDate,
+								oldEndDate: oldEnd ? oldEnd.format("YYYY-MM-DD") : "",
+								endTime: values.endTime,
+								oldEndTime: oldEnd ? oldEnd.format("HH:mm") : "",
+								startTime: values.startTime,
+								oldStartTime: oldStart ? oldStart.format("HH:mm") : "",
+								userEmail: bk.customerEmail,
+								changes,
+								eventLink,
+							} as any))
+						Promise.all(updatePromises)
+							.then((results) => console.log("All event updates sent successfully:", results))
+							.catch((err) => console.error("One or more event updates failed:", err))
+					}
+				}
+				toast({ title: "Event updated!", status: "success", duration: 3000 })
+				router.push(ROUTES.dashboard.events.index)
+			}
+		}).finally(() => {
+			setIsSubmitting(false)
+		})
+	}
+
+	const handleStartDateChange = (date?: string, time?: string) => {
+		if (formikRef?.current) {
+			if (date !== undefined) formikRef.current.setFieldValue("startDate", date)
+			if (time !== undefined) formikRef.current.setFieldValue("startTime", time)
+		}
+	}
+
+	const handleEndDateChange = (date?: string, time?: string) => {
+		if (formikRef?.current) {
+			if (date !== undefined) formikRef.current.setFieldValue("endDate", date)
+			if (time !== undefined) formikRef.current.setFieldValue("endTime", time)
+		}
+	}
+
+	const handleImageUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploading) return
+		setIsUploading(true)
+		setUploadProgress(0)
+		try {
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i]
+				const res = await uploadFile(file, { onProgressChange: (progress) => setUploadProgress(progress), folder: "posts" })
+				setUploadedImages((prev) => [...prev, { id: uniqueId(10), file: res.url }])
+			}
+		} catch (error: any) {
+			console.error("Error uploading file", error)
+			Error("Error", "Failed to upload file")
+		} finally {
+			setIsUploading(false)
+			setUploadProgress(0)
+		}
+	}
+
+	const handleImageDelete = async (imageUrl: string) => {
+		try {
+			try { await deleteFile(imageUrl) } catch {}
+			await axios.post("/api/delete-image", { url: imageUrl })
+			setUploadedImages((prev) => prev.filter((img) => img.file !== imageUrl))
+		} catch (error: any) {
+			console.error("Error deleting image", error)
+		}
+	}
+
+	const handleVideoUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploadingVideo) return
+		setIsUploadingVideo(true)
+		setVideoUploadProgress(0)
+		try {
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i]
+				const res = await uploadFile(file, { onProgressChange: (progress) => setVideoUploadProgress(progress), folder: "posts" })
+				setUploadedVideos((prev) => [...prev, { id: uniqueId(10), file: res.url }])
+			}
+		} catch (error: any) {
+			console.error("Error uploading video", error)
+		} finally {
+			setIsUploadingVideo(false)
+			setVideoUploadProgress(0)
+		}
+	}
+
+	const handleVideoDelete = async (videoUrl: string) => {
+		try {
+			try { await deleteFile(videoUrl) } catch {}
+			setUploadedVideos((prev) => prev.filter((v) => v.file !== videoUrl))
+		} catch (error: any) {
+			console.error("Error deleting video", error)
+		}
+	}
+
+	const handleCloneEvent = () => {
+		setIsCloning(true)
+		axios.post(`/api/events/${event._id}/clone`).then((res) => {
+			const newId = res?.data?.data?._id
+			toast({ title: "Event cloned successfully!", status: "success", duration: 3000 })
+			if (newId) router.push(`/console/events/${newId}/manage`)
+			else router.replace(router.asPath)
+		}).catch((err) => {
+			toast({ title: err?.response?.data?.message || "Failed to clone event.", status: "error", duration: 4000 })
+		}).finally(() => setIsCloning(false))
+	}
+
+	const handleDeleteEvent = () => {
+		setIsDeleting(true)
+		dispatcher(DeleteEventThunk({ id: event._id.toString() })).then(() => {
+			if (event.images?.length > 0) event.images.forEach((image: string) => deleteFile(image))
+			toast({ title: "Event deleted successfully!", status: "success", duration: 3000 })
+			onDeleteClose()
+			router.push(ROUTES.dashboard.events.index)
+		}).finally(() => setIsDeleting(false))
+	}
+
 	return (
 		<>
 			<ConsoleLayout
-				page={stripHtml(event.name) as any}
+				page={
+					<span className="flex flex-col mt-3">
+						<span className={`${roboto.className} mb-7`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
+							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}>My Events &rsaquo; </span>
+							<span className="text-[#F79432] font-normal">{stripHtml(event.name)}</span>
+						</span>
+						<span className={roboto.className} style={{ fontSize: "32px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>{stripHtml(event.name)}</span>
+					</span> as any
+				}
 				component={
-					<div className="flex gap-2">
+					<div className="flex flex-wrap gap-2 items-end self-end">
 						{isAdmin && (
 							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
 								View Analytics
 							</Button>
 						)}
-						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} onClick={() => router.push(`/console/events/${event._id}/check-in`)} fontWeight="bold">
-							Check-In Portal
+						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
+							Update Event
 						</Button>
-						<Button bg="#3E3E3E" color="white" _hover={{ bg: "#323232" }} _active={{ bg: "#323232" }} onClick={() => router.push(`/console/events/${event._id}/update`)}>
-							Edit Event
+						<Button bg="#3E3E3E" color="white" _hover={{ bg: "#323232" }} _active={{ bg: "#323232" }} fontWeight="bold" isLoading={isCloning} onClick={handleCloneEvent}>
+							Clone
+						</Button>
+						<Button bg="#EC5E5E" color="white" _hover={{ bg: "#d94c4c" }} _active={{ bg: "#d94c4c" }} fontWeight="bold" onClick={onDeleteOpen}>
+							Delete Event
 						</Button>
 					</div>
 				}
@@ -159,215 +545,635 @@ export default function Manage({ event }: any) {
 					dailyViews={analytics?.trends?.views || []}
 				/>
 
-				<Tabs variant="line">
-					<TabList borderBottom="2px solid #9C9C9C">
+				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={6}>
+					<TabList borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
 						<Tab
-							fontWeight="bold"
-							color="#9C9C9C"
+							className={roboto.className}
+							fontWeight={500}
+							fontSize="18px"
+							lineHeight="100%"
+							color="#FFFFFF"
+							borderTopRadius="10px"
+							px={5}
 							_selected={{
-								color: "#F79432",
-								borderBottom: "2px solid #F79432",
+								bg: "#FFFFFF",
+								color: "#0B0B0B",
+								fontWeight: 700,
+								borderColor: "#FFFFFF",
 							}}
 						>
 							Overview
 						</Tab>
 						<Tab
-							fontWeight="bold"
-							color="#9C9C9C"
+							className={roboto.className}
+							fontWeight={500}
+							fontSize="18px"
+							lineHeight="100%"
+							color="#FFFFFF"
+							borderTopRadius="10px"
+							px={5}
 							_selected={{
-								color: "#F79432",
-								borderBottom: "2px solid #F79432",
+								bg: "#FFFFFF",
+								color: "#0B0B0B",
+								fontWeight: 700,
+								borderColor: "#FFFFFF",
 							}}
 						>
 							Guests
 						</Tab>
 						<Tab
-							fontWeight="bold"
-							color="#9C9C9C"
+							className={roboto.className}
+							fontWeight={500}
+							fontSize="18px"
+							lineHeight="100%"
+							color="#FFFFFF"
+							borderTopRadius="10px"
+							px={5}
 							_selected={{
-								color: "#F79432",
-								borderBottom: "2px solid #F79432",
+								bg: "#FFFFFF",
+								color: "#0B0B0B",
+								fontWeight: 700,
+								borderColor: "#FFFFFF",
 							}}
 						>
 							Referral Codes
 						</Tab>
 						<Tab
-							fontWeight="bold"
-							color="#9C9C9C"
+							className={roboto.className}
+							fontWeight={500}
+							fontSize="18px"
+							lineHeight="100%"
+							color="#FFFFFF"
+							borderTopRadius="10px"
+							px={5}
 							_selected={{
-								color: "#F79432",
-								borderBottom: "2px solid #F79432",
+								bg: "#FFFFFF",
+								color: "#0B0B0B",
+								fontWeight: 700,
+								borderColor: "#FFFFFF",
 							}}
 						>
 							Custom Questions
 						</Tab>
 						<Tab
-							fontWeight="bold"
-							color="#9C9C9C"
+							className={roboto.className}
+							fontWeight={500}
+							fontSize="18px"
+							lineHeight="100%"
+							color="#FFFFFF"
+							borderTopRadius="10px"
+							px={5}
 							_selected={{
-								color: "#F79432",
-								borderBottom: "2px solid #F79432",
+								bg: "#FFFFFF",
+								color: "#0B0B0B",
+								fontWeight: 700,
+								borderColor: "#FFFFFF",
 							}}
 						>
 							Responses
 						</Tab>
 						<Tab
-							fontWeight="bold"
-							color="#9C9C9C"
+							className={roboto.className}
+							fontWeight={500}
+							fontSize="18px"
+							lineHeight="100%"
+							color="#FFFFFF"
+							borderTopRadius="10px"
+							px={5}
 							_selected={{
-								color: "#F79432",
-								borderBottom: "2px solid #F79432",
+								bg: "#FFFFFF",
+								color: "#0B0B0B",
+								fontWeight: 700,
+								borderColor: "#FFFFFF",
 							}}
 						>
 							Blasts
 						</Tab>
 					</TabList>
 					<TabPanels>
-						<TabPanel>
-							<div className="flex items-center justify-between gap-x-5 mb-10">
-								<div
-									className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
-									onClick={() => setInviteGuestsModal(true)}
-								>
-									<UserPlusSVG />
-									<p className="font-bold text-[#9C9C9C]">Invite Guests</p>
-								</div>
-								<div
-									className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
-									onClick={() => setSendBlastModal(true)}
-								>
-									<MessageSVG />
-									<p className="font-bold text-[#9C9C9C]">Send a Blast</p>
-								</div>
-								<div
-									className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
-									onClick={() => setShareModal(true)}
-								>
-									<ShareIcon className="w-6 h-6 text-[#949494]" />
-									<p className="font-bold text-[#9C9C9C]">Share Event</p>
-								</div>
+						<TabPanel px={0}>
+							<Formik
+								innerRef={formikRef}
+								initialValues={initialValues}
+								onSubmit={onSubmit}
+								enableReinitialize={true}
+							>
+								{({ values, setFieldValue }) => (
+									<Form>
+										<Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
+											{/* ===================== MAIN COLUMN ===================== */}
+											<Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
+												{/* ---- Basic Information ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Heading size="md" color="white" mb={5}>Basic Information</Heading>
 
-								{/* Total Views Block */}
-								<div
-									className="bg-[#1E1E1E] border border-[#434343] rounded-2xl p-4 w-full cursor-pointer hover:shadow-xl transition-all duration-300 flex items-center gap-x-2"
-									onClick={() => setShowDailyViewsModal(true)}
-								>
-									<EyeIcon className="w-6 h-6 text-[#949494]" />
-									<div className="flex flex-col">
-										<p className="font-bold text-[#9C9C9C]">Total Views</p>
-										<p className="text-xl font-bold text-white">{analytics?.summary?.views || 0}</p>
-									</div>
-								</div>
-							</div>
-							<div className="flex h-full gap-x-5">
-								<div className="w-[250px] h-[200px] relative rounded-2xl overflow-hidden">
-									<Image 
-										src={event.images[0]} 
-										alt={stripHtml(event.name)} 
-										fill
-										className="object-cover object-top"
-									/>
-								</div>
-								<div className="w-full">
-									<div className="p-3 flex flex-col gap-y-3 border-b border-[#585858] pb-10">
-										<h4 className="font-bold">When</h4>
-										{event.datePoll?.isActive ? (
-											<div>
-												<p className="font-semibold flex gap-x-2 items-center" style={{ color: "#F79432" }}>
-													<DateTimeSVG stroke="#F79432" />
-													Date to be determined via poll
-												</p>
-												{event.datePoll.options?.length > 0 && (
-													<ul className="mt-2 text-sm list-disc pl-4" style={{ color: "#B5B6B7" }}>
-														{event.datePoll.options.map((opt: any, i: number) => (
-															<li key={i}>{opt.date} {opt.time}{opt.label ? ` — ${opt.label}` : ""}</li>
-														))}
-													</ul>
-												)}
-											</div>
-										) : event.startsOn ? (
-											<p className="font-semibold flex gap-x-2 items-center">
-												<DateTimeSVG stroke="#fff" />
-												{DateTime.fromISO(event.startsOn).toLocal().toFormat("EEE LLL dd yyyy hh:mm:ss a")} {event.timezone}
-											</p>
-										) : (
-											<p className="font-semibold" style={{ color: "#B5B6B7" }}>Date to be decided</p>
-										)}
-									</div>
-									<div className="py-10 px-3 flex flex-col gap-y-3 border-b border-[#585858]">
-										<h4 className="font-bold">Where</h4>
-										<p className="font-semibold flex gap-x-2 items-center">
-											<LocationSVG stroke="#fff" />
-											{event.location}
-										</p>
-									</div>
-									<div className="p-3 flex flex-col gap-y-3">
-										<h4 className="font-bold">Description</h4>
-										<div
-											className="font-semibold text-[#B5B6B7] rich-content"
-											dangerouslySetInnerHTML={{
-												__html: typeof window !== "undefined"
-													? DOMPurify.sanitize(event.desc)
-													: stripHtml(event.desc)
-											}}
-										/>
-									</div>
+													<FormControl mb={4}>
+														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text></FormLabel>
+														<InputGroup>
+															<Field
+																as={Input}
+																name="name"
+																placeholder="Event title"
+																className={roboto.className}
+																bg="#090C10"
+																color="white"
+																fontSize="14px"
+																h="48px"
+																border="1px solid #343536"
+																_focus={{ borderColor: "#343536", boxShadow: "none" }}
+																maxLength={100}
+																pr="60px"
+																value={values?.name}
+															/>
+															<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" color="gray.500" fontSize="xs">
+																{values.name?.length || 0}/100
+															</InputLeftElement>
+														</InputGroup>
+													</FormControl>
 
-									{/* Post-Event Section */}
-									<div className="mt-10 p-6 bg-[#181818] rounded-2xl border border-[#3E3E3E]">
-										<h3 className="text-xl font-bold mb-4 text-[#F79432]">Post-Event Thank You</h3>
-										<p className="text-sm text-[#9C9C9C] mb-6">
-											Add a feedback form link (e.g. Google Forms) below. Once added, you can send a thank you email blast to all confirmed participants.
-										</p>
+													<FormControl mb={4}>
+														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Time zone</FormLabel>
+														<Box position="relative">
+															<TimezoneSelect className={tzFieldCls} />
+															<ChevronDownIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+														</Box>
+													</FormControl>
 
-										<Flex gap={4} direction="column">
-											<Box>
-												<Text fontWeight="bold" mb={2} color="white">Feedback Form Link</Text>
-												<Flex gap={2}>
-													<Input
-														bg="#090C10"
-														borderColor="#444444"
-														color="white"
-														placeholder="https://forms.google.com/..."
-														value={feedbackFormUrl}
-														onChange={(e) => setFeedbackFormUrl(e.target.value)}
-													/>
-													<Button
-														onClick={onUpdateFeedbackLink}
-														bg="#3E3E3E"
-														color="white"
-														_hover={{ bg: "#4A4A4A" }}
+													{/* Start / End date + time with dotted connector */}
+													<Flex
+														gap={4}
+														alignItems="stretch"
+														flexWrap={{ base: "wrap", sm: "nowrap" }}
+														mb={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 1 : 4}
+														bg="#14161B"
+														rounded="xl"
+														p="3"
+														opacity={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 0.4 : 1}
+														pointerEvents={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? "none" : "auto"}
 													>
-														Save Link
-													</Button>
-												</Flex>
-											</Box>
+														{/* Left: Start/End markers + dashed connector */}
+														<Flex direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
+															<Box position="absolute" left="5px" top="6" bottom="6" borderLeft="1px dashed #5A5D62" />
+															<Flex h="48px" align="center" gap="3">
+																<Box w="11px" h="11px" rounded="full" bg="#F79432" zIndex={1} />
+																<Text className={roboto.className} color="#FFFFFFCC" fontSize="14px">Start</Text>
+															</Flex>
+															<Flex h="48px" align="center" gap="3">
+																<Box w="11px" h="11px" rounded="full" bg="#3B82F6" zIndex={1} />
+																<Text className={roboto.className} color="#FFFFFFCC" fontSize="14px">End</Text>
+															</Flex>
+														</Flex>
+														{/* Right: two rows of date + time */}
+														<Flex direction="column" gap="3" flex="1" minW={0}>
+															<Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
+																<Box position="relative" flex="1" minW="140px">
+																	<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+																	<DatePicker className={dtFieldCls} onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" defaultDate={values.startDate} />
+																</Box>
+																<Box position="relative" flex="1" minW="120px">
+																	<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+																	<TimePicker className={dtFieldCls} onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" defaultValue={values.startTime} />
+																</Box>
+															</Flex>
+															<Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
+																<Box position="relative" flex="1" minW="140px">
+																	<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+																	<DatePicker className={dtFieldCls} onChange={(date) => handleEndDateChange(date)} placeholder="End Date" defaultDate={values.endDate} />
+																</Box>
+																<Box position="relative" flex="1" minW="120px">
+																	<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+																	<TimePicker className={dtFieldCls} onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" defaultValue={values.endTime} />
+																</Box>
+															</Flex>
+														</Flex>
+													</Flex>
+													{!!(values.datePoll?.isActive || values.datePoll?.options?.length) && (
+														<Text fontSize="xs" color="orange.400" mb={3}>Remove date poll to set a fixed start/end date</Text>
+													)}
 
-											{event.feedbackFormUrl && (
-												<Box mt={4} p={4} bg="#252525" rounded="xl" border="1px dashed #F79432">
-													<Text color="#F79432" fontWeight="bold" mb={2}>Ready to Send?</Text>
-													<Button
-														width="full"
-														bg="#F79432"
-														color="black"
-														fontWeight="bold"
-														_hover={{ bg: "#E68422" }}
-														isLoading={isSendingThankYou}
-														onClick={onSendThankYouEmails}
-													>
-														Send Thank You Emails to All Participants
-													</Button>
-													{event.thankYouEmailSentAt && (
-														<Text mt={2} fontSize="xs" color="#9C9C9C">
-															Last sent on: {DateTime.fromISO(event.thankYouEmailSentAt).toLocaleString(DateTime.DATETIME_MED)}
-														</Text>
+													<FormControl mb={4}>
+														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Location <Text as="span" color="#F79432">*</Text></FormLabel>
+														<InputGroup>
+															<InputLeftElement h="48px" pointerEvents="none"><LocationSVG /></InputLeftElement>
+															<Field name="location">
+																{({ field }: any) => (
+																	<Input {...field} ref={placesRef} id="location" placeholder="Choose Location" className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
+																)}
+															</Field>
+														</InputGroup>
+													</FormControl>
+
+													<FormControl>
+														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
+														<RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
+														<Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{stripHtml(values.desc || "").length}/500</Text>
+													</FormControl>
+												</Box>
+
+												{/* ---- Post-Event Thank You ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Heading size="md" color="white" mb={2}>Post-Event Thank You</Heading>
+													<Text fontSize="sm" color="#9C9C9C" mb={5}>
+														Add a feedback form link (e.g. Google Forms) below. Once added, you can send a thank you email blast to all confirmed participants.
+													</Text>
+													<Text fontWeight="bold" mb={2} color="white">Feedback Form Link</Text>
+													<Flex gap={2} direction={{ base: "column", sm: "row" }}>
+														<Input
+															bg="#090C10"
+															borderColor="#444444"
+															color="white"
+															placeholder="https://forms.google.com/..."
+															value={feedbackFormUrl}
+															onChange={(e) => setFeedbackFormUrl(e.target.value)}
+														/>
+														<Button onClick={onUpdateFeedbackLink} bg="#F79432" color="black" _hover={{ bg: "#E68422" }} flexShrink={0}>Save Link</Button>
+													</Flex>
+													{event.feedbackFormUrl && (
+														<Box mt={4} p={4} bg="#252525" rounded="xl" border="1px dashed #F79432">
+															<Text color="#F79432" fontWeight="bold" mb={2}>Ready to Send?</Text>
+															<Button width="full" bg="#F79432" color="black" fontWeight="bold" _hover={{ bg: "#E68422" }} isLoading={isSendingThankYou} onClick={onSendThankYouEmails}>
+																Send Thank You Emails to All Participants
+															</Button>
+															{event.thankYouEmailSentAt && (
+																<Text mt={2} fontSize="xs" color="#9C9C9C">Last sent on: {DateTime.fromISO(event.thankYouEmailSentAt).toLocaleString(DateTime.DATETIME_MED)}</Text>
+															)}
+														</Box>
 													)}
 												</Box>
-											)}
+
+												{/* ---- Interests ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<InterestsSelector bare selected={values.interests ?? []} onChange={(ids) => setFieldValue("interests", ids)} />
+												</Box>
+
+												{/* ---- Event Benefits ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Flex align="baseline" gap={2} mb={4}>
+														<Heading size="md" color="white">Event Benefits</Heading>
+														<Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max 23 chars)</Text>
+													</Flex>
+													{(() => {
+														const addBenefit = () => {
+															const v = benefitInput.trim()
+															if (!v) return
+															const list = (values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean)
+															setFieldValue("benefits", [...list, v].join(","))
+															setBenefitInput("")
+														}
+														return (
+															<InputGroup mb={4}>
+																<Input
+																	placeholder="e.g free food, free drinks etc"
+																	className={roboto.className}
+																	bg="#090C10"
+																	color="white"
+																	fontSize="sm"
+																	h="48px"
+																	border="1px solid #343536"
+																	_focus={{ borderColor: "#343536", boxShadow: "none" }}
+																	pr="70px"
+																	maxLength={23}
+																	value={benefitInput}
+																	onChange={(e) => setBenefitInput(e.target.value)}
+																	onKeyDown={(e) => {
+																		if (e.key === "Enter") { e.preventDefault(); addBenefit() }
+																	}}
+																/>
+																<InputRightElement w="auto" right="4" h="48px">
+																	<Button size="sm" variant="ghost" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} p="0" onClick={addBenefit}>
+																		+ Add
+																	</Button>
+																</InputRightElement>
+															</InputGroup>
+														)
+													})()}
+													<Flex gap={3} flexWrap="wrap">
+														{(values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean).map((b: string, idx: number) => (
+															<Flex key={`${b}-${idx}`} align="center" gap={2} bg="#090C10" border="1px solid #343536" rounded="md" px="4" py="2">
+																<Text className={roboto.className} fontSize="sm" color="white">{b}</Text>
+																<Box
+																	as="button"
+																	type="button"
+																	display="flex"
+																	alignItems="center"
+																	onClick={() => {
+																		const list = (values.benefits || "").split(",").map((x: string) => x.trim()).filter(Boolean)
+																		list.splice(idx, 1)
+																		setFieldValue("benefits", list.join(","))
+																	}}
+																>
+																	<MinusCircleIcon className="w-5 h-5 text-[#EC5E5E]" />
+																</Box>
+															</Flex>
+														))}
+													</Flex>
+												</Box>
+
+												{/* ---- Event Options ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Heading size="md" color="white" mb={4}>Event Options</Heading>
+													<Flex align="center" justifyContent="space-between" mb={4}>
+														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+															<LockSVG />
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Privacy</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Who can view and join this event</Text>
+															</Box>
+														</Flex>
+														<Field as="select" id="privacy" name="privacy" value={values?.privacy} className="bg-[#090C10] block w-[110px] h-10 rounded-md border border-[#2A2D31] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
+															<option value="private">Private</option>
+															<option value="public">Public</option>
+														</Field>
+													</Flex>
+													<Flex align="center" justifyContent="space-between" mb={4}>
+														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+															<UserTickSVG />
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Manually approve attendees</Text>
+															</Box>
+														</Flex>
+														<Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+													</Flex>
+													<Flex align="center" justifyContent="space-between" mb={4}>
+														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+															<MultipleUsersSVG />
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Capacity</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Maximum number of attendees</Text>
+															</Box>
+														</Flex>
+														<Field as={Input} type="number" min={0} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
+													</Flex>
+													<Flex align="center" justifyContent="space-between" mb={4}>
+														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+															<UserTickSVG />
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Send Update Email to Attendees</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Notify booked attendees of changes on save</Text>
+															</Box>
+														</Flex>
+														<Switch isChecked={sendUpdateEmailCheck} colorScheme="orange" onChange={(e) => setSendUpdateEmailCheck(e.target.checked)} />
+													</Flex>
+													<Flex align="center" justifyContent="space-between" mb={4}>
+														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+															<LocationSVG />
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Disclose Location After Booking</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Attendees see location only in booking email</Text>
+															</Box>
+														</Flex>
+														<Switch name="locationDisclosedAfterBooking" isChecked={values.locationDisclosedAfterBooking} colorScheme="orange" onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)} />
+													</Flex>
+													<Flex align="center" justifyContent="space-between" mb={4}>
+														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+															<DevicePhoneMobileIcon className="text-[#B5B6B7]" />
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Show on Mobile</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Display this event in the Jetzy mobile app</Text>
+															</Box>
+														</Flex>
+														<Switch name="showOnMobile" isChecked={values.showOnMobile} colorScheme="orange" onChange={() => setFieldValue("showOnMobile", !values.showOnMobile)} />
+													</Flex>
+													<Flex align="center" justifyContent="space-between">
+														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+															<TicketSVG />
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Tickets</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Manage ticket types and pricing</Text>
+															</Box>
+														</Flex>
+														<Button bg="transparent" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} size="sm" fontSize="16px" onClick={() => { setEditIndex(null); setTempTicket({ id: "", title: "", description: "", price: 0 }); onOpen() }} leftIcon={<TicketIcon className="w-5 h-5" />} p="0">
+															Add Tickets
+														</Button>
+													</Flex>
+													<FieldArray name="tickets">
+														{({ remove }) => (
+															<>
+																{values.tickets.map((ticket, index) => (
+																	<Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
+																		<Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
+																		<Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
+																		<Text fontWeight="bold" fontSize="2xl" color="#F79432" mt="2">${ticket.price}</Text>
+																		<Box position="absolute" top="4" right="4">
+																			<Menu>
+																				<MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-6 h-6" />} variant="ghost" size="sm" color="white" _hover={{ bg: "#333" }} _active={{ bg: "#444" }} />
+																				<MenuList bg="#1D1F24" border="1px solid #444" color="white">
+																					<MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => { setEditIndex(index); setTempTicket(ticket); onOpen() }}>Edit</MenuItem>
+																					<MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => remove(index)}>Delete</MenuItem>
+																				</MenuList>
+																			</Menu>
+																		</Box>
+																	</Box>
+																))}
+															</>
+														)}
+													</FieldArray>
+												</Box>
+
+												{/* ---- Date Poll ---- */}
+												<Box
+													bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}
+													opacity={!!(values.startDate || values.endDate) ? 0.4 : 1}
+													pointerEvents={!!(values.startDate || values.endDate) ? "none" : "auto"}
+												>
+													<Heading size="md" color="white" mb={1}>Date Poll <Text as="span" fontSize="sm" color="gray.500" fontWeight="normal">(optional)</Text></Heading>
+													{!!(values.startDate || values.endDate) && (
+														<Text fontSize="xs" color="orange.400" mb={2}>Remove start/end date to enable date poll</Text>
+													)}
+													<Flex align="center" justifyContent="space-between" mt={3} mb="3">
+														<Box>
+															<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Enable Date Poll</Text>
+															<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Let attendees vote on preferred event date</Text>
+														</Box>
+														<Switch isChecked={values.datePoll?.isActive} colorScheme="orange" onChange={() => setFieldValue("datePoll.isActive", !values.datePoll?.isActive)} />
+													</Flex>
+													{values.datePoll?.isActive && (
+														<Box>
+															{(values.datePoll?.options || []).map((opt, idx) => (
+																<Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
+																	<Box>
+																		<Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
+																		{opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
+																	</Box>
+																	<Button size="xs" variant="ghost" color="red.400" onClick={() => {
+																		const updated = [...(values.datePoll?.options || [])]
+																		updated.splice(idx, 1)
+																		setFieldValue("datePoll.options", updated)
+																	}}>Remove</Button>
+																</Flex>
+															))}
+															<Button size="sm" bg="transparent" color="white" border="1px dashed #666" width="100%" mt="1" _hover={{ bg: "#1C1F24" }} onClick={() => { setTempPollOption({ id: "", date: "", time: "", label: "" }); onPollModalOpen() }} leftIcon={<PlusSVG />}>
+																Add Date Option
+															</Button>
+														</Box>
+													)}
+												</Box>
+
+												{/* Status (kept) */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Flex align="center" justifyContent="space-between">
+														<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+														<Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#2A2D31] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
+															<option value="published">Published</option>
+															<option value="draft">Draft</option>
+														</Field>
+													</Flex>
+												</Box>
+											</Flex>
+
+											{/* ===================== SIDEBAR ===================== */}
+											<Flex direction="column" gap={6} flex="1" w="full" maxW={{ lg: "360px" }} minW={0}>
+												{/* ---- Event Media ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Heading size="md" color="white" mb={4}>Event Media</Heading>
+													<MediaUploadSection
+														uploadedImages={uploadedImages}
+														uploadedVideos={uploadedVideos}
+														onImageChange={handleImageUpload}
+														onVideoChange={handleVideoUpload}
+														isUploadingImage={isUploading}
+														isUploadingVideo={isUploadingVideo}
+														imageUploadProgress={uploadProgress}
+														videoUploadProgress={videoUploadProgress}
+														handleImageDelete={handleImageDelete}
+														handleVideoDelete={handleVideoDelete}
+													/>
+												</Box>
+
+												{/* ---- Quick Actions ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "20px", height: "20px" } }}>
+													<Heading size="md" color="white" mb={4}>Quick Actions</Heading>
+													<Flex direction="column" gap={3}>
+														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setInviteGuestsModal(true)}>
+															<UserPlusSVG /><Text className={roboto.className} color="white" fontWeight={500} fontSize="16px">Invite Guests</Text>
+														</Flex>
+														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setTabIndex(5)}>
+															<MessageSVG /><Text className={roboto.className} color="white" fontWeight={500} fontSize="16px">Send a Blast</Text>
+														</Flex>
+														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setShareModal(true)}>
+															<ShareIcon className="w-5 h-5" /><Text className={roboto.className} color="white" fontWeight={500} fontSize="16px">Share Event</Text>
+														</Flex>
+														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => router.push(`/console/events/${event._id}/check-in`)}>
+															<TicketSVG /><Text className={roboto.className} color="white" fontWeight={500} fontSize="16px">Check In Portal</Text>
+														</Flex>
+													</Flex>
+												</Box>
+
+												{/* ---- Event Stats ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "22px", height: "22px" } }}>
+													<Heading size="md" color="white" mb={4}>Event Stats</Heading>
+													<Flex direction="column">
+														<Flex align="center" gap={3} cursor="pointer" py={2} onClick={() => setShowDailyViewsModal(true)}>
+															<EyeIcon />
+															<Box>
+																<Text className={roboto.className} color="#9C9C9C" fontSize="13px" lineHeight="1.2">Views</Text>
+																<Text color="white" fontWeight="bold" fontSize="lg" lineHeight="1.2">{analytics?.summary?.views ?? 0}</Text>
+															</Box>
+														</Flex>
+														<Box borderTop="1px solid #2E2E2E" my={1} />
+														<Flex align="center" gap={3} py={2}>
+															<TicketSVG />
+															<Box>
+																<Text className={roboto.className} color="#9C9C9C" fontSize="13px" lineHeight="1.2">Tickets Sold</Text>
+																<Text color="white" fontWeight="bold" fontSize="lg" lineHeight="1.2">{analytics?.summary?.tickets?.sold ?? 0}</Text>
+															</Box>
+														</Flex>
+														<Box borderTop="1px solid #2E2E2E" my={1} />
+														<Flex align="center" gap={3} py={2}>
+															<MultipleUsersSVG />
+															<Box>
+																<Text className={roboto.className} color="#9C9C9C" fontSize="13px" lineHeight="1.2">Attendees</Text>
+																<Text color="white" fontWeight="bold" fontSize="lg" lineHeight="1.2">{analytics?.summary?.bookings ?? 0}</Text>
+															</Box>
+														</Flex>
+													</Flex>
+												</Box>
+											</Flex>
 										</Flex>
-									</div>
-								</div>
-							</div>
+
+										{/* Tickets Modal */}
+										<FieldArray name="tickets">
+											{({ push, replace }) => (
+												<Modal isOpen={isOpen} onClose={onClose} isCentered>
+													<ModalOverlay />
+													<ModalContent bg="#1E1E1E" color="white">
+														<ModalHeader>{editIndex !== null ? "Edit Ticket" : "Add Ticket"}</ModalHeader>
+														<ModalCloseButton />
+														<ModalBody>
+															<FormControl mb={4}>
+																<FormLabel>Ticket Name</FormLabel>
+																<Input placeholder="Enter ticket name" bg="#090C10" border="1px solid #444" value={tempTicket.title} onChange={(e) => setTempTicket({ ...tempTicket, title: e.target.value })} />
+															</FormControl>
+															<FormControl mb={4}>
+																<FormLabel>Description</FormLabel>
+																<Textarea placeholder="Enter description" bg="#090C10" border="1px solid #444" value={tempTicket.description} onChange={(e) => setTempTicket({ ...tempTicket, description: e.target.value })} />
+															</FormControl>
+															<FormControl mb={4}>
+																<FormLabel>Price</FormLabel>
+																<Input type="number" placeholder="Enter price" bg="#090C10" border="1px solid #444" value={tempTicket.price} onChange={(e) => setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) })} />
+															</FormControl>
+														</ModalBody>
+														<ModalFooter>
+															<Button bg="#F79432" color="black" mr={3} onClick={() => {
+																if (!tempTicket.title.trim() || !tempTicket.description.trim()) {
+																	toast({ title: "Missing required fields", description: "You need to provide a ticket title and description.", status: "error", duration: 4000, isClosable: true })
+																	return
+																}
+																if (editIndex !== null) replace(editIndex, tempTicket)
+																else push({ ...tempTicket, id: uniqueId(10) })
+																onClose()
+															}}>
+																{editIndex !== null ? "Save Changes" : "Add Ticket"}
+															</Button>
+															<Button variant="ghost" color="white" _hover={{ color: "black", bg: "orange" }} onClick={onClose}>Cancel</Button>
+														</ModalFooter>
+													</ModalContent>
+												</Modal>
+											)}
+										</FieldArray>
+
+										{/* Date Poll Option Modal */}
+										<Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
+											<ModalOverlay />
+											<ModalContent bg="#1E1E1E" color="white">
+												<ModalHeader>Add Date Option</ModalHeader>
+												<ModalCloseButton />
+												<ModalBody>
+													<FormControl mb={4}>
+														<FormLabel>Date</FormLabel>
+														<DatePicker key={`poll-date-${isPollModalOpen}`} onChange={(d) => setPollDate(d)} placeholder="Select date" />
+													</FormControl>
+													<FormControl mb={4}>
+														<FormLabel>Time</FormLabel>
+														<TimePicker key={`poll-time-${isPollModalOpen}`} onChange={(t) => setPollTime(t)} placeholder="Select time" />
+													</FormControl>
+													<FormControl mb={4}>
+														<FormLabel>Label (optional)</FormLabel>
+														<Input placeholder="e.g. Weekend option" bg="#090C10" border="1px solid #444" color="white" value={tempPollOption.label || ""} onChange={(e) => setTempPollOption({ ...tempPollOption, label: e.target.value })} />
+													</FormControl>
+												</ModalBody>
+												<ModalFooter>
+													<Flex flexDirection="column" w="full" gap="3">
+														<Button bg="#F79432" w="full" color="black" type="button" onClick={() => {
+															const label = tempPollOption.label || ""
+															if (pollDate && pollTime) {
+																const newOption: DatePollOption = { id: Date.now().toString(), date: pollDate, time: pollTime, label, votes: [] }
+																setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption])
+																setTempPollOption({ id: "", date: "", time: "", label: "" })
+																setPollDate("")
+																setPollTime("")
+																onPollModalClose()
+															}
+														}}>Add</Button>
+														<Button variant="unstyled" onClick={() => { setPollDate(""); setPollTime(""); onPollModalClose() }}>Cancel</Button>
+													</Flex>
+												</ModalFooter>
+											</ModalContent>
+										</Modal>
+									</Form>
+								)}
+							</Formik>
 						</TabPanel>
 						<TabPanel>
 							{/* Guests list content goes here */}
@@ -397,6 +1203,20 @@ export default function Manage({ event }: any) {
 						</TabPanel>
 					</TabPanels>
 				</Tabs>
+
+				{/* DELETE EVENT CONFIRMATION */}
+				<AlertDialog isOpen={isDeleteOpen} leastDestructiveRef={cancelRef} onClose={onDeleteClose} isCentered>
+					<AlertDialogOverlay>
+						<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
+							<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">Delete Event</AlertDialogHeader>
+							<AlertDialogBody color="white">Are you sure you want to delete this event? This action cannot be undone.</AlertDialogBody>
+							<AlertDialogFooter>
+								<Button ref={cancelRef} onClick={onDeleteClose}>Cancel</Button>
+								<Button colorScheme="red" onClick={handleDeleteEvent} ml={3} isLoading={isDeleting}>Delete</Button>
+							</AlertDialogFooter>
+						</AlertDialogContent>
+					</AlertDialogOverlay>
+				</AlertDialog>
 			</ConsoleLayout>
 		</>
 	)

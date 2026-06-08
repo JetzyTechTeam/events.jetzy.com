@@ -5,12 +5,14 @@ import {
   Flex,
   FormControl,
   FormLabel,
+  Heading,
   Input,
   Switch,
   Text,
   Textarea,
   InputGroup,
   InputLeftElement,
+  InputRightElement,
   useDisclosure,
   Modal,
   ModalOverlay,
@@ -24,7 +26,6 @@ import {
   Menu,
   MenuButton,
   IconButton,
-  Badge,
 } from "@chakra-ui/react";
 import {
   Formik,
@@ -37,17 +38,15 @@ import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { CreateEventFormData, DatePollOption, Pages } from "@/types";
 import { usePlacesWidget } from "react-google-autocomplete";
 import {
-  DescriptionSVG,
-  DotSVG,
-  DottedLinesSVG,
   LocationSVG,
   LockSVG,
   MultipleUsersSVG,
   PlusSVG,
   TicketSVG,
   UserTickSVG,
-  VerticalDotsSVG,
 } from "@/assets/icons";
+import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon } from "@heroicons/react/24/outline";
+import { MinusCircleIcon } from "@heroicons/react/24/solid";
 import TimePicker from "@/components/form/TimePicker";
 import DatePicker from "@/components/form/DatePicker";
 import { Error } from "@/lib/_toaster";
@@ -60,10 +59,17 @@ import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
 import MediaUploadSection from "../../../components/media-upload-section";
 import TimezoneSelect from "../../../components/timezone-select";
-import { useSession } from "next-auth/react";
 import { z } from "zod";
+import { Roboto } from "next/font/google";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import InterestsSelector from "@/components/events/InterestsSelector";
+
+const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
+
+// Shared dark field styling (Figma: bg #090C10, 1px #343536 border, rounded, Roboto 14px)
+const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-sm placeholder:text-gray-500 focus:outline-none";
+const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`;
+const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`;
 
 const initialValues = {
   name: "",
@@ -101,8 +107,6 @@ const CreateEventPage = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const dispatcher = useAppDispatch();
   const navigation = useRouter();
-  const { data: session } = useSession();
-  const router = useRouter();
 
   const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
 
@@ -114,6 +118,7 @@ const CreateEventPage = () => {
   const [isUploadingVideo, setIsUploadingVideo] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [editIndex, setEditIndex] = React.useState<number | null>(null);
+  const [benefitInput, setBenefitInput] = React.useState("");
   const [tempTicket, setTempTicket] = React.useState<TicketData>({
     id: "",
     title: "",
@@ -334,7 +339,7 @@ const CreateEventPage = () => {
     <ConsoleLayout
       page={Pages.CreateEvent}
       backBtn="/console/events"
-      maxW="max-w-4xl"
+      maxW="max-w-7xl"
     >
       <Formik
         initialValues={initialValues as CreateEventFormData}
@@ -343,343 +348,266 @@ const CreateEventPage = () => {
       >
         {({ values, setFieldValue }) => (
           <Form>
-            <Flex
-              direction={{ base: "column", md: "row" }}
-              gap={8}
-              p={8}
-              borderRadius="2xl"
-              maxW="900px"
-              mx="auto"
-              boxShadow="2xl"
-            >
-              {/* Left Side: Form Fields */}
-              <Box flex="1">
-                <FormControl mb={4}>
-                  <Flex alignItems="center">
-                    <Field
-                      as={Input}
-                      id="name"
-                      name="name"
-                      placeholder="Event Name"
-                      size="lg"
-                      color="white"
-                      border="none"
-                      h="20"
-                      fontSize="38"
-                      fontWeight="bold"
-                      p="0"
-                      _focus={{ border: "none", boxShadow: "none" }}
-                      _placeholder={{ color: "#FFFFFF52" }}
-                      value={values?.name}
-                    />
+            <Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
+              {/* ===================== MAIN COLUMN ===================== */}
+              <Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
+                {/* ---- Basic Information ---- */}
+                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <Heading size="md" color="white" mb={5}>Basic Information</Heading>
 
-                    <TimezoneSelect />
-                  </Flex>
-                </FormControl>
-                <Flex
-                  gap={4}
-                  alignItems="center"
-                  justifyContent="space-between"
-                  mb={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 1 : 4}
-                  bg="#14161B"
-                  rounded="xl"
-                  p="2"
-                  opacity={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 0.4 : 1}
-                  pointerEvents={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? "none" : "auto"}
-                >
-                  <Box pl="3" className="relative">
-                    <Box className="absolute top-5 left-4">
-                      <DottedLinesSVG />
-                    </Box>
-                    <FormLabel color="#FFFFFFA3" mb="5">
-                      <Flex gap="3" alignItems="center">
-                        <DotSVG />
-
-                        <Text>Start</Text>
-                      </Flex>
-                    </FormLabel>
-                    <FormLabel color="#FFFFFFA3">
-                      <Flex gap="3" alignItems="center">
-                        <DotSVG />
-                        <Text>End</Text>
-                      </Flex>
-                    </FormLabel>
-                  </Box>
-                  <Flex gap="4">
-                    <Box>
-                      <FormControl mb="2">
-                        <TimePicker
-                          onChange={(time) =>
-                            handleStartDateChange(undefined, time)
-                          }
-                          placeholder="Start Time"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <TimePicker
-                          onChange={(time) =>
-                            handleEndDateChange(undefined, time)
-                          }
-                          placeholder="End Time"
-                        />
-                      </FormControl>
-                    </Box>
-                    <Box>
-                      <FormControl mb="2">
-                        <DatePicker
-                          onChange={(date) => handleStartDateChange(date)}
-                          placeholder="Start Date"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <DatePicker
-                          onChange={(date) => handleEndDateChange(date)}
-                          placeholder="End Date"
-                        />
-                      </FormControl>
-                    </Box>
-                  </Flex>
-                </Flex>
-                {!!(values.datePoll?.isActive || values.datePoll?.options?.length) && (
-                  <Text fontSize="xs" color="orange.400" mb={3}>
-                    Remove date poll to set a fixed start/end date
-                  </Text>
-                )}
-                <FormControl mb={4}>
-                  <InputGroup>
-                    <InputLeftElement pointerEvents="none">
-                      <LocationSVG />
-                    </InputLeftElement>
-                    <Field name="location">
-                      {({ field }: any) => (
-                        <Input
-                          {...field}
-                          ref={ref}
-                          id="location"
-                          placeholder="Choose Location"
-                          bg="#141619"
-                          color="white"
-                          border="none"
-                          pl="10"
-                        />
-                      )}
-                    </Field>
-                  </InputGroup>
-                </FormControl>
-                <FormControl mb={4}>
-                  <Text fontWeight="semibold" color="gray.400" mb={2}>
-                    Description
-                  </Text>
-                  <RichTextEditor
-                    value={values.desc}
-                    onChange={(val) => setFieldValue("desc", val)}
-                    placeholder="Add Description"
-                  />
-                </FormControl>
-                <InterestsSelector
-                  selected={values.interests ?? []}
-                  onChange={(ids) => setFieldValue("interests", ids)}
-                />
-                <Text fontWeight="semibold" color="gray.400" mb={2}>
-                  Event Benefits (Max 23 chars)
-                </Text>
-                <Box bg="#141619" rounded="xl" px="4" py="3" mb={4}>
-                  <FormControl>
+                  <FormControl mb={4}>
+                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text></FormLabel>
                     <InputGroup>
-                      <InputLeftElement pointerEvents="none">
-                        <PlusSVG />
-                      </InputLeftElement>
                       <Field
                         as={Input}
-                        name="benefits"
-                        placeholder="e.g. Free drinks, Networking, Live Music (separate by commas)"
-                        bg="#1C1F24"
+                        name="name"
+                        placeholder="Event title"
+                        className={roboto.className}
+                        bg="#090C10"
                         color="white"
-                        border="none"
-                        fontSize="sm"
-                        pl="10"
-                        maxLength={23}
+                        fontSize="14px"
+                        h="48px"
+                        border="1px solid #343536"
+                        _focus={{ borderColor: "#343536", boxShadow: "none" }}
+                        maxLength={100}
+                        pr="60px"
+                        value={values?.name}
                       />
+                      <InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" color="gray.500" fontSize="xs">
+                        {values.name?.length || 0}/100
+                      </InputLeftElement>
                     </InputGroup>
-                    <Text fontSize="xs" color="gray.500" mt={1} textAlign="right">
-                      {values.benefits?.length || 0}/23
-                    </Text>
+                  </FormControl>
+
+                  <FormControl mb={4}>
+                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Time zone</FormLabel>
+                    <Box position="relative">
+                      <TimezoneSelect className={tzFieldCls} />
+                      <ChevronDownIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </Box>
+                  </FormControl>
+
+                  {/* Start / End date + time with dotted connector */}
+                  <Flex
+                    gap={4}
+                    alignItems="stretch"
+                    flexWrap={{ base: "wrap", sm: "nowrap" }}
+                    mb={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 1 : 4}
+                    bg="#14161B"
+                    rounded="xl"
+                    p="3"
+                    opacity={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 0.4 : 1}
+                    pointerEvents={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? "none" : "auto"}
+                  >
+                    {/* Left: Start/End markers + dashed connector */}
+                    <Flex direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
+                      <Box position="absolute" left="5px" top="6" bottom="6" borderLeft="1px dashed #5A5D62" />
+                      <Flex h="48px" align="center" gap="3">
+                        <Box w="11px" h="11px" rounded="full" bg="#F79432" zIndex={1} />
+                        <Text className={roboto.className} color="#FFFFFFCC" fontSize="14px">Start</Text>
+                      </Flex>
+                      <Flex h="48px" align="center" gap="3">
+                        <Box w="11px" h="11px" rounded="full" bg="#3B82F6" zIndex={1} />
+                        <Text className={roboto.className} color="#FFFFFFCC" fontSize="14px">End</Text>
+                      </Flex>
+                    </Flex>
+                    {/* Right: two rows of date + time */}
+                    <Flex direction="column" gap="3" flex="1" minW={0}>
+                      <Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
+                        <Box position="relative" flex="1" minW="140px">
+                          <CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                          <DatePicker className={dtFieldCls} onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" defaultDate={values.startDate} />
+                        </Box>
+                        <Box position="relative" flex="1" minW="120px">
+                          <ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                          <TimePicker className={dtFieldCls} onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" defaultValue={values.startTime} />
+                        </Box>
+                      </Flex>
+                      <Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
+                        <Box position="relative" flex="1" minW="140px">
+                          <CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                          <DatePicker className={dtFieldCls} onChange={(date) => handleEndDateChange(date)} placeholder="End Date" defaultDate={values.endDate} />
+                        </Box>
+                        <Box position="relative" flex="1" minW="120px">
+                          <ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+                          <TimePicker className={dtFieldCls} onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" defaultValue={values.endTime} />
+                        </Box>
+                      </Flex>
+                    </Flex>
+                  </Flex>
+                  {!!(values.datePoll?.isActive || values.datePoll?.options?.length) && (
+                    <Text fontSize="xs" color="orange.400" mb={3}>Remove date poll to set a fixed start/end date</Text>
+                  )}
+
+                  <FormControl mb={4}>
+                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Location <Text as="span" color="#F79432">*</Text></FormLabel>
+                    <InputGroup>
+                      <InputLeftElement h="48px" pointerEvents="none"><LocationSVG /></InputLeftElement>
+                      <Field name="location">
+                        {({ field }: any) => (
+                          <Input {...field} ref={ref} id="location" placeholder="Choose Location" className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
+                        )}
+                      </Field>
+                    </InputGroup>
+                  </FormControl>
+
+                  <FormControl>
+                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
+                    <RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
+                    <Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{(values.desc || "").replace(/<[^>]*>/g, "").length}/500</Text>
                   </FormControl>
                 </Box>
-                <Text fontWeight="semibold" color="gray.400" mb={2}>
-                  Event Options
-                </Text>
-                <Box bg="#141619" rounded="xl" px="3" py="2">
-                  <Flex align="center" justifyContent="space-between" mt="2">
-                    <Flex gap="3" alignItems="center">
+
+                {/* ---- Interests ---- */}
+                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <InterestsSelector bare selected={values.interests ?? []} onChange={(ids) => setFieldValue("interests", ids)} />
+                </Box>
+
+                {/* ---- Event Benefits ---- */}
+                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <Flex align="baseline" gap={2} mb={4}>
+                    <Heading size="md" color="white">Event Benefits</Heading>
+                    <Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max 23 chars)</Text>
+                  </Flex>
+                  {(() => {
+                    const addBenefit = () => {
+                      const v = benefitInput.trim()
+                      if (!v) return
+                      const list = (values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean)
+                      setFieldValue("benefits", [...list, v].join(","))
+                      setBenefitInput("")
+                    }
+                    return (
+                      <InputGroup mb={4}>
+                        <Input
+                          placeholder="e.g free food, free drinks etc"
+                          className={roboto.className}
+                          bg="#090C10"
+                          color="white"
+                          fontSize="sm"
+                          h="48px"
+                          border="1px solid #343536"
+                          _focus={{ borderColor: "#343536", boxShadow: "none" }}
+                          pr="70px"
+                          maxLength={23}
+                          value={benefitInput}
+                          onChange={(e) => setBenefitInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); addBenefit() }
+                          }}
+                        />
+                        <InputRightElement w="auto" right="4" h="48px">
+                          <Button size="sm" variant="ghost" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} p="0" onClick={addBenefit}>
+                            + Add
+                          </Button>
+                        </InputRightElement>
+                      </InputGroup>
+                    )
+                  })()}
+                  <Flex gap={3} flexWrap="wrap">
+                    {(values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean).map((b: string, idx: number) => (
+                      <Flex key={`${b}-${idx}`} align="center" gap={2} bg="#090C10" border="1px solid #343536" rounded="md" px="4" py="2">
+                        <Text className={roboto.className} fontSize="sm" color="white">{b}</Text>
+                        <Box
+                          as="button"
+                          type="button"
+                          display="flex"
+                          alignItems="center"
+                          onClick={() => {
+                            const list = (values.benefits || "").split(",").map((x: string) => x.trim()).filter(Boolean)
+                            list.splice(idx, 1)
+                            setFieldValue("benefits", list.join(","))
+                          }}
+                        >
+                          <MinusCircleIcon className="w-5 h-5 text-[#EC5E5E]" />
+                        </Box>
+                      </Flex>
+                    ))}
+                  </Flex>
+                </Box>
+
+                {/* ---- Event Options ---- */}
+                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <Heading size="md" color="white" mb={4}>Event Options</Heading>
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <LockSVG />
-                      <Text color="gray.400" mr={2}>
-                        Privacy
-                      </Text>
+                      <Box>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Privacy</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Who can view and join this event</Text>
+                      </Box>
                     </Flex>
-                    <Field
-                      as="select"
-                      id="privacy"
-                      name="privacy"
-                      value={values?.privacy}
-                      className="bg-[#1E1E1E] block w-[100px] h-10 rounded-md border-0 py-1 shadow-sm sm:text-sm sm:leading-6 p-3"
-                    >
+                    <Field as="select" id="privacy" name="privacy" value={values?.privacy} className="bg-[#090C10] block w-[110px] h-10 rounded-md border border-[#343536] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
                       <option value="private">Private</option>
                       <option value="public">Public</option>
                     </Field>
                   </Flex>
-                  <Flex align="center" justifyContent="space-between" my={4}>
-                    <Flex gap="3" alignItems="center">
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <UserTickSVG />
-                      <Text color="gray.400" mr={2}>
-                        Require Approval
-                      </Text>
+                      <Box>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Manually approve attendees</Text>
+                      </Box>
                     </Flex>
-                    <Switch
-                      name="requireApproval"
-                      isChecked={values.requireApproval}
-                      colorScheme="orange"
-                      onChange={() =>
-                        setFieldValue(
-                          "requireApproval",
-                          !values.requireApproval
-                        )
-                      }
-                    />
+                    <Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
                   </Flex>
-                  <Flex align="center" justifyContent="space-between" mb="4">
-                    <Flex gap="3" alignItems="center">
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <MultipleUsersSVG />
-                      <Text color="gray.400" mr={2}>
-                        Capacity
-                      </Text>
+                      <Box>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Capacity</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Maximum number of attendees</Text>
+                      </Box>
                     </Flex>
-                    <Field
-                      as={Input}
-                      type="number"
-                      min={0}
-                      value={values.capacity ?? ""}
-                      placeholder="0"
-                      name="capacity"
-                      bg="#1C1F24"
-                      color="white"
-                      border="none"
-                      w="80px"
-                      h="30px"
-                    />
+                    <Field as={Input} type="number" min={0} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #343536" w="90px" h="36px" />
                   </Flex>
-                  <Flex align="center" justifyContent="space-between" mb="4">
-                    <Flex gap="3" alignItems="center">
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <LocationSVG />
                       <Box>
-                        <Text color="gray.400">Disclose Location After Booking</Text>
-                        <Text fontSize="xs" color="gray.600">Attendees see real location only in booking email</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Disclose Location After Booking</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Attendees see location only in booking email</Text>
                       </Box>
                     </Flex>
-                    <Switch
-                      name="locationDisclosedAfterBooking"
-                      isChecked={values.locationDisclosedAfterBooking}
-                      colorScheme="orange"
-                      onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)}
-                    />
+                    <Switch name="locationDisclosedAfterBooking" isChecked={values.locationDisclosedAfterBooking} colorScheme="orange" onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)} />
                   </Flex>
-                  <Flex align="center" justifyContent="space-between" mb="4">
-                    <Flex gap="3" alignItems="center">
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+                      <DevicePhoneMobileIcon className="text-[#B5B6B7]" />
                       <Box>
-                        <Text color="gray.400">Show on Mobile</Text>
-                        <Text fontSize="xs" color="gray.600">Display this event in the Jetzy mobile app</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Show on Mobile</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Display this event in the Jetzy mobile app</Text>
                       </Box>
                     </Flex>
-                    <Switch
-                      name="showOnMobile"
-                      isChecked={values.showOnMobile}
-                      colorScheme="orange"
-                      onChange={() => setFieldValue("showOnMobile", !values.showOnMobile)}
-                    />
+                    <Switch name="showOnMobile" isChecked={values.showOnMobile} colorScheme="orange" onChange={() => setFieldValue("showOnMobile", !values.showOnMobile)} />
                   </Flex>
                   <Flex align="center" justifyContent="space-between">
-                    <Flex gap="3" alignItems="center">
+                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <TicketSVG />
-                      <Text color="gray.400" mr={2}>
-                        Tickets
-                      </Text>
+                      <Box>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Tickets</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Manage ticket types and pricing</Text>
+                      </Box>
                     </Flex>
-                    <Button
-                      bg="transparent"
-                      color="white"
-                      _hover={{ bg: "transparent" }}
-                      _active={{ bg: "transparent" }}
-                      size="sm"
-                      onClick={onOpen}
-                      rightIcon={<PlusSVG />}
-                      p="0"
-                    >
-                      Add
+                    <Button bg="transparent" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} size="sm" fontSize="16px" onClick={() => { setEditIndex(null); setTempTicket({ id: "", title: "", description: "", price: 0 }); onOpen() }} leftIcon={<TicketIcon className="w-5 h-5" />} p="0">
+                      Add Tickets
                     </Button>
                   </Flex>
                   <FieldArray name="tickets">
-                    {({ remove, replace, push }) => (
+                    {({ remove }) => (
                       <>
                         {values.tickets.map((ticket, index) => (
-                          <Box
-                            key={index}
-                            py="2"
-                            px="3"
-                            bg="#2B2B2B"
-                            borderRadius="md"
-                            border="1px solid #464646"
-                            my={4}
-                            position="relative"
-                          >
-                            <Box>
-                              <Text fontWeight="bold">{ticket.title}</Text>
-                              <Text fontSize="sm" my="2">
-                                {ticket.description}
-                              </Text>
-                              <Text
-                                fontSize="lg"
-                                fontWeight="bold"
-                                color="#F79432"
-                              >
-                                ${ticket.price}
-                              </Text>
-                            </Box>
-
-                            {/* Vertical Dots Menu */}
-                            <Box position="absolute" top="3" right="3">
+                          <Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
+                            <Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
+                            <Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
+                            <Text fontWeight="bold" fontSize="2xl" color="#F79432" mt="2">${ticket.price}</Text>
+                            <Box position="absolute" top="4" right="4">
                               <Menu>
-                                <MenuButton
-                                  as={IconButton}
-                                  icon={<VerticalDotsSVG />}
-                                  variant="ghost"
-                                  size="sm"
-                                  color="white"
-                                  _hover={{ bg: "#333" }}
-                                  _active={{ bg: "#444" }}
-                                />
-                                <MenuList
-                                  bg="#1D1F24"
-                                  border="1px solid #444"
-                                  color="white"
-                                >
-                                  <MenuItem
-                                    bg="transparent"
-                                    _hover={{ bg: "#333" }}
-                                    onClick={() => {
-                                      setEditIndex(index);
-                                      setTempTicket(ticket);
-                                      onOpen();
-                                    }}
-                                  >
-                                    Edit
-                                  </MenuItem>
-                                  <MenuItem
-                                    bg="transparent"
-                                    _hover={{ bg: "#333" }}
-                                    onClick={() => remove(index)}
-                                  >
-                                    Delete
-                                  </MenuItem>
+                                <MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-6 h-6" />} variant="ghost" size="sm" color="white" _hover={{ bg: "#333" }} _active={{ bg: "#444" }} />
+                                <MenuList bg="#1D1F24" border="1px solid #444" color="white">
+                                  <MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => { setEditIndex(index); setTempTicket(ticket); onOpen() }}>Edit</MenuItem>
+                                  <MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => remove(index)}>Delete</MenuItem>
                                 </MenuList>
                               </Menu>
                             </Box>
@@ -689,30 +617,23 @@ const CreateEventPage = () => {
                     )}
                   </FieldArray>
                 </Box>
+
+                {/* ---- Date Poll ---- */}
                 <Box
+                  bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}
                   opacity={!!(values.startDate || values.endDate) ? 0.4 : 1}
                   pointerEvents={!!(values.startDate || values.endDate) ? "none" : "auto"}
                 >
-                {!!(values.startDate || values.endDate) && (
-                  <Text fontSize="xs" color="orange.400" mt={6} mb={1}>
-                    Remove start/end date to enable date poll
-                  </Text>
-                )}
-                {/* Date Poll Section */}
-                <Text fontWeight="semibold" color="gray.400" mb={2} mt={!!(values.startDate || values.endDate) ? 1 : 6}>
-                  Date Poll
-                </Text>
-                <Box bg="#141619" rounded="xl" px="3" py="3" mb={4}>
-                  <Flex align="center" justifyContent="space-between" mb="3">
+                  <Heading size="md" color="white" mb={1}>Date Poll <Text as="span" fontSize="sm" color="gray.500" fontWeight="normal">(optional)</Text></Heading>
+                  {!!(values.startDate || values.endDate) && (
+                    <Text fontSize="xs" color="orange.400" mb={2}>Remove start/end date to enable date poll</Text>
+                  )}
+                  <Flex align="center" justifyContent="space-between" mt={3} mb="3">
                     <Box>
-                      <Text color="gray.400">Enable Date Poll</Text>
-                      <Text fontSize="xs" color="gray.600">Let attendees vote on preferred event date</Text>
+                      <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Enable Date Poll</Text>
+                      <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Let attendees vote on preferred event date</Text>
                     </Box>
-                    <Switch
-                      isChecked={values.datePoll?.isActive}
-                      colorScheme="orange"
-                      onChange={() => setFieldValue("datePoll.isActive", !values.datePoll?.isActive)}
-                    />
+                    <Switch isChecked={values.datePoll?.isActive} colorScheme="orange" onChange={() => setFieldValue("datePoll.isActive", !values.datePoll?.isActive)} />
                   </Flex>
                   {values.datePoll?.isActive && (
                     <Box>
@@ -722,270 +643,249 @@ const CreateEventPage = () => {
                             <Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
                             {opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
                           </Box>
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            color="red.400"
-                            onClick={() => {
-                              const updated = [...(values.datePoll?.options || [])];
-                              updated.splice(idx, 1);
-                              setFieldValue("datePoll.options", updated);
-                            }}
-                          >
-                            Remove
-                          </Button>
+                          <Button size="xs" variant="ghost" color="red.400" onClick={() => {
+                            const updated = [...(values.datePoll?.options || [])]
+                            updated.splice(idx, 1)
+                            setFieldValue("datePoll.options", updated)
+                          }}>Remove</Button>
                         </Flex>
                       ))}
-                      <Button
-                        size="sm"
-                        bg="transparent"
-                        color="white"
-                        border="1px dashed #666"
-                        width="100%"
-                        mt="1"
-                        _hover={{ bg: "#1C1F24" }}
-                        onClick={() => {
-                          setTempPollOption({ id: "", date: "", time: "", label: "" });
-                          onPollModalOpen();
-                        }}
-                        leftIcon={<PlusSVG />}
-                      >
+                      <Button size="sm" bg="transparent" color="white" border="1px dashed #666" width="100%" mt="1" _hover={{ bg: "#1C1F24" }} onClick={() => { setTempPollOption({ id: "", date: "", time: "", label: "" }); onPollModalOpen() }} leftIcon={<PlusSVG />}>
                         Add Date Option
                       </Button>
                     </Box>
                   )}
                 </Box>
-                </Box>
 
-                <Flex align="center" justifyContent="space-between" mt="4">
-                  <Text color="gray.400">Status</Text>
-                  <Field
-                    as="select"
-                    name="status"
-                    value={values?.status}
-                    className="bg-[#1E1E1E] block w-[130px] h-10 rounded-md border-0 py-1 shadow-sm sm:text-sm sm:leading-6 p-3"
+                {/* ---- Status + Submit ---- */}
+                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+                    <Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#343536] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
+                      <option value="published">Published</option>
+                      <option value="draft">Draft</option>
+                    </Field>
+                  </Flex>
+                  <Button
+                    type="submit"
+                    bg="#F79432"
+                    size="lg"
+                    width="100%"
+                    borderRadius="xl"
+                    color="black"
+                    isLoading={isSubmitting}
+                    isDisabled={isSubmitting || isUploading}
                   >
-                    <option value="published">Published</option>
-                    <option value="draft">Draft</option>
-                  </Field>
-                </Flex>
+                    {values.status === 'draft' ? 'Save as Draft' : 'Create Event'}
+                  </Button>
+                </Box>
+              </Flex>
 
-                <Button
-                  type="submit"
-                  mt="6"
-                  bg="#F79432"
-                  size="lg"
-                  width="100%"
-                  borderRadius="xl"
-                  color="black"
-                  isLoading={isSubmitting}
-                  isDisabled={isSubmitting || isUploading}
-                >
-                  {values.status === 'draft' ? 'Save as Draft' : 'Create Event'}
-                </Button>
+              {/* ===================== SIDEBAR ===================== */}
+              <Flex direction="column" gap={6} flex="1" w="full" maxW={{ lg: "360px" }} minW={0}>
+                {/* ---- Event Media ---- */}
+                <Box id="images" bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <Heading size="md" color="white" mb={4}>Event Media</Heading>
+                  <MediaUploadSection
+                    uploadedImages={uploadedImages}
+                    uploadedVideos={uploadedVideos}
+                    onImageChange={handleImageUpload}
+                    onVideoChange={handleVideoUpload}
+                    isUploadingImage={isUploading}
+                    isUploadingVideo={isUploadingVideo}
+                    imageUploadProgress={uploadProgress}
+                    videoUploadProgress={videoUploadProgress}
+                    handleImageDelete={handleImageDelete}
+                    handleVideoDelete={handleVideoDelete}
+                  />
+                </Box>
+              </Flex>
+            </Flex>
 
-                {/* Date Poll Option Modal */}
-                <Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
+            {/* Date Poll Option Modal */}
+            <Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
+              <ModalOverlay />
+              <ModalContent bg="#1E1E1E" color="white">
+                <ModalHeader>Add Date Option</ModalHeader>
+                <ModalCloseButton />
+                <ModalBody>
+                  <FormControl mb={4}>
+                    <FormLabel>Date</FormLabel>
+                    <DatePicker
+                      key={`poll-date-${isPollModalOpen}`}
+                      onChange={(d) => setPollDate(d)}
+                      placeholder="Select date"
+                    />
+                  </FormControl>
+                  <FormControl mb={4}>
+                    <FormLabel>Time</FormLabel>
+                    <TimePicker
+                      key={`poll-time-${isPollModalOpen}`}
+                      onChange={(t) => setPollTime(t)}
+                      placeholder="Select time"
+                    />
+                  </FormControl>
+                  <FormControl mb={4}>
+                    <FormLabel>Label (optional)</FormLabel>
+                    <Input
+                      placeholder="e.g. Weekend option"
+                      bg="#090C10"
+                      border="1px solid #444"
+                      color="white"
+                      value={tempPollOption.label || ""}
+                      onChange={(e) => setTempPollOption({ ...tempPollOption, label: e.target.value })}
+                    />
+                  </FormControl>
+                </ModalBody>
+                <ModalFooter>
+                  <Flex flexDirection="column" w="full" gap="3">
+                    <Button
+                      bg="#F79432"
+                      w="full"
+                      color="black"
+                      type="button"
+                      onClick={() => {
+                        const label = tempPollOption.label || ""
+                        if (pollDate && pollTime) {
+                          const newOption: DatePollOption = {
+                            id: Date.now().toString(),
+                            date: pollDate,
+                            time: pollTime,
+                            label,
+                            votes: [],
+                          };
+                          setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
+                          setTempPollOption({ id: "", date: "", time: "", label: "" });
+                          setPollDate("")
+                          setPollTime("")
+                          onPollModalClose();
+                        }
+                      }}
+                    >
+                      Add
+                    </Button>
+                    <Button variant="unstyled" onClick={() => { setPollDate(""); setPollTime(""); onPollModalClose(); }}>Cancel</Button>
+                  </Flex>
+                </ModalFooter>
+              </ModalContent>
+            </Modal>
+
+            {/* Tickets Modal */}
+            <FieldArray name="tickets">
+              {({ push, replace }) => (
+                <Modal isOpen={isOpen} onClose={onClose} isCentered>
                   <ModalOverlay />
                   <ModalContent bg="#1E1E1E" color="white">
-                    <ModalHeader>Add Date Option</ModalHeader>
+                    <ModalHeader>
+                      {editIndex !== null ? "Edit Ticket" : "Add Ticket"}
+                    </ModalHeader>
                     <ModalCloseButton />
                     <ModalBody>
                       <FormControl mb={4}>
-                        <FormLabel>Date</FormLabel>
-                        <DatePicker
-                          key={`poll-date-${isPollModalOpen}`}
-                          onChange={(d) => setPollDate(d)}
-                          placeholder="Select date"
-                        />
-                      </FormControl>
-                      <FormControl mb={4}>
-                        <FormLabel>Time</FormLabel>
-                        <TimePicker
-                          key={`poll-time-${isPollModalOpen}`}
-                          onChange={(t) => setPollTime(t)}
-                          placeholder="Select time"
-                        />
-                      </FormControl>
-                      <FormControl mb={4}>
-                        <FormLabel>Label (optional)</FormLabel>
+                        <FormLabel>Ticket Name</FormLabel>
                         <Input
-                          placeholder="e.g. Weekend option"
+                          id="ticketTitle"
+                          name="ticketTitle"
+                          placeholder="Enter ticket name"
                           bg="#090C10"
                           border="1px solid #444"
-                          color="white"
-                          value={tempPollOption.label || ""}
-                          onChange={(e) => setTempPollOption({ ...tempPollOption, label: e.target.value })}
+                          value={tempTicket.title}
+                          onChange={(e) =>
+                            setTempTicket({
+                              ...tempTicket,
+                              title: e.target.value,
+                            })
+                          }
+                        />
+                      </FormControl>
+                      <FormControl mb={4}>
+                        <FormLabel>Description</FormLabel>
+                        <Textarea
+                          id="ticketDescription"
+                          name="ticketDescription"
+                          placeholder="Enter description"
+                          bg="#090C10"
+                          border="1px solid #444"
+                          value={tempTicket.description}
+                          onChange={(e) =>
+                            setTempTicket({
+                              ...tempTicket,
+                              description: e.target.value,
+                            })
+                          }
+                        />
+                      </FormControl>
+                      <FormControl mb={4}>
+                        <FormLabel>Price</FormLabel>
+                        <Input
+                          id="ticketPrice"
+                          name="ticketPrice"
+                          type="number"
+                          placeholder="Enter price"
+                          bg="#090C10"
+                          border="1px solid #444"
+                          value={tempTicket.price}
+                          onChange={(e) =>
+                            setTempTicket({
+                              ...tempTicket,
+                              price: parseFloat(e.target.value),
+                            })
+                          }
                         />
                       </FormControl>
                     </ModalBody>
+
                     <ModalFooter>
                       <Flex flexDirection="column" w="full" gap="3">
                         <Button
                           bg="#F79432"
                           w="full"
                           color="black"
-                          type="button"
+                          mr={3}
                           onClick={() => {
-                            const label = tempPollOption.label || ""
-                            if (pollDate && pollTime) {
-                              const newOption: DatePollOption = {
-                                id: Date.now().toString(),
-                                date: pollDate,
-                                time: pollTime,
-                                label,
-                                votes: [],
-                              };
-                              setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption]);
-                              setTempPollOption({ id: "", date: "", time: "", label: "" });
-                              setPollDate("")
-                              setPollTime("")
-                              onPollModalClose();
+                            if (
+                              editIndex === null &&
+                              tempTicket.title &&
+                              tempTicket.price
+                            ) {
+                              push({
+                                ...tempTicket,
+                                id: new Date().getTime().toString(),
+                              });
+                              setTempTicket({
+                                id: "",
+                                title: "",
+                                description: "",
+                                price: 0,
+                              });
+                            } else if (editIndex !== null) {
+                              replace(editIndex, tempTicket);
                             }
+                            onClose();
                           }}
                         >
-                          Add
+                          {editIndex !== null ? "Update" : "Add"}
                         </Button>
-                        <Button variant="unstyled" onClick={() => { setPollDate(""); setPollTime(""); onPollModalClose(); }}>Cancel</Button>
+                        <Button
+                          variant="unstyled"
+                          onClick={() => {
+                            setTempTicket({
+                              id: "",
+                              title: "",
+                              description: "",
+                              price: 0,
+                            });
+                            onClose();
+                          }}
+                        >
+                          Cancel
+                        </Button>
                       </Flex>
                     </ModalFooter>
                   </ModalContent>
                 </Modal>
-
-                {/* Tickets Modal */}
-                <FieldArray name="tickets">
-                  {({ push, replace }) => (
-                    <Modal isOpen={isOpen} onClose={onClose} isCentered>
-                      <ModalOverlay />
-                      <ModalContent bg="#1E1E1E" color="white">
-                        <ModalHeader>
-                          {editIndex !== null ? "Edit Ticket" : "Add Ticket"}
-                        </ModalHeader>
-                        <ModalCloseButton />
-                        <ModalBody>
-                          <FormControl mb={4}>
-                            <FormLabel>Ticket Name</FormLabel>
-                            <Input
-                              id="ticketTitle"
-                              name="ticketTitle"
-                              placeholder="Enter ticket name"
-                              bg="#090C10"
-                              border="1px solid #444"
-                              value={tempTicket.title}
-                              onChange={(e) =>
-                                setTempTicket({
-                                  ...tempTicket,
-                                  title: e.target.value,
-                                })
-                              }
-                            />
-                          </FormControl>
-                          <FormControl mb={4}>
-                            <FormLabel>Description</FormLabel>
-                            <Textarea
-                              id="ticketDescription"
-                              name="ticketDescription"
-                              placeholder="Enter description"
-                              bg="#090C10"
-                              border="1px solid #444"
-                              value={tempTicket.description}
-                              onChange={(e) =>
-                                setTempTicket({
-                                  ...tempTicket,
-                                  description: e.target.value,
-                                })
-                              }
-                            />
-                          </FormControl>
-                          <FormControl mb={4}>
-                            <FormLabel>Price</FormLabel>
-                            <Input
-                              id="ticketPrice"
-                              name="ticketPrice"
-                              type="number"
-                              placeholder="Enter price"
-                              bg="#090C10"
-                              border="1px solid #444"
-                              value={tempTicket.price}
-                              onChange={(e) =>
-                                setTempTicket({
-                                  ...tempTicket,
-                                  price: parseFloat(e.target.value),
-                                })
-                              }
-                            />
-                          </FormControl>
-                        </ModalBody>
-
-                        <ModalFooter>
-                          <Flex flexDirection="column" w="full" gap="3">
-                            <Button
-                              bg="#F79432"
-                              w="full"
-                              color="black"
-                              mr={3}
-                              onClick={() => {
-                                if (
-                                  editIndex === null &&
-                                  tempTicket.title &&
-                                  tempTicket.price
-                                ) {
-                                  push({
-                                    ...tempTicket,
-                                    id: new Date().getTime().toString(),
-                                  });
-                                  setTempTicket({
-                                    id: "",
-                                    title: "",
-                                    description: "",
-                                    price: 0,
-                                  });
-                                } else if (editIndex !== null) {
-                                  replace(editIndex, tempTicket);
-                                }
-                                onClose();
-                              }}
-                            >
-                              {editIndex !== null ? "Update" : "Add"}
-                            </Button>
-                            <Button
-                              variant="unstyled"
-                              onClick={() => {
-                                setTempTicket({
-                                  id: "",
-                                  title: "",
-                                  description: "",
-                                  price: 0,
-                                });
-                                onClose();
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </Flex>
-                        </ModalFooter>
-                      </ModalContent>
-                    </Modal>
-                  )}
-                </FieldArray>
-              </Box>
-              {/* Right Side: Media Upload */}
-              <Box id="images" mb={6}>
-                <FormLabel>Event Media</FormLabel>
-                <MediaUploadSection
-                  uploadedImages={uploadedImages}
-                  uploadedVideos={uploadedVideos}
-                  onImageChange={handleImageUpload}
-                  onVideoChange={handleVideoUpload}
-                  isUploadingImage={isUploading}
-                  isUploadingVideo={isUploadingVideo}
-                  imageUploadProgress={uploadProgress}
-                  videoUploadProgress={videoUploadProgress}
-                  handleImageDelete={handleImageDelete}
-                  handleVideoDelete={handleVideoDelete}
-                />
-              </Box>
-            </Flex>
+              )}
+            </FieldArray>
           </Form>
         )}
       </Formik>

@@ -220,9 +220,9 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | Page | File | Access |
 |------|------|--------|
 | Events list | `src/pages/console/events/index.tsx` | admin=all, user=own (ownerId filter) |
-| Create event | `src/pages/console/events/create.tsx` | authenticated |
-| Edit event | `src/pages/console/events/[eventId]/update.tsx` | admin OR owner |
-| Manage event | `src/pages/console/events/[eventId]/manage.tsx` | admin OR owner. Tabs: Overview, Guests, Referral Codes, Custom Questions, Blasts (composer + sent history w/ edit/delete; "Advanced options" opens full SendBlastModal) |
+| Create event | `src/pages/console/events/create.tsx` | authenticated. Figma card design (mirrors Manage Overview): Basic Information / Interests(bare) / Event Benefits / Event Options / Date Poll / Status+Submit cards + Event Media sidebar. Shares styling tokens with manage (`#15181C`/`#343536`/10px cards, Roboto, full-width tz+chevron, date/time w/ icons). Logic unchanged (`CreateEventThunk`, success modal). |
+| Edit event | `src/pages/console/events/[eventId]/update.tsx` | **Redirect shim → `/manage`** (editing merged into Manage Overview). Old route/bookmarks still resolve. |
+| Manage event | `src/pages/console/events/[eventId]/manage.tsx` | admin OR owner. Figma redesign: **Overview tab is now the inline editable event form** (Formik, ported verbatim from old update.tsx — `initialValues`, `onSubmit`/`UpdateEventThunk` + send-update-event-email, image/video/ticket/poll handlers, Places autocomplete). 2-col responsive: main col (Basic Information, Post-Event Thank You, Interests, Event Benefits as chips over comma-string, Event Options, Date Poll, Status) + sidebar (Event Media `MediaUploadSection`, Quick Actions, Event Stats from `/api/analytics/events`). Header: breadcrumb + name, "Update Event" → `formikRef.submitForm()`, "Delete Event" → confirm dialog → `DeleteEventThunk`. Tabs (all 6, scrollable on mobile): Overview, Guests, Referral Codes, Custom Questions, Responses, Blasts |
 | Check-in | `src/pages/console/events/[eventId]/check-in.tsx` | admin OR owner |
 | Event analytics | `src/pages/console/events/[eventId]/analytics.tsx` | admin only — Overview tab (existing metrics) + Journey tab (funnel/heatmap/dwell/top targets) |
 | Ticket mgmt | `src/pages/console/events/[eventId]/tickets.tsx` | — |

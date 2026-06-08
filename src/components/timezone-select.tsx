@@ -14,7 +14,7 @@ const timezones = moment.tz.names().map((tz) => {
   };
 });
 
-const TimezoneSelect: React.FC = () => {
+const TimezoneSelect: React.FC<{ className?: string }> = ({ className }) => {
   const { values, handleChange } = useFormikContext<any>()
   return (
     <>
@@ -24,7 +24,7 @@ const TimezoneSelect: React.FC = () => {
         name="timezone"
         value={values?.timezone}
         onChange={handleChange}
-        className="bg-[#1E1E1E] block w-[130px] h-10 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+        className={className ?? "bg-[#1E1E1E] block w-[130px] h-10 rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"}
       >
         {timezones.map((tz) => (
           <option key={`${tz.label} ${tz.value}`} value={`${tz.label} ${tz.value}`}>
