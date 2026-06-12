@@ -88,8 +88,8 @@ export const authOptions: NextAuthOptions = {
             console.log('Creating JIT user from magic token:', email);
             const hashedPassword = await bcrypt.hash('123456', 10);
             user = await EventUsers.create({
-              firstName: magicTokenData.firstName,
-              lastName: magicTokenData.lastName,
+              firstName: magicTokenData.firstName || magicTokenData.email?.split("@")[0] || "User",
+              lastName: magicTokenData.lastName || "",
               email: magicTokenData.email,
               password: hashedPassword,
               role: 'user',
@@ -122,7 +122,9 @@ export const authOptions: NextAuthOptions = {
           }
 
 
-          let accessToken = null;
+          // Code-login embeds the real backend accessToken in the (signature-verified)
+          // magic token — use it directly and skip the password-based external authorize.
+          let accessToken = (magicTokenData as any)?.accessToken || null;
 
           // Try to get external token with timeout
           try {

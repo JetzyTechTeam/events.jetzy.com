@@ -7,6 +7,7 @@ interface MagicLinkData {
     firstName?: string;
     lastName?: string;
     _id?: string;
+    accessToken?: string;
 }
 
 /**

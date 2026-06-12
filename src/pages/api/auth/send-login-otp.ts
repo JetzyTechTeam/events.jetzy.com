@@ -1,13 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next"
-import { EventUsers } from "@/models/eventUsersModal"
-import { Users } from "@Jetzy/models/userModal"
-import { ensureDbConnected } from "@/configs/database"
-import { sendManualVerificationEmail } from "@Jetzy/lib/send-grid"
-
-const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString()
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-    await ensureDbConnected()
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Method not allowed" })
     }
@@ -16,47 +9,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { email } = req.body
         if (!email) return res.status(400).json({ error: "Email is required" })
 
-        const decodedEmail = email.toLowerCase().trim()
+        const decodedEmail = String(email).toLowerCase().trim()
+        const base = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://test.jetzy.com"
 
-        // Find user in either collection
-        const eventUser = await EventUsers.findOne({ email: decodedEmail })
-        const legacyUser = await Users.findOne({ email: decodedEmail })
+        const r = await fetch(`${base}/api/v1/accounts/login-code/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: decodedEmail, platform: "web" }),
+        })
+        const body = await r.json().catch(() => ({} as any))
 
-        if (!eventUser && !legacyUser) {
-            // Don't reveal if account exists — just say "if your email is registered, you'll get a code"
-            return res.status(200).json({ success: true, message: "If your email is registered, you'll receive a login code shortly." })
+        if (r.ok) {
+            return res.status(200).json({ success: true, message: "Login code sent to your email." })
         }
 
-        // Check if blocked
-        const user = eventUser || legacyUser
-        if ((user as any).isBlocked) {
-            return res.status(403).json({ error: "ACCOUNT_BLOCKED" })
+        if (r.status === 429) {
+            return res.status(429).json({ error: "Too many requests. Please wait before trying again." })
         }
 
-        const otp = generateOTP()
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
-
-        // Store OTP in whichever collection the user actually exists in
-        // IMPORTANT: Never upsert into EventUsers for legacy users — that creates ghost accounts
-        if (eventUser) {
-            await EventUsers.findOneAndUpdate(
-                { email: decodedEmail },
-                { $set: { manualVerificationCode: otp, manualVerificationCodeExpiresAt: expiresAt } }
-            )
-        } else if (legacyUser) {
-            // Store OTP directly in the legacy Users collection where the user lives
-            await Users.findOneAndUpdate(
-                { email: decodedEmail },
-                { $set: { manualVerificationCode: otp, manualVerificationCodeExpiresAt: expiresAt } },
-                { strict: false }
-            )
-        }
-
-        await sendManualVerificationEmail({ email: decodedEmail, code: otp })
-
-        return res.status(200).json({ success: true, message: "Login code sent to your email." })
+        return res.status(r.status || 500).json({ error: body?.message || "Failed to send code. Please try again." })
     } catch (error: any) {
-        console.error("Error in send-login-otp:", error.message)
+        console.error("Error in send-login-otp:", error?.message || error)
         return res.status(500).json({ error: "Internal server error" })
     }
 }
