@@ -21,16 +21,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Filter out cancelled bookings for main counts
         const activeBookings = allBookings.filter(b => b.status !== BookingStatus.CANCELLED);
 
-        // Calculate active ticket counts
+        // Calculate active ticket counts (register-only booking with no tickets = 1 spot)
         const totalTickets = activeBookings.reduce((sum, b) => {
-            return sum + b.tickets.reduce((tSum, t) => tSum + t.quantity, 0);
+            const qty = b.tickets.reduce((tSum, t) => tSum + t.quantity, 0);
+            return sum + (qty > 0 ? qty : 1);
         }, 0);
 
-        // Calculate cancelled ticket counts
+        // Calculate cancelled ticket counts (register-only booking with no tickets = 1 spot)
         const cancelledTickets = allBookings
             .filter(b => b.status === BookingStatus.CANCELLED)
             .reduce((sum, b) => {
-                return sum + b.tickets.reduce((tSum, t) => tSum + t.quantity, 0);
+                const qty = b.tickets.reduce((tSum, t) => tSum + t.quantity, 0);
+                return sum + (qty > 0 ? qty : 1);
             }, 0);
 
         //unique guests/customers based on email (excluding cancelled)

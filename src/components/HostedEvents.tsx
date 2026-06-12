@@ -13,6 +13,7 @@ import { IEvent } from "@/models/events/types"
 import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
 import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
+import Pagination from "@/components/misc/Pagination"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import Link from "next/link"
@@ -70,6 +71,7 @@ export default function HostedEvents({ event }: Props) {
 	const [isSendingInvite, setIsSendingInvite] = useState(false)
 	const [isSearching, setIsSearching] = useState(false)
 	const [isChatExpanded, setIsChatExpanded] = useState(false)
+	const [isManageListsOpen, setIsManageListsOpen] = useState(false)
 
 	useEffect(() => {
 		const q = inviteSearch.trim()
@@ -257,6 +259,11 @@ export default function HostedEvents({ event }: Props) {
 									Login
 								</Link>
 							)}
+							{canManage && (
+								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
+									Manage Event
+								</Link>
+							)}
 							{isAdmin && (
 								<Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
 									Edit Event
@@ -368,7 +375,7 @@ export default function HostedEvents({ event }: Props) {
 									</p>
 								</div>
 
-								<div className="flex gap-x-3 sm:items-end flex-shrink-0">
+								<div className="flex gap-x-3 sm:items-end flex-shrink-0 flex-wrap">
 									{canManage && (
 										<button
 											onClick={onQRModalOpen}
@@ -431,27 +438,41 @@ export default function HostedEvents({ event }: Props) {
 						<div className={`${isDatePollActive ? "max-w-6xl mx-auto lg:pr-[384px]" : "max-w-4xl mx-auto"} mt-8`}>
 							{/* Admin Tabs */}
 							<div className="bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden">
-								{/* Tab Headers */}
-								<div className="flex border-b border-[#434343]">
-									<button
-										onClick={() => setActiveTab("bookings")}
-										className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "bookings" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
-									>
-										Bookings
-									</button>
-									<button
-										onClick={() => setActiveTab("waiting-list")}
-										className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "waiting-list" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
-									>
-										Waiting List
-									</button>
-								</div>
+								{/* Section header toggle */}
+								<button
+									onClick={() => setIsManageListsOpen((v) => !v)}
+									className="w-full flex items-center justify-between px-6 py-4 text-left font-semibold text-white hover:bg-[#434343] transition-colors"
+									aria-expanded={isManageListsOpen}
+								>
+									<span>Bookings & Waiting List</span>
+									<Icon as={isManageListsOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
+								</button>
 
-								{/* Tab Content */}
-								<div className="p-6">
-									{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} />}
-									{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
-								</div>
+								{isManageListsOpen && (
+									<>
+										{/* Tab Headers */}
+										<div className="flex border-y border-[#434343]">
+											<button
+												onClick={() => setActiveTab("bookings")}
+												className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "bookings" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+											>
+												Bookings
+											</button>
+											<button
+												onClick={() => setActiveTab("waiting-list")}
+												className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "waiting-list" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+											>
+												Waiting List
+											</button>
+										</div>
+
+										{/* Tab Content */}
+										<div className="p-6">
+											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} />}
+											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
+										</div>
+									</>
+								)}
 							</div>
 						</div>
 					)}
@@ -779,31 +800,52 @@ function CustomArrow(props: { className?: string; onClick?: () => void; children
 }
 
 function GuestsList({ eventId }: { eventId: string }) {
+	const [isOpen, setIsOpen] = React.useState(false)
+	const [page, setPage] = React.useState(1)
+	const perPage = 10
+
 	const { data: guests, isLoading } = useQuery({
 		queryKey: ["eventGuests", eventId],
 		queryFn: () => axios.get(`/api/events/guests?eventId=${eventId}`),
 	})
 
+	const list: { _id: string; name: string }[] = Array.isArray(guests?.data?.data) ? guests.data.data : []
+	const paged = list.slice((page - 1) * perPage, page * perPage)
+
 	return (
-		<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8 py-3 px-6">
-			<h3 className="text-lg font-semibold mb-4">Guests</h3>
-			<ul className="space-y-3">
-				{isLoading && <li className="text-gray-400 text-sm">Loading guests...</li>}
+		<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8">
+			<button
+				onClick={() => setIsOpen((v) => !v)}
+				className="w-full flex items-center justify-between px-6 py-4 text-left font-semibold text-white hover:bg-[#434343] transition-colors"
+				aria-expanded={isOpen}
+			>
+				<span>Guests{!isLoading ? ` (${list.length})` : ""}</span>
+				<Icon as={isOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
+			</button>
 
-				{!isLoading && guests?.data?.data?.length === 0 && <li className="text-gray-500 italic text-sm">No guests found for this event.</li>}
+			{isOpen && (
+				<div className="px-6 pb-4 border-t border-[#434343] pt-4">
+					<ul className="space-y-3">
+						{isLoading && <li className="text-gray-400 text-sm">Loading guests...</li>}
 
-				{guests?.data?.data?.map((guest: { _id: string; name: string }) => {
-					if (!guest) return null;
-					return (
-						<li key={guest._id} className="flex items-center justify-between bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition">
-							<div className="flex items-center gap-4">
-								<div className="w-9 h-9 rounded-full bg-[#444] flex items-center justify-center text-white font-semibold uppercase">{guest.name?.charAt(0) || "?"}</div>
-								<span className="text-white font-medium">{guest.name || "Unknown Guest"}</span>
-							</div>
-						</li>
-					);
-				})}
-			</ul>
+						{!isLoading && list.length === 0 && <li className="text-gray-500 italic text-sm">No guests found for this event.</li>}
+
+						{paged.map((guest) => {
+							if (!guest) return null
+							return (
+								<li key={guest._id} className="flex items-center justify-between bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition">
+									<div className="flex items-center gap-4">
+										<div className="w-9 h-9 rounded-full bg-[#444] flex items-center justify-center text-white font-semibold uppercase">{guest.name?.charAt(0) || "?"}</div>
+										<span className="text-white font-medium">{guest.name || "Unknown Guest"}</span>
+									</div>
+								</li>
+							)
+						})}
+					</ul>
+
+					<Pagination totalItems={list.length} perPageItems={perPage} pageNo={page} onPageChange={setPage} />
+				</div>
+			)}
 		</div>
 	)
 }
@@ -828,6 +870,10 @@ interface Booking {
 }
 
 function EventBookings({ eventId }: { eventId: string }) {
+	const [page, setPage] = React.useState(1)
+	const [openId, setOpenId] = React.useState<string | null>(null)
+	const perPage = 10
+
 	const { data: bookings, isLoading } = useQuery({
 		queryKey: ["eventBookings", eventId],
 		queryFn: () => axios.get(`/api/events/${eventId}/event-bookings`),
@@ -848,6 +894,9 @@ function EventBookings({ eventId }: { eventId: string }) {
 			cancelledGuests: totals.data.cancelledGuests || 0,
 		}
 	}, [totals?.data])
+
+	const list: Booking[] = Array.isArray(bookings?.data) ? bookings.data : []
+	const paged = list.slice((page - 1) * perPage, page * perPage)
 
 	return (
 		<div>
@@ -877,63 +926,75 @@ function EventBookings({ eventId }: { eventId: string }) {
 
 			{isLoading && <p className="text-gray-300">Loading bookings...</p>}
 
-			{!isLoading && bookings?.data?.length === 0 && <p className="text-gray-300">No bookings found for this event.</p>}
+			{!isLoading && list.length === 0 && <p className="text-gray-300">No bookings found for this event.</p>}
 
 			{!isLoading &&
-				bookings?.data &&
-				Array.isArray(bookings.data) &&
-				bookings.data.map((booking: Booking) => (
-					<div key={booking._id} className="border-b border-[#434343] py-4 last:border-b-0">
-						<p className="text-sm text-[#bbbbbb]">
-							<span className="font-semibold text-white">Booking Ref:</span> {booking.bookingRef}
-						</p>
+				paged.map((booking: Booking) => {
+					const isOpen = openId === booking._id
+					return (
+						<div key={booking._id} className="border-b border-[#434343] last:border-b-0">
+							<button
+								type="button"
+								onClick={() => setOpenId(isOpen ? null : booking._id)}
+								className="w-full flex items-center justify-between gap-4 py-4 text-left"
+								aria-expanded={isOpen}
+							>
+								<div className="min-w-0">
+									<p className="text-sm font-semibold text-white truncate">{booking.customerName}</p>
+									<p className="text-xs text-[#bbbbbb] mt-0.5 truncate">Ref: {booking.bookingRef}</p>
+								</div>
+								<div className="flex items-center gap-4 flex-shrink-0">
+									<span className={`text-xs font-semibold ${booking.status === "cancelled" ? "text-red-400" : "text-green-400"}`}>{booking.status}</span>
+									<span className="text-sm font-semibold text-white">${booking.total}</span>
+									<Icon as={isOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
+								</div>
+							</button>
 
-						<p className="text-sm text-[#bbbbbb] mt-1">
-							<span className="font-semibold text-white">Customer:</span> {booking.customerName}
-						</p>
-						<p className="text-sm text-[#bbbbbb] mt-1">
-							<span className="font-semibold text-white">Email:</span> {booking.customerEmail}
-						</p>
-						<p className="text-sm text-[#bbbbbb] mt-1">
-							<span className="font-semibold text-white">Phone:</span> {booking.customerPhone}
-						</p>
+							{isOpen && (
+								<div className="pb-4">
+									<p className="text-sm text-[#bbbbbb]">
+										<span className="font-semibold text-white">Email:</span> {booking.customerEmail}
+									</p>
+									<p className="text-sm text-[#bbbbbb] mt-1">
+										<span className="font-semibold text-white">Phone:</span> {booking.customerPhone}
+									</p>
+									<p className="text-sm text-[#bbbbbb] mt-1">
+										<span className="font-semibold text-white">Created:</span> {new Date(booking.createdAt).toLocaleString()}
+									</p>
 
-						<p className="text-sm text-[#bbbbbb] mt-1">
-							<span className="font-semibold text-white">Status:</span> {booking.status}
-						</p>
+									<div className="mt-3">
+										<p className="font-semibold text-white text-sm">Tickets:</p>
+										{booking.tickets.length > 0 ? (
+											<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
+												{booking.tickets.map((ticket) => (
+													<li key={ticket._id}>
+														Quantity: <span className="text-white">{ticket.quantity}</span>
+													</li>
+												))}
+											</ul>
+										) : (
+											<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
+										)}
+									</div>
 
-						<p className="text-sm text-[#bbbbbb] mt-1">
-							<span className="font-semibold text-white">Created:</span> {new Date(booking.createdAt).toLocaleString()}
-						</p>
-
-						<div className="mt-3">
-							<p className="font-semibold text-white text-sm">Tickets:</p>
-							{booking.tickets.length > 0 ? (
-								<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
-									{booking.tickets.map((ticket) => (
-										<li key={ticket._id}>
-											Quantity: <span className="text-white">{ticket.quantity}</span>
-										</li>
-									))}
-								</ul>
-							) : (
-								<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
+									<div className="flex items-center gap-6 text-sm mt-3 text-[#bbbbbb]">
+										<p>
+											<span className="font-semibold text-white">Subtotal:</span> ${booking.subTotal}
+										</p>
+										<p>
+											<span className="font-semibold text-white">Tax:</span> ${booking.tax}
+										</p>
+										<p>
+											<span className="font-semibold text-white">Total:</span> ${booking.total}
+										</p>
+									</div>
+								</div>
 							)}
 						</div>
+					)
+				})}
 
-						<div className="flex items-center gap-6 text-sm mt-3 text-[#bbbbbb]">
-							<p>
-								<span className="font-semibold text-white">Subtotal:</span> ${booking.subTotal}
-							</p>
-							<p>
-								<span className="font-semibold text-white">Tax:</span> ${booking.tax}
-							</p>
-							<p>
-								<span className="font-semibold text-white">Total:</span> ${booking.total}
-							</p>
-						</div>
-					</div>
-				))}
+			<Pagination totalItems={list.length} perPageItems={perPage} pageNo={page} onPageChange={setPage} />
 		</div>
 	)
 }
@@ -944,6 +1005,10 @@ const linkifyOptions = {
 }
 
 function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: string }) {
+	const [page, setPage] = React.useState(1)
+	const [openId, setOpenId] = React.useState<string | null>(null)
+	const perPage = 10
+
 	const {
 		data: waitingList,
 		isLoading,
@@ -952,27 +1017,6 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
 		queryKey: ["eventWaitingList", eventId],
 		queryFn: () => axios.get(`/api/waiting-list/${eventId}`),
 	})
-
-	// Debug logging
-	console.log("EventWaitingList Debug:", {
-		eventId,
-		isLoading,
-		waitingList,
-		dataLength: waitingList?.data?.data?.length,
-	})
-
-	// Test API call directly
-	React.useEffect(() => {
-		const testApi = async () => {
-			try {
-				const response = await axios.get(`/api/waiting-list/${eventId}`)
-				console.log("Direct API test result:", response.data)
-			} catch (error) {
-				console.error("Direct API test error:", error)
-			}
-		}
-		testApi()
-	}, [eventId])
 
 	const handleApprove = async (waitingListId: string) => {
 		try {
@@ -1015,68 +1059,97 @@ function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: 
 		}
 	}
 
+	const list: any[] = Array.isArray(waitingList?.data?.data) ? waitingList.data.data : []
+	const paged = list.slice((page - 1) * perPage, page * perPage)
+
 	return (
 		<div>
 			<div className="flex items-center justify-between mb-4">
 				<h3 className="text-lg font-semibold text-white">Waiting List</h3>
-				{!isLoading && waitingList?.data?.data && (
+				{!isLoading && (
 					<div className="text-sm text-white">
-						<span className="font-semibold text-white">Total: {waitingList.data.data.length} users</span>
+						<span className="font-semibold text-white">Total: {list.length} users</span>
 					</div>
 				)}
 			</div>
 
 			{isLoading && <p className="text-gray-300">Loading waiting list...</p>}
 
-			{!isLoading && waitingList?.data?.data?.length === 0 && <p className="text-gray-300">No users on waiting list.</p>}
+			{!isLoading && list.length === 0 && <p className="text-gray-300">No users on waiting list.</p>}
 
 			{!isLoading &&
-				waitingList?.data?.data &&
-				Array.isArray(waitingList.data.data) &&
-				waitingList.data.data.map((user: any) => (
-					<div key={user._id} className="border-b border-[#434343] py-4 last:border-b-0">
-						<div className="flex justify-between items-start">
-							<div className="flex-1">
-								<p className="text-sm text-[#bbbbbb]">
-									<span className="font-semibold text-white">Name:</span> {user.firstName} {user.lastName}
-								</p>
-								<p className="text-sm text-[#bbbbbb] mt-1">
-									<span className="font-semibold text-white">Email:</span> {user.email}
-								</p>
-								<p className="text-sm text-[#bbbbbb] mt-1">
-									<span className="font-semibold text-white">Phone:</span> {user.phone}
-								</p>
-								<p className="text-sm text-[#bbbbbb] mt-1">
-									<span className="font-semibold text-white">Joined:</span> {new Date(user.createdAt).toLocaleString()}
-								</p>
+				paged.map((user: any) => {
+					const isOpen = openId === user._id
+					return (
+						<div key={user._id} className="border-b border-[#434343] last:border-b-0">
+							<div className="flex justify-between items-center gap-4 py-4">
+								<button
+									type="button"
+									onClick={() => setOpenId(isOpen ? null : user._id)}
+									className="flex items-center gap-3 min-w-0 flex-1 text-left"
+									aria-expanded={isOpen}
+								>
+									<div className="min-w-0">
+										<p className="text-sm font-semibold text-white truncate">
+											{user.firstName} {user.lastName}
+										</p>
+										<p className="text-xs text-[#bbbbbb] mt-0.5 truncate">{user.email}</p>
+									</div>
+									<Icon as={isOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} className="flex-shrink-0" />
+								</button>
 
-								<div className="mt-3">
-									<p className="font-semibold text-white text-sm">Requested Tickets:</p>
-									{user.tickets.length > 0 ? (
-										<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
-											{user.tickets.map((ticket: any, index: number) => (
-												<li key={index}>
-													{ticket.quantity} x {ticket.name} (${ticket.price} each)
-												</li>
-											))}
-										</ul>
-									) : (
-										<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
-									)}
+								<div className="flex gap-2 flex-shrink-0">
+									<button
+										onClick={(e) => {
+											e.stopPropagation()
+											handleApprove(user._id)
+										}}
+										className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+									>
+										Approve
+									</button>
+									<button
+										onClick={(e) => {
+											e.stopPropagation()
+											handleRemove(user._id)
+										}}
+										className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+									>
+										Remove
+									</button>
 								</div>
 							</div>
 
-							<div className="flex gap-2 ml-4">
-								<button onClick={() => handleApprove(user._id)} className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors">
-									Approve
-								</button>
-								<button onClick={() => handleRemove(user._id)} className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors">
-									Remove
-								</button>
-							</div>
+							{isOpen && (
+								<div className="pb-4">
+									<p className="text-sm text-[#bbbbbb]">
+										<span className="font-semibold text-white">Phone:</span> {user.phone}
+									</p>
+									<p className="text-sm text-[#bbbbbb] mt-1">
+										<span className="font-semibold text-white">Joined:</span> {new Date(user.createdAt).toLocaleString()}
+									</p>
+
+									<div className="mt-3">
+										<p className="font-semibold text-white text-sm">Requested Tickets:</p>
+										{user.tickets.length > 0 ? (
+											<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
+												{user.tickets.map((ticket: any, index: number) => (
+													<li key={index}>
+														{ticket.quantity} x {ticket.name} (${ticket.price} each)
+													</li>
+												))}
+											</ul>
+										) : (
+											<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
+										)}
+									</div>
+								</div>
+							)}
 						</div>
-					</div>
-				))}
+					)
+				})}
+
+			<Pagination totalItems={list.length} perPageItems={perPage} pageNo={page} onPageChange={setPage} />
 		</div>
 	)
 }
