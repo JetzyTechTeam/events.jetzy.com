@@ -25,7 +25,8 @@
       "Bash(git -C d:/Jetzy/events-jetzy-com branch -a)",
       "Bash(git --no-pager diff src/lib/send-grid.ts)",
       "Bash(npx next *)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "PowerShell(npx tsc --noEmit 2>&1)"
     ]
   }
 }

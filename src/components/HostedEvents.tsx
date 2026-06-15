@@ -534,34 +534,38 @@ export default function HostedEvents({ event }: Props) {
 											</Flex>
 										)}
 									</Flex>
-									{isChatExpanded && (
-										<Box id="discussion-chat-body">
-											{session ? (
-												<JetzyChatIntegration
-													eventId={clonedEvent._id.toString()}
-													eventName={stripHtml(clonedEvent.name)}
-												/>
-											) : (
-												<Box p={8} textAlign="center" bg="#2b2b2b" borderRadius="lg" border="1px solid" borderColor="#434343">
-													<Text fontSize="lg" fontWeight="bold" color="white" mb={2}>
-														Login Required
-													</Text>
-													<Text color="#bbbbbb" mb={4}>
-														Please login to access the discussion.
-													</Text>
-													<Button
-														onClick={() => {
-															router.push(`${ROUTES?.login || '/login'}?_cb=${encodeURIComponent(router.asPath)}`)
-														}}
-														bg="#F79432"
-														color="black"
-														_hover={{ bg: "#e58220" }}
-													>
-														Login
-													</Button>
-												</Box>
-											)}
+									{session ? (
+										// Keep the chat iframe mounted even when collapsed so it can load and
+										// report its message state (jetzychat-state) to auto-expand this dropdown.
+										// Hidden via CSS, not unmounted.
+										<Box id="discussion-chat-body" display={isChatExpanded ? "block" : "none"}>
+											<JetzyChatIntegration
+												eventId={clonedEvent._id.toString()}
+												eventName={stripHtml(clonedEvent.name)}
+												onHasMessages={() => setIsChatExpanded(true)}
+											/>
 										</Box>
+									) : (
+										isChatExpanded && (
+											<Box id="discussion-chat-body" p={8} textAlign="center" bg="#2b2b2b" borderRadius="lg" border="1px solid" borderColor="#434343">
+												<Text fontSize="lg" fontWeight="bold" color="white" mb={2}>
+													Login Required
+												</Text>
+												<Text color="#bbbbbb" mb={4}>
+													Please login to access the discussion.
+												</Text>
+												<Button
+													onClick={() => {
+														router.push(`${ROUTES?.login || '/login'}?_cb=${encodeURIComponent(router.asPath)}`)
+													}}
+													bg="#F79432"
+													color="black"
+													_hover={{ bg: "#e58220" }}
+												>
+													Login
+												</Button>
+											</Box>
+										)
 									)}
 								</Box>
 

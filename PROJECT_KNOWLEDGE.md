@@ -210,6 +210,12 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/events/discussions/comments/create|get|delete|reply|react|report|who-reacted`
 `/api/events/comments/create|get|edit|delete|reply`
 
+### Embedded Chat (JetzyChat iframe)
+`/api/events/[eventId]/chat-info` — returns interestId for auto-join.
+`/api/events/[eventId]/chat-tag-notify` (POST, no auth) — emails a tagged participant. Mailer `sendChatTagNotification` in `src/lib/send-grid.ts`.
+`/api/events/[eventId]/chat-message-notify` (POST, no auth) — emails a participant on each new web-embed message. Body `{ senderName, recipientEmail, recipientName?, messagePreview }`. Mailer `sendChatMessageNotification` (mirror of tag-notify). No throttling: chat app fires one POST per recipient per message.
+- Discussion dropdown in `src/components/HostedEvents.tsx` (`isChatExpanded`): when logged in the iframe (`JetzyChatIntegration`) is **always mounted**, hidden via `display:none` when collapsed, so it can load and report state. Iframe posts `jetzychat-state {eventId,hasMessages,...}`; child fires `onHasMessages` → parent auto-expands (expand-only). Origin checked by existing whitelist in `JetzyChatIntegration.tsx`.
+
 ### Admin / Misc
 `/api/admin/compliance/unblock`, `/api/users/search`, `/api/delete-image`, `/api/get-bookings`, `/api/get-event-participants`, `/api/guests-list`, `/api/edgestore/[...edgestore]`, `/api/sendgrid-webhook`, `/api/welcome-email`
 

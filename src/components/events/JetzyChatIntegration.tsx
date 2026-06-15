@@ -7,9 +7,12 @@ import { useSession } from "next-auth/react"
 interface JetzyChatIntegrationProps {
 	eventId: string
 	eventName?: string // Optional event name to display in chat
+	// Called when the embedded chat reports it has messages (jetzychat-state, matching eventId).
+	// Used by the parent to auto-expand the Discussion dropdown.
+	onHasMessages?: (eventId: string) => void
 }
 
-export default function JetzyChatIntegration({ eventId, eventName }: JetzyChatIntegrationProps) {
+export default function JetzyChatIntegration({ eventId, eventName, onHasMessages }: JetzyChatIntegrationProps) {
 	const { data: session } = useSession()
 	const iframeRef = useRef<HTMLIFrameElement>(null)
 	const [isLoading, setIsLoading] = useState(true)
@@ -120,11 +123,17 @@ export default function JetzyChatIntegration({ eventId, eventName }: JetzyChatIn
 				setError(event.data.message || 'Failed to load chat')
 				setIsLoading(false)
 			}
+
+			// Chat reports its message state on load and on every count change.
+			// Only ever signal expand (never collapse) so a manually-opened panel stays open.
+			if (event.data.type === 'jetzychat-state' && event.data.eventId === eventId) {
+				if (event.data.hasMessages) onHasMessages?.(eventId)
+			}
 		}
 
 		window.addEventListener('message', handleMessage)
 		return () => window.removeEventListener('message', handleMessage)
-	}, [])
+	}, [eventId, onHasMessages])
 
 	// Build embed URL
 	const jetzyChatUrl = process.env.NEXT_PUBLIC_JETZYCHAT_URL || 'https://jetzychat.vercel.app'

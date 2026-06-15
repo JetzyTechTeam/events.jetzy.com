@@ -2021,7 +2021,8 @@ export const sendChatTagNotification = async ({
   eventSlug,
 }: ChatTagNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const chatUrl = `${baseUrl}/${eventSlug}?view=chat`
+  // view=discussion so the event page auto-expands + scrolls to the chat (handled in HostedEvents.tsx)
+  const chatUrl = `${baseUrl}/${eventSlug}?view=discussion`
 
   const displayName = taggedName || email.split('@')[0]
   const cleanEventName = decodeHTMLEntities(eventName)
@@ -2072,6 +2073,78 @@ export const sendChatTagNotification = async ({
     console.log(`✅ Chat tag notification sent successfully to: ${email}`)
   } catch (error) {
     console.error("❌ Failed to send chat tag notification email:", error)
+    throw error
+  }
+}
+
+type ChatMessageNotificationData = {
+  email: string
+  recipientName?: string
+  senderName: string
+  eventName: string
+  eventSlug: string
+}
+
+export const sendChatMessageNotification = async ({
+  email,
+  recipientName,
+  senderName,
+  eventName,
+  eventSlug,
+}: ChatMessageNotificationData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+  // view=discussion so the event page auto-expands + scrolls to the chat (handled in HostedEvents.tsx)
+  const chatUrl = `${baseUrl}/${eventSlug}?view=discussion`
+
+  const displayName = recipientName || email.split('@')[0]
+  const cleanEventName = decodeHTMLEntities(eventName)
+
+  const subject = `New message in ${cleanEventName}`
+
+  try {
+    await sgMail.send({
+      to: email,
+      from: {
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+        name: "Jetzy Events",
+      },
+      subject,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); border-top: 4px solid #F79432;">
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 0;">
+              Hi ${displayName},
+            </p>
+            <p style="color: #1F2937; font-size: 16px; line-height: 1.6; margin: 15px 0 25px 0;">
+              <strong>${senderName}</strong> sent a new message in <strong>${cleanEventName}</strong>. Open the chat to read it and reply.
+            </p>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${chatUrl}" style="background: linear-gradient(135deg, #F79432 0%, #e8842a 100%); color: white; padding: 14px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(247, 148, 50, 0.3);">
+                Open Chat
+              </a>
+            </div>
+
+            <p style="color: #6B7280; font-size: 13px; line-height: 1.5; margin: 25px 0 0 0; text-align: center;">
+              Click the button above to view the conversation and reply.
+            </p>
+
+            <p style="color: #1F2937; font-size: 14px; margin-top: 30px; font-weight: 500;">
+              — Team Jetzy
+            </p>
+
+            <div style="margin-top: 40px; display: flex; align-items: center; gap: 10px;">
+              <img src="https://events.jetzy.com/favicon.ico" width="20" height="20" style="vertical-align: middle;" />
+              <span style="color: #F79432; font-weight: 600; font-size: 14px;">Jetzy Tech</span>
+            </div>
+          </div>
+        </div>
+      `),
+      text: `Hi ${displayName},\n\n${senderName} sent a new message in ${cleanEventName}. Open the chat to read it and reply.\n\nOpen the chat: ${chatUrl}\n\n— Team Jetzy`,
+    })
+    console.log(`✅ Chat message notification sent successfully to: ${email}`)
+  } catch (error) {
+    console.error("❌ Failed to send chat message notification email:", error)
     throw error
   }
 }
