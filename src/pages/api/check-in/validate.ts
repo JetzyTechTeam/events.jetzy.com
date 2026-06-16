@@ -5,6 +5,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { CheckIn } from "@/models/checkIn"
 import { Events } from "@/models/events"
+import { isCancelledBooking } from "@/lib/booking-status"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 
@@ -62,20 +63,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "No booking found for this event with the provided identifier", false, ResCode.NOT_FOUND)
 		}
 
-		const normalizedEmail = isBookingRef ? bookings[0].customerEmail : normalizedIdentifier.toLowerCase()
+		// Cancelled bookings cannot be checked in. If every matching booking is cancelled, reject;
+		// otherwise only aggregate the active ones (an email may have a mix of active + cancelled).
+		const activeBookings = bookings.filter((b) => !isCancelledBooking(b))
+		if (activeBookings.length === 0) {
+			return sendResponse(res, null, "This booking has been cancelled and cannot be checked in.", false, ResCode.BAD_REQUEST)
+		}
+
+		const normalizedEmail = isBookingRef ? activeBookings[0].customerEmail : normalizedIdentifier.toLowerCase()
 
 		// Aggregate data from all bookings
 		let totalTickets = 0
 		let totalCheckedIn = 0
 		const allCheckInHistory: any[] = []
 		const bookingRefs: string[] = []
-		let customerName = bookings[0].customerName
-		let customerPhone = bookings[0].customerPhone
+		let customerName = activeBookings[0].customerName
+		let customerPhone = activeBookings[0].customerPhone
 		let firstCheckInAt: string | null = null
 		let lastCheckInAt: string | null = null
 
 		// Process each booking
-		for (const booking of bookings) {
+		for (const booking of activeBookings) {
 			bookingRefs.push(booking.bookingRef)
 
 			// Calculate tickets for this booking
@@ -114,7 +122,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const isFullyCheckedIn = remainingTickets === 0
 
 		const responseData = {
-			bookingId: bookings.map((b) => b._id.toString()).join(","), // Comma-separated booking IDs
+			bookingId: activeBookings.map((b) => b._id.toString()).join(","), // Comma-separated booking IDs
 			bookingRef: bookingRefs.join(", "), // Display all booking references
 			customerName,
 			customerEmail: normalizedEmail,
@@ -126,11 +134,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			firstCheckInAt,
 			lastCheckInAt,
 			checkInHistory: allCheckInHistory,
-			bookingStatus: bookings[0].status, // Use first booking's status
-			totalBookings: bookings.length, // Number of separate bookings
+			bookingStatus: activeBookings[0].status, // Use first active booking's status
+			totalBookings: activeBookings.length, // Number of separate active bookings
 		}
 
-		return sendResponse(res, responseData, `Found ${bookings.length} booking(s) for this email`, true, ResCode.OK)
+		return sendResponse(res, responseData, `Found ${activeBookings.length} booking(s) for this email`, true, ResCode.OK)
 	} catch (error: any) {
 		console.error("Check-in validation error:", error)
 		return sendResponse(res, null, error.message || "Internal server error", false, ResCode.INTERNAL_SERVER_ERROR)

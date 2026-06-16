@@ -5,6 +5,7 @@ import { PlusCircleIcon } from "@heroicons/react/24/outline"
 import { Exportable } from "@/pages/console/bookings"
 import { downloadExcel } from "react-export-table-to-excel"
 import { Booking } from "@/pages/console/bookings"
+import { isCancelledBooking } from "@/lib/booking-status"
 
 type Props = {
 	rows: Booking[]
@@ -106,8 +107,9 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 					<Tbody>
 						{localRows.map((row) => {
 							const ci = checkInMap[row._id.toString()]
+							const cancelled = isCancelledBooking(row)
 							return (
-								<Tr key={row._id.toString()}>
+								<Tr key={row._id.toString()} opacity={cancelled ? 0.55 : 1}>
 									<Td fontWeight={"bold"}>
 										<Button
 											variant="link"
@@ -115,12 +117,15 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 											overflow="hidden"
 											whiteSpace="nowrap"
 											textOverflow="ellipsis"
+											textDecoration={cancelled ? "line-through" : undefined}
 										>
 											{row.bookingRef}
 										</Button>
 									</Td>
 									<Td>{row.total.toLocaleString("en-US", { style: "currency", currency: "USD" })}</Td>
-									<Td>{row.status}</Td>
+									<Td>
+										<Badge colorScheme={cancelled ? "red" : "green"}>{row.status}</Badge>
+									</Td>
 									<Td>
 										<Box>
 											<Text>{row.customerName}</Text>
@@ -141,7 +146,9 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 										</Box>
 									</Td>
 									<Td>
-										{ci?.checkedInCount > 0 ? (
+										{cancelled ? (
+											<Badge colorScheme="red">Cancelled</Badge>
+										) : ci?.checkedInCount > 0 ? (
 											<Badge colorScheme="green">
 												{ci.isFullyCheckedIn ? "Fully Checked In" : `Partial (${ci.checkedInCount})`}
 											</Badge>

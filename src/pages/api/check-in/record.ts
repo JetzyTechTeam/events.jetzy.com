@@ -6,6 +6,7 @@ import { Bookings } from "@/models/events/bookings"
 import { CheckIn } from "@/models/checkIn"
 import { EventGuest } from "@/models/eventGuest"
 import { Events } from "@/models/events"
+import { isCancelledBooking } from "@/lib/booking-status"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -69,14 +70,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const bookingIds = bookingId.split(",").map((id: string) => new Types.ObjectId(id.trim()))
 
 		// Verify all bookings exist and gather data
-		const bookings = await Bookings.find({
+		const foundBookings = await Bookings.find({
 			_id: { $in: bookingIds },
 			eventId: new Types.ObjectId(eventId),
 			isDeleted: false,
 		})
 
-		if (!bookings || bookings.length === 0) {
+		if (!foundBookings || foundBookings.length === 0) {
 			return sendResponse(res, null, "No bookings found or have been deleted", false, ResCode.NOT_FOUND)
+		}
+
+		// Safeguard: a cancelled booking can never be checked in.
+		const bookings = foundBookings.filter((b) => !isCancelledBooking(b))
+		if (bookings.length === 0) {
+			return sendResponse(res, null, "Cannot check in a cancelled booking.", false, ResCode.BAD_REQUEST)
 		}
 
 		// Calculate total tickets across all bookings

@@ -77,6 +77,7 @@ import MediaUploadSection from "@/components/media-upload-section"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
+import { isCancelledBooking } from "@/lib/booking-status"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
 import { useAppDispatch } from "@/redux/stores"
@@ -2097,7 +2098,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 
 	const bookingByEmail: Record<string, any> = {}
 	;(bookings as any[]).forEach((b: any) => {
-		if (b.customerEmail) bookingByEmail[b.customerEmail.toLowerCase()] = b
+		if (!b.customerEmail) return
+		const key = b.customerEmail.toLowerCase()
+		// Prefer an active booking over a cancelled one when an email has multiple.
+		const existing = bookingByEmail[key]
+		if (!existing || isCancelledBooking(existing)) bookingByEmail[key] = b
 	})
 
 	const checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }> = {}
@@ -2156,14 +2161,21 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 								const guest = guestByEmail[email]
 								const booking = bookingByEmail[email]
 								const ci = booking?._id ? checkInMap[booking._id.toString()] : null
+								const cancelled = isCancelledBooking(booking)
 								return (
-									<Tr key={email}>
-										<Td color="white">{booking?.customerName || guest?.name || "—"}</Td>
-										<Td color="white">{email}</Td>
-										<Td color="white">{guest?.status || (booking ? 'Purchased' : '—')}</Td>
+									<Tr key={email} opacity={cancelled ? 0.55 : 1}>
+										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{booking?.customerName || guest?.name || "—"}</Td>
+										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{email}</Td>
+										<Td color="white">
+											{cancelled
+												? <Badge colorScheme="red">Cancelled</Badge>
+												: (guest?.status || (booking ? 'Purchased' : '—'))}
+										</Td>
 										<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										<Td>
-											{!booking?._id
+											{cancelled
+												? <Badge colorScheme="red">Cancelled</Badge>
+												: !booking?._id
 												? <Badge colorScheme="gray">N/A</Badge>
 												: !ci
 												? <Badge colorScheme="gray">Not Checked In</Badge>

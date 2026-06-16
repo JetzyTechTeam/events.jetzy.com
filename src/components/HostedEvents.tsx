@@ -935,8 +935,9 @@ function EventBookings({ eventId }: { eventId: string }) {
 			{!isLoading &&
 				paged.map((booking: Booking) => {
 					const isOpen = openId === booking._id
+					const cancelled = booking.status === "cancelled"
 					return (
-						<div key={booking._id} className="border-b border-[#434343] last:border-b-0">
+						<div key={booking._id} className={`border-b border-[#434343] last:border-b-0 ${cancelled ? "opacity-60" : ""}`}>
 							<button
 								type="button"
 								onClick={() => setOpenId(isOpen ? null : booking._id)}
