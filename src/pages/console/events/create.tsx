@@ -100,7 +100,6 @@ const initialValues = {
 const createEventSchema = z.object({
   name: z.string().min(1, "Event name is required"),
   location: z.string().min(1, "Location is required"),
-  desc: z.string().min(1, "Description is required"),
 });
 
 const CreateEventPage = () => {
@@ -179,10 +178,6 @@ const CreateEventPage = () => {
         const fieldErrors = validation.error.flatten().fieldErrors;
         const errorMessages = Object.values(fieldErrors).flat().join("\n");
         Error("Validation Error", errorMessages || "Please fix the form errors");
-        return;
-      }
-      if (uploadedImages.length === 0) {
-        Error("Validation Error", "At least one image is required to publish");
         return;
       }
     }

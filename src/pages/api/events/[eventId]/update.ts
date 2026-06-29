@@ -6,6 +6,7 @@ import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
+import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import zod from "zod"
 import Stripe from "stripe"
 import { authOptions } from "../../auth/[...nextauth]"
@@ -13,7 +14,6 @@ import { Types } from "mongoose"
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
-import { stripHtml } from "@/utils/text"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -50,7 +50,7 @@ const schema = zod.object({
 		}),
 	),
 	isPaid: zod.boolean(),
-	desc: zod.string().nonempty(),
+	desc: zod.string().optional(),
 	timezone: zod.string().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
@@ -88,11 +88,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const params: CreateEventFormData = JSON.parse(body.payload) as CreateEventFormData
 
 		const { eventId } = req.query
-
-		// block empty description (RichTextEditor emits <p></p> when cleared)
-		if (!stripHtml(params.desc || "").trim()) {
-			return sendResponse(res, null, "Description is required.", false, ResCode.BAD_REQUEST)
-		}
 
 		// validate the request body
 		const data = schema.safeParse({ ...params, eventId })
@@ -148,7 +143,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			$set: {
 				name,
 				location,
-				desc: desc,
+				desc: desc ?? "",
 				isPaid,
 				capacity,
 				requireApproval,
@@ -158,7 +153,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					price: ticket.price.toFixed(2),
 					stripeProductId: stripeProducts[index].id,
 				})),
-				images: images.map((image) => image.file),
+				images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 				videos: videos?.map((v) => v.file) ?? [],
 				timezone: timezone || 'UTC',
 				privacy,

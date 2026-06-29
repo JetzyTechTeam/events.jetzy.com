@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
+import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -59,7 +60,7 @@ const schema = zod.object({
 		}),
 	),
 	isPaid: zod.boolean(),
-	desc: zod.string().nonempty(),
+	desc: zod.string().optional(),
 	privacy: zod.enum(['public', 'private']).optional().default('public'),
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
@@ -121,9 +122,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
 
-		// check if the event has images
-		if (images.length === 0) return sendResponse(res, null, "You need to add at least one image to an event.", false, ResCode.BAD_REQUEST)
-
 		// If event is paid and has tickets, lets format the tickets and create stripe prices for each ticket
 		const formattedTickets: Stripe.PriceCreateParams[] = tickets.map((ticket) => ({
 			unit_amount: ticket.price * 100,
@@ -148,12 +146,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				lat: latitude,
 				placeId,
 			},
-			desc: desc,
+			desc: desc ?? "",
 			...(start ? { startsOn: start } : {}),
 			...(end ? { endsOn: end } : {}),
 			isPaid,
 			privacy,
-			images: images.map((image) => image.file),
+			images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 			videos: videos?.map((v) => v.file) ?? [],
 			capacity,
 			requireApproval,
