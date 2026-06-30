@@ -191,7 +191,7 @@ const eventsSchema = new Schema<IEvent>(
 		},
 		showOnMobile: {
 			type: Boolean,
-			default: false,
+			default: true,
 		},
 		datePoll: {
 			type: datePollSchema,

@@ -88,7 +88,7 @@ const initialValues = {
   status: "published" as 'draft' | 'published',
   benefits: "",
   locationDisclosedAfterBooking: false,
-  showOnMobile: false,
+  showOnMobile: true,
   datePoll: {
     isActive: false,
     question: "",

@@ -64,7 +64,7 @@ const schema = zod.object({
 	privacy: zod.enum(['public', 'private']).optional().default('public'),
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
-	showOnMobile: zod.boolean().optional().default(false),
+	showOnMobile: zod.boolean().optional().default(true),
 	status: zod.enum(['draft', 'published']).optional().default('published'),
 	interests: zod.array(zod.string()).optional().default([]),
 	datePoll: zod.object({
@@ -165,7 +165,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			})),
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
-			showOnMobile: showOnMobile ?? false,
+			showOnMobile: showOnMobile ?? true,
 			status: status ?? 'published',
 			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0
