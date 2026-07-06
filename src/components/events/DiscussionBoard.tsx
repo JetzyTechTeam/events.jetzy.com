@@ -256,7 +256,7 @@ const FeedPostCard = ({
 							)}
 						</Flex>
 						<Flex align="center" gap={1} fontSize="xs" color="#bbbbbb">
-							<Text>{getRelativeTime(post.lastActivityAt)}</Text>
+							<Text>{getRelativeTime(post.lastActivityAt || post.createdAt)}</Text>
 							<Text>·</Text>
 							<Icon as={FiClock} />
 						</Flex>

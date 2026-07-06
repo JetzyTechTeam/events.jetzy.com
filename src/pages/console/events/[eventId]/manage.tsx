@@ -210,6 +210,7 @@ export default function Manage({ event: eventProp }: any) {
 	const [tempPollOption, setTempPollOption] = useState<DatePollOption>({ id: "", date: "", time: "", label: "" })
 	const [pollDate, setPollDate] = useState("")
 	const [pollTime, setPollTime] = useState("")
+	const [editPollIndex, setEditPollIndex] = useState<number | null>(null)
 	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = useState(false)
 	const [benefitInput, setBenefitInput] = useState("")
 
@@ -988,14 +989,23 @@ export default function Manage({ event: eventProp }: any) {
 																		<Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
 																		{opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
 																	</Box>
-																	<Button size="xs" variant="ghost" color="red.400" onClick={() => {
-																		const updated = [...(values.datePoll?.options || [])]
-																		updated.splice(idx, 1)
-																		setFieldValue("datePoll.options", updated)
-																	}}>Remove</Button>
+																	<Flex align="center" gap={1}>
+																		<Button size="xs" variant="ghost" color="orange.300" onClick={() => {
+																			setEditPollIndex(idx)
+																			setTempPollOption(opt)
+																			setPollDate(opt.date || "")
+																			setPollTime(opt.time || "")
+																			onPollModalOpen()
+																		}}>Edit</Button>
+																		<Button size="xs" variant="ghost" color="red.400" onClick={() => {
+																			const updated = [...(values.datePoll?.options || [])]
+																			updated.splice(idx, 1)
+																			setFieldValue("datePoll.options", updated)
+																		}}>Remove</Button>
+																	</Flex>
 																</Flex>
 															))}
-															<Button size="sm" bg="transparent" color="white" border="1px dashed #666" width="100%" mt="1" _hover={{ bg: "#1C1F24" }} onClick={() => { setTempPollOption({ id: "", date: "", time: "", label: "" }); onPollModalOpen() }} leftIcon={<PlusSVG />}>
+															<Button size="sm" bg="transparent" color="white" border="1px dashed #666" width="100%" mt="1" _hover={{ bg: "#1C1F24" }} onClick={() => { setEditPollIndex(null); setTempPollOption({ id: "", date: "", time: "", label: "" }); setPollDate(""); setPollTime(""); onPollModalOpen() }} leftIcon={<PlusSVG />}>
 																Add Date Option
 															</Button>
 														</Box>
@@ -1129,16 +1139,16 @@ export default function Manage({ event: eventProp }: any) {
 										<Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
 											<ModalOverlay />
 											<ModalContent bg="#1E1E1E" color="white">
-												<ModalHeader>Add Date Option</ModalHeader>
+												<ModalHeader>{editPollIndex !== null ? "Edit Date Option" : "Add Date Option"}</ModalHeader>
 												<ModalCloseButton />
 												<ModalBody>
 													<FormControl mb={4}>
 														<FormLabel>Date</FormLabel>
-														<DatePicker key={`poll-date-${isPollModalOpen}`} onChange={(d) => setPollDate(d)} placeholder="Select date" />
+														<DatePicker key={`poll-date-${isPollModalOpen}`} onChange={(d) => setPollDate(d)} defaultDate={pollDate} placeholder="Select date" />
 													</FormControl>
 													<FormControl mb={4}>
 														<FormLabel>Time</FormLabel>
-														<TimePicker key={`poll-time-${isPollModalOpen}`} onChange={(t) => setPollTime(t)} placeholder="Select time" />
+														<TimePicker key={`poll-time-${isPollModalOpen}`} className="bg-[#090C10] block w-full h-10 rounded-md border border-[#444] py-1.5 px-3 text-white sm:text-sm sm:leading-6" onChange={(t) => setPollTime(t)} defaultValue={pollTime} placeholder="Select time" />
 													</FormControl>
 													<FormControl mb={4}>
 														<FormLabel>Label (optional)</FormLabel>
@@ -1150,15 +1160,21 @@ export default function Manage({ event: eventProp }: any) {
 														<Button bg="#F79432" w="full" color="black" type="button" onClick={() => {
 															const label = tempPollOption.label || ""
 															if (pollDate) {
-																const newOption: DatePollOption = { id: Date.now().toString(), date: pollDate, time: pollTime, label, votes: [] }
-																setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption])
+																const opts = [...(values.datePoll?.options || [])]
+																if (editPollIndex !== null) {
+																	opts[editPollIndex] = { ...opts[editPollIndex], date: pollDate, time: pollTime, label }
+																} else {
+																	opts.push({ id: Date.now().toString(), date: pollDate, time: pollTime, label, votes: [] })
+																}
+																setFieldValue("datePoll.options", opts)
+																setEditPollIndex(null)
 																setTempPollOption({ id: "", date: "", time: "", label: "" })
 																setPollDate("")
 																setPollTime("")
 																onPollModalClose()
 															}
-														}}>Add</Button>
-														<Button variant="unstyled" onClick={() => { setPollDate(""); setPollTime(""); onPollModalClose() }}>Cancel</Button>
+														}}>{editPollIndex !== null ? "Save" : "Add"}</Button>
+														<Button variant="unstyled" onClick={() => { setEditPollIndex(null); setPollDate(""); setPollTime(""); onPollModalClose() }}>Cancel</Button>
 													</Flex>
 												</ModalFooter>
 											</ModalContent>

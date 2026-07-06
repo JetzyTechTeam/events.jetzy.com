@@ -716,6 +716,7 @@ const CreateEventPage = () => {
                     <FormLabel>Time</FormLabel>
                     <TimePicker
                       key={`poll-time-${isPollModalOpen}`}
+                      className="bg-[#090C10] block w-full h-10 rounded-md border border-[#444] py-1.5 px-3 text-white sm:text-sm sm:leading-6"
                       onChange={(t) => setPollTime(t)}
                       placeholder="Select time"
                     />
