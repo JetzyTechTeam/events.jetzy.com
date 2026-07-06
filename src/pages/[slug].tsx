@@ -176,6 +176,18 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			}
 		}
 
+		// 4. ObjectId fallback — mobile app shares raw _id deep-links (/{objectId}).
+		// Only runs when slug lookups miss AND the path is exactly a 24-hex ObjectId,
+		// so existing slug URLs are never affected.
+		if (!event && /^[0-9a-f]{24}$/i.test(slug as string)) {
+			console.log(`[Slug Lookup v3] Slug miss + param is ObjectId. Trying findById: ${slug}`)
+			const byId = await Events.findOne({ _id: slug as string, isDeleted: false })
+			if (byId) {
+				console.log(`[Slug Lookup v3] findById SUCCESS: ${byId._id}`)
+				event = byId
+			}
+		}
+
 		if (!event) {
 			console.log(`[Slug Lookup v3] ALL local lookups FAILED for: "${slug}". Checking External API...`);
 
