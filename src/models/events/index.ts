@@ -48,7 +48,7 @@ const datePollOptionSchema = new Schema(
 	{
 		id: { type: String, required: true },
 		date: { type: String, required: true },
-		time: { type: String, required: true },
+		time: { type: String, required: false },
 		label: { type: String, required: false },
 		votes: { type: [String], default: [] },
 	},

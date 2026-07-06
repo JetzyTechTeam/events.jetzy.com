@@ -741,7 +741,7 @@ const CreateEventPage = () => {
                       type="button"
                       onClick={() => {
                         const label = tempPollOption.label || ""
-                        if (pollDate && pollTime) {
+                        if (pollDate) {
                           const newOption: DatePollOption = {
                             id: Date.now().toString(),
                             date: pollDate,

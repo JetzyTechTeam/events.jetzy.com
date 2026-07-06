@@ -28,7 +28,7 @@ export interface ICustomQuestion {
 export interface IDatePollOption {
 	id: string;
 	date: string;
-	time: string;
+	time?: string;
 	label?: string;
 	votes: string[];
 }

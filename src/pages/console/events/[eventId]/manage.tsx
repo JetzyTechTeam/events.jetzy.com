@@ -1149,7 +1149,7 @@ export default function Manage({ event: eventProp }: any) {
 													<Flex flexDirection="column" w="full" gap="3">
 														<Button bg="#F79432" w="full" color="black" type="button" onClick={() => {
 															const label = tempPollOption.label || ""
-															if (pollDate && pollTime) {
+															if (pollDate) {
 																const newOption: DatePollOption = { id: Date.now().toString(), date: pollDate, time: pollTime, label, votes: [] }
 																setFieldValue("datePoll.options", [...(values.datePoll?.options || []), newOption])
 																setTempPollOption({ id: "", date: "", time: "", label: "" })

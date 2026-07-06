@@ -1269,7 +1269,7 @@ function DatePollSidebar({ event, isAdmin }: { event: IEvent; isAdmin: boolean }
 											</div>
 											<div className="flex items-center justify-between mb-2">
 												<div className="flex items-center gap-2">
-													<span className="text-xs text-[#777]">{opt.time}</span>
+													{opt.time && <span className="text-xs text-[#777]">{opt.time}</span>}
 													{dayLabel && <span className="text-xs text-[#666] border border-[#333] px-1.5 py-0.5 rounded">{dayLabel}</span>}
 												</div>
 												<span className="text-xs text-[#666]">{voteCount} Vote{voteCount !== 1 ? "s" : ""}</span>

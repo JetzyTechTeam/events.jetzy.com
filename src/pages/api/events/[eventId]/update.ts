@@ -62,7 +62,7 @@ const schema = zod.object({
 		options: zod.array(zod.object({
 			id: zod.string(),
 			date: zod.string(),
-			time: zod.string(),
+			time: zod.string().optional(),
 			label: zod.string().optional(),
 			votes: zod.array(zod.string()).optional(),
 		})),
@@ -170,7 +170,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						options: datePoll.options.map(opt => ({
 							id: opt.id,
 							date: opt.date,
-							time: opt.time,
+							time: opt.time || '',
 							label: opt.label || '',
 							votes: opt.votes || [],
 						})),
