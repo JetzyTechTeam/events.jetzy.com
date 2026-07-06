@@ -31,7 +31,7 @@ export type SignInFormData = {
 export type DatePollOption = {
 	id: string
 	date: string
-	time: string
+	time?: string
 	label?: string
 	votes?: string[]
 }
