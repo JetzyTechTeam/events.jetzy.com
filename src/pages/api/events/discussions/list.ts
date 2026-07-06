@@ -73,6 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ;[...mainUsers, ...eventUsersData].forEach((u: any) => { userMap[u._id.toString()] = u })
         const posts = postsRaw.map((post: any) => ({
             ...post,
+            lastActivityAt: post.lastActivityAt || post.createdAt,
             userId: post.userId ? (userMap[post.userId.toString()] || null) : null,
         }))
 

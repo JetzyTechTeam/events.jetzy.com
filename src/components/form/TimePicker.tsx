@@ -21,6 +21,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 			dateFormat: "H:i",
 			altInput: true,
 			altFormat: "h:i K",
+			allowInput: true,
 			defaultDate: defaultValue || undefined,
 			onChange: (selectedDates, dateStr) => {
 				onChange(dateStr)

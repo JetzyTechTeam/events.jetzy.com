@@ -264,11 +264,6 @@ export default function HostedEvents({ event }: Props) {
 									Manage Event
 								</Link>
 							)}
-							{isAdmin && (
-								<Link href={`/console/events/${clonedEvent._id}/update`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
-									Edit Event
-								</Link>
-							)}
 						</div>
 					</div>
 					<div className={`${isDatePollActive ? "max-w-6xl mx-auto flex flex-col lg:flex-row lg:gap-6 lg:items-start" : "max-w-4xl mx-auto"}`}>
