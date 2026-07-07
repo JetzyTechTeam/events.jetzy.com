@@ -33,7 +33,7 @@ const schema = zod.object({
 	endDate: zod.string().optional(),
 	endTime: zod.string().optional(),
 	name: zod.string().nonempty(),
-	location: zod.string().nonempty(),
+	location: zod.string().optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),

@@ -99,7 +99,7 @@ const initialValues = {
 
 const createEventSchema = z.object({
   name: z.string().min(1, "Event name is required"),
-  location: z.string().min(1, "Location is required"),
+  location: z.string().optional(),
 });
 
 const CreateEventPage = () => {
@@ -435,7 +435,7 @@ const CreateEventPage = () => {
                   )}
 
                   <FormControl mb={4}>
-                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Location <Text as="span" color="#F79432">*</Text></FormLabel>
+                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Location</FormLabel>
                     <InputGroup>
                       <InputLeftElement h="48px" pointerEvents="none"><LocationSVG /></InputLeftElement>
                       <Field name="location">
