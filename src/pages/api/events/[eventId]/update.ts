@@ -100,11 +100,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
 		let start: Date | undefined
 		let end: Date | undefined
-		if (startDate && startTime) {
-			start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		// Time is optional — default to midnight when only a date is provided
+		if (startDate) {
+			start = dayjs.tz(`${startDate} ${startTime || '00:00'}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
 		}
-		if (endDate && endTime) {
-			end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		if (endDate) {
+			end = dayjs.tz(`${endDate} ${endTime || '00:00'}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		}
+
+		// An active date poll is mutually exclusive with fixed dates — poll wins, drop the dates
+		if (datePoll?.isActive && datePoll.options?.length > 0) {
+			start = undefined
+			end = undefined
 		}
 
 		// check if start date is greater than end date

@@ -341,6 +341,14 @@ Schema: `datePoll.isActive`, `datePoll.question`, `datePoll.options[]` (id, date
 API: `GET/POST /api/events/[eventId]/poll`, `POST /api/events/[eventId]/poll/vote`
 Safari date parse issue fixed (commit 5b977a7)
 
+### Mutual exclusion with fixed dates (Date Poll ⟷ Start/End)
+An event has EITHER a fixed start/end date OR an active date poll, never both.
+- **Server (authoritative):** if `datePoll.isActive && options.length > 0`, `create.ts`/`update.ts` drop `startsOn`/`endsOn` (update `$unset`s them); `clone.ts` skips copying dates when the source poll is active. Heals legacy both-set records on next save.
+- **Client (create.tsx + manage.tsx):** enabling the poll switch clears start/end fields; setting a start/end date calls `clearDatePoll()`. A section is greyed only when the OTHER side has data AND this side is empty — so a legacy conflict (both set) unlocks BOTH sections, shows an orange conflict banner, and `onSubmit` blocks with a toast until the user removes one. Date Poll section renders directly beneath Start/End inside Basic Information.
+
+### Start/End time now optional
+`create.ts`/`update.ts` build the date from `startDate` alone (`startTime || '00:00'`) — previously required both, so a date without a time was silently dropped. `DatePicker.tsx` no longer sets `minDate`, so past/today dates are selectable (today's/ended events stay editable).
+
 ## Feature: Draft Events
 `status` field on IEvent: `draft` | `published`
 Draft events filtered from public `/api/events` listing

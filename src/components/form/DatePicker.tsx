@@ -19,9 +19,7 @@ export default function DatePicker({ onChange, defaultDate, placeholder = "Selec
       defaultDate: defaultDate,
       disableMobile: false,
       allowInput: true,
-      minDate: defaultDate && new Date(defaultDate) < new Date()
-        ? defaultDate
-        : "today",
+      // No minDate — allow past/today dates so today's or already-ended events remain editable
       onReady: (selectedDates, dateStr, instance) => {
         if (defaultDate) {
           instance.setDate(defaultDate, false);

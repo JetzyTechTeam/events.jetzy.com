@@ -305,6 +305,14 @@ export default function Manage({ event: eventProp }: any) {
 		values.images = uploadedImages
 		values.videos = uploadedVideos
 
+		// A date poll and fixed start/end dates are mutually exclusive — force the user to resolve a conflict
+		const pollActive = !!(values.datePoll?.isActive && values.datePoll?.options?.length)
+		const hasDates = !!(values.startDate || values.endDate)
+		if (pollActive && hasDates) {
+			Error("Validation Error", "Remove either the date poll or the start/end dates before saving.")
+			return
+		}
+
 		if (isDraft) {
 			if (!values.name?.trim()) {
 				Error("Validation Error", "Event name is required to save as draft")
@@ -399,16 +407,26 @@ export default function Manage({ event: eventProp }: any) {
 		})
 	}
 
+	const clearDatePoll = () => {
+		formikRef.current?.setFieldValue("datePoll", { isActive: false, question: "", options: [] })
+	}
+
 	const handleStartDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
-			if (date !== undefined) formikRef.current.setFieldValue("startDate", date)
+			if (date !== undefined) {
+				formikRef.current.setFieldValue("startDate", date)
+				if (date) clearDatePoll() // setting a fixed date disables the poll (mutually exclusive)
+			}
 			if (time !== undefined) formikRef.current.setFieldValue("startTime", time)
 		}
 	}
 
 	const handleEndDateChange = (date?: string, time?: string) => {
 		if (formikRef?.current) {
-			if (date !== undefined) formikRef.current.setFieldValue("endDate", date)
+			if (date !== undefined) {
+				formikRef.current.setFieldValue("endDate", date)
+				if (date) clearDatePoll() // setting a fixed date disables the poll (mutually exclusive)
+			}
 			if (time !== undefined) formikRef.current.setFieldValue("endTime", time)
 		}
 	}
@@ -692,17 +710,24 @@ export default function Manage({ event: eventProp }: any) {
 														</Box>
 													</FormControl>
 
+													{/* Conflict: legacy event has both a poll and fixed dates — keep both editable so the user can resolve it */}
+													{!!((values.startDate || values.endDate) && (values.datePoll?.isActive || values.datePoll?.options?.length)) && (
+														<Box mb={3} p={3} rounded="lg" bg="#3A2A12" border="1px solid #7A5A20">
+															<Text fontSize="sm" color="orange.300">This event has both a date poll and fixed dates. Remove one to continue.</Text>
+														</Box>
+													)}
+
 													{/* Start / End date + time with dotted connector */}
 													<Flex
 														gap={4}
 														alignItems="stretch"
 														flexWrap={{ base: "wrap", sm: "nowrap" }}
-														mb={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 1 : 4}
+														mb={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? 1 : 4}
 														bg="#14161B"
 														rounded="xl"
 														p="3"
-														opacity={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? 0.4 : 1}
-														pointerEvents={!!(values.datePoll?.isActive || values.datePoll?.options?.length) ? "none" : "auto"}
+														opacity={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? 0.4 : 1}
+														pointerEvents={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? "none" : "auto"}
 													>
 														{/* Left: Start/End markers + dashed connector */}
 														<Flex direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
@@ -740,9 +765,64 @@ export default function Manage({ event: eventProp }: any) {
 															</Flex>
 														</Flex>
 													</Flex>
-													{!!(values.datePoll?.isActive || values.datePoll?.options?.length) && (
+													{!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) && (
 														<Text fontSize="xs" color="orange.400" mb={3}>Remove date poll to set a fixed start/end date</Text>
 													)}
+
+													{/* ---- Date Poll (mutually exclusive with fixed dates) ---- */}
+													<Box
+														mb={4}
+														opacity={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) ? 0.4 : 1}
+														pointerEvents={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) ? "none" : "auto"}
+													>
+														<Heading size="md" color="white" mb={1}>Date Poll <Text as="span" fontSize="sm" color="gray.500" fontWeight="normal">(optional)</Text></Heading>
+														{!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) && (
+															<Text fontSize="xs" color="orange.400" mb={2}>Remove start/end date to enable date poll</Text>
+														)}
+														<Flex align="center" justifyContent="space-between" mt={3} mb="3">
+															<Box>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Enable Date Poll</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Let attendees vote on preferred event date</Text>
+															</Box>
+															<Switch isChecked={values.datePoll?.isActive} colorScheme="orange" onChange={() => {
+																const next = !values.datePoll?.isActive
+																setFieldValue("datePoll.isActive", next)
+																if (next) { // enabling the poll clears any fixed dates (mutually exclusive)
+																	setFieldValue("startDate", ""); setFieldValue("startTime", "")
+																	setFieldValue("endDate", ""); setFieldValue("endTime", "")
+																}
+															}} />
+														</Flex>
+														{values.datePoll?.isActive && (
+															<Box>
+																{(values.datePoll?.options || []).map((opt, idx) => (
+																	<Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
+																		<Box>
+																			<Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
+																			{opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
+																		</Box>
+																		<Flex align="center" gap={1}>
+																			<Button size="xs" variant="ghost" color="orange.300" onClick={() => {
+																				setEditPollIndex(idx)
+																				setTempPollOption(opt)
+																				setPollDate(opt.date || "")
+																				setPollTime(opt.time || "")
+																				onPollModalOpen()
+																			}}>Edit</Button>
+																			<Button size="xs" variant="ghost" color="red.400" onClick={() => {
+																				const updated = [...(values.datePoll?.options || [])]
+																				updated.splice(idx, 1)
+																				setFieldValue("datePoll.options", updated)
+																			}}>Remove</Button>
+																		</Flex>
+																	</Flex>
+																))}
+																<Button size="sm" bg="transparent" color="white" border="1px dashed #666" width="100%" mt="1" _hover={{ bg: "#1C1F24" }} onClick={() => { setEditPollIndex(null); setTempPollOption({ id: "", date: "", time: "", label: "" }); setPollDate(""); setPollTime(""); onPollModalOpen() }} leftIcon={<PlusSVG />}>
+																	Add Date Option
+																</Button>
+															</Box>
+														)}
+													</Box>
 
 													<FormControl mb={4}>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Location</FormLabel>
@@ -962,54 +1042,6 @@ export default function Manage({ event: eventProp }: any) {
 															</>
 														)}
 													</FieldArray>
-												</Box>
-
-												{/* ---- Date Poll ---- */}
-												<Box
-													bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}
-													opacity={!!(values.startDate || values.endDate) ? 0.4 : 1}
-													pointerEvents={!!(values.startDate || values.endDate) ? "none" : "auto"}
-												>
-													<Heading size="md" color="white" mb={1}>Date Poll <Text as="span" fontSize="sm" color="gray.500" fontWeight="normal">(optional)</Text></Heading>
-													{!!(values.startDate || values.endDate) && (
-														<Text fontSize="xs" color="orange.400" mb={2}>Remove start/end date to enable date poll</Text>
-													)}
-													<Flex align="center" justifyContent="space-between" mt={3} mb="3">
-														<Box>
-															<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Enable Date Poll</Text>
-															<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Let attendees vote on preferred event date</Text>
-														</Box>
-														<Switch isChecked={values.datePoll?.isActive} colorScheme="orange" onChange={() => setFieldValue("datePoll.isActive", !values.datePoll?.isActive)} />
-													</Flex>
-													{values.datePoll?.isActive && (
-														<Box>
-															{(values.datePoll?.options || []).map((opt, idx) => (
-																<Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
-																	<Box>
-																		<Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
-																		{opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
-																	</Box>
-																	<Flex align="center" gap={1}>
-																		<Button size="xs" variant="ghost" color="orange.300" onClick={() => {
-																			setEditPollIndex(idx)
-																			setTempPollOption(opt)
-																			setPollDate(opt.date || "")
-																			setPollTime(opt.time || "")
-																			onPollModalOpen()
-																		}}>Edit</Button>
-																		<Button size="xs" variant="ghost" color="red.400" onClick={() => {
-																			const updated = [...(values.datePoll?.options || [])]
-																			updated.splice(idx, 1)
-																			setFieldValue("datePoll.options", updated)
-																		}}>Remove</Button>
-																	</Flex>
-																</Flex>
-															))}
-															<Button size="sm" bg="transparent" color="white" border="1px dashed #666" width="100%" mt="1" _hover={{ bg: "#1C1F24" }} onClick={() => { setEditPollIndex(null); setTempPollOption({ id: "", date: "", time: "", label: "" }); setPollDate(""); setPollTime(""); onPollModalOpen() }} leftIcon={<PlusSVG />}>
-																Add Date Option
-															</Button>
-														</Box>
-													)}
 												</Box>
 
 												{/* Status (kept) */}
