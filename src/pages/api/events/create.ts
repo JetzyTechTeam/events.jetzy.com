@@ -110,11 +110,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let start: Date | undefined
 		let end: Date | undefined
 
-		if (startDate && startTime) {
-			start = dayjs.tz(`${startDate} ${startTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		// Time is optional — default to midnight when only a date is provided
+		if (startDate) {
+			start = dayjs.tz(`${startDate} ${startTime || '00:00'}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
 		}
-		if (endDate && endTime) {
-			end = dayjs.tz(`${endDate} ${endTime}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		if (endDate) {
+			end = dayjs.tz(`${endDate} ${endTime || '00:00'}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		}
+
+		// An active date poll is mutually exclusive with fixed dates — poll wins, drop the dates
+		const datePollActive = !!(datePoll?.isActive && datePoll.options.length > 0)
+		if (datePollActive) {
+			start = undefined
+			end = undefined
 		}
 
 		if (start && end && start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)

@@ -55,8 +55,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			venueName: source.venueName,
 			coordinates: source.coordinates,
 			desc: source.desc,
-			...(source.startsOn ? { startsOn: source.startsOn } : {}),
-			...(source.endsOn ? { endsOn: source.endsOn } : {}),
+			// An active date poll is mutually exclusive with fixed dates — don't copy dates when the source has a live poll
+			...(!source.datePoll?.isActive && source.startsOn ? { startsOn: source.startsOn } : {}),
+			...(!source.datePoll?.isActive && source.endsOn ? { endsOn: source.endsOn } : {}),
 			timezone: source.timezone,
 			isPaid: source.isPaid,
 			privacy: source.privacy,
