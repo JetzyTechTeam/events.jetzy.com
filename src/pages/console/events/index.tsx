@@ -420,11 +420,14 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}
 
 	const allValues = Array.from(allEventsMap.values())
-	const upcoming = allValues.filter((e) => !e.isEnded)
+	// Dated upcoming events first (soonest first), then TBD (no start date), then past events (most recently ended first)
+	const upcomingDated = allValues.filter((e) => !e.isEnded && !!e.startsOn)
+	const upcomingTbd = allValues.filter((e) => !e.isEnded && !e.startsOn)
 	const past = allValues.filter((e) => e.isEnded)
-	upcoming.sort((a, b) => getSortTime(a) - getSortTime(b))
+	upcomingDated.sort((a, b) => getSortTime(a) - getSortTime(b))
+	upcomingTbd.sort((a, b) => getSortTime(a) - getSortTime(b))
 	past.sort((a, b) => (b.endsOn ? new Date(b.endsOn).getTime() : 0) - (a.endsOn ? new Date(a.endsOn).getTime() : 0))
-	const allEvents = [...upcoming, ...past]
+	const allEvents = [...upcomingDated, ...upcomingTbd, ...past]
 
 	// Apply status filter chip (server-side) before pagination
 	const allowedFilters = ["all", "upcoming", "ended", "tbd"]
