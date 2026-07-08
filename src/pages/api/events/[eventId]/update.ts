@@ -194,6 +194,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!end) unsetDoc.endsOn = ""
 		if (Object.keys(unsetDoc).length > 0) updateDoc.$unset = unsetDoc
 
+		// Record whether an explicit time was set (empty time string = date-only event)
+		updateDoc.$set.hasStartTime = !!(start && startTime)
+		updateDoc.$set.hasEndTime = !!(end && endTime)
+
 		const newEvent = await Events.findOneAndUpdate(
 			{
 				_id: new Types.ObjectId(eventId as string),

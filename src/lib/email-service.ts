@@ -67,11 +67,11 @@ export function eventUpdateEmailTemplate({
           </tr>
           <tr>
             <td style="padding: 4px 8px;"><strong>Start:</strong></td>
-            <td style="padding: 4px 8px;"><b>${startDate} ${startTime}</b></td>
+            <td style="padding: 4px 8px;"><b>${startDate}${startTime ? ` ${startTime}` : ''}</b></td>
           </tr>
           <tr>
             <td style="padding: 4px 8px;"><strong>End:</strong></td>
-            <td style="padding: 4px 8px;"><b>${endDate} ${endTime}</b></td>
+            <td style="padding: 4px 8px;"><b>${endDate}${endTime ? ` ${endTime}` : ''}</b></td>
           </tr>
         </table>
         
@@ -84,7 +84,7 @@ export function eventUpdateEmailTemplate({
   const changesText = changes && changes.length > 0 ? `\nChanges made:\n- ${changes.join('\n- ')}\n` : '';
   const linkText = eventLink ? `\nView Event: ${eventLink}\n` : '';
 
-  const textBody = `Event Update: "${oldEventName}" has been updated.\n${changesText}\nNew Details:\nEvent Name: ${eventName}\nLocation: ${location}\nStart: ${startDate} ${startTime}\nEnd: ${endDate} ${endTime}\n${linkText}\nThank you,\nThe Jetzy Team`;
+  const textBody = `Event Update: "${oldEventName}" has been updated.\n${changesText}\nNew Details:\nEvent Name: ${eventName}\nLocation: ${location}\nStart: ${startDate}${startTime ? ` ${startTime}` : ''}\nEnd: ${endDate}${endTime ? ` ${endTime}` : ''}\n${linkText}\nThank you,\nThe Jetzy Team`;
 
   return {
     subject: `Event Update: "${oldEventName}" has changed`,

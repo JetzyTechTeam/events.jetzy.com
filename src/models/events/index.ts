@@ -97,6 +97,15 @@ const eventsSchema = new Schema<IEvent>(
 			type: Date,
 			required: false,
 		},
+		// Whether the organizer set an explicit time (vs a date-only event). Undefined on legacy events = treat as having a time.
+		hasStartTime: {
+			type: Boolean,
+			required: false,
+		},
+		hasEndTime: {
+			type: Boolean,
+			required: false,
+		},
 		timezone: {
 			type: String,
 			required: false,

@@ -157,6 +157,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			desc: desc ?? "",
 			...(start ? { startsOn: start } : {}),
 			...(end ? { endsOn: end } : {}),
+			hasStartTime: !!(start && startTime),
+			hasEndTime: !!(end && endTime),
 			isPaid,
 			privacy,
 			images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],

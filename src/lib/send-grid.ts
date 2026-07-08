@@ -530,8 +530,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     } else {
       start = dayjs.utc(event.startsOn).tz(eventTimezone)
       end = dayjs.utc(event.endsOn).tz(eventTimezone)
-      const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
-      const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
+      const startTimestamp = `${start.format('ddd MMM DD YYYY')}${event.hasStartTime !== false ? ` ${start.format('hh:mm A')}` : ''}`
+      const endTimestamp = `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}`
       timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
     }
     // Always use real location in emails — locationDisclosedAfterBooking only masks on the public event page
@@ -1185,8 +1185,8 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
     const eventTimezone = event.timezone.split(') ')[1]
     const start = dayjs.utc(event.startsOn).tz(eventTimezone)
     const end = dayjs.utc(event.endsOn).tz(eventTimezone)
-    const startTimestamp = `${start.format('ddd MMM DD YYYY')} ${start.format('hh:mm A')}`
-    const endTimestamp = `${end.format('ddd MMM DD YYYY')} ${end.format('hh:mm A')}`
+    const startTimestamp = `${start.format('ddd MMM DD YYYY')}${event.hasStartTime !== false ? ` ${start.format('hh:mm A')}` : ''}`
+    const endTimestamp = `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}`
     const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
     const location = event.location
 

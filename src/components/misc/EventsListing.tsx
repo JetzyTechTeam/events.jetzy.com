@@ -92,10 +92,10 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
     const date = dayjs.utc(event.startsOn).tz(userTimeZone)
 
     const formattedDate = date.format('MMMM DD, YYYY')
-    const formattedTime = date.format('hh:mm A')
+    const formattedTime = event?.hasStartTime !== false ? date.format('hh:mm A') : ''
 
     return { formattedDate, formattedTime }
-  }, [event.startsOn, event.timezone])
+  }, [event.startsOn, event.timezone, event.hasStartTime])
 
   return (
     <Box
@@ -214,8 +214,8 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
               <DateTimeSVG />
               {!event?.startsOn && !event?.endsOn && event?.datePoll?.isActive 
                 ? "Date to be decided (Polling)" 
-                : event?.startsOn 
-                ? `${formattedDate} ${formattedTime}`
+                : event?.startsOn
+                ? `${formattedDate}${formattedTime ? ` ${formattedTime}` : ""}`
                 : "Date to be decided"}
             </Text>
             <Text

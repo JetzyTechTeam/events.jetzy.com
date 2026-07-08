@@ -349,6 +349,12 @@ An event has EITHER a fixed start/end date OR an active date poll, never both.
 ### Start/End time now optional
 `create.ts`/`update.ts` build the date from `startDate` alone (`startTime || '00:00'`) — previously required both, so a date without a time was silently dropped. `DatePicker.tsx` no longer sets `minDate`, so past/today dates are selectable (today's/ended events stay editable).
 
+### Date-only vs midnight — `hasStartTime` / `hasEndTime` flags
+Because `startsOn`/`endsOn` is a single `Date`, it can't tell a date-only event apart from a real 12:00 AM event. Two optional booleans on the event model ([models/events/index.ts](src/models/events/index.ts), [types.ts](src/models/events/types.ts)) record intent:
+- **Write:** `create.ts`/`update.ts` set `hasStartTime = !!(start && startTime)` (empty time string = date-only). `clone.ts` copies the flags with the dates.
+- **Read (show unless explicitly false):** every time-display site guards on `event.hasStartTime !== false` (and `hasEndTime`). Legacy events (flag `undefined`) still show their time, so real 12 AM events are preserved — no backfill needed. Only events the new flow marks `false` hide the time.
+- **Sites:** `manage.tsx` (editor init + update-email change detection), `HostedEvents.tsx`, `EventsListing.tsx`, `success.tsx`, `send-grid.ts` (both booking-confirmation builders). `email-service.ts` uses a `${startTime ? ...}` string guard fed the flag-derived time from manage. (An earlier `00:00`-heuristic helper `hasEventTime` was removed in favor of these flags.)
+
 ## Feature: Draft Events
 `status` field on IEvent: `draft` | `published`
 Draft events filtered from public `/api/events` listing

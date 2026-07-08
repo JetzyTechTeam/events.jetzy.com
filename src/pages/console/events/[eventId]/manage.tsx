@@ -256,9 +256,9 @@ export default function Manage({ event: eventProp }: any) {
 			privacy: event.privacy,
 			status: (event.status ?? "published") as "draft" | "published",
 			startDate: start ? start.format("YYYY-MM-DD") : "",
-			startTime: start ? start.format("HH:mm") : "",
+			startTime: start && event.hasStartTime !== false ? start.format("HH:mm") : "",
 			endDate: end ? end.format("YYYY-MM-DD") : "",
-			endTime: end ? end.format("HH:mm") : "",
+			endTime: end && event.hasEndTime !== false ? end.format("HH:mm") : "",
 			timezone: event?.timezone || "",
 			showParticipants: event.showParticipants || false,
 			benefits: event.benefits || "",
@@ -354,13 +354,13 @@ export default function Manage({ event: eventProp }: any) {
 					if (values.location !== event.location) changes.push(`Location: ${event.location} -> ${values.location}`)
 
 					const oldStartDateStr = oldStart ? oldStart.format("YYYY-MM-DD") : ""
-					const oldStartTimeStr = oldStart ? oldStart.format("HH:mm") : ""
+					const oldStartTimeStr = oldStart && event.hasStartTime !== false ? oldStart.format("HH:mm") : ""
 					if (values.startDate !== oldStartDateStr || values.startTime !== oldStartTimeStr) {
 						if (values.startDate && values.startTime) changes.push(`Start time was updated to ${values.startDate} ${values.startTime}`)
 						else changes.push(`Start time was removed`)
 					}
 					const oldEndDateStr = oldEnd ? oldEnd.format("YYYY-MM-DD") : ""
-					const oldEndTimeStr = oldEnd ? oldEnd.format("HH:mm") : ""
+					const oldEndTimeStr = oldEnd && event.hasEndTime !== false ? oldEnd.format("HH:mm") : ""
 					if (values.endDate !== oldEndDateStr || values.endTime !== oldEndTimeStr) {
 						if (values.endDate && values.endTime) changes.push(`End time was updated to ${values.endDate} ${values.endTime}`)
 						else changes.push(`End time was removed`)
@@ -387,9 +387,9 @@ export default function Manage({ event: eventProp }: any) {
 								endDate: values.endDate,
 								oldEndDate: oldEnd ? oldEnd.format("YYYY-MM-DD") : "",
 								endTime: values.endTime,
-								oldEndTime: oldEnd ? oldEnd.format("HH:mm") : "",
+								oldEndTime: oldEnd && event.hasEndTime !== false ? oldEnd.format("HH:mm") : "",
 								startTime: values.startTime,
-								oldStartTime: oldStart ? oldStart.format("HH:mm") : "",
+								oldStartTime: oldStart && event.hasStartTime !== false ? oldStart.format("HH:mm") : "",
 								userEmail: bk.customerEmail,
 								changes,
 								eventLink,
