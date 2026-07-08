@@ -9,7 +9,6 @@ import { Button, Heading, Text, Input, InputGroup, InputLeftElement, Flex } from
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
-import Image from "next/image"
 import { Roboto } from "next/font/google"
 import Link from "next/link"
 
@@ -255,15 +254,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 				<div className="shrink-0">
 					{(() => {
 						const firstImage = event?.images?.[0]
-						// next/image needs an absolute URL or root-relative path; guard bad/seed data ("string", "", etc.)
+						// guard bad/seed data ("string", "", etc.); plain <img> so any host loads (mobile stores profile-pic URLs)
 						const isValidImage = typeof firstImage === "string" && (firstImage.startsWith("/") || firstImage.startsWith("http"))
 						return isValidImage ? (
-							<Image
+							<img
 								src={firstImage}
 								alt={stripHtml(event.name)}
 								className={`w-[150px] h-[120px] rounded-lg object-cover ${props.isEnded ? 'opacity-60' : ''}`}
-								width={150}
-								height={120}
 							/>
 						) : (
 							<div className={`w-[150px] h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
@@ -409,13 +406,25 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 	})
 
-	// Convert to array and sort (active events first, then ended events by start date)
-	const allEvents = Array.from(allEventsMap.values()).sort((a, b) => {
-		// Sort by status first (active events first, ended events last), then by start date (newest first)
-		if (a.isEnded && !b.isEnded) return 1
-		if (!a.isEnded && b.isEnded) return -1
-		return Number(new Date(b.startsOn)) - Number(new Date(a.startsOn))
-	})
+	// Sort to match the public listing (api/events/index.ts):
+	// upcoming/TBD first by startsOn ASC (soonest first, no-date polls float to top), then past by endsOn DESC
+	const getSortTime = (e: any): number => {
+		if (e.startsOn) return new Date(e.startsOn).getTime()
+		if (e.endsOn) return new Date(e.endsOn).getTime()
+		if (e.datePoll?.options?.length > 0 && e.datePoll.options[0].date) {
+			const opt = e.datePoll.options[0]
+			return new Date(`${opt.date}T${opt.time || "00:00"}`).getTime()
+		}
+		if (e.createdAt) return new Date(e.createdAt).getTime()
+		return 0
+	}
+
+	const allValues = Array.from(allEventsMap.values())
+	const upcoming = allValues.filter((e) => !e.isEnded)
+	const past = allValues.filter((e) => e.isEnded)
+	upcoming.sort((a, b) => getSortTime(a) - getSortTime(b))
+	past.sort((a, b) => (b.endsOn ? new Date(b.endsOn).getTime() : 0) - (a.endsOn ? new Date(a.endsOn).getTime() : 0))
+	const allEvents = [...upcoming, ...past]
 
 	// Apply status filter chip (server-side) before pagination
 	const allowedFilters = ["all", "upcoming", "ended", "tbd"]

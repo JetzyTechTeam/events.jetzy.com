@@ -1406,7 +1406,7 @@ function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () =
 				</svg>
 			</div>
 			<div className="flex-1 min-w-0">
-				<p className="text-sm font-semibold text-white">Help pick the perfect night</p>
+				<p className="text-sm font-semibold text-white">What date and time work best for you</p>
 				<p className="text-xs text-[#888] mt-0.5">Vote now and help finalize the event schedule.</p>
 			</div>
 			<div className="flex items-center gap-2 flex-shrink-0">
