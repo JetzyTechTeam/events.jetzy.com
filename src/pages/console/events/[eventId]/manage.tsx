@@ -91,6 +91,7 @@ import { Roboto } from "next/font/google"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
+import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -233,11 +234,9 @@ export default function Manage({ event: eventProp }: any) {
 	}, [event])
 
 	const initialValues: CreateEventFormData = React.useMemo(() => {
-		const tzString = event?.timezone || ""
-		const parts = tzString.split(") ")
-		const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess()
-		const start = event.startsOn ? dayjs(event.startsOn).tz(extractedTimeZone) : null
-		const end = event.endsOn ? dayjs(event.endsOn).tz(extractedTimeZone) : null
+		const extractedTimeZone = getEventZone(event?.timezone)
+		const start = event.startsOn ? dayjs.utc(event.startsOn).tz(extractedTimeZone) : null
+		const end = event.endsOn ? dayjs.utc(event.endsOn).tz(extractedTimeZone) : null
 
 		return {
 			name: stripHtml(event.name),
@@ -256,10 +255,10 @@ export default function Manage({ event: eventProp }: any) {
 			privacy: event.privacy,
 			status: (event.status ?? "published") as "draft" | "published",
 			startDate: start ? start.format("YYYY-MM-DD") : "",
-			startTime: start ? start.format("HH:mm") : "",
+			startTime: start && event.hasStartTime !== false ? start.format("HH:mm") : "",
 			endDate: end ? end.format("YYYY-MM-DD") : "",
-			endTime: end ? end.format("HH:mm") : "",
-			timezone: event?.timezone || "",
+			endTime: end && event.hasEndTime !== false ? end.format("HH:mm") : "",
+			timezone: normalizeTimezone(event?.timezone),
 			showParticipants: event.showParticipants || false,
 			benefits: event.benefits || "",
 			locationDisclosedAfterBooking: event.locationDisclosedAfterBooking || false,
@@ -344,23 +343,21 @@ export default function Manage({ event: eventProp }: any) {
 			if (res?.payload?.status) {
 				if (sendUpdateEmailCheck && events.length > 0) {
 					const changes: string[] = []
-					const tzString = event?.timezone || ""
-					const parts = tzString.split(") ")
-					const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess()
-					const oldStart = event.startsOn ? dayjs(event.startsOn).tz(extractedTimeZone) : null
-					const oldEnd = event.endsOn ? dayjs(event.endsOn).tz(extractedTimeZone) : null
+					const extractedTimeZone = getEventZone(event?.timezone)
+					const oldStart = event.startsOn ? dayjs.utc(event.startsOn).tz(extractedTimeZone) : null
+					const oldEnd = event.endsOn ? dayjs.utc(event.endsOn).tz(extractedTimeZone) : null
 
 					if (values.name !== event.name) changes.push(`Event Name: ${event.name} -> ${values.name}`)
 					if (values.location !== event.location) changes.push(`Location: ${event.location} -> ${values.location}`)
 
 					const oldStartDateStr = oldStart ? oldStart.format("YYYY-MM-DD") : ""
-					const oldStartTimeStr = oldStart ? oldStart.format("HH:mm") : ""
+					const oldStartTimeStr = oldStart && event.hasStartTime !== false ? oldStart.format("HH:mm") : ""
 					if (values.startDate !== oldStartDateStr || values.startTime !== oldStartTimeStr) {
 						if (values.startDate && values.startTime) changes.push(`Start time was updated to ${values.startDate} ${values.startTime}`)
 						else changes.push(`Start time was removed`)
 					}
 					const oldEndDateStr = oldEnd ? oldEnd.format("YYYY-MM-DD") : ""
-					const oldEndTimeStr = oldEnd ? oldEnd.format("HH:mm") : ""
+					const oldEndTimeStr = oldEnd && event.hasEndTime !== false ? oldEnd.format("HH:mm") : ""
 					if (values.endDate !== oldEndDateStr || values.endTime !== oldEndTimeStr) {
 						if (values.endDate && values.endTime) changes.push(`End time was updated to ${values.endDate} ${values.endTime}`)
 						else changes.push(`End time was removed`)
@@ -387,9 +384,9 @@ export default function Manage({ event: eventProp }: any) {
 								endDate: values.endDate,
 								oldEndDate: oldEnd ? oldEnd.format("YYYY-MM-DD") : "",
 								endTime: values.endTime,
-								oldEndTime: oldEnd ? oldEnd.format("HH:mm") : "",
+								oldEndTime: oldEnd && event.hasEndTime !== false ? oldEnd.format("HH:mm") : "",
 								startTime: values.startTime,
-								oldStartTime: oldStart ? oldStart.format("HH:mm") : "",
+								oldStartTime: oldStart && event.hasStartTime !== false ? oldStart.format("HH:mm") : "",
 								userEmail: bk.customerEmail,
 								changes,
 								eventLink,
@@ -711,7 +708,7 @@ export default function Manage({ event: eventProp }: any) {
 													</FormControl>
 
 													{/* Conflict: legacy event has both a poll and fixed dates — keep both editable so the user can resolve it */}
-													{!!((values.startDate || values.endDate) && (values.datePoll?.isActive || values.datePoll?.options?.length)) && (
+													{!!((values.startDate || values.endDate) && (values.datePoll?.isActive)) && (
 														<Box mb={3} p={3} rounded="lg" bg="#3A2A12" border="1px solid #7A5A20">
 															<Text fontSize="sm" color="orange.300">This event has both a date poll and fixed dates. Remove one to continue.</Text>
 														</Box>
@@ -722,12 +719,12 @@ export default function Manage({ event: eventProp }: any) {
 														gap={4}
 														alignItems="stretch"
 														flexWrap={{ base: "wrap", sm: "nowrap" }}
-														mb={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? 1 : 4}
+														mb={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 1 : 4}
 														bg="#14161B"
 														rounded="xl"
 														p="3"
-														opacity={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? 0.4 : 1}
-														pointerEvents={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? "none" : "auto"}
+														opacity={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 0.4 : 1}
+														pointerEvents={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? "none" : "auto"}
 													>
 														{/* Left: Start/End markers + dashed connector */}
 														<Flex direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
@@ -765,18 +762,18 @@ export default function Manage({ event: eventProp }: any) {
 															</Flex>
 														</Flex>
 													</Flex>
-													{!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) && (
+													{!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) && (
 														<Text fontSize="xs" color="orange.400" mb={3}>Remove date poll to set a fixed start/end date</Text>
 													)}
 
 													{/* ---- Date Poll (mutually exclusive with fixed dates) ---- */}
 													<Box
 														mb={4}
-														opacity={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) ? 0.4 : 1}
-														pointerEvents={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) ? "none" : "auto"}
+														opacity={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive)) ? 0.4 : 1}
+														pointerEvents={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive)) ? "none" : "auto"}
 													>
 														<Heading size="md" color="white" mb={1}>Date Poll <Text as="span" fontSize="sm" color="gray.500" fontWeight="normal">(optional)</Text></Heading>
-														{!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) && (
+														{!!((values.startDate || values.endDate) && !(values.datePoll?.isActive)) && (
 															<Text fontSize="xs" color="orange.400" mb={2}>Remove start/end date to enable date poll</Text>
 														)}
 														<Flex align="center" justifyContent="space-between" mt={3} mb="3">

@@ -24,6 +24,7 @@ type IEvent = {
 	location: string
 	venueName?: string
 	startsOn: string
+	hasStartTime?: boolean
 	timezone: string
 	slug: string
 	coordinates?: {
@@ -55,7 +56,7 @@ const CheckoutSuccessPage: React.FC = () => {
 		const date = dayjs.utc(parsedEvent.startsOn).tz(userTimeZone)
 
 		const formattedDate = date.format('MMMM DD, YYYY')
-		const formattedTime = date.format('hh:mm A')
+		const formattedTime = parsedEvent?.hasStartTime !== false ? date.format('hh:mm A') : ''
 
 		return { formattedDate, formattedTime }
 	}, [parsedEvent])
@@ -187,7 +188,7 @@ const CheckoutSuccessPage: React.FC = () => {
 								<p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Venue:</strong> {displayLocation}</p>
 								<p className="text-gray-700 break-words overflow-wrap-anywhere">
 									<strong>Date & Time:</strong>{" "}
-									{formattedDate}&nbsp;{formattedTime}
+									{formattedDate}{formattedTime ? <>&nbsp;{formattedTime}</> : null}
 									{(displayEvent.timezone) ? ` (${displayEvent.timezone})` : ""}
 								</p>
 								{/* Get Directions Link */}

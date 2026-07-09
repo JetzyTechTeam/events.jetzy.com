@@ -11,6 +11,8 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Roboto } from "next/font/google"
 import Link from "next/link"
+import { sortEvents, getEventStatus, EventStatus } from "@/utils/eventSort"
+import { formatEventTime, formatEventZoneLabel, formatEventDateParts } from "@/utils/eventTime"
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 import { useRouter } from "next/router"
@@ -146,7 +148,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 				{!eventList.length && <p>No events found.</p>}
 
 				{eventList.map((event) => (
-					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} isEnded={event.isEnded} />
+					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} isEnded={event.isEnded} timeStatus={(event as any).timeStatus} />
 				))}
 			</div>
 
@@ -210,7 +212,7 @@ const labelStyle: React.CSSProperties = {
 	color: "#9F9F9F",
 }
 
-const DateBlock = ({ startsOn, isEnded }: { startsOn?: any; isEnded?: boolean }) => {
+const DateBlock = ({ startsOn, isEnded, timezone }: { startsOn?: any; isEnded?: boolean; timezone?: string }) => {
 	const accent = isEnded ? "text-gray-500" : "text-white"
 	if (!startsOn) {
 		return (
@@ -221,10 +223,7 @@ const DateBlock = ({ startsOn, isEnded }: { startsOn?: any; isEnded?: boolean })
 			</div>
 		)
 	}
-	const d = new Date(startsOn.toString())
-	const weekday = d.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase()
-	const day = d.toLocaleDateString("en-US", { day: "numeric" })
-	const monthYear = d.toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase()
+	const { weekday, day, monthYear } = formatEventDateParts(startsOn, timezone)
 	return (
 		<div className="w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
 			<span className={roboto.className} style={labelStyle}>{weekday}</span>
@@ -234,8 +233,18 @@ const DateBlock = ({ startsOn, isEnded }: { startsOn?: any; isEnded?: boolean })
 	)
 }
 
-const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isEnded?: boolean }) => {
+// Per-card status badge styles (canonical order live -> future -> tbd -> past)
+const TIME_STATUS_BADGE: Record<EventStatus, { label: string; className: string }> = {
+	live: { label: "LIVE", className: "bg-[#123B2A] text-[#39D98A] border border-[#39D98A]" },
+	future: { label: "UPCOMING", className: "bg-[#2A1F00] text-[#F79432] border border-[#F79432]" },
+	tbd: { label: "TBD", className: "bg-[#2A2A2A] text-[#A7A7A7] border border-[#444444]" },
+	past: { label: "ENDED", className: "bg-[#444444] text-[#A7A7A7]" },
+}
+
+const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isEnded?: boolean; timeStatus?: EventStatus }) => {
 	const event = props
+	const timeStatus: EventStatus = props.timeStatus ?? getEventStatus(props)
+	const statusBadge = TIME_STATUS_BADGE[timeStatus]
 
 	const { data: totals } = useQuery({
 		queryKey: ["eventTotals", event._id],
@@ -248,7 +257,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 		<>
 			<div className={`flex items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
 				{/* DATE BLOCK */}
-				<DateBlock startsOn={event.startsOn} isEnded={props.isEnded} />
+				<DateBlock startsOn={event.startsOn} isEnded={props.isEnded} timezone={event.timezone} />
 
 				{/* THUMBNAIL */}
 				<div className="shrink-0">
@@ -279,11 +288,9 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								{stripHtml(event.name)}
 							</Heading>
 						</Link>
-						{props.isEnded && (
-							<span className="px-2 py-0.5 bg-[#444444] text-[#A7A7A7] text-xs rounded-full font-medium">
-								ENDED
-							</span>
-						)}
+						<span className={`px-2 py-0.5 text-xs rounded-full font-medium ${statusBadge.className}`}>
+							{statusBadge.label}
+						</span>
 						{event.status === 'draft' && (
 							<span className="px-2 py-0.5 bg-[#2A1F00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
 								DRAFT
@@ -300,7 +307,16 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					<div className="flex items-center gap-x-2 text-sm text-[#A7A7A7]">
 						<DateTimeSVG width={16} height={16} stroke="#F79432" />
 						<span>
-							{event.startsOn ? new Date(event.startsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} – {event.endsOn ? new Date(event.endsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} {event.timezone ? `(${event.timezone})` : ""}
+							{(() => {
+								const showStart = event.startsOn && event.hasStartTime !== false
+								const showEnd = event.endsOn && event.hasEndTime !== false
+								const label = formatEventZoneLabel(event.timezone)
+								const tz = label ? ` ${label}` : ""
+								if (showStart && showEnd) return `${formatEventTime(event.startsOn, event.timezone)} – ${formatEventTime(event.endsOn, event.timezone)}${tz}`
+								if (showStart) return `${formatEventTime(event.startsOn, event.timezone)}${tz}`
+								if (showEnd) return `Ends ${formatEventTime(event.endsOn, event.timezone)}${tz}`
+								return `All day${tz}`
+							})()}
 						</span>
 					</div>
 
@@ -391,8 +407,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	// Add active events
 	activeEvents.forEach(event => {
-		const eventData = event.toJSON()
-		eventData.isEnded = eventData.endsOn ? new Date(eventData.endsOn) < now : false
+		const eventData: any = event.toJSON()
+		eventData.timeStatus = getEventStatus(eventData)
+		eventData.isEnded = eventData.timeStatus === "past"
 		allEventsMap.set(eventData._id.toString(), eventData)
 	})
 
@@ -400,48 +417,29 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	pastEventsToInclude.forEach(event => {
 		const eventId = event._id.toString()
 		if (!allEventsMap.has(eventId)) {
-			const eventData = event.toJSON()
-			eventData.isEnded = true // Mark as ended since it's in the past
+			const eventData: any = event.toJSON()
+			eventData.timeStatus = "past" // in the past by query definition
+			eventData.isEnded = true
 			allEventsMap.set(eventId, eventData)
 		}
 	})
 
-	// Sort to match the public listing (api/events/index.ts):
-	// upcoming/TBD first by startsOn ASC (soonest first, no-date polls float to top), then past by endsOn DESC
-	const getSortTime = (e: any): number => {
-		if (e.startsOn) return new Date(e.startsOn).getTime()
-		if (e.endsOn) return new Date(e.endsOn).getTime()
-		if (e.datePoll?.options?.length > 0 && e.datePoll.options[0].date) {
-			const opt = e.datePoll.options[0]
-			return new Date(`${opt.date}T${opt.time || "00:00"}`).getTime()
-		}
-		if (e.createdAt) return new Date(e.createdAt).getTime()
-		return 0
-	}
-
-	const allValues = Array.from(allEventsMap.values())
-	// Dated upcoming events first (soonest first), then TBD (no start date), then past events (most recently ended first)
-	const upcomingDated = allValues.filter((e) => !e.isEnded && !!e.startsOn)
-	const upcomingTbd = allValues.filter((e) => !e.isEnded && !e.startsOn)
-	const past = allValues.filter((e) => e.isEnded)
-	upcomingDated.sort((a, b) => getSortTime(a) - getSortTime(b))
-	upcomingTbd.sort((a, b) => getSortTime(a) - getSortTime(b))
-	past.sort((a, b) => (b.endsOn ? new Date(b.endsOn).getTime() : 0) - (a.endsOn ? new Date(a.endsOn).getTime() : 0))
-	const allEvents = [...upcomingDated, ...upcomingTbd, ...past]
+	// Canonical order: live -> future -> tbd -> past (see src/utils/eventSort.ts)
+	const allEvents = sortEvents(Array.from(allEventsMap.values()))
 
 	// Apply status filter chip (server-side) before pagination
 	const allowedFilters = ["all", "upcoming", "ended", "tbd"]
 	const rawFilter = (context.query.filter as string) || "all"
 	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
 
-	const filteredEvents = allEvents.filter((e) => {
+	const filteredEvents = allEvents.filter((e: any) => {
 		switch (filter) {
 			case "upcoming":
-				return !e.isEnded && !!e.startsOn
+				return e.timeStatus === "live" || e.timeStatus === "future"
 			case "ended":
-				return !!e.isEnded
+				return e.timeStatus === "past"
 			case "tbd":
-				return !e.isEnded && !e.startsOn
+				return e.timeStatus === "tbd"
 			default:
 				return true
 		}

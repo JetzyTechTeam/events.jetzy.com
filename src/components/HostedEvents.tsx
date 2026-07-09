@@ -22,6 +22,7 @@ import Linkify from "linkify-react"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
+import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
 import { useRouter } from "next/router";
 
 dayjs.extend(utc)
@@ -201,18 +202,18 @@ export default function HostedEvents({ event }: Props) {
 		if (!clonedEvent?.startsOn) return { formattedDate: "", formattedTime: "" }
 
 		try {
-			const userTimeZone = clonedEvent?.timezone?.split(") ")[1] || clonedEvent?.timezone || "UTC"
+			const userTimeZone = getEventZone(clonedEvent?.timezone)
 			const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
 
 			const formattedDate = date.format("MMMM DD, YYYY")
-			const formattedTime = date.format("hh:mm A")
+			const formattedTime = clonedEvent?.hasStartTime !== false ? date.format("hh:mm A") : ""
 
 			return { formattedDate, formattedTime }
 		} catch (error) {
 			console.error("Error formatting date:", error)
 			return { formattedDate: "", formattedTime: "" }
 		}
-	}, [clonedEvent?.startsOn, clonedEvent?.timezone])
+	}, [clonedEvent?.startsOn, clonedEvent?.timezone, clonedEvent?.hasStartTime])
 
 	// Add error boundary for event data - only show if event is truly invalid
 	if (!isValidEvent || !clonedEvent) {
@@ -351,7 +352,7 @@ export default function HostedEvents({ event }: Props) {
 										{!clonedEvent?.startsOn && !clonedEvent?.endsOn && clonedEvent?.datePoll?.isActive
 											? "Date to be decided (Polling)"
 											: clonedEvent?.startsOn
-											? `${formattedDate}, ${formattedTime} ${clonedEvent?.timezone || ""}`
+											? `${formattedDate}${formattedTime ? `, ${formattedTime}` : ""} ${normalizeTimezone(clonedEvent?.timezone)}`
 											: "Date to be decided"}
 									</p>
 									<p className="text-sm sm:text-base flex gap-x-2 text-[#bbbbbb] break-words">

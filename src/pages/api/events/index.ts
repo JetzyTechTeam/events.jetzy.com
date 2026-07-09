@@ -6,6 +6,7 @@ import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
+import { sortEvents } from "@/utils/eventSort"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
@@ -62,35 +63,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const events = await Events.find(filter).lean()
 
-		// Sort events in memory:
-		// 1. No start/end dates (Polls/TBD) -> Top
-		// 2. Live/Upcoming events (endsOn >= now) sorted by startsOn ASC
-		// 3. Past events (endsOn < now) sorted by endsOn DESC
-		const now = new Date()
-
-		const upcomingAll = events.filter((e: any) => !e.endsOn || new Date(e.endsOn) >= now)
-		const pastEvents  = events.filter((e: any) => e.endsOn && new Date(e.endsOn) < now)
-
-		const getSortTime = (e: any): number => {
-			if (e.startsOn) return new Date(e.startsOn).getTime()
-			if (e.endsOn)   return new Date(e.endsOn).getTime()
-			if (e.datePoll?.options?.length > 0 && e.datePoll.options[0].date) {
-				const opt = e.datePoll.options[0]
-				return new Date(`${opt.date}T${opt.time || "00:00"}`).getTime()
-			}
-			if (e.createdAt) return new Date(e.createdAt).getTime()
-			return 0
-		}
-
-		upcomingAll.sort((a: any, b: any) => getSortTime(a) - getSortTime(b))
-
-		pastEvents.sort((a: any, b: any) => {
-			const tA = a.endsOn ? new Date(a.endsOn).getTime() : 0
-			const tB = b.endsOn ? new Date(b.endsOn).getTime() : 0
-			return tB - tA
-		})
-
-		const sortedEvents = [...upcomingAll, ...pastEvents]
+		// Canonical order: live -> future -> tbd -> past (see src/utils/eventSort.ts)
+		const sortedEvents = sortEvents(events)
 
 		const LIMIT = 20
 		const page = Math.max(1, parseInt(req.query.page as string) || 1)

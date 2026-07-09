@@ -25,6 +25,8 @@ import {
   Input,
 } from "@chakra-ui/react";
 import { calculateDistance } from "@/utils/distance";
+import { getEventStatus, getStatusRank, STATUS_LABEL, EventStatus } from "@/utils/eventSort";
+import { getEventZone } from "@/utils/eventTime";
 import { IEvent } from "@/models/events/types";
 import Pagination from "./Pagination";
 import Navbar from "./Navbar";
@@ -85,17 +87,26 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 
   const isNew = diffDays < 2;
 
+  const timeStatus: EventStatus = getEventStatus(event);
+  const statusBadgeStyle: Record<EventStatus, { bg: string; color: string; border?: string }> = {
+    live: { bg: "#123B2A", color: "#39D98A", border: "#39D98A" },
+    future: { bg: "#F79432", color: "black" },
+    tbd: { bg: "#2A2A2A", color: "#A7A7A7", border: "#444444" },
+    past: { bg: "#444444", color: "#A7A7A7" },
+  };
+  const badge = statusBadgeStyle[timeStatus];
+
   const { formattedDate, formattedTime } = useMemo(() => {
     if (!event?.startsOn) return { formattedDate: '', formattedTime: '' }
 
-    const userTimeZone = event.timezone?.split(') ')[1]
+    const userTimeZone = getEventZone(event.timezone)
     const date = dayjs.utc(event.startsOn).tz(userTimeZone)
 
     const formattedDate = date.format('MMMM DD, YYYY')
-    const formattedTime = date.format('hh:mm A')
+    const formattedTime = event?.hasStartTime !== false ? date.format('hh:mm A') : ''
 
     return { formattedDate, formattedTime }
-  }, [event.startsOn, event.timezone])
+  }, [event.startsOn, event.timezone, event.hasStartTime])
 
   return (
     <Box
@@ -114,6 +125,25 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       onClick={() => onClick(event)}
     >
       <Box p="2" position="relative">
+        {/* Status badge (live / upcoming / tbd / ended) */}
+        <Box
+          position="absolute"
+          top="4"
+          left="4"
+          zIndex="3"
+          bg={badge.bg}
+          color={badge.color}
+          border={badge.border ? "1px solid" : undefined}
+          borderColor={badge.border}
+          px="2"
+          py="0.5"
+          rounded="md"
+          fontSize="xs"
+          fontWeight="bold"
+          letterSpacing="0.03em"
+        >
+          {STATUS_LABEL[timeStatus]}
+        </Box>
         {event.images && event.images.length > 0 ? (
           <Image
             src={event.images[0]}
@@ -166,7 +196,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
         {event.benefits && event.benefits.trim() !== "" && (
           <Flex
             position="absolute"
-            top="4"
+            top="12"
             left="4"
             direction="column"
             gap="1"
@@ -214,8 +244,8 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
               <DateTimeSVG />
               {!event?.startsOn && !event?.endsOn && event?.datePoll?.isActive 
                 ? "Date to be decided (Polling)" 
-                : event?.startsOn 
-                ? `${formattedDate} ${formattedTime}`
+                : event?.startsOn
+                ? `${formattedDate}${formattedTime ? ` ${formattedTime}` : ""}`
                 : "Date to be decided"}
             </Text>
             <Text
@@ -336,45 +366,40 @@ const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, 
       return items;
     }
     
-    const now = new Date();
+    const now = Date.now();
 
     return [...items].sort((a, b) => {
-      // 1. Check if event is Live or Ended
-      const isALive = a.endsOn ? new Date(a.endsOn).getTime() >= now.getTime() : true;
-      const isBLive = b.endsOn ? new Date(b.endsOn).getTime() >= now.getTime() : true;
+      // Primary Sort: canonical bucket order (live -> future -> tbd -> past)
+      const rankA = getStatusRank(a, now);
+      const rankB = getStatusRank(b, now);
+      if (rankA !== rankB) return rankA - rankB;
 
-      // Primary Sort: Live Events always appear above Ended Events
-      if (isALive !== isBLive) {
-        return isALive ? -1 : 1;
-      }
-
-      // 2. Both are in the same bucket (both live, or both ended). Check coordinates.
+      // Within the same bucket, prefer nearer events (distance sort).
       const aLoc = a.coordinates;
       const bLoc = b.coordinates;
-      
+
       const aHasCoords = aLoc?.lat != null && aLoc?.long != null;
       const bHasCoords = bLoc?.lat != null && bLoc?.long != null;
-      
-      // Secondary Sort: Events with Location appear above Events without Location
+
+      // Events with Location appear above Events without Location
       if (aHasCoords && !bHasCoords) return -1;
       if (!aHasCoords && bHasCoords) return 1;
 
-      // Tertiary Sort: Sort by actual distance
+      // Sort by actual distance
       if (aHasCoords && bHasCoords) {
         const distA = calculateDistance(userLocation.lat, userLocation.lng, aLoc.lat, aLoc.long);
         const distB = calculateDistance(userLocation.lat, userLocation.lng, bLoc.lat, bLoc.long);
         if (distA !== distB) {
-            return distA - distB; 
+            return distA - distB;
         }
-      } 
-      
-      // Fallback: If both lack coordinates (or have the exact same distance), sort chronologically
+      }
+
+      // Fallback: If both lack coordinates (or same distance), sort chronologically.
       const dateA = a.startsOn ? new Date(a.startsOn).getTime() : 0;
       const dateB = b.startsOn ? new Date(b.startsOn).getTime() : 0;
-      
-      // For Live events, closest upcoming date matters (Ascending)
-      // For Ended events, most recently ended matters (Descending)
-      return isALive ? dateA - dateB : dateB - dateA;
+
+      // Past events: most recently ended first. Others: soonest first.
+      return rankA === 3 ? dateB - dateA : dateA - dateB;
     });
   }, [items, locationState, userLocation]);
 
