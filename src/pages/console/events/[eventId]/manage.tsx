@@ -91,6 +91,7 @@ import { Roboto } from "next/font/google"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
+import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -233,11 +234,9 @@ export default function Manage({ event: eventProp }: any) {
 	}, [event])
 
 	const initialValues: CreateEventFormData = React.useMemo(() => {
-		const tzString = event?.timezone || ""
-		const parts = tzString.split(") ")
-		const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess()
-		const start = event.startsOn ? dayjs(event.startsOn).tz(extractedTimeZone) : null
-		const end = event.endsOn ? dayjs(event.endsOn).tz(extractedTimeZone) : null
+		const extractedTimeZone = getEventZone(event?.timezone)
+		const start = event.startsOn ? dayjs.utc(event.startsOn).tz(extractedTimeZone) : null
+		const end = event.endsOn ? dayjs.utc(event.endsOn).tz(extractedTimeZone) : null
 
 		return {
 			name: stripHtml(event.name),
@@ -259,7 +258,7 @@ export default function Manage({ event: eventProp }: any) {
 			startTime: start && event.hasStartTime !== false ? start.format("HH:mm") : "",
 			endDate: end ? end.format("YYYY-MM-DD") : "",
 			endTime: end && event.hasEndTime !== false ? end.format("HH:mm") : "",
-			timezone: event?.timezone || "",
+			timezone: normalizeTimezone(event?.timezone),
 			showParticipants: event.showParticipants || false,
 			benefits: event.benefits || "",
 			locationDisclosedAfterBooking: event.locationDisclosedAfterBooking || false,
@@ -344,11 +343,9 @@ export default function Manage({ event: eventProp }: any) {
 			if (res?.payload?.status) {
 				if (sendUpdateEmailCheck && events.length > 0) {
 					const changes: string[] = []
-					const tzString = event?.timezone || ""
-					const parts = tzString.split(") ")
-					const extractedTimeZone = parts.length > 1 ? parts[1] : dayjs.tz.guess()
-					const oldStart = event.startsOn ? dayjs(event.startsOn).tz(extractedTimeZone) : null
-					const oldEnd = event.endsOn ? dayjs(event.endsOn).tz(extractedTimeZone) : null
+					const extractedTimeZone = getEventZone(event?.timezone)
+					const oldStart = event.startsOn ? dayjs.utc(event.startsOn).tz(extractedTimeZone) : null
+					const oldEnd = event.endsOn ? dayjs.utc(event.endsOn).tz(extractedTimeZone) : null
 
 					if (values.name !== event.name) changes.push(`Event Name: ${event.name} -> ${values.name}`)
 					if (values.location !== event.location) changes.push(`Location: ${event.location} -> ${values.location}`)

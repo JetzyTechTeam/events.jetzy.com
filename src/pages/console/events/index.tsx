@@ -12,6 +12,7 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Roboto } from "next/font/google"
 import Link from "next/link"
 import { sortEvents, getEventStatus, EventStatus } from "@/utils/eventSort"
+import { formatEventTime, formatEventZoneLabel, formatEventDateParts } from "@/utils/eventTime"
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 import { useRouter } from "next/router"
@@ -211,7 +212,7 @@ const labelStyle: React.CSSProperties = {
 	color: "#9F9F9F",
 }
 
-const DateBlock = ({ startsOn, isEnded }: { startsOn?: any; isEnded?: boolean }) => {
+const DateBlock = ({ startsOn, isEnded, timezone }: { startsOn?: any; isEnded?: boolean; timezone?: string }) => {
 	const accent = isEnded ? "text-gray-500" : "text-white"
 	if (!startsOn) {
 		return (
@@ -222,10 +223,7 @@ const DateBlock = ({ startsOn, isEnded }: { startsOn?: any; isEnded?: boolean })
 			</div>
 		)
 	}
-	const d = new Date(startsOn.toString())
-	const weekday = d.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase()
-	const day = d.toLocaleDateString("en-US", { day: "numeric" })
-	const monthYear = d.toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase()
+	const { weekday, day, monthYear } = formatEventDateParts(startsOn, timezone)
 	return (
 		<div className="w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
 			<span className={roboto.className} style={labelStyle}>{weekday}</span>
@@ -259,7 +257,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 		<>
 			<div className={`flex items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
 				{/* DATE BLOCK */}
-				<DateBlock startsOn={event.startsOn} isEnded={props.isEnded} />
+				<DateBlock startsOn={event.startsOn} isEnded={props.isEnded} timezone={event.timezone} />
 
 				{/* THUMBNAIL */}
 				<div className="shrink-0">
@@ -310,13 +308,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 						<DateTimeSVG width={16} height={16} stroke="#F79432" />
 						<span>
 							{(() => {
-								const fmt = (v: any) => new Date(v.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
 								const showStart = event.startsOn && event.hasStartTime !== false
 								const showEnd = event.endsOn && event.hasEndTime !== false
-								const tz = event.timezone ? ` (${event.timezone})` : ""
-								if (showStart && showEnd) return `${fmt(event.startsOn)} – ${fmt(event.endsOn)}${tz}`
-								if (showStart) return `${fmt(event.startsOn)}${tz}`
-								if (showEnd) return `Ends ${fmt(event.endsOn)}${tz}`
+								const label = formatEventZoneLabel(event.timezone)
+								const tz = label ? ` ${label}` : ""
+								if (showStart && showEnd) return `${formatEventTime(event.startsOn, event.timezone)} – ${formatEventTime(event.endsOn, event.timezone)}${tz}`
+								if (showStart) return `${formatEventTime(event.startsOn, event.timezone)}${tz}`
+								if (showEnd) return `Ends ${formatEventTime(event.endsOn, event.timezone)}${tz}`
 								return `All day${tz}`
 							})()}
 						</span>

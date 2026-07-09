@@ -26,6 +26,7 @@ import {
 } from "@chakra-ui/react";
 import { calculateDistance } from "@/utils/distance";
 import { getEventStatus, getStatusRank, STATUS_LABEL, EventStatus } from "@/utils/eventSort";
+import { getEventZone } from "@/utils/eventTime";
 import { IEvent } from "@/models/events/types";
 import Pagination from "./Pagination";
 import Navbar from "./Navbar";
@@ -98,7 +99,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
   const { formattedDate, formattedTime } = useMemo(() => {
     if (!event?.startsOn) return { formattedDate: '', formattedTime: '' }
 
-    const userTimeZone = event.timezone?.split(') ')[1]
+    const userTimeZone = getEventZone(event.timezone)
     const date = dayjs.utc(event.startsOn).tz(userTimeZone)
 
     const formattedDate = date.format('MMMM DD, YYYY')
