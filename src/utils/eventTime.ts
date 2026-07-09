@@ -8,17 +8,46 @@
 
 import moment from "moment-timezone"
 
+// Legacy abbreviations that some events stored instead of a real IANA zone.
+// dayjs/Intl throws on these ("Invalid time zone specified: EDT"), so map them.
+const TZ_ALIAS: Record<string, string> = {
+	EDT: "America/New_York",
+	EST: "America/New_York",
+	CDT: "America/Chicago",
+	CST: "America/Chicago",
+	MDT: "America/Denver",
+	MST: "America/Denver",
+	PDT: "America/Los_Angeles",
+	PST: "America/Los_Angeles",
+	GMT: "UTC",
+}
+
+// True only for zones Intl (and therefore dayjs) can actually handle.
+const isValidZone = (zone: string): boolean => {
+	try {
+		Intl.DateTimeFormat(undefined, { timeZone: zone })
+		return true
+	} catch {
+		return false
+	}
+}
+
 /**
- * Resolve the IANA zone from a stored `timezone` value.
- * Handles both stored forms:
+ * Resolve the IANA zone from a stored `timezone` value — and ALWAYS return a
+ * zone that dayjs/Intl accepts, so no consumer can throw on bad data.
+ * Handles both stored forms and legacy abbreviations:
  *   "(UTC+00:00) Africa/Abidjan" -> "Africa/Abidjan"
  *   "Africa/Abidjan"             -> "Africa/Abidjan"
+ *   "EDT"                        -> "America/New_York"
+ *   anything Intl rejects        -> "UTC"
  * Empty/undefined -> the viewer's guessed zone (last resort only).
  */
 export function getEventZone(tz?: string): string {
 	if (!tz) return moment.tz.guess()
 	const parts = tz.split(") ")
-	return parts.length > 1 ? parts[1] : tz
+	let zone = parts.length > 1 ? parts[1] : tz
+	if (TZ_ALIAS[zone]) zone = TZ_ALIAS[zone]
+	return isValidZone(zone) ? zone : "UTC"
 }
 
 /**
