@@ -100,12 +100,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
 		let start: Date | undefined
 		let end: Date | undefined
+		// An end time with no end date means the event ends that time on the start date (same-day end)
+		const resolvedEndDate = endDate || (endTime ? startDate : undefined)
+
 		// Time is optional — default to midnight when only a date is provided
 		if (startDate) {
 			start = dayjs.tz(`${startDate} ${startTime || '00:00'}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
 		}
-		if (endDate) {
-			end = dayjs.tz(`${endDate} ${endTime || '00:00'}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
+		if (resolvedEndDate) {
+			end = dayjs.tz(`${resolvedEndDate} ${endTime || '00:00'}`, 'YYYY-MM-DD HH:mm', extractedTimeZone).utc().toDate()
 		}
 
 		// An active date poll is mutually exclusive with fixed dates — poll wins, drop the dates

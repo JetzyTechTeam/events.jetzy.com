@@ -309,7 +309,16 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					<div className="flex items-center gap-x-2 text-sm text-[#A7A7A7]">
 						<DateTimeSVG width={16} height={16} stroke="#F79432" />
 						<span>
-							{event.startsOn ? new Date(event.startsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} – {event.endsOn ? new Date(event.endsOn.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : "--:--"} {event.timezone ? `(${event.timezone})` : ""}
+							{(() => {
+								const fmt = (v: any) => new Date(v.toString()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+								const showStart = event.startsOn && event.hasStartTime !== false
+								const showEnd = event.endsOn && event.hasEndTime !== false
+								const tz = event.timezone ? ` (${event.timezone})` : ""
+								if (showStart && showEnd) return `${fmt(event.startsOn)} – ${fmt(event.endsOn)}${tz}`
+								if (showStart) return `${fmt(event.startsOn)}${tz}`
+								if (showEnd) return `Ends ${fmt(event.endsOn)}${tz}`
+								return `All day${tz}`
+							})()}
 						</span>
 					</div>
 
