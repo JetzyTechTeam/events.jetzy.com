@@ -361,6 +361,14 @@ Draft events filtered from public `/api/events` listing
 Validation/redirection flow: draft→published handled on My Events page
 Commit: 86af2a6, f2f23e8
 
+## Feature: Event Sorting & Status Badges
+Canonical order everywhere: **live → future → tbd → past**. Single source of truth in `src/utils/eventSort.ts`:
+- `getEventStatus(e, now?)`: `effectiveEnd = endsOn ?? startsOn`; no dates→`tbd`; `effectiveEnd < now`→`past`; `startsOn > now`→`future`; else `live` (also end-only "by mistake" events stay live until `endsOn`).
+- `sortEvents(events, now?)`: bucket rank, then within-bucket — live=effectiveEnd ASC, future=startsOn ASC, tbd=createdAt DESC, past=endsOn DESC.
+- `getStatusRank`, `STATUS_LABEL`, `STATUS_RANK` exports.
+Consumers: `api/events/index.ts` (public list), `console/events/index.tsx` getServerSideProps (My Events — writes `timeStatus` per event, `isEnded = timeStatus==="past"`; filter chips map upcoming→live|future, ended→past, tbd→tbd), `EventsListing.tsx` client re-sort (bucket rank first, then distance within bucket when location granted).
+Per-card status badge (LIVE green / UPCOMING orange / TBD gray / ENDED gray) on both public `EventCard` and My Events `ListingCard`. NOTE: event lifecycle `status` (draft/published) is separate from `timeStatus` — do not conflate.
+
 ## Feature: Location Disclosure
 `locationDisclosedAfterBooking` boolean on IEvent
 Location hidden until booking confirmed when true
