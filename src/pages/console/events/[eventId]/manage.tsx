@@ -711,7 +711,7 @@ export default function Manage({ event: eventProp }: any) {
 													</FormControl>
 
 													{/* Conflict: legacy event has both a poll and fixed dates — keep both editable so the user can resolve it */}
-													{!!((values.startDate || values.endDate) && (values.datePoll?.isActive || values.datePoll?.options?.length)) && (
+													{!!((values.startDate || values.endDate) && (values.datePoll?.isActive)) && (
 														<Box mb={3} p={3} rounded="lg" bg="#3A2A12" border="1px solid #7A5A20">
 															<Text fontSize="sm" color="orange.300">This event has both a date poll and fixed dates. Remove one to continue.</Text>
 														</Box>
@@ -722,12 +722,12 @@ export default function Manage({ event: eventProp }: any) {
 														gap={4}
 														alignItems="stretch"
 														flexWrap={{ base: "wrap", sm: "nowrap" }}
-														mb={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? 1 : 4}
+														mb={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 1 : 4}
 														bg="#14161B"
 														rounded="xl"
 														p="3"
-														opacity={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? 0.4 : 1}
-														pointerEvents={!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) ? "none" : "auto"}
+														opacity={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 0.4 : 1}
+														pointerEvents={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? "none" : "auto"}
 													>
 														{/* Left: Start/End markers + dashed connector */}
 														<Flex direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
@@ -765,18 +765,18 @@ export default function Manage({ event: eventProp }: any) {
 															</Flex>
 														</Flex>
 													</Flex>
-													{!!((values.datePoll?.isActive || values.datePoll?.options?.length) && !(values.startDate || values.endDate)) && (
+													{!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) && (
 														<Text fontSize="xs" color="orange.400" mb={3}>Remove date poll to set a fixed start/end date</Text>
 													)}
 
 													{/* ---- Date Poll (mutually exclusive with fixed dates) ---- */}
 													<Box
 														mb={4}
-														opacity={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) ? 0.4 : 1}
-														pointerEvents={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) ? "none" : "auto"}
+														opacity={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive)) ? 0.4 : 1}
+														pointerEvents={!!((values.startDate || values.endDate) && !(values.datePoll?.isActive)) ? "none" : "auto"}
 													>
 														<Heading size="md" color="white" mb={1}>Date Poll <Text as="span" fontSize="sm" color="gray.500" fontWeight="normal">(optional)</Text></Heading>
-														{!!((values.startDate || values.endDate) && !(values.datePoll?.isActive || values.datePoll?.options?.length)) && (
+														{!!((values.startDate || values.endDate) && !(values.datePoll?.isActive)) && (
 															<Text fontSize="xs" color="orange.400" mb={2}>Remove start/end date to enable date poll</Text>
 														)}
 														<Flex align="center" justifyContent="space-between" mt={3} mb="3">
