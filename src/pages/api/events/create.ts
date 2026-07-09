@@ -128,7 +128,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			end = undefined
 		}
 
-		if (start && end && start >= end) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
+		// A date-only end spans the whole day — compare against end-of-day so a same-day
+		// all-day event (both midnight) isn't wrongly rejected.
+		const endForCompare = end && !endTime
+			? dayjs.tz(`${resolvedEndDate} 00:00`, 'YYYY-MM-DD HH:mm', extractedTimeZone).endOf('day').utc().toDate()
+			: end
+		if (start && endForCompare && start >= endForCompare) return sendResponse(res, null, "Start date must be less than end date.", false, ResCode.BAD_REQUEST)
 
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
