@@ -63,6 +63,7 @@ type TicketEmailData = {
   referralCode?: string
   discountAmount?: number
   discountPercentage?: number
+  approvalContext?: boolean // true when sent as a Require-Approval acceptance (celebratory header + subject)
 }
 
 type BookingCancellationData = {
@@ -311,6 +312,150 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
   }
 }
 
+type ApprovalEmailData = {
+  event: IEvent
+  firstName: string
+  lastName: string
+  email: string
+  tickets?: Array<{ name?: string; quantity: number }>
+  eventId?: string
+}
+
+// Sent to the attendee right after they check out on a Require-Approval event.
+export const sendApprovalPending = async ({ event, firstName, email, tickets = [] }: ApprovalEmailData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] sendApprovalPending skipped - would send to:", email)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const eventName = decodeHTMLEntities(event.name)
+  const totalTickets = tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)
+  try {
+    await sgMail.send({
+      to: [email, "tech@jetzyapp.com"],
+      from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+      subject: `Jetzy [Pending Approval] ${eventName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">Request Received — Pending Approval</h1>
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+            <p style="color: #856404; margin: 0;">
+              Hi ${firstName}, thanks for registering for "${eventName}". This event requires host approval.
+              Your request${totalTickets ? ` for ${totalTickets} ticket(s)` : ""} has been submitted and is <strong>pending review</strong>.
+            </p>
+          </div>
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">What happens next?</h2>
+            <ul style="color: #333; line-height: 1.6;">
+              <li>The host will review your request.</li>
+              <li>If approved, you'll receive a confirmation email with your ticket.</li>
+              <li>No further action is needed from you right now.</li>
+            </ul>
+          </div>
+          <p style="margin-top: 30px; text-align: center; color: #666;">Thank you for your interest in Jetzy events!</p>
+        </div>
+      `),
+      text: `Request Received — Pending Approval\n\nHi ${firstName}, your registration for "${eventName}" requires host approval and is pending review. You'll get a confirmation email if approved.`
+    })
+  } catch (error) {
+    console.error("Failed to send approval-pending email:", error)
+    throw error
+  }
+}
+
+// Sent to the admin inbox (SENDGRID_EMAIL_SENDER = contact@jetzyapp.com). kind:
+//   "request"  → a new attendee is awaiting approval
+//   "approved" → a request was approved & confirmed (copy for records)
+export const sendAdminApprovalNotice = async ({ event, firstName, lastName, email, tickets = [], eventId, kind }: ApprovalEmailData & { kind: "request" | "approved" }) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log(`[LOCALHOST MODE] sendAdminApprovalNotice (${kind}) skipped - would send to admin for:`, email)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const adminEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+  if (!adminEmail) {
+    console.error("SENDGRID_EMAIL_SENDER not set — cannot send admin approval notice")
+    return
+  }
+  const eventName = decodeHTMLEntities(event.name)
+  const totalTickets = tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)
+  const manageUrl = `${baseUrl || "https://events.jetzy.com"}/console/events/${eventId || (event as any)._id}/manage?tab=approvals`
+  const isRequest = kind === "request"
+  try {
+    await sgMail.send({
+      to: adminEmail,
+      from: { email: adminEmail, name: "Jetzy Events" },
+      subject: isRequest
+        ? `[Approval Needed] ${firstName} ${lastName} — ${eventName}`
+        : `[Approved] ${firstName} ${lastName} — ${eventName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
+          <h2 style="color: #F79432; margin-top: 0;">${isRequest ? "New Approval Request" : "Request Approved"}</h2>
+          <p style="color: #333; font-size: 16px;">
+            ${isRequest
+              ? "A new attendee is awaiting approval for the following event:"
+              : "The following attendee has been approved and their booking is now confirmed:"}
+          </p>
+          <div style="background-color: #f4f4f4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Event:</strong> ${eventName}</p>
+            <p style="margin: 5px 0;"><strong>Name:</strong> ${firstName} ${lastName}</p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+            ${totalTickets ? `<p style="margin: 5px 0;"><strong>Tickets:</strong> ${totalTickets}</p>` : ""}
+          </div>
+          ${isRequest ? `
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${manageUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              Review in Approvals
+            </a>
+          </div>` : ""}
+          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+            Automated notification from Jetzy Events.
+          </p>
+        </div>
+      `),
+      text: isRequest
+        ? `New approval request for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}\nReview: ${manageUrl}`
+        : `Approved & confirmed for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}`
+    })
+  } catch (error) {
+    console.error("Failed to send admin approval notice:", error)
+    // Non-fatal — do not throw; approval flow should not fail on admin email
+  }
+}
+
+// Sent to the attendee when the host rejects their approval request.
+export const sendApprovalRejected = async ({ event, firstName, email }: ApprovalEmailData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] sendApprovalRejected skipped - would send to:", email)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const eventName = decodeHTMLEntities(event.name)
+  try {
+    await sgMail.send({
+      to: [email, "tech@jetzyapp.com"],
+      from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+      subject: `Jetzy [Update] ${eventName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">Update on Your Request</h1>
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #9C9C9C;">
+            <p style="color: #333; margin: 0; line-height: 1.6;">
+              Hi ${firstName}, thank you for your interest in "${eventName}". Unfortunately, your request to attend
+              could not be approved this time. We hope to see you at a future Jetzy event.
+            </p>
+          </div>
+          <p style="margin-top: 30px; text-align: center; color: #666;">Thank you for using Jetzy.</p>
+        </div>
+      `),
+      text: `Update on Your Request\n\nHi ${firstName}, thank you for your interest in "${eventName}". Unfortunately, your request to attend could not be approved this time.`
+    })
+  } catch (error) {
+    console.error("Failed to send approval-rejected email:", error)
+    throw error
+  }
+}
+
 export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDate, eventLocation, hostName }: EventInvitationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (!baseUrl) {
@@ -486,7 +631,7 @@ export const sendBlastEmail = async ({
   }
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false }: TicketEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
 
   if (!baseUrl) {
@@ -996,12 +1141,19 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     const emailPayload = {
       to: [email, "tech@jetzyapp.com"],
       from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
-      subject: `Booking Confirmation: ${decodeHTMLEntities(event.name)}`,
+      subject: approvalContext
+        ? `Jetzy [You're In! 🎉] Your spot for ${decodeHTMLEntities(event.name)} is confirmed`
+        : `Booking Confirmation: ${decodeHTMLEntities(event.name)}`,
       ...(attachments.length > 0 ? { attachments } : {}),
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>
-          
+          ${approvalContext ? `
+          <div style="background-color: #d4edda; padding: 24px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #28a745; text-align: center;">
+            <h1 style="color: #155724; margin: 0 0 8px 0;">Great news — you've got a spot! 🎉</h1>
+            <p style="color: #155724; margin: 0;">Hi ${firstName}, your request to attend "${decodeHTMLEntities(event.name)}" has been <strong>approved and confirmed</strong>.</p>
+          </div>
+          ` : `<h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>`}
+
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
             <p><strong>Date and Time: </strong>${timestamp}</p>

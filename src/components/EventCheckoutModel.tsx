@@ -19,6 +19,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [liveEventData, setLiveEventData] = useState<any>(eventData || null)
 	const [checkoutStep, setCheckoutStep] = useState<"details" | "questions">("details")
 	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
+	const [pendingApproval, setPendingApproval] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -168,8 +169,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				})
 				const result = await response.json()
 				if (result.status) {
-					setFreeRegistrationSuccess(true)
-					setTimeout(() => window.location.reload(), 2500)
+					if (result.data?.pendingApproval) {
+						setPendingApproval(true)
+					} else {
+						setFreeRegistrationSuccess(true)
+						setTimeout(() => window.location.reload(), 2500)
+					}
 				} else {
 					Error("Registration Failed", result.message || "Something went wrong. Please try again.")
 				}
@@ -253,6 +258,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	useEffect(() => {
 		if (!showCheckout) {
 			setFreeRegistrationSuccess(false)
+			setPendingApproval(false)
 			return
 		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
@@ -288,8 +294,32 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 						</button>
 						{/* <div className="bg-jetzy text-black p-3 rounded-t-2xl text-center font-semibold">This deal is reserved for Jetzy Users Only.</div> */}
 
-						{/* Free Registration Success UI */}
-						{freeRegistrationSuccess ? (
+						{/* Pending Approval UI */}
+						{pendingApproval ? (
+							<div className="p-6 space-y-6">
+								<div className="text-center">
+									<div className="w-16 h-16 mx-auto mb-4 bg-[#F79432]/20 rounded-full flex items-center justify-center">
+										<svg className="w-8 h-8 text-[#F79432]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+										</svg>
+									</div>
+									<div className="bg-[#F79432]/20 border border-[#F79432]/30 rounded-lg p-6 mb-6">
+										<p className="text-[#F79432] text-2xl font-bold text-center">Request Submitted</p>
+									</div>
+									<p className="text-white mb-2">
+										Your request to attend <strong>&quot;{event}&quot;</strong> has been submitted for approval.
+									</p>
+									<p className="text-gray-400 text-sm mb-6">The host will review your request. If approved, a confirmation email will be sent to {formData.email}.</p>
+									<button
+										onClick={() => dispatch(toggleCheckoutForm(false))}
+										className="bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
+									>
+										Close
+									</button>
+								</div>
+							</div>
+						) : /* Free Registration Success UI */
+						freeRegistrationSuccess ? (
 							<div className="p-6 space-y-6">
 								<div className="text-center">
 									<div className="w-16 h-16 mx-auto mb-4 bg-green-500/20 rounded-full flex items-center justify-center">
@@ -351,6 +381,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								<div className="flex-1 overflow-y-auto px-6 py-2 space-y-4">
 									{checkoutStep === "details" && (
 									<div className="space-y-4">
+										{liveEventData?.requireApproval && (
+											<div className="bg-[#F79432]/15 border border-[#F79432]/40 rounded-lg p-3">
+												<p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
+												<p className="text-gray-300 text-xs mt-1">Your registration is subject to host approval.</p>
+											</div>
+										)}
 										<input
 											type="text"
 											name="firstName"

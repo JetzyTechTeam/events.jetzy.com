@@ -124,7 +124,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 									</Td>
 									<Td>{row.total.toLocaleString("en-US", { style: "currency", currency: "USD" })}</Td>
 									<Td>
-										<Badge colorScheme={cancelled ? "red" : "green"}>{row.status}</Badge>
+										<Badge colorScheme={cancelled ? "red" : row.status === "pending" ? "yellow" : "green"}>{row.status}</Badge>
 									</Td>
 									<Td>
 										<Box>

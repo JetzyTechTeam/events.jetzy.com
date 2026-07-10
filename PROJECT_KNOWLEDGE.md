@@ -203,7 +203,17 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/waiting-list/[eventId]`, `/api/waiting-list/add`, `/api/waiting-list/approve`, `/api/waiting-list/remove`
 
 ### Bookings
-`/api/bookings/cancel`
+`/api/bookings/cancel`, `/api/bookings/delete`
+`/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
+
+### Require Approval (free/RSVP events only)
+- Toggle in event form is **disabled when any ticket price > 0** (free events only). Enforced client-side (create.tsx/manage.tsx switch) AND server-side (`create.ts`/`update.ts` force `requireApproval=false` if a paid ticket exists).
+- On free checkout ([checkout/free-events.ts](src/pages/api/checkout/free-events.ts)) when `event.requireApproval`: booking created `status=PENDING` (capacity NOT consumed, no QR/confirmation); `sendApprovalPending` → attendee, `sendAdminApprovalNotice(kind:"request")` → contact@ (`SENDGRID_EMAIL_SENDER`, links to `…/manage?tab=approvals`). Returns `{ pendingApproval:true }`; `EventCheckoutModel.tsx` shows a "Request Submitted" panel AND an amber "Approval Required" banner in the details step when `liveEventData.requireApproval`.
+- `BookingStatus` gained `REJECTED`. `isCancelledBooking` (in [src/lib/booking-status.ts](src/lib/booking-status.ts)) now treats CANCELLED+REJECTED as inactive; new `isPendingBooking` helper. Pending/rejected excluded from check-in ([validate.ts](src/pages/api/check-in/validate.ts), [record.ts](src/pages/api/check-in/record.ts)); stats.ts already CONFIRMED-only.
+- Emails ([send-grid.ts](src/lib/send-grid.ts)): `sendApprovalPending` (attendee, pending), `sendAdminApprovalNotice(kind)` (contact@, request/approved), `sendApprovalConfirmed` (attendee, celebratory "you've got a spot 🎉" with date/time + **location** + QR — used on approve instead of `sendTicketConfirmation`), `sendApprovalRejected` (attendee, polite decline — sent on reject).
+- **Approvals UI** is a shared component `src/components/console/ApprovalRequests.tsx` (lists PENDING via `/api/get-bookings`, Approve button + Reject with a Chakra `AlertDialog`). Used in BOTH the Manage page **Approvals** tab and the public event-detail admin section ([HostedEvents.tsx](src/components/HostedEvents.tsx), `activeTab==="approvals"`), each rendered only when `event.requireApproval`.
+- Manage `getServerSideProps` passes `isAuthorized` (admin OR event owner); the Approvals tab shows a "sign in as admin/host" message when false. `?tab=approvals` query deep-links to the Approvals tab (tabIndex 6). Guests & Bookings tables show Pending Approval (yellow) / Rejected (red) badges.
+- Location safety: pending email never contains location; only the approval-confirmed email reveals it (always, regardless of `locationDisclosedAfterBooking`). Public page never shows a hidden location on-page.
 
 ### Discussions/Comments
 `/api/events/discussions/create|get|list|update|delete|react|report|who-reacted|who-viewed`

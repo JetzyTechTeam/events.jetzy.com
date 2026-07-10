@@ -66,7 +66,9 @@ import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon } from "@heroicons/react/24/outline"
 import { MinusCircleIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
-import { useSession } from "next-auth/react"
+import { useSession, signOut } from "next-auth/react"
+import Link from "next/link"
+import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import { Formik, Form, Field, FormikProps, FieldArray } from "formik"
 import { usePlacesWidget } from "react-google-autocomplete"
 import DatePicker from "@/components/form/DatePicker"
@@ -77,7 +79,8 @@ import MediaUploadSection from "@/components/media-upload-section"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
-import { isCancelledBooking } from "@/lib/booking-status"
+import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
+import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
 import { useAppDispatch } from "@/redux/stores"
@@ -114,7 +117,56 @@ const updateEventSchema = z.object({
 	location: z.string().optional(),
 })
 
-export default function Manage({ event: eventProp }: any) {
+// Page-level gate: only admins or the event owner may see the manage UI.
+// A logged-in-but-unauthorized user gets a permission screen instead — the
+// heavy Manage component (and its many hooks) never mounts for them.
+export default function ManagePage(props: any) {
+	if (!props.isAuthorized) {
+		let eventName = ""
+		try {
+			eventName = props.event ? JSON.parse(props.event).name : ""
+		} catch {}
+		return <ManageAccessDenied eventName={eventName} />
+	}
+	return <Manage {...props} />
+}
+
+function ManageAccessDenied({ eventName }: { eventName?: string }) {
+	const dispatch = useAppDispatch()
+
+	const logoutAndSignIn = () => {
+		dispatch(destroySession({}))
+		signOut({ callbackUrl: "/login" })
+	}
+
+	return (
+		<Flex minH="100vh" bg="#0B0B0B" align="center" justify="center" p={6}>
+			<Box maxW="480px" w="100%" bg="#161616" border="1px solid #2A2D31" borderRadius="16px" p={{ base: 6, md: 10 }} textAlign="center">
+				<Box w="56px" h="56px" mx="auto" mb={5} borderRadius="full" bg="#F79432" display="flex" alignItems="center" justifyContent="center">
+					<LockSVG />
+				</Box>
+				<Heading size="md" color="white" mb={3}>Admin access required</Heading>
+				<Text color="#B5B6B7" mb={2}>
+					You must be signed in as an admin or the event host to manage
+					{eventName ? ` "${stripHtml(eventName)}"` : " this event"}.
+				</Text>
+				<Text color="#7E8083" fontSize="sm" mb={6}>
+					You&apos;re signed in with an account that doesn&apos;t have access to this event.
+				</Text>
+				<Flex direction={{ base: "column", sm: "row" }} gap={3} justify="center">
+					<Button onClick={logoutAndSignIn} data-analytics-ignore="" bg="#F79432" color="black" fontWeight="bold" _hover={{ bg: "#E68422" }}>
+						Log out &amp; sign in
+					</Button>
+					<Button as={Link} href="/" variant="outline" color="white" borderColor="#3A3D41" _hover={{ bg: "#1E1E1E" }}>
+						Go to home
+					</Button>
+				</Flex>
+			</Box>
+		</Flex>
+	)
+}
+
+function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const event = React.useMemo(() => JSON.parse(eventProp), [eventProp])
 
 	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion">("about")
@@ -137,6 +189,13 @@ export default function Manage({ event: eventProp }: any) {
 			router.replace(`/console/events/${event._id}/manage`, undefined, { shallow: true })
 		}
 	}, [router.query.invite])
+
+	// Deep-link from the admin approval-request email opens the Approvals tab
+	useEffect(() => {
+		if (router.query.tab === "approvals" && event.requireApproval) {
+			setTabIndex(6)
+		}
+	}, [router.query.tab, event.requireApproval])
 
 	const { data: analytics } = useQuery({
 		queryKey: ["event-analytics", event._id],
@@ -657,6 +716,25 @@ export default function Manage({ event: eventProp }: any) {
 						>
 							Blasts
 						</Tab>
+						{event.requireApproval && (
+							<Tab
+								className={roboto.className}
+								fontWeight={500}
+								fontSize="18px"
+								lineHeight="100%"
+								color="#FFFFFF"
+								borderTopRadius="10px"
+								px={5}
+								_selected={{
+									bg: "#FFFFFF",
+									color: "#0B0B0B",
+									fontWeight: 700,
+									borderColor: "#FFFFFF",
+								}}
+							>
+								Approvals
+							</Tab>
+						)}
 					</TabList>
 					<TabPanels>
 						<TabPanel px={0}>
@@ -960,10 +1038,10 @@ export default function Manage({ event: eventProp }: any) {
 															<UserTickSVG />
 															<Box>
 																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Manually approve attendees</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">{(values.tickets || []).some((t: any) => Number(t.price) > 0) ? "Available for free events only" : "Manually approve attendees"}</Text>
 															</Box>
 														</Flex>
-														<Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+														<Switch name="requireApproval" isDisabled={(values.tickets || []).some((t: any) => Number(t.price) > 0)} isChecked={values.requireApproval && !(values.tickets || []).some((t: any) => Number(t.price) > 0)} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
 													</Flex>
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1238,6 +1316,13 @@ export default function Manage({ event: eventProp }: any) {
 								<BlastsManager event={event} onOpenAdvanced={() => setSendBlastModal(true)} />
 							</div>
 						</TabPanel>
+						{event.requireApproval && (
+							<TabPanel>
+								<div className="bg-[#181818] rounded-xl p-3">
+									<ApprovalRequests eventId={event._id} event={event} />
+								</div>
+							</TabPanel>
+						)}
 					</TabPanels>
 				</Tabs>
 
@@ -2198,19 +2283,25 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 								const booking = bookingByEmail[email]
 								const ci = booking?._id ? checkInMap[booking._id.toString()] : null
 								const cancelled = isCancelledBooking(booking)
+								const rejected = booking?.status === 'rejected'
+								const pending = isPendingBooking(booking)
 								return (
 									<Tr key={email} opacity={cancelled ? 0.55 : 1}>
 										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{booking?.customerName || guest?.name || "—"}</Td>
 										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{email}</Td>
 										<Td color="white">
 											{cancelled
-												? <Badge colorScheme="red">Cancelled</Badge>
+												? <Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
+												: pending
+												? <Badge colorScheme="yellow">Pending Approval</Badge>
 												: (guest?.status || (booking ? 'Purchased' : '—'))}
 										</Td>
 										<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										<Td>
 											{cancelled
-												? <Badge colorScheme="red">Cancelled</Badge>
+												? <Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
+												: pending
+												? <Badge colorScheme="gray">N/A</Badge>
 												: !booking?._id
 												? <Badge colorScheme="gray">N/A</Badge>
 												: !ci
@@ -2773,9 +2864,27 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const event = await Events.findOne({ _id: eventId, isDeleted: false })
 	if (!event) return { notFound: true }
 
+	// Admin OR event owner may review approvals; others see a permission message
+	const session = (authResult as any).props?.session
+	const role = session?.user?.role
+	const isAdmin = role === "admin" || role === "super admin"
+	const uid = (session?.user as any)?._id?.toString()
+	const isAuthorized = isAdmin || (event as any).ownerId?.toString() === uid
+
+	// Unauthorized users get only the event name (for the message) — no manage data
+	if (!isAuthorized) {
+		return {
+			props: {
+				event: JSON.stringify({ _id: eventId, name: (event as any).name }),
+				isAuthorized: false,
+			},
+		}
+	}
+
 	return {
 		props: {
 			event: JSON.stringify(event),
+			isAuthorized: true,
 		},
 	}
 }
