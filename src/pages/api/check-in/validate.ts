@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
+import { escapeRegExp } from "@/utils/text"
 import { Bookings } from "@/models/events/bookings"
 import { CheckIn } from "@/models/checkIn"
 import { Events } from "@/models/events"
@@ -55,8 +56,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			eventId,
 			isDeleted: false,
 			...(isBookingRef
-				? { bookingRef: { $regex: new RegExp(`^${normalizedIdentifier}$`, "i") } }
-				: { customerEmail: { $regex: new RegExp(`^${normalizedIdentifier}$`, "i") } }),
+				? { bookingRef: { $regex: new RegExp(`^${escapeRegExp(normalizedIdentifier)}$`, "i") } }
+				: { customerEmail: { $regex: new RegExp(`^${escapeRegExp(normalizedIdentifier)}$`, "i") } }),
 		}).lean()
 
 		if (!bookings || bookings.length === 0) {

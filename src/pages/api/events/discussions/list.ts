@@ -5,6 +5,7 @@ import { DiscussionPosts } from "@/models/events/discussion-posts"
 import { Users } from "@/models/userModal"
 import { EventUsers } from "@/models/eventUsersModal"
 import { ensureDbConnected } from "@/configs/database"
+import { escapeRegExp } from "@/utils/text"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     await ensureDbConnected()
@@ -23,19 +24,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const query: any = { eventId, isReported: { $ne: true } }
 
         if (search) {
+            const searchRegex = escapeRegExp(search as string)
             // Find users matching the search query
             const matchingUsers = await Users.find({
                 $or: [
-                    { firstName: { $regex: search, $options: "i" } },
-                    { lastName: { $regex: search, $options: "i" } },
+                    { firstName: { $regex: searchRegex, $options: "i" } },
+                    { lastName: { $regex: searchRegex, $options: "i" } },
                 ],
             }, "_id").lean()
             const userIds = matchingUsers.map((u: any) => u._id)
 
             query.$or = [
-                { title: { $regex: search, $options: "i" } },
-                { content: { $regex: search, $options: "i" } },
-                { tags: { $regex: search, $options: "i" } },
+                { title: { $regex: searchRegex, $options: "i" } },
+                { content: { $regex: searchRegex, $options: "i" } },
+                { tags: { $regex: searchRegex, $options: "i" } },
                 { userId: { $in: userIds } },
             ]
         }

@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { sortEvents } from "@/utils/eventSort"
+import { escapeRegExp } from "@/utils/text"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
@@ -24,11 +25,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const filter: any = { isDeleted: false, status: { $ne: 'draft' } }
 		if (!isAdmin) filter.privacy = { $ne: 'private' }
 		if (search) {
+			const searchRegex = escapeRegExp(search)
 			const orClauses: any[] = [
-				{ name: { $regex: search, $options: "i" } },
-				{ location: { $regex: search, $options: "i" } },
-				{ "host.name": { $regex: search, $options: "i" } },
-				{ benefits: { $regex: search, $options: "i" } },
+				{ name: { $regex: searchRegex, $options: "i" } },
+				{ location: { $regex: searchRegex, $options: "i" } },
+				{ "host.name": { $regex: searchRegex, $options: "i" } },
+				{ benefits: { $regex: searchRegex, $options: "i" } },
 			]
 
 			// Try to resolve interest IDs from the Jetzy API by name (best-effort, no auth)

@@ -1,3 +1,8 @@
+// Escape user input before using it inside a MongoDB $regex / new RegExp.
+// Without this, characters like \ ] ( | * form an invalid pattern and throw
+// (500), and crafted input can cause catastrophic backtracking (ReDoS).
+export const escapeRegExp = (s: string) => (s ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 export const stripHtml = (html: string) => {
     if (!html) return "";
 
