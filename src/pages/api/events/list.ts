@@ -4,6 +4,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
+import { escapeRegExp } from "@/utils/text"
 import { z } from "zod"
 
 const validationSchema = z.object({
@@ -30,7 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// calculate the skip value
 		const skip = (page - 1) * limit
 
-		let query: any = { isDeleted: false, location: { $regex: locFilter, $options: "i" } };
+		let query: any = { isDeleted: false, location: { $regex: escapeRegExp(locFilter), $options: "i" } };
 
 		//    get all the events from the database
 		const events = await Events.find(query)

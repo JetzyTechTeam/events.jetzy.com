@@ -2,6 +2,7 @@ import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
+import { escapeRegExp } from "@/utils/text"
 import { IBookings, IEvent } from "@/models/events/types"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
@@ -112,8 +113,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	// Optional search by event name or location (case-insensitive)
 	const search = (context.query.search as string)?.trim() || ""
+	const searchRegex = escapeRegExp(search)
 	const searchFilter = search
-		? { $or: [{ name: { $regex: search, $options: "i" } }, { location: { $regex: search, $options: "i" } }] }
+		? { $or: [{ name: { $regex: searchRegex, $options: "i" } }, { location: { $regex: searchRegex, $options: "i" } }] }
 		: {}
 	const baseFilter = { isDeleted: false, ...ownerFilter, ...searchFilter }
 

@@ -1,5 +1,5 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
-import { stripHtml } from "@/utils/text";
+import { stripHtml, escapeRegExp } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
@@ -373,8 +373,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	// Optional search by event name or location (case-insensitive)
 	const search = (context.query.search as string)?.trim() || ""
+	const searchRegex = escapeRegExp(search)
 	const searchFilter = search
-		? { $or: [{ name: { $regex: search, $options: "i" } }, { location: { $regex: search, $options: "i" } }] }
+		? { $or: [{ name: { $regex: searchRegex, $options: "i" } }, { location: { $regex: searchRegex, $options: "i" } }] }
 		: {}
 
 	// fetch active events (not deleted), filtered by owner if non-admin

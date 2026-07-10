@@ -1,6 +1,7 @@
 
 import { ensureDbConnected } from "@Jetzy/configs/database"
 import { Users } from "@Jetzy/models/userModal"
+import { escapeRegExp } from "@Jetzy/utils/text"
 import { isValidObjectId } from "mongoose"
 
 export const getPublicUserAction = async (id: string) => {
@@ -31,7 +32,7 @@ export const getPublicUserAction = async (id: string) => {
                 $expr: {
                     $regexMatch: {
                         input: { $toString: "$_id" },
-                        regex: `${idSuffix}$`,
+                        regex: `${escapeRegExp(idSuffix)}$`,
                         options: "i"
                     }
                 }

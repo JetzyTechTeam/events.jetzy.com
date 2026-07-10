@@ -6,6 +6,7 @@ import { Bookings } from "@/models/events/bookings";
 import { Events } from "@/models/events";
 import { CheckIn } from "@/models/checkIn";
 import { ensureDbConnected } from "@/configs/database";
+import { escapeRegExp } from "@/utils/text";
 import { Pages } from "@/types";
 import { Booking } from ".";
 import { authorizedOnly } from "@/lib/authSession"
@@ -104,9 +105,10 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
   }
 
   if (search && typeof search === "string") {
+    const searchRegex = escapeRegExp(search)
     filter.$or = [
-      { customerName: { $regex: search, $options: "i" } },
-      { customerEmail: { $regex: search, $options: "i" } },
+      { customerName: { $regex: searchRegex, $options: "i" } },
+      { customerEmail: { $regex: searchRegex, $options: "i" } },
     ];
   }
   if (amount && !isNaN(Number(amount))) {

@@ -3,6 +3,7 @@ import { ResCode } from "@/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { EventUsers } from "@/models/eventUsersModal"
 import { ensureDbConnected } from "@/configs/database"
+import { escapeRegExp } from "@/utils/text"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 
@@ -23,7 +24,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const q = (req.query.q as string || "").trim()
 		if (!q || q.length < 2) return sendResponse(res, [], "Query too short.", true, ResCode.OK)
 
-		const regex = new RegExp(q, "i")
+		const safeQ = escapeRegExp(q)
+		const regex = new RegExp(safeQ, "i")
 
 		const users = await EventUsers.find(
 			{
@@ -36,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						$expr: {
 							$regexMatch: {
 								input: { $concat: ["$firstName", " ", "$lastName"] },
-								regex: q,
+								regex: safeQ,
 								options: "i",
 							},
 						},
