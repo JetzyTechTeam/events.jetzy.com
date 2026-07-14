@@ -184,6 +184,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 
 ### Auth
 `/api/auth/[...nextauth]`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/send-login-otp`, `/api/auth/verify-login-otp`, `/api/auth/verify/send-code`, `/api/auth/verify/confirm-code`, `/api/auth/report-abuse`
+`/api/create` — QR-signup account creation (EventUsers). Accepts optional `refCode`; stores it on the doc AND (when present) best-effort forwards signup to main backend `POST {EXTERNAL}/api/v1/accounts/create` with webchat/mobile payload shape so the referrer gets credited (8s timeout, 409 tolerated, failure never blocks local signup).
 
 ### Messaging
 | Method | Route | Access |
@@ -247,7 +248,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | Event detail | `src/pages/[slug].tsx` | public |
 | Login | `src/pages/login.tsx` | |
 | Signup | `src/pages/signup.tsx` | |
-| QR signup | `src/pages/jetzyqrsignup.tsx` | |
+| QR signup | `src/pages/jetzyqrsignup.tsx` | Invite code is FIRST field (optional, live-verified vs main backend). No name field — `firstName` derived from email local-part. Success screen says log in + "Forgot Password" (no temp password shown). |
 | Success | `src/pages/success.tsx` | |
 | Cancel booking | `src/pages/cancel-booking.tsx` | |
 | Terms | `src/pages/terms.tsx` | |
@@ -379,6 +380,12 @@ Full CRUD: `/api/events/[eventId]/referral-codes`
 Admin OR owner access
 Tracks discountPercentage, commissionPercentage, usageCount, maxUses
 Stats endpoint available
+
+## Feature: Invite Code on QR Signup (user-level referral, NOT event referral codes)
+- UI: `jetzyqrsignup.tsx` — optional invite-code input, first field. Non-empty code live-verified via `VerifyReferralCodeApi` (`src/services/auth/authapis.ts`) → `GET external:/v1/referral/verify/{code}` (200 = valid; main Jetzy backend, same host as SSO). Invalid → inline error, blocks submit. Empty → skipped.
+- `refCode` flows: page → `handleEmailSignup` spread → `/api/create` → stored on EventUsers (`refCode` field in `eventUsersModal.ts`) + forwarded to main backend `/v1/accounts/create` (see Auth API section). `SignUpFormData.refCode?` in `src/types/form.ts`.
+- SSO (Google/Apple) signup does NOT carry invite code (goes through firebase-auth provider).
+- Welcome email (`sendWelcomeEmail` in `send-grid.ts`): CEO-approved invite-only copy; single font (`'Times New Roman', Times, Arial, serif` inlined on EVERY element — Outlook doesn't inherit); "Jetzy Select Concierge" → https://selectmember.jetzy.com/; no greeting line; no temp password (users use Forgot Password); signoff "Live the Jetzy Life! / Jetzy.com / Live like a Traveler | Travel like a Local"; order: body → closing → signoff → app-badge CTA → plain-divider safety text (yellow box removed). Store badges: `public/email/*-badge-v2.png` — trimmed artwork, identical 404×120 canvases, displayed 135×40 (old `-336x120.png` kept for already-sent emails; Gmail proxy caches by URL, so changing badge art requires NEW filenames).
 
 ## Feature: Check-in Portal
 QR code + manual check-in
