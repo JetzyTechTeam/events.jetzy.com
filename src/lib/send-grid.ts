@@ -1853,6 +1853,19 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
         Download the Jetzy mobile app from the link below. Log in using your email address and select “Forgot Password” to reset your password.
       </p>
 
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6;">
+        We look forward to welcoming you to the Jetzy community and connecting with you soon!
+      </p>
+
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 0;">
+        Live the Jetzy Life!<br/>
+        <a href="https://jetzy.com/" style="color: #F79432; font-weight: bold; text-decoration: underline;">Jetzy.com</a>
+      </p>
+
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6; font-style: italic; margin-top: 8px;">
+        Live like a Traveler | Travel like a Local
+      </p>
+
       <div style="text-align: center; margin: 35px 0;">
         <p style="font-family: ${FONT}; font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>
         <div style="margin-bottom: 20px;">
@@ -1867,19 +1880,6 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
           Visit Download Page
         </a>
       </div>
-
-      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6;">
-        We look forward to welcoming you to the Jetzy community and connecting with you soon!
-      </p>
-
-      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 0;">
-        Live the Jetzy Life!<br/>
-        <a href="https://jetzy.com/" style="color: #F79432; font-weight: bold; text-decoration: underline;">Jetzy.com</a>
-      </p>
-
-      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6; font-style: italic; margin-top: 8px;">
-        Live like a Traveler | Travel like a Local
-      </p>
 
       <!-- Account Safety Notice -->
       <div style="background-color: #FFF3CD; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #FFC107;">
