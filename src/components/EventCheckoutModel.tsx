@@ -403,7 +403,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												)}
 											</div>
 											{referralCodeValid === true && referralCodeDiscount !== null && (
-												<p className="text-sm text-green-500 mt-1.5 font-medium">✓ Valid! You&apos;ll get {referralCodeDiscount}% off your order</p>
+												<p className="text-sm text-green-500 mt-1.5 font-medium">
+													{referralCodeDiscount > 0 ? `✓ Valid! You'll get ${referralCodeDiscount}% off your order` : "✓ Referral code is valid"}
+												</p>
 											)}
 											{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
 										</div>
