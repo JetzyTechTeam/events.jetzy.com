@@ -9,6 +9,7 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
+import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { IEvent } from "@/models/events/types"
 import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
 import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
@@ -60,7 +61,7 @@ type Props = {
 
 export default function HostedEvents({ event }: Props) {
 	const [shareUrl, setShareUrl] = useState("")
-	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list">("bookings")
+	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list" | "approvals">("bookings")
 	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
 	const { isOpen: isDiscussionQRModalOpen, onOpen: onDiscussionQRModalOpen, onClose: onDiscussionQRModalClose } = useDisclosure()
 	const { isOpen: isInviteModalOpen, onOpen: onInviteModalOpen, onClose: onInviteModalClose } = useDisclosure()
@@ -460,12 +461,21 @@ export default function HostedEvents({ event }: Props) {
 											>
 												Waiting List
 											</button>
+											{clonedEvent?.requireApproval && (
+												<button
+													onClick={() => setActiveTab("approvals")}
+													className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+												>
+													Approvals
+												</button>
+											)}
 										</div>
 
 										{/* Tab Content */}
 										<div className="p-6">
 											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
+											{activeTab === "approvals" && clonedEvent?.requireApproval && <ApprovalRequests eventId={clonedEvent._id.toString()} event={clonedEvent} />}
 										</div>
 									</>
 								)}

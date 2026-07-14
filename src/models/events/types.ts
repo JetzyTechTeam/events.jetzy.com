@@ -89,6 +89,7 @@ export enum BookingStatus {
 	APPROVED = "approved",
 	CONFIRMED = "confirmed",
 	CANCELLED = "cancelled",
+	REJECTED = "rejected",
 	FAILED = "failed",
 	REFUNDED = "refunded",
 }
@@ -116,6 +117,8 @@ export interface IBookings extends IBaseModelProps {
 	referralCode?: string
 	discountAmount?: number
 	customAnswers?: ICustomAnswer[];
+	acceptedTerms?: boolean
+	acceptedTermsAt?: Date
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }

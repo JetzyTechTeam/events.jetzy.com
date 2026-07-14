@@ -6,7 +6,7 @@ import { escapeRegExp } from "@/utils/text"
 import { Bookings } from "@/models/events/bookings"
 import { CheckIn } from "@/models/checkIn"
 import { Events } from "@/models/events"
-import { isCancelledBooking } from "@/lib/booking-status"
+import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 
@@ -64,11 +64,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "No booking found for this event with the provided identifier", false, ResCode.NOT_FOUND)
 		}
 
-		// Cancelled bookings cannot be checked in. If every matching booking is cancelled, reject;
-		// otherwise only aggregate the active ones (an email may have a mix of active + cancelled).
-		const activeBookings = bookings.filter((b) => !isCancelledBooking(b))
+		// Cancelled/rejected or approval-pending bookings cannot be checked in. If every matching
+		// booking is inactive, reject; otherwise only aggregate the active ones (an email may have a mix).
+		const activeBookings = bookings.filter((b) => !isCancelledBooking(b) && !isPendingBooking(b))
 		if (activeBookings.length === 0) {
-			return sendResponse(res, null, "This booking has been cancelled and cannot be checked in.", false, ResCode.BAD_REQUEST)
+			return sendResponse(res, null, "This booking is not confirmed and cannot be checked in.", false, ResCode.BAD_REQUEST)
 		}
 
 		const normalizedEmail = isBookingRef ? activeBookings[0].customerEmail : normalizedIdentifier.toLowerCase()

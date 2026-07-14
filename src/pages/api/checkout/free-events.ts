@@ -2,7 +2,7 @@ import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
 import { uniqueId } from "@/lib/utils"
 import { resolveEventLocation } from "@/lib/event-helpers"
-import { sendTicketConfirmation } from "@/lib/send-grid"
+import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
@@ -44,6 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
 		const eventId = req.body?.eventId as string
+		const acceptedTerms = req.body?.acceptedTerms === true || req.body?.acceptedTerms === "true"
 		const customAnswers: Array<{ questionId: string; answer: any }> = req.body?.customAnswers
 			? JSON.parse(req.body.customAnswers)
 			: []
@@ -51,6 +52,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!eventId) {
 			return sendResponse(res, null, "Event ID is required", false, 400)
 		}
+
+		if (!acceptedTerms) {
+			return sendResponse(res, null, "You must agree to the Terms & Conditions to register.", false, 400)
+		}
+
+		const acceptedTermsAt = new Date()
 
 		// Create or update user profile
 		try {
@@ -60,6 +67,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				email: user.email,
 				phone: user.phone,
 				role: "user",
+				acceptedTerms: true,
+				acceptedTermsAt,
 			})
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
@@ -91,9 +100,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const session = await getServerSession(req, res, authOptions)
 		const bookerUserId = (session?.user as any)?._id || (session?.user as any)?.id
 
-		// Create confirmed booking record
+		// Require-Approval events: create a PENDING booking that the host must approve.
+		// Capacity is NOT consumed and no ticket is issued until approval.
+		const requiresApproval = !!(event as any).requireApproval
+
+		// Create the booking record (PENDING when approval is required, otherwise CONFIRMED)
 		const booking = await Bookings.create({
-			status: BookingStatus.CONFIRMED,
+			status: requiresApproval ? BookingStatus.PENDING : BookingStatus.CONFIRMED,
 			eventId,
 			bookingRef,
 			...(bookerUserId ? { bookerUserId } : {}),
@@ -110,10 +123,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				questionId: a.questionId,
 				answer: a.answer,
 			})),
+			acceptedTerms: true,
+			acceptedTermsAt,
 		})
-
-		// Update event tracker capacity
-		await booking.updateEventTracker()
 
 		// event already fetched above for validation
 		if (!event) {
@@ -121,6 +133,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		await resolveEventLocation(event)
+
+		// ---- Require-Approval branch: notify attendee (pending) + admin, then stop ----
+		if (requiresApproval) {
+			const ticketSummary = tickets.map((t) => ({ name: t.name, quantity: t.quantity }))
+			try {
+				await sendApprovalPending({
+					event,
+					firstName: user.firstName,
+					lastName: user.lastName,
+					email: user.email,
+					tickets: ticketSummary,
+					eventId,
+				})
+			} catch (emailError) {
+				console.error("Failed to send approval-pending email:", emailError)
+			}
+			try {
+				await sendAdminApprovalNotice({
+					event,
+					firstName: user.firstName,
+					lastName: user.lastName,
+					email: user.email,
+					tickets: ticketSummary,
+					eventId,
+					kind: "request",
+				})
+			} catch (adminError) {
+				console.error("Failed to send admin approval notice:", adminError)
+			}
+			return sendResponse(res, { bookingRef, pendingApproval: true }, "Request submitted for approval", true, 200)
+		}
+
+		// Update event tracker capacity (confirmed bookings only)
+		await booking.updateEventTracker()
 
 		// Send confirmation email
 		try {

@@ -7,6 +7,8 @@ export type UserData = {
     email: string
     phone: string
     role: string
+    acceptedTerms?: boolean
+    acceptedTermsAt?: Date
 }
 
 const isBoolean = {
@@ -49,6 +51,13 @@ export async function createOrUpdateUser(userData: UserData) {
 
         if (userExists) {
             userId = userExists._id
+            // Record latest T&C consent on the existing user when provided
+            if (userData.acceptedTerms) {
+                await db.collection("users").updateOne(
+                    { _id: userId },
+                    { $set: { acceptedTerms: true, acceptedTermsAt: userData.acceptedTermsAt || new Date() } }
+                )
+            }
         } else {
             const newUser = await db.collection("users").insertOne(userData)
             userId = newUser.insertedId
