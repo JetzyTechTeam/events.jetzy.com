@@ -1730,12 +1730,11 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       </div>
 
       <!-- Account Safety Notice -->
-      <div style="background-color: #FFF3CD; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #FFC107;">
-        <h3 style="font-family: ${FONT}; margin-top: 0; color: #856404; font-size: 15px;">⚠️ Account Safety Notice</h3>
-        <p style="font-family: ${FONT}; font-size: 14px; color: #856404; line-height: 1.6; margin: 0;">
+      <div style="margin: 25px 0; padding-top: 20px; border-top: 1px solid #eee;">
+        <p style="font-family: ${FONT}; font-size: 14px; color: #555; line-height: 1.6; margin: 0;">
           An account has been created on Jetzy using your email address. If you created this account, no action is needed.<br/><br/>
           If you did <strong>not</strong> create this account, please
-          <a href="${blockLink}" style="color: #856404; font-weight: bold; text-decoration: underline;">click here to block this account</a>.
+          <a href="${blockLink}" style="color: #F79432; font-weight: bold; text-decoration: underline;">click here to block this account</a>.
         </p>
       </div>
 
