@@ -17,7 +17,7 @@ type Data = {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<Data>) {
 	try {
-		const { firstName, lastName, email, password, shouldBeAJetzyMember, acceptedTerms, location, latitude, longitude, placeId } = req?.body
+		const { firstName, lastName, email, password, shouldBeAJetzyMember, acceptedTerms, location, latitude, longitude, placeId, refCode } = req?.body
 
 		const userType = Roles.USER
 
@@ -48,9 +48,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 			...(latitude !== undefined && { latitude }),
 			...(longitude !== undefined && { longitude }),
 			...(placeId && { placeId }),
+			...(refCode && { refCode }),
 		})
 
 		if (!user || user === null) return sendResponse(res, null, "Failed to create user account.", false, ResCode.INTERNAL_SERVER_ERROR)
+
+		// Referral attribution: mirror the mobile/webchat signup by registering the
+		// user on the main Jetzy backend with the invite code, so the referrer is
+		// credited. Best-effort — a backend failure must not break local signup.
+		// Only runs when a code is present (no-code signups keep the deferred
+		// JIT-sync path that happens on first login).
+		if (refCode) {
+			try {
+				const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://test.jetzy.com"
+				const controller = new AbortController()
+				const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+				const backendRes = await fetch(`${externalApiUrl}/api/v1/accounts/create`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					// Same shape mobile/webchat send to /v1/accounts/create
+					body: JSON.stringify({
+						email,
+						password, // plaintext — backend hashes its own copy
+						role: userType,
+						firstName: firstName ?? null,
+						lastName: lastName ?? null,
+						bio: null,
+						image: null,
+						refCode,
+					}),
+					signal: controller.signal,
+				})
+				clearTimeout(timeoutId)
+
+				if (backendRes.ok || backendRes.status === 409) {
+					console.log(`[create] Backend referral registration ${backendRes.status === 409 ? "skipped (already exists)" : "ok"} for ${email}, refCode=${refCode}`)
+				} else {
+					const errText = await backendRes.text().catch(() => "")
+					console.warn(`[create] Backend referral registration failed (${backendRes.status}) for ${email}: ${errText.substring(0, 120)}`)
+				}
+			} catch (err: any) {
+				console.warn(`[create] Backend referral registration error for ${email}:`, err?.name === "AbortError" ? "timeout" : err?.message || err)
+			}
+		}
 
 		return sendResponse(res, user, "User account created successfully.", true, ResCode.CREATED)
 	} catch (error: any) {

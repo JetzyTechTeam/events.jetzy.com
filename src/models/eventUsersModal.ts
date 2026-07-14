@@ -72,6 +72,12 @@ export const eventUsersSchema = new Schema(
       type: String,
       required: false,
     },
+    // Invite/referral code captured at signup (optional)
+    refCode: {
+      type: String,
+      required: false,
+      trim: true,
+    },
     // Account safety fields
     isBlocked: {
       type: Boolean,

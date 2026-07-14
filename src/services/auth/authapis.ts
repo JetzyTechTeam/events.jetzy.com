@@ -1,4 +1,4 @@
-import { POST } from "@Jetzy/configs/api"
+import { GET, POST } from "@Jetzy/configs/api"
 import { CreateJetzyAccountFormData, RequestParams, ServerResponse, SignUpFormData, UserInterface } from "@Jetzy/types"
 import { authEndpoints } from "./authendpoints"
 
@@ -24,4 +24,14 @@ export const AuthorizeSSOApi = async (params: RequestParams<SSOPayload>): Promis
 
 export const SignupSSOApi = async (params: RequestParams<SSOPayload>): Promise<ServerResponse<UserInterface, any>> => {
 	return await POST(authEndpoints.ssoSignup, params?.data)
+}
+
+// Optional invite/referral gate. Code in URL path, no body, no auth. 200 => valid.
+export const VerifyReferralCodeApi = async (code: string): Promise<boolean> => {
+	try {
+		await GET(`${authEndpoints.referralVerify}/${encodeURIComponent(code)}`)
+		return true
+	} catch {
+		return false
+	}
 }
