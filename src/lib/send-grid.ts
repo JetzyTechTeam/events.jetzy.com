@@ -1181,20 +1181,20 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           )
           .join("")}
             ${referralCode && discountAmount && discountAmount > 0 ? `
-              <div style="background-color: #f8f8f8; padding: 15px; border-radius: 8px; margin-top: 10px;">
-                <div style="display: flex; justify-content: space-between; margin: 6px 0;">
-                  <span style="color: #333;">Subtotal</span>
-                  <span style="color: #333;">$${subtotal.toFixed(2)}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin: 6px 0; color: #28a745;">
-                  <span>Discount (${referralCode}${discountPercentage ? ` &middot; ${discountPercentage}% off` : ''})</span>
-                  <span>-$${discountAmount.toFixed(2)}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin: 10px 0 0 0; padding-top: 10px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">
-                  <span>Total</span>
-                  <span>$${finalTotal.toFixed(2)}</span>
-                </div>
-              </div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f8f8; border-radius: 8px; margin-top: 10px;">
+                <tr>
+                  <td style="padding: 12px 15px 6px 15px; color: #333;">Subtotal</td>
+                  <td style="padding: 12px 15px 6px 15px; color: #333; text-align: right;">$${subtotal.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 15px; color: #28a745;">Discount (${referralCode}${discountPercentage ? ` &middot; ${discountPercentage}% off` : ''})</td>
+                  <td style="padding: 6px 15px; color: #28a745; text-align: right;">-$${discountAmount.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Total</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${finalTotal.toFixed(2)}</td>
+                </tr>
+              </table>
             ` : ''}
           </div>
 
