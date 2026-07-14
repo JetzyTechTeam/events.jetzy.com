@@ -152,14 +152,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </div>
           </div>
 
-          {/* Approval-required notice (free events only) */}
-          {event.requireApproval && (
-            <div className="bg-[#F79432]/15 border border-[#F79432]/40 rounded-lg p-3 mb-6">
-              <p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
-              <p className="text-gray-300 text-xs mt-1">Your registration is subject to host approval.</p>
-            </div>
-          )}
-
           {/* Ticket Section */}
           <div className="space-y-6">
             {tickets.map((ticket, index) => (

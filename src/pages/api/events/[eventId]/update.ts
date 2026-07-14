@@ -160,8 +160,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				desc: desc ?? "",
 				isPaid,
 				capacity,
-				// Require Approval is only supported on free events — force off if any paid ticket exists
-				requireApproval: (tickets || []).some((t: any) => Number(t.price) > 0) ? false : requireApproval,
+				requireApproval,
 				tickets: tickets.map((ticket, index) => ({
 					name: ticket.title,
 					desc: ticket.description,
