@@ -1718,10 +1718,10 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
         <p style="font-family: ${FONT}; font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>
         <div style="margin-bottom: 20px;">
           <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-            <img src="${baseUrl}/email/appstore-badge.png" alt="Download on the App Store" width="112" height="40" style="height: 40px; width: 112px;" />
+            <img src="${baseUrl}/email/appstore-badge-336x120.png" alt="Download on the App Store" width="112" height="40" style="height: 40px; width: 112px;" />
           </a>
           <a href="${PLAY_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
-            <img src="${baseUrl}/email/googleplay-badge.png" alt="Get it on Google Play" width="112" height="40" style="height: 40px; width: 112px;" />
+            <img src="${baseUrl}/email/googleplay-badge-336x120.png" alt="Get it on Google Play" width="112" height="40" style="height: 40px; width: 112px;" />
           </a>
         </div>
         <a href="${DOWNLOAD_LINK}" style="font-family: ${FONT}; background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
