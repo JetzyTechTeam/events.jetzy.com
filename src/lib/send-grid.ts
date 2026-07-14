@@ -1811,6 +1811,10 @@ export const sendThankYouNotification = async ({
 }
 
 export const sendWelcomeEmail = async ({ email, firstName, lastName, password }: WelcomeEmailData) => {
+  // CEO directive: one consistent font across the whole email (Times New Roman, fallback Arial).
+  // Applied inline on every text element because Outlook doesn't reliably inherit container font.
+  const FONT = "'Times New Roman', Times, Arial, serif";
+  const CONCIERGE_LINK = "https://selectmember.jetzy.com/";
   const APP_STORE_LINK = "https://apps.apple.com/us/app/jetzy-connect-travel-enjoy/id1019546379";
   const PLAY_STORE_LINK = "https://play.google.com/store/apps/details?id=com.icreon.travelconnect";
   const DOWNLOAD_LINK = "https://jetzyapp.com/download.html";
@@ -1821,26 +1825,36 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
   const blockLink = `${baseUrl}/api/auth/report-abuse?email=${encodedEmail}`;
 
   const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+    <div style="font-family: ${FONT}; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
       <div style="text-align: center; margin-bottom: 20px;">
         <img src="https://events.jetzy.com/favicon.ico" width="50" height="50" alt="Jetzy Logo" />
       </div>
-      <h1 style="color: #333; text-align: center;">Welcome to Jetzy! 🚀</h1>
-      
-      <p style="font-size: 16px; color: #555; line-height: 1.6;">
-        Hi ${firstName || 'Traveler'},
-      </p>
-      
-      <p style="font-size: 16px; color: #555; line-height: 1.6;">
-        <strong>Thank you for creating your Jetzy account!</strong> We're excited to have you join our global community of travelers and explorers.
+      <h1 style="font-family: ${FONT}; color: #333; text-align: center;">Welcome to Jetzy!</h1>
+
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6;">
+        Jetzy is an invite-only social network that helps you connect with inspiring, global-minded people based on your interests and location. Whether you’re a foodie looking to discover great restaurants, a hiker seeking adventure partners, or passionate about any other activity, Jetzy helps you find and connect with like-minded people around you and around the world.
       </p>
 
-      <p style="font-size: 16px; color: #555; line-height: 1.6;">
-        You can log in at any time using your email address and password, or request a one-time login code sent directly to your inbox.
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6;">
+        In addition, with our <a href="${CONCIERGE_LINK}" style="color: #F79432; font-weight: bold; text-decoration: underline;">Jetzy Select Concierge</a> you can unlock exclusive savings of up to 70% across travel and leisure.
+      </p>
+
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6; margin-bottom: 8px;">
+        For example:
+      </p>
+      <ul style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6; padding-left: 22px; margin-top: 0;">
+        <li style="font-family: ${FONT}; margin-bottom: 8px;"><strong>VIP restaurant benefits</strong> — priority seating, 10–30% discounts, and complimentary drinks, appetizers, or desserts for your entire table at premier restaurants.</li>
+        <li style="font-family: ${FONT}; margin-bottom: 8px;"><strong>Exclusive nightlife perks</strong> — VIP entry, complimentary drinks, and bottle experiences at top venues.</li>
+        <li style="font-family: ${FONT}; margin-bottom: 8px;"><strong>Private event invitations</strong> — access to exclusive gatherings and experiences.</li>
+        <li style="font-family: ${FONT}; margin-bottom: 8px;"><strong>Luxury travel &amp; lifestyle savings</strong> — up to 70% off hotels, car rentals, sporting events, private jets, yachts, spas, luggage, luxury goods, and more.</li>
+      </ul>
+
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6;">
+        Download the Jetzy mobile app from the link below. Log in using your email address and select “Forgot Password” to reset your password.
       </p>
 
       <div style="text-align: center; margin: 35px 0;">
-        <p style="font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>
+        <p style="font-family: ${FONT}; font-weight: bold; color: #F79432; font-size: 18px; margin-bottom: 15px;">Download the Jetzy App to Get Started</p>
         <div style="margin-bottom: 20px;">
           <a href="${APP_STORE_LINK}" style="text-decoration: none; display: inline-block; margin: 5px;">
             <img src="${baseUrl}/email/appstore-badge.png" alt="Download on the App Store" style="height: 40px;" />
@@ -1849,22 +1863,26 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
             <img src="${baseUrl}/email/googleplay-badge.png" alt="Get it on Google Play" style="height: 40px;" />
           </a>
         </div>
-        <a href="${DOWNLOAD_LINK}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+        <a href="${DOWNLOAD_LINK}" style="font-family: ${FONT}; background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
           Visit Download Page
         </a>
       </div>
 
+      <p style="font-family: ${FONT}; font-size: 16px; color: #555; line-height: 1.6;">
+        We look forward to welcoming you to the Jetzy community and connecting with you soon!
+      </p>
+
       <!-- Account Safety Notice -->
       <div style="background-color: #FFF3CD; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #FFC107;">
-        <h3 style="margin-top: 0; color: #856404; font-size: 15px;">⚠️ Account Safety Notice</h3>
-        <p style="font-size: 14px; color: #856404; line-height: 1.6; margin: 0;">
+        <h3 style="font-family: ${FONT}; margin-top: 0; color: #856404; font-size: 15px;">⚠️ Account Safety Notice</h3>
+        <p style="font-family: ${FONT}; font-size: 14px; color: #856404; line-height: 1.6; margin: 0;">
           An account has been created on Jetzy using your email address. If you created this account, no action is needed.<br/><br/>
-          If you did <strong>not</strong> create this account, please 
+          If you did <strong>not</strong> create this account, please
           <a href="${blockLink}" style="color: #856404; font-weight: bold; text-decoration: underline;">click here to block this account</a>.
         </p>
       </div>
 
-      <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+      <p style="font-family: ${FONT}; font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
         Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #F79432; text-decoration: none;">${CONTACT_EMAIL}</a>
         <br />
         &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
@@ -1881,7 +1899,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       },
       subject: "Welcome to Jetzy - Your Account is Ready!",
       html: wrapHtml(html),
-      text: `Welcome to Jetzy!\n\nThank you for creating your Jetzy account!\n\n${password ? `Your Temporary Password: ${password}\n\n` : ''}Download the app: ${DOWNLOAD_LINK}\n\n---\nACCOUNT SAFETY: An account has been created on Jetzy using your email address. If you created this account, no action is needed. If you did NOT create this account, please click here to block it: ${blockLink}`
+      text: `Welcome to Jetzy!\n\nJetzy is an invite-only social network that helps you connect with inspiring, global-minded people based on your interests and location. Whether you're a foodie looking to discover great restaurants, a hiker seeking adventure partners, or passionate about any other activity, Jetzy helps you find and connect with like-minded people around you and around the world.\n\nIn addition, with our Jetzy Select Concierge (${CONCIERGE_LINK}) you can unlock exclusive savings of up to 70% across travel and leisure.\n\nFor example:\n- VIP restaurant benefits — priority seating, 10–30% discounts, and complimentary drinks, appetizers, or desserts for your entire table at premier restaurants.\n- Exclusive nightlife perks — VIP entry, complimentary drinks, and bottle experiences at top venues.\n- Private event invitations — access to exclusive gatherings and experiences.\n- Luxury travel & lifestyle savings — up to 70% off hotels, car rentals, sporting events, private jets, yachts, spas, luggage, luxury goods, and more.\n\nDownload the Jetzy mobile app: ${DOWNLOAD_LINK}\nLog in using your email address and select "Forgot Password" to reset your password.\n\nWe look forward to welcoming you to the Jetzy community and connecting with you soon!\n\n---\nACCOUNT SAFETY: An account has been created on Jetzy using your email address. If you created this account, no action is needed. If you did NOT create this account, please click here to block it: ${blockLink}`
     });
     console.log(`✅ Welcome email sent successfully to: ${email}`);
   } catch (error) {

@@ -126,12 +126,17 @@ export default function JetzyQRSignup() {
             const newPassword = generateSecurePassword()
             setPassword(newPassword)
 
+            // No name is collected on this form — derive one from the email
+            // local-part (e.g. "foo@bar.com" -> "foo") so emails greet the user
+            // properly instead of "Hi New".
+            const derivedName = email.split("@")[0]?.trim() || "Traveler"
+
             const res: any = await handleEmailSignup({
                 email,
                 password: newPassword,
                 confirmPassword: newPassword,
-                firstName: "New",
-                lastName: "User",
+                firstName: derivedName,
+                lastName: "",
                 shouldBeAJetzyMember: false,
                 acceptedTerms: true,
                 skipToast: true, // Suppress global unprofessional-looking alert
@@ -150,7 +155,7 @@ export default function JetzyQRSignup() {
                 fetch("/api/welcome-email", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email, firstName: "New", lastName: "User", password: newPassword }),
+                    body: JSON.stringify({ email, firstName: derivedName, lastName: "", password: newPassword }),
                 }).catch(err => console.error("Failed to send welcome email:", err))
             } else {
                 // Extract error message from thunk result
@@ -226,6 +231,19 @@ export default function JetzyQRSignup() {
 
                             {/* Signup Form */}
                             <form onSubmit={onSignupSubmit} className="w-full flex flex-col items-center gap-1 mb-8">
+                                {/* Invite Code Field (optional) — first box */}
+                                <div className="w-full max-w-[559px]">
+                                    <input
+                                        id="signup-invite-code"
+                                        type="text"
+                                        value={inviteCode}
+                                        onChange={(e) => setInviteCode(e.target.value)}
+                                        placeholder="Enter your invite code (optional)"
+                                        className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
+                                        autoComplete="off"
+                                    />
+                                </div>
+
                                 <div className="w-full max-w-[559px]">
                                     {/* Email Field */}
                                     <input
@@ -252,19 +270,6 @@ export default function JetzyQRSignup() {
                                             setLocationData({ lat: null, lng: null, placeId: "" })
                                         }}
                                         placeholder="Enter your location"
-                                        className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
-                                        autoComplete="off"
-                                    />
-                                </div>
-
-                                {/* Invite Code Field (optional) */}
-                                <div className="w-full max-w-[559px]">
-                                    <input
-                                        id="signup-invite-code"
-                                        type="text"
-                                        value={inviteCode}
-                                        onChange={(e) => setInviteCode(e.target.value)}
-                                        placeholder="Enter your invite code (optional)"
                                         className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
                                         autoComplete="off"
                                     />
@@ -348,7 +353,7 @@ export default function JetzyQRSignup() {
                             Check Your Email
                         </h1>
                         <p className="text-gray-500 text-center text-[16px] sm:text-[18px] font-normal tracking-[-0.01em] mb-8 max-w-[480px] leading-relaxed px-2 sm:px-4">
-                            We&apos;ve sent you a temporary password to get started. Open your inbox and log in to begin your Jetzy experience.
+                            Check your inbox for your welcome email. Download the Jetzy app and log in with your email address &mdash; the first time, use &quot;Forgot Password&quot; to set your password.
                         </p>
 
                         {/* Success Illustration */}
