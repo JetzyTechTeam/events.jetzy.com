@@ -143,7 +143,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				const codeRecord = await ReferralCodes.findOne({
 					eventId: new Types.ObjectId(eventIdToQuery),
-					code: referralCode.toUpperCase(),
+					code: referralCode.trim().toUpperCase(),
 					isDeleted: false,
 					isActive: true,
 				})

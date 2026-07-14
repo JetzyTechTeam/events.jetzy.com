@@ -431,8 +431,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															handleValidateReferralCode(formData.referralCode)
 														}
 													}}
-													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 uppercase text-white"
-													style={{ textTransform: "uppercase" }}
+													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 text-white"
 												/>
 												{validatingReferralCode && (
 													<div className="absolute right-3 top-1/2 -translate-y-1/2">
