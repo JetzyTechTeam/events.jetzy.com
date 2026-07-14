@@ -9,6 +9,7 @@ import { AiFillApple } from "react-icons/ai"
 import { HiLocationMarker } from "react-icons/hi"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { usePlacesWidget } from "react-google-autocomplete"
+import { VerifyReferralCodeApi } from "@Jetzy/services/auth/authapis"
 
 // Image Assets
 import BgImage from "@Jetzy/assets/qrscanner signup/Rectangle background.png"
@@ -52,6 +53,8 @@ export default function JetzyQRSignup() {
     const [isEditing, setIsEditing] = useState(false)
     const [isGoogleLoading, setIsGoogleLoading] = useState(false)
     const [isAppleLoading, setIsAppleLoading] = useState(false)
+    const [inviteCode, setInviteCode] = useState("")
+    const [isVerifyingCode, setIsVerifyingCode] = useState(false)
 
     // Location state
     const [locationText, setLocationText] = useState("")
@@ -61,7 +64,7 @@ export default function JetzyQRSignup() {
         placeId: string
     }>({ lat: null, lng: null, placeId: "" })
 
-    const isAnyLoading = isLoading || isGoogleLoading || isAppleLoading
+    const isAnyLoading = isLoading || isGoogleLoading || isAppleLoading || isVerifyingCode
 
     // Google Places Autocomplete — allows both dropdown selection AND manual typing
     const { ref: locationRef } = usePlacesWidget<HTMLInputElement>({
@@ -103,6 +106,17 @@ export default function JetzyQRSignup() {
             return
         }
 
+        // Optional invite code — validate live only when provided
+        if (inviteCode.trim()) {
+            setIsVerifyingCode(true)
+            const ok = await VerifyReferralCodeApi(inviteCode.trim())
+            setIsVerifyingCode(false)
+            if (!ok) {
+                setError("Invalid invite code. Please check and try again, or leave it blank.")
+                return
+            }
+        }
+
         createAccount()
     }
 
@@ -126,6 +140,7 @@ export default function JetzyQRSignup() {
                 ...(locationData.lat !== null && { latitude: locationData.lat }),
                 ...(locationData.lng !== null && { longitude: locationData.lng }),
                 ...(locationData.placeId && { placeId: locationData.placeId }),
+                refCode: inviteCode.trim() || "",
             })
 
             // Redux thunk returns the action object. If it failed, it has `error`. 
@@ -206,7 +221,7 @@ export default function JetzyQRSignup() {
                         <div className="px-6 sm:px-12 py-8 flex flex-col items-center flex-1">
                             <h1 className="text-2xl sm:text-3xl font-bold text-center mb-1 text-[#1A1A1A]">Welcome to Jetzy</h1>
                             <p className="text-gray-500 text-center text-[14px] sm:text-[15px] mb-8 px-2 sm:px-6 leading-relaxed">
-                                Create your Jetzy account in seconds and unlock a seamless travel experience.
+                                Jetzy is an &quot;invite-only&quot; social club where you can access VIP perks and exclusive discounts of up to 70% for travel &amp; leisure.
                             </p>
 
                             {/* Signup Form */}
@@ -237,6 +252,19 @@ export default function JetzyQRSignup() {
                                             setLocationData({ lat: null, lng: null, placeId: "" })
                                         }}
                                         placeholder="Enter your location"
+                                        className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
+                                        autoComplete="off"
+                                    />
+                                </div>
+
+                                {/* Invite Code Field (optional) */}
+                                <div className="w-full max-w-[559px]">
+                                    <input
+                                        id="signup-invite-code"
+                                        type="text"
+                                        value={inviteCode}
+                                        onChange={(e) => setInviteCode(e.target.value)}
+                                        placeholder="Enter your invite code (optional)"
                                         className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
                                         autoComplete="off"
                                     />
