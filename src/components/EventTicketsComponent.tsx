@@ -155,8 +155,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </div>
           </div>
 
-          {/* Approval-required notice (free events only) */}
-          {event.requireApproval && (
+          {/* Approval-required notice — only for all-free events. On mixed
+              (paid+free) events approval applies to the free tier only, so the
+              blanket notice would confuse paid buyers; the checkout modal shows
+              a contextual banner for free-only selections instead. */}
+          {event.requireApproval && !ticketsItems.some((t) => Number(t.price) > 0) && (
             <div className="bg-[#F79432]/15 border border-[#F79432]/40 rounded-lg p-3 mb-6">
               <p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
               <p className="text-gray-300 text-xs mt-1">Your registration is subject to host approval.</p>
