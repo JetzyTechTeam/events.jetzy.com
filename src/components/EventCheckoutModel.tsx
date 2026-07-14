@@ -20,6 +20,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [checkoutStep, setCheckoutStep] = useState<"details" | "questions">("details")
 	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
 	const [pendingApproval, setPendingApproval] = useState(false)
+	const [acceptedTerms, setAcceptedTerms] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -106,6 +107,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		e.preventDefault()
 
 		if (checkoutStep === "details") {
+			if (!acceptedTerms) {
+				Error("Terms Required", "Please agree to the Terms & Conditions to continue.")
+				return
+			}
+
 			// Check required fields (exclude referralCode as it is optional)
 			const requiredFields = { ...formData } as any
 			delete requiredFields.referralCode
@@ -165,6 +171,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 						user: JSON.stringify(formData),
 						eventId,
 						customAnswers: JSON.stringify(customAnswersArray),
+						acceptedTerms: acceptedTerms,
 					}),
 				})
 				const result = await response.json()
@@ -191,6 +198,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					tickets: JSON.stringify(tickets),
 					user: JSON.stringify(formData),
 					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
+					acceptedTerms: acceptedTerms,
 					customAnswers: JSON.stringify(
 						Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 					),
@@ -259,6 +267,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		if (!showCheckout) {
 			setFreeRegistrationSuccess(false)
 			setPendingApproval(false)
+			setAcceptedTerms(false)
 			return
 		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
@@ -387,47 +396,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												<p className="text-gray-300 text-xs mt-1">Your registration is subject to host approval.</p>
 											</div>
 										)}
-										<input
-											type="text"
-											name="firstName"
-											placeholder="First Name"
-											value={formData.firstName}
-											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-											required
-										/>
-										<input
-											type="text"
-											name="lastName"
-											placeholder="Last Name"
-											value={formData.lastName}
-											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-											required
-										/>
-										<input
-											type="email"
-											name="email"
-											placeholder="Email"
-											value={formData.email}
-											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-											required
-										/>
-										<input
-											type="tel"
-											name="phone"
-											placeholder="Phone Number"
-											value={formData.phone}
-											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-											required
-											pattern="^\+?[0-9]{7,15}$"
-											title="Enter a valid phone number (e.g., +1234567890)"
-										/>
-										{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
-
-										{/* Referral Code Field */}
+										{/* Referral Code Field — first */}
 										<div>
 											<label className="block text-sm font-medium text-white mb-1.5">
 												Referral Code <span className="text-gray-400 font-normal">(Optional)</span>
@@ -475,6 +444,58 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											)}
 											{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
 										</div>
+										<input
+											type="text"
+											name="firstName"
+											placeholder="First Name"
+											value={formData.firstName}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+										/>
+										<input
+											type="text"
+											name="lastName"
+											placeholder="Last Name"
+											value={formData.lastName}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+										/>
+										<input
+											type="email"
+											name="email"
+											placeholder="Email"
+											value={formData.email}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+										/>
+										<input
+											type="tel"
+											name="phone"
+											placeholder="Phone Number"
+											value={formData.phone}
+											onChange={handleInputChange}
+											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+											required
+											pattern="^\+?[0-9]{7,15}$"
+											title="Enter a valid phone number (e.g., +1234567890)"
+										/>
+										{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
+
+										{/* Terms & Conditions — required to register */}
+										<label className="flex items-start gap-2 text-white cursor-pointer text-sm">
+											<input
+												type="checkbox"
+												checked={acceptedTerms}
+												onChange={(e) => setAcceptedTerms(e.target.checked)}
+												className="mt-0.5"
+											/>
+											<span>
+												I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-[#F79432] underline">Terms &amp; Conditions</a>. By registering for this event, I agree to the creation of a Jetzy account.
+											</span>
+										</label>
 									</div>
 									)}
 
@@ -619,7 +640,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										</div>
 									) : (
 										<button
-											disabled={isLoading}
+											disabled={isLoading || (checkoutStep === "details" && !acceptedTerms)}
 											type="submit"
 											className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
 										>

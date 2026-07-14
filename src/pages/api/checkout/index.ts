@@ -104,6 +104,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Invalid user data", false, ResCode.BAD_REQUEST)
 		}
 
+		// Require T&C consent (agreeing to register + create a Jetzy account)
+		const acceptedTerms = req.body?.acceptedTerms === true || req.body?.acceptedTerms === "true"
+		if (!acceptedTerms) {
+			return sendResponse(res, null, "You must agree to the Terms & Conditions to register.", false, ResCode.BAD_REQUEST)
+		}
+		const acceptedTermsAt = new Date()
+
 		// create jetzy user
 		try {
 			await createOrUpdateUser({
@@ -112,6 +119,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				email: user.email,
 				phone: user.phone,
 				role: "user",
+				acceptedTerms: true,
+				acceptedTermsAt,
 			})
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
@@ -256,6 +265,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			tickets: typeof req.body.tickets === 'string' ? req.body.tickets : JSON.stringify(tickets),
 			eventId: tickets[0]?.eventId || "",
 			eventDetails: JSON.stringify(eventDetails),
+			acceptedTerms: "true",
+			acceptedTermsAt: acceptedTermsAt.toISOString(),
 		}
 
 		if (referralCodeData) {

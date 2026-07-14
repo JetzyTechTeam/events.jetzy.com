@@ -91,4 +91,5 @@ export type CheckoutFormData = {
 	tickets: string
 	user: string
 	referralCode?: string
+	acceptedTerms?: boolean
 }

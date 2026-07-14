@@ -22,6 +22,8 @@ type SessionMetadata = {
 	tickets: string // JSON stringified array of ticket objects
 	referralCode?: string
 	discountPercentage?: string
+	acceptedTerms?: string
+	acceptedTermsAt?: string
 }
 
 type TicketsProps = Array<{
@@ -124,6 +126,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				referralCode: metadata.referralCode || undefined,
 				discountAmount: discountAmount,
 				customAnswers: customAnswers,
+				acceptedTerms: metadata.acceptedTerms === "true",
+				acceptedTermsAt: metadata.acceptedTermsAt ? new Date(metadata.acceptedTermsAt) : undefined,
 			})
 
 			// update the event tracker

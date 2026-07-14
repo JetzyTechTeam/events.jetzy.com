@@ -88,6 +88,15 @@ const bookingSchema = new Schema<IBookings>(
 			required: false,
 			default: [],
 		},
+		// Consent captured at booking time (T&C incl. agreeing to a Jetzy account)
+		acceptedTerms: {
+			type: Boolean,
+			default: false,
+		},
+		acceptedTermsAt: {
+			type: Date,
+			required: false,
+		},
 		isDeleted: {
 			type: Boolean,
 			default: false,

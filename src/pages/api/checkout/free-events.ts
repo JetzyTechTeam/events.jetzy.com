@@ -44,6 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const tickets = JSON.parse(req.body?.tickets) as BodyParams["tickets"]
 		const user = JSON.parse(req.body?.user) as BodyParams["user"]
 		const eventId = req.body?.eventId as string
+		const acceptedTerms = req.body?.acceptedTerms === true || req.body?.acceptedTerms === "true"
 		const customAnswers: Array<{ questionId: string; answer: any }> = req.body?.customAnswers
 			? JSON.parse(req.body.customAnswers)
 			: []
@@ -51,6 +52,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!eventId) {
 			return sendResponse(res, null, "Event ID is required", false, 400)
 		}
+
+		if (!acceptedTerms) {
+			return sendResponse(res, null, "You must agree to the Terms & Conditions to register.", false, 400)
+		}
+
+		const acceptedTermsAt = new Date()
 
 		// Create or update user profile
 		try {
@@ -60,6 +67,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				email: user.email,
 				phone: user.phone,
 				role: "user",
+				acceptedTerms: true,
+				acceptedTermsAt,
 			})
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
@@ -114,6 +123,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				questionId: a.questionId,
 				answer: a.answer,
 			})),
+			acceptedTerms: true,
+			acceptedTermsAt,
 		})
 
 		// event already fetched above for validation
