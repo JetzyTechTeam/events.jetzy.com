@@ -25,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Find referral code
 		const referralCode = await ReferralCodes.findOne({
 			eventId: new Types.ObjectId(eventId),
-			code: code.toUpperCase(),
+			code: code.trim().toUpperCase(),
 			isDeleted: false,
 			isActive: true,
 		})

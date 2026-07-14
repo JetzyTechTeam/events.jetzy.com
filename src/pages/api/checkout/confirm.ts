@@ -85,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			try {
 				const { ReferralCodes } = await import("@/models/events/referral-codes")
 				const referralCode = await ReferralCodes.findOne({
-					code: metadata.referralCode.toUpperCase(),
+					code: metadata.referralCode.trim().toUpperCase(),
 					isDeleted: false,
 				})
 

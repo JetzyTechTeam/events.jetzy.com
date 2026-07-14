@@ -385,8 +385,8 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 								<FormLabel>Code</FormLabel>
 								<Input
 									value={formData.code}
-									onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
-									placeholder="ABC123"
+									onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase().replace(/\s/g, "") })}
+									placeholder="ABC-123"
 									fontFamily="mono"
 									textTransform="uppercase"
 									maxLength={50}
@@ -396,7 +396,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 									_focus={{ borderColor: "#F79432" }}
 								/>
 								<Text fontSize="xs" color="gray.400" mt={1}>
-									Only uppercase letters and numbers allowed
+									Letters, numbers, and special characters allowed (no spaces). Codes are matched case-insensitively.
 								</Text>
 							</FormControl>
 

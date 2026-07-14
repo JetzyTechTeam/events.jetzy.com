@@ -10,7 +10,7 @@ import zod from "zod"
 
 // Validation schema for creating referral code
 const createReferralCodeSchema = zod.object({
-	code: zod.string().min(3).max(50).regex(/^[A-Z0-9]+$/, "Code must contain only uppercase letters and numbers"),
+	code: zod.string().min(3).max(50).regex(/^\S+$/, "Code cannot contain spaces"),
 	discountPercentage: zod.number().min(0).max(100),
 	maxUses: zod.number().positive().optional().nullable(),
 })
