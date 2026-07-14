@@ -148,10 +148,15 @@ const CheckoutSuccessPage: React.FC = () => {
 			</div>
 		)
 	}
-	// calculate the total of the order
-	const total = orderItems.reduce((acc, item) => {
+	// calculate the totals of the order (account for referral discount)
+	const subtotal = orderItems.reduce((acc, item) => {
 		return acc + item.price * item.quantity
 	}, 0)
+	// Stripe's amount_total is the authoritative charged amount (cents), already discounted
+	const finalTotal = typeof sessionData?.amount_total === "number" ? sessionData.amount_total / 100 : subtotal
+	const discount = Math.max(0, subtotal - finalTotal)
+	const referralCode: string | undefined = sessionData?.metadata?.referralCode
+	const discountPercentage: string | undefined = sessionData?.metadata?.discountPercentage
 
 	const displayEvent = eventData || parsedEvent
 	let displayLocation = eventData?.location || parsedEvent?.location
@@ -218,9 +223,21 @@ const CheckoutSuccessPage: React.FC = () => {
 								</div>
 							))}
 
+							{discount > 0 && (
+								<>
+									<div className="flex justify-between border-t pt-3">
+										<span className="text-gray-600">Subtotal</span>
+										<span className="text-gray-800">${subtotal.toFixed(2)}</span>
+									</div>
+									<div className="flex justify-between text-green-600">
+										<span>Discount{referralCode ? ` (${referralCode}${discountPercentage ? ` · ${discountPercentage}%` : ''})` : ''}</span>
+										<span>-${discount.toFixed(2)}</span>
+									</div>
+								</>
+							)}
 							<div className="flex justify-between border-t pt-3">
 								<span className="text-gray-800 font-bold">Total</span>
-								<span className="text-gray-800 font-bold">${total?.toFixed(2)}</span>
+								<span className="text-gray-800 font-bold">${finalTotal.toFixed(2)}</span>
 							</div>
 						</div>
 					</div>
