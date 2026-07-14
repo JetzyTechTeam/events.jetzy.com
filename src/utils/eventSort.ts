@@ -5,6 +5,7 @@
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
+import { getEventZone } from "./eventTime"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -17,48 +18,47 @@ const toTime = (v: any): number | null => {
 	return Number.isNaN(t) ? null : t
 }
 
-// Stored timezone format is "(UTC+05:00) Asia/Karachi" — pull out the IANA zone.
-// (Same parse create.ts uses.)
-const parseTz = (tz?: string): string | undefined => {
-	if (!tz) return undefined
-	return tz.split(") ")[1] || tz
-}
-
 // End of the calendar day that `value` falls on, in the event's timezone.
 // Date-only events store their date at midnight, so they must stay live through
 // the whole day rather than expiring the instant midnight passes.
+// getEventZone maps legacy abbreviations ("EDT" -> America/New_York) and falls
+// back to UTC for anything Intl/dayjs rejects, so this can never throw on bad
+// timezone data (which would 500 the whole listing).
 const endOfDay = (value: any, tz?: string): number => {
-	const zone = parseTz(tz)
+	const zone = tz ? getEventZone(tz) : undefined
 	const d = zone ? dayjs(value).tz(zone) : dayjs(value)
 	return d.endOf("day").valueOf()
 }
 
 /**
  * When is this event over? (single source of truth for past/live)
- *   - endsOn present:  hasEndTime === false -> end of the endsOn day (tz); else exact endsOn instant
- *   - else startsOn present (no end): end of the startsOn day (tz) — live through that day
+ * Status is driven by the START date (per CEO): an event is over once its
+ * start day has passed — the end date does NOT keep it alive.
+ *   - startsOn present -> end of the startsOn day (tz); ENDED the next day (endsOn ignored)
+ *   - else endsOn present (end-only "by mistake", no start):
+ *       hasEndTime === false -> end of the endsOn day (tz); else exact endsOn instant
  *   - else null (TBD)
  */
 export function getEffectiveEnd(e: any): number | null {
-	const end = toTime(e?.endsOn)
-	if (end != null) {
-		return e?.hasEndTime === false ? endOfDay(e.endsOn, e?.timezone) : end
-	}
 	const start = toTime(e?.startsOn)
 	if (start != null) {
 		return endOfDay(e.startsOn, e?.timezone)
+	}
+	const end = toTime(e?.endsOn)
+	if (end != null) {
+		return e?.hasEndTime === false ? endOfDay(e.endsOn, e?.timezone) : end
 	}
 	return null
 }
 
 /**
- * Classify an event.
+ * Classify an event by its START date (in the event's timezone):
  *   - no startsOn AND no endsOn         -> "tbd"
- *   - effectiveEnd < now                -> "past"
- *   - startsOn exists && startsOn > now  -> "future"
- *   - otherwise                         -> "live"
- * "live" also covers a date-only event (live all day) and an end-only
- * ("by mistake") event — live until its end day passes.
+ *   - start day is before today         -> "past"  (ENDED once start date passes)
+ *   - startsOn is in the future         -> "future" (UPCOMING)
+ *   - start day is today                -> "live"
+ * The end date is ignored for status — a multi-day event still ends the day
+ * after it starts.
  */
 export function getEventStatus(e: any, now: number = Date.now()): EventStatus {
 	const start = toTime(e?.startsOn)
@@ -92,7 +92,6 @@ export const STATUS_LABEL: Record<EventStatus, string> = {
 
 const effectiveEndTime = (e: any): number => getEffectiveEnd(e) ?? 0
 const startTime = (e: any): number => toTime(e?.startsOn) ?? 0
-const endTime = (e: any): number => toTime(e?.endsOn) ?? 0
 const createdTime = (e: any): number => toTime(e?.createdAt) ?? 0
 
 /**
@@ -101,7 +100,7 @@ const createdTime = (e: any): number => toTime(e?.createdAt) ?? 0
  *   live   -> effectiveEnd ASC (ending soonest first)
  *   future -> startsOn ASC (soonest first)
  *   tbd    -> createdAt DESC (newest first)
- *   past   -> endsOn DESC (most recently ended first)
+ *   past   -> start day DESC (most recently ended first)
  */
 export function sortEvents<T = any>(events: T[], now: number = Date.now()): T[] {
 	return [...events].sort((a: any, b: any) => {
@@ -117,7 +116,7 @@ export function sortEvents<T = any>(events: T[], now: number = Date.now()): T[] 
 			case "tbd":
 				return createdTime(b) - createdTime(a)
 			case "past":
-				return endTime(b) - endTime(a)
+				return effectiveEndTime(b) - effectiveEndTime(a)
 		}
 	})
 }
