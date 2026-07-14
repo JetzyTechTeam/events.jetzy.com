@@ -97,7 +97,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             price: newQty === 0 ? ticketItem.price : newQty * ticketItem.price
           }
         }
-        return ticket;
+        // Single-select: only one ticket type per checkout — reset any other selection
+        return ticket.isSelected
+          ? { ...ticket, isSelected: false, quantity: 0, price: ticketItem.price }
+          : ticket;
       })
     );
   };
