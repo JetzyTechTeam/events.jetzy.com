@@ -63,6 +63,12 @@ Fields: eventId, code (unique, uppercase), discountPercentage (0-100), commissio
 ### `src/models/events/blast.ts` — IBlast
 Blast email history (Luma-style Blasts tab). Fields: eventId, subject, message, targetType (all/bookings/invitations), status, emailType (custom/availability), recipientCount, succeededCount, failedCount, sentBy, sentAt, isDeleted. Created automatically by `/api/send-blast` after a successful send.
 
+### `src/models/events/albums.ts` — IEventAlbum
+Fields: eventId, title, description, media[] (`{url, type:'image'|'video'}`), createdBy, isDeleted. Collection `event-albums`. Multiple named albums per event.
+
+### `src/models/events/album-access.ts` — IAlbumAccess
+Fields: eventId, albumId, userId, action (`'login'|'signup'`). Collection `event-album-access`. **Unique index `{albumId,userId}`** — one row per (album,user); doubles as the notify-email dedupe guard AND the album-analytics source.
+
 ### `src/models/events/discussion-posts.ts` — IDiscussionPost
 Fields: eventId, userId, title, content, images[], attachments[], isPinned, isLocked, tags[], reactions (like/helpful arrays), viewCount, viewedBy[], commentCount, lastActivityAt, isReported
 
@@ -161,6 +167,11 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/events/admin/update-feedback-link` | admin OR owner |
 | POST | `/api/events/admin/send-thank-you` | admin OR owner |
 | GET | `/api/events/guests` | get guests |
+| GET | `/api/events/[eventId]/albums` | any logged-in user (view) |
+| POST | `/api/events/[eventId]/albums` | admin OR owner (create) |
+| PUT/DELETE | `/api/events/[eventId]/albums/[albumId]` | admin OR owner |
+| POST | `/api/events/[eventId]/albums/[albumId]/access` | any logged-in user — records access + notify email (once per user/album) |
+| GET | `/api/events/[eventId]/albums/access-log` | admin OR owner — per-viewer access log (name/email/action/date) for the Albums analytics tab + CSV export |
 
 ### Check-in
 | Method | Route | Access |
@@ -329,6 +340,16 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 - `upload.service.ts`
 
 ---
+
+## Feature: Event Albums
+Photo/video albums on the public event page, rendered **above** the Discussion section ([HostedEvents.tsx](src/components/HostedEvents.tsx) — `<EventAlbums>` above `#discussion-section`).
+- **Models:** `event-albums` (IEventAlbum) + `event-album-access` (IAlbumAccess).
+- **Component:** [src/components/events/EventAlbums.tsx](src/components/events/EventAlbums.tsx) — dark theme card. Album grid → gallery modal (react-slick, images + `<video controls>`). Create/Edit modal: multi-file photo+video upload via `uploadFile` ([upload.service.ts](src/services/upload.service.ts), folder `albums`), **per-file `AbortController`** so uploads are cancelable; Cancel aborts all in-flight + discards. Share (copy `/{slug}?album={id}` + QR), Edit, Delete (admin/owner only).
+- **View gate:** albums require login — logged-out users see a Login panel (`/login?_cb=<url>`; signup inherits `_cb`).
+- **Share deep-link:** `/{slug}?album={albumId}`. Logged-out recipient is bounced to login; after auth returns, that album auto-opens AND `POST …/access` fires once (sessionStorage guard `album_access_<id>` + server unique-index dedupe).
+- **Notify email:** `sendAlbumAccessNotice` ([send-grid.ts](src/lib/send-grid.ts)) → `SENDGRID_EMAIL_SENDER` inbox, first time each user opens each shared album. login-vs-signup derived from account age (<10 min = signup).
+- **Analytics:** `/api/analytics/events` returns an `albums` block (albumCount, totalAccesses, uniqueViewers, logins, signups, perAlbum[]). Surfaced in [analytics.tsx](src/pages/console/events/[eventId]/analytics.tsx) as a dedicated **"Albums" tab** (4th tab): summary cards + Top Albums table + per-viewer **Access Log** (name/email/login-vs-signup/date from `GET …/albums/access-log`) + **Export CSV** (summary + per-album + full access log). Admin-only page.
+- Full mobile-parity spec: `ALBUM_API.md` (repo root).
 
 ## Feature: Custom Questions
 Types: `text`, `options`, `multiple_choice`, `social_profile`, `company`, `checkbox`, `terms`, `mobile`, `website`

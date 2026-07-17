@@ -6,6 +6,8 @@ import { Bookings as BookingsModel } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
 import { CheckIn } from "@/models/checkIn"
 import { EventInteraction, PageView, UserSession } from "@/models/analytics"
+import { AlbumAccess } from "@/models/events/album-access"
+import { EventAlbums } from "@/models/events/albums"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
@@ -349,6 +351,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata: interaction.metadata || null,
 		}))
 
+		// 9. Album access analytics — how many users reached shared albums, login vs signup
+		const albumAccessMatch: any = { eventId: eventObjectId }
+		if (Object.keys(dateFilter).length > 0) {
+			albumAccessMatch.createdAt = dateFilter
+		}
+
+		const [albumActionStats, albumUniqueViewers, albumCount, perAlbumStats] = await Promise.all([
+			AlbumAccess.aggregate([
+				{ $match: albumAccessMatch },
+				{ $group: { _id: "$action", count: { $sum: 1 } } },
+			]),
+			AlbumAccess.aggregate([
+				{ $match: albumAccessMatch },
+				{ $group: { _id: "$userId" } },
+				{ $count: "count" },
+			]),
+			EventAlbums.countDocuments({ eventId: eventObjectId, isDeleted: false }),
+			AlbumAccess.aggregate([
+				{ $match: albumAccessMatch },
+				{ $group: { _id: "$albumId", accesses: { $sum: 1 }, users: { $addToSet: "$userId" } } },
+				{ $sort: { accesses: -1 } },
+				{ $limit: 10 },
+				{
+					$lookup: {
+						from: "event-albums",
+						localField: "_id",
+						foreignField: "_id",
+						as: "album",
+					},
+				},
+				{
+					$project: {
+						albumId: "$_id",
+						accesses: 1,
+						uniqueViewers: { $size: "$users" },
+						title: { $ifNull: [{ $arrayElemAt: ["$album.title", 0] }, "Untitled"] },
+					},
+				},
+			]),
+		])
+
+		let albumLogins = 0
+		let albumSignups = 0
+		albumActionStats.forEach((s: any) => {
+			if (s._id === "login") albumLogins = s.count
+			else if (s._id === "signup") albumSignups = s.count
+		})
+		const albumTotalAccesses = albumLogins + albumSignups
+		const albumUniqueCount = albumUniqueViewers[0]?.count || 0
+
 		// Calculate conversion rates
 		const viewToBookingRate = views.count > 0 ? (bookings.bookingCount / views.count) * 100 : 0
 		const viewToCheckInRate = checkIns.totalCheckedIn > 0 && bookings.totalTickets > 0 ? (checkIns.totalCheckedIn / bookings.totalTickets) * 100 : 0
@@ -392,6 +444,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						viewToBooking: viewToBookingRate,
 						viewToCheckIn: viewToCheckInRate,
 					},
+				},
+				albums: {
+					albumCount,
+					totalAccesses: albumTotalAccesses,
+					uniqueViewers: albumUniqueCount,
+					logins: albumLogins,
+					signups: albumSignups,
+					perAlbum: perAlbumStats.map((a: any) => ({
+						albumId: a.albumId?.toString(),
+						title: a.title,
+						accesses: a.accesses,
+						uniqueViewers: a.uniqueViewers,
+					})),
 				},
 				trends: {
 					bookings: bookingsOverTime.map((item: any) => ({

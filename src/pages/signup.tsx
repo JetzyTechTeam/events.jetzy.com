@@ -30,7 +30,7 @@ export default function SignupPage() {
 	const handleSubmit = async (values: StartSignupFormData) => {
 		setEmailExists(false)
 		setSubmitting(true)
-		const res = await handleStartSignup(values)
+		const res = await handleStartSignup(values, _cb ? _cb.toString() : undefined)
 
 		if (res.ok) {
 			router.push("/post-signup")

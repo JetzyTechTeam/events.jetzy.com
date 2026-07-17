@@ -117,7 +117,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
         }
     };
 
-    const handleStartSignup = async (values: StartSignupFormData) => {
+    const handleStartSignup = async (values: StartSignupFormData, cb?: string) => {
         try {
             const res = await fetch("/api/auth/start-signup", {
                 method: "POST",
@@ -126,6 +126,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                     name: values.name?.trim(),
                     email: values.email?.trim(),
                     acceptedTerms: values.acceptedTerms,
+                    cb: cb || undefined,
                 }),
             })
             const json = await res.json().catch(() => ({}))

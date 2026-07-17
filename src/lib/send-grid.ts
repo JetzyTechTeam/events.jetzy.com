@@ -311,6 +311,77 @@ export const sendWaitingListNotification = async ({ firstName, lastName, email, 
   }
 }
 
+// Sent to the admin inbox (SENDGRID_EMAIL_SENDER) the first time a given user opens a
+// given shared album after authenticating — so the team can see who logged in / signed up
+// via an album share link. Fired once per (album, user); never throws (non-fatal).
+export const sendAlbumAccessNotice = async ({
+  recipientName,
+  recipientEmail,
+  action,
+  eventName,
+  eventSlug,
+  albumTitle,
+  albumId,
+}: {
+  recipientName: string
+  recipientEmail: string
+  action: "login" | "signup"
+  eventName: string
+  eventSlug: string
+  albumTitle: string
+  albumId: string
+}) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log(`[LOCALHOST MODE] sendAlbumAccessNotice skipped - would notify admin for:`, recipientEmail)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const adminEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+  if (!adminEmail) {
+    console.error("SENDGRID_EMAIL_SENDER not set — cannot send album access notice")
+    return
+  }
+  const cleanEventName = decodeHTMLEntities(eventName)
+  const actionLabel = action === "signup" ? "signed up" : "logged in"
+  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}?album=${albumId}`
+  const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
+  try {
+    await sgMail.send({
+      to: adminEmail,
+      from: { email: adminEmail, name: "Jetzy Events" },
+      subject: `[Album] ${recipientName} ${actionLabel} — ${cleanEventName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
+          <h2 style="color: #F79432; margin-top: 0;">New Album Viewer</h2>
+          <p style="color: #333; font-size: 16px;">
+            A user <strong>${actionLabel}</strong> from a shared album link and can now view it:
+          </p>
+          <div style="background-color: #f4f4f4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Name:</strong> ${recipientName}</p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${recipientEmail}</p>
+            <p style="margin: 5px 0;"><strong>Action:</strong> ${actionLabel}</p>
+            <p style="margin: 5px 0;"><strong>Event:</strong> ${cleanEventName}</p>
+            <p style="margin: 5px 0;"><strong>Album:</strong> ${albumTitle}</p>
+            <p style="margin: 5px 0;"><strong>When:</strong> ${when}</p>
+          </div>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${albumUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              Open Album
+            </a>
+          </div>
+          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+            Automated notification from Jetzy Events.
+          </p>
+        </div>
+      `),
+      text: `New album viewer\nName: ${recipientName}\nEmail: ${recipientEmail}\nAction: ${actionLabel}\nEvent: ${cleanEventName}\nAlbum: ${albumTitle}\nWhen: ${when}\nOpen: ${albumUrl}`,
+    })
+  } catch (error) {
+    console.error("Failed to send album access notice:", error)
+    // Non-fatal — do not throw; album viewing should not fail on admin email
+  }
+}
+
 export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDate, eventLocation, hostName }: EventInvitationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (!baseUrl) {
@@ -1784,13 +1855,15 @@ export const sendVerificationEmail = async ({
   email,
   firstName,
   token,
+  cb,
 }: {
   email: string
   firstName?: string
   token: string
+  cb?: string
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const verifyUrl = `${baseUrl}/auth/verify-signup?token=${encodeURIComponent(token)}`
+  const verifyUrl = `${baseUrl}/auth/verify-signup?token=${encodeURIComponent(token)}${cb ? `&_cb=${encodeURIComponent(cb)}` : ""}`
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">

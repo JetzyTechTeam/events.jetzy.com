@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
+import EventAlbums from "@/components/events/EventAlbums"
 import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import { ROUTES } from "@/configs/routes"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
@@ -477,6 +478,17 @@ export default function HostedEvents({ event }: Props) {
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
 					{clonedEvent && <EventTicketsComponent event={clonedEvent} />}
+
+					{clonedEvent?._id && (
+						<div className={isDatePollActive ? "" : "max-w-4xl mx-auto"}>
+							<EventAlbums
+								eventId={clonedEvent._id.toString()}
+								eventSlug={clonedEvent.slug}
+								eventName={stripHtml(clonedEvent.name)}
+								canManage={canManage}
+							/>
+						</div>
+					)}
 
 					{clonedEvent?._id && (
 						<div id="discussion-section" className={`${isDatePollActive ? "" : "max-w-4xl mx-auto"} mt-8`}>

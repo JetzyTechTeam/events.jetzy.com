@@ -5,6 +5,8 @@ const UPLOAD_ENDPOINT = "https://prod-api.jetzy.com/api/v1/uploader/multiple";
 interface UploadOptions {
     folder?: string;
     onProgressChange?: (progress: number) => void;
+    // Optional AbortSignal so callers can cancel an in-flight upload.
+    signal?: AbortSignal;
 }
 
 export const uploadFile = async (
@@ -21,6 +23,7 @@ export const uploadFile = async (
             headers: {
                 "Content-Type": "multipart/form-data",
             },
+            signal: options?.signal,
             onUploadProgress: (progressEvent) => {
                 if (options?.onProgressChange && progressEvent.total) {
                     const progress = Math.round(
