@@ -13,7 +13,7 @@ Photo/video **albums** on events. Web portal (events-jetzy-com) implementation i
 | `eventId` | ObjectId → Events | indexed |
 | `title` | String | required, trimmed, ≤120 chars |
 | `description` | String | optional, ≤2000 |
-| `media` | Array | `[{ url: String, type: "image" \| "video" }]` (subdoc, no `_id`) |
+| `media` | Array | `[{ url: String, type: "image" \| "video" }]` (subdoc, no `_id`). **Order is authoritative** — the album cover is the first `image` in this array (drag-to-reorder in the web editor). Preserve order on read/write. |
 | `createdBy` | ObjectId → Users | who created it |
 | `isDeleted` | Boolean | soft delete, default false |
 | `createdAt` / `updatedAt` | Date | timestamps |
@@ -80,6 +80,7 @@ Standard response envelope (existing `sendResponse` helper): `{ status: boolean,
 - Recipient opens it. If **not logged in** → redirect to `/login?_cb=<original album url>`. The signup page inherits `_cb`, so login OR signup both return to the album URL.
 - After auth returns to `/{slug}?album={albumId}`: the client auto-opens that album's gallery AND calls `POST /albums/:albumId/access` once (client also guards with a per-session key; server dedupes authoritatively via the unique index).
 - **View gate:** albums are only visible to logged-in users (GET requires a session).
+- **Sharing** (generating/copying the `?album=` link) is client-side only and available to **every logged-in viewer**, not just admin/owner. Create/edit/delete remain admin-or-owner.
 
 Mobile equivalent: a deep link carrying `eventId`/`slug` + `albumId`; force auth before showing album media; on first view after auth POST the access endpoint.
 
