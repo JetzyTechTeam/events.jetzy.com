@@ -610,11 +610,11 @@ const CreateEventPage = () => {
                       <Box>
                         <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
                         <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>
-                          {(values.tickets || []).some((t: any) => Number(t.price) > 0) ? "Available for free events only" : "Manually approve attendees"}
+                          {((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)) ? "Available for events with a free ticket" : "Approval applies to free-ticket registrations"}
                         </Text>
                       </Box>
                     </Flex>
-                    <Switch name="requireApproval" isDisabled={(values.tickets || []).some((t: any) => Number(t.price) > 0)} isChecked={values.requireApproval && !(values.tickets || []).some((t: any) => Number(t.price) > 0)} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+                    <Switch name="requireApproval" isDisabled={(values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)} isChecked={values.requireApproval && !((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0))} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
                   </Flex>
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>

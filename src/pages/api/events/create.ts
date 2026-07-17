@@ -105,8 +105,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}]
 		}
 
-		// Require Approval is only supported on free events — force off if any paid ticket exists
-		if (tickets.some((t: any) => Number(t.price) > 0)) requireApproval = false
+		// Require Approval gates the FREE-ticket registrations. Allow it as long as the
+		// event has at least one free ticket; only force off when every ticket is paid.
+		if (tickets.length > 0 && tickets.every((t: any) => Number(t.price) > 0)) requireApproval = false
 
 		const effectiveTimezone = timezone && timezone.trim() !== '' ? timezone : 'UTC'
 		const extractedTimeZone = effectiveTimezone.split(') ')[1] || effectiveTimezone
