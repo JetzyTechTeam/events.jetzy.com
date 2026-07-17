@@ -24,6 +24,7 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogOverlay,
+	Badge,
 	useDisclosure,
 	useToast,
 } from "@chakra-ui/react"
@@ -269,13 +270,16 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 												<Text color="#cfcfcf" fontSize="xs">{album.media.length} item{album.media.length === 1 ? "" : "s"}</Text>
 											</Box>
 										</Box>
-										{canManage && (
-											<Flex position="absolute" top={1.5} right={1.5} gap={1} onClick={(e) => e.stopPropagation()}>
-												<IconButton aria-label="Share album" icon={<FiShare2 />} size="xs" borderRadius="full" bg="blackAlpha.700" color="white" _hover={{ bg: "blackAlpha.900" }} onClick={() => openShare(album)} />
-												<IconButton aria-label="Edit album" icon={<FiEdit2 />} size="xs" borderRadius="full" bg="blackAlpha.700" color="white" _hover={{ bg: "blackAlpha.900" }} onClick={() => openEdit(album)} />
-												<IconButton aria-label="Delete album" icon={<FiTrash2 />} size="xs" borderRadius="full" bg="blackAlpha.700" color="#ff8080" _hover={{ bg: "blackAlpha.900" }} onClick={() => openDelete(album)} />
-											</Flex>
-										)}
+										<Flex position="absolute" top={1.5} right={1.5} gap={1} onClick={(e) => e.stopPropagation()}>
+											{/* Share is available to every logged-in viewer */}
+											<IconButton aria-label="Share album" icon={<FiShare2 />} size="xs" borderRadius="full" bg="blackAlpha.700" color="white" _hover={{ bg: "blackAlpha.900" }} onClick={() => openShare(album)} />
+											{canManage && (
+												<>
+													<IconButton aria-label="Edit album" icon={<FiEdit2 />} size="xs" borderRadius="full" bg="blackAlpha.700" color="white" _hover={{ bg: "blackAlpha.900" }} onClick={() => openEdit(album)} />
+													<IconButton aria-label="Delete album" icon={<FiTrash2 />} size="xs" borderRadius="full" bg="blackAlpha.700" color="#ff8080" _hover={{ bg: "blackAlpha.900" }} onClick={() => openDelete(album)} />
+												</>
+											)}
+										</Flex>
 									</Box>
 								)
 							})}
@@ -391,6 +395,35 @@ function AlbumFormModal({
 	const [isSaving, setIsSaving] = useState(false)
 
 	const anyUploading = staged.some((s) => s.uploading)
+	// Cover = first uploaded image in order (matches coverOf on the card). Badge marks it.
+	const coverTempId = staged.find((s) => s.type === "image" && s.url && !s.error)?.tempId
+
+	// Native HTML5 drag-and-drop reorder (framer-motion Reorder can't handle a wrapping
+	// 2D grid — single-axis only — so tiles flew out of layout). Live-swaps on drag-enter.
+	// Ref holds the source index (no side effects inside state updaters); state mirrors it
+	// purely for the dragged tile's opacity.
+	const dragFromRef = useRef<number | null>(null)
+	const [dragIndex, setDragIndex] = useState<number | null>(null)
+	const startDrag = (idx: number) => {
+		dragFromRef.current = idx
+		setDragIndex(idx)
+	}
+	const endDrag = () => {
+		dragFromRef.current = null
+		setDragIndex(null)
+	}
+	const handleDragEnterTile = (idx: number) => {
+		const from = dragFromRef.current
+		if (from === null || from === idx) return
+		setStaged((prev) => {
+			const arr = [...prev]
+			const [moved] = arr.splice(from, 1)
+			arr.splice(idx, 0, moved)
+			return arr
+		})
+		dragFromRef.current = idx
+		setDragIndex(idx)
+	}
 
 	const handleFiles = (files: FileList | null, type: MediaType) => {
 		if (!files || files.length === 0) return
@@ -483,30 +516,53 @@ function AlbumFormModal({
 						</Box>
 					</Flex>
 
-					{/* Staged media grid */}
+					{/* Staged media grid — drag to reorder; first photo is the album cover */}
 					{staged.length > 0 && (
-						<SimpleGrid columns={{ base: 3, sm: 4 }} spacing={3} mt={3}>
-							{staged.map((s) => (
-								<Box key={s.tempId} position="relative" width="100%" pt="100%" borderRadius="md" overflow="hidden" bg="#0f0f0f" border="1px solid #2a2a2a">
-									{s.url ? (
-										s.type === "video" ? (
-											<video src={s.url} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} muted />
+						<>
+							<Text fontSize="xs" color="#8a8a8a" mt={4} mb={2}>Drag to reorder — the first photo is the album cover.</Text>
+							<SimpleGrid columns={{ base: 3, sm: 4 }} spacing={3}>
+								{staged.map((s, idx) => (
+									<Box
+										key={s.tempId}
+										position="relative"
+										width="100%"
+										pt="100%"
+										borderRadius="md"
+										overflow="hidden"
+										bg="#0f0f0f"
+										border={coverTempId === s.tempId ? "2px solid #F79432" : "1px solid #2a2a2a"}
+										opacity={dragIndex === idx ? 0.4 : 1}
+										cursor={s.uploading ? "default" : "grab"}
+										draggable={!s.uploading}
+										onDragStart={(e: React.DragEvent) => { e.dataTransfer.effectAllowed = "move"; startDrag(idx) }}
+										onDragEnter={() => handleDragEnterTile(idx)}
+										onDragOver={(e: React.DragEvent) => e.preventDefault()}
+										onDragEnd={endDrag}
+										onDrop={(e: React.DragEvent) => { e.preventDefault(); endDrag() }}
+									>
+										{s.url ? (
+											s.type === "video" ? (
+												<video src={s.url} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} muted />
+											) : (
+												<img src={s.url} alt="staged" draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} />
+											)
 										) : (
-											<img src={s.url} alt="staged" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-										)
-									) : (
-										<Flex position="absolute" inset={0} direction="column" align="center" justify="center" gap={1}>
-											<Spinner size="sm" color="#F79432" />
-											<Text fontSize="10px" color="gray.400">{s.progress}%</Text>
-										</Flex>
-									)}
-									{s.error && (
-										<Flex position="absolute" inset={0} align="center" justify="center" bg="blackAlpha.700"><Text fontSize="10px" color="#ff8080">Failed</Text></Flex>
-									)}
-									<IconButton aria-label="Remove" icon={<FiTrash2 />} size="xs" position="absolute" top="2px" right="2px" minW="20px" h="20px" p={0} bg="blackAlpha.800" color="white" _hover={{ bg: "red.600" }} onClick={() => removeStaged(s)} />
-								</Box>
-							))}
-						</SimpleGrid>
+											<Flex position="absolute" inset={0} direction="column" align="center" justify="center" gap={1}>
+												<Spinner size="sm" color="#F79432" />
+												<Text fontSize="10px" color="gray.400">{s.progress}%</Text>
+											</Flex>
+										)}
+										{s.error && (
+											<Flex position="absolute" inset={0} align="center" justify="center" bg="blackAlpha.700"><Text fontSize="10px" color="#ff8080">Failed</Text></Flex>
+										)}
+										{coverTempId === s.tempId && (
+											<Badge position="absolute" bottom="2px" left="2px" bg="#F79432" color="black" fontSize="9px" borderRadius="sm" px={1}>Cover</Badge>
+										)}
+										<IconButton aria-label="Remove" icon={<FiTrash2 />} size="xs" position="absolute" top="2px" right="2px" minW="20px" h="20px" p={0} bg="blackAlpha.800" color="white" _hover={{ bg: "red.600" }} draggable={false} onClick={() => removeStaged(s)} />
+									</Box>
+								))}
+							</SimpleGrid>
+						</>
 					)}
 				</ModalBody>
 				<ModalFooter>
