@@ -19,7 +19,9 @@ import Pagination from "@/components/misc/Pagination"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import Link from "next/link"
-import { useSession } from "next-auth/react"
+import { signOut, useSession } from "next-auth/react"
+import { useAppDispatch } from "@Jetzy/redux/stores"
+import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import Linkify from "linkify-react"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
@@ -92,6 +94,19 @@ export default function HostedEvents({ event }: Props) {
 	const toast = useToast()
 	const { data: session } = useSession()
 	const router = useRouter()
+	const dispatch = useAppDispatch()
+
+	// Canonical logout — mirrors src/components/misc/Navbar.tsx (LOGOUT-SAFETY RULE in CLAUDE.md):
+	// targeted removeItem only (never localStorage.clear()), then destroySession, then signOut.
+	const handleLogout = () => {
+		try { sessionStorage.removeItem("api_token") } catch {}
+		try { sessionStorage.removeItem("analytics_session_id") } catch {}
+		try { localStorage.removeItem("analytics_anon_id") } catch {}
+		try { localStorage.removeItem("events_location_pref") } catch {}
+		try { localStorage.removeItem("visitor_id") } catch {}
+		dispatch(destroySession({}))
+		signOut({ callbackUrl: "/" })
+	}
 
 	// Validate event data early and safely
 	const isValidEvent = event && event._id && event.name
@@ -244,27 +259,36 @@ export default function HostedEvents({ event }: Props) {
 				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
 					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex items-center justify-between`}>
 						<div className="flex items-center gap-3">
-							{canManage && (
-								<button
-									onClick={() => router.back()}
-									className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white flex items-center gap-2"
-								>
-									<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-									</svg>
-									Back
-								</button>
-							)}
+							<button
+								onClick={() => router.back()}
+								className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white flex items-center gap-2"
+							>
+								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+								</svg>
+								Back
+							</button>
 						</div>
 						<div className="flex items-center gap-2">
-							{isAdmin && (
-								<Link href="/login" className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
-									Login
-								</Link>
-							)}
 							{canManage && (
 								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
 									Manage Event
+								</Link>
+							)}
+							{session ? (
+								<button
+									data-analytics-ignore=""
+									onClick={handleLogout}
+									className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-red-400"
+								>
+									Logout
+								</button>
+							) : (
+								<Link
+									href={`/login?_cb=${encodeURIComponent(router.asPath)}`}
+									className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white"
+								>
+									Login
 								</Link>
 							)}
 						</div>
