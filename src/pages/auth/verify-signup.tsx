@@ -30,6 +30,10 @@ export default function VerifySignupPage() {
 	const [resendNote, setResendNote] = React.useState<string | null>(null)
 
 	const token = typeof router.query.token === "string" ? router.query.token : ""
+	// Only accept same-origin relative paths (starts with a single "/") to avoid an
+	// open redirect — _cb rides in on an email link and is attacker-craftable.
+	const rawCb = typeof router.query._cb === "string" ? router.query._cb : ""
+	const cb = rawCb.startsWith("/") && !rawCb.startsWith("//") ? rawCb : ""
 
 	React.useEffect(() => {
 		if (!router.isReady) return
@@ -79,11 +83,11 @@ export default function VerifySignupPage() {
 
 			if (signInRes?.error || !signInRes?.ok) {
 				setSubmitError("Account created, but auto-login failed. Please log in manually.")
-				router.push(ROUTES.login)
+				router.push(cb ? `${ROUTES.login}?_cb=${encodeURIComponent(cb)}` : ROUTES.login)
 				return
 			}
 
-			router.push(ROUTES.home)
+			router.push(cb || ROUTES.home)
 		} catch (err: any) {
 			setSubmitError(err?.message || "Network error.")
 			setSubmitting(false)

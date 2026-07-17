@@ -34,7 +34,7 @@ import {
 	TabPanels,
 	TabPanel,
 } from "@chakra-ui/react"
-import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiChevronLeft, FiChevronRight } from "react-icons/fi"
+import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiChevronLeft, FiChevronRight, FiImage, FiLogIn, FiUserPlus } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
 import ClickHeatmap from "@/components/analytics/ClickHeatmap"
@@ -135,6 +135,19 @@ interface EventAnalyticsData {
 			hasPreviousPage: boolean
 		}
 	}
+	albums?: {
+		albumCount: number
+		totalAccesses: number
+		uniqueViewers: number
+		logins: number
+		signups: number
+		perAlbum: Array<{
+			albumId: string
+			title: string
+			accesses: number
+			uniqueViewers: number
+		}>
+	}
 	dateRange: {
 		from: string | null
 		to: string | null
@@ -152,6 +165,9 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const toast = useToast()
 
 	const [tabIndex, setTabIndex] = useState(0)
+	const [albumLog, setAlbumLog] = useState<Array<{ _id: string; albumId: string; albumTitle: string; name: string; email: string; action: string; date: string }>>([])
+	const [albumLogLoaded, setAlbumLogLoaded] = useState(false)
+	const [albumLogLoading, setAlbumLogLoading] = useState(false)
 	const [journeyLoaded, setJourneyLoaded] = useState(false)
 	const [journeyLoading, setJourneyLoading] = useState(false)
 	const [funnel, setFunnel] = useState<FunnelStage[]>([])
@@ -224,9 +240,60 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 		}
 	}
 
+	const loadAlbumLog = async (force = false, from: Date | null = dateFrom, to: Date | null = dateTo) => {
+		if (!force && (albumLogLoaded || albumLogLoading)) return
+		setAlbumLogLoading(true)
+		try {
+			const params = new URLSearchParams({ eventId: eventData._id })
+			if (from) params.append("dateFrom", from.toISOString())
+			if (to) params.append("dateTo", to.toISOString())
+			const res = await fetch(`/api/events/${eventData._id}/albums/access-log?${params.toString()}`, { credentials: "include" })
+			const json = await res.json()
+			if (json?.status) setAlbumLog(json.data.items || [])
+			setAlbumLogLoaded(true)
+		} catch (e: any) {
+			toast({ title: "Failed to load album access log", description: e.message, status: "error" })
+		} finally {
+			setAlbumLogLoading(false)
+		}
+	}
+
+	const exportAlbumCSV = () => {
+		const a = analyticsData?.albums
+		const summaryLines = a
+			? [
+					"Album Analytics Summary",
+					`Albums,${a.albumCount}`,
+					`Total Accesses,${a.totalAccesses}`,
+					`Unique Viewers,${a.uniqueViewers}`,
+					`Logins via Album,${a.logins}`,
+					`Signups via Album,${a.signups}`,
+					"",
+					"Per Album,Accesses,Unique Viewers",
+					...a.perAlbum.map((p) => `"${p.title.replace(/"/g, '""')}",${p.accesses},${p.uniqueViewers}`),
+					"",
+			  ]
+			: []
+		const logHeader = "Album,Name,Email,Action,Date"
+		const logLines = albumLog.map(
+			(r) => `"${r.albumTitle.replace(/"/g, '""')}","${r.name.replace(/"/g, '""')}","${r.email.replace(/"/g, '""')}",${r.action},${new Date(r.date).toISOString()}`,
+		)
+		const csv = "﻿" + [...summaryLines, "Access Log", logHeader, ...logLines].join("\n")
+		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+		const url = URL.createObjectURL(blob)
+		const el = document.createElement("a")
+		el.href = url
+		el.download = `album-analytics-${stripHTMLAndDecode(eventData.name).slice(0, 30).replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`
+		document.body.appendChild(el)
+		el.click()
+		document.body.removeChild(el)
+		URL.revokeObjectURL(url)
+	}
+
 	useEffect(() => {
 		if (tabIndex === 1) loadJourney()
 		if (tabIndex === 2) loadNamedEvents()
+		if (tabIndex === 3) loadAlbumLog()
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tabIndex])
 
@@ -281,6 +348,9 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 		setDateFrom(from)
 		setDateTo(to)
 		setCurrentPage(1)
+		// Invalidate lazily-loaded album log so it refetches for the new range.
+		setAlbumLogLoaded(false)
+		if (tabIndex === 3) loadAlbumLog(true, from, to)
 	}
 
 	const handlePageChange = (newPage: number) => {
@@ -479,6 +549,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Overview</Tab>
 								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Journey</Tab>
 								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Named Events</Tab>
+								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Albums</Tab>
 							</TabList>
 							<TabPanels>
 								<TabPanel px={0}>
@@ -847,6 +918,81 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 											</Box>
 										)
 									})()}
+								</TabPanel>
+								<TabPanel px={0}>
+									<Flex justify="space-between" align="center" mb={4} flexWrap="wrap" gap={3}>
+										<Box>
+											<Text fontSize="xl" fontWeight="bold" color="white">Album Access</Text>
+											<Text fontSize="sm" color="#9C9C9C">Who reached shared albums, and whether they logged in or signed up.</Text>
+										</Box>
+										<Button size="sm" onClick={exportAlbumCSV} bg="#F79432" color="black" _hover={{ bg: "#E68422" }} borderRadius="full" px={4} isDisabled={!analyticsData.albums}>
+											Export CSV
+										</Button>
+									</Flex>
+
+									{analyticsData.albums && (
+										<SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
+											{[
+												{ label: "Album Viewers", value: analyticsData.albums.uniqueViewers, icon: FiEye, sub: `${formatNumber(analyticsData.albums.totalAccesses)} accesses` },
+												{ label: "Logins via Album", value: analyticsData.albums.logins, icon: FiLogIn, sub: undefined as string | undefined },
+												{ label: "Signups via Album", value: analyticsData.albums.signups, icon: FiUserPlus, sub: undefined as string | undefined },
+												{ label: "Albums", value: analyticsData.albums.albumCount, icon: FiImage, sub: undefined as string | undefined },
+											].map((t) => (
+												<Box key={t.label} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
+													<Flex align="center" gap={2} mb={2}>
+														<Box as={t.icon as any} color="#F79432" />
+														<Text fontSize="xs" color="#9C9C9C" fontWeight="bold">{t.label}</Text>
+													</Flex>
+													<Text fontSize="2xl" fontWeight="bold" color="white">{formatNumber(t.value)}</Text>
+													{t.sub && <Text fontSize="xs" color="#65676B">{t.sub}</Text>}
+												</Box>
+											))}
+										</SimpleGrid>
+									)}
+
+									{analyticsData.albums && analyticsData.albums.perAlbum.length > 0 && (
+										<Box mb={6}>
+											<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Top Albums by Access</Text>
+											<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+												<Table variant="simple" size="sm">
+													<Thead><Tr><Th>Album</Th><Th isNumeric>Accesses</Th><Th isNumeric>Unique Viewers</Th></Tr></Thead>
+													<Tbody>
+														{analyticsData.albums.perAlbum.map((a) => (
+															<Tr key={a.albumId} _hover={{ bg: "#262626" }}>
+																<Td><Text fontSize="sm">{a.title}</Text></Td>
+																<Td isNumeric><Text fontWeight="semibold">{a.accesses.toLocaleString()}</Text></Td>
+																<Td isNumeric><Badge colorScheme="teal">{a.uniqueViewers.toLocaleString()}</Badge></Td>
+															</Tr>
+														))}
+													</Tbody>
+												</Table>
+											</TableContainer>
+										</Box>
+									)}
+
+									<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Access Log</Text>
+									{albumLogLoading ? (
+										<Center py={10}><Spinner color="#F79432" /></Center>
+									) : albumLog.length > 0 ? (
+										<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+											<Table variant="simple" size="sm">
+												<Thead><Tr><Th>Album</Th><Th>Name</Th><Th>Email</Th><Th>Action</Th><Th>Date</Th></Tr></Thead>
+												<Tbody>
+													{albumLog.map((r) => (
+														<Tr key={r._id} _hover={{ bg: "#262626" }}>
+															<Td><Text fontSize="sm">{r.albumTitle}</Text></Td>
+															<Td><Text fontSize="sm">{r.name}</Text></Td>
+															<Td><Text fontSize="sm">{r.email}</Text></Td>
+															<Td><Badge colorScheme={r.action === "signup" ? "green" : "blue"}>{r.action === "signup" ? "Signup" : "Login"}</Badge></Td>
+															<Td><Text fontSize="sm" color="#9C9C9C">{new Date(r.date).toLocaleString()}</Text></Td>
+														</Tr>
+													))}
+												</Tbody>
+											</Table>
+										</TableContainer>
+									) : (
+										<Text color="#9C9C9C" fontSize="sm">No album access recorded for this event yet.</Text>
+									)}
 								</TabPanel>
 							</TabPanels>
 						</Tabs>

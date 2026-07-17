@@ -13,7 +13,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
-		const { name, email, acceptedTerms } = req.body || {}
+		const { name, email, acceptedTerms, cb } = req.body || {}
+		const cleanCb = typeof cb === "string" && cb.trim() ? cb.trim() : undefined
 
 		const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : ""
 		const cleanName = typeof name === "string" ? name.trim() : ""
@@ -53,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		try {
-			await sendVerificationEmail({ email: cleanEmail, firstName: cleanName, token })
+			await sendVerificationEmail({ email: cleanEmail, firstName: cleanName, token, cb: cleanCb })
 		} catch (err) {
 			console.error("sendVerificationEmail failed:", err)
 		}

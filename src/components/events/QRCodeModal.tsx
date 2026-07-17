@@ -14,7 +14,7 @@ import {
     useToast
 } from "@chakra-ui/react";
 import { QRCodeCanvas } from "qrcode.react";
-import { ArrowDownTrayIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon, LinkIcon } from "@heroicons/react/24/outline";
 
 interface QRCodeModalProps {
     isOpen: boolean;
@@ -46,6 +46,21 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, url, title }
                 duration: 2000,
                 isClosable: true,
             });
+        }
+    };
+
+    const copyLink = async () => {
+        try {
+            await navigator.clipboard.writeText(url);
+            toast({
+                title: "Link Copied",
+                description: "Share it with anyone — they'll log in or sign up to view.",
+                status: "success",
+                duration: 2000,
+                isClosable: true,
+            });
+        } catch {
+            toast({ title: "Could not copy link", status: "error", duration: 2000, isClosable: true });
         }
     };
 
@@ -83,13 +98,23 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, url, title }
                         </VStack>
                     </VStack>
                 </ModalBody>
-                <ModalFooter borderTop="1px solid" borderColor="#434343">
-                    <Button variant="ghost" mr={3} onClick={onClose} color="white" _hover={{ bg: "whiteAlpha.100" }}>
+                <ModalFooter borderTop="1px solid" borderColor="#434343" gap={3}>
+                    <Button variant="ghost" onClick={onClose} color="white" _hover={{ bg: "whiteAlpha.100" }}>
                         Close
                     </Button>
-                    <Button 
+                    <Button
+                        leftIcon={<LinkIcon className="w-4 h-4" />}
+                        variant="outline"
+                        borderColor="#434343"
+                        color="white"
+                        _hover={{ bg: "whiteAlpha.100" }}
+                        onClick={copyLink}
+                    >
+                        Copy Link
+                    </Button>
+                    <Button
                         leftIcon={<ArrowDownTrayIcon className="w-4 h-4" />}
-                        bg="#F79432" 
+                        bg="#F79432"
                         color="black"
                         _hover={{ bg: "#e58220" }}
                         onClick={downloadQRCode}
