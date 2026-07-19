@@ -127,19 +127,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// check if the event has tickets
 		if (isPaid && tickets.length === 0) return sendResponse(res, null, "You need to add at least one ticket to a paid event.", false, ResCode.BAD_REQUEST)
 
-		// If event is paid and has tickets, lets format the tickets and create stripe prices for each ticket
-		const formattedTickets: Stripe.PriceCreateParams[] = tickets.map((ticket) => ({
-			unit_amount: ticket.price * 100,
-			currency: "usd",
-			product_data: {
-				name: ticket.title,
-			},
-		}))
-
-		// create stripe products for each ticket
-		const stripeProducts = await Promise.all(formattedTickets.map((ticket) => stripe.prices.create(ticket)))
-		if (!stripeProducts) return sendResponse(res, null, "Failed to create event tickets.", false, ResCode.INTERNAL_SERVER_ERROR)
-
 		// Get the event
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId as string) })
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
@@ -152,6 +139,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Forbidden. You can only edit your own events.", false, ResCode.FORBIDDEN)
 		}
 
+		// Preserve each ticket's existing _id/stripeProductId across edits (client `ticket.id` is the
+		// previous `_id.toString()`) — bookings reference tickets by _id, so regenerating it here would
+		// silently orphan every past purchase's ticket-type link. Only mint a new Stripe price when the
+		// ticket is new or its price actually changed.
+		const existingTicketById = new Map<string, any>()
+		;(event.tickets || []).forEach((t: any) => existingTicketById.set(t._id?.toString(), t))
+
+		const resolvedTickets = await Promise.all(tickets.map(async (ticket) => {
+			const existing = existingTicketById.get(ticket.id.toString())
+			const priceChanged = !existing || Number(existing.price) !== ticket.price
+			const stripeProductId = priceChanged
+				? (await stripe.prices.create({
+					unit_amount: ticket.price * 100,
+					currency: "usd",
+					product_data: { name: ticket.title },
+				} as Stripe.PriceCreateParams)).id
+				: existing.stripeProductId
+
+			return {
+				...(existing ? { _id: existing._id } : {}),
+				name: ticket.title,
+				desc: ticket.description,
+				price: ticket.price.toFixed(2),
+				stripeProductId,
+			}
+		}))
+
 		// Find the event by id and update it
 		const updateDoc: any = {
 			$set: {
@@ -162,12 +176,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				capacity,
 				// Require Approval gates the FREE-ticket registrations — force off only when every ticket is paid.
 				requireApproval: ((tickets || []).length > 0 && (tickets || []).every((t: any) => Number(t.price) > 0)) ? false : requireApproval,
-				tickets: tickets.map((ticket, index) => ({
-					name: ticket.title,
-					desc: ticket.description,
-					price: ticket.price.toFixed(2),
-					stripeProductId: stripeProducts[index].id,
-				})),
+				tickets: resolvedTickets,
 				images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 				videos: videos?.map((v) => v.file) ?? [],
 				timezone: timezone || 'UTC',

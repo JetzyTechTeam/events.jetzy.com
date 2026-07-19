@@ -63,7 +63,7 @@ import axios from "axios"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
-import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon } from "@heroicons/react/24/outline"
+import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import { MinusCircleIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
@@ -204,6 +204,35 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			return res.data.data
 		},
 	})
+
+	const { data: eventBookings = [] } = useQuery({
+		queryKey: ["event-bookings", event._id],
+		queryFn: async () => {
+			const res = await axios.post("/api/get-bookings", { eventId: event._id })
+			return res.data || []
+		},
+	})
+
+	// Per-ticket-type sold count + revenue, keyed by ticket _id (matches the `id` field on form values).
+	const ticketSalesSummary = React.useMemo(() => {
+		const priceById = new Map<string, number>()
+		;(event.tickets || []).forEach((t: any) => priceById.set(t._id?.toString(), Number(t.price)))
+
+		const byTicketId = new Map<string, { sold: number; revenue: number }>()
+		;(eventBookings as any[]).forEach((booking: any) => {
+			if (isCancelledBooking(booking)) return
+			;(booking.tickets || []).forEach((t: any) => {
+				const key = t.ticketId?.toString()
+				if (!key) return
+				const price = priceById.get(key) ?? 0
+				const entry = byTicketId.get(key) || { sold: 0, revenue: 0 }
+				entry.sold += t.quantity || 0
+				entry.revenue += (t.quantity || 0) * price
+				byTicketId.set(key, entry)
+			})
+		})
+		return byTicketId
+	}, [eventBookings, event.tickets])
 
 	const onUpdateFeedbackLink = async () => {
 		try {
@@ -1098,22 +1127,31 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													<FieldArray name="tickets">
 														{({ remove }) => (
 															<>
-																{values.tickets.map((ticket, index) => (
-																	<Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
-																		<Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
-																		<Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
-																		<Text fontWeight="bold" fontSize="2xl" color="#F79432" mt="2">${ticket.price}</Text>
-																		<Box position="absolute" top="4" right="4">
-																			<Menu>
-																				<MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-6 h-6" />} variant="ghost" size="sm" color="white" _hover={{ bg: "#333" }} _active={{ bg: "#444" }} />
-																				<MenuList bg="#1D1F24" border="1px solid #444" color="white">
-																					<MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => { setEditIndex(index); setTempTicket(ticket); onOpen() }}>Edit</MenuItem>
-																					<MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => remove(index)}>Delete</MenuItem>
-																				</MenuList>
-																			</Menu>
+																{values.tickets.map((ticket, index) => {
+																	const stats = ticketSalesSummary.get(ticket.id.toString())
+																	return (
+																		<Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
+																			<Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white" pr="6">{ticket.title}</Text>
+																			<Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
+																			<Flex align="center" justify="space-between" mt="2" wrap="wrap" gap={2}>
+																				<Text fontWeight="bold" fontSize="2xl" color="#F79432">${ticket.price}</Text>
+																				<Flex gap={2}>
+																					<Badge colorScheme="purple" fontSize="0.75em" px={2} py={1} borderRadius="6px">{stats?.sold ?? 0} sold</Badge>
+																					<Badge colorScheme="green" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.revenue ?? 0).toFixed(2)} collected</Badge>
+																				</Flex>
+																			</Flex>
+																			<Box position="absolute" top="4" right="4">
+																				<Menu>
+																					<MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-6 h-6" />} variant="ghost" size="sm" color="white" _hover={{ bg: "#333" }} _active={{ bg: "#444" }} />
+																					<MenuList bg="#1D1F24" border="1px solid #444" color="white">
+																						<MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => { setEditIndex(index); setTempTicket(ticket); onOpen() }}>Edit</MenuItem>
+																						<MenuItem bg="transparent" _hover={{ bg: "#333" }} onClick={() => remove(index)}>Delete</MenuItem>
+																					</MenuList>
+																				</Menu>
+																			</Box>
 																		</Box>
-																	</Box>
-																))}
+																	)
+																})}
 															</>
 														)}
 													</FieldArray>
@@ -2160,7 +2198,18 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const [selectedGuest, setSelectedGuest] = useState<{ guest: any; booking: any; checkIn: any } | null>(null)
 	const [page, setPage] = useState(1)
 	const [deletingEmail, setDeletingEmail] = useState<string | null>(null)
+	const [ticketTypeFilter, setTicketTypeFilter] = useState<string>("all")
+	const [searchQuery, setSearchQuery] = useState("")
 	const queryClient = useQueryClient()
+
+	const eventTickets: any[] = event?.tickets || []
+	const ticketNameById: Record<string, string> = {}
+	eventTickets.forEach((t: any) => { if (t._id) ticketNameById[t._id.toString()] = t.name })
+
+	const formatBookingTickets = (booking: any): string => {
+		if (!booking?.tickets?.length) return '—'
+		return booking.tickets.map((t: any) => `${ticketNameById[t.ticketId?.toString()] || 'Ticket'} ×${t.quantity}`).join(', ')
+	}
 
 	const handleDeleteGuest = async (email: string, guest: any, booking: any) => {
 		if (!confirm(`Remove ${booking?.customerName || guest?.name || "this guest"}? This cannot be undone.`)) return
@@ -2231,6 +2280,21 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		checkInMap[ci.bookingId] = { checkedInCount: ci.checkedInCount, isFullyCheckedIn: ci.isFullyCheckedIn }
 	})
 
+	// Sold count + revenue per ticket type, so this shows up right here without switching to Overview.
+	const ticketStatsById: Record<string, { sold: number; revenue: number }> = {}
+	;(bookings as any[]).forEach((b: any) => {
+		if (isCancelledBooking(b)) return
+		;(b.tickets || []).forEach((t: any) => {
+			const key = t.ticketId?.toString()
+			if (!key) return
+			const price = Number((eventTickets.find((et: any) => et._id?.toString() === key) || {}).price) || 0
+			const entry = ticketStatsById[key] || { sold: 0, revenue: 0 }
+			entry.sold += t.quantity || 0
+			entry.revenue += (t.quantity || 0) * price
+			ticketStatsById[key] = entry
+		})
+	})
+
 	const eventQuestions: any[] = event?.questions || []
 
 	const formatAnswer = (qId: string, booking: any): string => {
@@ -2252,18 +2316,104 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	if (guestsLoading) return <Text>Loading guests...</Text>
 	if (guestsError) return <Text color="red.500">Failed to load guests.</Text>
 
-	const allEmails = Array.from(new Set([
+	const rawEmails = Array.from(new Set([
 		...guests.map((g: any) => g.email?.toLowerCase()).filter(Boolean),
 		...bookings.map((b: any) => b.customerEmail?.toLowerCase()).filter(Boolean)
 	]))
 
-	if (!allEmails.length) return <Text>No guests or bookings found.</Text>
+	const matchesTicketFilter = (email: string) => {
+		if (ticketTypeFilter === "all") return true
+		const booking = bookingByEmail[email]
+		if (!booking || isCancelledBooking(booking)) return false
+		return (booking.tickets || []).some((t: any) => t.ticketId?.toString() === ticketTypeFilter)
+	}
+
+	const matchesSearch = (email: string) => {
+		const q = searchQuery.trim().toLowerCase()
+		if (!q) return true
+		const guest = guestByEmail[email]
+		const booking = bookingByEmail[email]
+		const name = (booking?.customerName || guest?.name || "").toLowerCase()
+		return email.includes(q) || name.includes(q)
+	}
+
+	const allEmails = rawEmails.filter(matchesTicketFilter).filter(matchesSearch)
+	const hasActiveFilters = ticketTypeFilter !== "all" || !!searchQuery.trim()
+	const clearFilters = () => { setTicketTypeFilter("all"); setSearchQuery(""); setPage(1) }
+	const selectedTicketName = eventTickets.find((t: any) => t._id?.toString() === ticketTypeFilter)?.name
 
 	const totalPages = Math.ceil(allEmails.length / GUESTS_PAGE_SIZE)
 	const pagedEmails = allEmails.slice((page - 1) * GUESTS_PAGE_SIZE, page * GUESTS_PAGE_SIZE)
 
 	return (
 		<>
+			<Flex direction="column" gap={2} mb={3}>
+				<Flex align="center" gap={3} flexWrap="wrap">
+					<InputGroup size="sm" maxW="280px">
+						<InputLeftElement pointerEvents="none">
+							<MagnifyingGlassIcon className="w-4 h-4" style={{ color: "#9C9C9C" }} />
+						</InputLeftElement>
+						<Input
+							placeholder="Search by name or email"
+							bg="#0F1114"
+							border="1px solid #343536"
+							color="white"
+							value={searchQuery}
+							onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
+						/>
+					</InputGroup>
+
+					{eventTickets.length > 0 && (
+						<Select
+							size="sm"
+							maxW="280px"
+							bg="#0F1114"
+							border="1px solid #343536"
+							color="white"
+							value={ticketTypeFilter}
+							onChange={(e) => { setTicketTypeFilter(e.target.value); setPage(1) }}
+						>
+							<option value="all">All ticket types</option>
+							{eventTickets.map((t: any) => {
+								const stats = ticketStatsById[t._id?.toString()]
+								return (
+									<option key={t._id?.toString()} value={t._id?.toString()}>
+										{t.name} (${Number(t.price).toFixed(2)}) — {stats?.sold ?? 0} sold
+									</option>
+								)
+							})}
+						</Select>
+					)}
+
+					{hasActiveFilters && (
+						<Button size="sm" variant="ghost" color="#F79432" _hover={{ bg: "#2A2A2A" }} onClick={clearFilters}>
+							Clear filters
+						</Button>
+					)}
+				</Flex>
+
+				<Flex align="center" gap={2} flexWrap="wrap" fontSize="sm" color="#9C9C9C">
+					<Text>Showing <Text as="span" color="white" fontWeight="bold">{allEmails.length}</Text> of {rawEmails.length} guests</Text>
+					{ticketTypeFilter !== "all" && (
+						<>
+							<Text>·</Text>
+							<Badge colorScheme="purple" borderRadius="6px">{ticketStatsById[ticketTypeFilter]?.sold ?? 0} sold</Badge>
+							<Badge colorScheme="green" borderRadius="6px">${(ticketStatsById[ticketTypeFilter]?.revenue ?? 0).toFixed(2)} collected</Badge>
+						</>
+					)}
+				</Flex>
+			</Flex>
+
+			{!rawEmails.length ? (
+				<Text>No guests or bookings found.</Text>
+			) : !allEmails.length ? (
+				<Flex direction="column" gap={2} align="start">
+					<Text color="#9C9C9C">
+						No guests match{searchQuery.trim() ? ` "${searchQuery.trim()}"` : ''}{selectedTicketName ? ` for ${selectedTicketName}` : ''}.
+					</Text>
+					<Button size="sm" variant="link" color="#F79432" onClick={clearFilters}>Clear filters</Button>
+				</Flex>
+			) : (
 			<Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3" overflowX="auto">
 				<TableContainer>
 					<Table variant="simple" size="sm">
@@ -2272,6 +2422,8 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 								<Th color="#9C9C9C">Name</Th>
 								<Th color="#9C9C9C">Email</Th>
 								<Th color="#9C9C9C">Status</Th>
+								<Th color="#9C9C9C">Ticket Type</Th>
+								<Th color="#9C9C9C">Amount Paid</Th>
 								<Th color="#9C9C9C">Invited At</Th>
 								<Th color="#9C9C9C">Check-In</Th>
 								<Th color="#9C9C9C"></Th>
@@ -2296,6 +2448,8 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												? <Badge colorScheme="yellow">Pending Approval</Badge>
 												: (guest?.status || (booking ? 'Purchased' : '—'))}
 										</Td>
+										<Td color="white">{formatBookingTickets(booking)}</Td>
+										<Td color="white">{booking ? `$${Number(booking.total ?? 0).toFixed(2)}` : "—"}</Td>
 										<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										<Td>
 											{cancelled
@@ -2379,6 +2533,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 					</Flex>
 				)}
 			</Box>
+			)}
 
 			{/* Guest Detail Modal */}
 			<Modal isOpen={!!selectedGuest} onClose={() => setSelectedGuest(null)} isCentered size="2xl">
@@ -2406,6 +2561,14 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 									<Box>
 										<Text fontSize="xs" color="#9C9C9C">Invited At</Text>
 										<Text fontWeight="semibold">{selectedGuest.guest?.invitedAt ? DateTime.fromISO(selectedGuest.guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : '—'}</Text>
+									</Box>
+									<Box>
+										<Text fontSize="xs" color="#9C9C9C">Ticket Type</Text>
+										<Text fontWeight="semibold">{formatBookingTickets(selectedGuest.booking)}</Text>
+									</Box>
+									<Box>
+										<Text fontSize="xs" color="#9C9C9C">Amount Paid</Text>
+										<Text fontWeight="semibold">{selectedGuest.booking ? `$${Number(selectedGuest.booking.total ?? 0).toFixed(2)}` : '—'}</Text>
 									</Box>
 								</Flex>
 
