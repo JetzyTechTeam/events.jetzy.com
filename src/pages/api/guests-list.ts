@@ -1,4 +1,5 @@
 import { EventInvitation } from "@/models/events/event-invitations";
+import { ensureDbConnected } from "@/configs/database";
 import { NextApiRequest, NextApiResponse } from "next";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -6,6 +7,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ message: "Method not allowed" });
   }
   try {
+    await ensureDbConnected();
     const { eventId } = req.query;
     const eventInvitations = await EventInvitation.find({
       eventId
