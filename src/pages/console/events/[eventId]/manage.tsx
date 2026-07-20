@@ -63,7 +63,7 @@ import axios from "axios"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
-import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
+import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline"
 import { MinusCircleIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
@@ -2295,6 +2295,17 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		})
 	})
 
+	// How many people signed up (booking created) while the event was actually live, per `createdAt`.
+	const eventStart = event?.startsOn ? new Date(event.startsOn) : null
+	const eventEnd = event?.endsOn ? new Date(event.endsOn) : null
+	const signedUpDuringEvent = (eventStart && eventEnd)
+		? (bookings as any[]).filter((b: any) => {
+			if (isCancelledBooking(b) || !b.createdAt) return false
+			const t = new Date(b.createdAt).getTime()
+			return t >= eventStart.getTime() && t <= eventEnd.getTime()
+		}).length
+		: null
+
 	const eventQuestions: any[] = event?.questions || []
 
 	const formatAnswer = (qId: string, booking: any): string => {
@@ -2345,6 +2356,47 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const totalPages = Math.ceil(allEmails.length / GUESTS_PAGE_SIZE)
 	const pagedEmails = allEmails.slice((page - 1) * GUESTS_PAGE_SIZE, page * GUESTS_PAGE_SIZE)
 
+	const escapeCsv = (value: any) => {
+		const str = String(value ?? '')
+		return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str
+	}
+
+	const handleExportCsv = () => {
+		const headers = ['Name', 'Email', 'Status', 'Ticket Type', 'Amount Paid', 'Invited At', 'Check-In']
+		const rows = allEmails.map((email: string) => {
+			const guest = guestByEmail[email]
+			const booking = bookingByEmail[email]
+			const ci = booking?._id ? checkInMap[booking._id.toString()] : null
+			const cancelled = isCancelledBooking(booking)
+			const checkInLabel = cancelled
+				? 'Cancelled'
+				: !booking?._id ? 'N/A'
+				: !ci ? 'Not Checked In'
+				: ci.isFullyCheckedIn ? 'Fully Checked In'
+				: `Partial (${ci.checkedInCount})`
+			return [
+				booking?.customerName || guest?.name || '',
+				email,
+				cancelled ? 'Cancelled' : (guest?.status || (booking ? 'Purchased' : '')),
+				formatBookingTickets(booking),
+				booking ? Number(booking.total ?? 0).toFixed(2) : '',
+				guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : '',
+				checkInLabel,
+			]
+		})
+		const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(',')).join('\n')
+		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+		const url = URL.createObjectURL(blob)
+		const link = document.createElement('a')
+		link.href = url
+		const safeName = (event?.name || 'event').toString().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '')
+		link.setAttribute('download', `${safeName}-guests.csv`)
+		document.body.appendChild(link)
+		link.click()
+		document.body.removeChild(link)
+		URL.revokeObjectURL(url)
+	}
+
 	return (
 		<>
 			<Flex direction="column" gap={2} mb={3}>
@@ -2390,6 +2442,21 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							Clear filters
 						</Button>
 					)}
+
+					{allEmails.length > 0 && (
+						<Button
+							size="sm"
+							variant="outline"
+							borderColor="#343536"
+							color="white"
+							_hover={{ bg: "#2A2A2A" }}
+							leftIcon={<ArrowDownTrayIcon className="w-4 h-4" />}
+							onClick={handleExportCsv}
+							ml="auto"
+						>
+							Export CSV
+						</Button>
+					)}
 				</Flex>
 
 				<Flex align="center" gap={2} flexWrap="wrap" fontSize="sm" color="#9C9C9C">
@@ -2399,6 +2466,12 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							<Text>·</Text>
 							<Badge colorScheme="purple" borderRadius="6px">{ticketStatsById[ticketTypeFilter]?.sold ?? 0} sold</Badge>
 							<Badge colorScheme="green" borderRadius="6px">${(ticketStatsById[ticketTypeFilter]?.revenue ?? 0).toFixed(2)} collected</Badge>
+						</>
+					)}
+					{signedUpDuringEvent !== null && (
+						<>
+							<Text>·</Text>
+							<Badge colorScheme="blue" borderRadius="6px">{signedUpDuringEvent} signed up during the event</Badge>
 						</>
 					)}
 				</Flex>
