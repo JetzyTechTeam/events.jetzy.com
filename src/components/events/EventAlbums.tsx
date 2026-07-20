@@ -421,7 +421,8 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 												<Text color="white" fontSize="sm" fontWeight="600" noOfLines={1}>{album.title}</Text>
 												<Flex align="center" gap={2}>
 													<Text color="#cfcfcf" fontSize="xs">{album.media.length} item{album.media.length === 1 ? "" : "s"}</Text>
-													{album.publishNotifiedAt && (
+													{/* Publish state is a host-only concept — never shown to public viewers. */}
+													{canManage && album.publishNotifiedAt && (
 														<Badge bg="#2f7d32" color="white" fontSize="9px" borderRadius="sm" px={1}>Published</Badge>
 													)}
 												</Flex>
