@@ -8,7 +8,6 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
-import { resolveAlbumViewer } from "@/lib/album-auth"
 
 const mediaSchema = zod.object({
 	url: zod.string().url(),
@@ -26,13 +25,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
 
-		// Viewing only needs an identified viewer — a logged-in session OR the lightweight
-		// name+email guest gate. Creating still requires admin/owner (checked on POST).
-		const viewer = await resolveAlbumViewer(req, res)
-		if (!viewer) {
-			return sendResponse(res, null, "Enter your name and email to view albums.", false, ResCode.UNAUTHORIZED)
-		}
-
+		// Listing albums is public — anyone on the event page sees the photos, no prompt.
+		// The name+email gate only exists for share links (it records who arrived from one).
+		// Creating still requires admin/owner (checked on POST).
 		const userRole = (session?.user as any)?.role
 		const userId = (session?.user as any)?._id?.toString()
 		const isAdmin = userRole === "admin" || userRole === "super admin"
@@ -48,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
-		// GET — list albums (any identified viewer: session or name+email guest)
+		// GET — list albums (public)
 		if (req.method === "GET") {
 			const albums = await EventAlbums.find({ eventId: eventObjectId, isDeleted: false }).sort({ createdAt: -1 }).lean()
 			return sendResponse(res, albums, "Albums retrieved successfully", true, ResCode.OK)

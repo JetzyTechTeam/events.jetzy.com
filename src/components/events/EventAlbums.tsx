@@ -103,13 +103,17 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [publishingAlbum, setPublishingAlbum] = useState<Album | null>(null)
 
-	// Album viewing is deliberately low friction: a logged-in session works, and everyone
-	// else just gives a name + email (remembered in a cookie). `hasAccess` tracks whether
-	// this browser has already been let in, so we don't re-prompt.
+	// Albums themselves are public — nobody is prompted to browse them. `hasAccess` means
+	// "we know who this is" (a session, or a name+email guest cookie), which is what the
+	// share-link flow records and what tagging requires.
 	const [hasGuestAccess, setHasGuestAccess] = useState(false)
 	const hasAccess = !!session || hasGuestAccess
+	// Mirrored in a ref so the stable recordAlbumAccess callback can read the latest value
+	// without being re-created (and re-firing) every time access changes.
+	const hasAccessRef = useRef(hasAccess)
+	hasAccessRef.current = hasAccess
 
-	// Fetch albums — needs an identified viewer (session or guest cookie)
+	// Fetch albums — public, so this runs for anonymous visitors too
 	const {
 		data: albums = [],
 		isLoading,
@@ -119,22 +123,22 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 			const res = await axios.get(`/api/events/${eventId}/albums`)
 			return res.data?.data || []
 		},
-		enabled: hasAccess,
 		retry: false,
 	})
 
-	// Probe once on mount: if this browser already has the guest cookie, skip the dialog.
-	// `probeSettled` gates the auto-open below so the dialog doesn't flash open for people
-	// who already have a valid cookie while this request is still in flight.
+	// Probe once on mount: does this browser already hold the guest cookie? Must ask the
+	// dedicated viewer endpoint — /albums itself is public now, so a 200 there says nothing
+	// about identity. `probeSettled` gates the auto-open below so the dialog can't flash
+	// open at someone already identified while this request is still in flight.
 	const [probeSettled, setProbeSettled] = useState(false)
 	useEffect(() => {
 		if (session) { setProbeSettled(true); return }
 		if (hasGuestAccess || status === "loading") return
 		let cancelled = false
 		axios
-			.get(`/api/events/${eventId}/albums`)
-			.then(() => { if (!cancelled) setHasGuestAccess(true) })
-			.catch(() => { /* no cookie yet — the name+email dialog will show */ })
+			.get(`/api/events/${eventId}/albums/viewer`)
+			.then((res) => { if (!cancelled && res.data?.data?.identified) setHasGuestAccess(true) })
+			.catch(() => { /* treat as anonymous — the dialog shows if they came from a share link */ })
 			.finally(() => { if (!cancelled) setProbeSettled(true) })
 		return () => { cancelled = true }
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,20 +146,26 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 
 	const refresh = () => queryClient.invalidateQueries({ queryKey: ["albums", eventId] })
 
-	// Auto-open the name+email dialog once we're sure this visitor needs it (session
-	// settled AND the cookie probe is done). Closes itself once access is granted.
+	// The name+email dialog is ONLY for share links. Albums are public on the event page,
+	// so a normal visitor browsing photos is never prompted. Waits for the session and the
+	// cookie probe to settle so it can't flash open at someone who is already identified.
 	useEffect(() => {
+		const albumParam = router.query.album
+		if (typeof albumParam !== "string" || !albumParam) return
 		if (status === "loading" || !probeSettled) return
 		if (!hasAccess) guestGateModal.onOpen()
 		else guestGateModal.onClose()
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [status, hasAccess, probeSettled])
+	}, [router.query.album, status, hasAccess, probeSettled])
 
 	// Records that this person viewed an album (analytics + the one-time notice email).
-	// Fires whenever an album is actually opened — via a share link or normal browsing.
+	// Only identified viewers can be recorded — anonymous browsing leaves no trace.
 	// Guarded per session here; the server dedupes per person/album authoritatively.
 	const recordAlbumAccess = React.useCallback((albumId: string) => {
 		if (typeof window === "undefined") return
+		// Anonymous browsing isn't recorded — there's nobody to record. Share-link viewers
+		// identify themselves first, so their arrival is still captured.
+		if (!hasAccessRef.current) return
 		const key = `album_access_${albumId}`
 		if (sessionStorage.getItem(key)) return
 		sessionStorage.setItem(key, "1")
@@ -219,7 +229,16 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 		setEditingAlbum(album)
 		createModal.onOpen()
 	}
+	// Covers are public, the photos are not. An unidentified visitor gets the name+email
+	// dialog at the moment they open an album — never on page load — and we remember which
+	// album they wanted so they land in it straight after submitting.
+	const pendingAlbumRef = useRef<Album | null>(null)
 	const openGallery = (album: Album) => {
+		if (!hasAccess) {
+			pendingAlbumRef.current = album
+			guestGateModal.onOpen()
+			return
+		}
 		setGalleryAlbum(album)
 		galleryModal.onOpen()
 		recordAlbumAccess(album._id)
@@ -228,7 +247,7 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 		setShareAlbum(album)
 		const url = `${window.location.origin}/${eventSlug}?album=${album._id}`
 		navigator.clipboard?.writeText(url).catch(() => {})
-		toast({ title: "Album Link Copied!", description: "Recipients must log in or sign up to view it.", status: "success", duration: 2500, isClosable: true })
+		toast({ title: "Album Link Copied!", description: "Recipients just enter their name and email to view it.", status: "success", duration: 2500, isClosable: true })
 		shareModal.onOpen()
 	}
 	const openDelete = (album: Album) => {
@@ -312,19 +331,7 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 					</Flex>
 
 					{/* Body */}
-					{status === "loading" || (!hasAccess && !probeSettled) ? (
-						<Flex justify="center" py={10}><Spinner color="#F79432" /></Flex>
-					) : !hasAccess ? (
-						// The dialog handles entry; this is only visible if someone closes it
-						// without submitting, so they have a deliberate way to reopen it.
-						<Box p={8} textAlign="center" bg="#2b2b2b" borderRadius="lg" border="1px solid" borderColor="#434343">
-							<Text fontSize="lg" fontWeight="bold" color="white" mb={2}>View the photos</Text>
-							<Text color="#bbbbbb" mb={4}>Enter your name and email to view this event&apos;s albums.</Text>
-							<Button onClick={guestGateModal.onOpen} bg="#F79432" color="black" _hover={{ bg: "#e58220" }}>
-								Continue
-							</Button>
-						</Box>
-					) : isLoading ? (
+					{isLoading ? (
 						<Flex justify="center" py={10}><Spinner color="#F79432" /></Flex>
 					) : albums.length === 0 ? (
 						<Box p={8} textAlign="center" bg="#2b2b2b" borderRadius="lg" border="1px dashed" borderColor="#434343">
@@ -403,9 +410,21 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 			{/* Name+email access dialog */}
 			<GuestAccessModal
 				isOpen={guestGateModal.isOpen}
-				onClose={guestGateModal.onClose}
+				onClose={() => { pendingAlbumRef.current = null; guestGateModal.onClose() }}
 				eventId={eventId}
-				onGranted={() => { setHasGuestAccess(true); guestGateModal.onClose() }}
+				onGranted={() => {
+					setHasGuestAccess(true)
+					hasAccessRef.current = true
+					guestGateModal.onClose()
+					// Continue straight into whichever album they were trying to open.
+					const pending = pendingAlbumRef.current
+					if (pending) {
+						pendingAlbumRef.current = null
+						setGalleryAlbum(pending)
+						galleryModal.onOpen()
+						recordAlbumAccess(pending._id)
+					}
+				}}
 			/>
 
 			{/* Create / Edit modal */}
@@ -426,6 +445,8 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 				album={galleryAlbum}
 				eventId={eventId}
 				canManage={canManage}
+				hasAccess={hasAccess}
+				onRequireAccess={guestGateModal.onOpen}
 			/>
 
 			{/* Share QR modal */}
@@ -596,12 +617,16 @@ function AlbumGalleryModal({
 	album,
 	eventId,
 	canManage,
+	hasAccess,
+	onRequireAccess,
 }: {
 	isOpen: boolean
 	onClose: () => void
 	album: Album | null
 	eventId: string
 	canManage: boolean
+	hasAccess: boolean
+	onRequireAccess: () => void
 }) {
 	const [slideIndex, setSlideIndex] = useState(0)
 	const sliderRef = useRef<HTMLDivElement>(null)
@@ -657,6 +682,8 @@ function AlbumGalleryModal({
 									albumId={album._id}
 									mediaUrl={currentMedia.url}
 									canManage={canManage}
+									hasAccess={hasAccess}
+									onRequireAccess={onRequireAccess}
 								/>
 							)}
 						</>
@@ -675,11 +702,15 @@ function PhotoTagging({
 	albumId,
 	mediaUrl,
 	canManage,
+	hasAccess,
+	onRequireAccess,
 }: {
 	eventId: string
 	albumId: string
 	mediaUrl: string
 	canManage: boolean
+	hasAccess: boolean
+	onRequireAccess: () => void
 }) {
 	const toast = useToast()
 	const queryClient = useQueryClient()
@@ -827,6 +858,12 @@ function PhotoTagging({
 					borderRadius="full"
 					px={5}
 					onClick={() => {
+						// Tagging emails someone in your name, so we need to know who you are.
+						// Viewing stays anonymous; only this action asks for a name + email.
+						if (!hasAccess) {
+							onRequireAccess()
+							return
+						}
 						setShowForm((v) => !v)
 						setPendingTags([])
 						setMentionInput("")

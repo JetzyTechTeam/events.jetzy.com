@@ -16,7 +16,9 @@ const createTagSchema = zod.object({
 	personName: zod.string().max(120).optional(),
 })
 
-// Any album viewer (session or name+email guest) can tag people.
+// Album covers are public, but the photos themselves are not: opening an album needs an
+// identified viewer (a session, or the name+email guest gate). Tags carry personal email
+// addresses, so both reading and writing them stay behind that gate.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
 		await ensureDbConnected()
