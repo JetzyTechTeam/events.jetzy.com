@@ -81,13 +81,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 
 		const items = rows.map((r: any) => {
-			const u = userMap.get(r.userId?.toString()) || { name: "—", email: "—" }
+			// viewerEmail/viewerName are recorded on the row itself and are the source of
+			// truth — guest viewers have no linked account. Fall back to the account
+			// lookup only for legacy rows written before the guest flow existed.
+			const u = userMap.get(r.userId?.toString())
 			return {
 				_id: r._id.toString(),
 				albumId: r.albumId?.toString(),
 				albumTitle: albumTitle.get(r.albumId?.toString()) || "—",
-				name: u.name,
-				email: u.email,
+				name: r.viewerName || u?.name || "—",
+				email: r.viewerEmail || u?.email || "—",
 				action: r.action,
 				date: r.createdAt,
 			}

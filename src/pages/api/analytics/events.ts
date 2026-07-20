@@ -364,13 +364,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			]),
 			AlbumAccess.aggregate([
 				{ $match: albumAccessMatch },
-				{ $group: { _id: "$userId" } },
+				// Keyed on email, not userId — guest viewers may have no linked account.
+				{ $group: { _id: "$viewerEmail" } },
 				{ $count: "count" },
 			]),
 			EventAlbums.countDocuments({ eventId: eventObjectId, isDeleted: false }),
 			AlbumAccess.aggregate([
 				{ $match: albumAccessMatch },
-				{ $group: { _id: "$albumId", accesses: { $sum: 1 }, users: { $addToSet: "$userId" } } },
+				{ $group: { _id: "$albumId", accesses: { $sum: 1 }, users: { $addToSet: "$viewerEmail" } } },
 				{ $sort: { accesses: -1 } },
 				{ $limit: 10 },
 				{

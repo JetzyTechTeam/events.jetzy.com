@@ -14,6 +14,10 @@ export interface IEventAlbum {
 	media: IAlbumMedia[]
 	createdBy?: Schema.Types.ObjectId
 	isDeleted: boolean
+	/** Albums are visible immediately; publishing is what notifies attendees by email. */
+	publishedAt?: Date
+	publishNotifiedAt?: Date
+	notifiedCount?: number
 	createdAt?: Date
 	updatedAt?: Date
 }
@@ -64,6 +68,18 @@ const eventAlbumSchema = new Schema<IEventAlbum>(
 			type: Boolean,
 			default: false,
 			index: true,
+		},
+		publishedAt: {
+			type: Date,
+			required: false,
+		},
+		publishNotifiedAt: {
+			type: Date,
+			required: false,
+		},
+		notifiedCount: {
+			type: Number,
+			default: 0,
 		},
 	},
 	{

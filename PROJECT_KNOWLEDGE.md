@@ -67,7 +67,10 @@ Blast email history (Luma-style Blasts tab). Fields: eventId, subject, message, 
 Fields: eventId, title, description, media[] (`{url, type:'image'|'video'}`), createdBy, isDeleted. Collection `event-albums`. Multiple named albums per event.
 
 ### `src/models/events/album-access.ts` — IAlbumAccess
-Fields: eventId, albumId, userId, action (`'login'|'signup'`). Collection `event-album-access`. **Unique index `{albumId,userId}`** — one row per (album,user); doubles as the notify-email dedupe guard AND the album-analytics source.
+Fields: eventId, albumId, userId (optional), viewerEmail, viewerName, action (`'login'|'signup'`). Collection `event-album-access`. **Unique index `{albumId,viewerEmail}`** — one row per (album,person); doubles as the notify-email dedupe guard AND the album-analytics source. Email is the key because a session `_id` can come from `event-users` while the guest gate maps to `users`. Old `{albumId,userId}` index must be dropped — see `scripts/migrate-album-access-index.ts`.
+
+### `src/models/events/album-tags.ts` — IAlbumTag
+Fields: eventId, albumId, mediaUrl, personEmail, personName, taggedByEmail, taggedByName, notifiedAt. Collection `event-album-tags`. Index `{albumId,mediaUrl,personEmail}` is a **plain lookup index, not unique** — tagging is unrestricted, so the same person can be tagged repeatedly on one photo and is emailed each time. (Was unique in an earlier build; `scripts/migrate-album-tags-index.ts` drops it.)
 
 ### `src/models/events/discussion-posts.ts` — IDiscussionPost
 Fields: eventId, userId, title, content, images[], attachments[], isPinned, isLocked, tags[], reactions (like/helpful arrays), viewCount, viewedBy[], commentCount, lastActivityAt, isReported
@@ -167,10 +170,15 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/events/admin/update-feedback-link` | admin OR owner |
 | POST | `/api/events/admin/send-thank-you` | admin OR owner |
 | GET | `/api/events/guests` | get guests |
-| GET | `/api/events/[eventId]/albums` | any logged-in user (view) |
+| GET | `/api/events/[eventId]/albums` | any identified viewer (session OR name+email guest cookie) |
 | POST | `/api/events/[eventId]/albums` | admin OR owner (create) |
 | PUT/DELETE | `/api/events/[eventId]/albums/[albumId]` | admin OR owner |
-| POST | `/api/events/[eventId]/albums/[albumId]/access` | any logged-in user — records access + notify email (once per user/album) |
+| POST | `/api/events/[eventId]/albums/guest-access` | public — `{name,email}`, matches or auto-creates account, sets `album_guest` cookie |
+| GET | `/api/events/[eventId]/albums/participants` | admin OR owner — attendee suggestions for tagging (empty for others by design) |
+| POST | `/api/events/[eventId]/albums/[albumId]/access` | any viewer — records access + notify email (once per person/album) |
+| GET/POST | `/api/events/[eventId]/albums/[albumId]/tags` | any viewer — list / create tag (emails the tagged person) |
+| DELETE | `/api/events/[eventId]/albums/[albumId]/tags/[tagId]` | tagger, tagged person, or admin/owner |
+| POST | `/api/events/[eventId]/albums/[albumId]/publish` | admin OR owner — emails all attendees; `{resend:true}` required to re-send |
 | GET | `/api/events/[eventId]/albums/access-log` | admin OR owner — per-viewer access log (name/email/action/date) for the Albums analytics tab + CSV export |
 
 ### Check-in
@@ -355,7 +363,10 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 Photo/video albums on the public event page, rendered **above** the Discussion section ([HostedEvents.tsx](src/components/HostedEvents.tsx) — `<EventAlbums>` above `#discussion-section`).
 - **Models:** `event-albums` (IEventAlbum) + `event-album-access` (IAlbumAccess).
 - **Component:** [src/components/events/EventAlbums.tsx](src/components/events/EventAlbums.tsx) — dark theme card. Album grid → gallery modal (react-slick, images + `<video controls>`). Create/Edit modal: multi-file photo+video upload via `uploadFile` ([upload.service.ts](src/services/upload.service.ts), folder `posts`), **per-file `AbortController`** so uploads are cancelable; Cancel aborts all in-flight + discards. **Drag-to-reorder** staged media via framer-motion `Reorder` — media is an ordered array and the cover = first image (Cover badge marks it). **Share** (copy `/{slug}?album={id}` + QR + Copy Link) is available to **every logged-in viewer**; Edit/Delete are admin/owner only.
-- **View gate:** albums require login — logged-out users see a Login panel (`/login?_cb=<url>`; signup inherits `_cb`).
+- **View gate (no login required):** a logged-in user is never prompted; everyone else fills an inline **name + email** form ([album-auth.ts](src/lib/album-auth.ts) + `guest-access` API). Existing email → matched to that account; unknown email → account auto-created silently via `createOrUpdateUser` (same helper as ticket checkout). Identity is kept in a signed HttpOnly `album_guest` cookie (90 days). Deliberately low friction — the old `/login` redirect was losing people.
+- **Tagging:** any viewer can tag people in a photo; the tagged person gets an email. Hosts get an **`@`-mention** search over registered attendees (suggestions are host-only so the attendee email list doesn't leak to link recipients); everyone else types name + email. People are **staged locally and only sent after an explicit confirm dialog** — nothing is emailed on a misclick — and several can be tagged in one pass. **No duplicate restriction:** the same person can be tagged again on the same photo (and is re-emailed); nobody is hidden from the `@` dropdown. `PhotoTagging` is keyed by photo URL so staged tags reset when you swipe.
+- **Auto-login:** entering name + email signs the visitor in for real **only when the account is brand new** (`guest-access` returns a `magicToken` → `signIn("credentials", …)`). Emails that already belong to someone get album access via the cookie but **no session**, so a share link can't be used to take over a known account.
+- **Publish:** albums are visible immediately; the Publish button emails all attendees (`getEventParticipants`) that the photos are up. Re-sending requires explicit confirmation (`resend:true`).
 - **Share deep-link:** `/{slug}?album={albumId}`. Logged-out recipient is bounced to login; after auth returns, that album auto-opens AND `POST …/access` fires once (sessionStorage guard `album_access_<id>` + server unique-index dedupe).
 - **Notify email:** `sendAlbumAccessNotice` ([send-grid.ts](src/lib/send-grid.ts)) → `SENDGRID_EMAIL_SENDER` inbox, first time each user opens each shared album. login-vs-signup derived from account age (<10 min = signup).
 - **Analytics:** `/api/analytics/events` returns an `albums` block (albumCount, totalAccesses, uniqueViewers, logins, signups, perAlbum[]). Surfaced in [analytics.tsx](src/pages/console/events/[eventId]/analytics.tsx) as a dedicated **"Albums" tab** (4th tab): summary cards + Top Albums table + per-viewer **Access Log** (name/email/login-vs-signup/date from `GET …/albums/access-log`) + **Export CSV** (summary + per-album + full access log). Admin-only page.

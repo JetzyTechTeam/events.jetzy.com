@@ -494,6 +494,126 @@ export const sendAlbumAccessNotice = async ({
   }
 }
 
+// Sent to a person when someone tags them in an album photo.
+export const sendAlbumTagNotification = async ({
+  recipientEmail,
+  recipientName,
+  taggerName,
+  eventName,
+  eventSlug,
+  albumTitle,
+  albumId,
+  mediaUrl,
+}: {
+  recipientEmail: string
+  recipientName: string
+  taggerName: string
+  eventName: string
+  eventSlug: string
+  albumTitle: string
+  albumId: string
+  mediaUrl?: string
+}) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] sendAlbumTagNotification skipped - would send to:", recipientEmail)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const cleanEventName = decodeHTMLEntities(eventName)
+  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}?album=${albumId}`
+  try {
+    await sgMail.send({
+      to: recipientEmail,
+      from: {
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+        name: "Jetzy Events",
+      },
+      subject: `${taggerName} tagged you in a photo from ${cleanEventName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">You were tagged in a photo 📸</h1>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi ${recipientName}, <strong>${taggerName}</strong> tagged you in a photo from
+            <strong>${cleanEventName}</strong> (album: ${albumTitle}).
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${albumUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              View the Photo
+            </a>
+          </div>
+          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+            You're receiving this because someone tagged you in a Jetzy event album.
+          </p>
+        </div>
+      `),
+      text: `${taggerName} tagged you in a photo from "${cleanEventName}" (album: ${albumTitle}).\n\nView it: ${albumUrl}`,
+    })
+  } catch (error) {
+    console.error("Failed to send album tag notification:", error)
+    // Non-fatal — tagging should not fail on email
+  }
+}
+
+// Sent to every event attendee when the host publishes an album.
+export const sendAlbumPublishedNotification = async ({
+  recipientEmail,
+  recipientName,
+  eventName,
+  eventSlug,
+  albumTitle,
+  albumId,
+  coverUrl,
+}: {
+  recipientEmail: string
+  recipientName: string
+  eventName: string
+  eventSlug: string
+  albumTitle: string
+  albumId: string
+  coverUrl?: string
+}) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] sendAlbumPublishedNotification skipped - would send to:", recipientEmail)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const cleanEventName = decodeHTMLEntities(eventName)
+  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}?album=${albumId}`
+  try {
+    await sgMail.send({
+      to: recipientEmail,
+      from: {
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+        name: "Jetzy Events",
+      },
+      subject: `📸 The photos from ${cleanEventName} are up!`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">The photos are here! 🎉</h1>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi ${recipientName}, the album <strong>${albumTitle}</strong> from
+            <strong>${cleanEventName}</strong> has just been published. Take a look and find yourself!
+          </p>
+          ${coverUrl ? `
+          <div style="text-align: center; margin: 25px 0;">
+            <img src="${coverUrl}" alt="${albumTitle}" style="max-width: 100%; border-radius: 12px;" />
+          </div>` : ""}
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${albumUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              View the Album
+            </a>
+          </div>
+          <p style="margin-top: 30px; text-align: center; color: #666;">Thanks for being part of it!</p>
+        </div>
+      `),
+      text: `The photos from "${cleanEventName}" are up!\n\nAlbum: ${albumTitle}\nView it: ${albumUrl}`,
+    })
+  } catch (error) {
+    console.error("Failed to send album published notification:", error)
+    throw error
+  }
+}
+
 // Sent to the attendee when the host rejects their approval request.
 export const sendApprovalRejected = async ({ event, firstName, email }: ApprovalEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL

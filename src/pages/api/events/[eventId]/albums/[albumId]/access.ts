@@ -7,10 +7,9 @@ import { AlbumAccess } from "@/models/events/album-access"
 import { EventUsers } from "@/models/eventUsersModal"
 import { Users } from "@/models/userModal"
 import { ensureDbConnected } from "@/configs/database"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import { sendAlbumAccessNotice } from "@/lib/send-grid"
+import { resolveAlbumViewer } from "@/lib/album-auth"
 
 // Accounts created within this window are treated as "signup" rather than "login".
 const SIGNUP_WINDOW_MS = 10 * 60 * 1000
@@ -22,15 +21,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	try {
 		await ensureDbConnected()
-		const session = await getServerSession(req, res, authOptions)
 
-		if (!session) {
-			return sendResponse(res, null, "You need to be logged in to view this album.", false, ResCode.UNAUTHORIZED)
-		}
-
-		const userId = (session.user as any)?._id?.toString()
-		if (!userId || !Types.ObjectId.isValid(userId)) {
-			return sendResponse(res, null, "Invalid session user.", false, ResCode.UNAUTHORIZED)
+		const viewer = await resolveAlbumViewer(req, res)
+		if (!viewer) {
+			return sendResponse(res, null, "Enter your name and email to view this album.", false, ResCode.UNAUTHORIZED)
 		}
 
 		const { eventId, albumId } = req.query
@@ -43,7 +37,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const eventObjectId = new Types.ObjectId(eventId)
 		const albumObjectId = new Types.ObjectId(albumId)
-		const userObjectId = new Types.ObjectId(userId)
 
 		const event = await Events.findOne({ _id: eventObjectId, isDeleted: false }).select("_id name slug").lean()
 		if (!event) {
@@ -55,30 +48,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Album not found", false, ResCode.NOT_FOUND)
 		}
 
-		// Determine how the viewer authenticated (login vs fresh signup) via account age.
-		let action: "login" | "signup" = "login"
-		let recipientName = ((session.user as any)?.name || (session.user as any)?.fullName || "").trim()
-		let recipientEmail = ((session.user as any)?.email || "").trim()
-		try {
-			const projection = { createdAt: 1, firstName: 1, lastName: 1, email: 1 }
-			const userDoc =
-				(await EventUsers.findById(userObjectId, projection).lean()) ||
-				(await Users.findById(userObjectId, projection).lean())
-			if (userDoc) {
-				const createdAt = (userDoc as any).createdAt ? new Date((userDoc as any).createdAt).getTime() : null
+		// How did this viewer get here? The guest gate knows whether it just created the
+		// account and tells us; for logged-in sessions fall back to account age.
+		let action: "login" | "signup" = req.body?.isNewAccount === true ? "signup" : "login"
+		if (req.body?.isNewAccount === undefined && viewer.userId && Types.ObjectId.isValid(viewer.userId)) {
+			try {
+				const projection = { createdAt: 1 }
+				const userObjectId = new Types.ObjectId(viewer.userId)
+				const userDoc =
+					(await EventUsers.findById(userObjectId, projection).lean()) ||
+					(await Users.findById(userObjectId, projection).lean())
+				const createdAt = (userDoc as any)?.createdAt ? new Date((userDoc as any).createdAt).getTime() : null
 				if (createdAt && Date.now() - createdAt <= SIGNUP_WINDOW_MS) action = "signup"
-				if (!recipientName) recipientName = [(userDoc as any).firstName, (userDoc as any).lastName].filter(Boolean).join(" ")
-				if (!recipientEmail) recipientEmail = (userDoc as any).email || ""
+			} catch (e) {
+				console.error("[albums/access] user lookup failed:", e)
 			}
-		} catch (e) {
-			console.error("[albums/access] user lookup failed:", e)
 		}
 
-		// The unique { albumId, userId } index makes this the once-per-user-per-album guard
-		// AND the analytics record. First insert wins → email; duplicates are silently ignored.
+		// The unique { albumId, viewerEmail } index makes this the once-per-person-per-album
+		// guard AND the analytics record. First insert wins → email; duplicates are ignored.
 		let firstAccess = false
 		try {
-			await AlbumAccess.create({ eventId: eventObjectId, albumId: albumObjectId, userId: userObjectId, action })
+			await AlbumAccess.create({
+				eventId: eventObjectId,
+				albumId: albumObjectId,
+				userId: viewer.userId && Types.ObjectId.isValid(viewer.userId) ? new Types.ObjectId(viewer.userId) : undefined,
+				viewerEmail: viewer.email,
+				viewerName: viewer.name,
+				action,
+			})
 			firstAccess = true
 		} catch (error: any) {
 			if (error?.code === 11000) {
@@ -91,8 +89,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (firstAccess) {
 			// Fire-and-forget: email failure must not block the viewer.
 			sendAlbumAccessNotice({
-				recipientName: recipientName || "A viewer",
-				recipientEmail: recipientEmail || "unknown",
+				recipientName: viewer.name || "A viewer",
+				recipientEmail: viewer.email || "unknown",
 				action,
 				eventName: (event as any).name,
 				eventSlug: (event as any).slug,
