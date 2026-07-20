@@ -102,6 +102,9 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 
 	const [editingAlbum, setEditingAlbum] = useState<Album | null>(null)
 	const [galleryAlbum, setGalleryAlbum] = useState<Album | null>(null)
+	// Photo the visitor was tagging before being sent to login; on return we reopen that
+	// slide and prime the tag panel. Set only on the ?album=&tagPhoto= deep link.
+	const [pendingTagPhoto, setPendingTagPhoto] = useState<string | undefined>(undefined)
 	const [shareAlbum, setShareAlbum] = useState<Album | null>(null)
 	const [deletingAlbum, setDeletingAlbum] = useState<Album | null>(null)
 	const [isDeleting, setIsDeleting] = useState(false)
@@ -155,11 +158,12 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 
 	const refresh = () => queryClient.invalidateQueries({ queryKey: ["albums", eventId] })
 
-	// Tagging needs a real login. Send the visitor to /login and bring them back to exactly
-	// where they were (the login page honours _cb), so they return to this album to tag.
-	const goToLoginForTagging = React.useCallback(() => {
+	// Tagging needs a real login. Send the visitor to /login and bring them back to the exact
+	// album AND photo they were on (the login page honours _cb), with the tag panel primed —
+	// `tagPhoto` carries the media URL so we can reopen that slide and open the form.
+	const goToLoginForTagging = React.useCallback((albumId: string, mediaUrl: string) => {
 		if (typeof window === "undefined") return
-		const back = window.location.pathname + window.location.search
+		const back = `${window.location.pathname}?album=${albumId}&tagPhoto=${encodeURIComponent(mediaUrl)}`
 		router.push(`/login?_cb=${encodeURIComponent(back)}`)
 	}, [router])
 
@@ -234,6 +238,14 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 			deepLinkOpenedRef.current = albumParam
 			setGalleryAlbum(match)
 			galleryModal.onOpen()
+			// Capture the one-shot tagPhoto hint into state, then drop it from the URL so a
+			// later refresh/refetch doesn't force the tag panel back open — the gallery still
+			// reopens from ?album=. Reading it live from the query would race with this clear.
+			if (typeof router.query.tagPhoto === "string" && router.query.tagPhoto) {
+				setPendingTagPhoto(router.query.tagPhoto)
+				const { tagPhoto: _t, ...rest } = router.query
+				router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [albums, router.query.album, hasAccess])
@@ -458,12 +470,14 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 			{/* Gallery modal */}
 			<AlbumGalleryModal
 				isOpen={galleryModal.isOpen}
-				onClose={() => { galleryModal.onClose(); setGalleryAlbum(null) }}
+				onClose={() => { galleryModal.onClose(); setGalleryAlbum(null); setPendingTagPhoto(undefined) }}
 				album={galleryAlbum}
 				eventId={eventId}
 				canManage={canManage}
 				canTag={canTag}
 				onRequireLogin={goToLoginForTagging}
+				initialMediaUrl={pendingTagPhoto}
+				autoOpenTag={!!pendingTagPhoto}
 			/>
 
 			{/* Share QR modal */}
@@ -660,6 +674,8 @@ function AlbumGalleryModal({
 	canManage,
 	canTag,
 	onRequireLogin,
+	initialMediaUrl,
+	autoOpenTag,
 }: {
 	isOpen: boolean
 	onClose: () => void
@@ -667,10 +683,13 @@ function AlbumGalleryModal({
 	eventId: string
 	canManage: boolean
 	canTag: boolean
-	onRequireLogin: () => void
+	onRequireLogin: (albumId: string, mediaUrl: string) => void
+	initialMediaUrl?: string
+	autoOpenTag?: boolean
 }) {
 	const [slideIndex, setSlideIndex] = useState(0)
 	const sliderRef = useRef<HTMLDivElement>(null)
+	const slickRef = useRef<any>(null)
 	// adaptiveHeight is deliberately off: it writes an animated inline height on
 	// .slick-list, which fed a resize loop with the modal's scrollbar (opening the
 	// tag panel made the dialog jitter). Slides use a fixed viewport instead.
@@ -687,6 +706,21 @@ function AlbumGalleryModal({
 
 	useEffect(() => { setSlideIndex(0) }, [album?._id])
 
+	// Returning from login to tag a specific photo: jump to that slide once the album loads.
+	// One-shot per album so normal swiping isn't yanked back.
+	const jumpedRef = useRef<string | null>(null)
+	useEffect(() => {
+		if (!isOpen || !album || !initialMediaUrl) return
+		if (jumpedRef.current === album._id) return
+		const idx = album.media.findIndex((m) => m.url === initialMediaUrl)
+		if (idx >= 0) {
+			jumpedRef.current = album._id
+			setSlideIndex(idx)
+			// react-slick needs an imperative nudge; the ref may not be ready on first paint.
+			setTimeout(() => slickRef.current?.slickGoTo?.(idx), 50)
+		}
+	}, [isOpen, album, initialMediaUrl])
+
 	const currentMedia = album?.media?.[slideIndex]
 
 	return (
@@ -702,7 +736,7 @@ function AlbumGalleryModal({
 					{album && album.media.length > 0 ? (
 						<>
 							<Box ref={sliderRef} className="album-gallery-slider" sx={{ ".slick-prev:before, .slick-next:before": { color: "#F79432" }, ".slick-dots li button:before": { color: "#F79432" } }}>
-								<Slider {...settings}>
+								<Slider ref={slickRef} {...settings}>
 									{album.media.map((m, i) => (
 										<Box key={i} display="flex !important" alignItems="center" justifyContent="center" bg="#000" borderRadius="lg" overflow="hidden" height={{ base: "45vh", md: "55vh" }}>
 											{m.type === "video" ? (
@@ -725,6 +759,7 @@ function AlbumGalleryModal({
 									canManage={canManage}
 									canTag={canTag}
 									onRequireLogin={onRequireLogin}
+									autoOpenTag={!!autoOpenTag && currentMedia.url === initialMediaUrl}
 								/>
 							)}
 						</>
@@ -745,13 +780,15 @@ function PhotoTagging({
 	canManage,
 	canTag,
 	onRequireLogin,
+	autoOpenTag,
 }: {
 	eventId: string
 	albumId: string
 	mediaUrl: string
 	canManage: boolean
 	canTag: boolean
-	onRequireLogin: () => void
+	onRequireLogin: (albumId: string, mediaUrl: string) => void
+	autoOpenTag?: boolean
 }) {
 	const toast = useToast()
 	const queryClient = useQueryClient()
@@ -760,6 +797,13 @@ function PhotoTagging({
 	const [isTagging, setIsTagging] = useState(false)
 	const [showForm, setShowForm] = useState(false)
 	const [showManualEntry, setShowManualEntry] = useState(false)
+
+	// Returned from login to tag this exact photo → open the form straight away. Mount-only:
+	// PhotoTagging is keyed by media URL, so it mounts fresh on the target slide.
+	useEffect(() => {
+		if (autoOpenTag && canTag) setShowForm(true)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [])
 	const [mentionInput, setMentionInput] = useState("")
 	// Jetzy directory search — available to any logged-in tagger (needs the session's
 	// external accessToken, which guests don't have). Debounced so we don't hit the
@@ -947,9 +991,10 @@ function PhotoTagging({
 					px={5}
 					onClick={() => {
 						// Tagging emails someone in your name, so it needs a real login — the
-						// name+email guest cookie is enough to view but not to tag.
+						// name+email guest cookie is enough to view but not to tag. Carry the
+						// album + photo so login returns them right here, ready to tag.
 						if (!canTag) {
-							onRequireLogin()
+							onRequireLogin(albumId, mediaUrl)
 							return
 						}
 						setShowForm((v) => !v)
