@@ -168,7 +168,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const [albumLog, setAlbumLog] = useState<Array<{ _id: string; albumId: string; albumTitle: string; name: string; email: string; action: string; date: string }>>([])
 	const [albumLogLoaded, setAlbumLogLoaded] = useState(false)
 	const [albumLogLoading, setAlbumLogLoading] = useState(false)
-	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterest: string; date: string }>>([])
+	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterests: string[]; date: string }>>([])
 	const [topInterests, setTopInterests] = useState<Array<{ interest: string; count: number }>>([])
 	const [journeyLoaded, setJourneyLoaded] = useState(false)
 	const [journeyLoading, setJourneyLoading] = useState(false)
@@ -299,7 +299,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 					"",
 					"Interests Log",
 					"Name,Email,Interests,Custom Interest,Date",
-					...interestRows.map((r) => `${q(r.name)},${q(r.email)},${q(r.interests.join("; "))},${q(r.customInterest)},${new Date(r.date).toISOString()}`),
+					...interestRows.map((r) => `${q(r.name)},${q(r.email)},${q(r.interests.join("; "))},${q(r.customInterests.join("; "))},${new Date(r.date).toISOString()}`),
 			  ]
 			: []
 
@@ -1058,7 +1058,17 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 																			))}
 																		</Flex>
 																	</Td>
-																	<Td><Text fontSize="sm" color={r.customInterest ? "#F79432" : "#65676B"}>{r.customInterest || "—"}</Text></Td>
+																	<Td>
+																		{r.customInterests.length > 0 ? (
+																			<Flex wrap="wrap" gap={1}>
+																				{r.customInterests.map((c, ci) => (
+																					<Badge key={`${c}-${ci}`} bg="#3a2a12" color="#F79432" borderRadius="full" px={2} textTransform="none" fontWeight="normal">{c}</Badge>
+																				))}
+																			</Flex>
+																		) : (
+																			<Text fontSize="sm" color="#65676B">—</Text>
+																		)}
+																	</Td>
 																	<Td><Text fontSize="sm" color="#9C9C9C">{new Date(r.date).toLocaleString()}</Text></Td>
 																</Tr>
 															))}

@@ -58,13 +58,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const rows = await AlbumInterest.find(match).sort({ createdAt: -1 }).limit(5000).lean()
 
+		// Resolve custom entries: new array field, falling back to the legacy single string
+		// for rows captured before multi-custom.
+		const customsOf = (r: any): string[] =>
+			Array.isArray(r.customInterests) && r.customInterests.length
+				? r.customInterests
+				: r.customInterest
+				? [r.customInterest]
+				: []
+
 		// Per-viewer log
 		const items = rows.map((r: any) => ({
 			_id: r._id.toString(),
 			name: r.name || "—",
 			email: r.email || "—",
 			interests: Array.isArray(r.interests) ? r.interests : [],
-			customInterest: r.customInterest || "",
+			customInterests: customsOf(r),
 			date: r.createdAt,
 		}))
 
@@ -75,8 +84,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const key = String(i).trim()
 				if (key) counts.set(key, (counts.get(key) || 0) + 1)
 			}
-			const custom = (r.customInterest || "").trim()
-			if (custom) counts.set(`${custom} (custom)`, (counts.get(`${custom} (custom)`) || 0) + 1)
+			for (const c of customsOf(r)) {
+				const custom = String(c).trim()
+				if (custom) counts.set(`${custom} (custom)`, (counts.get(`${custom} (custom)`) || 0) + 1)
+			}
 		}
 		const top = Array.from(counts.entries())
 			.map(([interest, count]) => ({ interest, count }))
