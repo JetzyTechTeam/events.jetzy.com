@@ -15,7 +15,9 @@ export interface IAlbumInterest {
 	userId?: Schema.Types.ObjectId
 	/** Curated labels picked from the chip grid. */
 	interests: string[]
-	/** Free-text "tell us your interest", counts as one of the three. */
+	/** Free-text "tell us your interest" entries, each counts as one of the three. */
+	customInterests: string[]
+	/** Legacy single free-text field (pre multi-custom); kept for reading old rows. */
 	customInterest?: string
 	createdAt?: Date
 	updatedAt?: Date
@@ -48,6 +50,11 @@ const albumInterestSchema = new Schema<IAlbumInterest>(
 			type: [String],
 			default: [],
 		},
+		customInterests: {
+			type: [String],
+			default: [],
+		},
+		// Legacy single field — retained so rows written before multi-custom still read.
 		customInterest: {
 			type: String,
 			required: false,

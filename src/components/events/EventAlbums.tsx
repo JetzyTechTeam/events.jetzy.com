@@ -577,19 +577,45 @@ function GuestAccessModal({
 	const [email, setEmail] = useState("")
 	const [acceptedTerms, setAcceptedTerms] = useState(false)
 	const [interests, setInterests] = useState<string[]>([])
-	const [customInterest, setCustomInterest] = useState("")
+	const [customInterests, setCustomInterests] = useState<string[]>([])
+	const [customDraft, setCustomDraft] = useState("")
 	const [submitting, setSubmitting] = useState(false)
 
-	// A typed custom interest counts as one of the three.
-	const interestTotal = interests.length + (customInterest.trim() ? 1 : 0)
+	// Curated chips + each custom entry together count toward the 3.
+	const interestTotal = interests.length + customInterests.length
+	const atCapToast = () =>
+		toast({ title: `You've picked ${REQUIRED_INTERESTS} already — remove one to add another`, status: "warning", duration: 2500, isClosable: true })
+
 	const toggleInterest = (label: string) => {
 		setInterests((prev) => {
 			if (prev.includes(label)) return prev.filter((l) => l !== label)
-			// Cap at 3 including the custom entry — ignore extra taps.
-			if (prev.length + (customInterest.trim() ? 1 : 0) >= REQUIRED_INTERESTS) return prev
+			if (prev.length + customInterests.length >= REQUIRED_INTERESTS) {
+				atCapToast()
+				return prev
+			}
 			return [...prev, label]
 		})
 	}
+
+	const addCustom = () => {
+		const val = customDraft.trim()
+		if (!val) return
+		if (interestTotal >= REQUIRED_INTERESTS) {
+			atCapToast()
+			return
+		}
+		const dupe =
+			customInterests.some((c) => c.toLowerCase() === val.toLowerCase()) ||
+			interests.some((i) => i.toLowerCase() === val.toLowerCase())
+		if (dupe) {
+			toast({ title: "You've already added that", status: "warning", duration: 2000, isClosable: true })
+			return
+		}
+		setCustomInterests((prev) => [...prev, val])
+		setCustomDraft("")
+	}
+
+	const removeCustom = (val: string) => setCustomInterests((prev) => prev.filter((c) => c !== val))
 
 	const submit = async (e: React.FormEvent) => {
 		e.preventDefault()
@@ -597,7 +623,15 @@ function GuestAccessModal({
 			toast({ title: "Please enter your name and email", status: "warning", duration: 2500, isClosable: true })
 			return
 		}
-		if (interestTotal !== REQUIRED_INTERESTS) {
+		// Fold an un-added draft in so a viewer isn't blocked for forgetting to click Add.
+		const draft = customDraft.trim()
+		let effectiveCustoms = customInterests
+		if (draft && interestTotal < REQUIRED_INTERESTS && !customInterests.some((c) => c.toLowerCase() === draft.toLowerCase()) && !interests.some((i) => i.toLowerCase() === draft.toLowerCase())) {
+			effectiveCustoms = [...customInterests, draft]
+			setCustomInterests(effectiveCustoms)
+			setCustomDraft("")
+		}
+		if (interests.length + effectiveCustoms.length !== REQUIRED_INTERESTS) {
 			toast({ title: `Please pick ${REQUIRED_INTERESTS} interests — your own counts as one`, status: "warning", duration: 2800, isClosable: true })
 			return
 		}
@@ -613,7 +647,7 @@ function GuestAccessModal({
 				name: name.trim(),
 				email: email.trim(),
 				interests,
-				customInterest: customInterest.trim() || undefined,
+				customInterests: effectiveCustoms,
 			})
 			// Remember for the access-notice call so it can report returning vs new.
 			try { sessionStorage.setItem("album_is_new_account", res.data?.data?.isNewAccount ? "1" : "0") } catch {}
@@ -728,17 +762,33 @@ function GuestAccessModal({
 							</SimpleGrid>
 							<Box mt={3}>
 								<Text fontSize="xs" color="#F79432" fontWeight="600">Tell us your interest</Text>
-								<Text fontSize="11px" color="#8a8a8a" mb={1}>This will help us personalize future events for you. Counts as one of your {REQUIRED_INTERESTS}.</Text>
-								<Input
-									size="md"
-									value={customInterest}
-									onChange={(e) => setCustomInterest(e.target.value)}
-									placeholder="Type your interest here..."
-									bg="#1E1E1E"
-									borderColor="#343536"
-									color="white"
-									_placeholder={{ color: "#666" }}
-								/>
+								<Text fontSize="11px" color="#8a8a8a" mb={1}>Add your own — each counts as one of your {REQUIRED_INTERESTS}.</Text>
+								{customInterests.length > 0 && (
+									<Flex wrap="wrap" gap={2} mb={2}>
+										{customInterests.map((c) => (
+											<Flex key={c} align="center" gap={1} bg="#F79432" color="black" borderRadius="full" pl={3} pr={1} py={1}>
+												<Text fontSize="xs" fontWeight="600">{c}</Text>
+												<Box as="button" type="button" aria-label={`Remove ${c}`} onClick={() => removeCustom(c)} px={1} fontSize="sm" lineHeight="1" _hover={{ opacity: 0.7 }}>×</Box>
+											</Flex>
+										))}
+									</Flex>
+								)}
+								<Flex gap={2}>
+									<Input
+										size="md"
+										value={customDraft}
+										onChange={(e) => setCustomDraft(e.target.value)}
+										onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom() } }}
+										placeholder="Type your interest here..."
+										bg="#1E1E1E"
+										borderColor="#343536"
+										color="white"
+										_placeholder={{ color: "#666" }}
+									/>
+									<Button size="md" flexShrink={0} onClick={addCustom} bg="#2B2B2B" color="white" _hover={{ bg: "#3A3A3A" }} isDisabled={!customDraft.trim()}>
+										Add
+									</Button>
+								</Flex>
 							</Box>
 						</Box>
 

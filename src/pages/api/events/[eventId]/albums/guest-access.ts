@@ -17,7 +17,7 @@ const schema = zod.object({
 	email: zod.string().email(),
 	// Captured for event planning; the client enforces the "pick 3" rule, kept lenient here.
 	interests: zod.array(zod.string().max(60)).max(3).optional(),
-	customInterest: zod.string().max(200).optional(),
+	customInterests: zod.array(zod.string().max(200)).max(3).optional(),
 })
 
 /**
@@ -87,8 +87,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// re-entry updates. Never block album entry if this write fails.
 		try {
 			const interests = validation.data.interests?.map((i) => i.trim()).filter(Boolean) || []
-			const customInterest = validation.data.customInterest?.trim() || undefined
-			if (interests.length > 0 || customInterest) {
+			const customInterests = validation.data.customInterests?.map((i) => i.trim()).filter(Boolean) || []
+			if (interests.length > 0 || customInterests.length > 0) {
 				await AlbumInterest.updateOne(
 					{ eventId: new Types.ObjectId(eventId), email },
 					{
@@ -96,8 +96,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							name: fullName,
 							userId: userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined,
 							interests,
-							customInterest,
+							customInterests,
 						},
+						// Clear the legacy single field on any fresh write so it can't linger.
+						$unset: { customInterest: "" },
 					},
 					{ upsert: true },
 				)
