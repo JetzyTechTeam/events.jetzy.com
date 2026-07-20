@@ -197,6 +197,8 @@ type WelcomeEmailData = {
   firstName?: string
   lastName?: string
   password?: string
+  /** Extra sentence in the safety notice explaining where the account was created (e.g. an album). */
+  context?: string
 }
 
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets, paymentUrl }: WaitingListApprovalData) => {
@@ -567,6 +569,7 @@ export const sendAlbumPublishedNotification = async ({
   albumTitle,
   albumId,
   coverUrl,
+  magicToken,
 }: {
   recipientEmail: string
   recipientName: string
@@ -575,6 +578,7 @@ export const sendAlbumPublishedNotification = async ({
   albumTitle: string
   albumId: string
   coverUrl?: string
+  magicToken?: string
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
@@ -582,7 +586,14 @@ export const sendAlbumPublishedNotification = async ({
     return { success: true, message: "Email skipped in localhost mode" }
   }
   const cleanEventName = decodeHTMLEntities(eventName)
-  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}?album=${albumId}`
+  const root = baseUrl || "https://events.jetzy.com"
+  const albumPath = `/${eventSlug}?album=${albumId}`
+  // Recipients are known event participants and the link lands in their own inbox, so
+  // sign them straight in rather than making them fill in the name+email gate. Same
+  // one-click pattern the discussion emails use.
+  const albumUrl = magicToken
+    ? `${root}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(albumPath)}`
+    : `${root}${albumPath}`
   try {
     await sgMail.send({
       to: recipientEmail,
@@ -2021,7 +2032,7 @@ export const sendThankYouNotification = async ({
   }
 }
 
-export const sendWelcomeEmail = async ({ email, firstName, lastName, password }: WelcomeEmailData) => {
+export const sendWelcomeEmail = async ({ email, firstName, lastName, password, context }: WelcomeEmailData) => {
   // CEO directive: one consistent font across the whole email (Times New Roman, fallback Arial).
   // Applied inline on every text element because Outlook doesn't reliably inherit container font.
   const FONT = "'Times New Roman', Times, Arial, serif";
@@ -2095,7 +2106,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       <!-- Account Safety Notice -->
       <div style="margin: 25px 0; padding-top: 20px; border-top: 1px solid #eee;">
         <p style="font-family: ${FONT}; font-size: 14px; color: #555; line-height: 1.6; margin: 0;">
-          An account has been created on Jetzy using your email address. If you created this account, no action is needed.<br/><br/>
+          An account has been created on Jetzy using your email address${context ? ` ${context}` : ""}. If you created this account, no action is needed.<br/><br/>
           If you did <strong>not</strong> create this account, please
           <a href="${blockLink}" style="color: #F79432; font-weight: bold; text-decoration: underline;">click here to block this account</a>.
         </p>
@@ -2118,7 +2129,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       },
       subject: "Welcome to Jetzy - Your Account is Ready!",
       html: wrapHtml(html),
-      text: `Welcome to Jetzy!\n\nJetzy is an invite-only social network that helps you connect with inspiring, global-minded people based on your interests and location. Whether you're a foodie looking to discover great restaurants, a hiker seeking adventure partners, or passionate about any other activity, Jetzy helps you find and connect with like-minded people around you and around the world.\n\nIn addition, with our Jetzy Select Concierge (${CONCIERGE_LINK}) you can unlock exclusive savings of up to 70% across travel and leisure.\n\nFor example:\n- VIP restaurant benefits — priority seating, 10–30% discounts, and complimentary drinks, appetizers, or desserts for your entire table at premier restaurants.\n- Exclusive nightlife perks — VIP entry, complimentary drinks, and bottle experiences at top venues.\n- Private event invitations — access to exclusive gatherings and experiences.\n- Luxury travel & lifestyle savings — up to 70% off hotels, car rentals, sporting events, private jets, yachts, spas, luggage, luxury goods, and more.\n\nDownload the Jetzy mobile app: ${DOWNLOAD_LINK}\nLog in using your email address and select "Forgot Password" to reset your password.\n\nWe look forward to welcoming you to the Jetzy community and connecting with you soon!\n\nLive the Jetzy Life!\nJetzy.com (https://jetzy.com/)\n\nLive like a Traveler | Travel like a Local\n\n---\nACCOUNT SAFETY: An account has been created on Jetzy using your email address. If you created this account, no action is needed. If you did NOT create this account, please click here to block it: ${blockLink}`
+      text: `Welcome to Jetzy!\n\nJetzy is an invite-only social network that helps you connect with inspiring, global-minded people based on your interests and location. Whether you're a foodie looking to discover great restaurants, a hiker seeking adventure partners, or passionate about any other activity, Jetzy helps you find and connect with like-minded people around you and around the world.\n\nIn addition, with our Jetzy Select Concierge (${CONCIERGE_LINK}) you can unlock exclusive savings of up to 70% across travel and leisure.\n\nFor example:\n- VIP restaurant benefits — priority seating, 10–30% discounts, and complimentary drinks, appetizers, or desserts for your entire table at premier restaurants.\n- Exclusive nightlife perks — VIP entry, complimentary drinks, and bottle experiences at top venues.\n- Private event invitations — access to exclusive gatherings and experiences.\n- Luxury travel & lifestyle savings — up to 70% off hotels, car rentals, sporting events, private jets, yachts, spas, luggage, luxury goods, and more.\n\nDownload the Jetzy mobile app: ${DOWNLOAD_LINK}\nLog in using your email address and select "Forgot Password" to reset your password.\n\nWe look forward to welcoming you to the Jetzy community and connecting with you soon!\n\nLive the Jetzy Life!\nJetzy.com (https://jetzy.com/)\n\nLive like a Traveler | Travel like a Local\n\n---\nACCOUNT SAFETY: An account has been created on Jetzy using your email address${context ? ` ${context}` : ""}. If you created this account, no action is needed. If you did NOT create this account, please click here to block it: ${blockLink}`
     });
     console.log(`✅ Welcome email sent successfully to: ${email}`);
   } catch (error) {

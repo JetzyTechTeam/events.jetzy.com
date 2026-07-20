@@ -83,6 +83,10 @@ interface Props {
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 
+// Jetzy directory search in the tag panel is hidden until the search API stops requiring a
+// personal access token (album users don't have one). Set to true to re-enable.
+const SHOW_JETZY_SEARCH = false
+
 export default function EventAlbums({ eventId, eventSlug, eventName, canManage }: Props) {
 	const { data: session, status } = useSession()
 	const router = useRouter()
@@ -112,6 +116,11 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	// without being re-created (and re-firing) every time access changes.
 	const hasAccessRef = useRef(hasAccess)
 	hasAccessRef.current = hasAccess
+
+	// Tagging emails someone in your name, so it needs a REAL session — the name+email
+	// guest cookie is enough to view but not to tag. Existing accounts identified only by
+	// the gate cookie must go through a proper login before they can tag.
+	const canTag = !!session
 
 	// Fetch albums — public, so this runs for anonymous visitors too
 	const {
@@ -145,6 +154,14 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	}, [session, status, eventId])
 
 	const refresh = () => queryClient.invalidateQueries({ queryKey: ["albums", eventId] })
+
+	// Tagging needs a real login. Send the visitor to /login and bring them back to exactly
+	// where they were (the login page honours _cb), so they return to this album to tag.
+	const goToLoginForTagging = React.useCallback(() => {
+		if (typeof window === "undefined") return
+		const back = window.location.pathname + window.location.search
+		router.push(`/login?_cb=${encodeURIComponent(back)}`)
+	}, [router])
 
 	// The name+email dialog is ONLY for share links. Albums are public on the event page,
 	// so a normal visitor browsing photos is never prompted. Waits for the session and the
@@ -445,8 +462,8 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 				album={galleryAlbum}
 				eventId={eventId}
 				canManage={canManage}
-				hasAccess={hasAccess}
-				onRequireAccess={guestGateModal.onOpen}
+				canTag={canTag}
+				onRequireLogin={goToLoginForTagging}
 			/>
 
 			{/* Share QR modal */}
@@ -524,12 +541,19 @@ function GuestAccessModal({
 	const toast = useToast()
 	const [name, setName] = useState("")
 	const [email, setEmail] = useState("")
+	const [acceptedTerms, setAcceptedTerms] = useState(false)
 	const [submitting, setSubmitting] = useState(false)
 
 	const submit = async (e: React.FormEvent) => {
 		e.preventDefault()
 		if (!name.trim() || !email.trim()) {
 			toast({ title: "Please enter your name and email", status: "warning", duration: 2500, isClosable: true })
+			return
+		}
+		// This creates a Jetzy account behind the scenes, so consent is required here just
+		// as it is in ticket checkout.
+		if (!acceptedTerms) {
+			toast({ title: "Please agree to the Terms & Conditions to continue", status: "warning", duration: 2500, isClosable: true })
 			return
 		}
 		setSubmitting(true)
@@ -598,6 +622,23 @@ function GuestAccessModal({
 							_placeholder={{ color: "#666" }}
 							autoComplete="email"
 						/>
+
+						{/* Terms & Conditions — mirrors ticket checkout, since this also creates an account */}
+						<label style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer", marginTop: "14px" }}>
+							<input
+								type="checkbox"
+								checked={acceptedTerms}
+								onChange={(e) => setAcceptedTerms(e.target.checked)}
+								style={{ marginTop: "3px" }}
+							/>
+							<Text fontSize="xs" color="#bbbbbb">
+								I agree to the{" "}
+								<a href="/terms" target="_blank" rel="noreferrer" style={{ color: "#F79432", textDecoration: "underline" }}>
+									Terms &amp; Conditions
+								</a>
+								. By continuing, I agree to the creation of a Jetzy account.
+							</Text>
+						</label>
 					</form>
 				</ModalBody>
 				<ModalFooter>
@@ -617,16 +658,16 @@ function AlbumGalleryModal({
 	album,
 	eventId,
 	canManage,
-	hasAccess,
-	onRequireAccess,
+	canTag,
+	onRequireLogin,
 }: {
 	isOpen: boolean
 	onClose: () => void
 	album: Album | null
 	eventId: string
 	canManage: boolean
-	hasAccess: boolean
-	onRequireAccess: () => void
+	canTag: boolean
+	onRequireLogin: () => void
 }) {
 	const [slideIndex, setSlideIndex] = useState(0)
 	const sliderRef = useRef<HTMLDivElement>(null)
@@ -682,8 +723,8 @@ function AlbumGalleryModal({
 									albumId={album._id}
 									mediaUrl={currentMedia.url}
 									canManage={canManage}
-									hasAccess={hasAccess}
-									onRequireAccess={onRequireAccess}
+									canTag={canTag}
+									onRequireLogin={onRequireLogin}
 								/>
 							)}
 						</>
@@ -702,15 +743,15 @@ function PhotoTagging({
 	albumId,
 	mediaUrl,
 	canManage,
-	hasAccess,
-	onRequireAccess,
+	canTag,
+	onRequireLogin,
 }: {
 	eventId: string
 	albumId: string
 	mediaUrl: string
 	canManage: boolean
-	hasAccess: boolean
-	onRequireAccess: () => void
+	canTag: boolean
+	onRequireLogin: () => void
 }) {
 	const toast = useToast()
 	const queryClient = useQueryClient()
@@ -720,6 +761,12 @@ function PhotoTagging({
 	const [showForm, setShowForm] = useState(false)
 	const [showManualEntry, setShowManualEntry] = useState(false)
 	const [mentionInput, setMentionInput] = useState("")
+	// Jetzy directory search — available to any logged-in tagger (needs the session's
+	// external accessToken, which guests don't have). Debounced so we don't hit the
+	// upstream API on every keystroke.
+	const [jetzyQuery, setJetzyQuery] = useState("")
+	const [jetzyDebounced, setJetzyDebounced] = useState("")
+	const tagEmailRef = useRef<HTMLInputElement>(null)
 	// People queued up but NOT yet tagged — nothing is sent until the confirm dialog.
 	// Keyed by a generated id, not email: the same person may legitimately appear twice.
 	const [pendingTags, setPendingTags] = useState<{ id: string; email: string; name: string }[]>([])
@@ -744,6 +791,47 @@ function PhotoTagging({
 		},
 		enabled: canManage,
 	})
+
+	// Debounce the Jetzy search box.
+	useEffect(() => {
+		const t = setTimeout(() => setJetzyDebounced(jetzyQuery.trim()), 300)
+		return () => clearTimeout(t)
+	}, [jetzyQuery])
+
+	// Search the Jetzy user directory (reuses the same proxy the invite-members flow uses).
+	const { data: jetzyResults = [], isFetching: jetzySearching } = useQuery<any[]>({
+		queryKey: ["album-jetzy-search", eventId, jetzyDebounced],
+		queryFn: async () => {
+			const res = await axios.get(`/api/events/${eventId}/search-users`, { params: { query: jetzyDebounced, page: 1, perPage: 20 } })
+			const d = res.data
+			return d?.data?.docs || d?.data?.users || d?.data?.data || d?.docs || d?.users || []
+		},
+		enabled: SHOW_JETZY_SEARCH && canTag && jetzyDebounced.length >= 2,
+		retry: false,
+	})
+
+	// A Jetzy result we can tag directly (has an email) vs. one we must ask an email for.
+	const jetzyEmailOf = (u: any): string => (u?.email || u?.emailAddress || "").trim().toLowerCase()
+	const jetzyNameOf = (u: any): string => `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || u?.name || u?.userName || ""
+
+	// Picking a Jetzy user: stage straight away if they have an email; otherwise drop their
+	// name into the manual form and ask the tagger to supply one.
+	const pickJetzyUser = (u: any) => {
+		const email = jetzyEmailOf(u)
+		const name = jetzyNameOf(u)
+		if (email) {
+			stageTag(email, name)
+			setJetzyQuery("")
+			setJetzyDebounced("")
+			return
+		}
+		setShowManualEntry(true)
+		setTagName(name)
+		setTagEmail("")
+		setJetzyQuery("")
+		setJetzyDebounced("")
+		setTimeout(() => tagEmailRef.current?.focus(), 50)
+	}
 
 	const tagsForPhoto = tags.filter((t) => t.mediaUrl === mediaUrl)
 	const refreshTags = () => queryClient.invalidateQueries({ queryKey: ["album-tags", albumId] })
@@ -858,10 +946,10 @@ function PhotoTagging({
 					borderRadius="full"
 					px={5}
 					onClick={() => {
-						// Tagging emails someone in your name, so we need to know who you are.
-						// Viewing stays anonymous; only this action asks for a name + email.
-						if (!hasAccess) {
-							onRequireAccess()
+						// Tagging emails someone in your name, so it needs a real login — the
+						// name+email guest cookie is enough to view but not to tag.
+						if (!canTag) {
+							onRequireLogin()
 							return
 						}
 						setShowForm((v) => !v)
@@ -901,6 +989,72 @@ function PhotoTagging({
 
 			{showForm && (
 				<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
+						{/* Search the Jetzy directory — any logged-in tagger.
+						    Temporarily hidden: the search proxy still requires a personal token that
+						    album users don't have. Flip SHOW_JETZY_SEARCH back on once the backend
+						    drops the token requirement from the search API. */}
+						{SHOW_JETZY_SEARCH && canTag && (
+							<Box mb={4}>
+								<Text fontSize="xs" fontWeight="bold" color="#bbb" mb={2} textTransform="uppercase" letterSpacing="0.04em">
+									Search Jetzy members
+								</Text>
+								<Box position="relative">
+									<Input
+										size="md"
+										value={jetzyQuery}
+										onChange={(e) => setJetzyQuery(e.target.value)}
+										placeholder="Search by name or username"
+										bg="#1E1E1E"
+										borderColor="#343536"
+										color="white"
+										_placeholder={{ color: "#666" }}
+									/>
+									{jetzyDebounced.length >= 2 && (
+										<Box
+											position="absolute"
+											top="calc(100% + 4px)"
+											left={0}
+											right={0}
+											zIndex={10}
+											bg="#1a1a1a"
+											border="1px solid #333"
+											borderRadius="md"
+											boxShadow="lg"
+											maxH="240px"
+											overflowY="auto"
+										>
+											{jetzySearching ? (
+												<Flex justify="center" py={3}><Spinner size="sm" color="#F79432" /></Flex>
+											) : jetzyResults.length === 0 ? (
+												<Text fontSize="xs" color="#888" px={3} py={3}>No Jetzy members found. Use manual entry below.</Text>
+											) : (
+												jetzyResults.map((u: any, i: number) => {
+													const jEmail = jetzyEmailOf(u)
+													const jName = jetzyNameOf(u)
+													return (
+														<Box
+															key={u._id || u.id || `${jName}-${i}`}
+															as="button"
+															type="button"
+															width="100%"
+															textAlign="left"
+															px={3}
+															py={2}
+															_hover={{ bg: "whiteAlpha.100" }}
+															onClick={() => pickJetzyUser(u)}
+														>
+															<Text fontSize="sm" color="white">{jName || jEmail || "Jetzy member"}</Text>
+															<Text fontSize="xs" color="#888">{jEmail || "No email on file — you'll add one"}</Text>
+														</Box>
+													)
+												})
+											)}
+										</Box>
+									)}
+								</Box>
+							</Box>
+						)}
+
 					{/* Route 1 — registered attendees (@ search), host view only */}
 					{canManage && (
 						<Box mb={4}>
@@ -993,6 +1147,7 @@ function PhotoTagging({
 										Email address <Text as="span" color="#F79432">*</Text>
 									</Text>
 									<Input
+										ref={tagEmailRef}
 										size="md"
 										value={tagEmail}
 										onChange={(e) => setTagEmail(e.target.value)}

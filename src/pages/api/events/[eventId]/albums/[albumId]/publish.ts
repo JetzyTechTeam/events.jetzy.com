@@ -9,6 +9,7 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import { getEventParticipants } from "@/lib/event-participants"
 import { sendAlbumPublishedNotification } from "@/lib/send-grid"
+import { generateMagicToken } from "@/lib/magicLink"
 
 /**
  * Publish an album — emails everyone registered for the event that the photos are up.
@@ -74,6 +75,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		await Promise.all(
 			Array.from(participants.entries()).map(async ([email, name]) => {
 				try {
+					// One-click sign-in: these are known participants and the link goes to
+					// their own inbox, so they land in the album without the name+email gate.
+					const fullName = (name || "").trim()
+					const magicToken = generateMagicToken({
+						email,
+						firstName: fullName.split(" ")[0] || fullName,
+						lastName: fullName.split(" ").slice(1).join(" "),
+					})
+
 					await sendAlbumPublishedNotification({
 						recipientEmail: email,
 						recipientName: name || "there",
@@ -82,6 +92,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						albumTitle: album.title,
 						albumId,
 						coverUrl,
+						magicToken,
 					})
 					sent += 1
 				} catch (e) {

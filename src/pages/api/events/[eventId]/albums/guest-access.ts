@@ -9,6 +9,7 @@ import connectMongo from "@Jetzy/lib/connect-db"
 import { createOrUpdateUser } from "@/lib/user-utils"
 import { setAlbumGuestCookie } from "@/lib/album-auth"
 import { generateMagicToken } from "@/lib/magicLink"
+import { sendWelcomeEmail } from "@/lib/send-grid"
 
 const schema = zod.object({
 	name: zod.string().min(1).max(120),
@@ -40,7 +41,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, validation.error.errors, "Please enter a valid name and email.", false, ResCode.BAD_REQUEST)
 		}
 
-		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false }).select("_id").lean()
+		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false }).select("_id name").lean()
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
@@ -83,6 +84,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// could otherwise type a known address and take over that account. Existing accounts
 		// still get album access via the cookie above, just no login.
 		const magicToken = isNewAccount ? generateMagicToken({ email, firstName, lastName, _id: userId }) : undefined
+
+		// Welcome the brand-new account, and tell them where it came from so the safety
+		// notice (with its block link) makes sense. Fire-and-forget — never block entry.
+		if (isNewAccount) {
+			const eventName = (event as any).name ? `while viewing photos from "${(event as any).name}"` : "while viewing an event album"
+			sendWelcomeEmail({ email, firstName, lastName, context: eventName }).catch((e) =>
+				console.error("[albums/guest-access] welcome email failed:", e),
+			)
+		}
 
 		return sendResponse(res, { email, name: fullName, isNewAccount, magicToken }, "Access granted", true, ResCode.OK)
 	} catch (error: any) {
