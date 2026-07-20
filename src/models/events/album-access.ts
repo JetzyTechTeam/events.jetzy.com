@@ -7,7 +7,11 @@ export interface IAlbumAccess {
 	_id?: string
 	eventId: Schema.Types.ObjectId
 	albumId: Schema.Types.ObjectId
-	userId: Schema.Types.ObjectId
+	/** Optional: a NextAuth session _id can come from EventUsers while the guest gate maps to `users`. */
+	userId?: Schema.Types.ObjectId
+	/** Stable identity across both paths — this is the dedupe key. */
+	viewerEmail: string
+	viewerName?: string
 	action: AlbumAccessAction
 	createdAt?: Date
 	updatedAt?: Date
@@ -29,8 +33,18 @@ const albumAccessSchema = new Schema<IAlbumAccess>(
 		},
 		userId: {
 			type: Schema.Types.ObjectId,
-			required: true,
+			required: false,
 			ref: "Users",
+		},
+		viewerEmail: {
+			type: String,
+			required: true,
+			lowercase: true,
+			trim: true,
+		},
+		viewerName: {
+			type: String,
+			required: false,
 		},
 		action: {
 			type: String,
@@ -43,9 +57,11 @@ const albumAccessSchema = new Schema<IAlbumAccess>(
 	},
 )
 
-// One row per (album, user): guarantees once-per-user-per-album.
+// One row per (album, viewer email): guarantees once-per-person-per-album.
 // The unique index is both the email-dedupe guard and the analytics source.
-albumAccessSchema.index({ albumId: 1, userId: 1 }, { unique: true })
+// NOTE: the previous { albumId, userId } unique index must be dropped — userId is now
+// optional and multiple nulls would collide. See scripts/migrate-album-access-index.js
+albumAccessSchema.index({ albumId: 1, viewerEmail: 1 }, { unique: true })
 
 export const AlbumAccess: Model<IAlbumAccess> =
 	dbconn.models["AlbumAccess"] || dbconn.model("AlbumAccess", albumAccessSchema, "event-album-access")

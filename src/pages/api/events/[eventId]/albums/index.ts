@@ -25,13 +25,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		await ensureDbConnected()
 		const session = await getServerSession(req, res, authOptions)
 
-		// Any logged-in user may view albums; only admin/owner may create.
-		if (!session) {
-			return sendResponse(res, null, "You need to be logged in to view albums.", false, ResCode.UNAUTHORIZED)
-		}
-
-		const userRole = (session.user as any)?.role
-		const userId = (session.user as any)?._id?.toString()
+		// Listing albums is public — anyone on the event page sees the photos, no prompt.
+		// The name+email gate only exists for share links (it records who arrived from one).
+		// Creating still requires admin/owner (checked on POST).
+		const userRole = (session?.user as any)?.role
+		const userId = (session?.user as any)?._id?.toString()
 		const isAdmin = userRole === "admin" || userRole === "super admin"
 
 		const { eventId } = req.query
@@ -45,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
-		// GET — list albums (any logged-in user)
+		// GET — list albums (public)
 		if (req.method === "GET") {
 			const albums = await EventAlbums.find({ eventId: eventObjectId, isDeleted: false }).sort({ createdAt: -1 }).lean()
 			return sendResponse(res, albums, "Albums retrieved successfully", true, ResCode.OK)

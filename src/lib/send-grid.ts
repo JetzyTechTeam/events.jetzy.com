@@ -197,6 +197,8 @@ type WelcomeEmailData = {
   firstName?: string
   lastName?: string
   password?: string
+  /** Extra sentence in the safety notice explaining where the account was created (e.g. an album). */
+  context?: string
 }
 
 export const sendWaitingListApproval = async ({ firstName, lastName, email, eventName, tickets, paymentUrl }: WaitingListApprovalData) => {
@@ -448,9 +450,13 @@ export const sendAlbumAccessNotice = async ({
     console.log(`[LOCALHOST MODE] sendAlbumAccessNotice skipped - would notify admin for:`, recipientEmail)
     return { success: true, message: "Email skipped in localhost mode" }
   }
-  const adminEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
-  if (!adminEmail) {
-    console.error("SENDGRID_EMAIL_SENDER not set — cannot send album access notice")
+  // Recipient is configurable so staging test traffic can be pointed at a different inbox
+  // without touching the From address (SENDGRID_EMAIL_SENDER is the verified sender used
+  // by every email the platform sends). Falls back to the sender if it isn't set.
+  const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+  const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
+  if (!adminEmail || !senderEmail) {
+    console.error("SENDGRID_EMAIL_SENDER / ADMIN_NOTIFICATION_EMAIL not set — cannot send album access notice")
     return
   }
   const cleanEventName = decodeHTMLEntities(eventName)
@@ -460,7 +466,7 @@ export const sendAlbumAccessNotice = async ({
   try {
     await sgMail.send({
       to: adminEmail,
-      from: { email: adminEmail, name: "Jetzy Events" },
+      from: { email: senderEmail, name: "Jetzy Events" },
       subject: `[Album] ${recipientName} ${actionLabel} — ${cleanEventName}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
@@ -491,6 +497,135 @@ export const sendAlbumAccessNotice = async ({
   } catch (error) {
     console.error("Failed to send album access notice:", error)
     // Non-fatal — do not throw; album viewing should not fail on admin email
+  }
+}
+
+// Sent to a person when someone tags them in an album photo.
+export const sendAlbumTagNotification = async ({
+  recipientEmail,
+  recipientName,
+  taggerName,
+  eventName,
+  eventSlug,
+  albumTitle,
+  albumId,
+  mediaUrl,
+}: {
+  recipientEmail: string
+  recipientName: string
+  taggerName: string
+  eventName: string
+  eventSlug: string
+  albumTitle: string
+  albumId: string
+  mediaUrl?: string
+}) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] sendAlbumTagNotification skipped - would send to:", recipientEmail)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const cleanEventName = decodeHTMLEntities(eventName)
+  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}?album=${albumId}`
+  try {
+    await sgMail.send({
+      to: recipientEmail,
+      from: {
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+        name: "Jetzy Events",
+      },
+      subject: `${taggerName} tagged you in a photo from ${cleanEventName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">You were tagged in a photo 📸</h1>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi ${recipientName}, <strong>${taggerName}</strong> tagged you in a photo from
+            <strong>${cleanEventName}</strong> (album: ${albumTitle}).
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${albumUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              View the Photo
+            </a>
+          </div>
+          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+            You're receiving this because someone tagged you in a Jetzy event album.
+          </p>
+        </div>
+      `),
+      text: `${taggerName} tagged you in a photo from "${cleanEventName}" (album: ${albumTitle}).\n\nView it: ${albumUrl}`,
+    })
+  } catch (error) {
+    console.error("Failed to send album tag notification:", error)
+    // Non-fatal — tagging should not fail on email
+  }
+}
+
+// Sent to every event attendee when the host publishes an album.
+export const sendAlbumPublishedNotification = async ({
+  recipientEmail,
+  recipientName,
+  eventName,
+  eventSlug,
+  albumTitle,
+  albumId,
+  coverUrl,
+  magicToken,
+}: {
+  recipientEmail: string
+  recipientName: string
+  eventName: string
+  eventSlug: string
+  albumTitle: string
+  albumId: string
+  coverUrl?: string
+  magicToken?: string
+}) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] sendAlbumPublishedNotification skipped - would send to:", recipientEmail)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const cleanEventName = decodeHTMLEntities(eventName)
+  const root = baseUrl || "https://events.jetzy.com"
+  const albumPath = `/${eventSlug}?album=${albumId}`
+  // Recipients are known event participants and the link lands in their own inbox, so
+  // sign them straight in rather than making them fill in the name+email gate. Same
+  // one-click pattern the discussion emails use.
+  const albumUrl = magicToken
+    ? `${root}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(albumPath)}`
+    : `${root}${albumPath}`
+  try {
+    await sgMail.send({
+      to: recipientEmail,
+      from: {
+        email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+        name: "Jetzy Events",
+      },
+      subject: `📸 The photos from ${cleanEventName} are up!`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">The photos are here! 🎉</h1>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi ${recipientName}, the album <strong>${albumTitle}</strong> from
+            <strong>${cleanEventName}</strong> has just been published. Take a look and find yourself!
+          </p>
+          ${coverUrl ? `
+          <div style="text-align: center; margin: 25px 0;">
+            <img src="${coverUrl}" alt="${albumTitle}" style="max-width: 100%; border-radius: 12px;" />
+          </div>` : ""}
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${albumUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              View the Album
+            </a>
+          </div>
+          <p style="margin-top: 30px; text-align: center; color: #666;">Thanks for being part of it!</p>
+        </div>
+      `),
+      text: `The photos from "${cleanEventName}" are up!\n\nAlbum: ${albumTitle}\nView it: ${albumUrl}`,
+    })
+  } catch (error) {
+    console.error("Failed to send album published notification:", error)
+    throw error
   }
 }
 
@@ -1897,7 +2032,7 @@ export const sendThankYouNotification = async ({
   }
 }
 
-export const sendWelcomeEmail = async ({ email, firstName, lastName, password }: WelcomeEmailData) => {
+export const sendWelcomeEmail = async ({ email, firstName, lastName, password, context }: WelcomeEmailData) => {
   // CEO directive: one consistent font across the whole email (Times New Roman, fallback Arial).
   // Applied inline on every text element because Outlook doesn't reliably inherit container font.
   const FONT = "'Times New Roman', Times, Arial, serif";
@@ -1971,7 +2106,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       <!-- Account Safety Notice -->
       <div style="margin: 25px 0; padding-top: 20px; border-top: 1px solid #eee;">
         <p style="font-family: ${FONT}; font-size: 14px; color: #555; line-height: 1.6; margin: 0;">
-          An account has been created on Jetzy using your email address. If you created this account, no action is needed.<br/><br/>
+          An account has been created on Jetzy using your email address${context ? ` ${context}` : ""}. If you created this account, no action is needed.<br/><br/>
           If you did <strong>not</strong> create this account, please
           <a href="${blockLink}" style="color: #F79432; font-weight: bold; text-decoration: underline;">click here to block this account</a>.
         </p>
@@ -1994,7 +2129,7 @@ export const sendWelcomeEmail = async ({ email, firstName, lastName, password }:
       },
       subject: "Welcome to Jetzy - Your Account is Ready!",
       html: wrapHtml(html),
-      text: `Welcome to Jetzy!\n\nJetzy is an invite-only social network that helps you connect with inspiring, global-minded people based on your interests and location. Whether you're a foodie looking to discover great restaurants, a hiker seeking adventure partners, or passionate about any other activity, Jetzy helps you find and connect with like-minded people around you and around the world.\n\nIn addition, with our Jetzy Select Concierge (${CONCIERGE_LINK}) you can unlock exclusive savings of up to 70% across travel and leisure.\n\nFor example:\n- VIP restaurant benefits — priority seating, 10–30% discounts, and complimentary drinks, appetizers, or desserts for your entire table at premier restaurants.\n- Exclusive nightlife perks — VIP entry, complimentary drinks, and bottle experiences at top venues.\n- Private event invitations — access to exclusive gatherings and experiences.\n- Luxury travel & lifestyle savings — up to 70% off hotels, car rentals, sporting events, private jets, yachts, spas, luggage, luxury goods, and more.\n\nDownload the Jetzy mobile app: ${DOWNLOAD_LINK}\nLog in using your email address and select "Forgot Password" to reset your password.\n\nWe look forward to welcoming you to the Jetzy community and connecting with you soon!\n\nLive the Jetzy Life!\nJetzy.com (https://jetzy.com/)\n\nLive like a Traveler | Travel like a Local\n\n---\nACCOUNT SAFETY: An account has been created on Jetzy using your email address. If you created this account, no action is needed. If you did NOT create this account, please click here to block it: ${blockLink}`
+      text: `Welcome to Jetzy!\n\nJetzy is an invite-only social network that helps you connect with inspiring, global-minded people based on your interests and location. Whether you're a foodie looking to discover great restaurants, a hiker seeking adventure partners, or passionate about any other activity, Jetzy helps you find and connect with like-minded people around you and around the world.\n\nIn addition, with our Jetzy Select Concierge (${CONCIERGE_LINK}) you can unlock exclusive savings of up to 70% across travel and leisure.\n\nFor example:\n- VIP restaurant benefits — priority seating, 10–30% discounts, and complimentary drinks, appetizers, or desserts for your entire table at premier restaurants.\n- Exclusive nightlife perks — VIP entry, complimentary drinks, and bottle experiences at top venues.\n- Private event invitations — access to exclusive gatherings and experiences.\n- Luxury travel & lifestyle savings — up to 70% off hotels, car rentals, sporting events, private jets, yachts, spas, luggage, luxury goods, and more.\n\nDownload the Jetzy mobile app: ${DOWNLOAD_LINK}\nLog in using your email address and select "Forgot Password" to reset your password.\n\nWe look forward to welcoming you to the Jetzy community and connecting with you soon!\n\nLive the Jetzy Life!\nJetzy.com (https://jetzy.com/)\n\nLive like a Traveler | Travel like a Local\n\n---\nACCOUNT SAFETY: An account has been created on Jetzy using your email address${context ? ` ${context}` : ""}. If you created this account, no action is needed. If you did NOT create this account, please click here to block it: ${blockLink}`
     });
     console.log(`✅ Welcome email sent successfully to: ${email}`);
   } catch (error) {
