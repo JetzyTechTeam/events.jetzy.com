@@ -448,9 +448,13 @@ export const sendAlbumAccessNotice = async ({
     console.log(`[LOCALHOST MODE] sendAlbumAccessNotice skipped - would notify admin for:`, recipientEmail)
     return { success: true, message: "Email skipped in localhost mode" }
   }
-  const adminEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
-  if (!adminEmail) {
-    console.error("SENDGRID_EMAIL_SENDER not set — cannot send album access notice")
+  // Recipient is configurable so staging test traffic can be pointed at a different inbox
+  // without touching the From address (SENDGRID_EMAIL_SENDER is the verified sender used
+  // by every email the platform sends). Falls back to the sender if it isn't set.
+  const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+  const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
+  if (!adminEmail || !senderEmail) {
+    console.error("SENDGRID_EMAIL_SENDER / ADMIN_NOTIFICATION_EMAIL not set — cannot send album access notice")
     return
   }
   const cleanEventName = decodeHTMLEntities(eventName)
@@ -460,7 +464,7 @@ export const sendAlbumAccessNotice = async ({
   try {
     await sgMail.send({
       to: adminEmail,
-      from: { email: adminEmail, name: "Jetzy Events" },
+      from: { email: senderEmail, name: "Jetzy Events" },
       subject: `[Album] ${recipientName} ${actionLabel} — ${cleanEventName}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
