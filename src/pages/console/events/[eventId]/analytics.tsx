@@ -168,6 +168,8 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const [albumLog, setAlbumLog] = useState<Array<{ _id: string; albumId: string; albumTitle: string; name: string; email: string; action: string; date: string }>>([])
 	const [albumLogLoaded, setAlbumLogLoaded] = useState(false)
 	const [albumLogLoading, setAlbumLogLoading] = useState(false)
+	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterest: string; date: string }>>([])
+	const [topInterests, setTopInterests] = useState<Array<{ interest: string; count: number }>>([])
 	const [journeyLoaded, setJourneyLoaded] = useState(false)
 	const [journeyLoading, setJourneyLoading] = useState(false)
 	const [funnel, setFunnel] = useState<FunnelStage[]>([])
@@ -250,6 +252,15 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 			const res = await fetch(`/api/events/${eventData._id}/albums/access-log?${params.toString()}`, { credentials: "include" })
 			const json = await res.json()
 			if (json?.status) setAlbumLog(json.data.items || [])
+
+			// Interests picked in the album access dialog — loaded on the same tab.
+			const iRes = await fetch(`/api/events/${eventData._id}/albums/interests?${params.toString()}`, { credentials: "include" })
+			const iJson = await iRes.json()
+			if (iJson?.status) {
+				setInterestRows(iJson.data.items || [])
+				setTopInterests(iJson.data.top || [])
+			}
+
 			setAlbumLogLoaded(true)
 		} catch (e: any) {
 			toast({ title: "Failed to load album access log", description: e.message, status: "error" })
@@ -278,7 +289,21 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 		const logLines = albumLog.map(
 			(r) => `"${r.albumTitle.replace(/"/g, '""')}","${r.name.replace(/"/g, '""')}","${r.email.replace(/"/g, '""')}",${r.action},${new Date(r.date).toISOString()}`,
 		)
-		const csv = "﻿" + [...summaryLines, "Access Log", logHeader, ...logLines].join("\n")
+
+		const q = (s: string) => `"${(s || "").replace(/"/g, '""')}"`
+		const topLines = topInterests.length
+			? ["", "Top Interests,Count", ...topInterests.map((t) => `${q(t.interest)},${t.count}`)]
+			: []
+		const interestLines = interestRows.length
+			? [
+					"",
+					"Interests Log",
+					"Name,Email,Interests,Custom Interest,Date",
+					...interestRows.map((r) => `${q(r.name)},${q(r.email)},${q(r.interests.join("; "))},${q(r.customInterest)},${new Date(r.date).toISOString()}`),
+			  ]
+			: []
+
+		const csv = "﻿" + [...summaryLines, "Access Log", logHeader, ...logLines, ...topLines, ...interestLines].join("\n")
 		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
 		const url = URL.createObjectURL(blob)
 		const el = document.createElement("a")
@@ -993,6 +1018,58 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									) : (
 										<Text color="#9C9C9C" fontSize="sm">No album access recorded for this event yet.</Text>
 									)}
+
+									{/* Interests captured in the album access dialog — for event planning */}
+									<Box mt={8}>
+										<Text fontSize="xl" fontWeight="bold" color="white">Viewer Interests</Text>
+										<Text fontSize="sm" color="#9C9C9C" mb={4}>What album viewers said they want next — collected at the access dialog.</Text>
+
+										{albumLogLoading ? (
+											<Center py={10}><Spinner color="#F79432" /></Center>
+										) : interestRows.length > 0 ? (
+											<>
+												{topInterests.length > 0 && (
+													<Box mb={6}>
+														<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Most Wanted</Text>
+														<Flex wrap="wrap" gap={2}>
+															{topInterests.map((t) => (
+																<Flex key={t.interest} align="center" gap={2} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="full" pl={3} pr={2} py={1}>
+																	<Text fontSize="sm" color="white">{t.interest}</Text>
+																	<Badge bg="#F79432" color="black" borderRadius="full" px={2}>{t.count}</Badge>
+																</Flex>
+															))}
+														</Flex>
+													</Box>
+												)}
+
+												<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Per Viewer</Text>
+												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white", verticalAlign: "top" } }}>
+													<Table variant="simple" size="sm">
+														<Thead><Tr><Th>Name</Th><Th>Email</Th><Th>Interests</Th><Th>Their Own</Th><Th>Date</Th></Tr></Thead>
+														<Tbody>
+															{interestRows.map((r) => (
+																<Tr key={r._id} _hover={{ bg: "#262626" }}>
+																	<Td><Text fontSize="sm">{r.name}</Text></Td>
+																	<Td><Text fontSize="sm">{r.email}</Text></Td>
+																	<Td>
+																		<Flex wrap="wrap" gap={1}>
+																			{r.interests.map((i) => (
+																				<Badge key={i} bg="#2a2a2a" color="white" borderRadius="full" px={2} textTransform="none" fontWeight="normal">{i}</Badge>
+																			))}
+																		</Flex>
+																	</Td>
+																	<Td><Text fontSize="sm" color={r.customInterest ? "#F79432" : "#65676B"}>{r.customInterest || "—"}</Text></Td>
+																	<Td><Text fontSize="sm" color="#9C9C9C">{new Date(r.date).toLocaleString()}</Text></Td>
+																</Tr>
+															))}
+														</Tbody>
+													</Table>
+												</TableContainer>
+											</>
+										) : (
+											<Text color="#9C9C9C" fontSize="sm">No interests captured yet.</Text>
+										)}
+									</Box>
 								</TabPanel>
 							</TabPanels>
 						</Tabs>

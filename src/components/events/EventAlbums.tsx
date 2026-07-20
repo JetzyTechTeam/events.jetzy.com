@@ -28,7 +28,7 @@ import {
 	useDisclosure,
 	useToast,
 } from "@chakra-ui/react"
-import { FiPlus, FiShare2, FiEdit2, FiTrash2, FiImage, FiVideo, FiPlayCircle, FiSend, FiUsers, FiUserPlus } from "react-icons/fi"
+import { FiPlus, FiShare2, FiEdit2, FiTrash2, FiImage, FiVideo, FiPlayCircle, FiSend, FiUsers, FiUserPlus, FiStar } from "react-icons/fi"
 import { signIn, useSession } from "next-auth/react"
 import { useRouter } from "next/router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -86,6 +86,25 @@ const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 // Jetzy directory search in the tag panel is hidden until the search API stops requiring a
 // personal access token (album users don't have one). Set to true to re-enable.
 const SHOW_JETZY_SEARCH = false
+
+// Curated interests shown in the album access dialog — captured for event planning. Emoji is
+// display only; the label is what gets stored. A viewer must pick 3 (their own custom entry
+// counts as one).
+const ALBUM_INTERESTS: { label: string; emoji: string }[] = [
+	{ label: "Wine Tastings", emoji: "🍷" },
+	{ label: "Hiking", emoji: "🥾" },
+	{ label: "Golf", emoji: "⛳" },
+	{ label: "Networking", emoji: "🤝" },
+	{ label: "Tennis", emoji: "🎾" },
+	{ label: "Beach", emoji: "🏖️" },
+	{ label: "Travel", emoji: "✈️" },
+	{ label: "Founders", emoji: "🚀" },
+	{ label: "Art", emoji: "🎨" },
+	{ label: "Wellness", emoji: "🧘" },
+	{ label: "Live Music", emoji: "🎵" },
+	{ label: "Museum", emoji: "🏛️" },
+]
+const REQUIRED_INTERESTS = 3
 
 export default function EventAlbums({ eventId, eventSlug, eventName, canManage }: Props) {
 	const { data: session, status } = useSession()
@@ -556,12 +575,29 @@ function GuestAccessModal({
 	const [name, setName] = useState("")
 	const [email, setEmail] = useState("")
 	const [acceptedTerms, setAcceptedTerms] = useState(false)
+	const [interests, setInterests] = useState<string[]>([])
+	const [customInterest, setCustomInterest] = useState("")
 	const [submitting, setSubmitting] = useState(false)
+
+	// A typed custom interest counts as one of the three.
+	const interestTotal = interests.length + (customInterest.trim() ? 1 : 0)
+	const toggleInterest = (label: string) => {
+		setInterests((prev) => {
+			if (prev.includes(label)) return prev.filter((l) => l !== label)
+			// Cap at 3 including the custom entry — ignore extra taps.
+			if (prev.length + (customInterest.trim() ? 1 : 0) >= REQUIRED_INTERESTS) return prev
+			return [...prev, label]
+		})
+	}
 
 	const submit = async (e: React.FormEvent) => {
 		e.preventDefault()
 		if (!name.trim() || !email.trim()) {
 			toast({ title: "Please enter your name and email", status: "warning", duration: 2500, isClosable: true })
+			return
+		}
+		if (interestTotal !== REQUIRED_INTERESTS) {
+			toast({ title: `Please pick ${REQUIRED_INTERESTS} interests — your own counts as one`, status: "warning", duration: 2800, isClosable: true })
 			return
 		}
 		// This creates a Jetzy account behind the scenes, so consent is required here just
@@ -572,7 +608,12 @@ function GuestAccessModal({
 		}
 		setSubmitting(true)
 		try {
-			const res = await axios.post(`/api/events/${eventId}/albums/guest-access`, { name: name.trim(), email: email.trim() })
+			const res = await axios.post(`/api/events/${eventId}/albums/guest-access`, {
+				name: name.trim(),
+				email: email.trim(),
+				interests,
+				customInterest: customInterest.trim() || undefined,
+			})
 			// Remember for the access-notice call so it can report returning vs new.
 			try { sessionStorage.setItem("album_is_new_account", res.data?.data?.isNewAccount ? "1" : "0") } catch {}
 
@@ -603,7 +644,7 @@ function GuestAccessModal({
 	}
 
 	return (
-		<Modal isOpen={isOpen} onClose={onClose} isCentered size="sm">
+		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "sm", md: "lg" }} scrollBehavior="inside">
 			<ModalOverlay bg="blackAlpha.800" />
 			<ModalContent bg="#15181C" color="white" border="1px solid #343536">
 				<ModalHeader>View the photos</ModalHeader>
@@ -636,6 +677,69 @@ function GuestAccessModal({
 							_placeholder={{ color: "#666" }}
 							autoComplete="email"
 						/>
+
+						{/* Interests — captured for event planning; a viewer must pick 3 (custom counts as one) */}
+						<Box mt={5}>
+							<Flex align="flex-start" justify="space-between" gap={3} mb={1}>
+								<Box>
+									<Flex align="center" gap={2}>
+										<Icon as={FiStar} color="#F79432" boxSize={4} />
+										<Text fontSize="sm" fontWeight="600" color="white">What experiences would you like to join next?</Text>
+									</Flex>
+									<Text fontSize="xs" color="#8a8a8a">Pick {REQUIRED_INTERESTS}. We&apos;ll notify you about upcoming events you&apos;ll actually enjoy.</Text>
+								</Box>
+								<Badge flexShrink={0} bg={interestTotal === REQUIRED_INTERESTS ? "#2f7d32" : "#2b2b2b"} color="white" borderRadius="full" px={2} py={1} fontSize="11px">
+									{interestTotal}/{REQUIRED_INTERESTS} selected
+								</Badge>
+							</Flex>
+							<SimpleGrid columns={{ base: 2, md: 3 }} spacing={2} mt={2}>
+								{ALBUM_INTERESTS.map((it) => {
+									const isSel = interests.includes(it.label)
+									const atCap = interestTotal >= REQUIRED_INTERESTS
+									return (
+										<Box
+											key={it.label}
+											as="button"
+											type="button"
+											onClick={() => toggleInterest(it.label)}
+											aria-pressed={isSel}
+											opacity={!isSel && atCap ? 0.45 : 1}
+											cursor={!isSel && atCap ? "not-allowed" : "pointer"}
+											display="flex"
+											alignItems="flex-start"
+											gap={2}
+											px={3}
+											py={2}
+											minH="42px"
+											borderRadius="lg"
+											bg={isSel ? "#F79432" : "#1E1E1E"}
+											color={isSel ? "black" : "white"}
+											border="1px solid"
+											borderColor={isSel ? "#F79432" : "#343536"}
+											_hover={{ borderColor: isSel ? "#F79432" : "#5A5D62" }}
+											textAlign="left"
+										>
+											<Text fontSize="md" lineHeight="1.2" mt="1px">{it.emoji}</Text>
+											<Text fontSize="xs" fontWeight="600" whiteSpace="normal" lineHeight="1.2">{it.label}</Text>
+										</Box>
+									)
+								})}
+							</SimpleGrid>
+							<Box mt={3}>
+								<Text fontSize="xs" color="#F79432" fontWeight="600">Tell us your interest</Text>
+								<Text fontSize="11px" color="#8a8a8a" mb={1}>This will help us personalize future events for you. Counts as one of your {REQUIRED_INTERESTS}.</Text>
+								<Input
+									size="md"
+									value={customInterest}
+									onChange={(e) => setCustomInterest(e.target.value)}
+									placeholder="Type your interest here..."
+									bg="#1E1E1E"
+									borderColor="#343536"
+									color="white"
+									_placeholder={{ color: "#666" }}
+								/>
+							</Box>
+						</Box>
 
 						{/* Terms & Conditions — mirrors ticket checkout, since this also creates an account */}
 						<label style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer", marginTop: "14px" }}>

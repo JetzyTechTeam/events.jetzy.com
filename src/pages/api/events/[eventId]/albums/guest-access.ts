@@ -10,10 +10,14 @@ import { createOrUpdateUser } from "@/lib/user-utils"
 import { setAlbumGuestCookie } from "@/lib/album-auth"
 import { generateMagicToken } from "@/lib/magicLink"
 import { sendWelcomeEmail } from "@/lib/send-grid"
+import { AlbumInterest } from "@/models/events/album-interest"
 
 const schema = zod.object({
 	name: zod.string().min(1).max(120),
 	email: zod.string().email(),
+	// Captured for event planning; the client enforces the "pick 3" rule, kept lenient here.
+	interests: zod.array(zod.string().max(60)).max(3).optional(),
+	customInterest: zod.string().max(200).optional(),
 })
 
 /**
@@ -78,6 +82,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		setAlbumGuestCookie(res, { email, firstName, lastName, userId })
+
+		// Capture the interests for event planning. One row per (event, email), upserted so
+		// re-entry updates. Never block album entry if this write fails.
+		try {
+			const interests = validation.data.interests?.map((i) => i.trim()).filter(Boolean) || []
+			const customInterest = validation.data.customInterest?.trim() || undefined
+			if (interests.length > 0 || customInterest) {
+				await AlbumInterest.updateOne(
+					{ eventId: new Types.ObjectId(eventId), email },
+					{
+						$set: {
+							name: fullName,
+							userId: userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined,
+							interests,
+							customInterest,
+						},
+					},
+					{ upsert: true },
+				)
+			}
+		} catch (e) {
+			console.error("[albums/guest-access] interest capture failed:", e)
+		}
 
 		// Sign the visitor in for real ONLY when we just created the account. An email that
 		// already belongs to someone must not hand out a session — anyone with a share link
