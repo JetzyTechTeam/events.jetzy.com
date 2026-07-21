@@ -168,7 +168,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const [albumLog, setAlbumLog] = useState<Array<{ _id: string; albumId: string; albumTitle: string; name: string; email: string; action: string; date: string }>>([])
 	const [albumLogLoaded, setAlbumLogLoaded] = useState(false)
 	const [albumLogLoading, setAlbumLogLoading] = useState(false)
-	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterests: string[]; date: string }>>([])
+	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterests: string[]; optOut?: boolean; date: string }>>([])
 	const [topInterests, setTopInterests] = useState<Array<{ interest: string; count: number }>>([])
 	const [journeyLoaded, setJourneyLoaded] = useState(false)
 	const [journeyLoading, setJourneyLoading] = useState(false)
@@ -298,8 +298,8 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 			? [
 					"",
 					"Interests Log",
-					"Name,Email,Interests,Custom Interest,Date",
-					...interestRows.map((r) => `${q(r.name)},${q(r.email)},${q(r.interests.join("; "))},${q(r.customInterests.join("; "))},${new Date(r.date).toISOString()}`),
+					"Name,Email,Interests,Custom Interest,Opted Out,Date",
+					...interestRows.map((r) => `${q(r.name)},${q(r.email)},${q(r.interests.join("; "))},${q(r.customInterests.join("; "))},${r.optOut ? "Yes" : "No"},${new Date(r.date).toISOString()}`),
 			  ]
 			: []
 
@@ -1053,9 +1053,13 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 																	<Td><Text fontSize="sm">{r.email}</Text></Td>
 																	<Td>
 																		<Flex wrap="wrap" gap={1}>
+																			{r.optOut && (
+																				<Badge bg="#4a1f1f" color="#ff9a9a" borderRadius="full" px={2} textTransform="none" fontWeight="normal">Opted out</Badge>
+																			)}
 																			{r.interests.map((i) => (
 																				<Badge key={i} bg="#2a2a2a" color="white" borderRadius="full" px={2} textTransform="none" fontWeight="normal">{i}</Badge>
 																			))}
+																			{!r.optOut && r.interests.length === 0 && <Text fontSize="sm" color="#65676B">—</Text>}
 																		</Flex>
 																	</Td>
 																	<Td>

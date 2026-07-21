@@ -19,6 +19,8 @@ export interface IAlbumInterest {
 	customInterests: string[]
 	/** Legacy single free-text field (pre multi-custom); kept for reading old rows. */
 	customInterest?: string
+	/** Viewer ticked "I don't want to attend any other Jetzy event" — counts as answered. */
+	optOut?: boolean
 	createdAt?: Date
 	updatedAt?: Date
 }
@@ -58,6 +60,10 @@ const albumInterestSchema = new Schema<IAlbumInterest>(
 		customInterest: {
 			type: String,
 			required: false,
+		},
+		optOut: {
+			type: Boolean,
+			default: false,
 		},
 	},
 	{

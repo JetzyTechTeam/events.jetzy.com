@@ -117,6 +117,7 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	const shareModal = useDisclosure()
 	const deleteDialog = useDisclosure()
 	const guestGateModal = useDisclosure()
+	const interestsModal = useDisclosure()
 	const cancelDeleteRef = useRef<HTMLButtonElement>(null)
 
 	const [editingAlbum, setEditingAlbum] = useState<Album | null>(null)
@@ -162,13 +163,24 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	// about identity. `probeSettled` gates the auto-open below so the dialog can't flash
 	// open at someone already identified while this request is still in flight.
 	const [probeSettled, setProbeSettled] = useState(false)
+	// Whether this viewer still owes us interests for this event. Viewers who arrive already
+	// identified (logged in, or returning with the cookie — notably publish-email recipients,
+	// who are signed in by the magic link) never see the name+email gate, so without this
+	// they'd never be asked.
+	const [needsInterests, setNeedsInterests] = useState(false)
 	useEffect(() => {
-		if (session) { setProbeSettled(true); return }
-		if (hasGuestAccess || status === "loading") return
+		if (status === "loading") return
 		let cancelled = false
 		axios
 			.get(`/api/events/${eventId}/albums/viewer`)
-			.then((res) => { if (!cancelled && res.data?.data?.identified) setHasGuestAccess(true) })
+			.then((res) => {
+				if (cancelled) return
+				const d = res.data?.data
+				if (d?.identified) {
+					setHasGuestAccess(true)
+					setNeedsInterests(!d.hasInterests)
+				}
+			})
 			.catch(() => { /* treat as anonymous — the dialog shows if they came from a share link */ })
 			.finally(() => { if (!cancelled) setProbeSettled(true) })
 		return () => { cancelled = true }
@@ -252,9 +264,18 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 		const albumParam = router.query.album
 		if (!albumParam || typeof albumParam !== "string" || !hasAccess) return
 		if (deepLinkOpenedRef.current === albumParam) return
+		// Wait for the probe so we know whether to ask for interests first.
+		if (!probeSettled) return
 		const match = albums.find((a) => a._id === albumParam)
 		if (match) {
 			deepLinkOpenedRef.current = albumParam
+			// Known viewer who hasn't given interests (e.g. arrived from the publish email
+			// already logged in) — ask first, then continue into the album.
+			if (needsInterests) {
+				pendingAlbumRef.current = match
+				interestsModal.onOpen()
+				return
+			}
 			setGalleryAlbum(match)
 			galleryModal.onOpen()
 			// Capture the one-shot tagPhoto hint into state, then drop it from the URL so a
@@ -267,7 +288,7 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [albums, router.query.album, hasAccess])
+	}, [albums, router.query.album, hasAccess, probeSettled, needsInterests])
 
 	const openCreate = () => {
 		setEditingAlbum(null)
@@ -281,15 +302,25 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	// dialog at the moment they open an album — never on page load — and we remember which
 	// album they wanted so they land in it straight after submitting.
 	const pendingAlbumRef = useRef<Album | null>(null)
+	// Actually show the album (used directly, and after either dialog is satisfied).
+	const showGallery = (album: Album) => {
+		setGalleryAlbum(album)
+		galleryModal.onOpen()
+		recordAlbumAccess(album._id)
+	}
 	const openGallery = (album: Album) => {
 		if (!hasAccess) {
 			pendingAlbumRef.current = album
 			guestGateModal.onOpen()
 			return
 		}
-		setGalleryAlbum(album)
-		galleryModal.onOpen()
-		recordAlbumAccess(album._id)
+		// Known viewer, but we've never asked them what they want next on this event.
+		if (needsInterests) {
+			pendingAlbumRef.current = album
+			interestsModal.onOpen()
+			return
+		}
+		showGallery(album)
 	}
 	const openShare = (album: Album) => {
 		setShareAlbum(album)
@@ -464,6 +495,8 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 				onGranted={() => {
 					setHasGuestAccess(true)
 					hasAccessRef.current = true
+					// The gate collects interests too, so nothing further to ask.
+					setNeedsInterests(false)
 					guestGateModal.onClose()
 					// Continue straight into whichever album they were trying to open.
 					const pending = pendingAlbumRef.current
@@ -472,6 +505,22 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 						setGalleryAlbum(pending)
 						galleryModal.onOpen()
 						recordAlbumAccess(pending._id)
+					}
+				}}
+			/>
+
+			{/* Interests-only dialog — for viewers we already know but haven't asked yet */}
+			<InterestsModal
+				isOpen={interestsModal.isOpen}
+				onClose={() => { pendingAlbumRef.current = null; interestsModal.onClose() }}
+				eventId={eventId}
+				onSaved={() => {
+					setNeedsInterests(false)
+					interestsModal.onClose()
+					const pending = pendingAlbumRef.current
+					if (pending) {
+						pendingAlbumRef.current = null
+						showGallery(pending)
 					}
 				}}
 			/>
@@ -556,32 +605,18 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	)
 }
 
-// ─────────────────────────── Guest access dialog ───────────────────────────
-// Deliberately minimal: name + email, no password, no signup screen. If the email already
-// belongs to an account we match it; if not the server creates one silently. Opens
-// automatically whenever a visitor needs it (e.g. arriving via a share link) and, on
-// success, hands control back so the caller can continue straight into the album.
-function GuestAccessModal({
-	isOpen,
-	onClose,
-	eventId,
-	onGranted,
-}: {
-	isOpen: boolean
-	onClose: () => void
-	eventId: string
-	onGranted: () => void
-}) {
+// ─────────────────────────── Interest selection (shared) ───────────────────────────
+// Used by both the name+email gate (new visitors) and the interests-only dialog (viewers
+// who are already identified, e.g. arriving logged-in from the publish email).
+function useInterestSelection() {
 	const toast = useToast()
-	const [name, setName] = useState("")
-	const [email, setEmail] = useState("")
-	const [acceptedTerms, setAcceptedTerms] = useState(false)
 	const [interests, setInterests] = useState<string[]>([])
 	const [customInterests, setCustomInterests] = useState<string[]>([])
 	const [customDraft, setCustomDraft] = useState("")
-	const [submitting, setSubmitting] = useState(false)
+	// "I don't want to attend any other Jetzy event" — optional, and a valid answer on its
+	// own, so ticking it satisfies the at-least-one-interest requirement.
+	const [optOut, setOptOut] = useState(false)
 
-	// Curated chips + each custom entry, any number. At least one is required to continue.
 	const interestTotal = interests.length + customInterests.length
 
 	const toggleInterest = (label: string) => {
@@ -604,21 +639,210 @@ function GuestAccessModal({
 
 	const removeCustom = (val: string) => setCustomInterests((prev) => prev.filter((c) => c !== val))
 
+	// Folds an un-added draft in so a viewer isn't blocked for forgetting to click Add.
+	// Returns the values to submit, since setState wouldn't be visible synchronously.
+	const resolveForSubmit = () => {
+		const draft = customDraft.trim()
+		let effectiveCustoms = customInterests
+		if (
+			draft &&
+			!customInterests.some((c) => c.toLowerCase() === draft.toLowerCase()) &&
+			!interests.some((i) => i.toLowerCase() === draft.toLowerCase())
+		) {
+			effectiveCustoms = [...customInterests, draft]
+			setCustomInterests(effectiveCustoms)
+			setCustomDraft("")
+		}
+		return { interests, customInterests: effectiveCustoms, total: interests.length + effectiveCustoms.length, optOut }
+	}
+
+	return { interests, customInterests, customDraft, setCustomDraft, optOut, setOptOut, interestTotal, toggleInterest, addCustom, removeCustom, resolveForSubmit }
+}
+
+type InterestSelection = ReturnType<typeof useInterestSelection>
+
+function InterestsFields({ ix }: { ix: InterestSelection }) {
+	return (
+		<Box mt={5}>
+			<Flex align="flex-start" justify="space-between" gap={3} mb={1}>
+				<Box>
+					<Flex align="center" gap={2}>
+						<Icon as={FiStar} color="#F79432" boxSize={4} />
+						<Text fontSize="sm" fontWeight="600" color="white">What experiences would you like to join next?</Text>
+					</Flex>
+					<Text fontSize="xs" color="#8a8a8a">Pick the experiences you&apos;d like — we&apos;ll notify you about events you&apos;ll actually enjoy.</Text>
+				</Box>
+				<Badge flexShrink={0} bg={ix.interestTotal >= MIN_INTERESTS ? "#2f7d32" : "#2b2b2b"} color="white" borderRadius="full" px={2} py={1} fontSize="11px">
+					{ix.interestTotal} selected
+				</Badge>
+			</Flex>
+			<SimpleGrid columns={{ base: 2, md: 3 }} spacing={2} mt={2}>
+				{ALBUM_INTERESTS.map((it) => {
+					const isSel = ix.interests.includes(it.label)
+					return (
+						<Box
+							key={it.label}
+							as="button"
+							type="button"
+							onClick={() => ix.toggleInterest(it.label)}
+							aria-pressed={isSel}
+							cursor="pointer"
+							display="flex"
+							alignItems="flex-start"
+							gap={2}
+							px={3}
+							py={2}
+							minH="42px"
+							borderRadius="lg"
+							bg={isSel ? "#F79432" : "#1E1E1E"}
+							color={isSel ? "black" : "white"}
+							border="1px solid"
+							borderColor={isSel ? "#F79432" : "#343536"}
+							_hover={{ borderColor: isSel ? "#F79432" : "#5A5D62" }}
+							textAlign="left"
+						>
+							<Text fontSize="md" lineHeight="1.2" mt="1px">{it.emoji}</Text>
+							<Text fontSize="xs" fontWeight="600" whiteSpace="normal" lineHeight="1.2">{it.label}</Text>
+						</Box>
+					)
+				})}
+			</SimpleGrid>
+			<Box mt={3}>
+				<Text fontSize="xs" color="#F79432" fontWeight="600">Tell us your interest</Text>
+				<Text fontSize="11px" color="#8a8a8a" mb={1}>Add your own — as many as you like.</Text>
+				{ix.customInterests.length > 0 && (
+					<Flex wrap="wrap" gap={2} mb={2}>
+						{ix.customInterests.map((c) => (
+							<Flex key={c} align="center" gap={1} bg="#F79432" color="black" borderRadius="full" pl={3} pr={1} py={1}>
+								<Text fontSize="xs" fontWeight="600">{c}</Text>
+								<Box as="button" type="button" aria-label={`Remove ${c}`} onClick={() => ix.removeCustom(c)} px={1} fontSize="sm" lineHeight="1" _hover={{ opacity: 0.7 }}>×</Box>
+							</Flex>
+						))}
+					</Flex>
+				)}
+				<Flex gap={2}>
+					<Input
+						size="md"
+						value={ix.customDraft}
+						onChange={(e) => ix.setCustomDraft(e.target.value)}
+						onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); ix.addCustom() } }}
+						placeholder="Type your interest here..."
+						bg="#1E1E1E"
+						borderColor="#343536"
+						color="white"
+						_placeholder={{ color: "#666" }}
+					/>
+					<Button size="md" flexShrink={0} onClick={ix.addCustom} bg="#2B2B2B" color="white" _hover={{ bg: "#3A3A3A" }} isDisabled={!ix.customDraft.trim()}>
+						Add
+					</Button>
+				</Flex>
+			</Box>
+
+			{/* Optional opt-out. Ticking it is a valid answer on its own — no interest needed. */}
+			<label style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer", marginTop: "14px" }}>
+				<input
+					type="checkbox"
+					checked={ix.optOut}
+					onChange={(e) => ix.setOptOut(e.target.checked)}
+					style={{ marginTop: "3px" }}
+				/>
+				<Text fontSize="xs" color="#bbbbbb">
+					I don&apos;t want to attend any other Jetzy event <Text as="span" color="#777">(optional)</Text>
+				</Text>
+			</label>
+		</Box>
+	)
+}
+
+// ─────────────────────────── Interests-only dialog ───────────────────────────
+// For viewers we already know (logged in, or returning with the guest cookie) but who
+// haven't told us their interests for this event yet — they never see the name+email gate.
+function InterestsModal({
+	isOpen,
+	onClose,
+	eventId,
+	onSaved,
+}: {
+	isOpen: boolean
+	onClose: () => void
+	eventId: string
+	onSaved: () => void
+}) {
+	const toast = useToast()
+	const ix = useInterestSelection()
+	const [submitting, setSubmitting] = useState(false)
+
+	const submit = async (e: React.FormEvent) => {
+		e.preventDefault()
+		const { interests, customInterests, total, optOut } = ix.resolveForSubmit()
+		if (!optOut && total < MIN_INTERESTS) {
+			toast({ title: "Please select at least one interest to continue", status: "warning", duration: 2800, isClosable: true })
+			return
+		}
+		setSubmitting(true)
+		try {
+			await axios.post(`/api/events/${eventId}/albums/my-interests`, { interests, customInterests, optOut })
+			onSaved()
+		} catch (err: any) {
+			toast({ title: "Couldn't save your interests", description: err?.response?.data?.message || err.message, status: "error", duration: 3500, isClosable: true })
+		} finally {
+			setSubmitting(false)
+		}
+	}
+
+	return (
+		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "sm", md: "lg" }} scrollBehavior="inside">
+			<ModalOverlay bg="blackAlpha.800" />
+			<ModalContent bg="#15181C" color="white" border="1px solid #343536">
+				<ModalHeader>Before you view the photos</ModalHeader>
+				<ModalCloseButton />
+				<ModalBody>
+					<Text color="#bbbbbb" fontSize="sm">Quick one — tell us what you&apos;d like to join next.</Text>
+					<form id="interests-only-form" onSubmit={submit}>
+						<InterestsFields ix={ix} />
+					</form>
+				</ModalBody>
+				<ModalFooter>
+					<Button type="submit" form="interests-only-form" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
+						View Album
+					</Button>
+				</ModalFooter>
+			</ModalContent>
+		</Modal>
+	)
+}
+
+// ─────────────────────────── Guest access dialog ───────────────────────────
+// Deliberately minimal: name + email, no password, no signup screen. If the email already
+// belongs to an account we match it; if not the server creates one silently. Opens
+// automatically whenever a visitor needs it (e.g. arriving via a share link) and, on
+// success, hands control back so the caller can continue straight into the album.
+function GuestAccessModal({
+	isOpen,
+	onClose,
+	eventId,
+	onGranted,
+}: {
+	isOpen: boolean
+	onClose: () => void
+	eventId: string
+	onGranted: () => void
+}) {
+	const toast = useToast()
+	const ix = useInterestSelection()
+	const [name, setName] = useState("")
+	const [email, setEmail] = useState("")
+	const [acceptedTerms, setAcceptedTerms] = useState(false)
+	const [submitting, setSubmitting] = useState(false)
+
 	const submit = async (e: React.FormEvent) => {
 		e.preventDefault()
 		if (!name.trim() || !email.trim()) {
 			toast({ title: "Please enter your name and email", status: "warning", duration: 2500, isClosable: true })
 			return
 		}
-		// Fold an un-added draft in so a viewer isn't blocked for forgetting to click Add.
-		const draft = customDraft.trim()
-		let effectiveCustoms = customInterests
-		if (draft && !customInterests.some((c) => c.toLowerCase() === draft.toLowerCase()) && !interests.some((i) => i.toLowerCase() === draft.toLowerCase())) {
-			effectiveCustoms = [...customInterests, draft]
-			setCustomInterests(effectiveCustoms)
-			setCustomDraft("")
-		}
-		if (interests.length + effectiveCustoms.length < MIN_INTERESTS) {
+		const { interests, customInterests: effectiveCustoms, total, optOut } = ix.resolveForSubmit()
+		if (!optOut && total < MIN_INTERESTS) {
 			toast({ title: "Please select at least one interest to continue", status: "warning", duration: 2800, isClosable: true })
 			return
 		}
@@ -635,6 +859,7 @@ function GuestAccessModal({
 				email: email.trim(),
 				interests,
 				customInterests: effectiveCustoms,
+				optOut,
 			})
 			// Remember for the access-notice call so it can report returning vs new.
 			try { sessionStorage.setItem("album_is_new_account", res.data?.data?.isNewAccount ? "1" : "0") } catch {}
@@ -700,82 +925,8 @@ function GuestAccessModal({
 							autoComplete="email"
 						/>
 
-						{/* Interests — captured for event planning; a viewer must pick 3 (custom counts as one) */}
-						<Box mt={5}>
-							<Flex align="flex-start" justify="space-between" gap={3} mb={1}>
-								<Box>
-									<Flex align="center" gap={2}>
-										<Icon as={FiStar} color="#F79432" boxSize={4} />
-										<Text fontSize="sm" fontWeight="600" color="white">What experiences would you like to join next?</Text>
-									</Flex>
-									<Text fontSize="xs" color="#8a8a8a">Pick the experiences you&apos;d like — we&apos;ll notify you about events you&apos;ll actually enjoy.</Text>
-								</Box>
-								<Badge flexShrink={0} bg={interestTotal >= MIN_INTERESTS ? "#2f7d32" : "#2b2b2b"} color="white" borderRadius="full" px={2} py={1} fontSize="11px">
-									{interestTotal} selected
-								</Badge>
-							</Flex>
-							<SimpleGrid columns={{ base: 2, md: 3 }} spacing={2} mt={2}>
-								{ALBUM_INTERESTS.map((it) => {
-									const isSel = interests.includes(it.label)
-									return (
-										<Box
-											key={it.label}
-											as="button"
-											type="button"
-											onClick={() => toggleInterest(it.label)}
-											aria-pressed={isSel}
-											cursor="pointer"
-											display="flex"
-											alignItems="flex-start"
-											gap={2}
-											px={3}
-											py={2}
-											minH="42px"
-											borderRadius="lg"
-											bg={isSel ? "#F79432" : "#1E1E1E"}
-											color={isSel ? "black" : "white"}
-											border="1px solid"
-											borderColor={isSel ? "#F79432" : "#343536"}
-											_hover={{ borderColor: isSel ? "#F79432" : "#5A5D62" }}
-											textAlign="left"
-										>
-											<Text fontSize="md" lineHeight="1.2" mt="1px">{it.emoji}</Text>
-											<Text fontSize="xs" fontWeight="600" whiteSpace="normal" lineHeight="1.2">{it.label}</Text>
-										</Box>
-									)
-								})}
-							</SimpleGrid>
-							<Box mt={3}>
-								<Text fontSize="xs" color="#F79432" fontWeight="600">Tell us your interest</Text>
-								<Text fontSize="11px" color="#8a8a8a" mb={1}>Add your own — as many as you like.</Text>
-								{customInterests.length > 0 && (
-									<Flex wrap="wrap" gap={2} mb={2}>
-										{customInterests.map((c) => (
-											<Flex key={c} align="center" gap={1} bg="#F79432" color="black" borderRadius="full" pl={3} pr={1} py={1}>
-												<Text fontSize="xs" fontWeight="600">{c}</Text>
-												<Box as="button" type="button" aria-label={`Remove ${c}`} onClick={() => removeCustom(c)} px={1} fontSize="sm" lineHeight="1" _hover={{ opacity: 0.7 }}>×</Box>
-											</Flex>
-										))}
-									</Flex>
-								)}
-								<Flex gap={2}>
-									<Input
-										size="md"
-										value={customDraft}
-										onChange={(e) => setCustomDraft(e.target.value)}
-										onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom() } }}
-										placeholder="Type your interest here..."
-										bg="#1E1E1E"
-										borderColor="#343536"
-										color="white"
-										_placeholder={{ color: "#666" }}
-									/>
-									<Button size="md" flexShrink={0} onClick={addCustom} bg="#2B2B2B" color="white" _hover={{ bg: "#3A3A3A" }} isDisabled={!customDraft.trim()}>
-										Add
-									</Button>
-								</Flex>
-							</Box>
-						</Box>
+						{/* Interests — captured for event planning; at least one required */}
+						<InterestsFields ix={ix} />
 
 						{/* Terms & Conditions — mirrors ticket checkout, since this also creates an account */}
 						<label style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer", marginTop: "14px" }}>
@@ -790,7 +941,6 @@ function GuestAccessModal({
 								<a href="/terms" target="_blank" rel="noreferrer" style={{ color: "#F79432", textDecoration: "underline" }}>
 									Terms &amp; Conditions
 								</a>
-								. By continuing, I agree to the creation of a Jetzy account.
 							</Text>
 						</label>
 					</form>
