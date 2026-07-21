@@ -17,7 +17,7 @@ type Data = {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<Data>) {
 	try {
-		const { firstName, lastName, email, password, shouldBeAJetzyMember, acceptedTerms, location, latitude, longitude, placeId, refCode } = req?.body
+		const { firstName, lastName, email, password, shouldBeAJetzyMember, acceptedTerms, location, latitude, longitude, placeId, refCode, signupSource, signupSessionId } = req?.body
 
 		const userType = Roles.USER
 
@@ -49,6 +49,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 			...(longitude !== undefined && { longitude }),
 			...(placeId && { placeId }),
 			...(refCode && { refCode }),
+			// Attribution: which page the signup came from + analytics session
+			...(signupSource && { signupSource }),
+			...(signupSessionId && { signupSessionId }),
 		})
 
 		if (!user || user === null) return sendResponse(res, null, "Failed to create user account.", false, ResCode.INTERNAL_SERVER_ERROR)

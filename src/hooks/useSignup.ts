@@ -37,7 +37,11 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
         }
     }, [waitingForSession, status, session, navigate, _cb, navigate.isReady, options?.disableAutoRedirect])
 
-    const handleGoogleLogin = async (options?: { skipToast?: boolean }) => {
+    // Attribution passed through to the firebase-auth provider so SSO signups
+    // get the same signupSource/signupSessionId stamp as email signups.
+    type SsoOptions = { skipToast?: boolean; signupSource?: string; signupSessionId?: string }
+
+    const handleGoogleLogin = async (options?: SsoOptions) => {
         setWaitingForSession(false);
         try {
             const provider = new GoogleAuthProvider();
@@ -51,6 +55,8 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                 image: result.user.photoURL || "",
                 redirect: false,
                 isSignup: "true",
+                ...(options?.signupSource && { signupSource: options.signupSource }),
+                ...(options?.signupSessionId && { signupSessionId: options.signupSessionId }),
             });
 
             if (res?.error) {
@@ -70,7 +76,7 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
         }
     };
 
-    const handleAppleLogin = async (options?: { skipToast?: boolean }) => {
+    const handleAppleLogin = async (options?: SsoOptions) => {
         setWaitingForSession(false);
         try {
             const provider = new OAuthProvider('apple.com');
@@ -98,6 +104,8 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                 image: result.user.photoURL || "",
                 redirect: false,
                 isSignup: "true",
+                ...(options?.signupSource && { signupSource: options.signupSource }),
+                ...(options?.signupSessionId && { signupSessionId: options.signupSessionId }),
             });
 
             if (res?.error) {

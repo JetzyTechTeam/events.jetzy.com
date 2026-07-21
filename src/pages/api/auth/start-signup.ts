@@ -51,6 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			acceptedTermsAt: new Date(),
 			emailVerified: false,
 			verifyToken: token,
+			signupSource: "signup",
 		})
 
 		try {

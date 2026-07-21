@@ -596,9 +596,14 @@ export default function AnalyticsPage() {
 					{/* Date Range Selector */}
 					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
 						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
-						<NextLink href="/console/analytics/journey" passHref legacyBehavior>
-							<Button as="a" colorScheme="orange" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} size="sm">View Journey Analytics</Button>
-						</NextLink>
+						<HStack spacing={2}>
+							<NextLink href="/console/analytics/qr-signups" passHref legacyBehavior>
+								<Button as="a" variant="outline" borderColor="#F79432" color="#F79432" _hover={{ bg: "#2a2a2a" }} size="sm">QR Signups</Button>
+							</NextLink>
+							<NextLink href="/console/analytics/journey" passHref legacyBehavior>
+								<Button as="a" colorScheme="orange" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} size="sm">View Journey Analytics</Button>
+							</NextLink>
+						</HStack>
 					</Flex>
 
 					{/* Loading State */}

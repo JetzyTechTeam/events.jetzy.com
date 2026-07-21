@@ -10,6 +10,7 @@ import { HiLocationMarker } from "react-icons/hi"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { usePlacesWidget } from "react-google-autocomplete"
 import { VerifyReferralCodeApi } from "@Jetzy/services/auth/authapis"
+import { useAnalytics } from "@/contexts/AnalyticsContext"
 
 // Image Assets
 import BgImage from "@Jetzy/assets/qrscanner signup/Rectangle background.png"
@@ -45,6 +46,11 @@ const generateSecurePassword = () => {
 export default function JetzyQRSignup() {
     const { isLoading, handleGoogleLogin, handleAppleLogin, handleEmailSignup, status, session } = useSignup({ disableAutoRedirect: true })
     const navigate = useRouter()
+    const { sessionId } = useAnalytics()
+
+    // Signup attribution — stamped on the EventUsers record so the QR signup
+    // analytics page can tell these apart from /signup accounts.
+    const SIGNUP_SOURCE = "jetzyqrsignup"
 
     const [view, setView] = useState<ViewState>("SIGNUP")
     const [email, setEmail] = useState("")
@@ -146,6 +152,8 @@ export default function JetzyQRSignup() {
                 ...(locationData.lng !== null && { longitude: locationData.lng }),
                 ...(locationData.placeId && { placeId: locationData.placeId }),
                 refCode: inviteCode.trim() || "",
+                signupSource: SIGNUP_SOURCE,
+                ...(sessionId && { signupSessionId: sessionId }),
             })
 
             // Redux thunk returns the action object. If it failed, it has `error`. 
@@ -308,7 +316,7 @@ export default function JetzyQRSignup() {
                                     onClick={async () => {
                                         setIsEditing(false);
                                         setIsGoogleLoading(true);
-                                        const res = await handleGoogleLogin({ skipToast: true });
+                                        const res = await handleGoogleLogin({ skipToast: true, signupSource: SIGNUP_SOURCE, signupSessionId: sessionId || undefined });
                                         setIsGoogleLoading(false);
                                         if (!res.success) {
                                             setError(res.error || "Google signup failed. Please try again.");
@@ -329,7 +337,7 @@ export default function JetzyQRSignup() {
                                     onClick={async () => {
                                         setIsEditing(false);
                                         setIsAppleLoading(true);
-                                        const res = await handleAppleLogin({ skipToast: true });
+                                        const res = await handleAppleLogin({ skipToast: true, signupSource: SIGNUP_SOURCE, signupSessionId: sessionId || undefined });
                                         setIsAppleLoading(false);
                                         if (!res.success) {
                                             setError(res.error || "Apple signup failed. Please try again.");

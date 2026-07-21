@@ -198,6 +198,8 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/analytics/track\|track-action\|track-event-interaction\|track-page\|track-session-start\|track-session-end\|track-click\|track-scroll\|track-form` | public tracking (anonymous OK) |
 | GET | `/api/analytics/journey/sessions\|guests` | admin only |
 | GET | `/api/analytics/journey/session/[sessionId]\|funnel\|heat\|dwell` | admin OR event owner (when eventId scope applies) |
+| GET | `/api/analytics/qr-signups/list` | admin only — paginated QR-signup rows; `dateFrom/dateTo/search/source/provider/hasRefCode/page/limit`, `format=csv` streams the full filtered set. Projection is an explicit allowlist (never password/tokens). |
+| GET | `/api/analytics/qr-signups/funnel` | admin only — `/jetzyqrsignup` funnel (page view → form focus → submit → account created) + totals + top locations, all date-filtered |
 
 **Perf pattern:** `overview.ts`, `visitors.ts`, `top-users.ts`, `top-events.ts` run all independent DB queries in one `Promise.all` (not sequentially). Earlier sequential version stalled the dashboard for 30+ seconds on Atlas. Also: prefer `countDocuments` over `.distinct()` for unique counts; for distinct counts use `aggregate([{$group:{_id:"$field"}},{$count:"count"}])` (avoids loading all IDs into Node memory). Connection pool `maxPoolSize: 10` + `bufferCommands: false` (see `src/configs/database.ts`).
 
@@ -266,6 +268,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | Booking detail | `src/pages/console/bookings/[eventId].tsx` | admin OR owner (strips ownerId from props) |
 | Platform analytics | `src/pages/console/analytics.tsx` | admin only — dark themed (orange `#F79432` accent, `#1a1a1a` cards). Links to Journey page. |
 | Journey analytics | `src/pages/console/analytics/journey.tsx` | admin only — dark themed. Sessions / Guests vs Auth / Heatmap / Funnels tabs |
+| QR signup analytics | `src/pages/console/analytics/qr-signups.tsx` | admin only — dark themed. Metric cards + `/jetzyqrsignup` funnel + signups table (what each user entered: location, coords, placeId, invite code, provider) with date/search/provider/invite-code filters, pagination and CSV export. Linked from Platform + Journey analytics headers. |
 
 ---
 
@@ -427,6 +430,14 @@ Stats endpoint available
 - UI: `jetzyqrsignup.tsx` — optional invite-code input, first field. Non-empty code live-verified via `VerifyReferralCodeApi` (`src/services/auth/authapis.ts`) → `GET external:/v1/referral/verify/{code}` (200 = valid; main Jetzy backend, same host as SSO). Invalid → inline error, blocks submit. Empty → skipped.
 - `refCode` flows: page → `handleEmailSignup` spread → `/api/create` → stored on EventUsers (`refCode` field in `eventUsersModal.ts`) + forwarded to main backend `/v1/accounts/create` (see Auth API section). `SignUpFormData.refCode?` in `src/types/form.ts`.
 - SSO (Google/Apple) signup does NOT carry invite code (goes through firebase-auth provider).
+
+## Feature: QR Signup Attribution + Analytics
+- `EventUsers` gained `signupSource` (e.g. `"jetzyqrsignup"` / `"signup"`) and `signupSessionId` (analytics sessionId at signup) — both optional + indexed, in `src/models/eventUsersModal.ts`.
+- Email path: `jetzyqrsignup.tsx` reads `sessionId` from `useAnalytics()` and spreads both fields into `handleEmailSignup` → `SignUpFormData` → `/api/create` → `EventUsers.create`.
+- SSO path: `handleGoogleLogin`/`handleAppleLogin` in `useSignup.ts` take `{ signupSource, signupSessionId }` and forward them as `signIn("firebase-auth", …)` credentials; the provider in `[...nextauth].ts` stamps them on `EventUsers.create`. SSO rows have no location and no invite code.
+- `/api/auth/start-signup` stamps `signupSource: "signup"`.
+- Legacy rows (pre-field) are classified at **query time only**, never written back: `location`/`placeId` are collected exclusively on `/jetzyqrsignup`, so their presence infers a QR signup (`isInferred: true` → "QR (inferred)" badge). Shared matcher + date/CSV helpers live in `src/lib/qrSignups.ts` (`qrSourceMatch`, `buildDateFilter`, `escapeCsv`, `escapeRegex`).
+- Funnel caveat surfaced in the UI: form focus/submit stages only exist for post-journey-tracking sessions, and `submit` fires for the email `<form>` only — the Google/Apple buttons sit outside it, so social signups jump straight to "Account created".
 - Welcome email (`sendWelcomeEmail` in `send-grid.ts`): CEO-approved invite-only copy; single font (`'Times New Roman', Times, Arial, serif` inlined on EVERY element — Outlook doesn't inherit); "Jetzy Select Concierge" → https://selectmember.jetzy.com/; no greeting line; no temp password (users use Forgot Password); signoff "Live the Jetzy Life! / Jetzy.com / Live like a Traveler | Travel like a Local"; order: body → closing → signoff → app-badge CTA → plain-divider safety text (yellow box removed). Store badges: `public/email/*-badge-v2.png` — trimmed artwork, identical 404×120 canvases, displayed 135×40 (old `-336x120.png` kept for already-sent emails; Gmail proxy caches by URL, so changing badge art requires NEW filenames).
 
 ## Feature: Check-in Portal
