@@ -88,8 +88,8 @@ const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
 const SHOW_JETZY_SEARCH = false
 
 // Curated interests shown in the album access dialog — captured for event planning. Emoji is
-// display only; the label is what gets stored. A viewer must pick 3 (their own custom entry
-// counts as one).
+// display only; the label is what gets stored. A viewer must pick at least one (no upper
+// limit); their own custom entries count too.
 const ALBUM_INTERESTS: { label: string; emoji: string }[] = [
 	{ label: "Wine Tastings", emoji: "🍷" },
 	{ label: "Hiking", emoji: "🥾" },
@@ -104,7 +104,7 @@ const ALBUM_INTERESTS: { label: string; emoji: string }[] = [
 	{ label: "Live Music", emoji: "🎵" },
 	{ label: "Museum", emoji: "🏛️" },
 ]
-const REQUIRED_INTERESTS = 3
+const MIN_INTERESTS = 1
 
 export default function EventAlbums({ eventId, eventSlug, eventName, canManage }: Props) {
 	const { data: session, status } = useSession()
@@ -581,29 +581,16 @@ function GuestAccessModal({
 	const [customDraft, setCustomDraft] = useState("")
 	const [submitting, setSubmitting] = useState(false)
 
-	// Curated chips + each custom entry together count toward the 3.
+	// Curated chips + each custom entry, any number. At least one is required to continue.
 	const interestTotal = interests.length + customInterests.length
-	const atCapToast = () =>
-		toast({ title: `You've picked ${REQUIRED_INTERESTS} already — remove one to add another`, status: "warning", duration: 2500, isClosable: true })
 
 	const toggleInterest = (label: string) => {
-		setInterests((prev) => {
-			if (prev.includes(label)) return prev.filter((l) => l !== label)
-			if (prev.length + customInterests.length >= REQUIRED_INTERESTS) {
-				atCapToast()
-				return prev
-			}
-			return [...prev, label]
-		})
+		setInterests((prev) => (prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]))
 	}
 
 	const addCustom = () => {
 		const val = customDraft.trim()
 		if (!val) return
-		if (interestTotal >= REQUIRED_INTERESTS) {
-			atCapToast()
-			return
-		}
 		const dupe =
 			customInterests.some((c) => c.toLowerCase() === val.toLowerCase()) ||
 			interests.some((i) => i.toLowerCase() === val.toLowerCase())
@@ -626,13 +613,13 @@ function GuestAccessModal({
 		// Fold an un-added draft in so a viewer isn't blocked for forgetting to click Add.
 		const draft = customDraft.trim()
 		let effectiveCustoms = customInterests
-		if (draft && interestTotal < REQUIRED_INTERESTS && !customInterests.some((c) => c.toLowerCase() === draft.toLowerCase()) && !interests.some((i) => i.toLowerCase() === draft.toLowerCase())) {
+		if (draft && !customInterests.some((c) => c.toLowerCase() === draft.toLowerCase()) && !interests.some((i) => i.toLowerCase() === draft.toLowerCase())) {
 			effectiveCustoms = [...customInterests, draft]
 			setCustomInterests(effectiveCustoms)
 			setCustomDraft("")
 		}
-		if (interests.length + effectiveCustoms.length !== REQUIRED_INTERESTS) {
-			toast({ title: `Please pick ${REQUIRED_INTERESTS} interests — your own counts as one`, status: "warning", duration: 2800, isClosable: true })
+		if (interests.length + effectiveCustoms.length < MIN_INTERESTS) {
+			toast({ title: "Please select at least one interest to continue", status: "warning", duration: 2800, isClosable: true })
 			return
 		}
 		// This creates a Jetzy account behind the scenes, so consent is required here just
@@ -721,16 +708,15 @@ function GuestAccessModal({
 										<Icon as={FiStar} color="#F79432" boxSize={4} />
 										<Text fontSize="sm" fontWeight="600" color="white">What experiences would you like to join next?</Text>
 									</Flex>
-									<Text fontSize="xs" color="#8a8a8a">Pick {REQUIRED_INTERESTS}. We&apos;ll notify you about upcoming events you&apos;ll actually enjoy.</Text>
+									<Text fontSize="xs" color="#8a8a8a">Pick the experiences you&apos;d like — we&apos;ll notify you about events you&apos;ll actually enjoy.</Text>
 								</Box>
-								<Badge flexShrink={0} bg={interestTotal === REQUIRED_INTERESTS ? "#2f7d32" : "#2b2b2b"} color="white" borderRadius="full" px={2} py={1} fontSize="11px">
-									{interestTotal}/{REQUIRED_INTERESTS} selected
+								<Badge flexShrink={0} bg={interestTotal >= MIN_INTERESTS ? "#2f7d32" : "#2b2b2b"} color="white" borderRadius="full" px={2} py={1} fontSize="11px">
+									{interestTotal} selected
 								</Badge>
 							</Flex>
 							<SimpleGrid columns={{ base: 2, md: 3 }} spacing={2} mt={2}>
 								{ALBUM_INTERESTS.map((it) => {
 									const isSel = interests.includes(it.label)
-									const atCap = interestTotal >= REQUIRED_INTERESTS
 									return (
 										<Box
 											key={it.label}
@@ -738,8 +724,7 @@ function GuestAccessModal({
 											type="button"
 											onClick={() => toggleInterest(it.label)}
 											aria-pressed={isSel}
-											opacity={!isSel && atCap ? 0.45 : 1}
-											cursor={!isSel && atCap ? "not-allowed" : "pointer"}
+											cursor="pointer"
 											display="flex"
 											alignItems="flex-start"
 											gap={2}
@@ -762,7 +747,7 @@ function GuestAccessModal({
 							</SimpleGrid>
 							<Box mt={3}>
 								<Text fontSize="xs" color="#F79432" fontWeight="600">Tell us your interest</Text>
-								<Text fontSize="11px" color="#8a8a8a" mb={1}>Add your own — each counts as one of your {REQUIRED_INTERESTS}.</Text>
+								<Text fontSize="11px" color="#8a8a8a" mb={1}>Add your own — as many as you like.</Text>
 								{customInterests.length > 0 && (
 									<Flex wrap="wrap" gap={2} mb={2}>
 										{customInterests.map((c) => (
