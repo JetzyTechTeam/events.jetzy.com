@@ -15,9 +15,10 @@ import { AlbumInterest } from "@/models/events/album-interest"
 const schema = zod.object({
 	name: zod.string().min(1).max(120),
 	email: zod.string().email(),
-	// Captured for event planning; the client enforces the "pick 3" rule, kept lenient here.
-	interests: zod.array(zod.string().max(60)).max(3).optional(),
-	customInterests: zod.array(zod.string().max(200)).max(3).optional(),
+	// Captured for event planning; no upper limit (client requires at least one). The .max(50)
+	// caps are just abuse guards.
+	interests: zod.array(zod.string().max(60)).max(50).optional(),
+	customInterests: zod.array(zod.string().max(200)).max(50).optional(),
 })
 
 /**
