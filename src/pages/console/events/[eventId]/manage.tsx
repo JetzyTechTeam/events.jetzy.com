@@ -117,6 +117,15 @@ const updateEventSchema = z.object({
 	location: z.string().optional(),
 })
 
+// Syncs Formik's `dirty` flag up to the page, so the sticky header (rendered
+// outside <Formik>) can show an unsaved-changes indicator.
+function FormDirtyWatcher({ dirty, onChange }: { dirty: boolean; onChange: (dirty: boolean) => void }) {
+	useEffect(() => {
+		onChange(dirty)
+	}, [dirty, onChange])
+	return null
+}
+
 // Page-level gate: only admins or the event owner may see the manage UI.
 // A logged-in-but-unauthorized user gets a permission screen instead — the
 // heavy Manage component (and its many hooks) never mounts for them.
@@ -302,6 +311,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [editPollIndex, setEditPollIndex] = useState<number | null>(null)
 	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = useState(false)
 	const [benefitInput, setBenefitInput] = useState("")
+	const [isFormDirty, setIsFormDirty] = useState(false)
 
 	// Initialize images, videos and tickets on mount
 	useEffect(() => {
@@ -597,13 +607,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	return (
 		<>
 			<ConsoleLayout
+				stickyHeader
 				page={
 					<span className="flex flex-col mt-3">
-						<span className={`${roboto.className} mb-7`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
+						<span className={`${roboto.className} mb-3`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
 							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}>My Events &rsaquo; </span>
 							<span className="text-[#F79432] font-normal">{stripHtml(event.name)}</span>
 						</span>
-						<span className={roboto.className} style={{ fontSize: "32px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>{stripHtml(event.name)}</span>
+						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>{stripHtml(event.name)}</span>
 					</span> as any
 				}
 				component={
@@ -614,7 +625,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							</Button>
 						)}
 						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
-							Update Event
+							{tabIndex === 0 && isFormDirty && (
+								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
+							)}
+							{tabIndex === 0 && isFormDirty ? "Save Changes" : "Update Event"}
 						</Button>
 						<Button bg="#3E3E3E" color="white" _hover={{ bg: "#323232" }} _active={{ bg: "#323232" }} fontWeight="bold" isLoading={isCloning} onClick={handleCloneEvent}>
 							Clone
@@ -642,7 +656,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				/>
 
 				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={6}>
-					<TabList borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
+					<TabList position="sticky" top="var(--console-header-h, 112px)" zIndex={20} bg="#0B0B0B" borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
 						<Tab
 							className={roboto.className}
 							fontWeight={500}
@@ -773,8 +787,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								onSubmit={onSubmit}
 								enableReinitialize={true}
 							>
-								{({ values, setFieldValue }) => (
+								{({ values, setFieldValue, dirty }) => (
 									<Form>
+										<FormDirtyWatcher dirty={dirty} onChange={setIsFormDirty} />
 										<Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
 											{/* ===================== MAIN COLUMN ===================== */}
 											<Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>

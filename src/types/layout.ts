@@ -13,6 +13,7 @@ export interface ConsoleDashboardProps {
 	backBtn?: string;
 	maxW?: string
 	className?: string;
+	stickyHeader?: boolean
 }
 
 export interface ConsoleNavbarProps extends ConsoleDashboardProps {}
