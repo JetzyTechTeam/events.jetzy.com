@@ -11,6 +11,7 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
+import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
 import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
 import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
@@ -251,7 +252,9 @@ export default function HostedEvents({ event }: Props) {
 		)
 	}
 
-	const isEnded = clonedEvent?.endsOn ? new Date(clonedEvent.endsOn).getTime() < Date.now() : false
+	// Use the canonical status (start-date driven, timezone-aware, matches the "ENDED" badge
+	// in the listing) — not a raw endsOn check, which misses start-only events.
+	const isEnded = clonedEvent ? getEventStatus(clonedEvent) === "past" : false
 
 	try {
 		return (
@@ -420,14 +423,18 @@ export default function HostedEvents({ event }: Props) {
 										</button>
 									)}
 
-									<a
-										role="button"
-										href="#event-tickets"
-										className="bg-[#F79432] text-black font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm"
-									>
-										Get Tickets
-									</a>
-									{isFreeEvent && (
+									{/* Hidden once the event has ended (host/admin keep it for reference). */}
+									{(!isEnded || canManage) && (
+										<a
+											role="button"
+											href="#event-tickets"
+											className="bg-[#F79432] text-black font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm"
+										>
+											Get Tickets
+										</a>
+									)}
+									{/* Nothing to cancel once the event is over — hide for everyone. */}
+									{isFreeEvent && !isEnded && (
 										<button
 											onClick={handleCancelBooking}
 											disabled={isCancelling}
@@ -511,7 +518,8 @@ export default function HostedEvents({ event }: Props) {
 					<div className={isDatePollActive ? "max-w-6xl mx-auto lg:pr-[384px]" : ""}>
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
-					{clonedEvent && <EventTicketsComponent event={clonedEvent} />}
+					{/* Tickets are hidden once the event has ended, except for host/admin. */}
+					{clonedEvent && (!isEnded || canManage) && <EventTicketsComponent event={clonedEvent} />}
 
 					{clonedEvent?._id && (
 						<div className={isDatePollActive ? "" : "max-w-4xl mx-auto"}>
