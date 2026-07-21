@@ -19,6 +19,7 @@ const schema = zod.object({
 	// caps are just abuse guards.
 	interests: zod.array(zod.string().max(60)).max(50).optional(),
 	customInterests: zod.array(zod.string().max(200)).max(50).optional(),
+	optOut: zod.boolean().optional(),
 })
 
 /**
@@ -89,7 +90,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		try {
 			const interests = validation.data.interests?.map((i) => i.trim()).filter(Boolean) || []
 			const customInterests = validation.data.customInterests?.map((i) => i.trim()).filter(Boolean) || []
-			if (interests.length > 0 || customInterests.length > 0) {
+			const optOut = validation.data.optOut === true
+			// Opting out is an answer too — record it so we don't keep asking.
+			if (interests.length > 0 || customInterests.length > 0 || optOut) {
 				await AlbumInterest.updateOne(
 					{ eventId: new Types.ObjectId(eventId), email },
 					{
@@ -98,6 +101,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							userId: userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined,
 							interests,
 							customInterests,
+							optOut,
 						},
 						// Clear the legacy single field on any fresh write so it can't linger.
 						$unset: { customInterest: "" },
