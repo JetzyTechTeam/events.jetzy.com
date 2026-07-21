@@ -338,6 +338,9 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 - `events/` — AddTickets, CreateDiscussionModal, DiscussionBoard, DiscussionPostView, EventsTableComponent, EventTicketTable, JetzyChatIntegration, QRCodeModal, ReactionsListModal, TicketCard
 - `form/` — CheckoutForm, DatePicker, TimePicker
 - `layout/` — ConsoleLayout, ConsoleNavbar, EnhancedLayout, Layout
+  - `ConsoleLayout` takes optional `stickyHeader` (type in `src/types/layout.ts`): pins the title + action-button header to `top-0` (`z-30`) and publishes its measured height as the CSS var `--console-header-h` (ResizeObserver) so page content can stick beneath it. Used by `console/events/[eventId]/manage.tsx` so **Update Event / Clone / Delete** stay reachable while scrolling the long edit form; that page also pins its `TabList` at `top: var(--console-header-h)` and swaps the button label to "Save Changes" + dot when Formik is `dirty` (via local `FormDirtyWatcher`).
+  - Header height must stay **constant** — an earlier collapse-on-scroll version jittered (height change → reflow → threshold re-crossed → oscillation).
+  - `html, body` use `overflow-x: clip` (not `hidden`) in `src/styles/globals.scss`; `hidden` makes body a scroll container and disables `position: sticky` everywhere.
 - `misc/` — EventsListing, LoginModal, ForgotPasswordModal, RichTextEditor, SafeHTML, Pagination, ProgressBar, Spinner, CardGroup, DragAndDropUploader, ListGroup, TicketQuantityInput
 - Top-level: CheckInPortal.tsx, CheckInStats.tsx, ErrorBoundary.tsx, EventCheckoutModel.tsx, EventDetails.tsx, EventTicketsComponent.tsx, HostedEvents.tsx, image-upload-box.tsx, media-upload-section.tsx, video-upload-box.tsx, timezone-select.tsx
 
