@@ -15,6 +15,8 @@ export type SignUpFormData = {
 	longitude?: number
 	placeId?: string
 	refCode?: string
+	signupSource?: string
+	signupSessionId?: string
 }
 
 export type StartSignupFormData = {

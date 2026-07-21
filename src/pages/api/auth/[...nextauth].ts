@@ -273,6 +273,8 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "text" },
         image: { label: "Image", type: "text" },
         photoUrl: { label: "Photo URL", type: "text" },
+        signupSource: { label: "Signup Source", type: "text" },
+        signupSessionId: { label: "Signup Session Id", type: "text" },
       },
       async authorize(credentials, req) {
         console.log("--- Firebase Auth API Start ---");
@@ -373,6 +375,7 @@ export const authOptions: NextAuthOptions = {
             const lastName = name?.split(" ").slice(1).join(" ") || "";
 
             // Create in EventUsers by default
+            const { signupSource, signupSessionId } = (credentials as any) ?? {};
             user = await EventUsers.create({
               firstName,
               lastName,
@@ -382,6 +385,10 @@ export const authOptions: NextAuthOptions = {
               isVerified: true,
               authProvider: "firebase",
               firebaseUid: uid,
+              // Attribution — only set when the signup came from a page that
+              // passes it (e.g. /jetzyqrsignup). SSO carries no location/refCode.
+              ...(signupSource && { signupSource }),
+              ...(signupSessionId && { signupSessionId }),
             });
             console.log(`✅ Firebase Auth: New user created: ${user._id}`);
           }

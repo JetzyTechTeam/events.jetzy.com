@@ -78,6 +78,20 @@ export const eventUsersSchema = new Schema(
       required: false,
       trim: true,
     },
+    // Which page the signup came from, e.g. "jetzyqrsignup" | "signup"
+    signupSource: {
+      type: String,
+      required: false,
+      trim: true,
+      index: true,
+    },
+    // Analytics sessionId at the moment of signup — lets us join back to
+    // pageviews / usersessions / analytics_web_forms for funnel attribution
+    signupSessionId: {
+      type: String,
+      required: false,
+      index: true,
+    },
     // Account safety fields
     isBlocked: {
       type: Boolean,
