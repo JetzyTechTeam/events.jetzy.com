@@ -9,6 +9,8 @@ import {
 	IconButton,
 	Image,
 	Input,
+	InputGroup,
+	InputRightElement,
 	Spinner,
 	SimpleGrid,
 	Modal,
@@ -619,13 +621,28 @@ function useInterestSelection() {
 
 	const interestTotal = interests.length + customInterests.length
 
+	// Opting out and picking interests are contradictory, so they clear each other.
+	const toggleOptOut = () => {
+		setOptOut((prev) => {
+			const next = !prev
+			if (next) {
+				setInterests([])
+				setCustomInterests([])
+				setCustomDraft("")
+			}
+			return next
+		})
+	}
+
 	const toggleInterest = (label: string) => {
+		setOptOut(false)
 		setInterests((prev) => (prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]))
 	}
 
 	const addCustom = () => {
 		const val = customDraft.trim()
 		if (!val) return
+		setOptOut(false)
 		const dupe =
 			customInterests.some((c) => c.toLowerCase() === val.toLowerCase()) ||
 			interests.some((i) => i.toLowerCase() === val.toLowerCase())
@@ -656,7 +673,7 @@ function useInterestSelection() {
 		return { interests, customInterests: effectiveCustoms, total: interests.length + effectiveCustoms.length, optOut }
 	}
 
-	return { interests, customInterests, customDraft, setCustomDraft, optOut, setOptOut, interestTotal, toggleInterest, addCustom, removeCustom, resolveForSubmit }
+	return { interests, customInterests, customDraft, setCustomDraft, optOut, toggleOptOut, interestTotal, toggleInterest, addCustom, removeCustom, resolveForSubmit }
 }
 
 type InterestSelection = ReturnType<typeof useInterestSelection>
@@ -672,8 +689,19 @@ function InterestsFields({ ix }: { ix: InterestSelection }) {
 					</Flex>
 					<Text fontSize="xs" color="#8a8a8a">Pick the experiences you&apos;d like — we&apos;ll notify you about events you&apos;ll actually enjoy.</Text>
 				</Box>
-				<Badge flexShrink={0} bg={ix.interestTotal >= MIN_INTERESTS ? "#2f7d32" : "#2b2b2b"} color="white" borderRadius="full" px={2} py={1} fontSize="11px">
-					{ix.interestTotal} selected
+				<Badge
+					flexShrink={0}
+					bg={ix.optOut ? "#4a1f1f" : ix.interestTotal >= MIN_INTERESTS ? "#2f7d32" : "#2b2b2b"}
+					color={ix.optOut ? "#ffb4b4" : "white"}
+					borderRadius="full"
+					px={2}
+					py={1}
+					fontSize="10px"
+					textTransform="uppercase"
+					letterSpacing="0.06em"
+					fontWeight="bold"
+				>
+					{ix.optOut ? "Opted out" : `${ix.interestTotal} selected`}
 				</Badge>
 			</Flex>
 			<SimpleGrid columns={{ base: 2, md: 3 }} spacing={2} mt={2}>
@@ -687,69 +715,134 @@ function InterestsFields({ ix }: { ix: InterestSelection }) {
 							onClick={() => ix.toggleInterest(it.label)}
 							aria-pressed={isSel}
 							cursor="pointer"
+							position="relative"
 							display="flex"
 							alignItems="flex-start"
 							gap={2}
 							px={3}
 							py={2}
+							pr={isSel ? 6 : 3}
 							minH="42px"
-							borderRadius="lg"
+							borderRadius="12px"
 							bg={isSel ? "#F79432" : "#1E1E1E"}
 							color={isSel ? "black" : "white"}
 							border="1px solid"
 							borderColor={isSel ? "#F79432" : "#343536"}
-							_hover={{ borderColor: isSel ? "#F79432" : "#5A5D62" }}
+							transition="transform .12s ease, border-color .12s ease"
+							_hover={{ transform: "scale(1.02)", borderColor: isSel ? "#F79432" : "#5A5D62" }}
 							textAlign="left"
 						>
 							<Text fontSize="md" lineHeight="1.2" mt="1px">{it.emoji}</Text>
 							<Text fontSize="xs" fontWeight="600" whiteSpace="normal" lineHeight="1.2">{it.label}</Text>
+							{isSel && (
+								<Text position="absolute" top="4px" right="6px" fontSize="11px" fontWeight="bold" lineHeight="1" color="black">✓</Text>
+							)}
 						</Box>
 					)
 				})}
 			</SimpleGrid>
 			<Box mt={3}>
-				<Text fontSize="xs" color="#F79432" fontWeight="600">Tell us your interest</Text>
+				<Text fontSize="xs" color="#F79432" fontWeight="600">
+					Tell us your interest <Text as="span" color="#777" fontWeight="normal">(Optional)</Text>
+				</Text>
 				<Text fontSize="11px" color="#8a8a8a" mb={1}>Add your own — as many as you like.</Text>
 				{ix.customInterests.length > 0 && (
 					<Flex wrap="wrap" gap={2} mb={2}>
 						{ix.customInterests.map((c) => (
-							<Flex key={c} align="center" gap={1} bg="#F79432" color="black" borderRadius="full" pl={3} pr={1} py={1}>
+							<Flex
+								key={c}
+								align="center"
+								gap={1}
+								bg="#F79432"
+								color="black"
+								borderRadius="full"
+								pl={3}
+								pr={1}
+								py={1}
+								transition="transform .12s ease, opacity .12s ease"
+								_hover={{ transform: "scale(1.03)" }}
+							>
 								<Text fontSize="xs" fontWeight="600">{c}</Text>
-								<Box as="button" type="button" aria-label={`Remove ${c}`} onClick={() => ix.removeCustom(c)} px={1} fontSize="sm" lineHeight="1" _hover={{ opacity: 0.7 }}>×</Box>
+								<Box as="button" type="button" aria-label={`Remove ${c}`} onClick={() => ix.removeCustom(c)} px={1} fontSize="sm" lineHeight="1" _hover={{ opacity: 0.6 }}>×</Box>
 							</Flex>
 						))}
 					</Flex>
 				)}
-				<Flex gap={2}>
+				{/* Add sits inside the field (search-style input) */}
+				<InputGroup size="md">
 					<Input
-						size="md"
 						value={ix.customDraft}
 						onChange={(e) => ix.setCustomDraft(e.target.value)}
 						onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); ix.addCustom() } }}
 						placeholder="Type your interest here..."
 						bg="#1E1E1E"
 						borderColor="#343536"
+						borderRadius="10px"
 						color="white"
+						pr="4.5rem"
 						_placeholder={{ color: "#666" }}
 					/>
-					<Button size="md" flexShrink={0} onClick={ix.addCustom} bg="#2B2B2B" color="white" _hover={{ bg: "#3A3A3A" }} isDisabled={!ix.customDraft.trim()}>
-						Add
-					</Button>
-				</Flex>
+					<InputRightElement width="4.25rem" pr={1}>
+						<Button
+							size="sm"
+							h="1.9rem"
+							width="100%"
+							onClick={ix.addCustom}
+							bg="#2B2B2B"
+							color="white"
+							borderRadius="8px"
+							_hover={{ bg: "#3A3A3A" }}
+							isDisabled={!ix.customDraft.trim()}
+						>
+							Add
+						</Button>
+					</InputRightElement>
+				</InputGroup>
 			</Box>
 
-			{/* Optional opt-out. Ticking it is a valid answer on its own — no interest needed. */}
-			<label style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer", marginTop: "14px" }}>
-				<input
-					type="checkbox"
-					checked={ix.optOut}
-					onChange={(e) => ix.setOptOut(e.target.checked)}
-					style={{ marginTop: "3px" }}
-				/>
-				<Text fontSize="xs" color="#bbbbbb">
-					I don&apos;t want to attend any other Jetzy event <Text as="span" color="#777">(optional)</Text>
-				</Text>
-			</label>
+			{/* Opt-out — a real, tappable control (own checkbox square, solid border, card
+			    background) so it never reads as plain text. Still visually separate from the
+			    mandatory Terms checkbox: its own row below a divider, neutral-to-red states
+			    rather than the orange used by interest chips. */}
+			<Box mt={4} pt={3} borderTop="1px solid #2a2a2a">
+				<Flex
+					as="button"
+					type="button"
+					onClick={ix.toggleOptOut}
+					aria-pressed={ix.optOut}
+					width="100%"
+					align="center"
+					gap={3}
+					px={3}
+					py={3}
+					borderRadius="12px"
+					textAlign="left"
+					cursor="pointer"
+					bg={ix.optOut ? "#2a1f1f" : "#1E1E1E"}
+					border="1px solid"
+					borderColor={ix.optOut ? "#a35a5a" : "#434343"}
+					transition="transform .12s ease, border-color .12s ease, background .12s ease"
+					_hover={{ transform: "scale(1.01)", borderColor: ix.optOut ? "#c06a6a" : "#5A5D62", bg: ix.optOut ? "#332525" : "#242424" }}
+				>
+					{/* Checkbox square */}
+					<Flex
+						flexShrink={0}
+						align="center"
+						justify="center"
+						w="18px"
+						h="18px"
+						borderRadius="4px"
+						border="2px solid"
+						borderColor={ix.optOut ? "#e06a6a" : "#6a6a6a"}
+						bg={ix.optOut ? "#e06a6a" : "transparent"}
+					>
+						{ix.optOut && <Text fontSize="11px" fontWeight="bold" lineHeight="1" color="#131313">✓</Text>}
+					</Flex>
+					<Text fontSize="xs" fontWeight="600" color={ix.optOut ? "#ffb4b4" : "#d5d5d5"} whiteSpace="normal">
+						I don&apos;t want to attend any other Jetzy event
+					</Text>
+				</Flex>
+			</Box>
 		</Box>
 	)
 }
@@ -792,8 +885,8 @@ function InterestsModal({
 
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "sm", md: "lg" }} scrollBehavior="inside">
-			<ModalOverlay bg="blackAlpha.800" />
-			<ModalContent bg="#15181C" color="white" border="1px solid #343536">
+			<ModalOverlay bg="blackAlpha.700" backdropFilter="blur(8px)" />
+			<ModalContent bg="#131313" color="white" border="1px solid #343536" borderRadius="12px">
 				<ModalHeader>Before you view the photos</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
@@ -803,7 +896,7 @@ function InterestsModal({
 					</form>
 				</ModalBody>
 				<ModalFooter>
-					<Button type="submit" form="interests-only-form" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
+					<Button type="submit" form="interests-only-form" size="lg" fontWeight="bold" borderRadius="12px" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
 						View Album
 					</Button>
 				</ModalFooter>
@@ -832,8 +925,17 @@ function GuestAccessModal({
 	const ix = useInterestSelection()
 	const [name, setName] = useState("")
 	const [email, setEmail] = useState("")
+	const [emailError, setEmailError] = useState("")
 	const [acceptedTerms, setAcceptedTerms] = useState(false)
 	const [submitting, setSubmitting] = useState(false)
+
+	// Advisory only — surfaced on blur so the viewer catches a typo early. Submit-time
+	// validation is unchanged.
+	const validateEmailOnBlur = () => {
+		const v = email.trim()
+		if (!v) { setEmailError(""); return }
+		setEmailError(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? "" : "Enter a valid email address")
+	}
 
 	const submit = async (e: React.FormEvent) => {
 		e.preventDefault()
@@ -892,8 +994,8 @@ function GuestAccessModal({
 
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "sm", md: "lg" }} scrollBehavior="inside">
-			<ModalOverlay bg="blackAlpha.800" />
-			<ModalContent bg="#15181C" color="white" border="1px solid #343536">
+			<ModalOverlay bg="blackAlpha.700" backdropFilter="blur(8px)" />
+			<ModalContent bg="#131313" color="white" border="1px solid #343536" borderRadius="12px">
 				<ModalHeader>View the photos</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
@@ -906,6 +1008,7 @@ function GuestAccessModal({
 							placeholder="Your name"
 							bg="#1E1E1E"
 							borderColor="#343536"
+							borderRadius="10px"
 							color="white"
 							mb={3}
 							_placeholder={{ color: "#666" }}
@@ -915,15 +1018,20 @@ function GuestAccessModal({
 						<Text fontSize="sm" color="#bbb" mb={1}>Email</Text>
 						<Input
 							value={email}
-							onChange={(e) => setEmail(e.target.value)}
+							onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError("") }}
+							onBlur={validateEmailOnBlur}
 							placeholder="you@example.com"
 							type="email"
 							bg="#1E1E1E"
-							borderColor="#343536"
+							borderColor={emailError ? "#a35252" : "#343536"}
+							borderRadius="10px"
 							color="white"
 							_placeholder={{ color: "#666" }}
 							autoComplete="email"
 						/>
+						{emailError && (
+							<Text fontSize="xs" color="#ff9a9a" mt={1}>{emailError}</Text>
+						)}
 
 						{/* Interests — captured for event planning; at least one required */}
 						<InterestsFields ix={ix} />
@@ -946,7 +1054,7 @@ function GuestAccessModal({
 					</form>
 				</ModalBody>
 				<ModalFooter>
-					<Button type="submit" form="guest-access-form" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
+					<Button type="submit" form="guest-access-form" size="lg" fontWeight="bold" borderRadius="12px" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
 						View Album
 					</Button>
 				</ModalFooter>
