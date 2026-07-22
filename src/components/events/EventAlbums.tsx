@@ -39,12 +39,12 @@ import Slider from "react-slick"
 import { uploadFile } from "@/services/upload.service"
 import QRCodeModal from "@/components/events/QRCodeModal"
 
-type MediaType = "image" | "video"
-interface AlbumMedia {
+export type MediaType = "image" | "video"
+export interface AlbumMedia {
 	url: string
 	type: MediaType
 }
-interface Album {
+export interface Album {
 	_id: string
 	eventId: string
 	title: string
@@ -115,37 +115,15 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	const queryClient = useQueryClient()
 
 	const createModal = useDisclosure()
-	const galleryModal = useDisclosure()
 	const shareModal = useDisclosure()
 	const deleteDialog = useDisclosure()
-	const guestGateModal = useDisclosure()
-	const interestsModal = useDisclosure()
 	const cancelDeleteRef = useRef<HTMLButtonElement>(null)
 
 	const [editingAlbum, setEditingAlbum] = useState<Album | null>(null)
-	const [galleryAlbum, setGalleryAlbum] = useState<Album | null>(null)
-	// Photo the visitor was tagging before being sent to login; on return we reopen that
-	// slide and prime the tag panel. Set only on the ?album=&tagPhoto= deep link.
-	const [pendingTagPhoto, setPendingTagPhoto] = useState<string | undefined>(undefined)
 	const [shareAlbum, setShareAlbum] = useState<Album | null>(null)
 	const [deletingAlbum, setDeletingAlbum] = useState<Album | null>(null)
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [publishingAlbum, setPublishingAlbum] = useState<Album | null>(null)
-
-	// Albums themselves are public — nobody is prompted to browse them. `hasAccess` means
-	// "we know who this is" (a session, or a name+email guest cookie), which is what the
-	// share-link flow records and what tagging requires.
-	const [hasGuestAccess, setHasGuestAccess] = useState(false)
-	const hasAccess = !!session || hasGuestAccess
-	// Mirrored in a ref so the stable recordAlbumAccess callback can read the latest value
-	// without being re-created (and re-firing) every time access changes.
-	const hasAccessRef = useRef(hasAccess)
-	hasAccessRef.current = hasAccess
-
-	// Tagging emails someone in your name, so it needs a REAL session — the name+email
-	// guest cookie is enough to view but not to tag. Existing accounts identified only by
-	// the gate cookie must go through a proper login before they can tag.
-	const canTag = !!session
 
 	// Fetch albums — public, so this runs for anonymous visitors too
 	const {
@@ -160,137 +138,25 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 		retry: false,
 	})
 
-	// Probe once on mount: does this browser already hold the guest cookie? Must ask the
-	// dedicated viewer endpoint — /albums itself is public now, so a 200 there says nothing
-	// about identity. `probeSettled` gates the auto-open below so the dialog can't flash
-	// open at someone already identified while this request is still in flight.
-	const [probeSettled, setProbeSettled] = useState(false)
-	// Whether this viewer still owes us interests for this event. Viewers who arrive already
-	// identified (logged in, or returning with the cookie — notably publish-email recipients,
-	// who are signed in by the magic link) never see the name+email gate, so without this
-	// they'd never be asked.
-	const [needsInterests, setNeedsInterests] = useState(false)
-	useEffect(() => {
-		if (status === "loading") return
-		let cancelled = false
-		axios
-			.get(`/api/events/${eventId}/albums/viewer`)
-			.then((res) => {
-				if (cancelled) return
-				const d = res.data?.data
-				if (d?.identified) {
-					setHasGuestAccess(true)
-					setNeedsInterests(!d.hasInterests)
-				}
-			})
-			.catch(() => { /* treat as anonymous — the dialog shows if they came from a share link */ })
-			.finally(() => { if (!cancelled) setProbeSettled(true) })
-		return () => { cancelled = true }
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [session, status, eventId])
-
 	const refresh = () => queryClient.invalidateQueries({ queryKey: ["albums", eventId] })
 
-	// Tagging needs a real login. Send the visitor to /login and bring them back to the exact
-	// album AND photo they were on (the login page honours _cb), with the tag panel primed —
-	// `tagPhoto` carries the media URL so we can reopen that slide and open the form.
-	const goToLoginForTagging = React.useCallback((albumId: string, mediaUrl: string) => {
-		if (typeof window === "undefined") return
-		const back = `${window.location.pathname}?album=${albumId}&tagPhoto=${encodeURIComponent(mediaUrl)}`
-		router.push(`/login?_cb=${encodeURIComponent(back)}`)
-	}, [router])
-
-	// The name+email dialog is ONLY for share links. Albums are public on the event page,
-	// so a normal visitor browsing photos is never prompted. Waits for the session and the
-	// cookie probe to settle so it can't flash open at someone who is already identified.
+	// ── Back-compat for old share/email links: /{slug}?album=<id> ──
+	// Albums now live at /{slug}/album/{id}. Links already sent out (publish emails, tag
+	// notifications, copied share links) still use the query form, so redirect them.
+	// tagPhoto carries through as the new `photo` param. `from=event` tells the album page
+	// this view was already counted here, so it doesn't record a second one.
+	const redirectedRef = useRef(false)
 	useEffect(() => {
 		const albumParam = router.query.album
-		if (typeof albumParam !== "string" || !albumParam) return
-		if (status === "loading" || !probeSettled) return
-		if (!hasAccess) guestGateModal.onOpen()
-		else guestGateModal.onClose()
+		if (!albumParam || typeof albumParam !== "string" || redirectedRef.current) return
+		redirectedRef.current = true
+		const tagPhoto = typeof router.query.tagPhoto === "string" ? router.query.tagPhoto : ""
+		const params = new URLSearchParams({ from: "event" })
+		if (tagPhoto) params.set("photo", tagPhoto)
+		router.replace(`/${eventSlug}/album/${albumParam}?${params.toString()}`)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [router.query.album, status, hasAccess, probeSettled])
-
-	// Records that this person viewed an album (analytics + the one-time notice email).
-	// Only identified viewers can be recorded — anonymous browsing leaves no trace.
-	// Guarded per session here; the server dedupes per person/album authoritatively.
-	const recordAlbumAccess = React.useCallback((albumId: string) => {
-		if (typeof window === "undefined") return
-		// Anonymous browsing isn't recorded — there's nobody to record. Share-link viewers
-		// identify themselves first, so their arrival is still captured.
-		if (!hasAccessRef.current) return
-		const key = `album_access_${albumId}`
-		if (sessionStorage.getItem(key)) return
-		sessionStorage.setItem(key, "1")
-		// The guest gate records whether it just created the account, so the access
-		// record can report "new" vs "returning" (auto-created users have no createdAt).
-		let isNewAccount: boolean | undefined
-		try {
-			const flag = sessionStorage.getItem("album_is_new_account")
-			if (flag !== null) isNewAccount = flag === "1"
-		} catch {}
-		axios
-			.post(`/api/events/${eventId}/albums/${albumId}/access`, isNewAccount === undefined ? {} : { isNewAccount })
-			.catch((e) => console.error("album access notify failed", e))
-	}, [eventId])
-
-	// ── Share-link deep-link: /{slug}?album=<id> ──
-	// Scrolls the visitor to the Albums section immediately (regardless of access state,
-	// so the guest dialog below appears in the right place instead of at the page top).
-	const scrolledRef = useRef(false)
-	useEffect(() => {
-		const albumParam = router.query.album
-		if (!albumParam || typeof albumParam !== "string" || scrolledRef.current) return
-		scrolledRef.current = true
-		setTimeout(() => {
-			document.getElementById("album-section")?.scrollIntoView({ behavior: "smooth", block: "start" })
-		}, 300)
 	}, [router.query.album])
 
-	// No login bounce any more — an unidentified visitor sees the name+email dialog, and
-	// this records access as soon as they're through.
-	useEffect(() => {
-		const albumParam = router.query.album
-		if (!albumParam || typeof albumParam !== "string") return
-		if (status === "loading" || !hasAccess) return
-		recordAlbumAccess(albumParam)
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [router.query.album, status, hasAccess])
-
-	// Open the shared album's gallery once albums are loaded. Guarded by a ref so it
-	// auto-opens only ONCE per deep-linked id — otherwise a React Query refetch (e.g.
-	// on window focus) would re-open the modal after the user closed it.
-	const deepLinkOpenedRef = useRef<string | null>(null)
-	useEffect(() => {
-		const albumParam = router.query.album
-		if (!albumParam || typeof albumParam !== "string" || !hasAccess) return
-		if (deepLinkOpenedRef.current === albumParam) return
-		// Wait for the probe so we know whether to ask for interests first.
-		if (!probeSettled) return
-		const match = albums.find((a) => a._id === albumParam)
-		if (match) {
-			deepLinkOpenedRef.current = albumParam
-			// Known viewer who hasn't given interests (e.g. arrived from the publish email
-			// already logged in) — ask first, then continue into the album.
-			if (needsInterests) {
-				pendingAlbumRef.current = match
-				interestsModal.onOpen()
-				return
-			}
-			setGalleryAlbum(match)
-			galleryModal.onOpen()
-			// Capture the one-shot tagPhoto hint into state, then drop it from the URL so a
-			// later refresh/refetch doesn't force the tag panel back open — the gallery still
-			// reopens from ?album=. Reading it live from the query would race with this clear.
-			if (typeof router.query.tagPhoto === "string" && router.query.tagPhoto) {
-				setPendingTagPhoto(router.query.tagPhoto)
-				const { tagPhoto: _t, ...rest } = router.query
-				router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
-			}
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [albums, router.query.album, hasAccess, probeSettled, needsInterests])
 
 	const openCreate = () => {
 		setEditingAlbum(null)
@@ -300,33 +166,15 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 		setEditingAlbum(album)
 		createModal.onOpen()
 	}
-	// Covers are public, the photos are not. An unidentified visitor gets the name+email
-	// dialog at the moment they open an album — never on page load — and we remember which
-	// album they wanted so they land in it straight after submitting.
-	const pendingAlbumRef = useRef<Album | null>(null)
-	// Actually show the album (used directly, and after either dialog is satisfied).
-	const showGallery = (album: Album) => {
-		setGalleryAlbum(album)
-		galleryModal.onOpen()
-		recordAlbumAccess(album._id)
-	}
+	// Covers are public; the photos are not. Albums now open as a full "photo tour" page,
+	// where the name+email / interests gate runs — so this is a straight navigation.
 	const openGallery = (album: Album) => {
-		if (!hasAccess) {
-			pendingAlbumRef.current = album
-			guestGateModal.onOpen()
-			return
-		}
-		// Known viewer, but we've never asked them what they want next on this event.
-		if (needsInterests) {
-			pendingAlbumRef.current = album
-			interestsModal.onOpen()
-			return
-		}
-		showGallery(album)
+		// from=event: this page already recorded the event view, so the album page skips it.
+		router.push(`/${eventSlug}/album/${album._id}?from=event`)
 	}
 	const openShare = (album: Album) => {
 		setShareAlbum(album)
-		const url = `${window.location.origin}/${eventSlug}?album=${album._id}`
+		const url = `${window.location.origin}/${eventSlug}/album/${album._id}`
 		navigator.clipboard?.writeText(url).catch(() => {})
 		toast({ title: "Album Link Copied!", description: "Recipients just enter their name and email to view it.", status: "success", duration: 2500, isClosable: true })
 		shareModal.onOpen()
@@ -441,7 +289,8 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 											{cover ? (
 												firstIsVideo ? (
 													<>
-														<video src={cover} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} muted />
+														{/* #t=0.1 makes the browser paint the first frame as the poster */}
+														<video src={`${cover}#t=0.1`} preload="metadata" muted playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
 														<Icon as={FiPlayCircle} color="whiteAlpha.900" boxSize={8} position="absolute" top="50%" left="50%" transform="translate(-50%,-50%)" />
 													</>
 												) : (
@@ -489,44 +338,6 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 				</Box>
 			</div>
 
-			{/* Name+email access dialog */}
-			<GuestAccessModal
-				isOpen={guestGateModal.isOpen}
-				onClose={() => { pendingAlbumRef.current = null; guestGateModal.onClose() }}
-				eventId={eventId}
-				onGranted={() => {
-					setHasGuestAccess(true)
-					hasAccessRef.current = true
-					// The gate collects interests too, so nothing further to ask.
-					setNeedsInterests(false)
-					guestGateModal.onClose()
-					// Continue straight into whichever album they were trying to open.
-					const pending = pendingAlbumRef.current
-					if (pending) {
-						pendingAlbumRef.current = null
-						setGalleryAlbum(pending)
-						galleryModal.onOpen()
-						recordAlbumAccess(pending._id)
-					}
-				}}
-			/>
-
-			{/* Interests-only dialog — for viewers we already know but haven't asked yet */}
-			<InterestsModal
-				isOpen={interestsModal.isOpen}
-				onClose={() => { pendingAlbumRef.current = null; interestsModal.onClose() }}
-				eventId={eventId}
-				onSaved={() => {
-					setNeedsInterests(false)
-					interestsModal.onClose()
-					const pending = pendingAlbumRef.current
-					if (pending) {
-						pendingAlbumRef.current = null
-						showGallery(pending)
-					}
-				}}
-			/>
-
 			{/* Create / Edit modal */}
 			{createModal.isOpen && (
 				<AlbumFormModal
@@ -538,25 +349,12 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 				/>
 			)}
 
-			{/* Gallery modal */}
-			<AlbumGalleryModal
-				isOpen={galleryModal.isOpen}
-				onClose={() => { galleryModal.onClose(); setGalleryAlbum(null); setPendingTagPhoto(undefined) }}
-				album={galleryAlbum}
-				eventId={eventId}
-				canManage={canManage}
-				canTag={canTag}
-				onRequireLogin={goToLoginForTagging}
-				initialMediaUrl={pendingTagPhoto}
-				autoOpenTag={!!pendingTagPhoto}
-			/>
-
 			{/* Share QR modal */}
 			{shareAlbum && (
 				<QRCodeModal
 					isOpen={shareModal.isOpen}
 					onClose={() => { shareModal.onClose(); setShareAlbum(null) }}
-					url={`${typeof window !== "undefined" ? window.location.origin : ""}/${eventSlug}?album=${shareAlbum._id}`}
+					url={`${typeof window !== "undefined" ? window.location.origin : ""}/${eventSlug}/album/${shareAlbum._id}`}
 					title={`${eventName} — ${shareAlbum.title}`}
 				/>
 			)}
@@ -850,7 +648,7 @@ function InterestsFields({ ix }: { ix: InterestSelection }) {
 // ─────────────────────────── Interests-only dialog ───────────────────────────
 // For viewers we already know (logged in, or returning with the guest cookie) but who
 // haven't told us their interests for this event yet — they never see the name+email gate.
-function InterestsModal({
+export function InterestsModal({
 	isOpen,
 	onClose,
 	eventId,
@@ -910,7 +708,7 @@ function InterestsModal({
 // belongs to an account we match it; if not the server creates one silently. Opens
 // automatically whenever a visitor needs it (e.g. arriving via a share link) and, on
 // success, hands control back so the caller can continue straight into the album.
-function GuestAccessModal({
+export function GuestAccessModal({
 	isOpen,
 	onClose,
 	eventId,
@@ -1063,115 +861,8 @@ function GuestAccessModal({
 	)
 }
 
-// ─────────────────────────── Gallery modal (with tagging) ───────────────────────────
-function AlbumGalleryModal({
-	isOpen,
-	onClose,
-	album,
-	eventId,
-	canManage,
-	canTag,
-	onRequireLogin,
-	initialMediaUrl,
-	autoOpenTag,
-}: {
-	isOpen: boolean
-	onClose: () => void
-	album: Album | null
-	eventId: string
-	canManage: boolean
-	canTag: boolean
-	onRequireLogin: (albumId: string, mediaUrl: string) => void
-	initialMediaUrl?: string
-	autoOpenTag?: boolean
-}) {
-	const [slideIndex, setSlideIndex] = useState(0)
-	const sliderRef = useRef<HTMLDivElement>(null)
-	const slickRef = useRef<any>(null)
-	// adaptiveHeight is deliberately off: it writes an animated inline height on
-	// .slick-list, which fed a resize loop with the modal's scrollbar (opening the
-	// tag panel made the dialog jitter). Slides use a fixed viewport instead.
-	const settings = {
-		infinite: (album?.media.length || 0) > 1,
-		speed: 400,
-		slidesToShow: 1,
-		slidesToScroll: 1,
-		beforeChange: (_: number, next: number) => {
-			sliderRef.current?.querySelectorAll<HTMLVideoElement>("video").forEach((v) => v.pause())
-			setSlideIndex(next)
-		},
-	}
-
-	useEffect(() => { setSlideIndex(0) }, [album?._id])
-
-	// Returning from login to tag a specific photo: jump to that slide once the album loads.
-	// One-shot per album so normal swiping isn't yanked back.
-	const jumpedRef = useRef<string | null>(null)
-	useEffect(() => {
-		if (!isOpen || !album || !initialMediaUrl) return
-		if (jumpedRef.current === album._id) return
-		const idx = album.media.findIndex((m) => m.url === initialMediaUrl)
-		if (idx >= 0) {
-			jumpedRef.current = album._id
-			setSlideIndex(idx)
-			// react-slick needs an imperative nudge; the ref may not be ready on first paint.
-			setTimeout(() => slickRef.current?.slickGoTo?.(idx), 50)
-		}
-	}, [isOpen, album, initialMediaUrl])
-
-	const currentMedia = album?.media?.[slideIndex]
-
-	return (
-		<Modal isOpen={isOpen} onClose={onClose} size="4xl" isCentered scrollBehavior="inside">
-			<ModalOverlay bg="blackAlpha.800" />
-			<ModalContent bg="#111" color="white" border="1px solid #333">
-				<ModalHeader>{album?.title}</ModalHeader>
-				<ModalCloseButton />
-				{/* overflowY is "scroll", not "auto": a scrollbar that appears only once the
-				    tag panel opens changes the slide width and restarts the reflow loop. */}
-				<ModalBody pb={6} overflowY="scroll">
-					{album?.description ? <Text color="#bbb" fontSize="sm" mb={4}>{album.description}</Text> : null}
-					{album && album.media.length > 0 ? (
-						<>
-							<Box ref={sliderRef} className="album-gallery-slider" sx={{ ".slick-prev:before, .slick-next:before": { color: "#F79432" }, ".slick-dots li button:before": { color: "#F79432" } }}>
-								<Slider ref={slickRef} {...settings}>
-									{album.media.map((m, i) => (
-										<Box key={i} display="flex !important" alignItems="center" justifyContent="center" bg="#000" borderRadius="lg" overflow="hidden" height={{ base: "45vh", md: "55vh" }}>
-											{m.type === "video" ? (
-												<video src={m.url} controls style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }} />
-											) : (
-												<img src={m.url} alt={`media-${i}`} style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }} />
-											)}
-										</Box>
-									))}
-								</Slider>
-							</Box>
-							{currentMedia && (
-								// Keyed by photo so staged-but-unsent tags reset when you swipe —
-								// otherwise they'd carry over and get applied to the wrong photo.
-								<PhotoTagging
-									key={currentMedia.url}
-									eventId={eventId}
-									albumId={album._id}
-									mediaUrl={currentMedia.url}
-									canManage={canManage}
-									canTag={canTag}
-									onRequireLogin={onRequireLogin}
-									autoOpenTag={!!autoOpenTag && currentMedia.url === initialMediaUrl}
-								/>
-							)}
-						</>
-					) : (
-						<Text color="#888">No media in this album.</Text>
-					)}
-				</ModalBody>
-			</ModalContent>
-		</Modal>
-	)
-}
-
 // ─────────────────────────── Tagging for the visible photo ───────────────────────────
-function PhotoTagging({
+export function PhotoTagging({
 	eventId,
 	albumId,
 	mediaUrl,

@@ -461,7 +461,7 @@ export const sendAlbumAccessNotice = async ({
   }
   const cleanEventName = decodeHTMLEntities(eventName)
   const actionLabel = action === "signup" ? "signed up" : "logged in"
-  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}?album=${albumId}`
+  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}/album/${albumId}`
   const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
   try {
     await sgMail.send({
@@ -526,7 +526,7 @@ export const sendAlbumTagNotification = async ({
     return { success: true, message: "Email skipped in localhost mode" }
   }
   const cleanEventName = decodeHTMLEntities(eventName)
-  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}?album=${albumId}`
+  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}/album/${albumId}`
   try {
     await sgMail.send({
       to: recipientEmail,
@@ -587,7 +587,7 @@ export const sendAlbumPublishedNotification = async ({
   }
   const cleanEventName = decodeHTMLEntities(eventName)
   const root = baseUrl || "https://events.jetzy.com"
-  const albumPath = `/${eventSlug}?album=${albumId}`
+  const albumPath = `/${eventSlug}/album/${albumId}`
   // Recipients are known event participants and the link lands in their own inbox, so
   // sign them straight in rather than making them fill in the name+email gate. Same
   // one-click pattern the discussion emails use.
