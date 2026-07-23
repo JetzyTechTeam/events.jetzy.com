@@ -5,7 +5,7 @@ import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
 import { Types } from "mongoose"
 import { Box, Flex, Text, Heading, Icon, IconButton, Button, Spinner, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton } from "@chakra-ui/react"
-import { FiArrowLeft, FiShare2, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX } from "react-icons/fi"
+import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX } from "react-icons/fi"
 
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
@@ -13,6 +13,7 @@ import { EventAlbums as EventAlbumsModel } from "@/models/events/albums"
 import { PhotoTagging, type Album, type AlbumMedia } from "@/components/events/EventAlbums"
 import { useAlbumViewerGate } from "@/components/events/album/useAlbumViewerGate"
 import { useTrackEventView } from "@/hooks/useTrackEventView"
+import { useAnalytics } from "@/hooks/useAnalytics"
 
 type Props = {
 	album: string
@@ -195,10 +196,49 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 		touchX.current = null
 	}
 
+	const { trackEventInteraction } = useAnalytics()
+
+	// Copy a link, or open the native share sheet when the browser has one. We always share a
+	// LINK (not the raw file) — that's what routes recipients through the access gate; a bare
+	// file URL would bypass it.
+	const shareLink = async (url: string) => {
+		try {
+			if (typeof navigator !== "undefined" && (navigator as any).share) {
+				await (navigator as any).share({ title: album.title, url })
+				return
+			}
+		} catch (e: any) {
+			if (e?.name === "AbortError") return // user dismissed the sheet
+			// fall through to clipboard
+		}
+		navigator.clipboard?.writeText(url).catch(() => {})
+		toast({ title: "Link copied!", status: "success", duration: 2000, isClosable: true })
+	}
+
 	const shareAlbum = () => {
 		const url = `${window.location.origin}/${event.slug}/album/${album._id}`
-		navigator.clipboard?.writeText(url).catch(() => {})
-		toast({ title: "Album link copied!", status: "success", duration: 2000, isClosable: true })
+		shareLink(url)
+		trackEventInteraction(event._id, "share", { albumId: album._id, scope: "album" }).catch(() => {})
+	}
+
+	// Per-photo share: a link that reopens THIS item after the gate (?photo= deep link).
+	const sharePhoto = (m: AlbumMedia) => {
+		const url = `${window.location.origin}/${event.slug}/album/${album._id}?photo=${encodeURIComponent(m.url)}`
+		shareLink(url)
+		trackEventInteraction(event._id, "share", { albumId: album._id, mediaUrl: m.url, scope: "photo" }).catch(() => {})
+	}
+
+	// Download via our same-origin proxy — the media CDN blocks cross-origin fetch, and the
+	// `download` attribute is ignored for a cross-origin href, so a direct client download
+	// just opens the file. The proxy streams it back with Content-Disposition: attachment.
+	const downloadMedia = (m: AlbumMedia) => {
+		const href = `/api/events/${event._id}/albums/${album._id}/download?url=${encodeURIComponent(m.url)}`
+		const a = document.createElement("a")
+		a.href = href
+		a.rel = "noopener"
+		document.body.appendChild(a)
+		a.click()
+		document.body.removeChild(a)
 	}
 
 	const requireLoginToTag = (albumId: string, mediaUrl: string) => {
@@ -338,6 +378,8 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							<Text fontSize="xs" color="#9a9a9a">{openIndex + 1} of {media.length}</Text>
 						</Box>
 						<Flex gap={1}>
+							<IconButton aria-label="Share this photo" icon={<FiShare2 />} variant="ghost" color="white" _hover={{ bg: "whiteAlpha.100" }} onClick={() => sharePhoto(current)} />
+							<IconButton aria-label="Download" icon={<FiDownload />} variant="ghost" color="white" _hover={{ bg: "whiteAlpha.100" }} onClick={() => downloadMedia(current)} />
 							<IconButton
 								aria-label="Tag people"
 								icon={<FiTag />}
