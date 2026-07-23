@@ -289,12 +289,13 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 											{cover ? (
 												firstIsVideo ? (
 													<>
-														{/* #t=0.1 makes the browser paint the first frame as the poster */}
-														<video src={`${cover}#t=0.1`} preload="metadata" muted playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+														{/* #t=0.1 makes the browser paint the first frame as the poster; preload="none"
+														    avoids a metadata request per card on the event page */}
+														<video src={`${cover}#t=0.1`} preload="none" muted playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
 														<Icon as={FiPlayCircle} color="whiteAlpha.900" boxSize={8} position="absolute" top="50%" left="50%" transform="translate(-50%,-50%)" />
 													</>
 												) : (
-													<Image src={cover} alt={album.title} position="absolute" inset={0} width="100%" height="100%" objectFit="cover" />
+													<Image src={cover} alt={album.title} loading="lazy" position="absolute" inset={0} width="100%" height="100%" objectFit="cover" />
 												)
 											) : (
 												<Flex position="absolute" inset={0} align="center" justify="center"><Icon as={FiImage} color="#444" boxSize={7} /></Flex>

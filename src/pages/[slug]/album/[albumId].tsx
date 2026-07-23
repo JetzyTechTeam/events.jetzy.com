@@ -40,8 +40,30 @@ const Tile = React.memo(function Tile({
 	albumTitle: string
 	onOpen: (index: number) => void
 }) {
+	const ref = React.useRef<HTMLButtonElement>(null)
+	// Videos can't use native lazy-load, and `preload="metadata"` on every tile would fire a
+	// request per video on mount. So we only mount the <video> once the tile nears the
+	// viewport. Images use native lazy-load and need no observer.
+	const [inView, setInView] = useState(m.type !== "video")
+	useEffect(() => {
+		if (m.type !== "video" || inView || !ref.current) return
+		const el = ref.current
+		const io = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((e) => e.isIntersecting)) {
+					setInView(true)
+					io.disconnect()
+				}
+			},
+			{ rootMargin: "400px" },
+		)
+		io.observe(el)
+		return () => io.disconnect()
+	}, [m.type, inView])
+
 	return (
 		<Box
+			ref={ref}
 			as="button"
 			type="button"
 			onClick={() => onOpen(index)}
@@ -56,12 +78,14 @@ const Tile = React.memo(function Tile({
 		>
 			{m.type === "video" ? (
 				<>
-					<Box as="video" src={posterSrc(m.url)} preload="metadata" muted playsInline width="100%" height="100%" sx={{ objectFit: "cover" }} />
+					{inView && (
+						<Box as="video" src={posterSrc(m.url)} preload="metadata" muted playsInline width="100%" height="100%" sx={{ objectFit: "cover" }} />
+					)}
 					<Icon as={FiPlayCircle} color="whiteAlpha.900" boxSize={10} position="absolute" top="50%" left="50%" transform="translate(-50%,-50%)" />
 				</>
 			) : (
 				// eslint-disable-next-line @next/next/no-img-element
-				<img src={m.url} alt={`${albumTitle} ${index + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+				<img src={m.url} alt={`${albumTitle} ${index + 1}`} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
 			)}
 		</Box>
 	)
@@ -137,6 +161,18 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [ready, router.query.from])
 
+	// Preload the neighbouring images so arrow nav is instant. Skip videos.
+	useEffect(() => {
+		if (openIndex === null || media.length < 2) return
+		;[(openIndex + 1) % media.length, (openIndex - 1 + media.length) % media.length].forEach((i) => {
+			const n = media[i]
+			if (n && n.type !== "video") {
+				const img = new window.Image()
+				img.src = n.url
+			}
+		})
+	}, [openIndex, media])
+
 	// Keyboard nav
 	useEffect(() => {
 		if (openIndex === null) return
@@ -184,6 +220,24 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 		}
 		return out
 	}, [media])
+
+	// Infinite scroll: keep the initial DOM small on large albums, reveal more rows as the
+	// sentinel nears the viewport. The lightbox always indexes the full `media` array, so
+	// not-yet-rendered items stay reachable once a photo is open.
+	const ROW_BATCH = 8
+	const [visibleRows, setVisibleRows] = useState(ROW_BATCH)
+	useEffect(() => { setVisibleRows(ROW_BATCH) }, [album._id])
+	const sentinelRef = React.useRef<HTMLDivElement>(null)
+	useEffect(() => {
+		if (!ready || visibleRows >= rows.length || !sentinelRef.current) return
+		const el = sentinelRef.current
+		const io = new IntersectionObserver(
+			(entries) => { if (entries.some((e) => e.isIntersecting)) setVisibleRows((n) => n + ROW_BATCH) },
+			{ rootMargin: "600px" },
+		)
+		io.observe(el)
+		return () => io.disconnect()
+	}, [ready, visibleRows, rows.length])
 
 	return (
 		<>
@@ -239,7 +293,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 								<Text color="#888">No media in this album.</Text>
 							) : (
 								<Flex direction="column" gap={3}>
-									{rows.map((row, ri) => {
+									{rows.slice(0, visibleRows).map((row, ri) => {
 										const offset = rows.slice(0, ri).reduce((n, r) => n + r.length, 0)
 										return (
 											<Flex key={ri} gap={3} direction={{ base: "column", sm: row.length > 1 ? "row" : "column" }}>
@@ -257,6 +311,11 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 											</Flex>
 										)
 									})}
+									{visibleRows < rows.length && (
+										<Flex ref={sentinelRef} justify="center" py={6}>
+											<Spinner size="sm" color="#F79432" />
+										</Flex>
+									)}
 								</Flex>
 							)}
 						</Box>
@@ -309,7 +368,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							<Box as="video" src={current.url} controls maxH="100%" maxW="100%" sx={{ objectFit: "contain" }} borderRadius="12px" />
 						) : (
 							// eslint-disable-next-line @next/next/no-img-element
-							<img src={current.url} alt={album.title} style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain", borderRadius: "12px" }} />
+							<img src={current.url} alt={album.title} loading="eager" decoding="async" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain", borderRadius: "12px" }} />
 						)}
 						{media.length > 1 && (
 							<IconButton
