@@ -39,6 +39,7 @@
     "formik": "^2.4.5",
     "framer-motion": "^11.18.2",
     "jsqr": "^1.4.0",
+    "linkify-html": "^4.3.3",
     "linkify-react": "^4.3.2",
     "linkifyjs": "^4.3.2",
     "luxon": "^3.6.1",
