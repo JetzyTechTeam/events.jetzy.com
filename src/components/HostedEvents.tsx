@@ -24,6 +24,7 @@ import { signOut, useSession } from "next-auth/react"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import Linkify from "linkify-react"
+import linkifyHtml from "linkify-html"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
@@ -1056,6 +1057,7 @@ function EventBookings({ eventId }: { eventId: string }) {
 
 const linkifyOptions = {
 	target: "_blank",
+	rel: "noopener noreferrer",
 	className: "text-orange-600 underline hover:text-orange-800",
 }
 
@@ -1491,7 +1493,14 @@ function EventDescription({ description }: { description: string }) {
 	if (!description) return null
 	const isHtml = /<[a-z][\s\S]*>/i.test(description)
 	if (isHtml) {
-		const clean = typeof window !== "undefined" ? DOMPurify.sanitize(description) : stripHtml(description)
+		const clean =
+			typeof window !== "undefined"
+				? linkifyHtml(DOMPurify.sanitize(description), {
+						target: "_blank",
+						rel: "noopener noreferrer",
+						className: "text-orange-600 underline hover:text-orange-800",
+				  })
+				: stripHtml(description)
 		return (
 			<div
 				className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere rich-content"
