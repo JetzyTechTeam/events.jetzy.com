@@ -51,7 +51,8 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	// @ts-ignore
 	const userRole = session?.user?.role
 	const userName = session?.user?.name || (session?.user as any)?.fullName
-	const isSuperAdmin =
+	const isAdmin =
+		userRole === "admin" ||
 		userRole === "super admin" ||
 		userName?.toLowerCase() === "super admin"
 	const [isSignupQROpen, setIsSignupQROpen] = useState(false)
@@ -67,7 +68,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
 	]
 
-	const filteredNavigation = isSuperAdmin
+	const filteredNavigation = isAdmin
 		? navigation.filter((item) => item.name !== Pages.Dasshboard)
 		: userRole === Roles.USER
 			? [
