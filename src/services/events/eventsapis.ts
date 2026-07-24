@@ -29,6 +29,16 @@ export const UpdateEventApis = async (params: RequestParams<{ payload: string }>
 	return await PUT(eventEndPoints.update.replace(":eventId", params?.id as string), params?.data)
 }
 
+// Autosave the in-progress edit of a published event into its shadow draft ("draft 2")
+export const SaveDraftRevisionApis = async (params: RequestParams<{ payload: string }>): Promise<ServerResponse<any, any>> => {
+	return await POST(eventEndPoints.draftRevision.replace(":eventId", params?.id as string), params?.data)
+}
+
+// Discard the shadow draft and revert to the live published event
+export const DiscardDraftRevisionApis = async (params: RequestParams): Promise<ServerResponse<any, any>> => {
+	return await DROP(eventEndPoints.draftRevision.replace(":eventId", params?.id as string))
+}
+
 export const DeleteTicketApis = async (params: RequestParams<{ eventId: string; ticketId: string }>): Promise<ServerResponse<EventInterface, any>> => {
 	return await DROP(eventEndPoints.tickets.delete.replace(":eventId", params?.data?.eventId as string).replace(":ticketId", params?.data?.ticketId as string))
 }

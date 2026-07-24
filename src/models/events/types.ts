@@ -67,6 +67,8 @@ export interface IEvent extends IBaseModelProps {
 	privacy: 'public' | 'private';
 	showOnMobile?: boolean;
 	status?: 'draft' | 'published';
+	// Shadow "draft 2" of a published event: autosaved edits not yet committed to the live event
+	draftRevision?: { payload: any; savedAt: string | Date } | null;
 	isEnded?: boolean; // UI flag to indicate if event has ended
 	questions?: ICustomQuestion[];
 	createEventTracker(eventCapacity: number): Promise<IEventTracker>

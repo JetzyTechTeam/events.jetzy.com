@@ -209,6 +209,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const unsetDoc: any = {}
 		if (!start) unsetDoc.startsOn = ""
 		if (!end) unsetDoc.endsOn = ""
+		// A real save always supersedes any autosaved shadow draft ("draft 2")
+		unsetDoc.draftRevision = ""
 		if (Object.keys(unsetDoc).length > 0) updateDoc.$unset = unsetDoc
 
 		// Record whether an explicit time was set (empty time string = date-only event)

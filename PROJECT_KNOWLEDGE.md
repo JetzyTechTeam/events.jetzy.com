@@ -417,6 +417,14 @@ Draft events filtered from public `/api/events` listing
 Validation/redirection flow: draft→published handled on My Events page
 Commit: 86af2a6, f2f23e8
 
+## Feature: Autosave to Draft (event create/edit forms)
+Debounced (~2s) autosave with a "Saving… / Saved / Unsaved" pill next to the Save button.
+- **Create page** (`console/events/create.tsx`): first meaningful change (name required) creates ONE draft record (`status:draft`), then keeps updating it. `autosaveIdRef` + `creatingRef` + `createPromiseRef` prevent duplicates; `onSubmit` promotes/saves that same record (draft→published) instead of a second create.
+- **Manage page** (`console/events/[eventId]/manage.tsx`): a **draft** event autosaves in place (stays draft); a **published** event autosaves into a server-side **shadow draft** `event.draftRevision` — live fields untouched until Save. On load, if `draftRevision` exists the form seeds from it and shows a banner with **Discard draft** (reverts to live).
+- Autosave bypasses the redux thunks (which toast) and calls service APIs directly: `CreateEventApis`/`UpdateEventApis`/`SaveDraftRevisionApis`/`DiscardDraftRevisionApis`. Always stores `status:'draft'`; never runs the published Zod schema.
+- Schema: `draftRevision: { payload, savedAt }` (Mixed, optional) on `src/models/events/index.ts` + `IEvent`. `update.ts` `$unset`s it on every real save. New route `src/pages/api/events/[eventId]/draft-revision.ts` (POST save / DELETE discard, admin-or-owner).
+- Shared UI/logic: `src/components/events/AutosaveManager.tsx` — `<AutosaveManager>` (inside Formik, debounces via `useFormikContext`), `<AutosaveStatusPill>`, `buildEventPayload(values, images, videos, overrides)`. Media (`uploadedImages`/`uploadedVideos`) merged in via `mediaVersion` signature since it lives outside Formik.
+
 ## Feature: Event Sorting & Status Badges
 Canonical order everywhere: **live → future → tbd → past**. Single source of truth in `src/utils/eventSort.ts`:
 - `getEventStatus(e, now?)`: `effectiveEnd = endsOn ?? startsOn`; no dates→`tbd`; `effectiveEnd < now`→`past`; `startsOn > now`→`future`; else `live` (also end-only "by mistake" events stay live until `endsOn`).

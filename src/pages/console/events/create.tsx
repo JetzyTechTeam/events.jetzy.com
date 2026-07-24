@@ -50,7 +50,9 @@ import { MinusCircleIcon } from "@heroicons/react/24/solid";
 import TimePicker from "@/components/form/TimePicker";
 import DatePicker from "@/components/form/DatePicker";
 import { Error } from "@/lib/_toaster";
-import { CreateEventThunk } from "@/redux/reducers/eventsSlice";
+import { CreateEventThunk, UpdateEventThunk } from "@/redux/reducers/eventsSlice";
+import { CreateEventApis, UpdateEventApis } from "@/services/events/eventsapis";
+import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState } from "@/components/events/AutosaveManager";
 import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
@@ -130,6 +132,39 @@ const CreateEventPage = () => {
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
   const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
   const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
+
+  // Autosave: the first save creates ONE draft record; all later saves update it. The
+  // event stays a draft (hidden from the public list) until the organizer publishes.
+  const [autosaveState, setAutosaveState] = React.useState<AutosaveState>({ status: 'idle' });
+  const autosaveIdRef = React.useRef<string | null>(null);
+  const creatingRef = React.useRef(false);
+  const createPromiseRef = React.useRef<Promise<any> | null>(null);
+  const mediaVersion = React.useMemo(
+    () => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file)]),
+    [uploadedImages, uploadedVideos]
+  );
+
+  const handleAutosave = async (values: CreateEventFormData) => {
+    const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: 'draft' });
+    const existingId = autosaveIdRef.current;
+    if (existingId) {
+      await UpdateEventApis({ id: existingId, data: { payload: JSON.stringify(payload) } });
+      return;
+    }
+    // Only the first autosave creates the record; guard against concurrent creates.
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    const p = CreateEventApis({ data: { payload: JSON.stringify(payload) } }).then((res: any) => {
+      const newId = res?.data?._id;
+      if (newId) autosaveIdRef.current = newId;
+    });
+    createPromiseRef.current = p;
+    try {
+      await p;
+    } finally {
+      creatingRef.current = false;
+    }
+  };
 
   const { ref } = usePlacesWidget({
     apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
@@ -225,13 +260,26 @@ const CreateEventPage = () => {
 
     setIsSubmitting(true);
 
+    // If an autosave create is still in flight, wait for its id so we don't duplicate.
+    if (!autosaveIdRef.current && createPromiseRef.current) {
+      try { await createPromiseRef.current } catch { /* fall back to fresh create */ }
+    }
+
     const wasDraft = values.status === 'draft'
-    dispatcher(CreateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) } })).then((res: any) => {
+    const payloadStr = JSON.stringify({ ...values, privacy: values.privacy })
+    // If autosave already created a draft record, promote/save THAT record instead of
+    // creating a duplicate. Otherwise fall back to a fresh create.
+    const existingId = autosaveIdRef.current
+    const request = existingId
+      ? dispatcher(UpdateEventThunk({ data: { payload: payloadStr }, id: existingId }))
+      : dispatcher(CreateEventThunk({ data: { payload: payloadStr } }))
+
+    request.then((res: any) => {
       if (res?.payload?.status) {
         if (wasDraft) {
           navigation.push('/console/events')
         } else {
-          setCreatedEventId(res.payload.data._id);
+          setCreatedEventId(existingId ?? res.payload.data._id);
           onSuccessOpen();
         }
       }
@@ -357,6 +405,13 @@ const CreateEventPage = () => {
       >
         {({ values, setFieldValue }) => (
           <Form>
+            <AutosaveManager
+              enabled={!isSubmitting}
+              mediaVersion={mediaVersion}
+              canSave={(v) => !!v.name?.trim()}
+              onAutosave={handleAutosave}
+              onStatusChange={setAutosaveState}
+            />
             <Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
               {/* ===================== MAIN COLUMN ===================== */}
               <Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
@@ -690,6 +745,9 @@ const CreateEventPage = () => {
                       <option value="published">Published</option>
                       <option value="draft">Draft</option>
                     </Field>
+                  </Flex>
+                  <Flex justify="flex-end" mb={3}>
+                    <AutosaveStatusPill state={autosaveState} />
                   </Flex>
                   <Button
                     type="submit"
