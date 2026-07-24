@@ -89,6 +89,16 @@ const eventsSchema = new Schema<IEvent>(
 			default: 'published',
 			required: false,
 		},
+		// Shadow "draft 2" for a PUBLISHED event: autosaved, in-progress edits held
+		// separately so the live event is untouched until the organizer presses Save.
+		// Cleared ($unset) on a real update. `select: false` keeps the unpublished
+		// content out of every query by default — only the owner/admin-gated manage
+		// page opts in via `.select('+draftRevision')`, so it never leaks publicly.
+		draftRevision: {
+			type: Schema.Types.Mixed,
+			required: false,
+			select: false,
+		},
 		startsOn: {
 			type: Date,
 			required: false,

@@ -85,6 +85,8 @@ import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
 import { useAppDispatch } from "@/redux/stores"
 import { UpdateEventThunk, DeleteEventThunk } from "@/redux/reducers/eventsSlice"
+import { UpdateEventApis, SaveDraftRevisionApis, DiscardDraftRevisionApis } from "@/services/events/eventsapis"
+import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState } from "@/components/events/AutosaveManager"
 import { CreateEventFormData, DatePollOption } from "@/types"
 import { TicketData } from "@/components/events/TicketCard"
 import { FileUploadData } from "@/components/misc/DragAndDropUploader"
@@ -177,6 +179,15 @@ function ManageAccessDenied({ eventName }: { eventName?: string }) {
 
 function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const event = React.useMemo(() => JSON.parse(eventProp), [eventProp])
+
+	// A PUBLISHED event with an autosaved shadow draft ("draft 2"): seed the form from
+	// the pending edits instead of the live fields, and offer to Discard back to live.
+	const isPublished = (event.status ?? "published") === "published"
+	const draftPayload: any = isPublished && event.draftRevision?.payload ? event.draftRevision.payload : null
+	const draftSavedAt: string | null = draftPayload ? event.draftRevision?.savedAt ?? null : null
+
+	const [autosaveState, setAutosaveState] = useState<AutosaveState>({ status: "idle" })
+	const [isDiscardingDraft, setIsDiscardingDraft] = useState(false)
 
 	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion">("about")
 	const [tabIndex, setTabIndex] = useState(0)
@@ -313,8 +324,22 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [benefitInput, setBenefitInput] = useState("")
 	const [isFormDirty, setIsFormDirty] = useState(false)
 
-	// Initialize images, videos and tickets on mount
+	// Initialize images, videos and tickets on mount. When a shadow draft exists, seed
+	// from the autosaved payload (form-shaped) instead of the live event fields.
 	useEffect(() => {
+		if (draftPayload) {
+			setUploadedImages((draftPayload.images || []).map((img: any) => ({ id: img?.id || uniqueId(10), file: typeof img === "string" ? img : img?.file })))
+			setUploadedVideos((draftPayload.videos || []).map((v: any) => ({ id: v?.id || uniqueId(10), file: typeof v === "string" ? v : v?.file })))
+			if (draftPayload.tickets && formikRef.current) {
+				formikRef.current.setFieldValue("tickets", draftPayload.tickets.map((t: any) => ({
+					id: t.id || uniqueId(10),
+					title: t.title,
+					price: Number(t.price),
+					description: t.description,
+				})))
+			}
+			return
+		}
 		if (event.images && event.images.length > 0) {
 			setUploadedImages(event.images.map((img: string) => ({ id: uniqueId(10), file: img })))
 		}
@@ -332,6 +357,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	}, [event])
 
 	const initialValues: CreateEventFormData = React.useMemo(() => {
+		// Editing a published event with a shadow draft: the payload is already form-shaped.
+		// Force status to "published" so a manual Save publishes the edits into the live event.
+		if (draftPayload) {
+			return {
+				...draftPayload,
+				images: uploadedImages,
+				status: "published",
+			} as CreateEventFormData
+		}
+
 		const extractedTimeZone = getEventZone(event?.timezone)
 		const start = event.startsOn ? dayjs.utc(event.startsOn).tz(extractedTimeZone) : null
 		const end = event.endsOn ? dayjs.utc(event.endsOn).tz(extractedTimeZone) : null
@@ -395,6 +430,34 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				console.error("Error calling update event API:", error)
 				throw error
 			})
+	}
+
+	const mediaVersion = React.useMemo(
+		() => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file)]),
+		[uploadedImages, uploadedVideos],
+	)
+
+	// Published event -> shadow draft (live untouched). Draft event -> update in place (stays draft).
+	const handleAutosave = async (values: CreateEventFormData) => {
+		const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" })
+		const payloadStr = JSON.stringify(payload)
+		if (isPublished) {
+			await SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
+		} else {
+			await UpdateEventApis({ id: event._id.toString(), data: { payload: payloadStr } })
+		}
+	}
+
+	// Throw away the shadow draft and reload the live published values
+	const handleDiscardDraft = async () => {
+		setIsDiscardingDraft(true)
+		try {
+			await DiscardDraftRevisionApis({ id: event._id.toString() })
+			router.replace(router.asPath)
+		} catch (err) {
+			toast({ title: "Failed to discard draft.", status: "error", duration: 3000 })
+			setIsDiscardingDraft(false)
+		}
 	}
 
 	const onSubmit = async (values: CreateEventFormData) => {
@@ -618,7 +681,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					</span> as any
 				}
 				component={
-					<div className="flex flex-wrap gap-2 items-end self-end">
+					<div className="flex flex-wrap gap-2 items-center self-end">
+						{tabIndex === 0 && <AutosaveStatusPill state={autosaveState} />}
 						{isAdmin && (
 							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
 								View Analytics
@@ -790,6 +854,43 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								{({ values, setFieldValue, dirty }) => (
 									<Form>
 										<FormDirtyWatcher dirty={dirty} onChange={setIsFormDirty} />
+										<AutosaveManager
+											enabled={tabIndex === 0 && !isSubmitting}
+											mediaVersion={mediaVersion}
+											canSave={(v) => !!v.name?.trim()}
+											onAutosave={handleAutosave}
+											onStatusChange={setAutosaveState}
+										/>
+										{draftPayload && (
+											<Flex
+												mb={4}
+												px={4}
+												py={3}
+												borderRadius="10px"
+												bg="#2A2416"
+												border="1px solid #F79432"
+												align={{ base: "flex-start", md: "center" }}
+												justify="space-between"
+												direction={{ base: "column", md: "row" }}
+												gap={3}
+											>
+												<Text className={roboto.className} color="#F5C77E" fontSize="14px" lineHeight="130%">
+													You&rsquo;re editing unsaved autosaved changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Save Changes</b>.
+												</Text>
+												<Button
+													size="sm"
+													variant="outline"
+													borderColor="#F79432"
+													color="#F79432"
+													_hover={{ bg: "#F79432", color: "black" }}
+													isLoading={isDiscardingDraft}
+													onClick={handleDiscardDraft}
+													flexShrink={0}
+												>
+													Discard draft
+												</Button>
+											</Flex>
+										)}
 										<Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
 											{/* ===================== MAIN COLUMN ===================== */}
 											<Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
@@ -3112,7 +3213,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const eventId = context.query.eventId as string
 	if (!eventId) return { notFound: true }
 
-	const event = await Events.findOne({ _id: eventId, isDeleted: false })
+	// `draftRevision` is select:false (kept private); opt in here since the manage page
+	// (owner/admin gated below) is the only place that renders the autosaved shadow draft.
+	const event = await Events.findOne({ _id: eventId, isDeleted: false }).select("+draftRevision")
 	if (!event) return { notFound: true }
 
 	// Admin OR event owner may review approvals; others see a permission message

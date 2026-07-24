@@ -3,6 +3,7 @@ export const eventEndPoints = {
 	list: "public:/events",
 	fetch: "public:/events/:slug",
 	update: "public:/events/:eventId/update",
+	draftRevision: "public:/events/:eventId/draft-revision",
 	delete: "public:/events/:eventId/delete",
 	tickets: {
 		update: "public:/events/:eventId/tickets/:ticketId/update",
