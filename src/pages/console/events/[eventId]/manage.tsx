@@ -895,6 +895,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 										<Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
 											{/* ===================== MAIN COLUMN ===================== */}
 											<Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
+												{/* ---- Status (top; mirrors the one further down, same `status` field) ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Flex align="center" justifyContent="space-between">
+														<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+														<Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#2A2D31] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
+															<option value="published">Published</option>
+															<option value="draft">Draft</option>
+														</Field>
+													</Flex>
+												</Box>
 												{/* ---- Basic Information ---- */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 													<Heading size="md" color="white" mb={5}>Basic Information</Heading>
