@@ -412,6 +412,11 @@ const CreateEventPage = () => {
               onAutosave={handleAutosave}
               onStatusChange={setAutosaveState}
             />
+            {autosaveState.status !== 'idle' && (
+              <Flex justify="flex-end" mb={3}>
+                <AutosaveStatusPill state={autosaveState} />
+              </Flex>
+            )}
             <Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
               {/* ===================== MAIN COLUMN ===================== */}
               <Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
