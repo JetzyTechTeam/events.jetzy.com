@@ -438,14 +438,29 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		[uploadedImages, uploadedVideos],
 	)
 
+	// A manual "Update Event" must always win over autosave. Once a manual save reaches
+	// dispatch we LOCK autosave for the rest of this page's life (it only unlocks if the
+	// save fails and we stay on the page). This prevents a debounced autosave from being
+	// rescheduled after a successful save and reverting the event back to draft during the
+	// (client-side, still-mounted) navigation. `autosaveInFlightRef` lets submit await any
+	// already-running autosave before it writes.
+	const [autosaveLocked, setAutosaveLocked] = useState(false)
+	const autosaveLockedRef = React.useRef(false)
+	const autosaveInFlightRef = React.useRef<Promise<any> | null>(null)
+
 	// Published event -> shadow draft (live untouched). Draft event -> update in place (stays draft).
 	const handleAutosave = async (values: CreateEventFormData) => {
+		if (autosaveLockedRef.current) return
 		const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" })
 		const payloadStr = JSON.stringify(payload)
-		if (isPublished) {
-			await SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
-		} else {
-			await UpdateEventApis({ id: event._id.toString(), data: { payload: payloadStr } })
+		const p = isPublished
+			? SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
+			: UpdateEventApis({ id: event._id.toString(), data: { payload: payloadStr } })
+		autosaveInFlightRef.current = p
+		try {
+			await p
+		} finally {
+			if (autosaveInFlightRef.current === p) autosaveInFlightRef.current = null
 		}
 	}
 
@@ -494,6 +509,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 
 		setIsSubmitting(true)
 
+		// Lock autosave (stays locked on success so it can't reschedule during navigation),
+		// then let any in-flight autosave settle before the manual write lands last.
+		autosaveLockedRef.current = true
+		setAutosaveLocked(true)
+		if (autosaveInFlightRef.current) {
+			try { await autosaveInFlightRef.current } catch { /* ignore autosave failure */ }
+		}
+
 		const events = await axios.post(`/api/get-bookings`, { eventId: event._id })
 			.then(response => response.data)
 			.catch(error => {
@@ -501,8 +524,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				return []
 			})
 
+		let succeeded = false
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: event._id.toString() })).then((res: any) => {
 			if (res?.payload?.status) {
+				succeeded = true
 				if (sendUpdateEmailCheck && events.length > 0) {
 					const changes: string[] = []
 					const extractedTimeZone = getEventZone(event?.timezone)
@@ -563,6 +588,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			}
 		}).finally(() => {
 			setIsSubmitting(false)
+			// Keep autosave locked on success (we're navigating away); only unlock if the
+			// save failed and the user stays on the page so they can keep editing.
+			if (!succeeded) {
+				autosaveLockedRef.current = false
+				setAutosaveLocked(false)
+			}
 		})
 	}
 
@@ -693,7 +724,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							{tabIndex === 0 && isFormDirty && (
 								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
 							)}
-							{tabIndex === 0 && isFormDirty ? "Save Changes" : "Update Event"}
+							Update Event
 						</Button>
 						<Button bg="#3E3E3E" color="white" _hover={{ bg: "#323232" }} _active={{ bg: "#323232" }} fontWeight="bold" isLoading={isCloning} onClick={handleCloneEvent}>
 							Clone
@@ -856,7 +887,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 									<Form>
 										<FormDirtyWatcher dirty={dirty} onChange={setIsFormDirty} />
 										<AutosaveManager
-											enabled={tabIndex === 0 && !isSubmitting}
+											enabled={tabIndex === 0 && !autosaveLocked}
 											mediaVersion={mediaVersion}
 											canSave={(v) => !!v.name?.trim()}
 											onAutosave={handleAutosave}
@@ -876,7 +907,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 												gap={3}
 											>
 												<Text className={roboto.className} color="#F5C77E" fontSize="14px" lineHeight="130%">
-													You&rsquo;re editing unsaved autosaved changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Save Changes</b>.
+													You&rsquo;re editing unsaved autosaved changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Update Event</b>.
 												</Text>
 												<Button
 													size="sm"
@@ -895,6 +926,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 										<Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
 											{/* ===================== MAIN COLUMN ===================== */}
 											<Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
+												{/* ---- Status (top; mirrors the one further down, same `status` field) ---- */}
+												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Flex align="center" justifyContent="space-between">
+														<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+														<Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#2A2D31] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
+															<option value="published">Published</option>
+															<option value="draft">Draft</option>
+														</Field>
+													</Flex>
+												</Box>
 												{/* ---- Basic Information ---- */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 													<Heading size="md" color="white" mb={5}>Basic Information</Heading>

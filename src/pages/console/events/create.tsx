@@ -139,31 +139,40 @@ const CreateEventPage = () => {
   const [autosaveState, setAutosaveState] = React.useState<AutosaveState>({ status: 'idle' });
   const autosaveIdRef = React.useRef<string | null>(null);
   const creatingRef = React.useRef(false);
-  const createPromiseRef = React.useRef<Promise<any> | null>(null);
+  // A manual submit always wins over autosave. Once submit reaches dispatch we LOCK autosave
+  // for the rest of this page's life (unlock only if the save fails and we stay on the page),
+  // so a debounced autosave can't reschedule and revert the just-published event to draft.
+  const [autosaveLocked, setAutosaveLocked] = React.useState(false);
+  const autosaveLockedRef = React.useRef(false);
+  const autosaveInFlightRef = React.useRef<Promise<any> | null>(null);
   const mediaVersion = React.useMemo(
     () => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file)]),
     [uploadedImages, uploadedVideos]
   );
 
   const handleAutosave = async (values: CreateEventFormData) => {
+    if (autosaveLockedRef.current) return;
     const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: 'draft' });
     const existingId = autosaveIdRef.current;
+    let p: Promise<any>;
     if (existingId) {
-      await UpdateEventApis({ id: existingId, data: { payload: JSON.stringify(payload) } });
-      return;
+      p = UpdateEventApis({ id: existingId, data: { payload: JSON.stringify(payload) } });
+    } else {
+      // Only the first autosave creates the record; guard against concurrent creates.
+      if (creatingRef.current) return;
+      creatingRef.current = true;
+      p = CreateEventApis({ data: { payload: JSON.stringify(payload) } })
+        .then((res: any) => {
+          const newId = res?.data?._id;
+          if (newId) autosaveIdRef.current = newId;
+        })
+        .finally(() => { creatingRef.current = false; });
     }
-    // Only the first autosave creates the record; guard against concurrent creates.
-    if (creatingRef.current) return;
-    creatingRef.current = true;
-    const p = CreateEventApis({ data: { payload: JSON.stringify(payload) } }).then((res: any) => {
-      const newId = res?.data?._id;
-      if (newId) autosaveIdRef.current = newId;
-    });
-    createPromiseRef.current = p;
+    autosaveInFlightRef.current = p;
     try {
       await p;
     } finally {
-      creatingRef.current = false;
+      if (autosaveInFlightRef.current === p) autosaveInFlightRef.current = null;
     }
   };
 
@@ -261,9 +270,12 @@ const CreateEventPage = () => {
 
     setIsSubmitting(true);
 
-    // If an autosave create is still in flight, wait for its id so we don't duplicate.
-    if (!autosaveIdRef.current && createPromiseRef.current) {
-      try { await createPromiseRef.current } catch { /* fall back to fresh create */ }
+    // Lock autosave (stays locked on success so it can't reschedule and revert the published
+    // event to draft), then let any in-flight autosave settle so we don't duplicate the create.
+    autosaveLockedRef.current = true;
+    setAutosaveLocked(true);
+    if (autosaveInFlightRef.current) {
+      try { await autosaveInFlightRef.current } catch { /* fall back to fresh create */ }
     }
 
     const wasDraft = values.status === 'draft'
@@ -275,8 +287,10 @@ const CreateEventPage = () => {
       ? dispatcher(UpdateEventThunk({ data: { payload: payloadStr }, id: existingId }))
       : dispatcher(CreateEventThunk({ data: { payload: payloadStr } }))
 
+    let succeeded = false
     request.then((res: any) => {
       if (res?.payload?.status) {
+        succeeded = true
         if (wasDraft) {
           navigation.push('/console/events')
         } else {
@@ -286,6 +300,12 @@ const CreateEventPage = () => {
       }
     }).finally(() => {
       setIsSubmitting(false);
+      // Keep autosave locked on success (navigated away, or published + success modal — in
+      // both cases further autosave would be wrong); only unlock if it failed.
+      if (!succeeded) {
+        autosaveLockedRef.current = false;
+        setAutosaveLocked(false);
+      }
     });
   };
 
@@ -407,12 +427,27 @@ const CreateEventPage = () => {
         {({ values, setFieldValue }) => (
           <Form>
             <AutosaveManager
-              enabled={!isSubmitting}
+              enabled={!autosaveLocked}
               mediaVersion={mediaVersion}
               canSave={(v) => !!v.name?.trim()}
               onAutosave={handleAutosave}
               onStatusChange={setAutosaveState}
             />
+            {autosaveState.status !== 'idle' && (
+              <Flex justify="flex-end" mb={3}>
+                <AutosaveStatusPill state={autosaveState} />
+              </Flex>
+            )}
+            {/* ---- Status (top; mirrors the one at the bottom, same `status` field) ---- */}
+            <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mb={6}>
+              <Flex align="center" justifyContent="space-between">
+                <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+                <Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#343536] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
+                  <option value="published">Published</option>
+                  <option value="draft">Draft</option>
+                </Field>
+              </Flex>
+            </Box>
             <Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
               {/* ===================== MAIN COLUMN ===================== */}
               <Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
