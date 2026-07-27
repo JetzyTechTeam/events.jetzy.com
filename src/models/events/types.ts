@@ -66,6 +66,7 @@ export interface IEvent extends IBaseModelProps {
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
 	showOnMobile?: boolean;
+	premium?: boolean; // If true, only Jetzy Premium subscribers can book this event
 	status?: 'draft' | 'published';
 	// Shadow "draft 2" of a published event: autosaved edits not yet committed to the live event
 	draftRevision?: { payload: any; savedAt: string | Date } | null;

@@ -29,6 +29,7 @@ export function buildEventPayload(
 		privacy: values.privacy ?? "public",
 		isPaid: values.isPaid ?? ((values.tickets?.length ?? 0) > 0),
 		requireApproval: values.requireApproval ?? false,
+		premium: values.premium ?? false,
 		capacity: values.capacity ?? 0,
 		tickets: values.tickets ?? [],
 		...overrides,

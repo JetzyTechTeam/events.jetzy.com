@@ -17,6 +17,8 @@ import { ROUTES } from "@/configs/routes";
 import { useAppDispatch } from "@Jetzy/redux/stores";
 import { destroySession } from "@Jetzy/redux/reducers/appSlice";
 import { getUserSlug } from "@/lib/utils";
+import { usePremiumStatus } from "@/hooks/usePremiumStatus";
+import PremiumBadge from "@/components/premium/PremiumBadge";
 
 type NavbarProps = {
   hideEventNav?: boolean;
@@ -32,6 +34,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
   const userRole = (user as any)?.role;
   const isAdmin = userRole === "admin" || userRole === "super admin";
   const isUser = userRole === "user";
+  const { isPremium } = usePremiumStatus();
 
   return (
     <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={2}>
@@ -101,21 +104,24 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
             <Menu>
               <MenuButton>
                 <Flex align="center" gap={2}>
-                  {user?.image ? (
-                    <img
-                      className="h-8 w-8 rounded-full object-cover border border-gray-700"
-                      src={user.image}
-                      alt={user.name || ""}
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded-full bg-app flex items-center justify-center text-black font-bold text-[10px] uppercase">
-                      {user?.name
-                        ?.split(" ")
-                        .map((n: string) => n[0])
-                        .join("")
-                        .substring(0, 2)}
-                    </div>
-                  )}
+                  <Box position="relative">
+                    {user?.image ? (
+                      <img
+                        className="h-8 w-8 rounded-full object-cover border border-gray-700"
+                        src={user.image}
+                        alt={user.name || ""}
+                      />
+                    ) : (
+                      <div className="h-8 w-8 rounded-full bg-app flex items-center justify-center text-black font-bold text-[10px] uppercase">
+                        {user?.name
+                          ?.split(" ")
+                          .map((n: string) => n[0])
+                          .join("")
+                          .substring(0, 2)}
+                      </div>
+                    )}
+                    {isPremium && <PremiumBadge variant="dot" />}
+                  </Box>
                   <Text fontSize="sm" fontWeight="medium" color="gray.300" display={{ base: "none", md: "block" }}>
                     {user?.name || user?.email}
                   </Text>

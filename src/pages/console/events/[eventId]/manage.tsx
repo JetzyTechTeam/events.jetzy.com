@@ -64,7 +64,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline"
-import { MinusCircleIcon } from "@heroicons/react/24/solid"
+import { MinusCircleIcon, StarIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
 import Link from "next/link"
@@ -396,6 +396,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			benefits: event.benefits || "",
 			locationDisclosedAfterBooking: event.locationDisclosedAfterBooking || false,
 			showOnMobile: event.showOnMobile || false,
+			premium: event.premium || false,
 			datePoll: event.datePoll ? {
 				isActive: event.datePoll.isActive || false,
 				question: event.datePoll.question || "",
@@ -1165,6 +1166,36 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 												{/* ---- Event Options ---- */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 													<Heading size="md" color="white" mb={4}>Event Options</Heading>
+
+													{/* Premium Event — deliberately styled apart from the plain toggles below so organizers can't miss it */}
+													<Flex
+														align="center"
+														justifyContent="space-between"
+														mb={4}
+														p={4}
+														borderRadius="10px"
+														border="1px solid"
+														borderColor={values.premium ? "#F5C518" : "#4A3B00"}
+														bg={values.premium ? "linear-gradient(90deg, rgba(245,197,24,0.15) 0%, rgba(147,51,234,0.12) 100%)" : "#1A1608"}
+														transition="all 0.15s ease"
+													>
+														<Flex gap="3" alignItems="center">
+															<Flex align="center" justifyContent="center" w="40px" h="40px" borderRadius="full" bg="rgba(245,197,24,0.15)" flexShrink={0}>
+																<StarIcon className="w-5 h-5 text-[#F5C518]" />
+															</Flex>
+															<Box>
+																<Flex align="center" gap={2}>
+																	<Text className={roboto.className} color="white" fontWeight={700} fontSize="16px" lineHeight="100%">Premium Event</Text>
+																	<Box bg="#F5C518" color="black" px="2" py="0.5" borderRadius="full" fontSize="10px" fontWeight="bold" letterSpacing="0.03em">JETZY PREMIUM</Box>
+																</Flex>
+																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#C9BFA0" mt={1} maxW="360px">
+																	Restrict booking to Jetzy Premium subscribers only. Everyone can still see this event in listings.
+																</Text>
+															</Box>
+														</Flex>
+														<Switch name="premium" isChecked={values.premium} colorScheme="yellow" size="lg" onChange={() => setFieldValue("premium", !values.premium)} />
+													</Flex>
+
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<LockSVG />

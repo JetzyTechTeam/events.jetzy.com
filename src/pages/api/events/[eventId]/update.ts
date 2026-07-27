@@ -54,6 +54,7 @@ const schema = zod.object({
 	timezone: zod.string().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
+	premium: zod.boolean().optional(),
 	status: zod.enum(['draft', 'published']).optional(),
 	interests: zod.array(zod.string()).optional(),
 	datePoll: zod.object({
@@ -94,7 +95,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premium, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -185,6 +186,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				benefits,
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 				showOnMobile: showOnMobile ?? false,
+				premium: premium ?? false,
 				status: status ?? 'published',
 				interests: interests ?? [],
 				...(datePoll?.isActive && datePoll.options?.length > 0 ? {

@@ -9,6 +9,7 @@ import { FaApple, FaGooglePlay } from "react-icons/fa"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import { toast } from "react-toastify"
 import { getUserSlug } from "@Jetzy/lib/utils"
+import PremiumBadge from "@/components/premium/PremiumBadge"
 
 interface ProfilePageProps {
     user: {
@@ -17,6 +18,7 @@ interface ProfilePageProps {
         image?: string
         email?: string
         _id: string
+        isPremiumSubscriber?: boolean
     } | null
     baseUrl: string
 }
@@ -136,6 +138,11 @@ export default function UserProfilePage({ user, baseUrl }: ProfilePageProps) {
                         <h1 className="text-3xl font-bold text-center mb-1 tracking-tight">
                             {user.firstName || user.email?.split("@")[0] || "Jetzy Member"} {user.lastName || ""}
                         </h1>
+                        {user.isPremiumSubscriber && (
+                            <div className="mb-2">
+                                <PremiumBadge size="sm" />
+                            </div>
+                        )}
                         <p className="text-gray-400 text-sm mb-8">Jetzy Member</p>
 
                         {/* QR Code Section */}

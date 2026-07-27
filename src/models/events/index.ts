@@ -212,6 +212,10 @@ const eventsSchema = new Schema<IEvent>(
 			type: Boolean,
 			default: true,
 		},
+		premium: {
+			type: Boolean,
+			default: false, // true = only Jetzy Premium subscribers can book this event
+		},
 		datePoll: {
 			type: datePollSchema,
 			required: false,

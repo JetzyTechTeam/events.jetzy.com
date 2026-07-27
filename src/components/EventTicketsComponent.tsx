@@ -3,10 +3,10 @@ import {
   toggleCheckoutForm,
 } from "@Jetzy/redux/reducers/checkoutSlice";
 import { useAppDispatch } from "@Jetzy/redux/stores";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { waitUntil } from "@Jetzy/lib/utils";
 import Spinner from "./misc/Spinner";
-import { Error } from "@Jetzy/lib/_toaster";
+import { Error, Success } from "@Jetzy/lib/_toaster";
 import { IEvent } from "@/models/events/types";
 import { CheckmarkSVG } from "@/assets/icons";
 import {
@@ -24,17 +24,27 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/router";
 import Linkify from "linkify-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { stripHtml } from "@/utils/text";
+import { StarIcon } from "@heroicons/react/24/solid";
+import { usePremiumStatus, PREMIUM_STATUS_QUERY_KEY } from "@/hooks/usePremiumStatus";
+import { useQueryClient } from "@tanstack/react-query";
+import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
 
 type Props = {
   event: IEvent;
+  canManage?: boolean;
 };
 
-const EventTicketsComponent: React.FC<Props> = ({ event }) => {
+const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) => {
   const session = useSession();
+  const router = useRouter();
   const dispatcher = useAppDispatch();
+  const queryClient = useQueryClient();
+  const { isPremium } = usePremiumStatus();
+  const [showPaywall, setShowPaywall] = useState(false);
 
   // format the event tickets
   const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
@@ -136,6 +146,49 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
     });
   };
 
+  const needsPremiumGate = !!event.premium && !canManage && !isPremium;
+
+  const handleCheckoutClick = () => {
+    if (event.premium && !canManage) {
+      if (session.status !== "authenticated") {
+        router.push(`/login?callbackUrl=${encodeURIComponent(router.asPath)}`);
+        return;
+      }
+      if (!isPremium) {
+        setShowPaywall(true);
+        return;
+      }
+    }
+
+    showCheckoutForm(true);
+    sendGAEvent({
+      category: "Event",
+      action: "Checkout Button Clicked",
+      label: event.name,
+    });
+  };
+
+  // Detect the redirect back from Stripe after a premium subscription purchase.
+  useEffect(() => {
+    const sessionId = router.query.premium_session_id;
+    if (!sessionId || typeof sessionId !== "string") return;
+
+    axios
+      .get(`/api/subscriptions/confirm?session_id=${sessionId}`)
+      .then(() => {
+        Success("Welcome to Jetzy Premium!", "You can now book this event.");
+        queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY });
+      })
+      .catch(() => {
+        Error("Error", "We couldn't confirm your subscription. Please contact support if this persists.");
+      })
+      .finally(() => {
+        const { premium_session_id, ...rest } = router.query;
+        router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.query.premium_session_id]);
+
   return (
     <>
       {/* Main Container */}
@@ -154,6 +207,18 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
               </p>
             </div>
           </div>
+
+          {/* Premium Event notice — advance warning for non-subscribers before they even
+              select a ticket; the paywall modal is the hard gate on the Checkout click. */}
+          {needsPremiumGate && (
+            <div className="flex items-center gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+              <StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
+              <div>
+                <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>Premium Event</p>
+                <p className="text-gray-300 text-xs mt-1">A Jetzy Premium subscription is required to book this event.</p>
+              </div>
+            </div>
+          )}
 
           {/* Approval-required notice — only for all-free events. On mixed
               (paid+free) events approval applies to the free tier only, so the
@@ -276,14 +341,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
             <button
               disabled={isLoading}
-              onClick={() => {
-                showCheckoutForm(true)
-                sendGAEvent({
-                  category: "Event",
-                  action: "Checkout Button Clicked",
-                  label: event.name,
-                })
-              }}
+              onClick={handleCheckoutClick}
               className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? <Spinner /> : "Checkout"}
@@ -291,6 +349,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
           </div>
         </div>
       </div>
+
+      <PremiumPaywallModal
+        isOpen={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        eventName={stripHtml(event.name)}
+        returnTo={`/${event.slug}`}
+      />
 
       {/* map section  */}
       {/* <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">

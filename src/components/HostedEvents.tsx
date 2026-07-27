@@ -520,7 +520,7 @@ export default function HostedEvents({ event }: Props) {
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
 					{/* Tickets are hidden once the event has ended, except for host/admin. */}
-					{clonedEvent && (!isEnded || canManage) && <EventTicketsComponent event={clonedEvent} />}
+					{clonedEvent && (!isEnded || canManage) && <EventTicketsComponent event={clonedEvent} canManage={canManage} />}
 
 					{clonedEvent?._id && (
 						<div className={isDatePollActive ? "" : "max-w-4xl mx-auto"}>

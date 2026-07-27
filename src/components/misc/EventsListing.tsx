@@ -45,6 +45,7 @@ import Link from "next/link";
 dayjs.extend(utc)
 dayjs.extend(timezone)
 import { stripHtml } from "@/utils/text";
+import PremiumBadge from "@/components/premium/PremiumBadge";
 
 interface EventCardProps {
   event: IEvent;
@@ -125,25 +126,24 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       onClick={() => onClick(event)}
     >
       <Box p="2" position="relative">
-        {/* Status badge (live / upcoming / tbd / ended) */}
-        <Box
-          position="absolute"
-          top="4"
-          left="4"
-          zIndex="3"
-          bg={badge.bg}
-          color={badge.color}
-          border={badge.border ? "1px solid" : undefined}
-          borderColor={badge.border}
-          px="2"
-          py="0.5"
-          rounded="md"
-          fontSize="xs"
-          fontWeight="bold"
-          letterSpacing="0.03em"
-        >
-          {STATUS_LABEL[timeStatus]}
-        </Box>
+        {/* Status badge (live / upcoming / tbd / ended) + Premium badge */}
+        <Flex position="absolute" top="4" left="4" zIndex="3" gap="1.5" align="center">
+          <Box
+            bg={badge.bg}
+            color={badge.color}
+            border={badge.border ? "1px solid" : undefined}
+            borderColor={badge.border}
+            px="2"
+            py="0.5"
+            rounded="md"
+            fontSize="xs"
+            fontWeight="bold"
+            letterSpacing="0.03em"
+          >
+            {STATUS_LABEL[timeStatus]}
+          </Box>
+          {event.premium && <PremiumBadge size="xs" />}
+        </Flex>
         {event.images && event.images.length > 0 ? (
           <Image
             src={event.images[0]}

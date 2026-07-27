@@ -14,9 +14,9 @@ export const getPublicUserAction = async (id: string) => {
 
         if (isValidObjectId(id)) {
             // Standard ID lookup
-            user = await Users.findById(id).select("firstName lastName image email").lean()
+            user = await Users.findById(id).select("firstName lastName image email premiumSubscription.active").lean()
             if (!user) {
-                user = await EventUsers.findById(id).select("firstName lastName image email").lean()
+                user = await EventUsers.findById(id).select("firstName lastName image email premiumSubscription.active").lean()
             }
         } else {
             // Derived Slug lookup: firstname-lastname-last3id
@@ -39,8 +39,8 @@ export const getPublicUserAction = async (id: string) => {
             };
 
             const potentialUsers = [
-                ...(await Users.find(searchBySuffix).select("firstName lastName image email").lean()),
-                ...(await EventUsers.find(searchBySuffix).select("firstName lastName image email").lean())
+                ...(await Users.find(searchBySuffix).select("firstName lastName image email premiumSubscription.active").lean()),
+                ...(await EventUsers.find(searchBySuffix).select("firstName lastName image email premiumSubscription.active").lean())
             ];
 
             console.log(`[Slug Lookup] Found ${potentialUsers.length} potential matches by suffix`);
@@ -73,7 +73,8 @@ export const getPublicUserAction = async (id: string) => {
                 firstName: user.firstName,
                 lastName: user.lastName,
                 image: finalImage || null,
-                _id: user._id.toString()
+                _id: user._id.toString(),
+                isPremiumSubscriber: !!user.premiumSubscription?.active,
             }
         }
     } catch (error: any) {
