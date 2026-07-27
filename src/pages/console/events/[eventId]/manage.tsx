@@ -693,7 +693,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							{tabIndex === 0 && isFormDirty && (
 								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
 							)}
-							{tabIndex === 0 && isFormDirty ? "Save Changes" : "Update Event"}
+							Update Event
 						</Button>
 						<Button bg="#3E3E3E" color="white" _hover={{ bg: "#323232" }} _active={{ bg: "#323232" }} fontWeight="bold" isLoading={isCloning} onClick={handleCloneEvent}>
 							Clone
@@ -876,7 +876,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 												gap={3}
 											>
 												<Text className={roboto.className} color="#F5C77E" fontSize="14px" lineHeight="130%">
-													You&rsquo;re editing unsaved autosaved changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Save Changes</b>.
+													You&rsquo;re editing unsaved autosaved changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Update Event</b>.
 												</Text>
 												<Button
 													size="sm"
