@@ -438,14 +438,29 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		[uploadedImages, uploadedVideos],
 	)
 
+	// A manual "Update Event" must always win over autosave. Once a manual save reaches
+	// dispatch we LOCK autosave for the rest of this page's life (it only unlocks if the
+	// save fails and we stay on the page). This prevents a debounced autosave from being
+	// rescheduled after a successful save and reverting the event back to draft during the
+	// (client-side, still-mounted) navigation. `autosaveInFlightRef` lets submit await any
+	// already-running autosave before it writes.
+	const [autosaveLocked, setAutosaveLocked] = useState(false)
+	const autosaveLockedRef = React.useRef(false)
+	const autosaveInFlightRef = React.useRef<Promise<any> | null>(null)
+
 	// Published event -> shadow draft (live untouched). Draft event -> update in place (stays draft).
 	const handleAutosave = async (values: CreateEventFormData) => {
+		if (autosaveLockedRef.current) return
 		const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" })
 		const payloadStr = JSON.stringify(payload)
-		if (isPublished) {
-			await SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
-		} else {
-			await UpdateEventApis({ id: event._id.toString(), data: { payload: payloadStr } })
+		const p = isPublished
+			? SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
+			: UpdateEventApis({ id: event._id.toString(), data: { payload: payloadStr } })
+		autosaveInFlightRef.current = p
+		try {
+			await p
+		} finally {
+			if (autosaveInFlightRef.current === p) autosaveInFlightRef.current = null
 		}
 	}
 
@@ -494,6 +509,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 
 		setIsSubmitting(true)
 
+		// Lock autosave (stays locked on success so it can't reschedule during navigation),
+		// then let any in-flight autosave settle before the manual write lands last.
+		autosaveLockedRef.current = true
+		setAutosaveLocked(true)
+		if (autosaveInFlightRef.current) {
+			try { await autosaveInFlightRef.current } catch { /* ignore autosave failure */ }
+		}
+
 		const events = await axios.post(`/api/get-bookings`, { eventId: event._id })
 			.then(response => response.data)
 			.catch(error => {
@@ -501,8 +524,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				return []
 			})
 
+		let succeeded = false
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: event._id.toString() })).then((res: any) => {
 			if (res?.payload?.status) {
+				succeeded = true
 				if (sendUpdateEmailCheck && events.length > 0) {
 					const changes: string[] = []
 					const extractedTimeZone = getEventZone(event?.timezone)
@@ -563,6 +588,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			}
 		}).finally(() => {
 			setIsSubmitting(false)
+			// Keep autosave locked on success (we're navigating away); only unlock if the
+			// save failed and the user stays on the page so they can keep editing.
+			if (!succeeded) {
+				autosaveLockedRef.current = false
+				setAutosaveLocked(false)
+			}
 		})
 	}
 
@@ -856,7 +887,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 									<Form>
 										<FormDirtyWatcher dirty={dirty} onChange={setIsFormDirty} />
 										<AutosaveManager
-											enabled={tabIndex === 0 && !isSubmitting}
+											enabled={tabIndex === 0 && !autosaveLocked}
 											mediaVersion={mediaVersion}
 											canSave={(v) => !!v.name?.trim()}
 											onAutosave={handleAutosave}
