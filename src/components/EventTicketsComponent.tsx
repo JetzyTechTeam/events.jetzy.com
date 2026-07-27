@@ -151,7 +151,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) =>
   const handleCheckoutClick = () => {
     if (event.premium && !canManage) {
       if (session.status !== "authenticated") {
-        router.push(`/login?callbackUrl=${encodeURIComponent(router.asPath)}`);
+        router.push(`/login?_cb=${encodeURIComponent(router.asPath)}`);
         return;
       }
       if (!isPremium) {

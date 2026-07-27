@@ -27,6 +27,9 @@ const schema = zod.object({
 	endTime: zod.string().optional(),
 	name: zod.string().nonempty(),
 	location: zod.string().optional(),
+	longitude: zod.number().optional(),
+	latitude: zod.number().optional(),
+	placeId: zod.string().optional(),
 	capacity: zod.number().nonnegative(),
 	requireApproval: zod.boolean(),
 	images: zod.array(
@@ -95,7 +98,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premium, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premium, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -172,6 +175,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			$set: {
 				name,
 				location,
+				// Only overwrite saved coordinates when the client actually sent new ones
+				// (e.g. the user re-picked a location) — otherwise leave the existing
+				// coordinates untouched instead of wiping them with undefined.
+				...(typeof longitude === "number" && typeof latitude === "number" ? {
+					coordinates: { long: longitude, lat: latitude, placeId },
+				} : {}),
 				desc: desc ?? "",
 				isPaid,
 				capacity,

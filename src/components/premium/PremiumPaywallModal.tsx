@@ -90,8 +90,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, eventName, retu
 							<div className="flex flex-col gap-3">
 								<button
 									onClick={() => setStep("plan")}
-									className="font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-colors"
-									style={{ background: "#F5C518", color: "#000" }}
+									className="bg-jetzy text-black font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-colors"
 								>
 									Upgrade to Jetzy Premium
 								</button>
@@ -141,8 +140,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, eventName, retu
 								<button
 									disabled={subscribeMutation.isPending}
 									onClick={() => subscribeMutation.mutate()}
-									className="w-2/3 font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
-									style={{ background: "#F5C518", color: "#000" }}
+									className="w-2/3 bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
 								>
 									{subscribeMutation.isPending ? <Spinner /> : "Subscribe Now"}
 								</button>

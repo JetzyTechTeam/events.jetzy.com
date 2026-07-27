@@ -3,8 +3,10 @@ import { StarIcon } from "@heroicons/react/24/solid"
 
 type PremiumBadgeProps = {
 	size?: "xs" | "sm" | "md"
-	// "pill" for listing cards / profile name row, "dot" for a small avatar-corner overlay
-	variant?: "pill" | "dot"
+	// "pill" for the navbar/profile name row, "badge" to sit flush next to a status
+	// badge (same box shape/size as the LIVE/UPCOMING/TBD/ENDED badges), "dot" for a
+	// small avatar-corner overlay.
+	variant?: "pill" | "badge" | "dot"
 }
 
 const SIZE_STYLES = {
@@ -26,6 +28,29 @@ const PremiumBadge: React.FC<PremiumBadgeProps> = ({ size = "sm", variant = "pil
 			>
 				<StarIcon className="w-2.5 h-2.5 text-black" />
 			</div>
+		)
+	}
+
+	if (variant === "badge") {
+		// Matches the status badges (LIVE/UPCOMING/TBD/ENDED) exactly: Chakra's
+		// px="2" py="0.5" rounded="md" fontSize="xs" fontWeight="bold" letterSpacing="0.03em".
+		return (
+			<span
+				className="inline-flex items-center gap-1 font-bold rounded-md"
+				style={{
+					paddingLeft: "8px",
+					paddingRight: "8px",
+					paddingTop: "2px",
+					paddingBottom: "2px",
+					fontSize: "12px",
+					letterSpacing: "0.03em",
+					background: "#F5C518",
+					color: "#000",
+				}}
+			>
+				<StarIcon className="w-3 h-3" />
+				PREMIUM
+			</span>
 		)
 	}
 
