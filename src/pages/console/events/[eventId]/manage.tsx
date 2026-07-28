@@ -314,6 +314,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [isCloning, setIsCloning] = useState(false)
+	const [isApproving, setIsApproving] = useState(false)
 	const [editIndex, setEditIndex] = useState<number | null>(null)
 	const [tempTicket, setTempTicket] = useState<TicketData>({ id: "", title: "", description: "", price: 0 })
 	const [tempPollOption, setTempPollOption] = useState<DatePollOption>({ id: "", date: "", time: "", label: "" })
@@ -677,6 +678,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		}
 	}
 
+	const handleApproveEvent = () => {
+		setIsApproving(true)
+		axios.post(`/api/events/${event._id}/approve`).then(() => {
+			toast({ title: "Event approved successfully!", status: "success", duration: 3000 })
+			router.replace(router.asPath)
+		}).catch((err) => {
+			toast({ title: err?.response?.data?.message || "Failed to approve event.", status: "error", duration: 4000 })
+		}).finally(() => setIsApproving(false))
+	}
+
 	const handleCloneEvent = () => {
 		setIsCloning(true)
 		axios.post(`/api/events/${event._id}/clone`).then((res) => {
@@ -709,12 +720,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}>My Events &rsaquo; </span>
 							<span className="text-[#F79432] font-normal">{stripHtml(event.name)}</span>
 						</span>
-						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>{stripHtml(event.name)}</span>
+						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>
+							{stripHtml(event.name)}
+							{event.privacy === "public" && event.adminApprovalStatus === "pending" && (
+								<Box as="span" ml={3} px="10px" py="3px" borderRadius="md" fontSize="13px" fontWeight="bold" letterSpacing="0.03em" bg="#3A2A00" color="#F79432" border="1px solid #F79432" verticalAlign="middle">
+									PENDING APPROVAL
+								</Box>
+							)}
+						</span>
 					</span> as any
 				}
 				component={
 					<div className="flex flex-wrap gap-2 items-center self-end">
 						{tabIndex === 0 && <AutosaveStatusPill state={autosaveState} />}
+						{isAdmin && event.privacy === "public" && event.adminApprovalStatus === "pending" && (
+							<Button bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
+								Approve Event
+							</Button>
+						)}
 						{isAdmin && (
 							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
 								View Analytics

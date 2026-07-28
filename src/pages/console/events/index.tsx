@@ -298,6 +298,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							</span>
 						)}
 						{(event as any).premium && <PremiumBadge size="xs" />}
+						{(event as any).privacy !== 'private' && (event as any).adminApprovalStatus === 'pending' && (
+							<span className="px-2 py-0.5 bg-[#3A2A00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
+								PENDING APPROVAL
+							</span>
+						)}
 						{(event as any).privacy === 'private' && (
 							<span className="px-2 py-0.5 bg-[#7C1D1D] text-white border border-red-500/40 text-xs rounded-full font-medium">
 								PRIVATE

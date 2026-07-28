@@ -65,6 +65,7 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	adminApprovalStatus?: 'pending' | 'approved';
 	showOnMobile?: boolean;
 	premium?: boolean; // If true, only Jetzy Premium subscribers can book this event
 	status?: 'draft' | 'published';

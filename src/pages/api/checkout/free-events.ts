@@ -80,6 +80,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, 404)
 		}
+		if (event.privacy === "public" && event.adminApprovalStatus === "pending") {
+			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, 403)
+		}
 		if (event.questions && event.questions.length > 0) {
 			const requiredQuestions = event.questions.filter((q: any) => q.isRequired)
 			for (const reqQ of requiredQuestions) {

@@ -191,6 +191,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
+		if (event.privacy === "public" && event.adminApprovalStatus === "pending") {
+			console.warn("[checkout/index] Blocked checkout for pending-approval event:", event._id)
+			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, ResCode.FORBIDDEN)
+		}
+
 		// Validate required custom questions
 		if (event.questions && event.questions.length > 0) {
 			const requiredQuestions = event.questions.filter(q => q.isRequired);

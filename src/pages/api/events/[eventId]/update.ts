@@ -191,6 +191,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				videos: videos?.map((v) => v.file) ?? [],
 				timezone: timezone || 'UTC',
 				privacy,
+				// Private events are always auto-approved. A public event only needs a
+				// fresh admin review when it's newly becoming public (was private before) —
+				// otherwise leave its current approval status untouched (don't re-trigger
+				// pending on every unrelated edit, and don't silently approve a pending one).
+				...(privacy === "private"
+					? { adminApprovalStatus: "approved" }
+					: (event.privacy === "private" ? { adminApprovalStatus: "pending" } : {})),
 				feedbackFormUrl,
 				benefits,
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,

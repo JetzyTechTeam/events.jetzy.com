@@ -174,6 +174,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			hasEndTime: !!(end && endTime),
 			isPaid,
 			privacy,
+			// Public events need admin review before they're publicly visible; private events are always auto-approved.
+			adminApprovalStatus: privacy === "private" ? "approved" : "pending",
 			images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 			videos: videos?.map((v) => v.file) ?? [],
 			capacity,

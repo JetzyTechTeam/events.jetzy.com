@@ -8,6 +8,8 @@ import { ensureDbConnected } from "@/configs/database"
 import { useAnalytics } from "@/hooks/useAnalytics"
 import Head from "next/head"
 import { stripHTMLAndDecode } from "@/lib/utils"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { ssr: false }) // Import the HostedEvents component dynamically
 
@@ -226,6 +228,20 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 
 		console.log(`[Slug Lookup v3] Success! Rendering event: ${event.name} (${event._id})`)
+
+		// Public events pending admin approval are hidden from everyone except their
+		// owner/admin (same treatment as a not-found event, so pending events aren't
+		// discoverable/shareable before review).
+		if (event.privacy === "public" && event.adminApprovalStatus === "pending") {
+			const session = await getServerSession(context.req, context.res, authOptions)
+			const role = (session?.user as any)?.role
+			const isAdmin = role === "admin" || role === "super admin"
+			const userId = (session?.user as any)?._id?.toString()
+			const isOwner = userId && event.ownerId?.toString() === userId
+			if (!isAdmin && !isOwner) {
+				return { notFound: true }
+			}
+		}
 
 		// compress the event data
 		const eventData = JSON.stringify(event.toJSON())

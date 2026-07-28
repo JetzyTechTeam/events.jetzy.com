@@ -83,6 +83,14 @@ const eventsSchema = new Schema<IEvent>(
 			default: 'public',
 			required: true,
 		},
+		// Admin moderation gate for public events. Private events are always
+		// auto-approved. Defaults to 'approved' so events that existed before this
+		// field was introduced aren't retroactively hidden.
+		adminApprovalStatus: {
+			type: String,
+			enum: ["pending", "approved"],
+			default: "approved",
+		},
 		status: {
 			type: String,
 			enum: ['draft', 'published'],
