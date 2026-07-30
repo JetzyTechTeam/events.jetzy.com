@@ -100,9 +100,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const session = await getServerSession(req, res, authOptions)
 		const bookerUserId = (session?.user as any)?._id || (session?.user as any)?.id
 
-		// Require-Approval events: create a PENDING booking that the host must approve.
-		// Capacity is NOT consumed and no ticket is issued until approval.
-		const requiresApproval = !!(event as any).requireApproval
+		// Require-Approval: create a PENDING booking that the host must approve. Capacity is
+		// NOT consumed and no ticket is issued until approval. Resolved per-ticket (with the
+		// event-level flag as the fallback), so one free ticket can opt out while others don't.
+		const { selectionRequiresApproval } = await import("@/lib/ticket-approval")
+		const requiresApproval = selectionRequiresApproval(event as any, tickets as any)
 
 		// Create the booking record (PENDING when approval is required, otherwise CONFIRMED)
 		const booking = await Bookings.create({

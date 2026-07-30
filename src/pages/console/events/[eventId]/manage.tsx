@@ -80,6 +80,7 @@ import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
+import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
@@ -210,12 +211,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		}
 	}, [router.query.invite])
 
+	// Approvals surfaces show whenever ANY ticket needs approval, not just when the
+	// event-level default is on — a single flagged ticket is enough.
+	const hasApprovalTickets = React.useMemo(() => eventHasAnyApprovalTicket(event as any), [event])
+
 	// Deep-link from the admin approval-request email opens the Approvals tab
 	useEffect(() => {
-		if (router.query.tab === "approvals" && event.requireApproval) {
+		if (router.query.tab === "approvals" && hasApprovalTickets) {
 			setTabIndex(6)
 		}
-	}, [router.query.tab, event.requireApproval])
+	}, [router.query.tab, hasApprovalTickets])
 
 	const { data: analytics } = useQuery({
 		queryKey: ["event-analytics", event._id],
@@ -238,16 +243,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		const priceById = new Map<string, number>()
 		;(event.tickets || []).forEach((t: any) => priceById.set(t._id?.toString(), Number(t.price)))
 
-		const byTicketId = new Map<string, { sold: number; revenue: number }>()
+		const byTicketId = new Map<string, { sold: number; revenue: number; onHold: number }>()
 		;(eventBookings as any[]).forEach((booking: any) => {
 			if (isCancelledBooking(booking)) return
+			// A pending paid request has an authorized card hold, not money in the bank.
+			// Counting it as revenue would put cash on screen that may never be captured.
+			const onHold = booking?.payment?.status === "authorized" || booking?.payment?.status === "capturing" || booking?.payment?.status === "failed"
 			;(booking.tickets || []).forEach((t: any) => {
 				const key = t.ticketId?.toString()
 				if (!key) return
 				const price = priceById.get(key) ?? 0
-				const entry = byTicketId.get(key) || { sold: 0, revenue: 0 }
-				entry.sold += t.quantity || 0
-				entry.revenue += (t.quantity || 0) * price
+				const entry = byTicketId.get(key) || { sold: 0, revenue: 0, onHold: 0 }
+				const amount = (t.quantity || 0) * price
+				if (onHold) {
+					entry.onHold += amount
+				} else {
+					entry.sold += t.quantity || 0
+					entry.revenue += amount
+				}
 				byTicketId.set(key, entry)
 			})
 		})
@@ -336,6 +349,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					title: t.title,
 					price: Number(t.price),
 					description: t.description,
+					// Must pass through as-is (never `?? false`): undefined means "inherit the
+					// event setting", and coercing it here would let autosave pin every ticket to OFF.
+					requireApproval: t.requireApproval,
 				})))
 			}
 			return
@@ -352,6 +368,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				title: ticket.name,
 				price: Number(ticket.price),
 				description: ticket.desc,
+				requireApproval: ticket.requireApproval,
 			})))
 		}
 	}, [event])
@@ -384,6 +401,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				title: stripHtml(ticket.name),
 				price: Number(ticket.price),
 				description: stripHtml(ticket.desc),
+				requireApproval: ticket.requireApproval,
 			})),
 			privacy: event.privacy,
 			status: (event.status ?? "published") as "draft" | "published",
@@ -854,7 +872,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						>
 							Blasts
 						</Tab>
-						{event.requireApproval && (
+						{hasApprovalTickets && (
 							<Tab
 								className={roboto.className}
 								fontWeight={500}
@@ -1224,10 +1242,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 															<UserTickSVG />
 															<Box>
 																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">{((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)) ? "Available for events with a free ticket" : "Approval applies to free-ticket registrations"}</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" maxW="360px">Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.</Text>
 															</Box>
 														</Flex>
-														<Switch name="requireApproval" isDisabled={(values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)} isChecked={values.requireApproval && !((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0))} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+														<Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
 													</Flex>
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1288,13 +1306,21 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																	const stats = ticketSalesSummary.get(ticket.id.toString())
 																	return (
 																		<Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
-																			<Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white" pr="6">{ticket.title}</Text>
+																			<Flex align="center" gap={2} pr="6" wrap="wrap">
+																				<Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
+																				{ticketApprovalFlag(values as any, ticket as any) && (
+																					<Badge colorScheme="orange" fontSize="0.7em" px={2} py={0.5} borderRadius="6px">Approval</Badge>
+																				)}
+																			</Flex>
 																			<Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
 																			<Flex align="center" justify="space-between" mt="2" wrap="wrap" gap={2}>
 																				<Text fontWeight="bold" fontSize="2xl" color="#F79432">${ticket.price}</Text>
-																				<Flex gap={2}>
+																				<Flex gap={2} wrap="wrap">
 																					<Badge colorScheme="purple" fontSize="0.75em" px={2} py={1} borderRadius="6px">{stats?.sold ?? 0} sold</Badge>
 																					<Badge colorScheme="green" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.revenue ?? 0).toFixed(2)} collected</Badge>
+																					{(stats?.onHold ?? 0) > 0 && (
+																						<Badge colorScheme="yellow" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.onHold ?? 0).toFixed(2)} on hold</Badge>
+																					)}
 																				</Flex>
 																			</Flex>
 																			<Box position="absolute" top="4" right="4">
@@ -1417,6 +1443,27 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																<FormLabel>Price</FormLabel>
 																<Input type="number" placeholder="Enter price" bg="#090C10" border="1px solid #444" value={tempTicket.price} onChange={(e) => setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) })} />
 															</FormControl>
+															<FormControl mb={4}>
+																<Flex align="center" justify="space-between" gap={4}>
+																	<Box>
+																		<FormLabel mb={0}>Require Approval</FormLabel>
+																		<Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
+																			{tempTicket.requireApproval === undefined
+																				? `Inherits the event setting (${values.requireApproval ? "On" : "Off"})`
+																				: !tempTicket.requireApproval
+																					? "Guests book this ticket instantly."
+																					: Number(tempTicket.price) > 0
+																						? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
+																						: "Guests request a spot; you approve or decline."}
+																		</Text>
+																	</Box>
+																	<Switch
+																		colorScheme="orange"
+																		isChecked={tempTicket.requireApproval ?? values.requireApproval}
+																		onChange={(e) => setTempTicket({ ...tempTicket, requireApproval: e.target.checked })}
+																	/>
+																</Flex>
+															</FormControl>
 														</ModalBody>
 														<ModalFooter>
 															<Button bg="#F79432" color="black" mr={3} onClick={() => {
@@ -1511,7 +1558,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								<BlastsManager event={event} onOpenAdvanced={() => setSendBlastModal(true)} />
 							</div>
 						</TabPanel>
-						{event.requireApproval && (
+						{hasApprovalTickets && (
 							<TabPanel>
 								<div className="bg-[#181818] rounded-xl p-3">
 									<ApprovalRequests eventId={event._id} event={event} />

@@ -64,6 +64,7 @@ type TicketEmailData = {
   discountAmount?: number
   discountPercentage?: number
   approvalContext?: boolean // true when sent as a Require-Approval acceptance (celebratory header + subject)
+  amountCharged?: number // paid approvals only: the hold has just been captured, so say so
 }
 
 type BookingCancellationData = {
@@ -321,10 +322,25 @@ type ApprovalEmailData = {
   email: string
   tickets?: Array<{ name?: string; quantity: number }>
   eventId?: string
+  /**
+   * Present only for PAID approval requests, where the card is authorized but not
+   * charged. Free/RSVP approvals omit it and every block below renders exactly as
+   * it did before paid approval shipped.
+   */
+  payment?: { amount: number; expiresAt?: Date | string | null }
+}
+
+const formatMoney = (amount: number) => `$${Number(amount || 0).toFixed(2)}`
+
+const formatHoldDeadline = (expiresAt?: Date | string | null) => {
+  if (!expiresAt) return null
+  const d = new Date(expiresAt)
+  if (isNaN(d.getTime())) return null
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
 }
 
 // Sent to the attendee right after they check out on a Require-Approval event.
-export const sendApprovalPending = async ({ event, firstName, email, tickets = [] }: ApprovalEmailData) => {
+export const sendApprovalPending = async ({ event, firstName, email, tickets = [], payment }: ApprovalEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
     console.log("[LOCALHOST MODE] sendApprovalPending skipped - would send to:", email)
@@ -332,6 +348,32 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
   }
   const eventName = decodeHTMLEntities(event.name)
   const totalTickets = tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)
+  const holdDeadline = formatHoldDeadline(payment?.expiresAt)
+  const holdBlock = payment
+    ? `
+          <div style="background-color: #e8f4fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2196f3;">
+            <p style="color: #0d47a1; margin: 0 0 10px 0; font-size: 16px;"><strong>You have not been charged.</strong></p>
+            <p style="color: #333; margin: 0; line-height: 1.6;">
+              We've placed a temporary authorization hold of <strong>${formatMoney(payment.amount)}</strong> on your card.
+              If the host approves your request${holdDeadline ? ` by <strong>${holdDeadline}</strong>` : ""}, the hold converts to a
+              charge and your ticket is emailed to you. If your request is declined${holdDeadline ? ` — or the host doesn't respond by then —` : ""}
+              the hold is released automatically.
+            </p>
+            <p style="color: #666; margin: 12px 0 0 0; font-size: 13px;">
+              Depending on your bank, a released hold can take 5&ndash;10 business days to disappear from your statement.
+            </p>
+          </div>`
+    : ""
+  const nextSteps = payment
+    ? `
+              <li>The host will review your request.</li>
+              <li>If approved, your card is charged ${formatMoney(payment.amount)} and you'll receive your ticket by email.</li>
+              <li>If declined, the hold is released and you are not charged.</li>
+              <li>No further action is needed from you right now.</li>`
+    : `
+              <li>The host will review your request.</li>
+              <li>If approved, you'll receive a confirmation email with your ticket.</li>
+              <li>No further action is needed from you right now.</li>`
   try {
     await sgMail.send({
       to: [email, "tech@jetzyapp.com"],
@@ -345,19 +387,18 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
               Hi ${firstName}, thanks for registering for "${eventName}". This event requires host approval.
               Your request${totalTickets ? ` for ${totalTickets} ticket(s)` : ""} has been submitted and is <strong>pending review</strong>.
             </p>
-          </div>
+          </div>${holdBlock}
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">What happens next?</h2>
-            <ul style="color: #333; line-height: 1.6;">
-              <li>The host will review your request.</li>
-              <li>If approved, you'll receive a confirmation email with your ticket.</li>
-              <li>No further action is needed from you right now.</li>
+            <ul style="color: #333; line-height: 1.6;">${nextSteps}
             </ul>
           </div>
           <p style="margin-top: 30px; text-align: center; color: #666;">Thank you for your interest in Jetzy events!</p>
         </div>
       `),
-      text: `Request Received — Pending Approval\n\nHi ${firstName}, your registration for "${eventName}" requires host approval and is pending review. You'll get a confirmation email if approved.`
+      text: payment
+        ? `Request Received — Pending Approval\n\nHi ${firstName}, your registration for "${eventName}" requires host approval and is pending review.\n\nYou have NOT been charged. We've placed a temporary authorization hold of ${formatMoney(payment.amount)} on your card${holdDeadline ? `, valid until ${holdDeadline}` : ""}. If the host approves, the hold converts to a charge and your ticket is emailed. If declined or unreviewed, the hold is released automatically. A released hold can take 5-10 business days to clear your statement.`
+        : `Request Received — Pending Approval\n\nHi ${firstName}, your registration for "${eventName}" requires host approval and is pending review. You'll get a confirmation email if approved.`
     })
   } catch (error) {
     console.error("Failed to send approval-pending email:", error)
@@ -368,7 +409,17 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
 // Sent to the admin inbox (SENDGRID_EMAIL_SENDER = contact@jetzyapp.com). kind:
 //   "request"  → a new attendee is awaiting approval
 //   "approved" → a request was approved & confirmed (copy for records)
-export const sendAdminApprovalNotice = async ({ event, firstName, lastName, email, tickets = [], eventId, kind }: ApprovalEmailData & { kind: "request" | "approved" }) => {
+//   "expired"  → a PAID request's card hold lapsed before anyone acted. This is the only
+//                fully async path — nobody is looking at a screen when it happens — so the
+//                host would otherwise silently lose a paying guest.
+export const sendAdminApprovalNotice = async ({
+  event, firstName, lastName, email, tickets = [], eventId, kind, amountOnHold, holdExpiresAt, amountCharged,
+}: ApprovalEmailData & {
+  kind: "request" | "approved" | "expired"
+  amountOnHold?: number
+  holdExpiresAt?: Date | string | null
+  amountCharged?: number
+}) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
     console.log(`[LOCALHOST MODE] sendAdminApprovalNotice (${kind}) skipped - would send to admin for:`, email)
@@ -383,26 +434,53 @@ export const sendAdminApprovalNotice = async ({ event, firstName, lastName, emai
   const totalTickets = tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)
   const manageUrl = `${baseUrl || "https://events.jetzy.com"}/console/events/${eventId || (event as any)._id}/manage?tab=approvals`
   const isRequest = kind === "request"
+  const isExpired = kind === "expired"
+  const deadline = formatHoldDeadline(holdExpiresAt)
+
+  const heading = isRequest ? "New Approval Request" : isExpired ? "Card Hold Expired" : "Request Approved"
+  const accent = isExpired ? "#DC2626" : "#F79432"
+  const intro = isRequest
+    ? "A new attendee is awaiting approval for the following event:"
+    : isExpired
+      ? "A card authorization expired before this request was reviewed. The guest was <strong>not</strong> charged and the hold has been released. They will need to book again."
+      : "The following attendee has been approved and their booking is now confirmed:"
+
+  const moneyLine = isRequest && amountOnHold
+    ? `<p style="margin: 5px 0;"><strong>On hold:</strong> ${formatMoney(amountOnHold)}${deadline ? ` &mdash; expires ${deadline}` : ""}</p>`
+    : kind === "approved" && amountCharged
+      ? `<p style="margin: 5px 0;"><strong>Charged:</strong> ${formatMoney(amountCharged)}</p>`
+      : isExpired && amountOnHold
+        ? `<p style="margin: 5px 0;"><strong>Released (never charged):</strong> ${formatMoney(amountOnHold)}</p>`
+        : ""
+
+  const urgencyBanner = isRequest && amountOnHold && deadline
+    ? `<div style="background-color: #fff3cd; padding: 12px 15px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #ffc107;">
+            <p style="color: #856404; margin: 0; font-size: 14px;">
+              The card hold expires on <strong>${deadline}</strong>. After that it is released automatically and cannot be recovered.
+            </p>
+          </div>`
+    : ""
+
   try {
     await sgMail.send({
       to: adminEmail,
       from: { email: adminEmail, name: "Jetzy Events" },
       subject: isRequest
         ? `[Approval Needed] ${firstName} ${lastName} — ${eventName}`
-        : `[Approved] ${firstName} ${lastName} — ${eventName}`,
+        : isExpired
+          ? `[Hold Expired] ${firstName} ${lastName} — ${eventName}`
+          : `[Approved] ${firstName} ${lastName} — ${eventName}`,
       html: wrapHtml(`
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
-          <h2 style="color: #F79432; margin-top: 0;">${isRequest ? "New Approval Request" : "Request Approved"}</h2>
-          <p style="color: #333; font-size: 16px;">
-            ${isRequest
-              ? "A new attendee is awaiting approval for the following event:"
-              : "The following attendee has been approved and their booking is now confirmed:"}
-          </p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid ${accent}; border-radius: 12px;">
+          <h2 style="color: ${accent}; margin-top: 0;">${heading}</h2>
+          ${urgencyBanner}
+          <p style="color: #333; font-size: 16px;">${intro}</p>
           <div style="background-color: #f4f4f4; padding: 15px; border-radius: 8px; margin: 20px 0;">
             <p style="margin: 5px 0;"><strong>Event:</strong> ${eventName}</p>
             <p style="margin: 5px 0;"><strong>Name:</strong> ${firstName} ${lastName}</p>
             <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
             ${totalTickets ? `<p style="margin: 5px 0;"><strong>Tickets:</strong> ${totalTickets}</p>` : ""}
+            ${moneyLine}
           </div>
           ${isRequest ? `
           <div style="text-align: center; margin: 30px 0;">
@@ -416,8 +494,10 @@ export const sendAdminApprovalNotice = async ({ event, firstName, lastName, emai
         </div>
       `),
       text: isRequest
-        ? `New approval request for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}\nReview: ${manageUrl}`
-        : `Approved & confirmed for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}`
+        ? `New approval request for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${amountOnHold ? `\nOn hold: ${formatMoney(amountOnHold)}${deadline ? ` (expires ${deadline})` : ""}` : ""}\nReview: ${manageUrl}`
+        : isExpired
+          ? `Card hold expired for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}${amountOnHold ? `\nReleased (never charged): ${formatMoney(amountOnHold)}` : ""}\nThe guest was not charged and must book again.`
+          : `Approved & confirmed for "${eventName}"\nName: ${firstName} ${lastName}\nEmail: ${email}\nTickets: ${totalTickets}${amountCharged ? `\nCharged: ${formatMoney(amountCharged)}` : ""}`
     })
   } catch (error) {
     console.error("Failed to send admin approval notice:", error)
@@ -629,14 +709,41 @@ export const sendAlbumPublishedNotification = async ({
   }
 }
 
-// Sent to the attendee when the host rejects their approval request.
-export const sendApprovalRejected = async ({ event, firstName, email }: ApprovalEmailData) => {
+// Sent to the attendee when their approval request ends without a ticket — either the
+// host declined it, or (paid only) the card hold lapsed before anyone reviewed it.
+export const sendApprovalRejected = async ({ event, firstName, email, payment, reason = "declined" }: ApprovalEmailData & { reason?: "declined" | "expired" }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
-    console.log("[LOCALHOST MODE] sendApprovalRejected skipped - would send to:", email)
+    console.log(`[LOCALHOST MODE] sendApprovalRejected (${reason}) skipped - would send to:`, email)
     return { success: true, message: "Email skipped in localhost mode" }
   }
   const eventName = decodeHTMLEntities(event.name)
+  const isExpired = reason === "expired"
+  const eventUrl = `${baseUrl || "https://events.jetzy.com"}/${(event as any).slug || ""}`
+
+  const bodyText = isExpired
+    ? `Hi ${firstName}, your request to attend "${eventName}" wasn't reviewed in time.`
+    : `Hi ${firstName}, thank you for your interest in "${eventName}". Unfortunately, your request to attend could not be approved this time. We hope to see you at a future Jetzy event.`
+
+  const refundBlock = payment
+    ? `
+          <div style="background-color: #e8f4fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2196f3;">
+            <p style="color: #0d47a1; margin: 0 0 10px 0; font-size: 16px;"><strong>You have not been charged.</strong></p>
+            <p style="color: #333; margin: 0; line-height: 1.6;">
+              The <strong>${formatMoney(payment.amount)}</strong> authorization hold on your card has been released.
+            </p>
+            <p style="color: #666; margin: 12px 0 0 0; font-size: 13px;">
+              Depending on your bank, it may take 5&ndash;10 business days to clear from your statement.
+            </p>
+          </div>`
+    : ""
+
+  const rebookBlock = isExpired
+    ? `<p style="text-align: center; margin: 25px 0;">
+            <a href="${eventUrl}" style="background-color: #F79432; color: #000; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Book Again</a>
+          </p>`
+    : ""
+
   try {
     await sgMail.send({
       to: [email, "tech@jetzyapp.com"],
@@ -646,15 +753,12 @@ export const sendApprovalRejected = async ({ event, firstName, email }: Approval
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h1 style="color: #333; text-align: center;">Update on Your Request</h1>
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #9C9C9C;">
-            <p style="color: #333; margin: 0; line-height: 1.6;">
-              Hi ${firstName}, thank you for your interest in "${eventName}". Unfortunately, your request to attend
-              could not be approved this time. We hope to see you at a future Jetzy event.
-            </p>
-          </div>
+            <p style="color: #333; margin: 0; line-height: 1.6;">${bodyText}</p>
+          </div>${refundBlock}${rebookBlock}
           <p style="margin-top: 30px; text-align: center; color: #666;">Thank you for using Jetzy.</p>
         </div>
       `),
-      text: `Update on Your Request\n\nHi ${firstName}, thank you for your interest in "${eventName}". Unfortunately, your request to attend could not be approved this time.`
+      text: `Update on Your Request\n\n${bodyText}${payment ? `\n\nYou have NOT been charged. The ${formatMoney(payment.amount)} hold on your card has been released. It may take 5-10 business days to clear from your statement.` : ""}${isExpired ? `\n\nIf you'd still like to attend, please book again: ${eventUrl}` : ""}`
     })
   } catch (error) {
     console.error("Failed to send approval-rejected email:", error)
@@ -837,7 +941,7 @@ export const sendBlastEmail = async ({
   }
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged }: TicketEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
 
   if (!baseUrl) {
@@ -1357,6 +1461,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #d4edda; padding: 24px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #28a745; text-align: center;">
             <h1 style="color: #155724; margin: 0 0 8px 0;">Great news — you've got a spot! 🎉</h1>
             <p style="color: #155724; margin: 0;">Hi ${firstName}, your request to attend "${decodeHTMLEntities(event.name)}" has been <strong>approved and confirmed</strong>.</p>
+            ${amountCharged ? `<p style="color: #155724; margin: 12px 0 0 0;">Your card has now been charged <strong>${formatMoney(amountCharged)}</strong>.</p>` : ""}
           </div>
           ` : `<h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>`}
 

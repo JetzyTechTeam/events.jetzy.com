@@ -225,6 +225,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
+		// Does the selected ticket need host approval? Per-ticket flag wins, event-level is
+		// the fallback. When it does, we authorize the card but do NOT charge it — the money
+		// is captured only if/when the host approves (see api/bookings/approve.ts).
+		const { selectionRequiresApproval } = await import("@/lib/ticket-approval")
+		const requiresApproval = selectionRequiresApproval(event as any, tickets as any)
+		const bookingRef = `JZ-${reference}`
+
 		const eventDetails = {
 			name: event?.name,
 			location: event?.location,
@@ -235,7 +242,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
 		const cleanBaseUrl = baseUrl.replace(/\/$/, '')
-		const successUrl = `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
+		// The `approval` marker lets /success render the pending-approval variant before it
+		// has the session back from Stripe.
+		const successUrl = requiresApproval
+			? `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}&approval=1`
+			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
 
 		// Create Stripe coupon for referral code discount if applicable
@@ -267,6 +278,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			eventDetails: JSON.stringify(eventDetails),
 			acceptedTerms: "true",
 			acceptedTermsAt: acceptedTermsAt.toISOString(),
+			bookingRef,
+			requiresApproval: requiresApproval ? "true" : "false",
 		}
 
 		if (referralCodeData) {
@@ -293,14 +306,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata: metadata,
 			customer_email: user.email,
 			discounts: discountConfig,
+			// Approval orders authorize the card without charging it. Everything below is
+			// spread in conditionally so the ordinary paid path is byte-identical to before.
+			...(requiresApproval
+				? {
+					submit_type: "book" as const,
+					payment_intent_data: {
+						capture_method: "manual" as const,
+						description: `Approval hold — ${event.name}`,
+						// Duplicated from the session metadata on purpose: `payment_intent.*`
+						// webhook events carry the PaymentIntent's metadata, not the session's,
+						// and the expiry handler needs to find the booking from one of those.
+						metadata: {
+							bookingRef,
+							eventId: String(event._id),
+							requiresApproval: "true",
+						},
+					},
+					custom_text: {
+						submit: {
+							message:
+								"You won't be charged now. We'll place a temporary hold on your card and only charge you if the host approves your request. Holds are released automatically if your request is declined.",
+						},
+					},
+				}
+				: {}),
 		}).catch((stripeError: any) => {
 			console.error("[checkout/index] Stripe session creation failed:", stripeError.message)
 			throw new Error(`Stripe error: ${stripeError.message}`)
 		})
 
 		if (session) {
-			console.log("[checkout/index] Checkout session created:", session.id)
-			return sendResponse(res, session, "Checkout created successfully!", true, ResCode.OK)
+			console.log("[checkout/index] Checkout session created:", session.id, requiresApproval ? "(approval hold)" : "")
+			return sendResponse(res, { ...session, requiresApproval }, "Checkout created successfully!", true, ResCode.OK)
 		}
 
 		return sendResponse(res, null, "Couldn't complete checkout.", false, ResCode.BAD_REQUEST)
