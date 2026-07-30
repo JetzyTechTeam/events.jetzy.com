@@ -15,41 +15,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!eventId) return res.status(400).json({ message: "Event ID is required" });
 
     try {
-        // Get all bookings (including cancelled for separate count)
         const allBookings = await Bookings.find({ eventId: eventId, isDeleted: false });
 
-        // Filter out cancelled bookings for main counts
-        const activeBookings = allBookings.filter(b => b.status !== BookingStatus.CANCELLED);
-
-        // Calculate active ticket counts (register-only booking with no tickets = 1 spot)
-        const totalTickets = activeBookings.reduce((sum, b) => {
-            const qty = b.tickets.reduce((tSum, t) => tSum + t.quantity, 0);
-            return sum + (qty > 0 ? qty : 1);
-        }, 0);
-
-        // Calculate cancelled ticket counts (register-only booking with no tickets = 1 spot)
-        const cancelledTickets = allBookings
-            .filter(b => b.status === BookingStatus.CANCELLED)
-            .reduce((sum, b) => {
+        // register-only booking with no tickets = 1 spot
+        const ticketCount = (bookings: typeof allBookings) =>
+            bookings.reduce((sum, b) => {
                 const qty = b.tickets.reduce((tSum, t) => tSum + t.quantity, 0);
                 return sum + (qty > 0 ? qty : 1);
             }, 0);
+        const guestCount = (bookings: typeof allBookings) =>
+            new Set(bookings.map(b => b.customerEmail)).size;
 
-        //unique guests/customers based on email (excluding cancelled)
-        const uniqueGuests = new Set(activeBookings.map(b => b.customerEmail)).size;
+        // "Active" means actually attending. Rejected and failed (expired card hold)
+        // bookings are as dead as cancelled ones, and a pending approval request hasn't
+        // consumed a seat yet — the event tracker only increments on approval, so counting
+        // any of these as active would overstate attendance.
+        const isInactive = (b: (typeof allBookings)[number]) =>
+            b.status === BookingStatus.CANCELLED ||
+            b.status === BookingStatus.REJECTED ||
+            b.status === BookingStatus.FAILED;
 
-        //unique cancelled guests
-        const cancelledGuests = new Set(
-            allBookings
-                .filter(b => b.status === BookingStatus.CANCELLED)
-                .map(b => b.customerEmail)
-        ).size;
+        const activeBookings = allBookings.filter(b => !isInactive(b) && b.status !== BookingStatus.PENDING);
+        const inactiveBookings = allBookings.filter(isInactive);
+        const pendingBookings = allBookings.filter(b => b.status === BookingStatus.PENDING);
 
         return res.status(200).json({
-            totalTickets,
-            uniqueGuests,
-            cancelledTickets,
-            cancelledGuests
+            totalTickets: ticketCount(activeBookings),
+            uniqueGuests: guestCount(activeBookings),
+            // Key name kept for backwards compatibility; now covers cancelled + rejected + expired.
+            cancelledTickets: ticketCount(inactiveBookings),
+            cancelledGuests: guestCount(inactiveBookings),
+            pendingTickets: ticketCount(pendingBookings),
+            pendingGuests: guestCount(pendingBookings),
         });
     } catch (error) {
         console.error("Error fetching totals:", error);
