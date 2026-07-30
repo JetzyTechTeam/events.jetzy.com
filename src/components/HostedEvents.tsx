@@ -1000,14 +1000,16 @@ function EventBookings({ eventId }: { eventId: string }) {
 		queryFn: () => axios.get(`/api/events/${eventId}/totals`),
 	})
 
-	const { totalTickets, uniqueCustomers, cancelledTickets, cancelledGuests } = React.useMemo(() => {
-		if (!totals?.data) return { totalTickets: 0, uniqueCustomers: 0, cancelledTickets: 0, cancelledGuests: 0 }
+	const { totalTickets, uniqueCustomers, cancelledTickets, cancelledGuests, pendingTickets, pendingGuests } = React.useMemo(() => {
+		if (!totals?.data) return { totalTickets: 0, uniqueCustomers: 0, cancelledTickets: 0, cancelledGuests: 0, pendingTickets: 0, pendingGuests: 0 }
 
 		return {
 			totalTickets: totals.data.totalTickets || 0,
 			uniqueCustomers: totals.data.uniqueGuests || 0,
 			cancelledTickets: totals.data.cancelledTickets || 0,
 			cancelledGuests: totals.data.cancelledGuests || 0,
+			pendingTickets: totals.data.pendingTickets || 0,
+			pendingGuests: totals.data.pendingGuests || 0,
 		}
 	}, [totals?.data])
 
@@ -1027,11 +1029,19 @@ function EventBookings({ eventId }: { eventId: string }) {
 								<span className="font-semibold text-white">Active Customers:</span>
 								<span className="text-green-400">{uniqueCustomers}</span>
 							</div>
+							{(pendingTickets > 0 || pendingGuests > 0) && (
+								<div className="flex space-x-4">
+									<span className="font-semibold text-white">Awaiting Approval:</span>
+									<span className="text-amber-400">{pendingTickets}</span>
+									<span className="font-semibold text-white">Pending Customers:</span>
+									<span className="text-amber-400">{pendingGuests}</span>
+								</div>
+							)}
 							{(cancelledTickets > 0 || cancelledGuests > 0) && (
 								<div className="flex space-x-4">
-									<span className="font-semibold text-white">Cancelled Tickets:</span>
+									<span className="font-semibold text-white">Inactive Tickets:</span>
 									<span className="text-red-400">{cancelledTickets}</span>
-									<span className="font-semibold text-white">Cancelled Customers:</span>
+									<span className="font-semibold text-white">Inactive Customers:</span>
 									<span className="text-red-400">{cancelledGuests}</span>
 								</div>
 							)}
