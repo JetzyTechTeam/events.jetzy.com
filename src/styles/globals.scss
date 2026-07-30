@@ -58,6 +58,22 @@ body {
     -webkit-text-fill-color: white !important;
 }
 
+/* Native <select> dropdown options.
+   Setting color:white on a <select> styles the closed control, but the open popup is
+   drawn by the browser with its own light background — leaving white text on white and
+   the options effectively invisible. Chrome/Edge on Windows only inherit these when set
+   on <option> itself, so the whole app's selects sit on dark surfaces and are styled
+   here once rather than at every call site. */
+select option {
+    background-color: #0F1114;
+    color: #ffffff;
+}
+
+select option:checked,
+select option:hover {
+    background-color: #2A2D31;
+}
+
 /* Rich text content rendered from Quill editor */
 .rich-content h1 { font-size: 1.5em; font-weight: bold; margin-bottom: 0.5em; }
 .rich-content h2 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.5em; }

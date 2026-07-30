@@ -12,6 +12,32 @@ const customAnswerSchema = new Schema(
 	{ _id: false }
 )
 
+/**
+ * Stripe money state for a booking. Nested rather than flattened so "this booking
+ * has money attached" is a single truthy check that free bookings trivially fail,
+ * and so the whole block can be stripped from API projections in one shot.
+ */
+const bookingPaymentSchema = new Schema(
+	{
+		provider: { type: String, default: "stripe" },
+		checkoutSessionId: { type: String, index: true },
+		paymentIntentId: { type: String, index: true },
+		captureMethod: { type: String, enum: ["automatic", "manual"], default: "automatic" },
+		status: {
+			type: String,
+			enum: ["authorized", "capturing", "captured", "canceled", "expired", "failed"],
+		},
+		amount: { type: Number, default: 0 }, // major units (dollars), matches booking.total
+		currency: { type: String, default: "usd" },
+		authorizedAt: { type: Date },
+		authExpiresAt: { type: Date },
+		capturedAt: { type: Date },
+		canceledAt: { type: Date },
+		lastError: { type: String },
+	},
+	{ _id: false }
+)
+
 const bookingSchema = new Schema<IBookings>(
 	{
 		bookingRef: {
@@ -91,6 +117,11 @@ const bookingSchema = new Schema<IBookings>(
 			type: [customAnswerSchema],
 			required: false,
 			default: [],
+		},
+		// Absent for free bookings and for every booking predating paid approval.
+		payment: {
+			type: bookingPaymentSchema,
+			required: false,
 		},
 		// Consent captured at booking time (T&C incl. agreeing to a Jetzy account)
 		acceptedTerms: {

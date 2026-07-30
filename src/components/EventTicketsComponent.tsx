@@ -9,6 +9,7 @@ import Spinner from "./misc/Spinner";
 import { Error } from "@Jetzy/lib/_toaster";
 import { IEvent } from "@/models/events/types";
 import { CheckmarkSVG } from "@/assets/icons";
+import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import {
   Button,
   Modal,
@@ -56,6 +57,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         isSelected: false,
         priceId: ticket.stripeProductId,
         eventId: event._id.toString(),
+        // Resolved (per-ticket flag, event fallback) so downstream consumers don't have to
+        // re-derive it. This has to survive into the checkout payload.
+        requireApproval: ticketApprovalFlag(event as any, ticket as any),
       };
     });
 
@@ -132,6 +136,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         isSelected: ticket.isSelected,
         priceId: ticket.priceId,
         eventId: ticket.eventId,
+        requireApproval: ticket.requireApproval,
       }))
       .filter((ticket) => ticket.isSelected);
 
@@ -142,6 +147,12 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
       dispatcher(toggleCheckoutForm(showCheckout));
     });
   };
+
+  const anyTicketNeedsApproval = eventHasAnyApprovalTicket(event as any);
+  const allTicketsNeedApproval = eventRequiresApprovalForAllTickets(event as any);
+  const hasPaidApprovalTicket = ticketsItems.some((t) => t.requireApproval && Number(t.price) > 0);
+  // Whether the CURRENT selection needs approval — drives the CTA label.
+  const selectionNeedsApproval = selectionRequiresApproval(event as any, tickets.filter((t) => t.isSelected) as any);
 
   const handleCheckoutClick = () => {
     showCheckoutForm(true);
@@ -198,14 +209,19 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </div>
           )}
 
-          {/* Approval-required notice — only for all-free events. On mixed
-              (paid+free) events approval applies to the free tier only, so the
-              blanket notice would confuse paid buyers; the checkout modal shows
-              a contextual banner for free-only selections instead. */}
-          {event.requireApproval && !ticketsItems.some((t) => Number(t.price) > 0) && (
+          {/* Approval-required notice. Shown whenever ANY ticket needs approval; the copy
+              distinguishes "every ticket" from "some tickets" so buyers of an
+              instant-book tier aren't misled. Per-ticket pills below carry the detail. */}
+          {anyTicketNeedsApproval && (
             <div className="bg-[#F79432]/15 border border-[#F79432]/40 rounded-lg p-3 mb-6">
               <p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
-              <p className="text-gray-300 text-xs mt-1">Your registration is subject to host approval.</p>
+              <p className="text-gray-300 text-xs mt-1">
+                {allTicketsNeedApproval
+                  ? hasPaidApprovalTicket
+                    ? "Your booking is subject to host approval. Your card is authorized at checkout but only charged if the host approves."
+                    : "Your registration is subject to host approval."
+                  : "Some tickets on this event require host approval — see the ticket you select for details."}
+              </p>
             </div>
           )}
 
@@ -247,6 +263,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                       <h3 className={`font-semibold text-lg ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
                         {ticket.name}
                       </h3>
+                      {ticket.requireApproval && (
+                        <span className="inline-block mt-1 text-[10px] font-semibold uppercase tracking-wide text-[#F79432] bg-[#F79432]/15 border border-[#F79432]/40 rounded px-2 py-0.5">
+                          {Number(staticTickets[index].price) > 0
+                            ? "Approval required · card authorized, charged on approval"
+                            : "Approval required"}
+                        </span>
+                      )}
                       <p className="text-xs text-gray-400 my-1">
                         Select to proceed to checkout
                       </p>
@@ -334,7 +357,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
               onClick={handleCheckoutClick}
               className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? <Spinner /> : "Checkout"}
+              {isLoading ? <Spinner /> : selectionNeedsApproval ? "Request to Book" : "Checkout"}
             </button>
           </div>
         </div>

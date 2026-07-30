@@ -51,6 +51,8 @@ const schema = zod.object({
 			title: zod.string().nonempty(),
 			price: zod.number().nonnegative(),
 			description: zod.string().optional(),
+			// `.optional()` and never `.default(false)` — see the preserve-on-omit logic below.
+			requireApproval: zod.boolean().optional(),
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -172,20 +174,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				} as Stripe.PriceCreateParams)).id
 				: existing.stripeProductId
 
+			// Preserve-on-omit: an older client (or an autosave built from a stale form) may not
+			// send `requireApproval` at all. Falling back to the stored value means such a save
+			// leaves the flag alone instead of silently wiping every per-ticket override.
+			const resolvedRequireApproval =
+				ticket.requireApproval !== undefined ? ticket.requireApproval
+					: existing?.requireApproval !== undefined ? existing.requireApproval
+						: undefined
+
 			return {
 				...(existing ? { _id: existing._id } : {}),
 				name: ticket.title,
 				desc: ticket.description,
 				price: ticket.price.toFixed(2),
 				stripeProductId,
+				// Private Premium Events force approval on every ticket — a per-ticket override
+				// can't be used to bypass the invite-only approval requirement.
+				...((premium && privacy === "private")
+					? { requireApproval: true }
+					: (resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {})),
 			}
 		}))
 
 		// Private Premium Events are invite-only — always require host approval on top
-		// of the invite-link/code gate, regardless of ticket pricing.
-		const effectiveRequireApproval = (premium && privacy === "private")
-			? true
-			: (((tickets || []).length > 0 && (tickets || []).every((t: any) => Number(t.price) > 0)) ? false : requireApproval)
+		// of the invite-link/code gate, regardless of ticket pricing. Otherwise this is
+		// just the event-level default that tickets without their own flag inherit
+		// (see src/lib/ticket-approval.ts) — paid tickets support approval now too.
+		const effectiveRequireApproval = (premium && privacy === "private") ? true : requireApproval
 
 		// Auto-generate the private-access code once, the first time an event becomes premium+private. Stable afterwards.
 		const newPrivateAccessCode = (premium && privacy === "private" && !event.privateAccessCode)
@@ -206,8 +221,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				desc: desc ?? "",
 				isPaid,
 				capacity,
-				// Require Approval gates the FREE-ticket registrations — force off only when every ticket is paid
-				// (unless it's a private Premium Event, which always requires host approval — see above).
+				// Event-level default for tickets that don't set their own flag (paid tickets support
+				// approval now — card authorized at checkout, captured on approval). Private Premium
+				// Events always force this on, regardless of what the client sent — see above.
 				requireApproval: effectiveRequireApproval,
 				tickets: resolvedTickets,
 				images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
