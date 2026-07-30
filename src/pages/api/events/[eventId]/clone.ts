@@ -70,6 +70,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				desc: ticket.desc,
 				price: Number(ticket.price).toFixed(2),
 				stripeProductId: stripeProducts[index].id,
+				// Carry per-ticket approval overrides; unset stays unset so the clone inherits.
+				...(ticket.requireApproval !== undefined ? { requireApproval: ticket.requireApproval } : {}),
 			})),
 			questions: source.questions,
 			benefits: source.benefits,

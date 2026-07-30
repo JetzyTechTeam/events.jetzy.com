@@ -41,8 +41,15 @@ const CheckoutSuccessPage: React.FC = () => {
 	const [sessionData, setSessionData] = React.useState<any>(null)
 	const [isLoading, setIsLoading] = React.useState(true)
 	const [eventData, setEventData] = React.useState<IEvent | null>(null)
+	// Approval orders authorize the card instead of charging it, so Stripe reports the
+	// session as "unpaid". That is success, not failure — this flag switches the page copy.
+	const [pendingApproval, setPendingApproval] = React.useState(false)
+	const [holdExpiresAt, setHoldExpiresAt] = React.useState<string | null>(null)
 
 	let { payload, session_id, event } = query
+	// Set by checkout's success_url for approval orders, so the page can pick its copy
+	// even before the confirm call returns.
+	const approvalFlag = query.approval
 
 	const parsedEvent: IEvent | null = event
 		? JSON.parse(event as string)
@@ -74,10 +81,16 @@ const CheckoutSuccessPage: React.FC = () => {
 			if (session_id) {
 				try {
 					const response = await axios.get(`/api/checkout/confirm?session_id=${session_id}`)
-					const { session, event: freshEvent } = response.data
+					const { session, event: freshEvent, booking, requiresApproval } = response.data
 					setSessionData(session)
 
-					if (session.payment_status !== "paid") {
+					const isApproval = approvalFlag === "1" || requiresApproval === true || session?.metadata?.requiresApproval === "true"
+					setPendingApproval(isApproval)
+					if (booking?.payment?.authExpiresAt) setHoldExpiresAt(booking.payment.authExpiresAt)
+
+					// Only a genuinely failed payment is an error. An approval hold leaves the
+					// session "unpaid" on purpose.
+					if (session.payment_status !== "paid" && !isApproval) {
 						Error("Payment Error", "Your payment was not successful. Please try again.")
 						return
 					}
@@ -117,7 +130,7 @@ const CheckoutSuccessPage: React.FC = () => {
 		}
 
 		checkPaymentStatus()
-	}, [session_id, payload])
+	}, [session_id, payload, approvalFlag])
 
 	// Show loading state
 	if (isLoading) {
@@ -175,16 +188,46 @@ const CheckoutSuccessPage: React.FC = () => {
 			<div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 				<div className="p-6 sm:p-8 text-center">
 					<div className="mb-6">
-						<svg className="w-16 h-16 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-						</svg>
+						{pendingApproval ? (
+							<svg className="w-16 h-16 mx-auto text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+							</svg>
+						) : (
+							<svg className="w-16 h-16 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+							</svg>
+						)}
 					</div>
 
-					<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Thank You for Your Purchase!</h1>
-					<p className="text-gray-600 mb-6">Your payment was successful.</p>
+					{pendingApproval ? (
+						<>
+							<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Request Submitted — Pending Approval</h1>
+							<div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-left">
+								<p className="text-amber-900 font-semibold mb-1">You have not been charged.</p>
+								<p className="text-gray-700 text-sm">
+									We&apos;ve placed a temporary hold of{" "}
+									<strong>
+										{((sessionData?.amount_total ?? 0) / 100).toLocaleString("en-US", { style: "currency", currency: "usd" })}
+									</strong>{" "}
+									on your card. If the host approves your request
+									{holdExpiresAt ? <> by <strong>{dayjs(holdExpiresAt).format("MMMM D, YYYY")}</strong></> : null}, your card will
+									be charged and your ticket emailed to you. If your request is declined — or the host doesn&apos;t respond in
+									time — the hold is released automatically and you are not charged.
+								</p>
+								<p className="text-gray-500 text-xs mt-2">
+									Depending on your bank, a released hold can take 5&ndash;10 business days to disappear from your statement.
+								</p>
+							</div>
+						</>
+					) : (
+						<>
+							<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Thank You for Your Purchase!</h1>
+							<p className="text-gray-600 mb-6">Your payment was successful.</p>
+						</>
+					)}
 
 					<div className="bg-gray-50 p-6 rounded-lg text-left">
-						<h2 className="text-xl font-bold text-gray-800 mb-4">Order Summary</h2>
+						<h2 className="text-xl font-bold text-gray-800 mb-4">{pendingApproval ? "Request Summary" : "Order Summary"}</h2>
 
 						{/* Event Info */}
 						{displayEvent && (
@@ -236,9 +279,12 @@ const CheckoutSuccessPage: React.FC = () => {
 								</>
 							)}
 							<div className="flex justify-between border-t pt-3">
-								<span className="text-gray-800 font-bold">Total</span>
-								<span className="text-gray-800 font-bold">${finalTotal.toFixed(2)}</span>
+								<span className="text-gray-800 font-bold">{pendingApproval ? "Amount on hold" : "Total"}</span>
+								<span className={`font-bold ${pendingApproval ? "text-amber-600" : "text-gray-800"}`}>${finalTotal.toFixed(2)}</span>
 							</div>
+							{pendingApproval && (
+								<p className="text-xs text-gray-500 pt-1">Not charged yet — only captured if the host approves.</p>
+							)}
 						</div>
 					</div>
 

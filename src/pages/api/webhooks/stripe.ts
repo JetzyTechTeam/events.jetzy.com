@@ -64,7 +64,80 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							cancelAtPeriodEnd: subscription.cancel_at_period_end,
 						})
 					}
+				} else if (checkoutSession.mode === "payment") {
+					// Ticket purchase. This is the authoritative fulfilment path: without it a
+					// buyer who never returns to /success would leave a live card hold with no
+					// booking row anywhere. Idempotent, so racing /success is harmless.
+					const { fulfillCheckoutSessionById } = await import("@/lib/checkout-fulfillment")
+					await fulfillCheckoutSessionById(checkoutSession.id)
 				}
+				break
+			}
+
+			// A manual-capture authorization was released. `cancellation_reason: "automatic"`
+			// means Stripe expired it — the host ran out of time and the guest can never be
+			// charged for this request. Our own reject/cancel flows cancel with an explicit
+			// reason and have already written their status, so they fall through untouched.
+			case "payment_intent.canceled": {
+				const pi = event.data.object as Stripe.PaymentIntent
+				const { Bookings } = await import("@/models/events/bookings")
+				const { BookingStatus } = await import("@/models/events/types")
+
+				const booking = await Bookings.findOne({ "payment.paymentIntentId": pi.id })
+				if (!booking) break
+				if (booking.payment?.status === "captured") break // defensive: money already taken
+				if (booking.status === BookingStatus.REJECTED || booking.status === BookingStatus.CANCELLED) break
+
+				const expired = pi.cancellation_reason === "automatic"
+				if (!booking.payment) booking.payment = {}
+				booking.payment.status = expired ? "expired" : "canceled"
+				booking.payment.canceledAt = new Date()
+				if (expired) booking.status = BookingStatus.FAILED
+				await booking.save()
+
+				if (expired) {
+					try {
+						const { Events } = await import("@/models/events")
+						const { sendApprovalRejected, sendAdminApprovalNotice } = await import("@/lib/send-grid")
+						const bookingEvent = await Events.findById(booking.eventId)
+						if (bookingEvent) {
+							const [firstName, ...rest] = (booking.customerName || "").split(" ")
+							const lastName = rest.join(" ")
+							const amount = booking.payment?.amount || booking.total || 0
+							await sendApprovalRejected({
+								event: bookingEvent,
+								firstName,
+								lastName,
+								email: booking.customerEmail,
+								reason: "expired",
+								payment: { amount },
+							})
+							// The host is not looking at a screen when this fires — tell them, or
+							// they silently lose a paying guest.
+							await sendAdminApprovalNotice({
+								event: bookingEvent,
+								firstName,
+								lastName,
+								email: booking.customerEmail,
+								eventId: String(booking.eventId),
+								kind: "expired",
+								amountOnHold: amount,
+							})
+						}
+					} catch (emailError) {
+						console.error("[webhooks/stripe] Failed to send hold-expiry emails:", emailError)
+					}
+				}
+				break
+			}
+
+			case "payment_intent.payment_failed": {
+				const pi = event.data.object as Stripe.PaymentIntent
+				const { Bookings } = await import("@/models/events/bookings")
+				await Bookings.updateOne(
+					{ "payment.paymentIntentId": pi.id, "payment.status": { $in: ["authorized", "capturing"] } },
+					{ $set: { "payment.status": "failed", "payment.lastError": pi.last_payment_error?.message || "payment_failed" } },
+				)
 				break
 			}
 

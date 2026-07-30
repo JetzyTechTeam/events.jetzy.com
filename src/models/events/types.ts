@@ -6,6 +6,8 @@ export interface IEventTicket {
 	price: number
 	desc: string
 	stripeProductId: string
+	/** Per-ticket override. `undefined` inherits the event-level `requireApproval`. */
+	requireApproval?: boolean
 	_id: Types.ObjectId
 	updatedAt: string
 	createdAt: string
@@ -102,6 +104,37 @@ export interface ICustomAnswer {
 	answer: any; // Can be a string, array of strings, boolean, etc. depending on question type
 }
 
+/**
+ * Lifecycle of the money attached to a booking. Deliberately separate from
+ * `BookingStatus`: "awaiting host approval" and "funds are held" are orthogonal.
+ * A free pending booking has no `payment` at all.
+ */
+export type BookingPaymentStatus =
+	| "authorized"  // card authorized (manual capture), not charged
+	| "capturing"   // capture in flight — crash-recovery marker, never a resting state
+	| "captured"    // money taken
+	| "canceled"    // hold released by us (reject / guest cancel)
+	| "expired"     // authorization lapsed at Stripe, can never be captured
+	| "failed"      // capture attempt failed; booking stays PENDING so the host can retry
+
+export interface IBookingPayment {
+	provider?: string
+	checkoutSessionId?: string
+	paymentIntentId?: string
+	captureMethod?: "automatic" | "manual"
+	status?: BookingPaymentStatus
+	/** Major units (dollars), matching `booking.total`. */
+	amount?: number
+	currency?: string
+	authorizedAt?: Date
+	/** Optimistic: Stripe holds are ~7 days, shorter on some issuers. The
+	 *  `payment_intent.canceled` webhook is the authoritative expiry signal. */
+	authExpiresAt?: Date
+	capturedAt?: Date
+	canceledAt?: Date
+	lastError?: string
+}
+
 export interface IBookings extends IBaseModelProps {
 	bookingRef: string
 	eventId: Types.ObjectId
@@ -121,6 +154,8 @@ export interface IBookings extends IBaseModelProps {
 	referralCode?: string
 	discountAmount?: number
 	customAnswers?: ICustomAnswer[];
+	/** Absent on free bookings and on every booking made before paid approval shipped. */
+	payment?: IBookingPayment
 	acceptedTerms?: boolean
 	acceptedTermsAt?: Date
 	updateEventTracker: () => Promise<void>

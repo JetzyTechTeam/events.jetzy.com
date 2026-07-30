@@ -6,6 +6,8 @@ export type TicketData = {
   title: string
   price: number
   description: string
+  /** Per-ticket approval override. `undefined` inherits the event-level setting. */
+  requireApproval?: boolean
 }
 
 export interface TicketCardProps {

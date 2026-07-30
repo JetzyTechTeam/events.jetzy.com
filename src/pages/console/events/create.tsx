@@ -26,6 +26,7 @@ import {
   Menu,
   MenuButton,
   IconButton,
+  Badge,
 } from "@chakra-ui/react";
 import {
   Formik,
@@ -56,6 +57,7 @@ import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState }
 import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
+import { ticketApprovalFlag } from "@/lib/ticket-approval";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
@@ -730,12 +732,12 @@ const CreateEventPage = () => {
                       <UserTickSVG />
                       <Box>
                         <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
-                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>
-                          {((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)) ? "Available for events with a free ticket" : "Approval applies to free-ticket registrations"}
+                        <Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" mt={1} maxW="360px">
+                          Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.
                         </Text>
                       </Box>
                     </Flex>
-                    <Switch name="requireApproval" isDisabled={(values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)} isChecked={values.requireApproval && !((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0))} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+                    <Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
                   </Flex>
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -784,7 +786,12 @@ const CreateEventPage = () => {
                       <>
                         {values.tickets.map((ticket, index) => (
                           <Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
-                            <Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
+                            <Flex align="center" gap={2} pr="6" wrap="wrap">
+                              <Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
+                              {ticketApprovalFlag(values as any, ticket as any) && (
+                                <Badge colorScheme="orange" fontSize="0.7em" px={2} py={0.5} borderRadius="6px">Approval</Badge>
+                              )}
+                            </Flex>
                             <Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
                             <Text fontWeight="bold" fontSize="2xl" color="#F79432" mt="2">${ticket.price}</Text>
                             <Box position="absolute" top="4" right="4">
@@ -982,6 +989,27 @@ const CreateEventPage = () => {
                             })
                           }
                         />
+                      </FormControl>
+                      <FormControl mb={4}>
+                        <Flex align="center" justify="space-between" gap={4}>
+                          <Box>
+                            <FormLabel mb={0}>Require Approval</FormLabel>
+                            <Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
+                              {tempTicket.requireApproval === undefined
+                                ? `Inherits the event setting (${values.requireApproval ? "On" : "Off"})`
+                                : !tempTicket.requireApproval
+                                  ? "Guests book this ticket instantly."
+                                  : Number(tempTicket.price) > 0
+                                    ? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
+                                    : "Guests request a spot; you approve or decline."}
+                            </Text>
+                          </Box>
+                          <Switch
+                            colorScheme="orange"
+                            isChecked={tempTicket.requireApproval ?? values.requireApproval}
+                            onChange={(e) => setTempTicket({ ...tempTicket, requireApproval: e.target.checked })}
+                          />
+                        </Flex>
                       </FormControl>
                     </ModalBody>
 

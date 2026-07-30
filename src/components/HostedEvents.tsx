@@ -11,6 +11,8 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
+import { eventHasAnyApprovalTicket } from "@/lib/ticket-approval"
+import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
 import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
@@ -146,6 +148,20 @@ export default function HostedEvents({ event }: Props) {
 	})
 	const myBooking = myBookingResp?.data ?? null
 	const [isCancelling, setIsCancelling] = useState(false)
+
+	// Badge counts for the admin Approvals tab, so a host sees there's something waiting —
+	// and that a card hold is about to lapse — without having to open the tab.
+	const eventNeedsApproval = eventHasAnyApprovalTicket(clonedEvent as any)
+	const { data: approvalBookings } = useQuery({
+		queryKey: ["event-bookings", clonedEvent?._id?.toString()],
+		queryFn: async () => (await axios.post("/api/get-bookings", { eventId: clonedEvent?._id })).data || [],
+		enabled: !!isAdmin && !!clonedEvent?._id && eventNeedsApproval,
+	})
+	const pendingApprovalCount = (approvalBookings as any[] | undefined)?.filter((b) => isPendingBooking(b)).length ?? 0
+	const expiringHoldCount = (approvalBookings as any[] | undefined)?.filter((b) => {
+		const remaining = holdTimeRemaining(b)
+		return isPendingBooking(b) && remaining !== null && remaining > 0 && remaining < 48 * 60 * 60 * 1000
+	}).length ?? 0
 
 	const handleCancelBooking = async () => {
 		// Not logged in → push to login with callback
@@ -494,12 +510,22 @@ export default function HostedEvents({ event }: Props) {
 											>
 												Waiting List
 											</button>
-											{clonedEvent?.requireApproval && (
+											{eventHasAnyApprovalTicket(clonedEvent as any) && (
 												<button
 													onClick={() => setActiveTab("approvals")}
-													className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+													className={`flex-1 px-6 py-4 text-left font-semibold transition-colors flex items-center gap-2 ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
 												>
 													Approvals
+													{pendingApprovalCount > 0 && (
+														<span className={`text-xs font-bold rounded-full px-2 py-0.5 ${activeTab === "approvals" ? "bg-black text-[#F79432]" : "bg-[#F79432] text-black"}`}>
+															{pendingApprovalCount}
+														</span>
+													)}
+													{expiringHoldCount > 0 && (
+														<span className="text-xs font-bold rounded-full px-2 py-0.5 bg-red-500 text-white" title="Card hold(s) expiring within 48 hours">
+															!
+														</span>
+													)}
 												</button>
 											)}
 										</div>
@@ -508,7 +534,7 @@ export default function HostedEvents({ event }: Props) {
 										<div className="p-6">
 											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
-											{activeTab === "approvals" && clonedEvent?.requireApproval && <ApprovalRequests eventId={clonedEvent._id.toString()} event={clonedEvent} />}
+											{activeTab === "approvals" && eventHasAnyApprovalTicket(clonedEvent as any) && <ApprovalRequests eventId={clonedEvent._id.toString()} event={clonedEvent} />}
 										</div>
 									</>
 								)}
@@ -922,6 +948,41 @@ interface Booking {
 	tax: number
 	total: number
 	createdAt: string
+	/** Absent on free bookings and on anything predating paid approval. */
+	payment?: {
+		status?: string
+		amount?: number
+		authExpiresAt?: string
+		capturedAt?: string
+		lastError?: string
+	}
+}
+
+/** Status pill for the admin bookings list — must distinguish "money held" from "money taken". */
+function BookingStatusPill({ booking }: { booking: Booking }) {
+	const paymentStatus = booking.payment?.status
+	const amount = booking.payment?.amount
+
+	if (paymentStatus === "authorized" || paymentStatus === "capturing") {
+		const expired = booking.payment?.authExpiresAt && new Date(booking.payment.authExpiresAt) < new Date()
+		return (
+			<span className={`text-xs font-semibold ${expired ? "text-red-400" : "text-amber-400"}`}>
+				{expired ? "hold expired" : `pending · $${Number(amount || 0).toFixed(2)} on hold`}
+			</span>
+		)
+	}
+	if (paymentStatus === "failed") return <span className="text-xs font-semibold text-red-400">charge failed</span>
+	if (paymentStatus === "expired") return <span className="text-xs font-semibold text-red-400">hold expired</span>
+	if (paymentStatus === "canceled") return <span className="text-xs font-semibold text-gray-400">{booking.status} · hold released</span>
+	if (paymentStatus === "captured") return <span className="text-xs font-semibold text-green-400">{booking.status} · charged</span>
+
+	// Free bookings / legacy rows: pending is not the same as confirmed, so don't paint it green.
+	const color = booking.status === "cancelled" || booking.status === "rejected" || booking.status === "failed"
+		? "text-red-400"
+		: booking.status === "pending"
+			? "text-amber-400"
+			: "text-green-400"
+	return <span className={`text-xs font-semibold ${color}`}>{booking.status}</span>
 }
 
 function EventBookings({ eventId }: { eventId: string }) {
@@ -987,6 +1048,8 @@ function EventBookings({ eventId }: { eventId: string }) {
 				paged.map((booking: Booking) => {
 					const isOpen = openId === booking._id
 					const cancelled = booking.status === "cancelled"
+					// Authorized funds are not collected funds — never render them as plain revenue.
+					const onHold = booking.payment?.status === "authorized" || booking.payment?.status === "capturing" || booking.payment?.status === "failed"
 					return (
 						<div key={booking._id} className={`border-b border-[#434343] last:border-b-0 ${cancelled ? "opacity-60" : ""}`}>
 							<button
@@ -1000,8 +1063,8 @@ function EventBookings({ eventId }: { eventId: string }) {
 									<p className="text-xs text-[#bbbbbb] mt-0.5 truncate">Ref: {booking.bookingRef}</p>
 								</div>
 								<div className="flex items-center gap-4 flex-shrink-0">
-									<span className={`text-xs font-semibold ${booking.status === "cancelled" ? "text-red-400" : "text-green-400"}`}>{booking.status}</span>
-									<span className="text-sm font-semibold text-white">${booking.total}</span>
+									<BookingStatusPill booking={booking} />
+									<span className={`text-sm font-semibold ${onHold ? "text-amber-400" : "text-white"}`}>${booking.total}</span>
 									<Icon as={isOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
 								</div>
 							</button>
@@ -1041,9 +1104,52 @@ function EventBookings({ eventId }: { eventId: string }) {
 											<span className="font-semibold text-white">Tax:</span> ${booking.tax}
 										</p>
 										<p>
-											<span className="font-semibold text-white">Total:</span> ${booking.total}
+											<span className="font-semibold text-white">{onHold ? "On hold:" : "Total:"}</span> ${booking.total}
 										</p>
 									</div>
+
+									{booking.payment?.status && (
+										<div className={`mt-3 rounded-lg p-3 text-sm border ${
+											booking.payment.status === "captured"
+												? "bg-green-500/10 border-green-500/40"
+												: booking.payment.status === "authorized" || booking.payment.status === "capturing"
+													? "bg-amber-500/10 border-amber-500/40"
+													: "bg-red-500/10 border-red-500/40"
+										}`}>
+											{booking.payment.status === "captured" && (
+												<p className="text-green-300">
+													Charged <span className="font-semibold">${Number(booking.payment.amount || 0).toFixed(2)}</span>
+													{booking.payment.capturedAt ? ` on ${new Date(booking.payment.capturedAt).toLocaleString()}` : ""}.
+												</p>
+											)}
+											{(booking.payment.status === "authorized" || booking.payment.status === "capturing") && (
+												<>
+													<p className="text-amber-300 font-semibold">
+														Awaiting approval — ${Number(booking.payment.amount || 0).toFixed(2)} held, not charged.
+													</p>
+													{booking.payment.authExpiresAt && (
+														<p className="text-[#bbbbbb] text-xs mt-1">
+															Hold expires {new Date(booking.payment.authExpiresAt).toLocaleString()} — after that it is released automatically and cannot be recovered. Approve or decline in the Approvals tab.
+														</p>
+													)}
+												</>
+											)}
+											{booking.payment.status === "failed" && (
+												<>
+													<p className="text-red-300 font-semibold">Charge failed — the guest has not been charged.</p>
+													{booking.payment.lastError && <p className="text-[#bbbbbb] text-xs mt-1">{booking.payment.lastError}</p>}
+												</>
+											)}
+											{booking.payment.status === "expired" && (
+												<p className="text-red-300">Card hold expired before review. Never charged — the guest must book again.</p>
+											)}
+											{booking.payment.status === "canceled" && (
+												<p className="text-[#bbbbbb]">
+													Hold of ${Number(booking.payment.amount || 0).toFixed(2)} released. The guest was not charged.
+												</p>
+											)}
+										</div>
+									)}
 								</div>
 							)}
 						</div>

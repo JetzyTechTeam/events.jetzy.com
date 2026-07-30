@@ -50,6 +50,8 @@ const schema = zod.object({
 			title: zod.string().nonempty(),
 			price: zod.number().nonnegative(),
 			description: zod.string().optional(),
+			// `.optional()` and never `.default(false)` — see the preserve-on-omit logic below.
+			requireApproval: zod.boolean().optional(),
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -161,12 +163,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				} as Stripe.PriceCreateParams)).id
 				: existing.stripeProductId
 
+			// Preserve-on-omit: an older client (or an autosave built from a stale form) may not
+			// send `requireApproval` at all. Falling back to the stored value means such a save
+			// leaves the flag alone instead of silently wiping every per-ticket override.
+			const resolvedRequireApproval =
+				ticket.requireApproval !== undefined ? ticket.requireApproval
+					: existing?.requireApproval !== undefined ? existing.requireApproval
+						: undefined
+
 			return {
 				...(existing ? { _id: existing._id } : {}),
 				name: ticket.title,
 				desc: ticket.description,
 				price: ticket.price.toFixed(2),
 				stripeProductId,
+				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
 			}
 		}))
 
@@ -184,8 +195,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				desc: desc ?? "",
 				isPaid,
 				capacity,
-				// Require Approval gates the FREE-ticket registrations — force off only when every ticket is paid.
-				requireApproval: ((tickets || []).length > 0 && (tickets || []).every((t: any) => Number(t.price) > 0)) ? false : requireApproval,
+				// Event-level default for tickets that don't set their own flag. Paid tickets are
+				// supported now (card authorized at checkout, captured on approval), so the old
+				// "force off when every ticket is paid" rule is gone.
+				requireApproval,
 				tickets: resolvedTickets,
 				images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 				videos: videos?.map((v) => v.file) ?? [],

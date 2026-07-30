@@ -228,14 +228,53 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/cancel`, `/api/bookings/delete`
 `/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
 
-### Require Approval (free/RSVP events only)
-- Toggle in event form is **disabled when any ticket price > 0** (free events only). Enforced client-side (create.tsx/manage.tsx switch) AND server-side (`create.ts`/`update.ts` force `requireApproval=false` if a paid ticket exists).
-- On free checkout ([checkout/free-events.ts](src/pages/api/checkout/free-events.ts)) when `event.requireApproval`: booking created `status=PENDING` (capacity NOT consumed, no QR/confirmation); `sendApprovalPending` → attendee, `sendAdminApprovalNotice(kind:"request")` → contact@ (`SENDGRID_EMAIL_SENDER`, links to `…/manage?tab=approvals`). Returns `{ pendingApproval:true }`; `EventCheckoutModel.tsx` shows a "Request Submitted" panel AND an amber "Approval Required" banner in the details step when `liveEventData.requireApproval`.
-- `BookingStatus` gained `REJECTED`. `isCancelledBooking` (in [src/lib/booking-status.ts](src/lib/booking-status.ts)) now treats CANCELLED+REJECTED as inactive; new `isPendingBooking` helper. Pending/rejected excluded from check-in ([validate.ts](src/pages/api/check-in/validate.ts), [record.ts](src/pages/api/check-in/record.ts)); stats.ts already CONFIRMED-only.
-- Emails ([send-grid.ts](src/lib/send-grid.ts)): `sendApprovalPending` (attendee, pending), `sendAdminApprovalNotice(kind)` (contact@, request/approved), `sendApprovalConfirmed` (attendee, celebratory "you've got a spot 🎉" with date/time + **location** + QR — used on approve instead of `sendTicketConfirmation`), `sendApprovalRejected` (attendee, polite decline — sent on reject).
-- **Approvals UI** is a shared component `src/components/console/ApprovalRequests.tsx` (lists PENDING via `/api/get-bookings`, Approve button + Reject with a Chakra `AlertDialog`). Used in BOTH the Manage page **Approvals** tab and the public event-detail admin section ([HostedEvents.tsx](src/components/HostedEvents.tsx), `activeTab==="approvals"`), each rendered only when `event.requireApproval`.
-- Manage `getServerSideProps` passes `isAuthorized` (admin OR event owner); the Approvals tab shows a "sign in as admin/host" message when false. `?tab=approvals` query deep-links to the Approvals tab (tabIndex 6). Guests & Bookings tables show Pending Approval (yellow) / Rejected (red) badges.
+### Require Approval (free AND paid tickets)
+
+**Scope: per-ticket, not per-event.** `eventTicketsSchema.requireApproval` is a `Boolean` with **no default** — `undefined` means "inherit `event.requireApproval`". That tri-state is what makes the change backward compatible with zero migration; adding `default:false` would pin every legacy ticket to OFF on its next save. The event-level flag is retained and relabelled in the UI as "Default for tickets that don't set their own".
+
+Resolve it **only** through [src/lib/ticket-approval.ts](src/lib/ticket-approval.ts) — `ticketApprovalFlag`, `ticketRequiresApproval`, `eventHasAnyApprovalTicket`, `eventRequiresApprovalForAllTickets`, `selectionRequiresApproval`. Never read `event.requireApproval` raw.
+
+The old "force `requireApproval=false` when every ticket is paid" rule in `create.ts`/`update.ts` is **removed**. `update.ts` instead does **preserve-on-omit** on the per-ticket flag (incoming → existing → unset) so a stale-client autosave can't wipe overrides.
+
+**Paid approval = authorize, don't charge.** Ticket selection is single-select (one ticket type per checkout, [EventTicketsComponent.tsx](src/components/EventTicketsComponent.tsx)), so the selected ticket alone decides the mode — mixed carts are impossible.
+- [checkout/index.ts](src/pages/api/checkout/index.ts): when the selection needs approval, the Checkout Session gets `payment_intent_data.capture_method:"manual"` + `submit_type:"book"` + `custom_text.submit`, and metadata gains `bookingRef` + `requiresApproval`. `payment_intent_data.metadata` duplicates those because `payment_intent.*` webhooks carry PI metadata, not session metadata. `success_url` gains `&approval=1`.
+- Approve → `paymentIntents.capture()`. Reject/cancel → `paymentIntents.cancel()`. **Authorizations expire in ~7 days** and are then unchargeable — this is a known, accepted limitation, surfaced in the UI, with no re-charge fallback.
+
+**Booking money state lives in `booking.payment`** (new sub-doc on [bookings.ts](src/models/events/bookings.ts)): `checkoutSessionId`, `paymentIntentId`, `captureMethod`, `status` (`authorized|capturing|captured|canceled|expired|failed`), `amount`, `authorizedAt`, `authExpiresAt`, `capturedAt`, `canceledAt`, `lastError`. Absent on free bookings and everything predating this feature — always use `payment?.`.
+
+**`BookingStatus` is unchanged and still means "awaiting approval".** Money state is orthogonal and lives in `payment.status`; a free pending booking is `{PENDING, payment:undefined}`, a paid one `{PENDING, payment.status:"authorized"}`. Expired holds use the previously-unused `FAILED`. [booking-status.ts](src/lib/booking-status.ts) gained `FAILED` to `isCancelledBooking` plus `isAuthorizedHold` / `isCapturedBooking` / `isCaptureFailed` / `isHoldExpired` / `holdTimeRemaining`.
+
+**Fulfilment moved to [src/lib/checkout-fulfillment.ts](src/lib/checkout-fulfillment.ts)** (`fulfillCheckoutSessionById`), called from **both** [checkout/confirm.ts](src/pages/api/checkout/confirm.ts) and the Stripe webhook, idempotent via the unique `bookingRef` + `E11000` catch. Reason: with manual capture, a buyer who never returns to `/success` would otherwise leave a live card hold with no booking row anywhere — invisible, unapprovable, silently released a week later. Side benefit: fixes the pre-existing duplicate-booking / duplicate-referral-increment bug on `/success` reload. Approval orders skip `updateEventTracker()` and defer the referral `usageCount` increment to approve time.
+
+**Webhook** ([webhooks/stripe.ts](src/pages/api/webhooks/stripe.ts)) now also handles `checkout.session.completed` with `mode:"payment"`, plus **`payment_intent.canceled`** (`cancellation_reason:"automatic"` ⇒ `FAILED`/`expired` + guest and host emails — the authoritative expiry signal) and `payment_intent.payment_failed`. **Subscribe `payment_intent.canceled` in the Stripe Dashboard per environment.**
+
+**approve.ts order: capacity check → atomic latch → capture → confirm.** Capacity first so a refusal never follows a capture (no refund tooling exists). Capture before confirm because the failure modes aren't symmetric: confirm-then-fail leaves a confirmed booking with an emailed QR and no money; capture-then-fail leaves `PENDING`/`capturing`, which a retry self-heals via `payment_intent_unexpected_state` → `succeeded`. Capture failure leaves the booking **PENDING** with `payment.status:"failed"` so it stays visible and retryable. `reject.ts` refuses outright if the PI already succeeded rather than stranding a charge. `cancel.ts` releases outstanding holds and now only decrements the tracker for bookings that actually consumed capacity.
+
+**Emails** ([send-grid.ts](src/lib/send-grid.ts)) — all payment blocks are conditional, so free flows render byte-identically:
+
+| Trigger | Guest | Host |
+|---|---|---|
+| Request submitted | `sendApprovalPending` + hold amount/deadline | `sendAdminApprovalNotice{kind:"request", amountOnHold, holdExpiresAt}` |
+| Approve → charged | `sendTicketConfirmation{approvalContext, amountCharged}` | `{kind:"approved", amountCharged}` |
+| Approve → charge fails | none (nothing settled) | none (synchronous; the red toast is the notification) |
+| Reject | `sendApprovalRejected{reason:"declined", payment}` | none |
+| Hold expires | `sendApprovalRejected{reason:"expired", payment}` | **`{kind:"expired"}`** — the only fully async path |
+
+**Approvals UI** `src/components/console/ApprovalRequests.tsx` — one query, partitioned client-side into **Pending** (Payment + Expires columns, sorted soonest-expiring first, 48h warning strip, Approve disabled on expired holds, "Retry charge" + inline error on capture failure) and **Processed** (`Charged $X` / `Declined — released` / `Hold expired — never charged`). Without the Processed view a booking vanishes on approval and nothing tells the host whether the card was charged. Gating everywhere is `eventHasAnyApprovalTicket`, not `event.requireApproval`.
+
+**`/success`** renders a pending-approval variant (amber, "Request Submitted", hold explanation, Total → "Amount on hold"). Its `payment_status !== "paid"` guard now exempts approval orders — every one of them hits it otherwise.
+
+**Revenue split:** `manage.tsx` ticket rollups separate `revenue` (captured) from `onHold` (authorized) — authorized money is not collected money.
+
+**Public event page admin panel** ([HostedEvents.tsx](src/components/HostedEvents.tsx), `Bookings & Waiting List`): the Approvals tab button carries a pending count badge plus a red `!` when any hold expires within 48h. `EventBookings` rows use `BookingStatusPill` — `pending · $X on hold` (amber) / `charged` (green) / `charge failed` / `hold expired` — instead of painting every non-cancelled status green, and the expanded row shows a payment panel with the hold deadline, capture timestamp, or `lastError`. The amount turns amber while only authorized.
+
+**Public ticket list** shows a per-ticket pill (`Approval required · card authorized, charged on approval` for paid) and the event-level banner distinguishes "every ticket" from "some tickets". The CTA reads **Request to Book** when the current selection needs approval. `[slug].tsx` serialises via `event.toJSON()`, so per-ticket flags reach the page unmodified.
+
+**Both booking-list endpoints were unauthenticated and are now admin-or-owner with Stripe ids projected out**: [get-bookings.ts](src/pages/api/get-bookings.ts) and [events/[eventId]/event-bookings.ts](src/pages/api/events/[eventId]/event-bookings.ts).
+
+- Manage `getServerSideProps` passes `isAuthorized` (admin OR event owner); the Approvals tab shows a "sign in as admin/host" message when false. `?tab=approvals` deep-links to the Approvals tab (tabIndex 6). Guests & Bookings tables show Pending Approval (yellow) / Rejected (red) badges.
 - Location safety: pending email never contains location; only the approval-confirmed email reveals it (always, regardless of `locationDisclosedAfterBooking`). Public page never shows a hidden location on-page.
+- **Gotcha:** [bookings.ts](src/models/events/bookings.ts) caches the compiled model (`dbconn.models["Bookings"] || …`). After a schema edit a hot-reloaded dev server keeps the old model and **silently drops every `payment` field with no error** — restart the dev server.
 
 ### Discussions/Comments
 `/api/events/discussions/create|get|list|update|delete|react|report|who-reacted|who-viewed`

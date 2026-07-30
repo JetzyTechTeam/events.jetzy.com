@@ -22,6 +22,14 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 			type: String,
 			required: true,
 		},
+		// Per-ticket approval override. Deliberately has NO default: `undefined` means
+		// "inherit event.requireApproval", which is what keeps every pre-existing ticket
+		// working without a migration. A default of `false` would pin legacy tickets to
+		// OFF the first time their event is saved.
+		requireApproval: {
+			type: Boolean,
+			required: false,
+		},
 	},
 	{ timestamps: true },
 )

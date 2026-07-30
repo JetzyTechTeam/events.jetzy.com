@@ -4,6 +4,7 @@ import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
+import { selectionRequiresApproval } from "@/lib/ticket-approval"
 
 export default function EventCheckoutModel({ event, eventData }: { event: string; eventData?: any }) {
 	// const [acceptTerms, setAcceptTerms] = useState(false)
@@ -30,6 +31,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		phone: "",
 		referralCode: "",
 	})
+
+	// Does the current selection need host approval, and what will be held/charged?
+	const selectionTotal = tickets.reduce((sum, t) => sum + ((t as any).price ?? 0) * ((t as any).quantity ?? 1), 0)
+	const selectionNeedsApproval = selectionRequiresApproval(liveEventData, tickets as any)
 
 	const [referralCodeValid, setReferralCodeValid] = useState<boolean | null>(null)
 	const [referralCodeDiscount, setReferralCodeDiscount] = useState<number | null>(null)
@@ -156,7 +161,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			label: event,
 		})
 
-		// Detect free ticket flow (total = $0) — skip Stripe and register directly
+		// Detect free ticket flow (total = $0) — skip Stripe and register directly.
+		// Paid approval orders still go through Stripe; they just authorize instead of charge.
 		const totalPrice = tickets.reduce((sum, t) => sum + ((t as any).price ?? 0) * ((t as any).quantity ?? 1), 0)
 
 		if (totalPrice === 0) {
@@ -390,11 +396,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								<div className="flex-1 overflow-y-auto px-6 py-2 space-y-4">
 									{checkoutStep === "details" && (
 									<div className="space-y-4">
-										{/* Approval applies to free-ticket registrations only — show only when the current selection is free */}
-										{liveEventData?.requireApproval && tickets.reduce((sum, t) => sum + ((t as any).price ?? 0) * ((t as any).quantity ?? 1), 0) === 0 && (
+										{/* Approval notice for the CURRENT selection. Paid selections spell out that
+										    the card is only authorized, since that is the part guests get wrong. */}
+										{selectionNeedsApproval && (
 											<div className="bg-[#F79432]/15 border border-[#F79432]/40 rounded-lg p-3">
 												<p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
-												<p className="text-gray-300 text-xs mt-1">Your registration is subject to host approval.</p>
+												<p className="text-gray-300 text-xs mt-1">
+													{selectionTotal > 0
+														? `Your card will be authorized for ${selectionTotal.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged. You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
+														: "Your registration is subject to host approval."}
+												</p>
 											</div>
 										)}
 										{/* Referral Code Field — first */}
@@ -637,7 +648,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										<div className="flex gap-3">
 											<button type="button" onClick={() => setCheckoutStep("details")} className="w-1/3 border border-[#444] text-white font-bold px-6 py-3 rounded-xl transition-all hover:bg-[#222]">Back</button>
 											<button disabled={isLoading} type="submit" className="w-2/3 bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50">
-												{isLoading ? <Spinner /> : "Submit"}
+												{isLoading ? <Spinner /> : selectionNeedsApproval ? "Request to Book" : "Submit"}
 											</button>
 										</div>
 									) : (
@@ -646,7 +657,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											type="submit"
 											className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
 										>
-											{isLoading ? <Spinner /> : ((liveEventData?.questions || []).length > 0 ? "Next" : "Submit")}
+											{isLoading ? <Spinner /> : ((liveEventData?.questions || []).length > 0 ? "Next" : selectionNeedsApproval ? "Request to Book" : "Submit")}
 										</button>
 									)}
 								</div>
