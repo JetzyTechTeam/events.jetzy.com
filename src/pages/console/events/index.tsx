@@ -30,7 +30,7 @@ type Pagination = {
 	totalPages: number
 }
 
-type FilterKey = "all" | "upcoming" | "ended" | "tbd"
+type FilterKey = "all" | "upcoming" | "ended" | "tbd" | "pending"
 
 type Props = {
 	events: string
@@ -38,6 +38,7 @@ type Props = {
 	isAdmin: boolean
 	search: string
 	filter: FilterKey
+	pendingCount: number
 }
 
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -45,9 +46,10 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 	{ key: "upcoming", label: "Upcoming" },
 	{ key: "ended", label: "Ended" },
 	{ key: "tbd", label: "TBD" },
+	{ key: "pending", label: "Pending Approval" },
 ]
 
-export default function EventsListing({ events, pagination, isAdmin, search, filter }: Props) {
+export default function EventsListing({ events, pagination, isAdmin, search, filter, pendingCount }: Props) {
 	const [eventList, setEventList] = React.useState<IEvent[]>(() => JSON.parse(events) as IEvent[])
 	const [searchInput, setSearchInput] = useState(search || "")
 	const router = useRouter()
@@ -139,7 +141,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 									: "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
 							}`}
 						>
-							{label}
+							{key === "pending" ? `${label} (${pendingCount})` : label}
 						</button>
 					)
 				})}
@@ -436,9 +438,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const allEvents = sortEvents(Array.from(allEventsMap.values()))
 
 	// Apply status filter chip (server-side) before pagination
-	const allowedFilters = ["all", "upcoming", "ended", "tbd"]
+	const allowedFilters = ["all", "upcoming", "ended", "tbd", "pending"]
 	const rawFilter = (context.query.filter as string) || "all"
 	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
+
+	const isPendingApproval = (e: any) => e.privacy !== 'private' && e.adminApprovalStatus === 'pending'
+	const pendingCount = allEvents.filter(isPendingApproval).length
 
 	const filteredEvents = allEvents.filter((e: any) => {
 		switch (filter) {
@@ -448,6 +453,8 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 				return e.timeStatus === "past"
 			case "tbd":
 				return e.timeStatus === "tbd"
+			case "pending":
+				return isPendingApproval(e)
 			default:
 				return true
 		}
@@ -464,6 +471,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			isAdmin,
 			search,
 			filter,
+			pendingCount,
 		},
 	}
 }

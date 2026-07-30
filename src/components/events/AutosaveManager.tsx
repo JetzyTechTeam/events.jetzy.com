@@ -30,6 +30,7 @@ export function buildEventPayload(
 		isPaid: values.isPaid ?? ((values.tickets?.length ?? 0) > 0),
 		requireApproval: values.requireApproval ?? false,
 		premium: values.premium ?? false,
+		premiumMemberDiscountPercentage: values.premiumMemberDiscountPercentage ?? 0,
 		capacity: values.capacity ?? 0,
 		tickets: values.tickets ?? [],
 		...overrides,

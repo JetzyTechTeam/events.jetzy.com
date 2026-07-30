@@ -83,6 +83,10 @@ const bookingSchema = new Schema<IBookings>(
 			type: Number,
 			default: 0,
 		},
+		premiumMemberDiscountApplied: {
+			type: Boolean,
+			default: false,
+		},
 		customAnswers: {
 			type: [customAnswerSchema],
 			required: false,

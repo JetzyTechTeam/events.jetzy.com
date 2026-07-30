@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
+import { findUserRecord } from "@/lib/premium"
 import zod from "zod"
 import Stripe from "stripe"
 import { authOptions } from "../../auth/[...nextauth]"
@@ -58,6 +59,7 @@ const schema = zod.object({
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
 	premium: zod.boolean().optional(),
+	premiumMemberDiscountPercentage: zod.number().min(0).max(100).optional(),
 	status: zod.enum(['draft', 'published']).optional(),
 	interests: zod.array(zod.string()).optional(),
 	datePoll: zod.object({
@@ -98,7 +100,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premium, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -143,6 +145,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Forbidden. You can only edit your own events.", false, ResCode.FORBIDDEN)
 		}
 
+		// Only Jetzy Premium subscribers (or admins) can newly turn an event Premium —
+		// an already-premium event stays premium even if the host's subscription later lapses.
+		if (premium && !event.premium && !isAdmin) {
+			const record = await findUserRecord(userId)
+			if (!record?.doc?.premiumSubscription?.active) {
+				return sendResponse(res, null, "Only Jetzy Premium members can host Premium Events. Subscribe to Jetzy Premium to continue.", false, ResCode.FORBIDDEN)
+			}
+		}
+
 		// Preserve each ticket's existing _id/stripeProductId across edits (client `ticket.id` is the
 		// previous `_id.toString()`) — bookings reference tickets by _id, so regenerating it here would
 		// silently orphan every past purchase's ticket-type link. Only mint a new Stripe price when the
@@ -170,6 +181,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}))
 
+		// Private Premium Events are invite-only — always require host approval on top
+		// of the invite-link/code gate, regardless of ticket pricing.
+		const effectiveRequireApproval = (premium && privacy === "private")
+			? true
+			: (((tickets || []).length > 0 && (tickets || []).every((t: any) => Number(t.price) > 0)) ? false : requireApproval)
+
+		// Auto-generate the private-access code once, the first time an event becomes premium+private. Stable afterwards.
+		const newPrivateAccessCode = (premium && privacy === "private" && !event.privateAccessCode)
+			? generateRandomId(10) as string
+			: undefined
+
 		// Find the event by id and update it
 		const updateDoc: any = {
 			$set: {
@@ -184,8 +206,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				desc: desc ?? "",
 				isPaid,
 				capacity,
-				// Require Approval gates the FREE-ticket registrations — force off only when every ticket is paid.
-				requireApproval: ((tickets || []).length > 0 && (tickets || []).every((t: any) => Number(t.price) > 0)) ? false : requireApproval,
+				// Require Approval gates the FREE-ticket registrations — force off only when every ticket is paid
+				// (unless it's a private Premium Event, which always requires host approval — see above).
+				requireApproval: effectiveRequireApproval,
 				tickets: resolvedTickets,
 				images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 				videos: videos?.map((v) => v.file) ?? [],
@@ -203,6 +226,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 				showOnMobile: showOnMobile ?? false,
 				premium: premium ?? false,
+				premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
+				...(newPrivateAccessCode ? { privateAccessCode: newPrivateAccessCode } : {}),
 				status: status ?? 'published',
 				interests: interests ?? [],
 				...(datePoll?.isActive && datePoll.options?.length > 0 ? {

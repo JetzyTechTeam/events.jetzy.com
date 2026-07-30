@@ -22,6 +22,7 @@ type SessionMetadata = {
 	tickets: string // JSON stringified array of ticket objects
 	referralCode?: string
 	discountPercentage?: string
+	premiumMemberDiscount?: string
 	acceptedTerms?: string
 	acceptedTermsAt?: string
 }
@@ -107,6 +108,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
+		// Handle Jetzy Premium member discount (mutually exclusive with a referral code — see checkout/index.ts)
+		const premiumMemberDiscountApplied = metadata.premiumMemberDiscount === "true"
+		if (premiumMemberDiscountApplied && metadata.discountPercentage) {
+			const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
+			const discountPercent = parseFloat(metadata.discountPercentage)
+			discountAmount = Math.round((subtotal * (discountPercent / 100) + Number.EPSILON) * 100) / 100
+			console.log("[checkout/confirm] Jetzy Premium member discount applied:", discountAmount)
+		}
+
 		// Create a booking record if the payment was successful
 		if (session.payment_status === "paid") {
 			const subtotal = tickets.reduce((acc, curr) => acc + curr.price * curr.quantity, 0)
@@ -125,6 +135,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				total: session.amount_total ? session.amount_total / 100 : 0,
 				referralCode: metadata.referralCode || undefined,
 				discountAmount: discountAmount,
+				premiumMemberDiscountApplied,
 				customAnswers: customAnswers,
 				acceptedTerms: metadata.acceptedTerms === "true",
 				acceptedTermsAt: metadata.acceptedTermsAt ? new Date(metadata.acceptedTermsAt) : undefined,

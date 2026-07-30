@@ -172,6 +172,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 						eventId,
 						customAnswers: JSON.stringify(customAnswersArray),
 						acceptedTerms: acceptedTerms,
+						privateAccessCode: liveEventData?.privateAccessCode || eventData?.privateAccessCode,
 					}),
 				})
 				const result = await response.json()
@@ -202,6 +203,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					customAnswers: JSON.stringify(
 						Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 					),
+					privateAccessCode: liveEventData?.privateAccessCode || eventData?.privateAccessCode,
 				} as any,
 			}),
 		).then((res: any) => {

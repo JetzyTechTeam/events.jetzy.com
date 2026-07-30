@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
+import { findUserRecord } from "@/lib/premium"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -66,6 +67,7 @@ const schema = zod.object({
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional().default(true),
 	premium: zod.boolean().optional().default(false),
+	premiumMemberDiscountPercentage: zod.number().min(0).max(100).optional().default(0),
 	status: zod.enum(['draft', 'published']).optional().default('published'),
 	interests: zod.array(zod.string()).optional().default([]),
 	datePoll: zod.object({
@@ -95,7 +97,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premium, datePoll, status, interests } = params
+		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
+
+		// Only Jetzy Premium subscribers (or admins) can host a Premium Event
+		if (premium) {
+			const userRole = (session.user as any)?.role
+			const isAdmin = userRole === "admin" || userRole === "super admin"
+			if (!isAdmin) {
+				const userId = (session.user as any)?._id
+				const record = await findUserRecord(userId)
+				if (!record?.doc?.premiumSubscription?.active) {
+					return sendResponse(res, null, "Only Jetzy Premium members can host Premium Events. Subscribe to Jetzy Premium to continue.", false, ResCode.FORBIDDEN)
+				}
+			}
+		}
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -109,6 +124,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Require Approval gates the FREE-ticket registrations. Allow it as long as the
 		// event has at least one free ticket; only force off when every ticket is paid.
 		if (tickets.length > 0 && tickets.every((t: any) => Number(t.price) > 0)) requireApproval = false
+
+		// Private Premium Events are invite-only — always require host approval on top
+		// of the invite-link/code gate, regardless of ticket pricing.
+		if (premium && privacy === "private") requireApproval = true
+
+		// Auto-generate the private-access code once for premium+private events
+		const privateAccessCode = (premium && privacy === "private") ? generateRandomId(10) as string : undefined
 
 		const effectiveTimezone = timezone && timezone.trim() !== '' ? timezone : 'UTC'
 		const extractedTimeZone = effectiveTimezone.split(') ')[1] || effectiveTimezone
@@ -192,6 +214,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 			showOnMobile: showOnMobile ?? true,
 			premium: premium ?? false,
+			premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
+			...(privateAccessCode ? { privateAccessCode } : {}),
 			status: status ?? 'published',
 			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0

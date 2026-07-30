@@ -3,10 +3,10 @@ import {
   toggleCheckoutForm,
 } from "@Jetzy/redux/reducers/checkoutSlice";
 import { useAppDispatch } from "@Jetzy/redux/stores";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { waitUntil } from "@Jetzy/lib/utils";
 import Spinner from "./misc/Spinner";
-import { Error, Success } from "@Jetzy/lib/_toaster";
+import { Error } from "@Jetzy/lib/_toaster";
 import { IEvent } from "@/models/events/types";
 import { CheckmarkSVG } from "@/assets/icons";
 import {
@@ -22,29 +22,26 @@ import {
   useToast,
 } from "@chakra-ui/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import axios from "axios";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/router";
 import Linkify from "linkify-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { stripHtml } from "@/utils/text";
 import { StarIcon } from "@heroicons/react/24/solid";
-import { usePremiumStatus, PREMIUM_STATUS_QUERY_KEY } from "@/hooks/usePremiumStatus";
-import { useQueryClient } from "@tanstack/react-query";
+import { usePremiumStatus } from "@/hooks/usePremiumStatus";
+import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
 
 type Props = {
   event: IEvent;
-  canManage?: boolean;
 };
 
-const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) => {
-  const session = useSession();
-  const router = useRouter();
+const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const dispatcher = useAppDispatch();
-  const queryClient = useQueryClient();
   const { isPremium } = usePremiumStatus();
-  const [showPaywall, setShowPaywall] = useState(false);
+  const [showPremiumPromo, setShowPremiumPromo] = useState(false);
+  usePremiumSubscriptionReturn();
+
+  const memberDiscountPercentage = Number(event.premiumMemberDiscountPercentage) || 0;
+  const hasMemberDiscount = !!event.premium && memberDiscountPercentage > 0;
 
   // format the event tickets
   const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
@@ -146,20 +143,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) =>
     });
   };
 
-  const needsPremiumGate = !!event.premium && !canManage && !isPremium;
-
   const handleCheckoutClick = () => {
-    if (event.premium && !canManage) {
-      if (session.status !== "authenticated") {
-        router.push(`/login?_cb=${encodeURIComponent(router.asPath)}`);
-        return;
-      }
-      if (!isPremium) {
-        setShowPaywall(true);
-        return;
-      }
-    }
-
     showCheckoutForm(true);
     sendGAEvent({
       category: "Event",
@@ -167,27 +151,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) =>
       label: event.name,
     });
   };
-
-  // Detect the redirect back from Stripe after a premium subscription purchase.
-  useEffect(() => {
-    const sessionId = router.query.premium_session_id;
-    if (!sessionId || typeof sessionId !== "string") return;
-
-    axios
-      .get(`/api/subscriptions/confirm?session_id=${sessionId}`)
-      .then(() => {
-        Success("Welcome to Jetzy Premium!", "You can now book this event.");
-        queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY });
-      })
-      .catch(() => {
-        Error("Error", "We couldn't confirm your subscription. Please contact support if this persists.");
-      })
-      .finally(() => {
-        const { premium_session_id, ...rest } = router.query;
-        router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.query.premium_session_id]);
 
   return (
     <>
@@ -208,15 +171,30 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) =>
             </div>
           </div>
 
-          {/* Premium Event notice — advance warning for non-subscribers before they even
-              select a ticket; the paywall modal is the hard gate on the Checkout click. */}
-          {needsPremiumGate && (
-            <div className="flex items-center gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-              <StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
-              <div>
-                <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>Premium Event</p>
-                <p className="text-gray-300 text-xs mt-1">A Jetzy Premium subscription is required to book this event.</p>
+          {/* Member pricing notice — Premium Events are open to everyone; a subscription
+              just unlocks a discount, so this is a promo, not a gate. */}
+          {hasMemberDiscount && (
+            <div className="flex items-center justify-between gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+              <div className="flex items-center gap-2">
+                <StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
+                <div>
+                  <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>Premium Event</p>
+                  <p className="text-gray-300 text-xs mt-1">
+                    {isPremium
+                      ? `As a Jetzy Premium member, you save ${memberDiscountPercentage}% on this event.`
+                      : `Jetzy Premium members save ${memberDiscountPercentage}% on this event.`}
+                  </p>
+                </div>
               </div>
+              {!isPremium && (
+                <button
+                  onClick={() => setShowPremiumPromo(true)}
+                  className="text-xs font-bold underline flex-shrink-0"
+                  style={{ color: "#F5C518" }}
+                >
+                  Subscribe
+                </button>
+              )}
             </div>
           )}
 
@@ -285,12 +263,24 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) =>
                     </div>
 
                     <div className="flex flex-col items-start sm:items-end w-full sm:w-1/3 mt-4 sm:mt-0 pt-3 sm:pt-0">
-                      <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
-                        {staticTickets[index].price.toLocaleString("en-US", {
-                          style: "currency",
-                          currency: "usd",
-                        })}
-                      </p>
+                      {hasMemberDiscount && isPremium && staticTickets[index].price > 0 ? (
+                        <>
+                          <p className="text-sm text-gray-500 line-through">
+                            {staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}
+                          </p>
+                          <p className="font-bold text-2xl" style={{ color: "#F5C518" }}>
+                            {(staticTickets[index].price * (1 - memberDiscountPercentage / 100)).toLocaleString("en-US", { style: "currency", currency: "usd" })}
+                          </p>
+                          <p className="text-xs" style={{ color: "#F5C518" }}>Member price ({memberDiscountPercentage}% off)</p>
+                        </>
+                      ) : (
+                        <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                          {staticTickets[index].price.toLocaleString("en-US", {
+                            style: "currency",
+                            currency: "usd",
+                          })}
+                        </p>
+                      )}
 
                       {event.isPaid && ticket.isSelected && (
                         <div
@@ -351,10 +341,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false }) =>
       </div>
 
       <PremiumPaywallModal
-        isOpen={showPaywall}
-        onClose={() => setShowPaywall(false)}
-        eventName={stripHtml(event.name)}
+        isOpen={showPremiumPromo}
+        onClose={() => setShowPremiumPromo(false)}
         returnTo={`/${event.slug}`}
+        title="Save with Jetzy Premium"
+        message={`Subscribe to Jetzy Premium and save ${memberDiscountPercentage}% on this and every other Premium Event.`}
       />
 
       {/* map section  */}

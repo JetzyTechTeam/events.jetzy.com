@@ -67,6 +67,8 @@ export interface IEvent extends IBaseModelProps {
 	privacy: 'public' | 'private';
 	adminApprovalStatus?: 'pending' | 'approved';
 	showOnMobile?: boolean;
+	premiumMemberDiscountPercentage?: number;
+	privateAccessCode?: string;
 	premium?: boolean; // If true, only Jetzy Premium subscribers can book this event
 	status?: 'draft' | 'published';
 	// Shadow "draft 2" of a published event: autosaved edits not yet committed to the live event
@@ -120,6 +122,7 @@ export interface IBookings extends IBaseModelProps {
 	total: number
 	referralCode?: string
 	discountAmount?: number
+	premiumMemberDiscountApplied?: boolean
 	customAnswers?: ICustomAnswer[];
 	acceptedTerms?: boolean
 	acceptedTermsAt?: Date

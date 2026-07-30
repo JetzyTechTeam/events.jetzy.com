@@ -2,6 +2,9 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
+import { usePremiumStatus } from "@/hooks/usePremiumStatus"
+import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn"
+import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
@@ -202,6 +205,20 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const { data: session } = useSession()
 	const userRole = (session?.user as any)?.role
 	const isAdmin = userRole === "admin" || userRole === "super admin"
+	const { isPremium } = usePremiumStatus()
+	const canHostPremium = isAdmin || isPremium
+	const [showPremiumPaywall, setShowPremiumPaywall] = useState(false)
+	usePremiumSubscriptionReturn()
+	const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
+	const inviteLink = (typeof window !== "undefined" && event.privateAccessCode)
+		? `${window.location.origin}/${event.slug}?code=${event.privateAccessCode}`
+		: ""
+	const handleCopyInviteLink = () => {
+		if (!inviteLink) return
+		navigator.clipboard.writeText(inviteLink)
+		setInviteLinkCopied(true)
+		setTimeout(() => setInviteLinkCopied(false), 2000)
+	}
 
 	useEffect(() => {
 		if (router.query.invite === "true") {
@@ -398,6 +415,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			locationDisclosedAfterBooking: event.locationDisclosedAfterBooking || false,
 			showOnMobile: event.showOnMobile || false,
 			premium: event.premium || false,
+			premiumMemberDiscountPercentage: event.premiumMemberDiscountPercentage || 0,
 			datePoll: event.datePoll ? {
 				isActive: event.datePoll.isActive || false,
 				question: event.datePoll.question || "",
@@ -773,6 +791,26 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					onClose={() => setShowDailyViewsModal(false)}
 					dailyViews={analytics?.trends?.views || []}
 				/>
+
+				<PremiumPaywallModal
+					isOpen={showPremiumPaywall}
+					onClose={() => setShowPremiumPaywall(false)}
+					returnTo={`/console/events/${event._id}/manage`}
+				/>
+
+				{event.premium && event.privacy === "private" && event.privateAccessCode && (
+					<Box bg="#1E1A0A" border="1px solid #F5C518" borderRadius="10px" p={4} mt={4}>
+						<Flex align="center" justifyContent="space-between" flexWrap="wrap" gap={3}>
+							<Box>
+								<Text className={roboto.className} color="#F5C518" fontWeight={700} fontSize="14px">Private Premium Event — Invite Link</Text>
+								<Text className={roboto.className} color="#C9BFA0" fontSize="12px" mt={1} wordBreak="break-all">{inviteLink}</Text>
+							</Box>
+							<Button bg="#F5C518" color="black" _hover={{ bg: "#E0B317" }} fontWeight="bold" onClick={handleCopyInviteLink} flexShrink={0}>
+								{inviteLinkCopied ? "Copied!" : "Copy Invite Link"}
+							</Button>
+						</Flex>
+					</Box>
+				)}
 
 				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={6}>
 					<TabList position="sticky" top="var(--console-header-h, 112px)" zIndex={20} bg="#0B0B0B" borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
@@ -1253,12 +1291,32 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																	<Box bg="#F5C518" color="black" px="2" py="0.5" borderRadius="full" fontSize="10px" fontWeight="bold" letterSpacing="0.03em">JETZY PREMIUM</Box>
 																</Flex>
 																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#C9BFA0" mt={1} maxW="360px">
-																	Restrict booking to Jetzy Premium subscribers only. Everyone can still see this event in listings.
+																	{canHostPremium
+																		? "Everyone can book this event — Jetzy Premium members get the member discount below."
+																		: "Only Jetzy Premium members can host Premium Events."}
 																</Text>
+																{!canHostPremium && (
+																	<Box as="button" type="button" onClick={() => setShowPremiumPaywall(true)} mt={2} color="#F5C518" fontSize="12px" fontWeight={700} textDecoration="underline">
+																		Subscribe to Jetzy Premium
+																	</Box>
+																)}
 															</Box>
 														</Flex>
-														<Switch name="premium" isChecked={values.premium} colorScheme="yellow" size="lg" onChange={() => setFieldValue("premium", !values.premium)} />
+														<Switch name="premium" isChecked={values.premium} isDisabled={!canHostPremium} colorScheme="yellow" size="lg" onChange={() => setFieldValue("premium", !values.premium)} />
 													</Flex>
+
+													{values.premium && (
+														<Flex align="center" justifyContent="space-between" mb={4}>
+															<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+																<StarIcon className="w-5 h-5 text-[#F5C518]" />
+																<Box>
+																	<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Member Discount %</Text>
+																	<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Jetzy Premium members get this % off tickets</Text>
+																</Box>
+															</Flex>
+															<Field as={Input} type="number" min={0} max={100} value={values.premiumMemberDiscountPercentage ?? 0} placeholder="0" name="premiumMemberDiscountPercentage" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
+														</Flex>
+													)}
 
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1273,15 +1331,32 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 															<option value="public">Public</option>
 														</Field>
 													</Flex>
+													{values.premium && values.privacy === "private" && (
+														<Box bg="rgba(245,197,24,0.1)" border="1px solid rgba(245,197,24,0.3)" borderRadius="8px" p={3} mb={4}>
+															<Text className={roboto.className} fontSize="12px" color="#F5C518">
+																Private Premium Events are invite-only — see the invite link below, and every booking will need your approval.
+															</Text>
+														</Box>
+													)}
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<UserTickSVG />
 															<Box>
 																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">{((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)) ? "Available for events with a free ticket" : "Approval applies to free-ticket registrations"}</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">
+																	{(values.premium && values.privacy === "private")
+																		? "Always on for private Premium Events"
+																		: ((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)) ? "Available for events with a free ticket" : "Approval applies to free-ticket registrations"}
+																</Text>
 															</Box>
 														</Flex>
-														<Switch name="requireApproval" isDisabled={(values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)} isChecked={values.requireApproval && !((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0))} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+														<Switch
+															name="requireApproval"
+															isDisabled={(values.premium && values.privacy === "private") || ((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0))}
+															isChecked={(values.premium && values.privacy === "private") || (values.requireApproval && !((values.tickets || []).length > 0 && (values.tickets || []).every((t: any) => Number(t.price) > 0)))}
+															colorScheme="orange"
+															onChange={() => setFieldValue("requireApproval", !values.requireApproval)}
+														/>
 													</Flex>
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>

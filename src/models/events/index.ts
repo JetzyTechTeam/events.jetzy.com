@@ -222,7 +222,20 @@ const eventsSchema = new Schema<IEvent>(
 		},
 		premium: {
 			type: Boolean,
-			default: false, // true = only Jetzy Premium subscribers can book this event
+			default: false, // true = only Jetzy Premium subscribers can host; anyone can book, members get a discount
+		},
+		// Host-configured member perk, only meaningful when premium: true
+		premiumMemberDiscountPercentage: {
+			type: Number,
+			default: 0,
+			min: 0,
+			max: 100,
+		},
+		// Auto-generated once for premium + private events — lets the invite link
+		// ({slug}?code=...) grant view/booking access without an account/invitation.
+		privateAccessCode: {
+			type: String,
+			required: false,
 		},
 		datePoll: {
 			type: datePollSchema,

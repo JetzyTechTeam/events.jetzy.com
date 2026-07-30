@@ -15,15 +15,24 @@ type PlanInfo = {
 type Props = {
 	isOpen: boolean
 	onClose: () => void
-	eventName: string
 	returnTo: string
+	title?: string
+	message?: string
 }
 
 // Structurally mirrors EventCheckoutModel.tsx: one modal shell, multiple internal states
-// (here: "locked" -> "plan"), same icon-circle/banner/message layout as its
-// Pending-Approval / Waiting-List states.
-const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, eventName, returnTo }) => {
-	const [step, setStep] = useState<"locked" | "plan">("locked")
+// (here: "pitch" -> "plan"), same icon-circle/banner/message layout as its
+// Pending-Approval / Waiting-List states. Generic subscribe pitch — used both when a
+// non-member tries to host a Premium Event and when a non-member browsing a Premium
+// Event's ticket page wants to learn about member pricing.
+const PremiumPaywallModal: React.FC<Props> = ({
+	isOpen,
+	onClose,
+	returnTo,
+	title = "Subscribe to Jetzy Premium",
+	message = "Host Premium Events and give your attendees member pricing.",
+}) => {
+	const [step, setStep] = useState<"pitch" | "plan">("pitch")
 
 	const { data: plan, isLoading: planLoading } = useQuery({
 		queryKey: ["premium-plan"],
@@ -54,7 +63,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, eventName, retu
 	if (!isOpen) return null
 
 	const handleClose = () => {
-		setStep("locked")
+		setStep("pitch")
 		onClose()
 	}
 
@@ -72,27 +81,24 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, eventName, retu
 					&times;
 				</button>
 
-				{step === "locked" ? (
+				{step === "pitch" ? (
 					<div className="p-6 space-y-6">
 						<div className="text-center">
 							<div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "rgba(245,197,24,0.15)" }}>
 								<StarIcon className="w-8 h-8" style={{ color: "#F5C518" }} />
 							</div>
 							<div className="rounded-lg p-6 mb-6" style={{ background: "rgba(245,197,24,0.15)", border: "1px solid rgba(245,197,24,0.3)" }}>
-								<p className="text-2xl font-bold text-center" style={{ color: "#F5C518" }}>Premium Event</p>
+								<p className="text-2xl font-bold text-center" style={{ color: "#F5C518" }}>{title}</p>
 							</div>
-							<p className="text-white mb-2">
-								<strong>&quot;{eventName}&quot;</strong> is reserved for Jetzy Premium subscribers.
-							</p>
 							<p className="text-gray-400 text-sm mb-6">
-								Subscribe to Jetzy Premium to unlock booking for this and every other premium event.
+								{message}
 							</p>
 							<div className="flex flex-col gap-3">
 								<button
 									onClick={() => setStep("plan")}
 									className="bg-jetzy text-black font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-colors"
 								>
-									Upgrade to Jetzy Premium
+									Subscribe to Jetzy Premium
 								</button>
 								<button
 									onClick={handleClose}
@@ -132,7 +138,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, eventName, retu
 							<div className="flex gap-3">
 								<button
 									type="button"
-									onClick={() => setStep("locked")}
+									onClick={() => setStep("pitch")}
 									className="w-1/3 border border-[#444] text-white font-bold px-6 py-3 rounded-xl transition-all hover:bg-[#222]"
 								>
 									Back

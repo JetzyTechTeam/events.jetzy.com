@@ -2,6 +2,9 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
 import { NextApiRequest, NextApiResponse } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
+import { findUserRecord } from "@/lib/premium"
 import Stripe from "stripe"
 
 type BodyParams = {
@@ -22,6 +25,7 @@ type BodyParams = {
 		phone: string
 	}
 	referralCode?: string
+	privateAccessCode?: string
 	customAnswers?: any[]
 }
 
@@ -196,6 +200,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, ResCode.FORBIDDEN)
 		}
 
+		// Private Premium Events are invite-only — the client must present the code
+		// from the invite link (defense in depth alongside the [slug] page-level gate).
+		if (event.premium && event.privacy === "private") {
+			const privateAccessCode = req.body?.privateAccessCode as string | undefined
+			if (!privateAccessCode || privateAccessCode !== event.privateAccessCode) {
+				console.warn("[checkout/index] Blocked checkout for private premium event without a valid access code:", event._id)
+				return sendResponse(res, null, "A valid invite code is required to book this event.", false, ResCode.FORBIDDEN)
+			}
+		}
+
+		// Jetzy Premium member discount — only when no referral code was applied (an
+		// explicit code the buyer typed in wins over the automatic member perk; Stripe
+		// Checkout Sessions only support a single discount).
+		let premiumMemberDiscountData: { percentage: number } | null = null
+		if (!referralCodeData && event.premium && Number(event.premiumMemberDiscountPercentage) > 0) {
+			try {
+				const buyerSession = await getServerSession(req, res, authOptions)
+				const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
+				if (buyerId) {
+					const record = await findUserRecord(buyerId)
+					if (record?.doc?.premiumSubscription?.active) {
+						premiumMemberDiscountData = { percentage: Number(event.premiumMemberDiscountPercentage) }
+						console.log("[checkout/index] Jetzy Premium member discount applied:", premiumMemberDiscountData)
+					}
+				}
+			} catch (memberDiscountError: any) {
+				console.error("[checkout/index] Error resolving Premium member discount:", memberDiscountError)
+			}
+		}
+
 		// Validate required custom questions
 		if (event.questions && event.questions.length > 0) {
 			const requiredQuestions = event.questions.filter(q => q.isRequired);
@@ -259,6 +293,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			} catch (couponError: any) {
 				console.error("[checkout/index] Error creating Stripe coupon:", couponError)
 			}
+		} else if (premiumMemberDiscountData) {
+			try {
+				const coupon = await stripe.coupons.create({
+					percent_off: premiumMemberDiscountData.percentage,
+					duration: 'once',
+					name: 'Jetzy Premium Member Discount',
+				})
+
+				discountConfig = [{
+					coupon: coupon.id,
+				}]
+			} catch (couponError: any) {
+				console.error("[checkout/index] Error creating Premium member discount coupon:", couponError)
+			}
 		}
 
 		// Prepare metadata
@@ -277,6 +325,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (referralCodeData) {
 			metadata.referralCode = referralCodeData.code
 			metadata.discountPercentage = referralCodeData.discountPercentage.toString()
+		} else if (premiumMemberDiscountData) {
+			metadata.premiumMemberDiscount = "true"
+			metadata.discountPercentage = premiumMemberDiscountData.percentage.toString()
 		}
 
 		if (customAnswers && customAnswers.length > 0) {
