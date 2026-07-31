@@ -203,7 +203,6 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
         ) : (
           <Flex align="center" gap={4}>
             <Button
-              size="sm"
               bg="#F5C518"
               color="black"
               _hover={{ bg: "#E0B317" }}
