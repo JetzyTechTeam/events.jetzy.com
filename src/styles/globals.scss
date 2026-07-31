@@ -59,19 +59,24 @@ body {
 }
 
 /* Native <select> dropdown options.
-   Setting color:white on a <select> styles the closed control, but the open popup is
-   drawn by the browser with its own light background — leaving white text on white and
-   the options effectively invisible. Chrome/Edge on Windows only inherit these when set
-   on <option> itself, so the whole app's selects sit on dark surfaces and are styled
-   here once rather than at every call site. */
-select option {
-    background-color: #0F1114;
-    color: #ffffff;
+   Setting color:white on a <select> only styles the closed control; the open popup is
+   drawn by the browser, so options rendered white-on-white and were invisible until
+   highlighted. Chrome/Edge on Windows only honour these when set on <option> itself.
+
+   !important is required: Chakra's Select theme sets `> option { background:
+   chakra-body-bg }` through a generated class, which outranks a plain element selector,
+   and chakra-body-bg resolves to white because the app never enables dark colorMode.
+
+   Colours match the MenuList styling used elsewhere in the console so the native popup
+   reads as part of the same theme. Every select in the app sits on a dark surface. */
+select option,
+select optgroup {
+    background-color: #1D1F24 !important;
+    color: #ffffff !important;
 }
 
-select option:checked,
-select option:hover {
-    background-color: #2A2D31;
+select option:checked {
+    background-color: #2A2D31 !important;
 }
 
 /* Rich text content rendered from Quill editor */
