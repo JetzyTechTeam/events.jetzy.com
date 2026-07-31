@@ -18,7 +18,9 @@ import { useAppDispatch } from "@Jetzy/redux/stores";
 import { destroySession } from "@Jetzy/redux/reducers/appSlice";
 import { getUserSlug } from "@/lib/utils";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
+import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 import PremiumBadge from "@/components/premium/PremiumBadge";
+import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
 
 type NavbarProps = {
   hideEventNav?: boolean;
@@ -35,6 +37,8 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
   const isAdmin = userRole === "admin" || userRole === "super admin";
   const isUser = userRole === "user";
   const { isPremium } = usePremiumStatus();
+  const [showPremiumPaywall, setShowPremiumPaywall] = React.useState(false);
+  usePremiumSubscriptionReturn();
 
   return (
     <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={2}>
@@ -97,6 +101,21 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                 onClick={() => router.push(ROUTES.dashboard.events.index)}
               >
                 Dashboard
+              </Button>
+            )}
+
+            {/* Buy Jetzy Premium — only shown to non-members, sits right next to the profile menu */}
+            {!isPremium && (
+              <Button
+                size="sm"
+                bg="#F5C518"
+                color="black"
+                _hover={{ bg: "#E0B317" }}
+                onClick={() => setShowPremiumPaywall(true)}
+                leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
+                display={{ base: "none", sm: "flex" }}
+              >
+                Buy Jetzy Premium
               </Button>
             )}
 
@@ -196,6 +215,14 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
           </Flex>
         )}
       </Flex>
+
+      {authenticated && (
+        <PremiumPaywallModal
+          isOpen={showPremiumPaywall}
+          onClose={() => setShowPremiumPaywall(false)}
+          returnTo={router.asPath}
+        />
+      )}
     </Box>
   );
 };
