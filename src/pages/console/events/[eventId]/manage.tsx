@@ -85,6 +85,7 @@ import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
 import EventSlugField from "@/components/events/EventSlugField"
+import { isPendingAdminApproval } from "@/lib/event-approval"
 import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
@@ -223,12 +224,17 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		setTimeout(() => setInviteLinkCopied(false), 2000)
 	}
 
+	// Public events await admin review before anyone else can open them, so outward-facing
+	// actions (invite, blast, share, check-in) stay hidden until approved.
+	const isPendingApproval = isPendingAdminApproval(event as any)
+
 	useEffect(() => {
 		if (router.query.invite === "true") {
-			setInviteGuestsModal(true)
+			// Don't let the deep link bypass the pending gate — just clean the URL.
+			if (!isPendingApproval) setInviteGuestsModal(true)
 			router.replace(`/console/events/${event._id}/manage`, undefined, { shallow: true })
 		}
-	}, [router.query.invite])
+	}, [router.query.invite, isPendingApproval])
 
 	// Approvals surfaces show whenever ANY ticket needs approval, not just when the
 	// event-level default is on — a single flagged ticket is enough.
@@ -769,7 +775,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						</span>
 						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>
 							{stripHtml(event.name)}
-							{event.privacy === "public" && event.adminApprovalStatus === "pending" && (
+							{isPendingApproval && (
 								<Box as="span" ml={3} px="10px" py="3px" borderRadius="md" fontSize="13px" fontWeight="bold" letterSpacing="0.03em" bg="#3A2A00" color="#F79432" border="1px solid #F79432" verticalAlign="middle">
 									PENDING APPROVAL
 								</Box>
@@ -780,7 +786,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				component={
 					<div className="flex flex-wrap gap-2 items-center self-end">
 						{tabIndex === 0 && <AutosaveStatusPill state={autosaveState} />}
-						{isAdmin && event.privacy === "public" && event.adminApprovalStatus === "pending" && (
+						{isAdmin && isPendingApproval && (
 							<Button bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
 								Approve Event
 							</Button>
@@ -1539,7 +1545,19 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													/>
 												</Box>
 
-												{/* ---- Quick Actions ---- */}
+												{/* ---- Quick Actions ----
+												    Hidden while the event is awaiting admin approval: guests can't open
+												    the event yet, so an invite or blast would send them to the
+												    "not yet approved" page. Server-side guards enforce the same rule. */}
+												{isPendingApproval ? (
+													<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+														<Heading size="md" color="white" mb={2}>Quick Actions</Heading>
+														<Text className={roboto.className} color="#868686" fontSize="14px" lineHeight="150%">
+															Quick actions unlock once your event is approved. You&apos;ll be able to invite guests,
+															send blasts and open the check-in portal then.
+														</Text>
+													</Box>
+												) : (
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "20px", height: "20px" } }}>
 													<Heading size="md" color="white" mb={4}>Quick Actions</Heading>
 													<Flex direction="column" gap={3}>
@@ -1557,6 +1575,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														</Flex>
 													</Flex>
 												</Box>
+												)}
 
 												{/* ---- Event Stats ---- */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "22px", height: "22px" } }}>

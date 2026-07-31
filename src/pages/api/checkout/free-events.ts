@@ -1,9 +1,11 @@
+import { isPendingAdminApproval } from "@/lib/event-approval"
 import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
 import { uniqueId } from "@/lib/utils"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
+import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
@@ -80,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, 404)
 		}
-		if (event.privacy === "public" && event.adminApprovalStatus === "pending") {
+		if (isPendingAdminApproval(event as any)) {
 			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, 403)
 		}
 		if (event.premium && event.privacy === "private") {
@@ -201,6 +203,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				})),
 				orderNumber: bookingRef,
 				qrCodeImageUrl,
+				// Free registration: shows Subtotal/Total explicitly rather than nothing at all.
+				pricing: buildTicketPricing({ subtotal, total: 0 }),
 			})
 		} catch (emailError) {
 			console.error("Failed to send free ticket confirmation email:", emailError)

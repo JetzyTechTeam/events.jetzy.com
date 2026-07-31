@@ -156,6 +156,9 @@ export interface IBookings extends IBaseModelProps {
 	referralCode?: string
 	discountAmount?: number
 	premiumMemberDiscountApplied?: boolean
+	/** Rates behind `discountAmount`; undefined on bookings predating the split. */
+	referralDiscountPercentage?: number
+	premiumMemberDiscountPercentage?: number
 	customAnswers?: ICustomAnswer[];
 	/** Absent on free bookings and on every booking made before paid approval shipped. */
 	payment?: IBookingPayment

@@ -1,3 +1,4 @@
+import { isPendingAdminApproval } from "@/lib/event-approval"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
@@ -195,7 +196,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
-		if (event.privacy === "public" && event.adminApprovalStatus === "pending") {
+		if (isPendingAdminApproval(event as any)) {
 			console.warn("[checkout/index] Blocked checkout for pending-approval event:", event._id)
 			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, ResCode.FORBIDDEN)
 		}

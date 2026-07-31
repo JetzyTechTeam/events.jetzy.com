@@ -1,6 +1,7 @@
 import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
+import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
 import sgMail from "@sendgrid/mail"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -67,6 +68,12 @@ type TicketEmailData = {
   discountPercentage?: number
   approvalContext?: boolean // true when sent as a Require-Approval acceptance (celebratory header + subject)
   amountCharged?: number // paid approvals only: the hold has just been captured, so say so
+  /**
+   * Itemised order total. Preferred over the legacy referralCode/discountAmount trio —
+   * when absent the summary falls back to those, or to a plain subtotal/total derived
+   * from `tickets`, so every confirmation shows a total either way.
+   */
+  pricing?: TicketPricing
 }
 
 type BookingCancellationData = {
@@ -943,7 +950,7 @@ export const sendBlastEmail = async ({
   }
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged, pricing }: TicketEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
 
   if (!baseUrl) {
@@ -1003,8 +1010,21 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
     const subtotal = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
     const finalTotal = discountAmount && discountAmount > 0 ? subtotal - discountAmount : subtotal
-    
-    console.log("Email details:", { timestamp, location, subtotal, finalTotal, referralCode, discountAmount, tickets })
+
+    // The summary always renders. Prefer the caller's itemised breakdown; otherwise build
+    // one from the legacy discount params; failing that, a plain subtotal/total. Previously
+    // the whole block (including the Total) was gated on a referral code being present, so
+    // a Premium-only discount — or any free/approval booking — showed no total at all.
+    const resolvedPricing: TicketPricing =
+      pricing ??
+      buildTicketPricing({
+        subtotal,
+        referralCode,
+        referralPercentage: discountPercentage,
+        combinedDiscountAmount: discountAmount,
+      })
+
+    console.log("Email details:", { timestamp, location, subtotal, finalTotal, resolvedPricing, tickets })
 
     // Process QR code image for attachment
     const attachments: any[] = []
@@ -1493,22 +1513,27 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             `,
           )
           .join("")}
-            ${referralCode && discountAmount && discountAmount > 0 ? `
+            ${`
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f8f8; border-radius: 8px; margin-top: 10px;">
                 <tr>
                   <td style="padding: 12px 15px 6px 15px; color: #333;">Subtotal</td>
-                  <td style="padding: 12px 15px 6px 15px; color: #333; text-align: right;">$${subtotal.toFixed(2)}</td>
+                  <td style="padding: 12px 15px 6px 15px; color: #333; text-align: right;">$${resolvedPricing.subtotal.toFixed(2)}</td>
                 </tr>
+                ${resolvedPricing.lines
+                  .map(
+                    (line) => `
                 <tr>
-                  <td style="padding: 6px 15px; color: #28a745;">Discount (${referralCode}${discountPercentage ? ` &middot; ${discountPercentage}% off` : ''})</td>
-                  <td style="padding: 6px 15px; color: #28a745; text-align: right;">-$${discountAmount.toFixed(2)}</td>
-                </tr>
+                  <td style="padding: 6px 15px; color: #28a745;">${line.label}</td>
+                  <td style="padding: 6px 15px; color: #28a745; text-align: right;">-$${line.amount.toFixed(2)}</td>
+                </tr>`,
+                  )
+                  .join("")}
                 <tr>
                   <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Total</td>
-                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${finalTotal.toFixed(2)}</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${resolvedPricing.total.toFixed(2)}</td>
                 </tr>
               </table>
-            ` : ''}
+            `}
           </div>
 
           ${qrCodeValid ? `

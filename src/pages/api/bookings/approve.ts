@@ -11,6 +11,7 @@ import { BookingStatus } from "@/models/events/types"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { sendTicketConfirmation, sendAdminApprovalNotice } from "@/lib/send-grid"
+import { pricingFromBooking } from "@/lib/ticket-pricing"
 import { getStripeClient } from "@/lib/premium"
 import Stripe from "stripe"
 import zod from "zod"
@@ -202,6 +203,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			qrCodeImageUrl,
 			approvalContext: true,
 			amountCharged,
+			// Summary comes from the booking, not from the ticket rows above: those are
+			// rebuilt from current event prices (bookings store no per-ticket price
+			// snapshot), whereas subTotal and the discount rates are what was recorded at
+			// purchase. Total is the amount actually captured.
+			pricing: pricingFromBooking(
+				{
+					subTotal: booking.subTotal,
+					total: amountCharged ?? booking.total,
+					referralCode: booking.referralCode,
+					discountAmount: booking.discountAmount,
+					referralDiscountPercentage: (booking as any).referralDiscountPercentage,
+					premiumMemberDiscountPercentage: (booking as any).premiumMemberDiscountPercentage,
+				},
+				ticketDetails.reduce((sum, t) => sum + (t.price || 0) * (t.quantity || 0), 0),
+			),
 		})
 	} catch (emailError) {
 		// Never let a mail failure undo a successful capture — money first, mail second.

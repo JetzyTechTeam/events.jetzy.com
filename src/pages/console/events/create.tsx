@@ -59,6 +59,7 @@ import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
 import { ticketApprovalFlag } from "@/lib/ticket-approval";
 import EventSlugField from "@/components/events/EventSlugField";
+import { isPendingAdminApproval } from "@/lib/event-approval";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
@@ -148,6 +149,7 @@ const CreateEventPage = () => {
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
   const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
   const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
+  const [createdEventPending, setCreatedEventPending] = React.useState(false);
 
   // Autosave: the first save creates ONE draft record; all later saves update it. The
   // event stays a draft (hidden from the public list) until the organizer publishes.
@@ -318,6 +320,9 @@ const CreateEventPage = () => {
           navigation.push('/console/events')
         } else {
           setCreatedEventId(existingId ?? res.payload.data._id);
+          // A public event is created pending admin review, so inviting now would send
+          // guests to the "not yet approved" page. Private events are auto-approved.
+          setCreatedEventPending(isPendingAdminApproval(res.payload.data));
           onSuccessOpen();
         }
       }
@@ -1185,26 +1190,47 @@ const CreateEventPage = () => {
           <ModalHeader>🎉 Event Created!</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={2}>
-            <Text mb={2}>Your event is live. Would you like to invite friends or Jetzy users now?</Text>
+            {createdEventPending ? (
+              <Text mb={2}>
+                Your event has been submitted for review. Once an admin approves it, it goes live and
+                you&apos;ll be able to invite guests and send blasts.
+              </Text>
+            ) : (
+              <Text mb={2}>Your event is live. Would you like to invite friends or Jetzy users now?</Text>
+            )}
           </ModalBody>
           <ModalFooter gap={3}>
-            <Button
-              variant="ghost"
-              color="gray.400"
-              _hover={{ bg: "#2a2a2a" }}
-              onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }}
-            >
-              Go to Manage
-            </Button>
-            <Button
-              bg="#F79432"
-              color="black"
-              _hover={{ bg: "#f78c22" }}
-              _active={{ bg: "#e67a10" }}
-              onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage?invite=true`); }}
-            >
-              Invite Friends
-            </Button>
+            {createdEventPending ? (
+              <Button
+                bg="#F79432"
+                color="black"
+                _hover={{ bg: "#f78c22" }}
+                _active={{ bg: "#e67a10" }}
+                onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }}
+              >
+                Go to Manage
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  color="gray.400"
+                  _hover={{ bg: "#2a2a2a" }}
+                  onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }}
+                >
+                  Go to Manage
+                </Button>
+                <Button
+                  bg="#F79432"
+                  color="black"
+                  _hover={{ bg: "#f78c22" }}
+                  _active={{ bg: "#e67a10" }}
+                  onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage?invite=true`); }}
+                >
+                  Invite Friends
+                </Button>
+              </>
+            )}
           </ModalFooter>
         </ModalContent>
       </Modal>

@@ -1,5 +1,6 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import { eventPath } from "@/lib/event-slug"
+import { isPendingAdminApproval } from "@/lib/event-approval"
 import { stripHtml, escapeRegExp } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
@@ -301,7 +302,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							</span>
 						)}
 						{(event as any).premium && <PremiumBadge size="xs" />}
-						{(event as any).privacy !== 'private' && (event as any).adminApprovalStatus === 'pending' && (
+						{isPendingAdminApproval(event as any) && (
 							<span className="px-2 py-0.5 bg-[#3A2A00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
 								PENDING APPROVAL
 							</span>
@@ -443,7 +444,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const rawFilter = (context.query.filter as string) || "all"
 	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
 
-	const isPendingApproval = (e: any) => e.privacy !== 'private' && e.adminApprovalStatus === 'pending'
+	const isPendingApproval = (e: any) => isPendingAdminApproval(e)
 	const pendingCount = allEvents.filter(isPendingApproval).length
 
 	const filteredEvents = allEvents.filter((e: any) => {

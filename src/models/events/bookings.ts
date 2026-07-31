@@ -113,6 +113,18 @@ const bookingSchema = new Schema<IBookings>(
 			type: Boolean,
 			default: false,
 		},
+		// The two discount rates that produced `discountAmount`, stored separately so a
+		// confirmation email sent later (e.g. on paid approval) can itemise Premium vs
+		// referral instead of lumping them together. No default: bookings created before
+		// this existed leave them undefined and fall back to a single combined line.
+		referralDiscountPercentage: {
+			type: Number,
+			required: false,
+		},
+		premiumMemberDiscountPercentage: {
+			type: Number,
+			required: false,
+		},
 		customAnswers: {
 			type: [customAnswerSchema],
 			required: false,

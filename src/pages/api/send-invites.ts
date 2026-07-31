@@ -1,7 +1,11 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import sendgrid from "@sendgrid/mail";
 import { EventInvitation } from "@/models/events/event-invitations";
+import { Events } from "@/models/events";
 import { ensureDbConnected } from "@/configs/database";
+import { getServerSession } from "next-auth";
+import { authOptions } from "./auth/[...nextauth]";
+import { isPendingAdminApproval, PENDING_APPROVAL_MESSAGE } from "@/lib/event-approval";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -17,6 +21,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!emails || !Array.isArray(emails) || emails.length === 0) {
       return res.status(400).json({ message: "No emails provided" });
+    }
+
+    if (!eventId) {
+      return res.status(400).json({ message: "Event ID is required" });
+    }
+
+    // This route was previously unauthenticated and never loaded the event, which made it
+    // an open relay: anyone could send arbitrary email with a custom subject and body
+    // through our SendGrid account. Require a session and event ownership.
+    const session = await getServerSession(req, res, authOptions);
+    const userId = (session?.user as any)?._id?.toString();
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const event = await Events.findById(eventId).select("_id ownerId privacy adminApprovalStatus");
+    if (!event) {
+      return res.status(404).json({ message: "Event not found" });
+    }
+
+    const role = (session?.user as any)?.role;
+    const isAdmin = role === "admin" || role === "super admin";
+    if (!isAdmin && (event as any).ownerId?.toString() !== userId) {
+      return res.status(403).json({ message: "You can only invite guests to your own events" });
+    }
+
+    // Guests can't open a pending event yet — an invite would land them on the
+    // "not yet approved" page.
+    if (isPendingAdminApproval(event as any)) {
+      return res.status(403).json({ message: PENDING_APPROVAL_MESSAGE });
     }
 
     if (!process.env.SENDGRID_API_KEY) {

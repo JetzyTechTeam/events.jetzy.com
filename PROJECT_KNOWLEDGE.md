@@ -228,6 +228,30 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/cancel`, `/api/bookings/delete`
 `/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
 
+### Pending admin approval — outward-facing actions gated
+
+Public events are created `adminApprovalStatus: "pending"` and are invisible to everyone but the owner/admins until approved. Outward-facing actions are now blocked while pending, because an invite or blast would send guests to the "Event Not Yet Approved" page.
+
+**Use [src/lib/event-approval.ts](src/lib/event-approval.ts)** — `isPendingAdminApproval(event)` and `PENDING_APPROVAL_MESSAGE`. Seven sites previously re-derived this inline with two different spellings (`privacy === "public"` vs `privacy !== "private"`); all now call the helper.
+
+> Naming collision: `ApprovalRequests`, the Approvals tab and `ticket-approval.ts` are all about a **host approving guest bookings** — unrelated to admin approval of the event itself.
+
+- **UI**: the Quick Actions card in [manage.tsx](src/pages/console/events/[eventId]/manage.tsx) is replaced by an explanatory note while pending. The `?invite=true` deep link no longer auto-opens the invite modal. The post-creation modal in [create.tsx](src/pages/console/events/create.tsx) shows "submitted for review" instead of **Invite Friends** for public events (private events are auto-approved and keep it).
+- **Server guards** (UI hiding is not enforcement): [send-invites.ts](src/pages/api/send-invites.ts), [send-blast.ts](src/pages/api/send-blast.ts), [invite-jetzy-user.ts](src/pages/api/events/[eventId]/invite-jetzy-user.ts). The latter two now load the event **for all callers, not just non-admins**, since the gate depends on event state rather than role.
+- **`send-invites.ts` was previously unauthenticated** and never loaded the event — an open relay that let anyone send arbitrary email through our SendGrid. It now requires a session plus admin-or-owner.
+- Not gated: editing the event, tickets, questions, referral codes.
+
+### Ticket email — discount breakdown
+
+The confirmation email showed per-ticket prices but **no discount and no total**. Everything was behind one gate — `referralCode && discountAmount > 0` — so a Premium-member-only discount rendered nothing, and the three callers that pass no discount data could never show a total at all.
+
+- **[src/lib/ticket-pricing.ts](src/lib/ticket-pricing.ts)** is the single source: `buildTicketPricing` / `pricingFromBooking` return `{ subtotal, lines[], total }`.
+- Discounts **stack multiplicatively**, matching the single Stripe coupon built in [checkout/index.ts](src/pages/api/checkout/index.ts): Premium applies first, referral on the remainder. The two line amounts sum exactly to `subtotal − total`. A supplied `total` always wins over the computed figure so the email can't disagree with Stripe; rounding drift is absorbed into the last line.
+- **The summary now renders unconditionally.** With no `pricing`, it falls back to the legacy params, then to a plain subtotal/total from `tickets` — so every confirmation gains a Total, including free RSVPs and waiting-list approvals.
+- **Booking schema gained `referralDiscountPercentage` and `premiumMemberDiscountPercentage`** (optional, no default). Only `discountAmount` and a boolean were stored before, so `approve.ts` — which emails later from the booking — couldn't split the two. Legacy bookings leave them undefined and fall back to one combined line.
+- `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
+- **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
+
 ### Custom event slugs
 
 Hosts choose their own event URL. Uses the **existing** `slug` field (`String, required, unique, index`) — **no schema change**, so the mobile app reading the same collection is unaffected. This is also why there is no `previousSlugs` redirect array.

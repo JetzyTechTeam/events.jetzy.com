@@ -10,6 +10,7 @@ import { useAnalytics } from "@/hooks/useAnalytics"
 import Head from "next/head"
 import { stripHTMLAndDecode } from "@/lib/utils"
 import { eventUrl } from "@/lib/event-slug"
+import { isPendingAdminApproval } from "@/lib/event-approval"
 import { toMetaDescription } from "@/utils/text"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -308,7 +309,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		// Public events pending admin approval are hidden from everyone except their
 		// owner/admin — anyone else opening a shared link sees a friendly "not yet
 		// approved" notice and gets bounced to the main events page.
-		if (event.privacy === "public" && event.adminApprovalStatus === "pending") {
+		if (isPendingAdminApproval(event as any)) {
 			const session = await getServerSession(context.req, context.res, authOptions)
 			const role = (session?.user as any)?.role
 			const isAdmin = role === "admin" || role === "super admin"

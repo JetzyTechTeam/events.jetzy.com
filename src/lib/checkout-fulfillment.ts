@@ -1,6 +1,7 @@
 import Stripe from "stripe"
 import { ensureDbConnected } from "@/configs/database"
 import { getStripeClient } from "@/lib/premium"
+import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
@@ -162,6 +163,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			referralCode: metadata.referralCode || undefined,
 			discountAmount,
 			premiumMemberDiscountApplied,
+			// Persist the individual rates so a later email can itemise the two discounts.
+			...(referralPercent > 0 ? { referralDiscountPercentage: referralPercent } : {}),
+			...(premiumPercent > 0 ? { premiumMemberDiscountPercentage: premiumPercent } : {}),
 			customAnswers,
 			acceptedTerms: metadata.acceptedTerms === "true",
 			acceptedTermsAt: metadata.acceptedTermsAt ? new Date(metadata.acceptedTermsAt) : undefined,
@@ -256,6 +260,15 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			referralCode: metadata.referralCode,
 			discountAmount: discountAmount > 0 ? discountAmount : undefined,
 			discountPercentage: effectiveDiscountPercentage > 0 ? effectiveDiscountPercentage : undefined,
+			// Itemised so Premium and referral show as separate lines, and the Total is the
+			// amount Stripe actually charged rather than a recomputed figure.
+			pricing: buildTicketPricing({
+				subtotal,
+				referralCode: metadata.referralCode,
+				referralPercentage: referralPercent,
+				premiumPercentage: premiumPercent,
+				total,
+			}),
 			qrCodeImageUrl,
 		})
 	} catch (emailError) {
