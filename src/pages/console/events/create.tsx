@@ -1066,10 +1066,12 @@ const CreateEventPage = () => {
                           id="ticketPrice"
                           name="ticketPrice"
                           type="number"
-                          placeholder="Enter price"
+                          placeholder="Enter price (0 for free)"
                           bg="#090C10"
                           border="1px solid #444"
-                          value={tempTicket.price}
+                          // NaN would render as a broken controlled value, so an empty
+                          // field shows empty and is treated as free ($0) on save.
+                          value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""}
                           onChange={(e) =>
                             setTempTicket({
                               ...tempTicket,
@@ -1109,13 +1111,26 @@ const CreateEventPage = () => {
                           color="black"
                           mr={3}
                           onClick={() => {
-                            if (
-                              editIndex === null &&
-                              tempTicket.title &&
-                              tempTicket.price
-                            ) {
+                            // Only the title is required. Price is deliberately NOT checked for
+                            // truthiness — a free ticket is $0, and testing `tempTicket.price`
+                            // directly used to silently drop it (0 and NaN are both falsy).
+                            if (!tempTicket.title.trim()) {
+                              Error("Missing ticket name", "You need to provide a ticket name.");
+                              return;
+                            }
+
+                            // Blank price means free. `parseFloat("")` is NaN, so normalise here.
+                            const normalised = {
+                              ...tempTicket,
+                              title: tempTicket.title.trim(),
+                              price: Number.isFinite(tempTicket.price) ? tempTicket.price : 0,
+                            };
+
+                            if (editIndex !== null) {
+                              replace(editIndex, normalised);
+                            } else {
                               push({
-                                ...tempTicket,
+                                ...normalised,
                                 id: new Date().getTime().toString(),
                               });
                               setTempTicket({
@@ -1124,8 +1139,6 @@ const CreateEventPage = () => {
                                 description: "",
                                 price: 0,
                               });
-                            } else if (editIndex !== null) {
-                              replace(editIndex, tempTicket);
                             }
                             onClose();
                           }}
