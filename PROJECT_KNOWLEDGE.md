@@ -316,13 +316,20 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 | Page | File | Notes |
 |------|------|-------|
 | Home / event listing | `src/pages/index.tsx` | users land here after login |
-| Event detail | `src/pages/[slug].tsx` | public |
+| Event detail | `src/pages/[slug].tsx` | public. Owns all OG/Twitter share meta (no `Layout` wrapper). See Social Share Meta below. |
 | Login | `src/pages/login.tsx` | |
 | Signup | `src/pages/signup.tsx` | |
 | QR signup | `src/pages/jetzyqrsignup.tsx` | Invite code is FIRST field (optional, live-verified vs main backend). No name field — `firstName` derived from email local-part. Success screen says log in + "Forgot Password" (no temp password shown). |
 | Success | `src/pages/success.tsx` | |
 | Cancel booking | `src/pages/cancel-booking.tsx` | |
 | Terms | `src/pages/terms.tsx` | |
+
+### Social Share Meta (event links)
+
+- All OG/Twitter tags for a shared event link live in the `<Head>` of `src/pages/[slug].tsx`. `Layout.tsx` / `EnhancedLayout.tsx` hold generic site-level tags and are **not** used by this page.
+- `event.desc` is **Quill rich-text HTML**. Never put it in a `<meta>` raw — Apple/iMessage renders `og:description` literally and the card shows `<p><br></p>…`. Always run it through `toMetaDescription()` (`src/utils/text.ts`), which inserts spaces at block boundaries, strips tags, decodes entities, collapses whitespace and truncates to 200 chars on a word boundary.
+- `og:image` is always emitted: `images[0]` normalized to absolute, falling back to `${NEXT_PUBLIC_URL}/imgs/logo.png` when the event has no images. `og:url` uses `slug || _id`. `og:type` is `website` (`event` is not a valid OG type).
+- Previews are cached per-URL by iMessage/Facebook — re-scrape via the Facebook Sharing Debugger or test with a `?v=2` suffix before assuming a fix did not land.
 
 ---
 

@@ -9,6 +9,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { useAnalytics } from "@/hooks/useAnalytics"
 import Head from "next/head"
 import { stripHTMLAndDecode } from "@/lib/utils"
+import { toMetaDescription } from "@/utils/text"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 
@@ -169,20 +170,34 @@ export default function EventDetailPage({ event, pendingApproval, privateAccessR
 		)
 	}
 
+	const siteUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+	const eventName = stripHTMLAndDecode(data.name)
+	const metaTitle = `${eventName} - Jetzy Events`
+	// desc is Quill rich text — never put it in a meta tag raw, scrapers render it literally
+	const metaDescription = toMetaDescription(data.desc) || `Join ${eventName} on Jetzy. Book your tickets now!`
+	const rawImage = data.images?.[0]
+	const metaImage = rawImage ? (rawImage.startsWith("http") ? rawImage : `${siteUrl}${rawImage.startsWith("/") ? "" : "/"}${rawImage}`) : `${siteUrl}/imgs/logo.png`
+	const pageUrl = `${siteUrl}/${data.slug || data._id}`
+
 	return (
 		<>
 			<Head>
-				<title>{stripHTMLAndDecode(data.name)} - Jetzy Events</title>
-				<meta name="description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy. Book your tickets now!`} />
-				<meta name="keywords" content={`${stripHTMLAndDecode(data.name)}, event, tickets, booking, ${data.location}`} />
-				<meta property="og:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
-				<meta property="og:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
-				{data.images && data.images.length > 0 && <meta property="og:image" content={data.images[0]} />}
-				<meta property="og:type" content="event" />
+				<title>{metaTitle}</title>
+				<meta name="description" content={metaDescription} />
+				<meta name="keywords" content={`${eventName}, event, tickets, booking, ${data.location}`} />
+				<meta property="og:title" content={metaTitle} />
+				<meta property="og:description" content={metaDescription} />
+				<meta property="og:image" content={metaImage} />
+				<meta property="og:image:width" content="1200" />
+				<meta property="og:image:height" content="630" />
+				<meta property="og:image:alt" content={metaTitle} />
+				<meta property="og:url" content={pageUrl} />
+				<meta property="og:site_name" content="Jetzy Events" />
+				<meta property="og:type" content="website" />
 				<meta name="twitter:card" content="summary_large_image" />
-				<meta name="twitter:title" content={`${stripHTMLAndDecode(data.name)} - Jetzy Events`} />
-				<meta name="twitter:description" content={data.desc || `Join ${stripHTMLAndDecode(data.name)} on Jetzy.`} />
-				{data.images && data.images.length > 0 && <meta name="twitter:image" content={data.images[0]} />}
+				<meta name="twitter:title" content={metaTitle} />
+				<meta name="twitter:description" content={metaDescription} />
+				<meta name="twitter:image" content={metaImage} />
 			</Head>
 			<ErrorBoundary>
 				<HostedEvents event={data} />
