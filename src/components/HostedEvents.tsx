@@ -203,10 +203,16 @@ export default function HostedEvents({ event }: Props) {
 
 	useEffect(() => {
 		if (typeof window !== "undefined") {
-			// Create a base share URL without the view/scrollTo parameters for the top share/QR buttons
+			// Base share URL for the top share/QR buttons, without the view/scrollTo params.
 			const url = new URL(window.location.href);
 			url.searchParams.delete("view");
 			url.searchParams.delete("scrollTo");
+			// Private Premium events need the access code, and deriving it from the current
+			// URL isn't enough: the owner is exempt from the invite gate, so they can be
+			// viewing without ?code= and would share a link nobody else can open.
+			if (clonedEvent?.privateAccessCode) {
+				url.searchParams.set("code", String(clonedEvent.privateAccessCode));
+			}
 			setShareUrl(url.toString());
 
 			// Auto focus on discussion section only if scroll parameter is present
@@ -225,7 +231,7 @@ export default function HostedEvents({ event }: Props) {
 				}, 1000)
 			}
 		}
-	}, [router.query.view, router.query.scrollTo])
+	}, [router.query.view, router.query.scrollTo, clonedEvent?.privateAccessCode])
 
 	// Share the URL only (no title/description) so mobile native share matches
 	// desktop behaviour — copying the bare event link, not the description text.

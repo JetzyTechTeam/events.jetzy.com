@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]";
 import { isPendingAdminApproval, PENDING_APPROVAL_MESSAGE } from "@/lib/event-approval";
+import { eventShareUrl } from "@/lib/event-slug";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -38,7 +39,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   // on event state, not on the caller's role.
   const eventDoc = await Events.findOne(
     { _id: new mongoose.Types.ObjectId(event._id), isDeleted: false },
-    { ownerId: 1, privacy: 1, adminApprovalStatus: 1 },
+    { ownerId: 1, privacy: 1, adminApprovalStatus: 1, slug: 1, privateAccessCode: 1 },
   ).lean();
   if (!eventDoc) {
     return res.status(404).json({ error: "Event not found." });
@@ -53,6 +54,13 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   if (isPendingAdminApproval(eventDoc as any)) {
     return res.status(403).json({ error: PENDING_APPROVAL_MESSAGE });
   }
+
+  // Build the recipient link here rather than trusting the client's `eventLink`: a
+  // private Premium event needs its access code appended, and the host's own browser
+  // often has no code in the URL because owners bypass the invite gate.
+  const recipientEventLink = (eventDoc as any).slug
+    ? eventShareUrl(process.env.NEXT_PUBLIC_URL || "", eventDoc as any)
+    : eventLink;
 
   try {
     let findPeople;
@@ -126,7 +134,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           ${message}
         </p>
         <div style="text-align: center; margin: 35px 0;">
-          <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+          <a href="${recipientEventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details
           </a>
         </div>
@@ -158,7 +166,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           ${message}
         </p>
         <div style="text-align: center; margin: 35px 0;">
-          <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+          <a href="${recipientEventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details
           </a>
         </div>

@@ -86,7 +86,7 @@ import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
 import EventSlugField from "@/components/events/EventSlugField"
 import { isPendingAdminApproval } from "@/lib/event-approval"
-import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
+import { eventPath, eventUrl, eventShareUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
@@ -215,7 +215,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	usePremiumSubscriptionReturn()
 	const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
 	const inviteLink = (typeof window !== "undefined" && event.privateAccessCode)
-		? `${eventUrl(window.location.origin, event.slug)}?code=${event.privateAccessCode}`
+		? eventShareUrl(window.location.origin, event as any)
 		: ""
 	const handleCopyInviteLink = () => {
 		if (!inviteLink) return
@@ -613,7 +613,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					if (changes.length > 0) {
 						const uniqueUsers = Array.from(new Map(events.map((e: any) => [e.customerEmail, e])).values()) as any[]
 						const origin = typeof window !== "undefined" ? window.location.origin : ""
-						const eventLink = eventUrl(origin, event.slug)
+						// Share URL so private Premium events keep their access code.
+						const eventLink = eventShareUrl(origin, event as any)
 						const updatePromises = uniqueUsers.map((bk: any) =>
 							sendEventUpdate({
 								eventName: values.name,
@@ -818,7 +819,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				<SendBlastModal sendBlastModal={sendBlastModal} setSendBlastModal={setSendBlastModal} event={event} />
 
 				{/* SHARE MODAL  */}
-				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={event.slug} />
+				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={event.slug} privateAccessCode={(event as any).privateAccessCode} />
 
 				{/* DAILY VIEWS MODAL */}
 				<DailyViewsModal
@@ -1822,7 +1823,8 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				status,
 				targetType,
 				emailType,
-				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
+				// The server rebuilds this from the event record; kept correct here anyway.
+				eventLink: eventShareUrl(process.env.NEXT_PUBLIC_URL || "", event as any),
 			})
 
 			if (res.status === 207) {
@@ -2081,7 +2083,8 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				status: "all",
 				targetType: "all",
 				emailType: "custom",
-				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
+				// The server rebuilds this from the event record; kept correct here anyway.
+				eventLink: eventShareUrl(process.env.NEXT_PUBLIC_URL || "", event as any),
 			})
 			toast({
 				title: res.status === 207 ? "Partially sent" : "Blast sent!",
@@ -2138,7 +2141,8 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				status: blast.status || "all",
 				targetType: blast.targetType || "all",
 				emailType: blast.emailType || "custom",
-				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
+				// The server rebuilds this from the event record; kept correct here anyway.
+				eventLink: eventShareUrl(process.env.NEXT_PUBLIC_URL || "", event as any),
 			})
 			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
 			refresh()
@@ -3450,10 +3454,14 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 	)
 }
 
-function ShareModal({ shareModal, setShareModal, eventSlug }: { shareModal: boolean; setShareModal: (shareModal: boolean) => void; eventSlug: string }) {
+function ShareModal({ shareModal, setShareModal, eventSlug, privateAccessCode }: { shareModal: boolean; setShareModal: (shareModal: boolean) => void; eventSlug: string; privateAccessCode?: string }) {
 	const [copied, setCopied] = useState(false)
 
-	const sharelink = eventUrl(process.env.NEXT_PUBLIC_URL || "", eventSlug)
+	// Private Premium events need the access code or the recipient hits the invite-code
+	// wall. Owners are exempt from that gate, so a code-less link looks fine to the host
+	// and only fails for the guests they sent it to.
+	const isPrivate = !!privateAccessCode
+	const sharelink = eventShareUrl(process.env.NEXT_PUBLIC_URL || "", { slug: eventSlug, privateAccessCode })
 
 	const onCopy = () => {
 		navigator.clipboard.writeText(sharelink).then(() => {
@@ -3466,14 +3474,19 @@ function ShareModal({ shareModal, setShareModal, eventSlug }: { shareModal: bool
 		<Modal isOpen={shareModal} onClose={() => setShareModal(false)} isCentered>
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
-				<ModalHeader>Share Event</ModalHeader>
+				<ModalHeader>{isPrivate ? "Invite Link" : "Share Event"}</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
 					<Box display="flex" flexDirection="column" gap={3}>
-						<Text fontWeight="bold">Share the link:</Text>
+						<Text fontWeight="bold">{isPrivate ? "Anyone with this link can view and book:" : "Share the link:"}</Text>
 						<Box w="100%" borderWidth="1px" bg="#090C10" borderColor="#444444" color="white" _placeholder={{ color: "gray.400" }} rounded="xl" p={2} wordBreak="break-all">
 							{sharelink}
 						</Box>
+						{isPrivate && (
+							<Text fontSize="12px" color="#868686" lineHeight="140%">
+								This is a private event, so the link includes an access code. Without it, guests are asked for an invite code.
+							</Text>
+						)}
 						<Button onClick={onCopy} bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} size="lg">
 							{copied ? "Copied!" : "Copy"}
 						</Button>

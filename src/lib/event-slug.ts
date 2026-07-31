@@ -174,6 +174,27 @@ export const eventPath = (slug: string) => `/${encodeURIComponent(slug ?? "")}`
 export const eventUrl = (baseUrl: string, slug: string) =>
 	`${(baseUrl || "https://events.jetzy.com").replace(/\/$/, "")}${eventPath(slug)}`
 
+/**
+ * The guest-facing event link — use this for anything a non-owner will open (share
+ * buttons, QR codes, blast and invitation emails).
+ *
+ * Private Premium events are invite-only: `[slug].tsx` blocks anyone who isn't the owner
+ * or an admin unless the URL carries `?code=<privateAccessCode>`. Because owners and
+ * admins are exempt, a link built without the code still works for the host and only
+ * fails for the guests it was sent to — so always build guest links through here rather
+ * than `eventUrl` directly.
+ *
+ * `privateAccessCode` only exists on `premium && privacy === "private"` events, so this
+ * is a plain event URL for everything else.
+ */
+export const eventShareUrl = (
+	baseUrl: string,
+	event?: { slug?: string; privateAccessCode?: string | null } | null,
+): string => {
+	const base = eventUrl(baseUrl, event?.slug ?? "")
+	return event?.privateAccessCode ? `${base}?code=${encodeURIComponent(event.privateAccessCode)}` : base
+}
+
 /** `/my%20event/album/<id>` for album links. */
 export const eventAlbumPath = (slug: string, albumId: string) =>
 	`${eventPath(slug)}/album/${encodeURIComponent(albumId ?? "")}`

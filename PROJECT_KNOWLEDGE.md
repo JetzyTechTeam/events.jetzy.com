@@ -228,6 +228,24 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/cancel`, `/api/bookings/delete`
 `/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
 
+### Private Premium events — guest links must carry the access code
+
+`[slug].tsx` blocks a `premium && privacy === "private"` event unless the URL has `?code=<privateAccessCode>` — **except for the owner and admins, who are exempt**. That exemption is why link bugs here are invisible in testing: the host's own link works for them and only fails for the guests they sent it to. **Always verify in an incognito window.**
+
+**Use `eventShareUrl(baseUrl, event)` from [src/lib/event-slug.ts](src/lib/event-slug.ts)** for any link a non-owner will open — share buttons, QR codes, emails. It appends the code when one exists and is a plain event URL otherwise (`privateAccessCode` only exists on premium+private events, [create.ts:155](src/pages/api/events/create.ts#L155)). Use plain `eventUrl` only for owner-facing links.
+
+Fixed sites, all of which previously handed out dead links for private events:
+- Console **Share Event** modal — also relabels to "Invite Link" with an explainer when the event is private.
+- **Public page share + both QR modals** — `shareUrl` was derived from `window.location.href`, so it only carried the code if the host happened to be viewing with it; now taken from event data.
+- **Blast emails** — [send-blast.ts](src/pages/api/send-blast.ts) now builds the recipient link **server-side** from the event record rather than trusting the client's `eventLink`.
+- **Event-update** notice and the **"Book Again"** button in `sendApprovalRejected`.
+
+The Invite Link banner on the manage page is retained as the explicit call-out that an event is invite-only.
+
+> `sendEventInvitation` and `sendBlastEmail` in `send-grid.ts` have **no callers** — dead code, deliberately untouched.
+>
+> Not affected: the Invite Guests flow sends `/events/{id}/guests/invite`, a separate RSVP page that isn't gated.
+
 ### Pending admin approval — outward-facing actions gated
 
 Public events are created `adminApprovalStatus: "pending"` and are invisible to everyone but the owner/admins until approved. Outward-facing actions are now blocked while pending, because an invite or blast would send guests to the "Event Not Yet Approved" page.
