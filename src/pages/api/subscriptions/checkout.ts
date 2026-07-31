@@ -31,7 +31,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { model, doc } = record
 
 		if (doc.premiumSubscription?.active) {
-			return sendResponse(res, null, "You already have an active Jetzy Premium subscription.", false, ResCode.BAD_REQUEST)
+			return sendResponse(res, { alreadySubscribed: true }, "You already have an active Jetzy Premium subscription.", false, ResCode.BAD_REQUEST)
 		}
 
 		const stripe = getStripeClient()

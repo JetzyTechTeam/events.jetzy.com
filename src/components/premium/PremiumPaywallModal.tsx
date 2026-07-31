@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react"
-import { useQuery, useMutation } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
 import { StarIcon } from "@heroicons/react/24/solid"
 import Spinner from "@/components/misc/Spinner"
-import { Error as ErrorToast } from "@/lib/_toaster"
+import { Error as ErrorToast, Info as InfoToast } from "@/lib/_toaster"
+import { PREMIUM_STATUS_QUERY_KEY } from "@/hooks/usePremiumStatus"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -43,6 +44,7 @@ const PremiumPaywallModal: React.FC<Props> = ({
 	const [step, setStep] = useState<"pitch" | "plan">("pitch")
 	const { status: sessionStatus } = useSession()
 	const router = useRouter()
+	const queryClient = useQueryClient()
 
 	const { data: plan, isLoading: planLoading } = useQuery({
 		queryKey: ["premium-plan"],
@@ -66,6 +68,16 @@ const PremiumPaywallModal: React.FC<Props> = ({
 			}
 		},
 		onError: (error: any) => {
+			// Logged-out visitor turned out to already have an active subscription once
+			// they signed in (see the resume effect below) — that's good news, not an
+			// error, so tell them plainly and close the modal instead of showing "failed".
+			if (error?.response?.data?.data?.alreadySubscribed) {
+				InfoToast("You're already a member", "You already have an active Jetzy Premium subscription.")
+				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
+				setStep("pitch")
+				onClose()
+				return
+			}
 			const message = error?.response?.data?.message || "Could not start checkout. Please try again."
 			ErrorToast("Error", message)
 		},
