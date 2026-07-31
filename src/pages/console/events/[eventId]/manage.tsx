@@ -1441,7 +1441,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 															</FormControl>
 															<FormControl mb={4}>
 																<FormLabel>Price</FormLabel>
-																<Input type="number" placeholder="Enter price" bg="#090C10" border="1px solid #444" value={tempTicket.price} onChange={(e) => setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) })} />
+																{/* NaN would break the controlled value, so an empty field stays
+																    empty and is treated as free ($0) on save. */}
+																<Input type="number" placeholder="Enter price (0 for free)" bg="#090C10" border="1px solid #444" value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""} onChange={(e) => setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) })} />
 															</FormControl>
 															<FormControl mb={4}>
 																<Flex align="center" justify="space-between" gap={4}>
@@ -1467,12 +1469,22 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														</ModalBody>
 														<ModalFooter>
 															<Button bg="#F79432" color="black" mr={3} onClick={() => {
-																if (!tempTicket.title.trim() || !tempTicket.description.trim()) {
-																	toast({ title: "Missing required fields", description: "You need to provide a ticket title and description.", status: "error", duration: 4000, isClosable: true })
+																// Only the title is required — description is optional server-side
+																// (zod `.optional()`), and requiring it here made tickets created
+																// without one impossible to edit.
+																if (!tempTicket.title.trim()) {
+																	toast({ title: "Missing ticket name", description: "You need to provide a ticket name.", status: "error", duration: 4000, isClosable: true })
 																	return
 																}
-																if (editIndex !== null) replace(editIndex, tempTicket)
-																else push({ ...tempTicket, id: uniqueId(10) })
+																// Blank price means free. `parseFloat("")` is NaN, which would
+																// otherwise reach the server and fail zod's number check.
+																const normalised = {
+																	...tempTicket,
+																	title: tempTicket.title.trim(),
+																	price: Number.isFinite(tempTicket.price) ? tempTicket.price : 0,
+																}
+																if (editIndex !== null) replace(editIndex, normalised)
+																else push({ ...normalised, id: uniqueId(10) })
 																onClose()
 															}}>
 																{editIndex !== null ? "Save Changes" : "Add Ticket"}
