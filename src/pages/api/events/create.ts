@@ -8,6 +8,8 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
+import { findUserRecord } from "@/lib/premium"
+import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -33,6 +35,8 @@ const schema = zod.object({
 	endDate: zod.string().optional(),
 	endTime: zod.string().optional(),
 	name: zod.string().nonempty(),
+	// Host-chosen event URL. Blank/omitted derives one from the event name.
+	slug: zod.string().optional(),
 	location: zod.string().optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
@@ -68,6 +72,8 @@ const schema = zod.object({
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional().default(true),
+	premium: zod.boolean().optional().default(false),
+	premiumMemberDiscountPercentage: zod.number().min(0).max(100).optional().default(0),
 	status: zod.enum(['draft', 'published']).optional().default('published'),
 	interests: zod.array(zod.string()).optional().default([]),
 	datePoll: zod.object({
@@ -97,7 +103,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
+
+		// Resolve the event URL. A host-supplied slug is validated and made unique; a blank
+		// one is derived from the event name, falling back to a random id when the name has
+		// nothing usable in it (e.g. emoji only).
+		let resolvedSlug: string
+		if (requestedSlug && requestedSlug.trim()) {
+			const check = validateEventSlug(requestedSlug)
+			if (!check.ok) return sendResponse(res, null, check.reason, false, ResCode.BAD_REQUEST)
+			resolvedSlug = await buildUniqueSlug(Events, check.slug)
+		} else {
+			const derived = slugifyFromName(name)
+			resolvedSlug = derived
+				? await buildUniqueSlug(Events, derived)
+				: (generateRandomId(10) as string)
+		}
+
+		// Only Jetzy Premium subscribers (or admins) can host a Premium Event
+		if (premium) {
+			const userRole = (session.user as any)?.role
+			const isAdmin = userRole === "admin" || userRole === "super admin"
+			if (!isAdmin) {
+				const userId = (session.user as any)?._id
+				const record = await findUserRecord(userId)
+				if (!record?.doc?.premiumSubscription?.active) {
+					return sendResponse(res, null, "Only Jetzy Premium members can host Premium Events. Subscribe to Jetzy Premium to continue.", false, ResCode.FORBIDDEN)
+				}
+			}
+		}
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -112,6 +146,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// and only captured on approval), so the old "force off when every ticket is paid"
 		// rule has been removed. `requireApproval` is the event-level default; individual
 		// tickets may override it.
+
+		// Private Premium Events always require host approval, regardless of ticket pricing.
+		// This is now the only gate on them: private events are unlisted rather than
+		// invite-only, so anyone with the link can request a spot — the host still decides.
+		if (premium && privacy === "private") requireApproval = true
 
 		const effectiveTimezone = timezone && timezone.trim() !== '' ? timezone : 'UTC'
 		const extractedTimeZone = effectiveTimezone.split(') ')[1] || effectiveTimezone
@@ -161,7 +200,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// create event
 		const newEvent = await Events.create({
-			slug: generateRandomId(10),
+			slug: resolvedSlug,
 			ownerId: (session.user as any)._id,
 			name,
 			location,
@@ -177,6 +216,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			hasEndTime: !!(end && endTime),
 			isPaid,
 			privacy,
+			// Public events need admin review before they're publicly visible; private events are always auto-approved.
+			adminApprovalStatus: privacy === "private" ? "approved" : "pending",
 			images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 			videos: videos?.map((v) => v.file) ?? [],
 			capacity,
@@ -194,6 +235,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 			showOnMobile: showOnMobile ?? true,
+			premium: premium ?? false,
+			premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
 			status: status ?? 'published',
 			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0
@@ -218,6 +261,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		return sendResponse(res, newEvent, "Event created successfully.", true, ResCode.CREATED)
 	} catch (error: any) {
+		// Slug uniqueness is pre-checked, but a concurrent create can still lose the race.
+		// Surface that as a usable message instead of leaking Mongo's E11000 text.
+		if (error?.code === 11000) {
+			return sendResponse(res, null, "That event URL was just taken. Please choose another.", false, ResCode.BAD_REQUEST)
+		}
 		console.log("Error:", error.message)
 		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)
 	}

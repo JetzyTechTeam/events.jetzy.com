@@ -2,6 +2,7 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
+import { isPendingAdminApproval, PENDING_APPROVAL_MESSAGE } from "@/lib/event-approval"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -33,12 +34,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	const isAdmin = userRole === "admin" || userRole === "super admin"
 	const accessToken = (session as any).accessToken
 
-	// Ownership check
-	if (!isAdmin) {
-		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false }, { ownerId: 1 }).lean()
-		if (!event || (event as any).ownerId?.toString() !== sessionUserId) {
-			return sendResponse(res, null, "Access denied.", false, ResCode.FORBIDDEN)
-		}
+	// Loaded for everyone (not just non-admins) because the pending-approval gate depends
+	// on event state, not on the caller's role.
+	const event = await Events.findOne(
+		{ _id: new Types.ObjectId(eventId), isDeleted: false },
+		{ ownerId: 1, privacy: 1, adminApprovalStatus: 1 },
+	).lean()
+	if (!event) {
+		return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
+	}
+
+	if (!isAdmin && (event as any).ownerId?.toString() !== sessionUserId) {
+		return sendResponse(res, null, "Access denied.", false, ResCode.FORBIDDEN)
+	}
+
+	// The invitee can't open a pending event yet.
+	if (isPendingAdminApproval(event as any)) {
+		return sendResponse(res, null, PENDING_APPROVAL_MESSAGE, false, ResCode.FORBIDDEN)
 	}
 
 	let inviteSent = false

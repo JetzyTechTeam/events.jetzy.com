@@ -60,7 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let releasedAmount: number | undefined
 		if (booking.payment?.paymentIntentId && ["authorized", "capturing", "failed"].includes(booking.payment.status as string)) {
 			try {
-				const { getStripeClient } = await import("@/lib/stripe-client")
+				const { getStripeClient } = await import("@/lib/premium")
 				await getStripeClient().paymentIntents.cancel(booking.payment.paymentIntentId, { cancellation_reason: "abandoned" })
 				releasedAmount = booking.payment.amount
 			} catch (stripeError: any) {

@@ -1,4 +1,5 @@
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
+import { eventPath } from "@/lib/event-slug"
 import { adminOnly } from "@Jetzy/lib/authSession"
 import { Pages } from "@Jetzy/types"
 import { GetServerSideProps } from "next"
@@ -1585,7 +1586,7 @@ export default function AnalyticsPage() {
 																	/>
 																)}
 																<Box>
-																	<Link as={NextLink} href={`/${event.slug}`} color="#F79432" fontWeight="medium" _hover={{ textDecoration: "underline" }}>
+																	<Link as={NextLink} href={eventPath(event.slug)} color="#F79432" fontWeight="medium" _hover={{ textDecoration: "underline" }}>
 																		<SafeHTML html={event.name} />
 																	</Link>
 																</Box>

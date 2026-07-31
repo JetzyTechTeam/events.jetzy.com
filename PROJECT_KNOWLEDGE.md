@@ -228,6 +228,67 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/cancel`, `/api/bookings/delete`
 `/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
 
+### Private events are UNLISTED, not invite-only
+
+A `privacy: "private"` event is excluded from the public listing — [api/events/index.ts](src/pages/api/events/index.ts) filters `privacy: { $ne: 'private' }` for non-admins — but **anyone holding the link can view and book it**. There is no access code.
+
+**The `?code=` / `privateAccessCode` invite gate was removed.** It was enforced in three places (the `[slug].tsx` page, `checkout/index.ts`, `free-events.ts`) and **exempted owners and admins**. That exemption made every link bug invisible in testing: the host's own link worked, and only the guests they sent it to were blocked. It produced a steady stream of dead links across the share modal, QR codes, blast emails, discussion and chat notifications, and the invite-accept redirect — each needing the code threaded through separately.
+
+**Consequence for future work: there is exactly one event link, `eventUrl(baseUrl, slug)`.** No share-vs-owner variants, nothing to append. Don't reintroduce a code-aware helper.
+
+- **`privateAccessCode` is deprecated** on the schema and `IEvent` — no longer generated (`create.ts`, `update.ts`) and no longer read. The field is retained so existing documents and the mobile app reading the same collection are undisturbed; it can be dropped in a later cleanup. Old `?code=` links keep working, since the query param is simply ignored.
+- **Private Premium events still force `requireApproval = true`** at creation. With the code gone, host approval of each booking is the only remaining gate on them.
+- The manage page's yellow "Invite Link" banner is replaced by a plain note explaining that the event is unlisted and the share link grants access.
+- `sendEventInvitation` and `sendBlastEmail` in `send-grid.ts` have **no callers** — dead code.
+
+### Pending admin approval — outward-facing actions gated
+
+Public events are created `adminApprovalStatus: "pending"` and are invisible to everyone but the owner/admins until approved. Outward-facing actions are now blocked while pending, because an invite or blast would send guests to the "Event Not Yet Approved" page.
+
+**Use [src/lib/event-approval.ts](src/lib/event-approval.ts)** — `isPendingAdminApproval(event)` and `PENDING_APPROVAL_MESSAGE`. Seven sites previously re-derived this inline with two different spellings (`privacy === "public"` vs `privacy !== "private"`); all now call the helper.
+
+> Naming collision: `ApprovalRequests`, the Approvals tab and `ticket-approval.ts` are all about a **host approving guest bookings** — unrelated to admin approval of the event itself.
+
+- **UI**: the Quick Actions card in [manage.tsx](src/pages/console/events/[eventId]/manage.tsx) is replaced by an explanatory note while pending. The `?invite=true` deep link no longer auto-opens the invite modal. The post-creation modal in [create.tsx](src/pages/console/events/create.tsx) shows "submitted for review" instead of **Invite Friends** for public events (private events are auto-approved and keep it).
+- **Server guards** (UI hiding is not enforcement): [send-invites.ts](src/pages/api/send-invites.ts), [send-blast.ts](src/pages/api/send-blast.ts), [invite-jetzy-user.ts](src/pages/api/events/[eventId]/invite-jetzy-user.ts). The latter two now load the event **for all callers, not just non-admins**, since the gate depends on event state rather than role.
+- **`send-invites.ts` was previously unauthenticated** and never loaded the event — an open relay that let anyone send arbitrary email through our SendGrid. It now requires a session plus admin-or-owner.
+- Not gated: editing the event, tickets, questions, referral codes.
+
+### Ticket email — discount breakdown
+
+The confirmation email showed per-ticket prices but **no discount and no total**. Everything was behind one gate — `referralCode && discountAmount > 0` — so a Premium-member-only discount rendered nothing, and the three callers that pass no discount data could never show a total at all.
+
+- **[src/lib/ticket-pricing.ts](src/lib/ticket-pricing.ts)** is the single source: `buildTicketPricing` / `pricingFromBooking` return `{ subtotal, lines[], total }`.
+- Discounts **stack multiplicatively**, matching the single Stripe coupon built in [checkout/index.ts](src/pages/api/checkout/index.ts): Premium applies first, referral on the remainder. The two line amounts sum exactly to `subtotal − total`. A supplied `total` always wins over the computed figure so the email can't disagree with Stripe; rounding drift is absorbed into the last line.
+- **The summary now renders unconditionally.** With no `pricing`, it falls back to the legacy params, then to a plain subtotal/total from `tickets` — so every confirmation gains a Total, including free RSVPs and waiting-list approvals.
+- **Booking schema gained `referralDiscountPercentage` and `premiumMemberDiscountPercentage`** (optional, no default). Only `discountAmount` and a boolean were stored before, so `approve.ts` — which emails later from the booking — couldn't split the two. Legacy bookings leave them undefined and fall back to one combined line.
+- `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
+- **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
+
+### Custom event slugs
+
+Hosts choose their own event URL. Uses the **existing** `slug` field (`String, required, unique, index`) — **no schema change**, so the mobile app reading the same collection is unaffected. This is also why there is no `previousSlugs` redirect array.
+
+**All slug logic lives in [src/lib/event-slug.ts](src/lib/event-slug.ts)** — `validateEventSlug`, `slugifyFromName`, `buildUniqueSlug`, `escapeForRegex`, and the URL builders `eventPath` / `eventUrl` / `eventAlbumPath` / `eventAlbumUrl`. Isomorphic, so the forms and the API validate identically.
+
+**Permissive by design.** Spaces, accents, `&`, `.`, `_`, emoji are all allowed. Only characters that cannot survive a URL path are rejected, each with a message naming the character: `/` (Next matches one path segment), `?` and `#` (terminate the path), `%` (breaks percent-decoding), `\`, and control characters. Also rejected: `RESERVED_SLUGS` (route names that would shadow `/[slug]` — `login`, `console`, `api`, `profile`, …) and **any 24-hex string**, which would be ambiguous with the ObjectId fallback at [[slug].tsx:259](src/pages/[slug].tsx#L259).
+
+**Blank slug derives from the event name** — `slugifyFromName` strips HTML, folds accents (`Fête` → `fete`), drops apostrophes, and hyphenates; falls back to `generateRandomId(10)` when nothing usable remains (e.g. an emoji-only name).
+
+**Uniqueness is CASE-INSENSITIVE.** The page lookup falls back to a case-insensitive regex, so `MyEvent` and `myevent` would resolve to each other and must not coexist. `buildUniqueSlug` appends `-2`, `-3`… and deliberately **does not filter `isDeleted`** — the unique index has no partial filter, so a soft-deleted event still holds its slug; filtering would report "available" then throw E11000.
+
+- **create.ts** — `slug` optional in zod; supplied → validate + uniquify, blank → derive from name.
+- **update.ts** — `slug` optional; **omit means unchanged** (a stale client or autosave can never blank it); uniquify with `excludeEventId` so a no-op save doesn't bump the slug to `-2`.
+- Both catch `E11000` → friendly message instead of leaking Mongo's text through the 500 handler.
+- **`/api/events/slug-available`** (GET, session required) backs the form's debounced availability check.
+- `clone.ts` still uses `generateRandomId(10)` — a clone shouldn't guess a URL.
+
+**UI** — shared [EventSlugField.tsx](src/components/events/EventSlugField.tsx) on both create and manage, rendering an `events.jetzy.com/` prefix, live validation and availability. Manage passes `warnOnChange` so editing shows a warning that shared links, printed QR codes and already-sent emails will break (the `/{eventId}` fallback still resolves them).
+
+**Every slug URL is now encoded.** ~20 sites previously interpolated the slug raw, safe only because slugs were `[A-Za-z0-9]{10}`. Always use `eventPath`/`eventUrl` — never `` `${base}/${slug}` ``. Note `send-grid.ts` imports them **aliased** (`buildEventUrl`) because several functions declare a local `eventUrl`.
+
+**Non-obvious:** [analytics/events.ts](src/pages/api/analytics/events.ts) matches `eventPath(event.slug)` against `PageView.page`. The browser records the *encoded* path, so a raw comparison would silently report zero views for any slug containing a space.
+
 ### Require Approval (free AND paid tickets)
 
 **Scope: per-ticket, not per-event.** `eventTicketsSchema.requireApproval` is a `Boolean` with **no default** — `undefined` means "inherit `event.requireApproval`". That tri-state is what makes the change backward compatible with zero migration; adding `default:false` would pin every legacy ticket to OFF on its next save. The event-level flag is retained and relabelled in the UI as "Default for tickets that don't set their own".

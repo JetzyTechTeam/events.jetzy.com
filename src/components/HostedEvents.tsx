@@ -203,7 +203,7 @@ export default function HostedEvents({ event }: Props) {
 
 	useEffect(() => {
 		if (typeof window !== "undefined") {
-			// Create a base share URL without the view/scrollTo parameters for the top share/QR buttons
+			// Base share URL for the top share/QR buttons, without the view/scrollTo params.
 			const url = new URL(window.location.href);
 			url.searchParams.delete("view");
 			url.searchParams.delete("scrollTo");

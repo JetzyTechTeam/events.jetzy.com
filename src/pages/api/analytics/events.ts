@@ -1,4 +1,5 @@
 import { sendResponse } from "@Jetzy/lib/helpers"
+import { eventPath } from "@/lib/event-slug"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
@@ -236,7 +237,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		])
 
 		// 6. Get traffic sources (referrers) for this event's page views
-		const eventPagePath = `/${event.slug}`
+		// Encoded: the browser records the percent-encoded path in PageView.page, so a
+		// raw slug with a space would never match and the event would report zero views.
+		const eventPagePath = eventPath(event.slug)
 		const referrerMatch: any = { page: eventPagePath, referrer: { $exists: true, $nin: [null, ""] } }
 		if (Object.keys(dateFilter).length > 0) {
 			referrerMatch.timestamp = dateFilter

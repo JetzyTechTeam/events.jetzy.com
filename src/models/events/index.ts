@@ -91,6 +91,14 @@ const eventsSchema = new Schema<IEvent>(
 			default: 'public',
 			required: true,
 		},
+		// Admin moderation gate for public events. Private events are always
+		// auto-approved. Defaults to 'approved' so events that existed before this
+		// field was introduced aren't retroactively hidden.
+		adminApprovalStatus: {
+			type: String,
+			enum: ["pending", "approved"],
+			default: "approved",
+		},
 		status: {
 			type: String,
 			enum: ['draft', 'published'],
@@ -219,6 +227,24 @@ const eventsSchema = new Schema<IEvent>(
 		showOnMobile: {
 			type: Boolean,
 			default: true,
+		},
+		premium: {
+			type: Boolean,
+			default: false, // true = only Jetzy Premium subscribers can host; anyone can book, members get a discount
+		},
+		// Host-configured member perk, only meaningful when premium: true
+		premiumMemberDiscountPercentage: {
+			type: Number,
+			default: 0,
+			min: 0,
+			max: 100,
+		},
+		// DEPRECATED — no longer generated or enforced. Private events are unlisted rather
+		// than invite-only, so nothing reads this. Kept so existing documents (and the
+		// mobile app reading the same collection) are undisturbed; safe to drop later.
+		privateAccessCode: {
+			type: String,
+			required: false,
 		},
 		datePoll: {
 			type: datePollSchema,

@@ -8,7 +8,7 @@ import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
 import { BookingStatus } from "@/models/events/types"
 import { sendApprovalRejected } from "@/lib/send-grid"
-import { getStripeClient } from "@/lib/stripe-client"
+import { getStripeClient } from "@/lib/premium"
 import zod from "zod"
 
 const schema = zod.object({

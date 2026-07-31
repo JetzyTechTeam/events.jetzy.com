@@ -1,4 +1,7 @@
 import { IEvent } from "@/models/events/types"
+// Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
+import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
+import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
 import sgMail from "@sendgrid/mail"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -65,6 +68,12 @@ type TicketEmailData = {
   discountPercentage?: number
   approvalContext?: boolean // true when sent as a Require-Approval acceptance (celebratory header + subject)
   amountCharged?: number // paid approvals only: the hold has just been captured, so say so
+  /**
+   * Itemised order total. Preferred over the legacy referralCode/discountAmount trio —
+   * when absent the summary falls back to those, or to a plain subtotal/total derived
+   * from `tickets`, so every confirmation shows a total either way.
+   */
+  pricing?: TicketPricing
 }
 
 type BookingCancellationData = {
@@ -541,7 +550,7 @@ export const sendAlbumAccessNotice = async ({
   }
   const cleanEventName = decodeHTMLEntities(eventName)
   const actionLabel = action === "signup" ? "signed up" : "logged in"
-  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}/album/${albumId}`
+  const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
   const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
   try {
     await sgMail.send({
@@ -606,7 +615,7 @@ export const sendAlbumTagNotification = async ({
     return { success: true, message: "Email skipped in localhost mode" }
   }
   const cleanEventName = decodeHTMLEntities(eventName)
-  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}/album/${albumId}`
+  const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
   try {
     await sgMail.send({
       to: recipientEmail,
@@ -667,7 +676,7 @@ export const sendAlbumPublishedNotification = async ({
   }
   const cleanEventName = decodeHTMLEntities(eventName)
   const root = baseUrl || "https://events.jetzy.com"
-  const albumPath = `/${eventSlug}/album/${albumId}`
+  const albumPath = eventAlbumPath(eventSlug, albumId)
   // Recipients are known event participants and the link lands in their own inbox, so
   // sign them straight in rather than making them fill in the name+email gate. Same
   // one-click pattern the discussion emails use.
@@ -719,7 +728,9 @@ export const sendApprovalRejected = async ({ event, firstName, email, payment, r
   }
   const eventName = decodeHTMLEntities(event.name)
   const isExpired = reason === "expired"
-  const eventUrl = `${baseUrl || "https://events.jetzy.com"}/${(event as any).slug || ""}`
+  // Share URL, not a plain event URL: a private Premium event needs its access code or
+  // the "Book Again" button lands the guest on the invite-code wall.
+  const eventUrl = buildEventUrl(baseUrl || "", (event as any).slug || "")
 
   const bodyText = isExpired
     ? `Hi ${firstName}, your request to attend "${eventName}" wasn't reviewed in time.`
@@ -771,7 +782,7 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
   }
-  const eventUrl = `${baseUrl}/${eventSlug}`
+  const eventUrl = buildEventUrl(baseUrl, eventSlug)
 
   try {
     await sgMail.send({
@@ -860,7 +871,7 @@ export const sendBlastEmail = async ({
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
   }
-  const eventUrl = `${baseUrl}/${eventSlug}`
+  const eventUrl = buildEventUrl(baseUrl, eventSlug)
 
   // Dynamic button text and styling based on email type
   const buttonConfig = {
@@ -941,7 +952,7 @@ export const sendBlastEmail = async ({
   }
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged, pricing }: TicketEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
 
   if (!baseUrl) {
@@ -1001,8 +1012,21 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
 
     const subtotal = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
     const finalTotal = discountAmount && discountAmount > 0 ? subtotal - discountAmount : subtotal
-    
-    console.log("Email details:", { timestamp, location, subtotal, finalTotal, referralCode, discountAmount, tickets })
+
+    // The summary always renders. Prefer the caller's itemised breakdown; otherwise build
+    // one from the legacy discount params; failing that, a plain subtotal/total. Previously
+    // the whole block (including the Total) was gated on a referral code being present, so
+    // a Premium-only discount — or any free/approval booking — showed no total at all.
+    const resolvedPricing: TicketPricing =
+      pricing ??
+      buildTicketPricing({
+        subtotal,
+        referralCode,
+        referralPercentage: discountPercentage,
+        combinedDiscountAmount: discountAmount,
+      })
+
+    console.log("Email details:", { timestamp, location, subtotal, finalTotal, resolvedPricing, tickets })
 
     // Process QR code image for attachment
     const attachments: any[] = []
@@ -1491,22 +1515,27 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             `,
           )
           .join("")}
-            ${referralCode && discountAmount && discountAmount > 0 ? `
+            ${`
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f8f8; border-radius: 8px; margin-top: 10px;">
                 <tr>
                   <td style="padding: 12px 15px 6px 15px; color: #333;">Subtotal</td>
-                  <td style="padding: 12px 15px 6px 15px; color: #333; text-align: right;">$${subtotal.toFixed(2)}</td>
+                  <td style="padding: 12px 15px 6px 15px; color: #333; text-align: right;">$${resolvedPricing.subtotal.toFixed(2)}</td>
                 </tr>
+                ${resolvedPricing.lines
+                  .map(
+                    (line) => `
                 <tr>
-                  <td style="padding: 6px 15px; color: #28a745;">Discount (${referralCode}${discountPercentage ? ` &middot; ${discountPercentage}% off` : ''})</td>
-                  <td style="padding: 6px 15px; color: #28a745; text-align: right;">-$${discountAmount.toFixed(2)}</td>
-                </tr>
+                  <td style="padding: 6px 15px; color: #28a745;">${line.label}</td>
+                  <td style="padding: 6px 15px; color: #28a745; text-align: right;">-$${line.amount.toFixed(2)}</td>
+                </tr>`,
+                  )
+                  .join("")}
                 <tr>
                   <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Total</td>
-                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${finalTotal.toFixed(2)}</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${resolvedPricing.total.toFixed(2)}</td>
                 </tr>
               </table>
-            ` : ''}
+            `}
           </div>
 
           ${qrCodeValid ? `
@@ -1768,7 +1797,7 @@ export const sendDiscussionNotification = async ({
   hasImages,
 }: DiscussionNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   const subject = hasImages
     ? `New photos added to ${decodeHTMLEntities(eventName)}`
@@ -1835,7 +1864,7 @@ export const sendCommentNotification = async ({
   isPostAuthor = false,
 }: CommentNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   const decodedEvent = decodeHTMLEntities(eventName)
 
@@ -1908,7 +1937,7 @@ export const sendTagNotification = async ({
   hasImages,
 }: TagNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   const subject = hasImages
     ? `${authorName} tagged you in a photo from ${decodeHTMLEntities(eventName)}`
@@ -1973,7 +2002,7 @@ export const sendReactionNotification = async ({
   postId,
 }: ReactionNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   try {
     await sgMail.send({
@@ -2030,7 +2059,7 @@ export const sendViewMilestoneNotification = async ({
   viewCount,
 }: ViewMilestoneNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   try {
     await sgMail.send({
@@ -2086,7 +2115,7 @@ export const sendThankYouNotification = async ({
   formLink,
 }: ThankYouNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const eventUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}`)}`
+  const eventUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(eventPath(eventSlug))}`
 
   const subject = `Thank you for making ${decodeHTMLEntities(eventName)} unforgettable 💫`
 
@@ -2529,7 +2558,7 @@ export const sendChatTagNotification = async ({
 }: ChatTagNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   // view=discussion so the event page auto-expands + scrolls to the chat (handled in HostedEvents.tsx)
-  const chatUrl = `${baseUrl}/${eventSlug}?view=discussion`
+  const chatUrl = `${buildEventUrl(baseUrl, eventSlug)}?view=discussion`
 
   const displayName = taggedName || email.split('@')[0]
   const cleanEventName = decodeHTMLEntities(eventName)
@@ -2601,7 +2630,7 @@ export const sendChatMessageNotification = async ({
 }: ChatMessageNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   // view=discussion so the event page auto-expands + scrolls to the chat (handled in HostedEvents.tsx)
-  const chatUrl = `${baseUrl}/${eventSlug}?view=discussion`
+  const chatUrl = `${buildEventUrl(baseUrl, eventSlug)}?view=discussion`
 
   const displayName = recipientName || email.split('@')[0]
   const cleanEventName = decodeHTMLEntities(eventName)

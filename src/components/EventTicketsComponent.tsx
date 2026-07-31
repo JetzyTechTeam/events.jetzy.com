@@ -10,6 +10,7 @@ import { Error } from "@Jetzy/lib/_toaster";
 import { IEvent } from "@/models/events/types";
 import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
+import { eventPath } from "@/lib/event-slug";
 import {
   Button,
   Modal,
@@ -23,19 +24,26 @@ import {
   useToast,
 } from "@chakra-ui/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import axios from "axios";
-import { useSession } from "next-auth/react";
 import Linkify from "linkify-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { stripHtml } from "@/utils/text";
+import { StarIcon } from "@heroicons/react/24/solid";
+import { usePremiumStatus } from "@/hooks/usePremiumStatus";
+import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
+import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
 
 type Props = {
   event: IEvent;
 };
 
 const EventTicketsComponent: React.FC<Props> = ({ event }) => {
-  const session = useSession();
   const dispatcher = useAppDispatch();
+  const { isPremium } = usePremiumStatus();
+  const [showPremiumPromo, setShowPremiumPromo] = useState(false);
+  usePremiumSubscriptionReturn();
+
+  const memberDiscountPercentage = Number(event.premiumMemberDiscountPercentage) || 0;
+  const hasMemberDiscount = !!event.premium && memberDiscountPercentage > 0;
 
   // format the event tickets
   const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
@@ -147,6 +155,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   // Whether the CURRENT selection needs approval — drives the CTA label.
   const selectionNeedsApproval = selectionRequiresApproval(event as any, tickets.filter((t) => t.isSelected) as any);
 
+  const handleCheckoutClick = () => {
+    showCheckoutForm(true);
+    sendGAEvent({
+      category: "Event",
+      action: "Checkout Button Clicked",
+      label: event.name,
+    });
+  };
+
   return (
     <>
       {/* Main Container */}
@@ -165,6 +182,33 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
               </p>
             </div>
           </div>
+
+          {/* Member pricing notice — Premium Events are open to everyone; a subscription
+              just unlocks a discount, so this is a promo, not a gate. */}
+          {hasMemberDiscount && (
+            <div className="flex items-center justify-between gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+              <div className="flex items-center gap-2">
+                <StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
+                <div>
+                  <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>Premium Event</p>
+                  <p className="text-gray-300 text-xs mt-1">
+                    {isPremium
+                      ? `As a Jetzy Premium member, you save ${memberDiscountPercentage}% on this event.`
+                      : `Jetzy Premium members save ${memberDiscountPercentage}% on this event.`}
+                  </p>
+                </div>
+              </div>
+              {!isPremium && (
+                <button
+                  onClick={() => setShowPremiumPromo(true)}
+                  className="text-xs font-bold underline flex-shrink-0"
+                  style={{ color: "#F5C518" }}
+                >
+                  Subscribe
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Approval-required notice. Shown whenever ANY ticket needs approval; the copy
               distinguishes "every ticket" from "some tickets" so buyers of an
@@ -243,12 +287,24 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                     </div>
 
                     <div className="flex flex-col items-start sm:items-end w-full sm:w-1/3 mt-4 sm:mt-0 pt-3 sm:pt-0">
-                      <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
-                        {staticTickets[index].price.toLocaleString("en-US", {
-                          style: "currency",
-                          currency: "usd",
-                        })}
-                      </p>
+                      {hasMemberDiscount && isPremium && staticTickets[index].price > 0 ? (
+                        <>
+                          <p className="text-sm text-gray-500 line-through">
+                            {staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}
+                          </p>
+                          <p className="font-bold text-2xl" style={{ color: "#F5C518" }}>
+                            {(staticTickets[index].price * (1 - memberDiscountPercentage / 100)).toLocaleString("en-US", { style: "currency", currency: "usd" })}
+                          </p>
+                          <p className="text-xs" style={{ color: "#F5C518" }}>Member price ({memberDiscountPercentage}% off)</p>
+                        </>
+                      ) : (
+                        <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                          {staticTickets[index].price.toLocaleString("en-US", {
+                            style: "currency",
+                            currency: "usd",
+                          })}
+                        </p>
+                      )}
 
                       {event.isPaid && ticket.isSelected && (
                         <div
@@ -299,14 +355,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
             <button
               disabled={isLoading}
-              onClick={() => {
-                showCheckoutForm(true)
-                sendGAEvent({
-                  category: "Event",
-                  action: "Checkout Button Clicked",
-                  label: event.name,
-                })
-              }}
+              onClick={handleCheckoutClick}
               className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? <Spinner /> : selectionNeedsApproval ? "Request to Book" : "Checkout"}
@@ -314,6 +363,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
           </div>
         </div>
       </div>
+
+      <PremiumPaywallModal
+        isOpen={showPremiumPromo}
+        onClose={() => setShowPremiumPromo(false)}
+        returnTo={eventPath(event.slug)}
+        title="Save with Jetzy Premium"
+        message={`Subscribe to Jetzy Premium and save ${memberDiscountPercentage}% on this and every other Premium Event.`}
+      />
 
       {/* map section  */}
       {/* <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">

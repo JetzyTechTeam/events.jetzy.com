@@ -7,6 +7,8 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
+import { findUserRecord } from "@/lib/premium"
+import { buildUniqueSlug, validateEventSlug } from "@/lib/event-slug"
 import zod from "zod"
 import Stripe from "stripe"
 import { authOptions } from "../../auth/[...nextauth]"
@@ -26,7 +28,12 @@ const schema = zod.object({
 	endDate: zod.string().optional(),
 	endTime: zod.string().optional(),
 	name: zod.string().nonempty(),
+	// Host-chosen event URL. Omitted means "leave unchanged" — never blanked.
+	slug: zod.string().optional(),
 	location: zod.string().optional(),
+	longitude: zod.number().optional(),
+	latitude: zod.number().optional(),
+	placeId: zod.string().optional(),
 	capacity: zod.number().nonnegative(),
 	requireApproval: zod.boolean(),
 	images: zod.array(
@@ -56,6 +63,8 @@ const schema = zod.object({
 	timezone: zod.string().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
+	premium: zod.boolean().optional(),
+	premiumMemberDiscountPercentage: zod.number().min(0).max(100).optional(),
 	status: zod.enum(['draft', 'published']).optional(),
 	interests: zod.array(zod.string()).optional(),
 	datePoll: zod.object({
@@ -96,7 +105,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, location, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -141,6 +150,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Forbidden. You can only edit your own events.", false, ResCode.FORBIDDEN)
 		}
 
+		// Resolve the event URL only when the client actually sent one. Omitting it means
+		// "leave unchanged", so an older client or a stale autosave can't blank the slug.
+		// `excludeEventId` keeps a no-op save from bumping the slug to "-2".
+		let resolvedSlug: string | undefined
+		if (requestedSlug !== undefined && requestedSlug.trim()) {
+			const check = validateEventSlug(requestedSlug)
+			if (!check.ok) return sendResponse(res, null, check.reason, false, ResCode.BAD_REQUEST)
+			resolvedSlug = await buildUniqueSlug(Events, check.slug, { excludeEventId: String(event._id) })
+		}
+
+		// Only Jetzy Premium subscribers (or admins) can newly turn an event Premium —
+		// an already-premium event stays premium even if the host's subscription later lapses.
+		if (premium && !event.premium && !isAdmin) {
+			const record = await findUserRecord(userId)
+			if (!record?.doc?.premiumSubscription?.active) {
+				return sendResponse(res, null, "Only Jetzy Premium members can host Premium Events. Subscribe to Jetzy Premium to continue.", false, ResCode.FORBIDDEN)
+			}
+		}
+
 		// Preserve each ticket's existing _id/stripeProductId across edits (client `ticket.id` is the
 		// previous `_id.toString()`) — bookings reference tickets by _id, so regenerating it here would
 		// silently orphan every past purchase's ticket-type link. Only mint a new Stripe price when the
@@ -173,31 +201,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				desc: ticket.description,
 				price: ticket.price.toFixed(2),
 				stripeProductId,
-				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
+				// Private Premium Events force approval on every ticket — a per-ticket override
+				// can't be used to bypass the invite-only approval requirement.
+				...((premium && privacy === "private")
+					? { requireApproval: true }
+					: (resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {})),
 			}
 		}))
+
+		// Private Premium Events are invite-only — always require host approval on top
+		// of the invite-link/code gate, regardless of ticket pricing. Otherwise this is
+		// just the event-level default that tickets without their own flag inherit
+		// (see src/lib/ticket-approval.ts) — paid tickets support approval now too.
+		const effectiveRequireApproval = (premium && privacy === "private") ? true : requireApproval
 
 		// Find the event by id and update it
 		const updateDoc: any = {
 			$set: {
 				name,
+				...(resolvedSlug !== undefined ? { slug: resolvedSlug } : {}),
 				location,
+				// Only overwrite saved coordinates when the client actually sent new ones
+				// (e.g. the user re-picked a location) — otherwise leave the existing
+				// coordinates untouched instead of wiping them with undefined.
+				...(typeof longitude === "number" && typeof latitude === "number" ? {
+					coordinates: { long: longitude, lat: latitude, placeId },
+				} : {}),
 				desc: desc ?? "",
 				isPaid,
 				capacity,
-				// Event-level default for tickets that don't set their own flag. Paid tickets are
-				// supported now (card authorized at checkout, captured on approval), so the old
-				// "force off when every ticket is paid" rule is gone.
-				requireApproval,
+				// Event-level default for tickets that don't set their own flag (paid tickets support
+				// approval now — card authorized at checkout, captured on approval). Private Premium
+				// Events always force this on, regardless of what the client sent — see above.
+				requireApproval: effectiveRequireApproval,
 				tickets: resolvedTickets,
 				images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 				videos: videos?.map((v) => v.file) ?? [],
 				timezone: timezone || 'UTC',
 				privacy,
+				// Private events are always auto-approved. A public event only needs a
+				// fresh admin review when it's newly becoming public (was private before) —
+				// otherwise leave its current approval status untouched (don't re-trigger
+				// pending on every unrelated edit, and don't silently approve a pending one).
+				...(privacy === "private"
+					? { adminApprovalStatus: "approved" }
+					: (event.privacy === "private" ? { adminApprovalStatus: "pending" } : {})),
 				feedbackFormUrl,
 				benefits,
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 				showOnMobile: showOnMobile ?? false,
+				premium: premium ?? false,
+				premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
 				status: status ?? 'published',
 				interests: interests ?? [],
 				...(datePoll?.isActive && datePoll.options?.length > 0 ? {
@@ -250,6 +304,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		return sendResponse(res, newEvent, "Event updated successfully.", true, ResCode.OK)
 	} catch (error: any) {
+		// Slug uniqueness is pre-checked, but a concurrent save can still lose the race.
+		if (error?.code === 11000) {
+			return sendResponse(res, null, "That event URL was just taken. Please choose another.", false, ResCode.BAD_REQUEST)
+		}
 		console.log("Error:", error.message)
 		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)
 	}

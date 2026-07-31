@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { sendTicketConfirmation } from "@/lib/send-grid"
+import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { BookingStatus } from "@/models/events/types"
 import mongoose from "mongoose"
 
@@ -100,6 +101,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					desc: ''
 				})),
 				orderNumber: bookingRef,
+				// No discounts on a waiting-list conversion, but the buyer still gets a total.
+				pricing: buildTicketPricing({ subtotal: subTotal, total }),
 			})
 			console.log("Booking confirmation email sent successfully")
 		} catch (emailError) {

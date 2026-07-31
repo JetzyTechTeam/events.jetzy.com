@@ -1,4 +1,6 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
+import { eventPath } from "@/lib/event-slug"
+import { isPendingAdminApproval } from "@/lib/event-approval"
 import { stripHtml, escapeRegExp } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
@@ -20,6 +22,7 @@ import React, { useState } from "react"
 import { toast } from "react-toastify"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
+import PremiumBadge from "@/components/premium/PremiumBadge"
 
 type Pagination = {
 	total: number
@@ -29,7 +32,7 @@ type Pagination = {
 	totalPages: number
 }
 
-type FilterKey = "all" | "upcoming" | "ended" | "tbd"
+type FilterKey = "all" | "upcoming" | "ended" | "tbd" | "pending"
 
 type Props = {
 	events: string
@@ -37,6 +40,7 @@ type Props = {
 	isAdmin: boolean
 	search: string
 	filter: FilterKey
+	pendingCount: number
 }
 
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -44,9 +48,10 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 	{ key: "upcoming", label: "Upcoming" },
 	{ key: "ended", label: "Ended" },
 	{ key: "tbd", label: "TBD" },
+	{ key: "pending", label: "Pending Approval" },
 ]
 
-export default function EventsListing({ events, pagination, isAdmin, search, filter }: Props) {
+export default function EventsListing({ events, pagination, isAdmin, search, filter, pendingCount }: Props) {
 	const [eventList, setEventList] = React.useState<IEvent[]>(() => JSON.parse(events) as IEvent[])
 	const [searchInput, setSearchInput] = useState(search || "")
 	const router = useRouter()
@@ -138,7 +143,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 									: "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
 							}`}
 						>
-							{label}
+							{key === "pending" ? `${label} (${pendingCount})` : label}
 						</button>
 					)
 				})}
@@ -283,7 +288,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 				{/* INFO */}
 				<div className="flex-1 min-w-0 space-y-1.5">
 					<div className="flex items-center gap-2 flex-wrap">
-						<Link href={`/${event.slug}`}>
+						<Link href={eventPath(event.slug)}>
 							<Heading as="h3" fontSize={18} cursor="pointer" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
 								{stripHtml(event.name)}
 							</Heading>
@@ -294,6 +299,12 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 						{event.status === 'draft' && (
 							<span className="px-2 py-0.5 bg-[#2A1F00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
 								DRAFT
+							</span>
+						)}
+						{(event as any).premium && <PremiumBadge size="xs" />}
+						{isPendingAdminApproval(event as any) && (
+							<span className="px-2 py-0.5 bg-[#3A2A00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
+								PENDING APPROVAL
 							</span>
 						)}
 						{(event as any).privacy === 'private' && (
@@ -429,9 +440,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const allEvents = sortEvents(Array.from(allEventsMap.values()))
 
 	// Apply status filter chip (server-side) before pagination
-	const allowedFilters = ["all", "upcoming", "ended", "tbd"]
+	const allowedFilters = ["all", "upcoming", "ended", "tbd", "pending"]
 	const rawFilter = (context.query.filter as string) || "all"
 	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
+
+	const isPendingApproval = (e: any) => isPendingAdminApproval(e)
+	const pendingCount = allEvents.filter(isPendingApproval).length
 
 	const filteredEvents = allEvents.filter((e: any) => {
 		switch (filter) {
@@ -441,6 +455,8 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 				return e.timeStatus === "past"
 			case "tbd":
 				return e.timeStatus === "tbd"
+			case "pending":
+				return isPendingApproval(e)
 			default:
 				return true
 		}
@@ -457,6 +473,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			isAdmin,
 			search,
 			filter,
+			pendingCount,
 		},
 	}
 }

@@ -29,8 +29,15 @@ export function buildEventPayload(
 		privacy: values.privacy ?? "public",
 		isPaid: values.isPaid ?? ((values.tickets?.length ?? 0) > 0),
 		requireApproval: values.requireApproval ?? false,
+		premium: values.premium ?? false,
+		// The field is a plain number input — coerce so a cleared/blank field (or any
+		// out-of-range typo) never reaches the API as "", NaN, or outside 0-100.
+		premiumMemberDiscountPercentage: Math.min(100, Math.max(0, Number(values.premiumMemberDiscountPercentage) || 0)),
 		capacity: values.capacity ?? 0,
 		tickets: values.tickets ?? [],
+		// Trim so a whitespace-only entry is treated as "not set". On create that means
+		// derive the URL from the event name; on update it means leave the slug alone.
+		slug: values.slug?.trim() || undefined,
 		...overrides,
 	}
 }

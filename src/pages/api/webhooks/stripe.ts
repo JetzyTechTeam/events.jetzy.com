@@ -1,24 +1,7 @@
 import { ensureDbConnected } from "@/configs/database"
-import { getStripeClient } from "@/lib/stripe-client"
+import { getStripeClient, setPremiumStatusByStripeCustomerId, setUserPremiumStatus } from "@/lib/premium"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
-
-/**
- * Stripe webhook — ticket payments only.
- *
- * Required for correctness, not just convenience: approval orders authorize the card
- * with `capture_method: "manual"`, so a buyer who closes the tab instead of returning to
- * /success would otherwise leave a live hold with no booking row anywhere — invisible to
- * the host and silently released a week later. This endpoint also carries the only
- * authoritative signal that a hold has expired.
- *
- * Subscription events are deliberately not handled here; Jetzy Premium does not exist on
- * this branch. Re-add the `mode === "subscription"` and `customer.subscription.*` cases
- * if that feature is ever merged in.
- *
- * Subscribe in the Stripe Dashboard, per environment:
- *   checkout.session.completed, payment_intent.canceled, payment_intent.payment_failed
- */
 
 // Stripe needs the raw, unparsed request body to verify the webhook signature.
 export const config = {
@@ -66,8 +49,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		switch (event.type) {
 			case "checkout.session.completed": {
 				const checkoutSession = event.data.object as Stripe.Checkout.Session
-				if (checkoutSession.mode === "payment") {
-					// Authoritative fulfilment path. Idempotent, so racing /success is harmless.
+				if (checkoutSession.mode === "subscription" && checkoutSession.subscription) {
+					const userId = checkoutSession.client_reference_id || (checkoutSession.metadata as any)?.userId
+					const subscription = await stripe.subscriptions.retrieve(
+						typeof checkoutSession.subscription === "string" ? checkoutSession.subscription : checkoutSession.subscription.id,
+					)
+					if (userId) {
+						await setUserPremiumStatus(userId, {
+							active: subscription.status === "active" || subscription.status === "trialing",
+							stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id,
+							stripeSubscriptionId: subscription.id,
+							status: subscription.status,
+							currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+							cancelAtPeriodEnd: subscription.cancel_at_period_end,
+						})
+					}
+				} else if (checkoutSession.mode === "payment") {
+					// Ticket purchase. This is the authoritative fulfilment path: without it a
+					// buyer who never returns to /success would leave a live card hold with no
+					// booking row anywhere. Idempotent, so racing /success is harmless.
 					const { fulfillCheckoutSessionById } = await import("@/lib/checkout-fulfillment")
 					await fulfillCheckoutSessionById(checkoutSession.id)
 				}
@@ -138,6 +138,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					{ "payment.paymentIntentId": pi.id, "payment.status": { $in: ["authorized", "capturing"] } },
 					{ $set: { "payment.status": "failed", "payment.lastError": pi.last_payment_error?.message || "payment_failed" } },
 				)
+				break
+			}
+
+			case "customer.subscription.updated": {
+				const subscription = event.data.object as Stripe.Subscription
+				const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+				await setPremiumStatusByStripeCustomerId(customerId, {
+					active: subscription.status === "active" || subscription.status === "trialing",
+					stripeSubscriptionId: subscription.id,
+					status: subscription.status,
+					currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+					cancelAtPeriodEnd: subscription.cancel_at_period_end,
+				})
+				break
+			}
+
+			case "customer.subscription.deleted": {
+				const subscription = event.data.object as Stripe.Subscription
+				const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+				await setPremiumStatusByStripeCustomerId(customerId, {
+					active: false,
+					status: subscription.status,
+					cancelAtPeriodEnd: false,
+				})
 				break
 			}
 

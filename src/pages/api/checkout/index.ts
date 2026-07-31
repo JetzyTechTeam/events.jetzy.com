@@ -1,7 +1,11 @@
+import { isPendingAdminApproval } from "@/lib/event-approval"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
 import { NextApiRequest, NextApiResponse } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
+import { findUserRecord } from "@/lib/premium"
 import Stripe from "stripe"
 
 type BodyParams = {
@@ -191,6 +195,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
+		if (isPendingAdminApproval(event as any)) {
+			console.warn("[checkout/index] Blocked checkout for pending-approval event:", event._id)
+			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, ResCode.FORBIDDEN)
+		}
+
+		// Private events are unlisted rather than invite-only — no access code required.
+
+		// Jetzy Premium member discount — stacks with a referral code (see combined
+		// coupon math below): the member discount comes off first, then the referral
+		// code takes its cut off what's left.
+		let premiumMemberDiscountData: { percentage: number } | null = null
+		if (event.premium && Number(event.premiumMemberDiscountPercentage) > 0) {
+			try {
+				const buyerSession = await getServerSession(req, res, authOptions)
+				const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
+				if (buyerId) {
+					const record = await findUserRecord(buyerId)
+					if (record?.doc?.premiumSubscription?.active) {
+						premiumMemberDiscountData = { percentage: Number(event.premiumMemberDiscountPercentage) }
+						console.log("[checkout/index] Jetzy Premium member discount applied:", premiumMemberDiscountData)
+					}
+				}
+			} catch (memberDiscountError: any) {
+				console.error("[checkout/index] Error resolving Premium member discount:", memberDiscountError)
+			}
+		}
+
 		// Validate required custom questions
 		if (event.questions && event.questions.length > 0) {
 			const requiredQuestions = event.questions.filter(q => q.isRequired);
@@ -249,14 +280,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
 
-		// Create Stripe coupon for referral code discount if applicable
+		// Stripe Checkout Sessions only support a single discount, so when both a
+		// referral code and a Premium member discount apply, they're combined into ONE
+		// coupon that reproduces "member discount off first, then referral code off the
+		// remainder" — e.g. 80% member + 20% referral = 84% off total, not 100%.
+		let combinedPercentOff: number | null = null
+		if (referralCodeData && premiumMemberDiscountData) {
+			const remainingAfterMember = 1 - premiumMemberDiscountData.percentage / 100
+			const remainingAfterBoth = remainingAfterMember * (1 - referralCodeData.discountPercentage / 100)
+			combinedPercentOff = Math.round((1 - remainingAfterBoth) * 10000) / 100 // 2 decimal places
+		} else if (referralCodeData) {
+			combinedPercentOff = referralCodeData.discountPercentage
+		} else if (premiumMemberDiscountData) {
+			combinedPercentOff = premiumMemberDiscountData.percentage
+		}
+
 		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
-		if (referralCodeData) {
+		if (combinedPercentOff && combinedPercentOff > 0) {
 			try {
+				const couponName = referralCodeData && premiumMemberDiscountData
+					? `Jetzy Premium Member + Referral: ${referralCodeData.code}`
+					: referralCodeData
+						? `Referral: ${referralCodeData.code}`
+						: 'Jetzy Premium Member Discount'
+
 				const coupon = await stripe.coupons.create({
-					percent_off: referralCodeData.discountPercentage,
+					percent_off: combinedPercentOff,
 					duration: 'once',
-					name: `Referral: ${referralCodeData.code}`,
+					name: couponName,
 				})
 
 				discountConfig = [{
@@ -284,7 +335,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (referralCodeData) {
 			metadata.referralCode = referralCodeData.code
-			metadata.discountPercentage = referralCodeData.discountPercentage.toString()
+			metadata.referralDiscountPercentage = referralCodeData.discountPercentage.toString()
+		}
+		if (premiumMemberDiscountData) {
+			metadata.premiumMemberDiscount = "true"
+			metadata.premiumMemberDiscountPercentage = premiumMemberDiscountData.percentage.toString()
 		}
 
 		if (customAnswers && customAnswers.length > 0) {

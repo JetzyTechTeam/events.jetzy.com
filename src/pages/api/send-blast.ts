@@ -8,6 +8,8 @@ import sendgrid from "@sendgrid/mail";
 import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]";
+import { isPendingAdminApproval, PENDING_APPROVAL_MESSAGE } from "@/lib/event-approval";
+import { eventUrl } from "@/lib/event-slug";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -33,12 +35,32 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     return res.status(400).json({ error: "Event ID is required." });
   }
 
-  if (!isAdmin) {
-    const eventDoc = await Events.findOne({ _id: new mongoose.Types.ObjectId(event._id), isDeleted: false }, { ownerId: 1 }).lean();
-    if (!eventDoc || (eventDoc as any).ownerId?.toString() !== userId) {
-      return res.status(403).json({ error: "Access denied. You can only send blasts for your own events." });
-    }
+  // Loaded for everyone (not just non-admins) because the pending-approval gate depends
+  // on event state, not on the caller's role.
+  const eventDoc = await Events.findOne(
+    { _id: new mongoose.Types.ObjectId(event._id), isDeleted: false },
+    { ownerId: 1, privacy: 1, adminApprovalStatus: 1, slug: 1 },
+  ).lean();
+  if (!eventDoc) {
+    return res.status(404).json({ error: "Event not found." });
   }
+
+  if (!isAdmin && (eventDoc as any).ownerId?.toString() !== userId) {
+    return res.status(403).json({ error: "Access denied. You can only send blasts for your own events." });
+  }
+
+  // Recipients can't open a pending event yet, so a blast would link them to the
+  // "not yet approved" page.
+  if (isPendingAdminApproval(eventDoc as any)) {
+    return res.status(403).json({ error: PENDING_APPROVAL_MESSAGE });
+  }
+
+  // Build the recipient link here rather than trusting the client's `eventLink`: a
+  // private Premium event needs its access code appended, and the host's own browser
+  // often has no code in the URL because owners bypass the invite gate.
+  const recipientEventLink = (eventDoc as any).slug
+    ? eventUrl(process.env.NEXT_PUBLIC_URL || "", (eventDoc as any).slug)
+    : eventLink;
 
   try {
     let findPeople;
@@ -112,7 +134,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           ${message}
         </p>
         <div style="text-align: center; margin: 35px 0;">
-          <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+          <a href="${recipientEventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details
           </a>
         </div>
@@ -144,7 +166,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           ${message}
         </p>
         <div style="text-align: center; margin: 35px 0;">
-          <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+          <a href="${recipientEventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details
           </a>
         </div>

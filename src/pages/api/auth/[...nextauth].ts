@@ -248,6 +248,7 @@ export const authOptions: NextAuthOptions = {
             isBlocked: !!(user as any).isBlocked,
             emailBounced: !!(user as any).emailBounced,
             requiresVerification: !!(user as any).requiresVerification,
+            isPremiumSubscriber: !!(user as any).premiumSubscription?.active,
             ...(finalImage ? { image: finalImage } : {}),
           };
 
@@ -433,6 +434,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             role: user.role,
             accessToken: accessToken, // Now using Jetzy SSO token
+            isPremiumSubscriber: !!(user as any).premiumSubscription?.active,
             ...(sessionImage ? { image: sessionImage } : {}),
           };
         } catch (error: any) {

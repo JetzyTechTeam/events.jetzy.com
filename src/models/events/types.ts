@@ -67,7 +67,12 @@ export interface IEvent extends IBaseModelProps {
 	timezone: string;
 	tickets: IEventTicket[]
 	privacy: 'public' | 'private';
+	adminApprovalStatus?: 'pending' | 'approved';
 	showOnMobile?: boolean;
+	premiumMemberDiscountPercentage?: number;
+	/** @deprecated No longer generated or enforced — private events are unlisted, not invite-only. */
+	privateAccessCode?: string;
+	premium?: boolean; // If true, only Jetzy Premium subscribers can book this event
 	status?: 'draft' | 'published';
 	// Shadow "draft 2" of a published event: autosaved edits not yet committed to the live event
 	draftRevision?: { payload: any; savedAt: string | Date } | null;
@@ -151,6 +156,10 @@ export interface IBookings extends IBaseModelProps {
 	total: number
 	referralCode?: string
 	discountAmount?: number
+	premiumMemberDiscountApplied?: boolean
+	/** Rates behind `discountAmount`; undefined on bookings predating the split. */
+	referralDiscountPercentage?: number
+	premiumMemberDiscountPercentage?: number
 	customAnswers?: ICustomAnswer[];
 	/** Absent on free bookings and on every booking made before paid approval shipped. */
 	payment?: IBookingPayment

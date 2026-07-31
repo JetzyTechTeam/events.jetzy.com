@@ -154,6 +154,15 @@ export const eventUsersSchema = new Schema(
       type: Date,
       required: false,
     },
+    // Jetzy Premium Events subscription (Stripe recurring payment)
+    premiumSubscription: {
+      active: { type: Boolean, default: false },
+      stripeCustomerId: { type: String, required: false },
+      stripeSubscriptionId: { type: String, required: false },
+      status: { type: String, required: false },
+      currentPeriodEnd: { type: Date, required: false },
+      cancelAtPeriodEnd: { type: Boolean, default: false },
+    },
   },
   { timestamps: true }
 )

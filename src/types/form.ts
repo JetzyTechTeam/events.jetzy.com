@@ -45,6 +45,8 @@ export type CreateEventFormData = {
 	endDate: string
 	endTime: string
 	name: string
+	/** Host-chosen event URL. Blank on create derives one from the name. */
+	slug?: string
 	location: string
 	longitude?: number
 	latitude?: number
@@ -64,6 +66,10 @@ export type CreateEventFormData = {
 	benefits?: string
 	locationDisclosedAfterBooking?: boolean
 	showOnMobile?: boolean
+	premium?: boolean
+	// Allows a transient "" while the field is cleared mid-edit; always normalised to a
+	// clamped number before it's sent to the API (see AutosaveManager.buildEventPayload).
+	premiumMemberDiscountPercentage?: number | ""
 	datePoll?: {
 		isActive: boolean
 		question?: string

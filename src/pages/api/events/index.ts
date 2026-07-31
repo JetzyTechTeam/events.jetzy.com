@@ -23,7 +23,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const search = (req.query.search as string)?.trim() || ""
 		const filter: any = { isDeleted: false, status: { $ne: 'draft' } }
-		if (!isAdmin) filter.privacy = { $ne: 'private' }
+		if (!isAdmin) {
+			filter.privacy = { $ne: 'private' }
+			// Hide public events still awaiting admin approval. $ne (not $eq 'approved')
+			// also matches legacy documents that predate this field entirely.
+			filter.adminApprovalStatus = { $ne: 'pending' }
+		}
 		if (search) {
 			const searchRegex = escapeRegExp(search)
 			const orClauses: any[] = [

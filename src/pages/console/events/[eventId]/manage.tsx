@@ -2,6 +2,9 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
+import { usePremiumStatus } from "@/hooks/usePremiumStatus"
+import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn"
+import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
@@ -64,7 +67,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline"
-import { MinusCircleIcon } from "@heroicons/react/24/solid"
+import { MinusCircleIcon, StarIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
 import Link from "next/link"
@@ -81,6 +84,9 @@ import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
+import EventSlugField from "@/components/events/EventSlugField"
+import { isPendingAdminApproval } from "@/lib/event-approval"
+import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
@@ -203,13 +209,22 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const { data: session } = useSession()
 	const userRole = (session?.user as any)?.role
 	const isAdmin = userRole === "admin" || userRole === "super admin"
+	const { isPremium } = usePremiumStatus()
+	const canHostPremium = isAdmin || isPremium
+	const [showPremiumPaywall, setShowPremiumPaywall] = useState(false)
+	usePremiumSubscriptionReturn()
+
+	// Public events await admin review before anyone else can open them, so outward-facing
+	// actions (invite, blast, share, check-in) stay hidden until approved.
+	const isPendingApproval = isPendingAdminApproval(event as any)
 
 	useEffect(() => {
 		if (router.query.invite === "true") {
-			setInviteGuestsModal(true)
+			// Don't let the deep link bypass the pending gate — just clean the URL.
+			if (!isPendingApproval) setInviteGuestsModal(true)
 			router.replace(`/console/events/${event._id}/manage`, undefined, { shallow: true })
 		}
-	}, [router.query.invite])
+	}, [router.query.invite, isPendingApproval])
 
 	// Approvals surfaces show whenever ANY ticket needs approval, not just when the
 	// event-level default is on — a single flagged ticket is enough.
@@ -327,6 +342,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [isSubmitting, setIsSubmitting] = useState(false)
 	const [isDeleting, setIsDeleting] = useState(false)
 	const [isCloning, setIsCloning] = useState(false)
+	const [isApproving, setIsApproving] = useState(false)
 	const [editIndex, setEditIndex] = useState<number | null>(null)
 	const [tempTicket, setTempTicket] = useState<TicketData>({ id: "", title: "", description: "", price: 0 })
 	const [tempPollOption, setTempPollOption] = useState<DatePollOption>({ id: "", date: "", time: "", label: "" })
@@ -390,6 +406,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 
 		return {
 			name: stripHtml(event.name),
+			slug: event.slug,
 			desc: event.desc,
 			location: event.location,
 			capacity: event.capacity,
@@ -414,6 +431,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			benefits: event.benefits || "",
 			locationDisclosedAfterBooking: event.locationDisclosedAfterBooking || false,
 			showOnMobile: event.showOnMobile || false,
+			premium: event.premium || false,
+			premiumMemberDiscountPercentage: event.premiumMemberDiscountPercentage || 0,
 			datePoll: event.datePoll ? {
 				isActive: event.datePoll.isActive || false,
 				question: event.datePoll.question || "",
@@ -506,6 +525,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			return
 		}
 
+		if (values.premium) {
+			const pct = Number(values.premiumMemberDiscountPercentage)
+			if (values.premiumMemberDiscountPercentage === "" || Number.isNaN(pct) || pct < 0 || pct > 100) {
+				Error("Validation Error", "Please enter a member discount between 0 and 100 for this Premium Event.")
+				return
+			}
+		}
+
 		if (isDraft) {
 			if (!values.name?.trim()) {
 				Error("Validation Error", "Event name is required to save as draft")
@@ -576,7 +603,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					if (changes.length > 0) {
 						const uniqueUsers = Array.from(new Map(events.map((e: any) => [e.customerEmail, e])).values()) as any[]
 						const origin = typeof window !== "undefined" ? window.location.origin : ""
-						const eventLink = `${origin}/${event.slug}`
+						// Share URL so private Premium events keep their access code.
+						const eventLink = eventUrl(origin, event.slug)
 						const updatePromises = uniqueUsers.map((bk: any) =>
 							sendEventUpdate({
 								eventName: values.name,
@@ -694,6 +722,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		}
 	}
 
+	const handleApproveEvent = () => {
+		setIsApproving(true)
+		axios.post(`/api/events/${event._id}/approve`).then(() => {
+			toast({ title: "Event approved successfully!", status: "success", duration: 3000 })
+			router.replace(router.asPath)
+		}).catch((err) => {
+			toast({ title: err?.response?.data?.message || "Failed to approve event.", status: "error", duration: 4000 })
+		}).finally(() => setIsApproving(false))
+	}
+
 	const handleCloneEvent = () => {
 		setIsCloning(true)
 		axios.post(`/api/events/${event._id}/clone`).then((res) => {
@@ -726,12 +764,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}>My Events &rsaquo; </span>
 							<span className="text-[#F79432] font-normal">{stripHtml(event.name)}</span>
 						</span>
-						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>{stripHtml(event.name)}</span>
+						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>
+							{stripHtml(event.name)}
+							{isPendingApproval && (
+								<Box as="span" ml={3} px="10px" py="3px" borderRadius="md" fontSize="13px" fontWeight="bold" letterSpacing="0.03em" bg="#3A2A00" color="#F79432" border="1px solid #F79432" verticalAlign="middle">
+									PENDING APPROVAL
+								</Box>
+							)}
+						</span>
 					</span> as any
 				}
 				component={
 					<div className="flex flex-wrap gap-2 items-center self-end">
 						{tabIndex === 0 && <AutosaveStatusPill state={autosaveState} />}
+						{isAdmin && isPendingApproval && (
+							<Button bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
+								Approve Event
+							</Button>
+						)}
 						{isAdmin && (
 							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
 								View Analytics
@@ -759,7 +809,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				<SendBlastModal sendBlastModal={sendBlastModal} setSendBlastModal={setSendBlastModal} event={event} />
 
 				{/* SHARE MODAL  */}
-				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={event.slug} />
+				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={event.slug} isPrivate={event.privacy === "private"} />
 
 				{/* DAILY VIEWS MODAL */}
 				<DailyViewsModal
@@ -767,6 +817,22 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					onClose={() => setShowDailyViewsModal(false)}
 					dailyViews={analytics?.trends?.views || []}
 				/>
+
+				<PremiumPaywallModal
+					isOpen={showPremiumPaywall}
+					onClose={() => setShowPremiumPaywall(false)}
+					returnTo={`/console/events/${event._id}/manage`}
+				/>
+
+				{event.privacy === "private" && (
+					<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4} mt={4}>
+						<Text className={roboto.className} color="white" fontWeight={700} fontSize="14px">Private event</Text>
+						<Text className={roboto.className} color="#868686" fontSize="12px" mt={1} lineHeight="140%">
+							This event is hidden from the public events list. Anyone you share the link with can
+							view it{event.premium ? " and request a spot, which you approve" : ""}. Use <strong>Share Event</strong> to copy the link.
+						</Text>
+					</Box>
+				)}
 
 				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={6}>
 					<TabList position="sticky" top="var(--console-header-h, 112px)" zIndex={20} bg="#0B0B0B" borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
@@ -979,6 +1045,17 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																{values.name?.length || 0}/100
 															</InputLeftElement>
 														</InputGroup>
+													</FormControl>
+
+													<FormControl mb={4}>
+														<EventSlugField
+															value={values.slug || ""}
+															onChange={(v) => setFieldValue("slug", v)}
+															eventName={values.name}
+															eventId={event._id?.toString()}
+															originalSlug={event.slug}
+															warnOnChange
+														/>
 													</FormControl>
 
 													<FormControl mb={4}>
@@ -1224,6 +1301,73 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 												{/* ---- Event Options ---- */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 													<Heading size="md" color="white" mb={4}>Event Options</Heading>
+
+													{/* Premium Event — deliberately styled apart from the plain toggles below so organizers can't miss it */}
+													<Flex
+														align="center"
+														justifyContent="space-between"
+														mb={4}
+														p={4}
+														borderRadius="10px"
+														border="1px solid"
+														borderColor={values.premium ? "#F5C518" : "#4A3B00"}
+														bg={values.premium ? "linear-gradient(90deg, rgba(245,197,24,0.15) 0%, rgba(147,51,234,0.12) 100%)" : "#1A1608"}
+														transition="all 0.15s ease"
+													>
+														<Flex gap="3" alignItems="center">
+															<Flex align="center" justifyContent="center" w="40px" h="40px" borderRadius="full" bg="rgba(245,197,24,0.15)" flexShrink={0}>
+																<StarIcon className="w-5 h-5 text-[#F5C518]" />
+															</Flex>
+															<Box>
+																<Flex align="center" gap={2}>
+																	<Text className={roboto.className} color="white" fontWeight={700} fontSize="16px" lineHeight="100%">Premium Event</Text>
+																	<Box bg="#F5C518" color="black" px="2" py="0.5" borderRadius="full" fontSize="10px" fontWeight="bold" letterSpacing="0.03em">JETZY PREMIUM</Box>
+																</Flex>
+																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#C9BFA0" mt={1} maxW="360px">
+																	{canHostPremium
+																		? "Everyone can book this event — Jetzy Premium members get the member discount below."
+																		: "Only Jetzy Premium members can host Premium Events."}
+																</Text>
+																{!canHostPremium && (
+																	<Box as="button" type="button" onClick={() => setShowPremiumPaywall(true)} mt={2} color="#F5C518" fontSize="12px" fontWeight={700} textDecoration="underline">
+																		Subscribe to Jetzy Premium
+																	</Box>
+																)}
+															</Box>
+														</Flex>
+														<Switch name="premium" isChecked={values.premium} isDisabled={!canHostPremium} colorScheme="yellow" size="lg" onChange={() => setFieldValue("premium", !values.premium)} />
+													</Flex>
+
+													{values.premium && (
+														<Flex align="center" justifyContent="space-between" mb={4}>
+															<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+																<StarIcon className="w-5 h-5 text-[#F5C518]" />
+																<Box>
+																	<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Member Discount %</Text>
+																	<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Jetzy Premium members get this % off tickets</Text>
+																</Box>
+															</Flex>
+															<Input
+																type="number"
+																min={0}
+																max={100}
+																value={values.premiumMemberDiscountPercentage ?? 0}
+																placeholder="0"
+																name="premiumMemberDiscountPercentage"
+																onChange={(e) => {
+																	const raw = e.target.value
+																	setFieldValue("premiumMemberDiscountPercentage", raw === "" ? "" : Math.min(100, Math.max(0, Number(raw))))
+																}}
+																onBlur={() => {
+																	if (values.premiumMemberDiscountPercentage === "" || Number.isNaN(Number(values.premiumMemberDiscountPercentage))) {
+																		setFieldValue("premiumMemberDiscountPercentage", 0)
+																	}
+																}}
+																bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px"
+															/>
+														</Flex>
+													)}
+
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<LockSVG />
@@ -1237,15 +1381,32 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 															<option value="public">Public</option>
 														</Field>
 													</Flex>
+													{values.premium && values.privacy === "private" && (
+														<Box bg="rgba(245,197,24,0.1)" border="1px solid rgba(245,197,24,0.3)" borderRadius="8px" p={3} mb={4}>
+															<Text className={roboto.className} fontSize="12px" color="#F5C518">
+																Private Premium Events are invite-only — see the invite link below, and every booking will need your approval.
+															</Text>
+														</Box>
+													)}
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<UserTickSVG />
 															<Box>
 																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" maxW="360px">Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" maxW="360px">
+																	{(values.premium && values.privacy === "private")
+																		? "Always on for private Premium Events."
+																		: "Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve."}
+																</Text>
 															</Box>
 														</Flex>
-														<Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+														<Switch
+															name="requireApproval"
+															isDisabled={values.premium && values.privacy === "private"}
+															isChecked={(values.premium && values.privacy === "private") || values.requireApproval}
+															colorScheme="orange"
+															onChange={() => setFieldValue("requireApproval", !values.requireApproval)}
+														/>
 													</Flex>
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1371,7 +1532,19 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													/>
 												</Box>
 
-												{/* ---- Quick Actions ---- */}
+												{/* ---- Quick Actions ----
+												    Hidden while the event is awaiting admin approval: guests can't open
+												    the event yet, so an invite or blast would send them to the
+												    "not yet approved" page. Server-side guards enforce the same rule. */}
+												{isPendingApproval ? (
+													<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+														<Heading size="md" color="white" mb={2}>Quick Actions</Heading>
+														<Text className={roboto.className} color="#868686" fontSize="14px" lineHeight="150%">
+															Quick actions unlock once your event is approved. You&apos;ll be able to invite guests,
+															send blasts and open the check-in portal then.
+														</Text>
+													</Box>
+												) : (
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "20px", height: "20px" } }}>
 													<Heading size="md" color="white" mb={4}>Quick Actions</Heading>
 													<Flex direction="column" gap={3}>
@@ -1389,6 +1562,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														</Flex>
 													</Flex>
 												</Box>
+												)}
 
 												{/* ---- Event Stats ---- */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "22px", height: "22px" } }}>
@@ -1635,7 +1809,8 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				status,
 				targetType,
 				emailType,
-				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+				// The server rebuilds this from the event record; kept correct here anyway.
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 
 			if (res.status === 207) {
@@ -1894,7 +2069,8 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				status: "all",
 				targetType: "all",
 				emailType: "custom",
-				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+				// The server rebuilds this from the event record; kept correct here anyway.
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 			toast({
 				title: res.status === 207 ? "Partially sent" : "Blast sent!",
@@ -1951,7 +2127,8 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				status: blast.status || "all",
 				targetType: blast.targetType || "all",
 				emailType: blast.emailType || "custom",
-				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+				// The server rebuilds this from the event record; kept correct here anyway.
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
 			refresh()
@@ -3263,10 +3440,12 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 	)
 }
 
-function ShareModal({ shareModal, setShareModal, eventSlug }: { shareModal: boolean; setShareModal: (shareModal: boolean) => void; eventSlug: string }) {
+function ShareModal({ shareModal, setShareModal, eventSlug, isPrivate }: { shareModal: boolean; setShareModal: (shareModal: boolean) => void; eventSlug: string; isPrivate?: boolean }) {
 	const [copied, setCopied] = useState(false)
 
-	const sharelink = `${process.env.NEXT_PUBLIC_URL}/${eventSlug}`
+	// One link for every event type. Private events are unlisted, not invite-only, so
+	// there is no access code to append.
+	const sharelink = eventUrl(process.env.NEXT_PUBLIC_URL || "", eventSlug)
 
 	const onCopy = () => {
 		navigator.clipboard.writeText(sharelink).then(() => {
@@ -3287,6 +3466,11 @@ function ShareModal({ shareModal, setShareModal, eventSlug }: { shareModal: bool
 						<Box w="100%" borderWidth="1px" bg="#090C10" borderColor="#444444" color="white" _placeholder={{ color: "gray.400" }} rounded="xl" p={2} wordBreak="break-all">
 							{sharelink}
 						</Box>
+						{isPrivate && (
+							<Text fontSize="12px" color="#868686" lineHeight="140%">
+								This event is private, so it won&apos;t appear in the public events list — but anyone you send this link to can open it.
+							</Text>
+						)}
 						<Button onClick={onCopy} bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} size="lg">
 							{copied ? "Copied!" : "Copy"}
 						</Button>

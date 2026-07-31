@@ -47,7 +47,7 @@ import {
   UserTickSVG,
 } from "@/assets/icons";
 import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon } from "@heroicons/react/24/outline";
-import { MinusCircleIcon } from "@heroicons/react/24/solid";
+import { MinusCircleIcon, StarIcon } from "@heroicons/react/24/solid";
 import TimePicker from "@/components/form/TimePicker";
 import DatePicker from "@/components/form/DatePicker";
 import { Error } from "@/lib/_toaster";
@@ -58,6 +58,8 @@ import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
 import { ticketApprovalFlag } from "@/lib/ticket-approval";
+import EventSlugField from "@/components/events/EventSlugField";
+import { isPendingAdminApproval } from "@/lib/event-approval";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
@@ -67,6 +69,10 @@ import { z } from "zod";
 import { Roboto } from "next/font/google";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import InterestsSelector from "@/components/events/InterestsSelector";
+import { useSession } from "next-auth/react";
+import { usePremiumStatus } from "@/hooks/usePremiumStatus";
+import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
+import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
 
@@ -93,6 +99,8 @@ const initialValues = {
   benefits: "",
   locationDisclosedAfterBooking: false,
   showOnMobile: true,
+  premium: false,
+  premiumMemberDiscountPercentage: 0,
   datePoll: {
     isActive: false,
     question: "",
@@ -110,6 +118,13 @@ const CreateEventPage = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const dispatcher = useAppDispatch();
   const navigation = useRouter();
+  const { data: session } = useSession();
+  const userRole = (session?.user as any)?.role;
+  const isAdmin = userRole === "admin" || userRole === "super admin";
+  const { isPremium } = usePremiumStatus();
+  const canHostPremium = isAdmin || isPremium;
+  const [showPremiumPaywall, setShowPremiumPaywall] = React.useState(false);
+  usePremiumSubscriptionReturn();
 
   const formikRef = React.useRef<FormikProps<CreateEventFormData>>(null);
 
@@ -134,6 +149,7 @@ const CreateEventPage = () => {
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
   const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
   const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
+  const [createdEventPending, setCreatedEventPending] = React.useState(false);
 
   // Autosave: the first save creates ONE draft record; all later saves update it. The
   // event stays a draft (hidden from the public list) until the organizer publishes.
@@ -221,6 +237,14 @@ const CreateEventPage = () => {
       return;
     }
 
+    if (values.premium) {
+      const pct = Number(values.premiumMemberDiscountPercentage);
+      if (values.premiumMemberDiscountPercentage === "" || Number.isNaN(pct) || pct < 0 || pct > 100) {
+        Error("Validation Error", "Please enter a member discount between 0 and 100 for this Premium Event.");
+        return;
+      }
+    }
+
     if (isDraft) {
       if (!values.name?.trim()) {
         Error("Validation Error", "Event name is required to save as draft");
@@ -296,6 +320,9 @@ const CreateEventPage = () => {
           navigation.push('/console/events')
         } else {
           setCreatedEventId(existingId ?? res.payload.data._id);
+          // A public event is created pending admin review, so inviting now would send
+          // guests to the "not yet approved" page. Private events are auto-approved.
+          setCreatedEventPending(isPendingAdminApproval(res.payload.data));
           onSuccessOpen();
         }
       }
@@ -478,6 +505,14 @@ const CreateEventPage = () => {
                         {values.name?.length || 0}/100
                       </InputLeftElement>
                     </InputGroup>
+                  </FormControl>
+
+                  <FormControl mb={4}>
+                    <EventSlugField
+                      value={values.slug || ""}
+                      onChange={(v) => setFieldValue("slug", v)}
+                      eventName={values.name}
+                    />
                   </FormControl>
 
                   <FormControl mb={4}>
@@ -683,6 +718,89 @@ const CreateEventPage = () => {
                 {/* ---- Event Options ---- */}
                 <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
                   <Heading size="md" color="white" mb={4}>Event Options</Heading>
+
+                  {/* Premium Event — deliberately styled apart from the plain toggles below so organizers can't miss it */}
+                  <Flex
+                    align="center"
+                    justifyContent="space-between"
+                    mb={4}
+                    p={4}
+                    borderRadius="10px"
+                    border="1px solid"
+                    borderColor={values.premium ? "#F5C518" : "#4A3B00"}
+                    bg={values.premium ? "linear-gradient(90deg, rgba(245,197,24,0.15) 0%, rgba(147,51,234,0.12) 100%)" : "#1A1608"}
+                    transition="all 0.15s ease"
+                  >
+                    <Flex gap="3" alignItems="center">
+                      <Flex align="center" justifyContent="center" w="40px" h="40px" borderRadius="full" bg="rgba(245,197,24,0.15)" flexShrink={0}>
+                        <StarIcon className="w-5 h-5 text-[#F5C518]" />
+                      </Flex>
+                      <Box>
+                        <Flex align="center" gap={2}>
+                          <Text className={roboto.className} color="white" fontWeight={700} fontSize="16px" lineHeight="100%">Premium Event</Text>
+                          <Box bg="#F5C518" color="black" px="2" py="0.5" borderRadius="full" fontSize="10px" fontWeight="bold" letterSpacing="0.03em">JETZY PREMIUM</Box>
+                        </Flex>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#C9BFA0" mt={1} maxW="360px">
+                          {canHostPremium
+                            ? "Everyone can book this event — Jetzy Premium members get the member discount below."
+                            : "Only Jetzy Premium members can host Premium Events."}
+                        </Text>
+                        {!canHostPremium && (
+                          <Box
+                            as="button"
+                            type="button"
+                            onClick={() => setShowPremiumPaywall(true)}
+                            mt={2}
+                            color="#F5C518"
+                            fontSize="12px"
+                            fontWeight={700}
+                            textDecoration="underline"
+                          >
+                            Subscribe to Jetzy Premium
+                          </Box>
+                        )}
+                      </Box>
+                    </Flex>
+                    <Switch
+                      name="premium"
+                      isChecked={values.premium}
+                      isDisabled={!canHostPremium}
+                      colorScheme="yellow"
+                      size="lg"
+                      onChange={() => setFieldValue("premium", !values.premium)}
+                    />
+                  </Flex>
+
+                  {values.premium && (
+                    <Flex align="center" justifyContent="space-between" mb={4}>
+                      <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+                        <StarIcon className="w-5 h-5 text-[#F5C518]" />
+                        <Box>
+                          <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Member Discount %</Text>
+                          <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Jetzy Premium members get this % off tickets</Text>
+                        </Box>
+                      </Flex>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={values.premiumMemberDiscountPercentage ?? 0}
+                        placeholder="0"
+                        name="premiumMemberDiscountPercentage"
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          setFieldValue("premiumMemberDiscountPercentage", raw === "" ? "" : Math.min(100, Math.max(0, Number(raw))))
+                        }}
+                        onBlur={() => {
+                          if (values.premiumMemberDiscountPercentage === "" || Number.isNaN(Number(values.premiumMemberDiscountPercentage))) {
+                            setFieldValue("premiumMemberDiscountPercentage", 0)
+                          }
+                        }}
+                        bg="#090C10" color="white" border="1px solid #343536" w="90px" h="36px"
+                      />
+                    </Flex>
+                  )}
+
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <LockSVG />
@@ -696,17 +814,32 @@ const CreateEventPage = () => {
                       <option value="public">Public</option>
                     </Field>
                   </Flex>
+                  {values.premium && values.privacy === "private" && (
+                    <Box bg="rgba(245,197,24,0.1)" border="1px solid rgba(245,197,24,0.3)" borderRadius="8px" p={3} mb={4}>
+                      <Text className={roboto.className} fontSize="12px" color="#F5C518">
+                        Private Premium Events are invite-only: an invite link with a unique code will be generated once you save, and every booking will need your approval.
+                      </Text>
+                    </Box>
+                  )}
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <UserTickSVG />
                       <Box>
                         <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
                         <Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" mt={1} maxW="360px">
-                          Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.
+                          {(values.premium && values.privacy === "private")
+                            ? "Always on for private Premium Events."
+                            : "Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve."}
                         </Text>
                       </Box>
                     </Flex>
-                    <Switch name="requireApproval" isChecked={values.requireApproval} colorScheme="orange" onChange={() => setFieldValue("requireApproval", !values.requireApproval)} />
+                    <Switch
+                      name="requireApproval"
+                      isDisabled={values.premium && values.privacy === "private"}
+                      isChecked={(values.premium && values.privacy === "private") || values.requireApproval}
+                      colorScheme="orange"
+                      onChange={() => setFieldValue("requireApproval", !values.requireApproval)}
+                    />
                   </Flex>
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1057,29 +1190,56 @@ const CreateEventPage = () => {
           <ModalHeader>🎉 Event Created!</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={2}>
-            <Text mb={2}>Your event is live. Would you like to invite friends or Jetzy users now?</Text>
+            {createdEventPending ? (
+              <Text mb={2}>
+                Your event has been submitted for review. Once an admin approves it, it goes live and
+                you&apos;ll be able to invite guests and send blasts.
+              </Text>
+            ) : (
+              <Text mb={2}>Your event is live. Would you like to invite friends or Jetzy users now?</Text>
+            )}
           </ModalBody>
           <ModalFooter gap={3}>
-            <Button
-              variant="ghost"
-              color="gray.400"
-              _hover={{ bg: "#2a2a2a" }}
-              onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }}
-            >
-              Go to Manage
-            </Button>
-            <Button
-              bg="#F79432"
-              color="black"
-              _hover={{ bg: "#f78c22" }}
-              _active={{ bg: "#e67a10" }}
-              onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage?invite=true`); }}
-            >
-              Invite Friends
-            </Button>
+            {createdEventPending ? (
+              <Button
+                bg="#F79432"
+                color="black"
+                _hover={{ bg: "#f78c22" }}
+                _active={{ bg: "#e67a10" }}
+                onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }}
+              >
+                Go to Manage
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  color="gray.400"
+                  _hover={{ bg: "#2a2a2a" }}
+                  onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage`); }}
+                >
+                  Go to Manage
+                </Button>
+                <Button
+                  bg="#F79432"
+                  color="black"
+                  _hover={{ bg: "#f78c22" }}
+                  _active={{ bg: "#e67a10" }}
+                  onClick={() => { onSuccessClose(); navigation.push(`/console/events/${createdEventId}/manage?invite=true`); }}
+                >
+                  Invite Friends
+                </Button>
+              </>
+            )}
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      <PremiumPaywallModal
+        isOpen={showPremiumPaywall}
+        onClose={() => setShowPremiumPaywall(false)}
+        returnTo="/console/events/create"
+      />
     </ConsoleLayout>
   );
 };
