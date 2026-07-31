@@ -1,6 +1,6 @@
 import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
-import { eventUrl as buildEventUrl, eventShareUrl as buildEventShareUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
+import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
 import sgMail from "@sendgrid/mail"
 import dayjs from 'dayjs'
@@ -730,7 +730,7 @@ export const sendApprovalRejected = async ({ event, firstName, email, payment, r
   const isExpired = reason === "expired"
   // Share URL, not a plain event URL: a private Premium event needs its access code or
   // the "Book Again" button lands the guest on the invite-code wall.
-  const eventUrl = buildEventShareUrl(baseUrl || "", event as any)
+  const eventUrl = buildEventUrl(baseUrl || "", (event as any).slug || "")
 
   const bodyText = isExpired
     ? `Hi ${firstName}, your request to attend "${eventName}" wasn't reviewed in time.`

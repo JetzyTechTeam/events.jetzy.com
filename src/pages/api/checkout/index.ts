@@ -26,7 +26,6 @@ type BodyParams = {
 		phone: string
 	}
 	referralCode?: string
-	privateAccessCode?: string
 	customAnswers?: any[]
 }
 
@@ -201,15 +200,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, ResCode.FORBIDDEN)
 		}
 
-		// Private Premium Events are invite-only — the client must present the code
-		// from the invite link (defense in depth alongside the [slug] page-level gate).
-		if (event.premium && event.privacy === "private") {
-			const privateAccessCode = req.body?.privateAccessCode as string | undefined
-			if (!privateAccessCode || privateAccessCode !== event.privateAccessCode) {
-				console.warn("[checkout/index] Blocked checkout for private premium event without a valid access code:", event._id)
-				return sendResponse(res, null, "A valid invite code is required to book this event.", false, ResCode.FORBIDDEN)
-			}
-		}
+		// Private events are unlisted rather than invite-only — no access code required.
 
 		// Jetzy Premium member discount — stacks with a referral code (see combined
 		// coupon math below): the member discount comes off first, then the referral

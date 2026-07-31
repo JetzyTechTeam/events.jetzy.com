@@ -215,11 +215,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// (see src/lib/ticket-approval.ts) — paid tickets support approval now too.
 		const effectiveRequireApproval = (premium && privacy === "private") ? true : requireApproval
 
-		// Auto-generate the private-access code once, the first time an event becomes premium+private. Stable afterwards.
-		const newPrivateAccessCode = (premium && privacy === "private" && !event.privateAccessCode)
-			? generateRandomId(10) as string
-			: undefined
-
 		// Find the event by id and update it
 		const updateDoc: any = {
 			$set: {
@@ -257,7 +252,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				showOnMobile: showOnMobile ?? false,
 				premium: premium ?? false,
 				premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
-				...(newPrivateAccessCode ? { privateAccessCode: newPrivateAccessCode } : {}),
 				status: status ?? 'published',
 				interests: interests ?? [],
 				...(datePoll?.isActive && datePoll.options?.length > 0 ? {

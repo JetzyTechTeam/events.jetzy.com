@@ -86,7 +86,7 @@ import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
 import EventSlugField from "@/components/events/EventSlugField"
 import { isPendingAdminApproval } from "@/lib/event-approval"
-import { eventPath, eventUrl, eventShareUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
+import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
@@ -213,16 +213,6 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const canHostPremium = isAdmin || isPremium
 	const [showPremiumPaywall, setShowPremiumPaywall] = useState(false)
 	usePremiumSubscriptionReturn()
-	const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
-	const inviteLink = (typeof window !== "undefined" && event.privateAccessCode)
-		? eventShareUrl(window.location.origin, event as any)
-		: ""
-	const handleCopyInviteLink = () => {
-		if (!inviteLink) return
-		navigator.clipboard.writeText(inviteLink)
-		setInviteLinkCopied(true)
-		setTimeout(() => setInviteLinkCopied(false), 2000)
-	}
 
 	// Public events await admin review before anyone else can open them, so outward-facing
 	// actions (invite, blast, share, check-in) stay hidden until approved.
@@ -614,7 +604,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						const uniqueUsers = Array.from(new Map(events.map((e: any) => [e.customerEmail, e])).values()) as any[]
 						const origin = typeof window !== "undefined" ? window.location.origin : ""
 						// Share URL so private Premium events keep their access code.
-						const eventLink = eventShareUrl(origin, event as any)
+						const eventLink = eventUrl(origin, event.slug)
 						const updatePromises = uniqueUsers.map((bk: any) =>
 							sendEventUpdate({
 								eventName: values.name,
@@ -819,7 +809,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				<SendBlastModal sendBlastModal={sendBlastModal} setSendBlastModal={setSendBlastModal} event={event} />
 
 				{/* SHARE MODAL  */}
-				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={event.slug} privateAccessCode={(event as any).privateAccessCode} />
+				<ShareModal shareModal={shareModal} setShareModal={setShareModal} eventSlug={event.slug} isPrivate={event.privacy === "private"} />
 
 				{/* DAILY VIEWS MODAL */}
 				<DailyViewsModal
@@ -834,17 +824,13 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					returnTo={`/console/events/${event._id}/manage`}
 				/>
 
-				{event.premium && event.privacy === "private" && event.privateAccessCode && (
-					<Box bg="#1E1A0A" border="1px solid #F5C518" borderRadius="10px" p={4} mt={4}>
-						<Flex align="center" justifyContent="space-between" flexWrap="wrap" gap={3}>
-							<Box>
-								<Text className={roboto.className} color="#F5C518" fontWeight={700} fontSize="14px">Private Premium Event — Invite Link</Text>
-								<Text className={roboto.className} color="#C9BFA0" fontSize="12px" mt={1} wordBreak="break-all">{inviteLink}</Text>
-							</Box>
-							<Button bg="#F5C518" color="black" _hover={{ bg: "#E0B317" }} fontWeight="bold" onClick={handleCopyInviteLink} flexShrink={0}>
-								{inviteLinkCopied ? "Copied!" : "Copy Invite Link"}
-							</Button>
-						</Flex>
+				{event.privacy === "private" && (
+					<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4} mt={4}>
+						<Text className={roboto.className} color="white" fontWeight={700} fontSize="14px">Private event</Text>
+						<Text className={roboto.className} color="#868686" fontSize="12px" mt={1} lineHeight="140%">
+							This event is hidden from the public events list. Anyone you share the link with can
+							view it{event.premium ? " and request a spot, which you approve" : ""}. Use <strong>Share Event</strong> to copy the link.
+						</Text>
 					</Box>
 				)}
 
@@ -1824,7 +1810,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				targetType,
 				emailType,
 				// The server rebuilds this from the event record; kept correct here anyway.
-				eventLink: eventShareUrl(process.env.NEXT_PUBLIC_URL || "", event as any),
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 
 			if (res.status === 207) {
@@ -2084,7 +2070,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				targetType: "all",
 				emailType: "custom",
 				// The server rebuilds this from the event record; kept correct here anyway.
-				eventLink: eventShareUrl(process.env.NEXT_PUBLIC_URL || "", event as any),
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 			toast({
 				title: res.status === 207 ? "Partially sent" : "Blast sent!",
@@ -2142,7 +2128,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				targetType: blast.targetType || "all",
 				emailType: blast.emailType || "custom",
 				// The server rebuilds this from the event record; kept correct here anyway.
-				eventLink: eventShareUrl(process.env.NEXT_PUBLIC_URL || "", event as any),
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
 			refresh()
@@ -3454,14 +3440,12 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 	)
 }
 
-function ShareModal({ shareModal, setShareModal, eventSlug, privateAccessCode }: { shareModal: boolean; setShareModal: (shareModal: boolean) => void; eventSlug: string; privateAccessCode?: string }) {
+function ShareModal({ shareModal, setShareModal, eventSlug, isPrivate }: { shareModal: boolean; setShareModal: (shareModal: boolean) => void; eventSlug: string; isPrivate?: boolean }) {
 	const [copied, setCopied] = useState(false)
 
-	// Private Premium events need the access code or the recipient hits the invite-code
-	// wall. Owners are exempt from that gate, so a code-less link looks fine to the host
-	// and only fails for the guests they sent it to.
-	const isPrivate = !!privateAccessCode
-	const sharelink = eventShareUrl(process.env.NEXT_PUBLIC_URL || "", { slug: eventSlug, privateAccessCode })
+	// One link for every event type. Private events are unlisted, not invite-only, so
+	// there is no access code to append.
+	const sharelink = eventUrl(process.env.NEXT_PUBLIC_URL || "", eventSlug)
 
 	const onCopy = () => {
 		navigator.clipboard.writeText(sharelink).then(() => {
@@ -3474,17 +3458,17 @@ function ShareModal({ shareModal, setShareModal, eventSlug, privateAccessCode }:
 		<Modal isOpen={shareModal} onClose={() => setShareModal(false)} isCentered>
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
-				<ModalHeader>{isPrivate ? "Invite Link" : "Share Event"}</ModalHeader>
+				<ModalHeader>Share Event</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
 					<Box display="flex" flexDirection="column" gap={3}>
-						<Text fontWeight="bold">{isPrivate ? "Anyone with this link can view and book:" : "Share the link:"}</Text>
+						<Text fontWeight="bold">Share the link:</Text>
 						<Box w="100%" borderWidth="1px" bg="#090C10" borderColor="#444444" color="white" _placeholder={{ color: "gray.400" }} rounded="xl" p={2} wordBreak="break-all">
 							{sharelink}
 						</Box>
 						{isPrivate && (
 							<Text fontSize="12px" color="#868686" lineHeight="140%">
-								This is a private event, so the link includes an access code. Without it, guests are asked for an invite code.
+								This event is private, so it won&apos;t appear in the public events list — but anyone you send this link to can open it.
 							</Text>
 						)}
 						<Button onClick={onCopy} bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} size="lg">

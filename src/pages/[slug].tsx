@@ -20,9 +20,8 @@ const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), { s
 type Props = {
 	event: string
 	pendingApproval?: boolean
-	privateAccessRequired?: boolean
 }
-export default function EventDetailPage({ event, pendingApproval, privateAccessRequired }: Props) {
+export default function EventDetailPage({ event, pendingApproval }: Props) {
 	const { trackEventInteraction } = useAnalytics()
 	const router = useRouter()
 
@@ -35,13 +34,13 @@ export default function EventDetailPage({ event, pendingApproval, privateAccessR
 		parseError = error
 	}
 
-	// Shared link to a public event still awaiting admin approval, or a private Premium
-	// Event opened without a valid invite code — bounce back to the main events page.
+	// Shared link to a public event still awaiting admin approval — bounce back to the
+	// main events page.
 	useEffect(() => {
-		if (!pendingApproval && !privateAccessRequired) return
+		if (!pendingApproval) return
 		const timer = setTimeout(() => router.push("/"), 4000)
 		return () => clearTimeout(timer)
-	}, [pendingApproval, privateAccessRequired, router])
+	}, [pendingApproval, router])
 
 	useEffect(() => {
 		const trackView = async () => {
@@ -111,30 +110,6 @@ export default function EventDetailPage({ event, pendingApproval, privateAccessR
 						</div>
 						<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Event Not Yet Approved</h1>
 						<p className="text-gray-600 mb-6">This event is still awaiting admin approval and isn&apos;t publicly available yet. You&apos;ll be redirected to the main events page shortly.</p>
-						<button
-							onClick={() => router.push("/")}
-							className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
-						>
-							Go to Events Now
-						</button>
-					</div>
-				</div>
-			</div>
-		)
-	}
-
-	if (privateAccessRequired) {
-		return (
-			<div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-8 flex items-center">
-				<div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
-					<div className="p-6 sm:p-8 text-center">
-						<div className="mb-6">
-							<svg className="w-16 h-16 mx-auto text-[#F79432]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-							</svg>
-						</div>
-						<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Private Event — Invite Code Required</h1>
-						<p className="text-gray-600 mb-6">This is a private Premium Event. You&apos;ll need the host&apos;s invite link to view it. You&apos;ll be redirected to the main events page shortly.</p>
 						<button
 							onClick={() => router.push("/")}
 							className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
@@ -320,21 +295,10 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			}
 		}
 
-		// Private Premium Events are invite-only — require the code from the invite
-		// link ({slug}?code=...) unless the viewer is the owner/admin.
-		if (event.premium && event.privacy === "private") {
-			const session = await getServerSession(context.req, context.res, authOptions)
-			const role = (session?.user as any)?.role
-			const isAdmin = role === "admin" || role === "super admin"
-			const userId = (session?.user as any)?._id?.toString()
-			const isOwner = userId && event.ownerId?.toString() === userId
-			if (!isAdmin && !isOwner) {
-				const providedCode = (context.query.code as string) || ""
-				if (!providedCode || providedCode !== event.privateAccessCode) {
-					return { props: { event: "", privateAccessRequired: true } }
-				}
-			}
-		}
+		// Private events are UNLISTED, not invite-only: they're excluded from the public
+		// listing (api/events/index.ts) but anyone holding the link can open them. The old
+		// ?code= invite gate was removed — it made every guest-facing link a source of dead
+		// links, since owners and admins bypassed it and so never saw the breakage.
 
 		// compress the event data
 		const eventData = JSON.stringify(event.toJSON())

@@ -147,12 +147,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// rule has been removed. `requireApproval` is the event-level default; individual
 		// tickets may override it.
 
-		// Private Premium Events are invite-only — always require host approval on top
-		// of the invite-link/code gate, regardless of ticket pricing.
+		// Private Premium Events always require host approval, regardless of ticket pricing.
+		// This is now the only gate on them: private events are unlisted rather than
+		// invite-only, so anyone with the link can request a spot — the host still decides.
 		if (premium && privacy === "private") requireApproval = true
-
-		// Auto-generate the private-access code once for premium+private events
-		const privateAccessCode = (premium && privacy === "private") ? generateRandomId(10) as string : undefined
 
 		const effectiveTimezone = timezone && timezone.trim() !== '' ? timezone : 'UTC'
 		const extractedTimeZone = effectiveTimezone.split(') ')[1] || effectiveTimezone
@@ -239,7 +237,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			showOnMobile: showOnMobile ?? true,
 			premium: premium ?? false,
 			premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
-			...(privateAccessCode ? { privateAccessCode } : {}),
 			status: status ?? 'published',
 			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0

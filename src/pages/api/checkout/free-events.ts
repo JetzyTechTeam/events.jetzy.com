@@ -85,12 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (isPendingAdminApproval(event as any)) {
 			return sendResponse(res, null, "This event is awaiting admin approval and can't be booked yet.", false, 403)
 		}
-		if (event.premium && event.privacy === "private") {
-			const privateAccessCode = req.body?.privateAccessCode as string | undefined
-			if (!privateAccessCode || privateAccessCode !== event.privateAccessCode) {
-				return sendResponse(res, null, "A valid invite code is required to book this event.", false, 403)
-			}
-		}
+		// Private events are unlisted rather than invite-only — no access code required.
 		if (event.questions && event.questions.length > 0) {
 			const requiredQuestions = event.questions.filter((q: any) => q.isRequired)
 			for (const reqQ of requiredQuestions) {

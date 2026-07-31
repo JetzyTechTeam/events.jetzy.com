@@ -228,23 +228,18 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/cancel`, `/api/bookings/delete`
 `/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
 
-### Private Premium events — guest links must carry the access code
+### Private events are UNLISTED, not invite-only
 
-`[slug].tsx` blocks a `premium && privacy === "private"` event unless the URL has `?code=<privateAccessCode>` — **except for the owner and admins, who are exempt**. That exemption is why link bugs here are invisible in testing: the host's own link works for them and only fails for the guests they sent it to. **Always verify in an incognito window.**
+A `privacy: "private"` event is excluded from the public listing — [api/events/index.ts](src/pages/api/events/index.ts) filters `privacy: { $ne: 'private' }` for non-admins — but **anyone holding the link can view and book it**. There is no access code.
 
-**Use `eventShareUrl(baseUrl, event)` from [src/lib/event-slug.ts](src/lib/event-slug.ts)** for any link a non-owner will open — share buttons, QR codes, emails. It appends the code when one exists and is a plain event URL otherwise (`privateAccessCode` only exists on premium+private events, [create.ts:155](src/pages/api/events/create.ts#L155)). Use plain `eventUrl` only for owner-facing links.
+**The `?code=` / `privateAccessCode` invite gate was removed.** It was enforced in three places (the `[slug].tsx` page, `checkout/index.ts`, `free-events.ts`) and **exempted owners and admins**. That exemption made every link bug invisible in testing: the host's own link worked, and only the guests they sent it to were blocked. It produced a steady stream of dead links across the share modal, QR codes, blast emails, discussion and chat notifications, and the invite-accept redirect — each needing the code threaded through separately.
 
-Fixed sites, all of which previously handed out dead links for private events:
-- Console **Share Event** modal — also relabels to "Invite Link" with an explainer when the event is private.
-- **Public page share + both QR modals** — `shareUrl` was derived from `window.location.href`, so it only carried the code if the host happened to be viewing with it; now taken from event data.
-- **Blast emails** — [send-blast.ts](src/pages/api/send-blast.ts) now builds the recipient link **server-side** from the event record rather than trusting the client's `eventLink`.
-- **Event-update** notice and the **"Book Again"** button in `sendApprovalRejected`.
+**Consequence for future work: there is exactly one event link, `eventUrl(baseUrl, slug)`.** No share-vs-owner variants, nothing to append. Don't reintroduce a code-aware helper.
 
-The Invite Link banner on the manage page is retained as the explicit call-out that an event is invite-only.
-
-> `sendEventInvitation` and `sendBlastEmail` in `send-grid.ts` have **no callers** — dead code, deliberately untouched.
->
-> Not affected: the Invite Guests flow sends `/events/{id}/guests/invite`, a separate RSVP page that isn't gated.
+- **`privateAccessCode` is deprecated** on the schema and `IEvent` — no longer generated (`create.ts`, `update.ts`) and no longer read. The field is retained so existing documents and the mobile app reading the same collection are undisturbed; it can be dropped in a later cleanup. Old `?code=` links keep working, since the query param is simply ignored.
+- **Private Premium events still force `requireApproval = true`** at creation. With the code gone, host approval of each booking is the only remaining gate on them.
+- The manage page's yellow "Invite Link" banner is replaced by a plain note explaining that the event is unlisted and the share link grants access.
+- `sendEventInvitation` and `sendBlastEmail` in `send-grid.ts` have **no callers** — dead code.
 
 ### Pending admin approval — outward-facing actions gated
 

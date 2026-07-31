@@ -207,12 +207,6 @@ export default function HostedEvents({ event }: Props) {
 			const url = new URL(window.location.href);
 			url.searchParams.delete("view");
 			url.searchParams.delete("scrollTo");
-			// Private Premium events need the access code, and deriving it from the current
-			// URL isn't enough: the owner is exempt from the invite gate, so they can be
-			// viewing without ?code= and would share a link nobody else can open.
-			if (clonedEvent?.privateAccessCode) {
-				url.searchParams.set("code", String(clonedEvent.privateAccessCode));
-			}
 			setShareUrl(url.toString());
 
 			// Auto focus on discussion section only if scroll parameter is present
@@ -231,7 +225,7 @@ export default function HostedEvents({ event }: Props) {
 				}, 1000)
 			}
 		}
-	}, [router.query.view, router.query.scrollTo, clonedEvent?.privateAccessCode])
+	}, [router.query.view, router.query.scrollTo])
 
 	// Share the URL only (no title/description) so mobile native share matches
 	// desktop behaviour — copying the bare event link, not the description text.

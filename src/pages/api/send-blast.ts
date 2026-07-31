@@ -9,7 +9,7 @@ import mongoose from "mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]";
 import { isPendingAdminApproval, PENDING_APPROVAL_MESSAGE } from "@/lib/event-approval";
-import { eventShareUrl } from "@/lib/event-slug";
+import { eventUrl } from "@/lib/event-slug";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -39,7 +39,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   // on event state, not on the caller's role.
   const eventDoc = await Events.findOne(
     { _id: new mongoose.Types.ObjectId(event._id), isDeleted: false },
-    { ownerId: 1, privacy: 1, adminApprovalStatus: 1, slug: 1, privateAccessCode: 1 },
+    { ownerId: 1, privacy: 1, adminApprovalStatus: 1, slug: 1 },
   ).lean();
   if (!eventDoc) {
     return res.status(404).json({ error: "Event not found." });
@@ -59,7 +59,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   // private Premium event needs its access code appended, and the host's own browser
   // often has no code in the URL because owners bypass the invite gate.
   const recipientEventLink = (eventDoc as any).slug
-    ? eventShareUrl(process.env.NEXT_PUBLIC_URL || "", eventDoc as any)
+    ? eventUrl(process.env.NEXT_PUBLIC_URL || "", (eventDoc as any).slug)
     : eventLink;
 
   try {

@@ -70,6 +70,7 @@ export interface IEvent extends IBaseModelProps {
 	adminApprovalStatus?: 'pending' | 'approved';
 	showOnMobile?: boolean;
 	premiumMemberDiscountPercentage?: number;
+	/** @deprecated No longer generated or enforced — private events are unlisted, not invite-only. */
 	privateAccessCode?: string;
 	premium?: boolean; // If true, only Jetzy Premium subscribers can book this event
 	status?: 'draft' | 'published';

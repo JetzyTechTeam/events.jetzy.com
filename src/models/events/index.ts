@@ -239,8 +239,9 @@ const eventsSchema = new Schema<IEvent>(
 			min: 0,
 			max: 100,
 		},
-		// Auto-generated once for premium + private events — lets the invite link
-		// ({slug}?code=...) grant view/booking access without an account/invitation.
+		// DEPRECATED — no longer generated or enforced. Private events are unlisted rather
+		// than invite-only, so nothing reads this. Kept so existing documents (and the
+		// mobile app reading the same collection) are undisturbed; safe to drop later.
 		privateAccessCode: {
 			type: String,
 			required: false,
