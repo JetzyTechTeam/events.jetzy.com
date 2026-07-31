@@ -1,4 +1,5 @@
 import { ROUTES } from "@Jetzy/configs/routes"
+import { eventPath } from "@/lib/event-slug"
 import { DeleteEventThunk, getEventState } from "@Jetzy/redux/reducers/eventsSlice"
 import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import { EventInterface } from "@Jetzy/types"
@@ -30,7 +31,7 @@ const EventCard: React.FC<EventCardProps> = ({ item, isAdmin }) => {
 
 	return (
 		<div className="bg-[#1E1E1E] shadow-md rounded-lg overflow-hidden relative">
-			<Link href={ROUTES.eventDetails.replace("[slug]", item?.slug)} className="block">
+			<Link href={eventPath(item?.slug)} className="block">
 				<div className="relative h-48 w-full">
 					{item?.images && item.images.length > 0 ? (
 						<Image className="w-full h-full object-cover object-top" src={item.images[0]} alt={item?.name} width={512} height={512} />

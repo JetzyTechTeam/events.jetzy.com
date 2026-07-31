@@ -228,6 +228,30 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/cancel`, `/api/bookings/delete`
 `/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
 
+### Custom event slugs
+
+Hosts choose their own event URL. Uses the **existing** `slug` field (`String, required, unique, index`) — **no schema change**, so the mobile app reading the same collection is unaffected. This is also why there is no `previousSlugs` redirect array.
+
+**All slug logic lives in [src/lib/event-slug.ts](src/lib/event-slug.ts)** — `validateEventSlug`, `slugifyFromName`, `buildUniqueSlug`, `escapeForRegex`, and the URL builders `eventPath` / `eventUrl` / `eventAlbumPath` / `eventAlbumUrl`. Isomorphic, so the forms and the API validate identically.
+
+**Permissive by design.** Spaces, accents, `&`, `.`, `_`, emoji are all allowed. Only characters that cannot survive a URL path are rejected, each with a message naming the character: `/` (Next matches one path segment), `?` and `#` (terminate the path), `%` (breaks percent-decoding), `\`, and control characters. Also rejected: `RESERVED_SLUGS` (route names that would shadow `/[slug]` — `login`, `console`, `api`, `profile`, …) and **any 24-hex string**, which would be ambiguous with the ObjectId fallback at [[slug].tsx:259](src/pages/[slug].tsx#L259).
+
+**Blank slug derives from the event name** — `slugifyFromName` strips HTML, folds accents (`Fête` → `fete`), drops apostrophes, and hyphenates; falls back to `generateRandomId(10)` when nothing usable remains (e.g. an emoji-only name).
+
+**Uniqueness is CASE-INSENSITIVE.** The page lookup falls back to a case-insensitive regex, so `MyEvent` and `myevent` would resolve to each other and must not coexist. `buildUniqueSlug` appends `-2`, `-3`… and deliberately **does not filter `isDeleted`** — the unique index has no partial filter, so a soft-deleted event still holds its slug; filtering would report "available" then throw E11000.
+
+- **create.ts** — `slug` optional in zod; supplied → validate + uniquify, blank → derive from name.
+- **update.ts** — `slug` optional; **omit means unchanged** (a stale client or autosave can never blank it); uniquify with `excludeEventId` so a no-op save doesn't bump the slug to `-2`.
+- Both catch `E11000` → friendly message instead of leaking Mongo's text through the 500 handler.
+- **`/api/events/slug-available`** (GET, session required) backs the form's debounced availability check.
+- `clone.ts` still uses `generateRandomId(10)` — a clone shouldn't guess a URL.
+
+**UI** — shared [EventSlugField.tsx](src/components/events/EventSlugField.tsx) on both create and manage, rendering an `events.jetzy.com/` prefix, live validation and availability. Manage passes `warnOnChange` so editing shows a warning that shared links, printed QR codes and already-sent emails will break (the `/{eventId}` fallback still resolves them).
+
+**Every slug URL is now encoded.** ~20 sites previously interpolated the slug raw, safe only because slugs were `[A-Za-z0-9]{10}`. Always use `eventPath`/`eventUrl` — never `` `${base}/${slug}` ``. Note `send-grid.ts` imports them **aliased** (`buildEventUrl`) because several functions declare a local `eventUrl`.
+
+**Non-obvious:** [analytics/events.ts](src/pages/api/analytics/events.ts) matches `eventPath(event.slug)` against `PageView.page`. The browser records the *encoded* path, so a raw comparison would silently report zero views for any slug containing a space.
+
 ### Require Approval (free AND paid tickets)
 
 **Scope: per-ticket, not per-event.** `eventTicketsSchema.requireApproval` is a `Boolean` with **no default** — `undefined` means "inherit `event.requireApproval`". That tri-state is what makes the change backward compatible with zero migration; adding `default:false` would pin every legacy ticket to OFF on its next save. The event-level flag is retained and relabelled in the UI as "Default for tickets that don't set their own".

@@ -58,6 +58,7 @@ import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
 import { ticketApprovalFlag } from "@/lib/ticket-approval";
+import EventSlugField from "@/components/events/EventSlugField";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
@@ -499,6 +500,14 @@ const CreateEventPage = () => {
                         {values.name?.length || 0}/100
                       </InputLeftElement>
                     </InputGroup>
+                  </FormControl>
+
+                  <FormControl mb={4}>
+                    <EventSlugField
+                      value={values.slug || ""}
+                      onChange={(v) => setFieldValue("slug", v)}
+                      eventName={values.name}
+                    />
                   </FormControl>
 
                   <FormControl mb={4}>

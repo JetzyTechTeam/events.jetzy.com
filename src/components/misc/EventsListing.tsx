@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { eventPath } from "@/lib/event-slug";
 import {
   Box,
   Image,
@@ -406,7 +407,7 @@ const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, 
   const handleEventClick = (event: IEvent): void => {
     // Replace this with navigation or modal display for event details
 
-    router.push(ROUTES.eventDetails.replace("[slug]", event.slug));
+    router.push(eventPath(event.slug));
   };
 
   return (

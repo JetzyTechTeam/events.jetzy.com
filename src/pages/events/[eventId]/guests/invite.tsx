@@ -1,4 +1,5 @@
 import { DescriptionSVG, DotSVG, DottedLinesSVG, LocationSVG } from "@/assets/icons";
+import { eventPath } from "@/lib/event-slug";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { authorizedOnly } from "@/lib/authSession";
 import { Events } from "@/models/events";
@@ -55,7 +56,7 @@ export default function GuestsInvited({ event }: { event: string }) {
       setIsRegistered(true);
       setTimeout(() => {
         handleCloseModal();
-        router.push(`/${data.slug}`);
+        router.push(eventPath(data.slug));
       }, 2000);
     } catch (err: any) {
       setError(err.message || "Registration failed");

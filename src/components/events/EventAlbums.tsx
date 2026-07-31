@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react"
+import { eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import {
 	Box,
 	Button,
@@ -153,7 +154,7 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 		const tagPhoto = typeof router.query.tagPhoto === "string" ? router.query.tagPhoto : ""
 		const params = new URLSearchParams({ from: "event" })
 		if (tagPhoto) params.set("photo", tagPhoto)
-		router.replace(`/${eventSlug}/album/${albumParam}?${params.toString()}`)
+		router.replace(`${eventAlbumPath(eventSlug, albumParam)}?${params.toString()}`)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.query.album])
 
@@ -170,11 +171,11 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 	// where the name+email / interests gate runs — so this is a straight navigation.
 	const openGallery = (album: Album) => {
 		// from=event: this page already recorded the event view, so the album page skips it.
-		router.push(`/${eventSlug}/album/${album._id}?from=event`)
+		router.push(`${eventAlbumPath(eventSlug, album._id)}?from=event`)
 	}
 	const openShare = (album: Album) => {
 		setShareAlbum(album)
-		const url = `${window.location.origin}/${eventSlug}/album/${album._id}`
+		const url = eventAlbumUrl(window.location.origin, eventSlug, album._id)
 		navigator.clipboard?.writeText(url).catch(() => {})
 		toast({ title: "Album Link Copied!", description: "Recipients just enter their name and email to view it.", status: "success", duration: 2500, isClosable: true })
 		shareModal.onOpen()
@@ -355,7 +356,7 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 				<QRCodeModal
 					isOpen={shareModal.isOpen}
 					onClose={() => { shareModal.onClose(); setShareAlbum(null) }}
-					url={`${typeof window !== "undefined" ? window.location.origin : ""}/${eventSlug}/album/${shareAlbum._id}`}
+					url={eventAlbumUrl(typeof window !== "undefined" ? window.location.origin : "", eventSlug, shareAlbum._id)}
 					title={`${eventName} — ${shareAlbum.title}`}
 				/>
 			)}

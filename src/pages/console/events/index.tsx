@@ -1,4 +1,5 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
+import { eventPath } from "@/lib/event-slug"
 import { stripHtml, escapeRegExp } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
@@ -286,7 +287,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 				{/* INFO */}
 				<div className="flex-1 min-w-0 space-y-1.5">
 					<div className="flex items-center gap-2 flex-wrap">
-						<Link href={`/${event.slug}`}>
+						<Link href={eventPath(event.slug)}>
 							<Heading as="h3" fontSize={18} cursor="pointer" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
 								{stripHtml(event.name)}
 							</Heading>

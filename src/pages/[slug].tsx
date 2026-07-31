@@ -9,6 +9,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { useAnalytics } from "@/hooks/useAnalytics"
 import Head from "next/head"
 import { stripHTMLAndDecode } from "@/lib/utils"
+import { eventUrl } from "@/lib/event-slug"
 import { toMetaDescription } from "@/utils/text"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -177,7 +178,7 @@ export default function EventDetailPage({ event, pendingApproval, privateAccessR
 	const metaDescription = toMetaDescription(data.desc) || `Join ${eventName} on Jetzy. Book your tickets now!`
 	const rawImage = data.images?.[0]
 	const metaImage = rawImage ? (rawImage.startsWith("http") ? rawImage : `${siteUrl}${rawImage.startsWith("/") ? "" : "/"}${rawImage}`) : `${siteUrl}/imgs/logo.png`
-	const pageUrl = `${siteUrl}/${data.slug || data._id}`
+	const pageUrl = eventUrl(siteUrl, data.slug || String(data._id))
 
 	return (
 		<>
@@ -273,7 +274,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 				try {
 					console.log(`[Slug Lookup v3] Fetching from External V2 API: ${slug}`);
 					const externalApiUrl = "https://test.jetzy.com/api/v2/events";
-					const res = await fetch(`${externalApiUrl}/${slug}`, {
+					const res = await fetch(`${externalApiUrl}/${encodeURIComponent(slug as string)}`, {
 						headers: {
 							'Authorization': `Bearer ${token}`,
 							'Content-Type': 'application/json',

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
+import { eventAlbumPath, eventAlbumUrl, eventPath } from "@/lib/event-slug"
 import Head from "next/head"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
@@ -216,14 +217,14 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	}
 
 	const shareAlbum = () => {
-		const url = `${window.location.origin}/${event.slug}/album/${album._id}`
+		const url = eventAlbumUrl(window.location.origin, event.slug, album._id)
 		shareLink(url)
 		trackEventInteraction(event._id, "share", { albumId: album._id, scope: "album" }).catch(() => {})
 	}
 
 	// Per-photo share: a link that reopens THIS item after the gate (?photo= deep link).
 	const sharePhoto = (m: AlbumMedia) => {
-		const url = `${window.location.origin}/${event.slug}/album/${album._id}?photo=${encodeURIComponent(m.url)}`
+		const url = `${eventAlbumUrl(window.location.origin, event.slug, album._id)}?photo=${encodeURIComponent(m.url)}`
 		shareLink(url)
 		trackEventInteraction(event._id, "share", { albumId: album._id, mediaUrl: m.url, scope: "photo" }).catch(() => {})
 	}
@@ -242,7 +243,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	}
 
 	const requireLoginToTag = (albumId: string, mediaUrl: string) => {
-		const back = `/${event.slug}/album/${albumId}?photo=${encodeURIComponent(mediaUrl)}&tag=1`
+		const back = `${eventAlbumPath(event.slug, albumId)}?photo=${encodeURIComponent(mediaUrl)}&tag=1`
 		router.push(`/login?_cb=${encodeURIComponent(back)}`)
 	}
 
@@ -294,7 +295,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						variant="ghost"
 						color="white"
 						_hover={{ bg: "whiteAlpha.100" }}
-						onClick={() => router.push(`/${event.slug}`)}
+						onClick={() => router.push(eventPath(event.slug))}
 					/>
 					<Text fontWeight="700">Photo tour</Text>
 					<Button leftIcon={<FiShare2 />} size="sm" variant="ghost" color="white" _hover={{ bg: "whiteAlpha.100" }} onClick={shareAlbum}>

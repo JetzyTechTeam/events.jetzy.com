@@ -1,4 +1,6 @@
 import { IEvent } from "@/models/events/types"
+// Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
+import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import sgMail from "@sendgrid/mail"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -541,7 +543,7 @@ export const sendAlbumAccessNotice = async ({
   }
   const cleanEventName = decodeHTMLEntities(eventName)
   const actionLabel = action === "signup" ? "signed up" : "logged in"
-  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}/album/${albumId}`
+  const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
   const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
   try {
     await sgMail.send({
@@ -606,7 +608,7 @@ export const sendAlbumTagNotification = async ({
     return { success: true, message: "Email skipped in localhost mode" }
   }
   const cleanEventName = decodeHTMLEntities(eventName)
-  const albumUrl = `${baseUrl || "https://events.jetzy.com"}/${eventSlug}/album/${albumId}`
+  const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
   try {
     await sgMail.send({
       to: recipientEmail,
@@ -667,7 +669,7 @@ export const sendAlbumPublishedNotification = async ({
   }
   const cleanEventName = decodeHTMLEntities(eventName)
   const root = baseUrl || "https://events.jetzy.com"
-  const albumPath = `/${eventSlug}/album/${albumId}`
+  const albumPath = eventAlbumPath(eventSlug, albumId)
   // Recipients are known event participants and the link lands in their own inbox, so
   // sign them straight in rather than making them fill in the name+email gate. Same
   // one-click pattern the discussion emails use.
@@ -719,7 +721,7 @@ export const sendApprovalRejected = async ({ event, firstName, email, payment, r
   }
   const eventName = decodeHTMLEntities(event.name)
   const isExpired = reason === "expired"
-  const eventUrl = `${baseUrl || "https://events.jetzy.com"}/${(event as any).slug || ""}`
+  const eventUrl = buildEventUrl(baseUrl || "", (event as any).slug || "")
 
   const bodyText = isExpired
     ? `Hi ${firstName}, your request to attend "${eventName}" wasn't reviewed in time.`
@@ -771,7 +773,7 @@ export const sendEventInvitation = async ({ email, eventName, eventSlug, eventDa
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
   }
-  const eventUrl = `${baseUrl}/${eventSlug}`
+  const eventUrl = buildEventUrl(baseUrl, eventSlug)
 
   try {
     await sgMail.send({
@@ -860,7 +862,7 @@ export const sendBlastEmail = async ({
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
   }
-  const eventUrl = `${baseUrl}/${eventSlug}`
+  const eventUrl = buildEventUrl(baseUrl, eventSlug)
 
   // Dynamic button text and styling based on email type
   const buttonConfig = {
@@ -1768,7 +1770,7 @@ export const sendDiscussionNotification = async ({
   hasImages,
 }: DiscussionNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   const subject = hasImages
     ? `New photos added to ${decodeHTMLEntities(eventName)}`
@@ -1835,7 +1837,7 @@ export const sendCommentNotification = async ({
   isPostAuthor = false,
 }: CommentNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   const decodedEvent = decodeHTMLEntities(eventName)
 
@@ -1908,7 +1910,7 @@ export const sendTagNotification = async ({
   hasImages,
 }: TagNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   const subject = hasImages
     ? `${authorName} tagged you in a photo from ${decodeHTMLEntities(eventName)}`
@@ -1973,7 +1975,7 @@ export const sendReactionNotification = async ({
   postId,
 }: ReactionNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   try {
     await sgMail.send({
@@ -2030,7 +2032,7 @@ export const sendViewMilestoneNotification = async ({
   viewCount,
 }: ViewMilestoneNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}?view=discussion&postId=${postId}`)}`
+  const discussionUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`${eventPath(eventSlug)}?view=discussion&postId=${postId}`)}`
 
   try {
     await sgMail.send({
@@ -2086,7 +2088,7 @@ export const sendThankYouNotification = async ({
   formLink,
 }: ThankYouNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
-  const eventUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(`/${eventSlug}`)}`
+  const eventUrl = `${baseUrl}/login?magicToken=${magicToken}&_cb=${encodeURIComponent(eventPath(eventSlug))}`
 
   const subject = `Thank you for making ${decodeHTMLEntities(eventName)} unforgettable 💫`
 
@@ -2529,7 +2531,7 @@ export const sendChatTagNotification = async ({
 }: ChatTagNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   // view=discussion so the event page auto-expands + scrolls to the chat (handled in HostedEvents.tsx)
-  const chatUrl = `${baseUrl}/${eventSlug}?view=discussion`
+  const chatUrl = `${buildEventUrl(baseUrl, eventSlug)}?view=discussion`
 
   const displayName = taggedName || email.split('@')[0]
   const cleanEventName = decodeHTMLEntities(eventName)
@@ -2601,7 +2603,7 @@ export const sendChatMessageNotification = async ({
 }: ChatMessageNotificationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   // view=discussion so the event page auto-expands + scrolls to the chat (handled in HostedEvents.tsx)
-  const chatUrl = `${baseUrl}/${eventSlug}?view=discussion`
+  const chatUrl = `${buildEventUrl(baseUrl, eventSlug)}?view=discussion`
 
   const displayName = recipientName || email.split('@')[0]
   const cleanEventName = decodeHTMLEntities(eventName)

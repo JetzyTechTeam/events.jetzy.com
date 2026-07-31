@@ -10,6 +10,7 @@ import { Error } from "@Jetzy/lib/_toaster";
 import { IEvent } from "@/models/events/types";
 import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
+import { eventPath } from "@/lib/event-slug";
 import {
   Button,
   Modal,
@@ -366,7 +367,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
       <PremiumPaywallModal
         isOpen={showPremiumPromo}
         onClose={() => setShowPremiumPromo(false)}
-        returnTo={`/${event.slug}`}
+        returnTo={eventPath(event.slug)}
         title="Save with Jetzy Premium"
         message={`Subscribe to Jetzy Premium and save ${memberDiscountPercentage}% on this and every other Premium Event.`}
       />

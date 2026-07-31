@@ -84,6 +84,8 @@ import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
+import EventSlugField from "@/components/events/EventSlugField"
+import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
@@ -212,7 +214,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	usePremiumSubscriptionReturn()
 	const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
 	const inviteLink = (typeof window !== "undefined" && event.privateAccessCode)
-		? `${window.location.origin}/${event.slug}?code=${event.privateAccessCode}`
+		? `${eventUrl(window.location.origin, event.slug)}?code=${event.privateAccessCode}`
 		: ""
 	const handleCopyInviteLink = () => {
 		if (!inviteLink) return
@@ -408,6 +410,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 
 		return {
 			name: stripHtml(event.name),
+			slug: event.slug,
 			desc: event.desc,
 			location: event.location,
 			capacity: event.capacity,
@@ -604,7 +607,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					if (changes.length > 0) {
 						const uniqueUsers = Array.from(new Map(events.map((e: any) => [e.customerEmail, e])).values()) as any[]
 						const origin = typeof window !== "undefined" ? window.location.origin : ""
-						const eventLink = `${origin}/${event.slug}`
+						const eventLink = eventUrl(origin, event.slug)
 						const updatePromises = uniqueUsers.map((bk: any) =>
 							sendEventUpdate({
 								eventName: values.name,
@@ -1049,6 +1052,17 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																{values.name?.length || 0}/100
 															</InputLeftElement>
 														</InputGroup>
+													</FormControl>
+
+													<FormControl mb={4}>
+														<EventSlugField
+															value={values.slug || ""}
+															onChange={(v) => setFieldValue("slug", v)}
+															eventName={values.name}
+															eventId={event._id?.toString()}
+															originalSlug={event.slug}
+															warnOnChange
+														/>
 													</FormControl>
 
 													<FormControl mb={4}>
@@ -1789,7 +1803,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				status,
 				targetType,
 				emailType,
-				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 
 			if (res.status === 207) {
@@ -2048,7 +2062,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				status: "all",
 				targetType: "all",
 				emailType: "custom",
-				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 			toast({
 				title: res.status === 207 ? "Partially sent" : "Blast sent!",
@@ -2105,7 +2119,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				status: blast.status || "all",
 				targetType: blast.targetType || "all",
 				emailType: blast.emailType || "custom",
-				eventLink: `${process.env.NEXT_PUBLIC_URL}/${event.slug}`,
+				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 			})
 			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
 			refresh()
@@ -3420,7 +3434,7 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 function ShareModal({ shareModal, setShareModal, eventSlug }: { shareModal: boolean; setShareModal: (shareModal: boolean) => void; eventSlug: string }) {
 	const [copied, setCopied] = useState(false)
 
-	const sharelink = `${process.env.NEXT_PUBLIC_URL}/${eventSlug}`
+	const sharelink = eventUrl(process.env.NEXT_PUBLIC_URL || "", eventSlug)
 
 	const onCopy = () => {
 		navigator.clipboard.writeText(sharelink).then(() => {

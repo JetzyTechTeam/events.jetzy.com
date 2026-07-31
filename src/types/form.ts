@@ -45,6 +45,8 @@ export type CreateEventFormData = {
 	endDate: string
 	endTime: string
 	name: string
+	/** Host-chosen event URL. Blank on create derives one from the name. */
+	slug?: string
 	location: string
 	longitude?: number
 	latitude?: number

@@ -35,6 +35,9 @@ export function buildEventPayload(
 		premiumMemberDiscountPercentage: Math.min(100, Math.max(0, Number(values.premiumMemberDiscountPercentage) || 0)),
 		capacity: values.capacity ?? 0,
 		tickets: values.tickets ?? [],
+		// Trim so a whitespace-only entry is treated as "not set". On create that means
+		// derive the URL from the event name; on update it means leave the slug alone.
+		slug: values.slug?.trim() || undefined,
 		...overrides,
 	}
 }

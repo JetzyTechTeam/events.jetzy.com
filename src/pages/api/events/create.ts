@@ -9,6 +9,7 @@ import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import { findUserRecord } from "@/lib/premium"
+import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -34,6 +35,8 @@ const schema = zod.object({
 	endDate: zod.string().optional(),
 	endTime: zod.string().optional(),
 	name: zod.string().nonempty(),
+	// Host-chosen event URL. Blank/omitted derives one from the event name.
+	slug: zod.string().optional(),
 	location: zod.string().optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
@@ -100,7 +103,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
+		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
+
+		// Resolve the event URL. A host-supplied slug is validated and made unique; a blank
+		// one is derived from the event name, falling back to a random id when the name has
+		// nothing usable in it (e.g. emoji only).
+		let resolvedSlug: string
+		if (requestedSlug && requestedSlug.trim()) {
+			const check = validateEventSlug(requestedSlug)
+			if (!check.ok) return sendResponse(res, null, check.reason, false, ResCode.BAD_REQUEST)
+			resolvedSlug = await buildUniqueSlug(Events, check.slug)
+		} else {
+			const derived = slugifyFromName(name)
+			resolvedSlug = derived
+				? await buildUniqueSlug(Events, derived)
+				: (generateRandomId(10) as string)
+		}
 
 		// Only Jetzy Premium subscribers (or admins) can host a Premium Event
 		if (premium) {
@@ -184,7 +202,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// create event
 		const newEvent = await Events.create({
-			slug: generateRandomId(10),
+			slug: resolvedSlug,
 			ownerId: (session.user as any)._id,
 			name,
 			location,
@@ -246,6 +264,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		return sendResponse(res, newEvent, "Event created successfully.", true, ResCode.CREATED)
 	} catch (error: any) {
+		// Slug uniqueness is pre-checked, but a concurrent create can still lose the race.
+		// Surface that as a usable message instead of leaking Mongo's E11000 text.
+		if (error?.code === 11000) {
+			return sendResponse(res, null, "That event URL was just taken. Please choose another.", false, ResCode.BAD_REQUEST)
+		}
 		console.log("Error:", error.message)
 		return sendResponse(res, null, error.message, false, ResCode.INTERNAL_SERVER_ERROR)
 	}
