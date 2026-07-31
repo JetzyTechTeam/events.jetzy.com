@@ -210,11 +210,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
-		// Jetzy Premium member discount — only when no referral code was applied (an
-		// explicit code the buyer typed in wins over the automatic member perk; Stripe
-		// Checkout Sessions only support a single discount).
+		// Jetzy Premium member discount — stacks with a referral code (see combined
+		// coupon math below): the member discount comes off first, then the referral
+		// code takes its cut off what's left.
 		let premiumMemberDiscountData: { percentage: number } | null = null
-		if (!referralCodeData && event.premium && Number(event.premiumMemberDiscountPercentage) > 0) {
+		if (event.premium && Number(event.premiumMemberDiscountPercentage) > 0) {
 			try {
 				const buyerSession = await getServerSession(req, res, authOptions)
 				const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
@@ -288,14 +288,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
 
-		// Create Stripe coupon for referral code discount if applicable
+		// Stripe Checkout Sessions only support a single discount, so when both a
+		// referral code and a Premium member discount apply, they're combined into ONE
+		// coupon that reproduces "member discount off first, then referral code off the
+		// remainder" — e.g. 80% member + 20% referral = 84% off total, not 100%.
+		let combinedPercentOff: number | null = null
+		if (referralCodeData && premiumMemberDiscountData) {
+			const remainingAfterMember = 1 - premiumMemberDiscountData.percentage / 100
+			const remainingAfterBoth = remainingAfterMember * (1 - referralCodeData.discountPercentage / 100)
+			combinedPercentOff = Math.round((1 - remainingAfterBoth) * 10000) / 100 // 2 decimal places
+		} else if (referralCodeData) {
+			combinedPercentOff = referralCodeData.discountPercentage
+		} else if (premiumMemberDiscountData) {
+			combinedPercentOff = premiumMemberDiscountData.percentage
+		}
+
 		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
-		if (referralCodeData) {
+		if (combinedPercentOff && combinedPercentOff > 0) {
 			try {
+				const couponName = referralCodeData && premiumMemberDiscountData
+					? `Jetzy Premium Member + Referral: ${referralCodeData.code}`
+					: referralCodeData
+						? `Referral: ${referralCodeData.code}`
+						: 'Jetzy Premium Member Discount'
+
 				const coupon = await stripe.coupons.create({
-					percent_off: referralCodeData.discountPercentage,
+					percent_off: combinedPercentOff,
 					duration: 'once',
-					name: `Referral: ${referralCodeData.code}`,
+					name: couponName,
 				})
 
 				discountConfig = [{
@@ -303,20 +323,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				}]
 			} catch (couponError: any) {
 				console.error("[checkout/index] Error creating Stripe coupon:", couponError)
-			}
-		} else if (premiumMemberDiscountData) {
-			try {
-				const coupon = await stripe.coupons.create({
-					percent_off: premiumMemberDiscountData.percentage,
-					duration: 'once',
-					name: 'Jetzy Premium Member Discount',
-				})
-
-				discountConfig = [{
-					coupon: coupon.id,
-				}]
-			} catch (couponError: any) {
-				console.error("[checkout/index] Error creating Premium member discount coupon:", couponError)
 			}
 		}
 
@@ -337,10 +343,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (referralCodeData) {
 			metadata.referralCode = referralCodeData.code
-			metadata.discountPercentage = referralCodeData.discountPercentage.toString()
-		} else if (premiumMemberDiscountData) {
+			metadata.referralDiscountPercentage = referralCodeData.discountPercentage.toString()
+		}
+		if (premiumMemberDiscountData) {
 			metadata.premiumMemberDiscount = "true"
-			metadata.discountPercentage = premiumMemberDiscountData.percentage.toString()
+			metadata.premiumMemberDiscountPercentage = premiumMemberDiscountData.percentage.toString()
 		}
 
 		if (customAnswers && customAnswers.length > 0) {

@@ -526,6 +526,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			return
 		}
 
+		if (values.premium) {
+			const pct = Number(values.premiumMemberDiscountPercentage)
+			if (values.premiumMemberDiscountPercentage === "" || Number.isNaN(pct) || pct < 0 || pct > 100) {
+				Error("Validation Error", "Please enter a member discount between 0 and 100 for this Premium Event.")
+				return
+			}
+		}
+
 		if (isDraft) {
 			if (!values.name?.trim()) {
 				Error("Validation Error", "Event name is required to save as draft")
@@ -1332,7 +1340,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																	<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Jetzy Premium members get this % off tickets</Text>
 																</Box>
 															</Flex>
-															<Field as={Input} type="number" min={0} max={100} value={values.premiumMemberDiscountPercentage ?? 0} placeholder="0" name="premiumMemberDiscountPercentage" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
+															<Input
+																type="number"
+																min={0}
+																max={100}
+																value={values.premiumMemberDiscountPercentage ?? 0}
+																placeholder="0"
+																name="premiumMemberDiscountPercentage"
+																onChange={(e) => {
+																	const raw = e.target.value
+																	setFieldValue("premiumMemberDiscountPercentage", raw === "" ? "" : Math.min(100, Math.max(0, Number(raw))))
+																}}
+																onBlur={() => {
+																	if (values.premiumMemberDiscountPercentage === "" || Number.isNaN(Number(values.premiumMemberDiscountPercentage))) {
+																		setFieldValue("premiumMemberDiscountPercentage", 0)
+																	}
+																}}
+																bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px"
+															/>
 														</Flex>
 													)}
 

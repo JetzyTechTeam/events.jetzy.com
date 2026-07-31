@@ -46,8 +46,9 @@ type SessionMetadata = {
 	phone?: string
 	tickets?: string
 	referralCode?: string
-	discountPercentage?: string
+	referralDiscountPercentage?: string
 	premiumMemberDiscount?: string
+	premiumMemberDiscountPercentage?: string
 	acceptedTerms?: string
 	acceptedTermsAt?: string
 	requiresApproval?: string
@@ -133,14 +134,17 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	const subtotal = tickets.reduce((acc, t) => acc + (t.price || 0) * (t.quantity || 0), 0)
 	const total = session.amount_total ? session.amount_total / 100 : 0
 
-	// Jetzy Premium member discount is mutually exclusive with a referral code (see
-	// checkout/index.ts) — both share `metadata.discountPercentage` for the amount.
+	// Jetzy Premium member discount stacks with a referral code (see checkout/index.ts):
+	// the member discount comes off first, then the referral code takes its cut off the
+	// remainder — e.g. 80% member + 20% referral = 84% off total, not 100%.
 	const premiumMemberDiscountApplied = metadata.premiumMemberDiscount === "true"
-	let discountAmount = 0
-	if (metadata.discountPercentage && (metadata.referralCode || premiumMemberDiscountApplied)) {
-		const discountPercent = parseFloat(metadata.discountPercentage)
-		discountAmount = Math.round((subtotal * (discountPercent / 100) + Number.EPSILON) * 100) / 100
-	}
+	const referralPercent = metadata.referralCode && metadata.referralDiscountPercentage ? parseFloat(metadata.referralDiscountPercentage) : 0
+	const premiumPercent = premiumMemberDiscountApplied && metadata.premiumMemberDiscountPercentage ? parseFloat(metadata.premiumMemberDiscountPercentage) : 0
+	const combinedDiscountFraction = 1 - (1 - premiumPercent / 100) * (1 - referralPercent / 100)
+	const effectiveDiscountPercentage = Math.round(combinedDiscountFraction * 10000) / 100
+	const discountAmount = combinedDiscountFraction > 0
+		? Math.round((subtotal * combinedDiscountFraction + Number.EPSILON) * 100) / 100
+		: 0
 
 	const now = new Date()
 	let booking: IBookings | null = null
@@ -251,7 +255,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			orderNumber: bookingRef,
 			referralCode: metadata.referralCode,
 			discountAmount: discountAmount > 0 ? discountAmount : undefined,
-			discountPercentage: metadata.discountPercentage ? parseFloat(metadata.discountPercentage) : undefined,
+			discountPercentage: effectiveDiscountPercentage > 0 ? effectiveDiscountPercentage : undefined,
 			qrCodeImageUrl,
 		})
 	} catch (emailError) {

@@ -1,9 +1,17 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import axios from "axios"
+import { useSession } from "next-auth/react"
+import { useRouter } from "next/router"
 import { StarIcon } from "@heroicons/react/24/solid"
 import Spinner from "@/components/misc/Spinner"
 import { Error as ErrorToast } from "@/lib/_toaster"
+
+// Query param that marks "the visitor was sent to /login specifically to finish
+// subscribing" — set right before the redirect, read back on return to auto-resume
+// straight into Stripe instead of making them click Subscribe a second time.
+const RESUME_PARAM = "premiumSubscribe"
+const RESUME_SESSION_KEY = "jetzy_premium_resume_handled"
 
 type PlanInfo = {
 	name: string
@@ -33,6 +41,8 @@ const PremiumPaywallModal: React.FC<Props> = ({
 	message = "Host Premium Events and give your attendees member pricing.",
 }) => {
 	const [step, setStep] = useState<"pitch" | "plan">("pitch")
+	const { status: sessionStatus } = useSession()
+	const router = useRouter()
 
 	const { data: plan, isLoading: planLoading } = useQuery({
 		queryKey: ["premium-plan"],
@@ -55,16 +65,49 @@ const PremiumPaywallModal: React.FC<Props> = ({
 				ErrorToast("Error", "Could not start checkout. Please try again.")
 			}
 		},
-		onError: () => {
-			ErrorToast("Error", "Could not start checkout. Please try again.")
+		onError: (error: any) => {
+			const message = error?.response?.data?.message || "Could not start checkout. Please try again."
+			ErrorToast("Error", message)
 		},
 	})
+
+	// Resuming after a login redirect (see handleSubscribeClick below) — skip straight to
+	// Stripe instead of making the user click Subscribe a second time. Guarded by a
+	// sessionStorage flag since every page can mount its own instance of this modal
+	// (Navbar, ticket page, create/manage forms) and all of them see the same URL.
+	useEffect(() => {
+		if (!router.isReady) return
+		if (router.query[RESUME_PARAM] !== "1") return
+		if (sessionStatus !== "authenticated") return
+		if (typeof window === "undefined" || sessionStorage.getItem(RESUME_SESSION_KEY)) return
+
+		sessionStorage.setItem(RESUME_SESSION_KEY, "1")
+		subscribeMutation.mutate(undefined, {
+			onSettled: () => {
+				const { [RESUME_PARAM]: _resume, ...rest } = router.query
+				router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+			},
+		})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.isReady, router.query[RESUME_PARAM], sessionStatus])
 
 	if (!isOpen) return null
 
 	const handleClose = () => {
 		setStep("pitch")
 		onClose()
+	}
+
+	// Subscribing requires an account. A logged-out visitor is sent to log in first,
+	// then automatically resumed straight into Stripe on return (see the effect above).
+	const handleSubscribeClick = () => {
+		if (sessionStatus !== "authenticated") {
+			const url = new URL(window.location.href)
+			url.searchParams.set(RESUME_PARAM, "1")
+			router.push(`/login?_cb=${encodeURIComponent(url.pathname + url.search)}`)
+			return
+		}
+		subscribeMutation.mutate()
 	}
 
 	const formattedPrice = plan?.unitAmount != null
@@ -145,7 +188,7 @@ const PremiumPaywallModal: React.FC<Props> = ({
 								</button>
 								<button
 									disabled={subscribeMutation.isPending}
-									onClick={() => subscribeMutation.mutate()}
+									onClick={handleSubscribeClick}
 									className="w-2/3 bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
 								>
 									{subscribeMutation.isPending ? <Spinner /> : "Subscribe Now"}

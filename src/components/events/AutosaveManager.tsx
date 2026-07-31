@@ -30,7 +30,9 @@ export function buildEventPayload(
 		isPaid: values.isPaid ?? ((values.tickets?.length ?? 0) > 0),
 		requireApproval: values.requireApproval ?? false,
 		premium: values.premium ?? false,
-		premiumMemberDiscountPercentage: values.premiumMemberDiscountPercentage ?? 0,
+		// The field is a plain number input — coerce so a cleared/blank field (or any
+		// out-of-range typo) never reaches the API as "", NaN, or outside 0-100.
+		premiumMemberDiscountPercentage: Math.min(100, Math.max(0, Number(values.premiumMemberDiscountPercentage) || 0)),
 		capacity: values.capacity ?? 0,
 		tickets: values.tickets ?? [],
 		...overrides,
