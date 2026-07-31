@@ -201,7 +201,18 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
             </Menu>
           </Flex>
         ) : (
-          <Flex gap={4}>
+          <Flex align="center" gap={4}>
+            <Button
+              size="sm"
+              bg="#F5C518"
+              color="black"
+              _hover={{ bg: "#E0B317" }}
+              onClick={() => setShowPremiumPaywall(true)}
+              leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
+              display={{ base: "none", sm: "flex" }}
+            >
+              Buy Jetzy Premium
+            </Button>
             <Button
               variant="outline"
               colorScheme="orange"
@@ -216,13 +227,11 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
         )}
       </Flex>
 
-      {authenticated && (
-        <PremiumPaywallModal
-          isOpen={showPremiumPaywall}
-          onClose={() => setShowPremiumPaywall(false)}
-          returnTo={router.asPath}
-        />
-      )}
+      <PremiumPaywallModal
+        isOpen={showPremiumPaywall}
+        onClose={() => setShowPremiumPaywall(false)}
+        returnTo={router.asPath}
+      />
     </Box>
   );
 };
