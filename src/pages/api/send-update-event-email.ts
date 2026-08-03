@@ -25,27 +25,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       eventLink
     } = req.body
 
-    if (
-      !eventName || !oldEventName || !location || !oldLocation ||
-      !startDate || !oldStartDate || !endDate || !oldEndDate ||
-      !endTime || !oldEndTime || !startTime || !oldStartTime || !userEmail
-    ) {
-      return res.status(400).json({ error: "Missing required fields" })
+    // Only the recipient is genuinely required. Dates and times are optional on events
+    // now (date polls, TBD dates, hasStartTime/hasEndTime false), and location can be
+    // blank — the previous check demanded all twelve fields be truthy, so any event
+    // missing an end time silently 400'd and no update email was ever sent.
+    if (!userEmail) {
+      return res.status(400).json({ error: "userEmail is required" })
     }
 
     const data = {
-      eventName,
-      oldEventName,
-      location,
-      oldLocation,
-      startDate,
-      oldStartDate,
-      endDate,
-      oldEndDate,
-      endTime,
-      oldEndTime,
-      startTime,
-      oldStartTime,
+      eventName: eventName || oldEventName || "Your event",
+      oldEventName: oldEventName || eventName || "Your event",
+      location: location || "",
+      oldLocation: oldLocation || "",
+      startDate: startDate || "",
+      oldStartDate: oldStartDate || "",
+      endDate: endDate || "",
+      oldEndDate: oldEndDate || "",
+      endTime: endTime || "",
+      oldEndTime: oldEndTime || "",
+      startTime: startTime || "",
+      oldStartTime: oldStartTime || "",
       userEmail,
       changes,
       eventLink
