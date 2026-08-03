@@ -265,6 +265,16 @@ The confirmation email showed per-ticket prices but **no discount and no total**
 - `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
 - **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
 
+### Stripe's $0.50 minimum charge
+
+Stripe refuses any charge under **50¢ USD**, manual-capture approval holds included. A ticket priced at $0.20 looked fine everywhere until a buyer reached checkout, where session creation threw and they saw a generic 500.
+
+- `STRIPE_MIN_CHARGE_USD`, `isBelowStripeMinimum`, `BELOW_MIN_PRICE_MESSAGE` live in [src/lib/ticket-pricing.ts](src/lib/ticket-pricing.ts) — pure, so forms and APIs validate identically. **$0 is free and always allowed**; only $0.01–$0.49 is rejected.
+- Enforced in both ticket modals ([create.tsx](src/pages/console/events/create.tsx), [manage.tsx](src/pages/console/events/[eventId]/manage.tsx)) and in the `price` zod field of [create.ts](src/pages/api/events/create.ts) and [update.ts](src/pages/api/events/[eventId]/update.ts). The server check is the real guard — the mobile app posts the same schema. Re-saving an event with a legacy sub-minimum ticket is blocked until it is repriced.
+- [checkout/index.ts](src/pages/api/checkout/index.ts) guards the **order total** separately, because form validation cannot see events already saved at a bad price, nor a discount dragging a valid total under the floor ($2.00 × 90% referral = $0.20). It prices from the event record, not the request body.
+- The route's 500 handler now sets a **top-level `message`** alongside the nested `error`. `ServerErrors` in [_toaster.tsx](src/lib/_toaster.tsx) reads only `err.message`, so previously every failure here surfaced as "Something went wrong. Please try again."
+- `unit_amount` uses `Math.round(price * 100)` in all three price-creating routes. Unrounded, `19.99 * 100` is `1998.9999999999998` and Stripe rejects a non-integer.
+
 ### Custom event slugs
 
 Hosts choose their own event URL. Uses the **existing** `slug` field (`String, required, unique, index`) — **no schema change**, so the mobile app reading the same collection is unaffected. This is also why there is no `previousSlugs` redirect array.
