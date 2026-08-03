@@ -61,18 +61,20 @@ export function eventUpdateEmailTemplate({
             <td style="padding: 4px 8px;"><strong>Event Name:</strong></td>
             <td style="padding: 4px 8px;"><b>${eventName}</b></td>
           </tr>
+          ${location ? `
           <tr>
             <td style="padding: 4px 8px;"><strong>Location:</strong></td>
             <td style="padding: 4px 8px;"><b>${location}</b></td>
-          </tr>
+          </tr>` : ''}
           <tr>
             <td style="padding: 4px 8px;"><strong>Start:</strong></td>
-            <td style="padding: 4px 8px;"><b>${startDate}${startTime ? ` ${startTime}` : ''}</b></td>
+            <td style="padding: 4px 8px;"><b>${startDate ? `${startDate}${startTime ? ` ${startTime}` : ''}` : 'To be announced'}</b></td>
           </tr>
+          ${endDate ? `
           <tr>
             <td style="padding: 4px 8px;"><strong>End:</strong></td>
             <td style="padding: 4px 8px;"><b>${endDate}${endTime ? ` ${endTime}` : ''}</b></td>
-          </tr>
+          </tr>` : ''}
         </table>
         
         ${linkHtml}
@@ -84,7 +86,10 @@ export function eventUpdateEmailTemplate({
   const changesText = changes && changes.length > 0 ? `\nChanges made:\n- ${changes.join('\n- ')}\n` : '';
   const linkText = eventLink ? `\nView Event: ${eventLink}\n` : '';
 
-  const textBody = `Event Update: "${oldEventName}" has been updated.\n${changesText}\nNew Details:\nEvent Name: ${eventName}\nLocation: ${location}\nStart: ${startDate}${startTime ? ` ${startTime}` : ''}\nEnd: ${endDate}${endTime ? ` ${endTime}` : ''}\n${linkText}\nThank you,\nThe Jetzy Team`;
+  const locationText = location ? `Location: ${location}\n` : ''
+  const startText = `Start: ${startDate ? `${startDate}${startTime ? ` ${startTime}` : ''}` : 'To be announced'}\n`
+  const endText = endDate ? `End: ${endDate}${endTime ? ` ${endTime}` : ''}\n` : ''
+  const textBody = `Event Update: "${oldEventName}" has been updated.\n${changesText}\nNew Details:\nEvent Name: ${eventName}\n${locationText}${startText}${endText}${linkText}\nThank you,\nThe Jetzy Team`;
 
   return {
     subject: `Event Update: "${oldEventName}" has changed`,

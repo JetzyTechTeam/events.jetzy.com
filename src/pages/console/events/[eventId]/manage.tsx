@@ -572,6 +572,17 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		dispatcher(UpdateEventThunk({ data: { payload: JSON.stringify({ ...values, privacy: values.privacy }) }, id: event._id.toString() })).then((res: any) => {
 			if (res?.payload?.status) {
 				succeeded = true
+				// The toggle is on but there's nobody booked — say so, otherwise it looks
+				// identical to a successful send.
+				if (sendUpdateEmailCheck && events.length === 0) {
+					toast({
+						title: "No update emails sent",
+						description: "Nobody has booked this event yet, so there was no one to notify.",
+						status: "info",
+						duration: 6000,
+						isClosable: true,
+					})
+				}
 				if (sendUpdateEmailCheck && events.length > 0) {
 					const changes: string[] = []
 					const extractedTimeZone = getEventZone(event?.timezone)
@@ -623,9 +634,39 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								changes,
 								eventLink,
 							} as any))
-						Promise.all(updatePromises)
-							.then((results) => console.log("All event updates sent successfully:", results))
-							.catch((err) => console.error("One or more event updates failed:", err))
+						// Tell the host what happened. This used to log to the console only, so a
+						// failing send looked identical to a successful one — the "Event updated!"
+						// toast fired either way and the page navigated off.
+						Promise.allSettled(updatePromises).then((results) => {
+							const failed = results.filter((r) => r.status === "rejected").length
+							if (failed > 0) {
+								console.error("Event update emails failed:", results.filter((r) => r.status === "rejected"))
+								toast({
+									title: "Event saved, but some update emails failed",
+									description: `${failed} of ${results.length} attendee${results.length === 1 ? "" : "s"} weren't notified.`,
+									status: "warning",
+									duration: 8000,
+									isClosable: true,
+								})
+							} else {
+								toast({
+									title: `Update email sent to ${results.length} attendee${results.length === 1 ? "" : "s"}`,
+									status: "success",
+									duration: 4000,
+									isClosable: true,
+								})
+							}
+						})
+					} else {
+						// Nothing the email reports on actually changed, so there is nothing to
+						// tell attendees. Without this the host assumes the send failed.
+						toast({
+							title: "No update emails sent",
+							description: "Nothing changed that attendees need to be told about.",
+							status: "info",
+							duration: 6000,
+							isClosable: true,
+						})
 					}
 				}
 				toast({ title: "Event updated!", status: "success", duration: 3000 })
