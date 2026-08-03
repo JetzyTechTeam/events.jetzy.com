@@ -589,8 +589,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					const oldStart = event.startsOn ? dayjs.utc(event.startsOn).tz(extractedTimeZone) : null
 					const oldEnd = event.endsOn ? dayjs.utc(event.endsOn).tz(extractedTimeZone) : null
 
-					if (values.name !== event.name) changes.push(`Event Name: ${event.name} -> ${values.name}`)
+					// Every comparison must mirror how initialValues seeds the field, or it
+					// reports a change on every save. `name` is seeded with stripHtml(), so
+					// comparing against the raw name flagged a phantom edit for any name
+					// containing markup or an entity.
+					const oldName = stripHtml(event.name)
+					if (values.name !== oldName) changes.push(`Event Name: ${oldName} -> ${values.name}`)
 					if (values.location !== event.location) changes.push(`Location: ${event.location} -> ${values.location}`)
+
+					// The event link changing is the single most important thing to tell an
+					// attendee — every link they already hold stops working.
+					if (values.slug && values.slug !== event.slug) {
+						changes.push(`The event link has changed to ${eventUrl(typeof window !== "undefined" ? window.location.origin : "", values.slug)}`)
+					}
+
+					// Seeded via normalizeTimezone(), so normalise the old value the same way.
+					if (values.timezone !== normalizeTimezone(event?.timezone)) {
+						changes.push(`Time zone changed to ${values.timezone}`)
+					}
 
 					const oldStartDateStr = oldStart ? oldStart.format("YYYY-MM-DD") : ""
 					const oldStartTimeStr = oldStart && event.hasStartTime !== false ? oldStart.format("HH:mm") : ""
@@ -607,9 +623,33 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					if (values.desc !== event.desc) changes.push("Event description was updated")
 					if (values.capacity !== event.capacity) changes.push(`Event capacity was changed to ${values.capacity}`)
 
-					const currentTickets = JSON.stringify(values.tickets.map(t => ({ title: t.title, price: t.price })))
-					const oldTickets = JSON.stringify((event.tickets || []).map((t: any) => ({ title: stripHtml(t.name), price: Number(t.price) })))
+					// Include the ticket description — it's part of what the attendee bought.
+					// Per-ticket approval is deliberately excluded: it only affects new
+					// bookings, not someone who already has a place.
+					const currentTickets = JSON.stringify(values.tickets.map(t => ({ title: t.title, price: t.price, description: t.description })))
+					const oldTickets = JSON.stringify((event.tickets || []).map((t: any) => ({ title: stripHtml(t.name), price: Number(t.price), description: stripHtml(t.desc) })))
 					if (currentTickets !== oldTickets) changes.push("Ticketing options have been revised")
+
+					// Whether the address is visible to them, seeded as `|| false`.
+					const oldDisclose = event.locationDisclosedAfterBooking || false
+					if ((values.locationDisclosedAfterBooking || false) !== oldDisclose) {
+						changes.push(values.locationDisclosedAfterBooking
+							? "The exact location is now shared only with booked attendees"
+							: "The event location is now shown publicly")
+					}
+
+					// Date poll: compare the proposed dates, ignoring vote counts, which move
+					// on their own and would otherwise report a change on every save.
+					const pollShape = (p: any) => JSON.stringify({
+						isActive: !!p?.isActive,
+						question: p?.question || "",
+						options: (p?.options || []).map((o: any) => ({ date: o?.date, time: o?.time || "", label: o?.label || "" })),
+					})
+					if (pollShape(values.datePoll) !== pollShape(event.datePoll)) {
+						changes.push(values.datePoll?.isActive
+							? "The proposed dates for this event have been updated — please cast your vote"
+							: "The date poll for this event has been closed")
+					}
 
 					if (changes.length > 0) {
 						const uniqueUsers = Array.from(new Map(events.map((e: any) => [e.customerEmail, e])).values()) as any[]
