@@ -1,6 +1,7 @@
 'use client'
 import { Error } from "@/lib/_toaster"
 import { eventPath } from "@/lib/event-slug"
+import { buildTicketPricing } from "@/lib/ticket-pricing"
 import axios from "axios"
 import { useRouter } from "next/router"
 import React, { useMemo } from "react"
@@ -168,9 +169,22 @@ const CheckoutSuccessPage: React.FC = () => {
 	}, 0)
 	// Stripe's amount_total is the authoritative charged amount (cents), already discounted
 	const finalTotal = typeof sessionData?.amount_total === "number" ? sessionData.amount_total / 100 : subtotal
-	const discount = Math.max(0, subtotal - finalTotal)
 	const referralCode: string | undefined = sessionData?.metadata?.referralCode
-	const discountPercentage: string | undefined = sessionData?.metadata?.discountPercentage
+
+	// Split the discount into its Premium and referral parts. Checkout writes the two
+	// rates separately (`referralDiscountPercentage` / `premiumMemberDiscountPercentage`);
+	// the old code read a `discountPercentage` key that is no longer written, so the
+	// percentage silently vanished and a Premium-only saving showed as a bare "Discount".
+	// Same helper as the checkout form and the confirmation email, with Stripe's total
+	// authoritative — it reconciles any rounding drift into the last line.
+	const pricing = buildTicketPricing({
+		subtotal,
+		referralCode,
+		referralPercentage: parseFloat(sessionData?.metadata?.referralDiscountPercentage ?? "0"),
+		premiumPercentage: parseFloat(sessionData?.metadata?.premiumMemberDiscountPercentage ?? "0"),
+		total: finalTotal,
+		combinedDiscountAmount: Math.max(0, subtotal - finalTotal),
+	})
 
 	const displayEvent = eventData || parsedEvent
 	let displayLocation = eventData?.location || parsedEvent?.location
@@ -267,16 +281,18 @@ const CheckoutSuccessPage: React.FC = () => {
 								</div>
 							))}
 
-							{discount > 0 && (
+							{pricing.lines.length > 0 && (
 								<>
 									<div className="flex justify-between border-t pt-3">
 										<span className="text-gray-600">Subtotal</span>
-										<span className="text-gray-800">${subtotal.toFixed(2)}</span>
+										<span className="text-gray-800">${pricing.subtotal.toFixed(2)}</span>
 									</div>
-									<div className="flex justify-between text-green-600">
-										<span>Discount{referralCode ? ` (${referralCode}${discountPercentage ? ` · ${discountPercentage}%` : ''})` : ''}</span>
-										<span>-${discount.toFixed(2)}</span>
-									</div>
+									{pricing.lines.map((line) => (
+										<div key={line.label} className="flex justify-between text-green-600">
+											<span>{line.label}</span>
+											<span>-${line.amount.toFixed(2)}</span>
+										</div>
+									))}
 								</>
 							)}
 							<div className="flex justify-between border-t pt-3">

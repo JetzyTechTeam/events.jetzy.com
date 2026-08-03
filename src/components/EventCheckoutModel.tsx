@@ -5,6 +5,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { selectionRequiresApproval } from "@/lib/ticket-approval"
+import { buildTicketPricing } from "@/lib/ticket-pricing"
+import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 
 export default function EventCheckoutModel({ event, eventData }: { event: string; eventData?: any }) {
 	// const [acceptTerms, setAcceptTerms] = useState(false)
@@ -38,6 +40,21 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 	const [referralCodeValid, setReferralCodeValid] = useState<boolean | null>(null)
 	const [referralCodeDiscount, setReferralCodeDiscount] = useState<number | null>(null)
+
+	// Live preview of what the buyer will actually pay. Built with the same helper the
+	// server, the confirmation email and the success page use, so all four agree — but the
+	// server recomputes independently and stays authoritative.
+	const { isPremium } = usePremiumStatus()
+	const memberDiscountPercentage = liveEventData?.premium && isPremium
+		? Number(liveEventData?.premiumMemberDiscountPercentage) || 0
+		: 0
+	const appliedReferralPercentage = referralCodeValid === true ? (referralCodeDiscount ?? 0) : 0
+	const pricing = buildTicketPricing({
+		subtotal: selectionTotal,
+		referralCode: appliedReferralPercentage > 0 ? formData.referralCode?.trim().toUpperCase() : undefined,
+		referralPercentage: appliedReferralPercentage,
+		premiumPercentage: memberDiscountPercentage,
+	})
 	const [validatingReferralCode, setValidatingReferralCode] = useState(false)
 	const referralCodeValidationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -403,7 +420,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												<p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
 												<p className="text-gray-300 text-xs mt-1">
 													{selectionTotal > 0
-														? `Your card will be authorized for ${selectionTotal.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged. You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
+														// Quote the DISCOUNTED total — that's what Stripe actually holds.
+														? `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged. You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
 														: "Your registration is subject to host approval."}
 												</p>
 											</div>
@@ -641,6 +659,29 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										</div>
 									)}
 								</div>
+
+								{/* Order summary. Only for paid selections — a free RSVP has nothing to
+								    break down and the rows would just be noise. */}
+								{selectionTotal > 0 && (
+									<div className="px-6 pt-4 shrink-0">
+										<div className="rounded-lg bg-[#1A1A1A] border border-[#2E2E2E] p-3 text-sm">
+											<div className="flex justify-between text-gray-300">
+												<span>Subtotal</span>
+												<span>{pricing.subtotal.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+											</div>
+											{pricing.lines.map((line) => (
+												<div key={line.label} className="flex justify-between text-green-400 mt-1">
+													<span>{line.label}</span>
+													<span>-{line.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+												</div>
+											))}
+											<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
+												<span>Total</span>
+												<span>{pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+											</div>
+										</div>
+									</div>
+								)}
 
 								{/* Pinned action buttons */}
 								<div className="px-6 py-4 shrink-0 border-t border-[#2E2E2E]">

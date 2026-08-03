@@ -298,11 +298,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
 		if (combinedPercentOff && combinedPercentOff > 0) {
 			try {
-				const couponName = referralCodeData && premiumMemberDiscountData
-					? `Jetzy Premium Member + Referral: ${referralCodeData.code}`
+				const rawCouponName = referralCodeData && premiumMemberDiscountData
+					? `Premium + Referral ${referralCodeData.code}`
 					: referralCodeData
 						? `Referral: ${referralCodeData.code}`
 						: 'Jetzy Premium Member Discount'
+
+				// Stripe hard-limits coupon.name to 40 characters and rejects the whole call
+				// if it's longer. The name is built from a host-supplied referral code, so it
+				// must be clamped: the old combined label came to 42 chars, which meant every
+				// stacked Premium+referral checkout threw here, got swallowed below, and the
+				// buyer was charged full price with no discount at all.
+				const couponName = rawCouponName.slice(0, 40)
 
 				const coupon = await stripe.coupons.create({
 					percent_off: combinedPercentOff,
@@ -314,7 +321,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					coupon: coupon.id,
 				}]
 			} catch (couponError: any) {
-				console.error("[checkout/index] Error creating Stripe coupon:", couponError)
+				// Never fall through to a full-price session. The buyer was promised a
+				// discount; charging them in full instead is worse than making them retry.
+				console.error("[checkout/index] Coupon creation failed:", couponError?.message || couponError)
+				return sendResponse(res, null, "We couldn't apply your discount. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 			}
 		}
 
