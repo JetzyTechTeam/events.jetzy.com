@@ -2675,6 +2675,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const [ticketTypeFilter, setTicketTypeFilter] = useState<string>("all")
 	const [searchQuery, setSearchQuery] = useState("")
 	const queryClient = useQueryClient()
+	const toast = useToast()
 
 	const eventTickets: any[] = event?.tickets || []
 	const ticketNameById: Record<string, string> = {}
@@ -2686,19 +2687,35 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	}
 
 	const handleDeleteGuest = async (email: string, guest: any, booking: any) => {
-		if (!confirm(`Remove ${booking?.customerName || guest?.name || "this guest"}? This cannot be undone.`)) return
+		const who = booking?.customerName || guest?.name || "this guest"
+		// Deleting a request that's still awaiting approval is a decline, so the guest is
+		// emailed and any card hold released. Say so before the host confirms.
+		const isAwaitingApproval = isPendingBooking(booking)
+		const onHold = booking?.payment?.status === "authorized" || booking?.payment?.status === "capturing"
+		const message = isAwaitingApproval
+			? `Decline ${who}'s request?\n\nThey'll be emailed that they weren't approved${onHold ? `, and the $${Number(booking?.payment?.amount || 0).toFixed(2)} hold on their card will be released` : ""}. This cannot be undone.`
+			: `Remove ${who}? This cannot be undone.`
+		if (!confirm(message)) return
+
 		setDeletingEmail(email)
 		try {
+			let bookingResult: any = null
 			if (booking?.bookingRef) {
-				await axios.post("/api/bookings/delete", { bookingRef: booking.bookingRef })
+				const res = await axios.post("/api/bookings/delete", { bookingRef: booking.bookingRef })
+				bookingResult = res.data
 			}
 			if (guest?._id) {
 				await axios.post("/api/guests/delete", { guestId: guest._id })
 			}
 			queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
-		} catch {
-			alert("Failed to delete guest.")
+			if (bookingResult?.data?.rejectionEmailSent) {
+				toast({ title: bookingResult.message || "Request declined.", status: "success", duration: 5000, isClosable: true })
+			}
+		} catch (err: any) {
+			// The server refuses to delete an already-charged booking, and that reason is
+			// worth showing rather than a generic failure.
+			alert(err?.response?.data?.message || "Failed to delete guest.")
 		} finally {
 			setDeletingEmail(null)
 		}
