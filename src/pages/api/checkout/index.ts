@@ -1,4 +1,5 @@
 import { isPendingAdminApproval } from "@/lib/event-approval"
+import { buildTicketPricing, isBelowStripeMinimum, STRIPE_MIN_CHARGE_USD } from "@/lib/ticket-pricing"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
@@ -280,6 +281,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
 
+		// Stripe refuses any charge under $0.50 — a manual-capture hold included — and the
+		// rejection surfaces as an opaque 500 at the buyer's checkout. Catch it here with
+		// real numbers. This covers both an event saved at a sub-minimum price before that
+		// was validated, and a discount that drags an otherwise fine total under the floor.
+		// Unit prices come from the event record rather than the request body, so the figure
+		// matches what Stripe is actually being asked to charge.
+		const chargeSubtotal = tickets.reduce((sum, ticket) => {
+			const stored = (event.tickets || []).find((et: any) => et?.stripeProductId === ticket.priceId)
+			const unitPrice = Number(stored?.price ?? ticket.price) || 0
+			return sum + unitPrice * (Number(ticket.quantity) || 0)
+		}, 0)
+		const chargePricing = buildTicketPricing({
+			subtotal: chargeSubtotal,
+			referralCode: referralCodeData?.code,
+			referralPercentage: referralCodeData?.discountPercentage,
+			premiumPercentage: premiumMemberDiscountData?.percentage,
+		})
+		if (isBelowStripeMinimum(chargePricing.total)) {
+			console.warn("[checkout/index] Order below Stripe minimum:", { subtotal: chargeSubtotal, total: chargePricing.total })
+			return sendResponse(
+				res,
+				null,
+				`This order comes to $${chargePricing.total.toFixed(2)}. Payments must be at least $${STRIPE_MIN_CHARGE_USD.toFixed(2)} — please contact the host.`,
+				false,
+				ResCode.BAD_REQUEST,
+			)
+		}
+
 		// Stripe Checkout Sessions only support a single discount, so when both a
 		// referral code and a Premium member discount apply, they're combined into ONE
 		// coupon that reproduces "member discount off first, then referral code off the
@@ -410,7 +439,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	} catch (error: any) {
 		console.error("[checkout/index] CRITICAL ERROR:", error.message || error)
 		if (error.stack) console.error(error.stack)
+		// The top-level `message` matters: the client toaster reads `err.message` and, when
+		// the only message was nested under `error`, every failure here rendered as the
+		// useless "Something went wrong. Please try again." `error` is kept for callers
+		// that already read that shape.
 		return res.status(500).json({
+			status: false,
+			message: error.message || "An unexpected server error occurred",
 			error: {
 				code: "500",
 				message: error.message || "An unexpected server error occurred"

@@ -58,6 +58,7 @@ import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
 import { ticketApprovalFlag } from "@/lib/ticket-approval";
+import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing";
 import EventSlugField from "@/components/events/EventSlugField";
 import { isPendingAdminApproval } from "@/lib/event-approval";
 import { FileUploadData } from "@/components/misc/DragAndDropUploader";
@@ -1130,6 +1131,13 @@ const CreateEventPage = () => {
                             // directly used to silently drop it (0 and NaN are both falsy).
                             if (!tempTicket.title.trim()) {
                               Error("Missing ticket name", "You need to provide a ticket name.");
+                              return;
+                            }
+
+                            // Stripe won't charge under $0.50, so a ticket priced there can never
+                            // be sold — the failure would only surface at the buyer's checkout.
+                            if (isBelowStripeMinimum(tempTicket.price)) {
+                              Error("Price too low", BELOW_MIN_PRICE_MESSAGE);
                               return;
                             }
 
