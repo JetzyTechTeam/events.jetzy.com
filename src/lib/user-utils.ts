@@ -42,10 +42,25 @@ const settings = {
     deactivatedAt: null,
 }
 
+/**
+ * Escape a user-supplied string for safe use inside a RegExp literal.
+ * Same helper, same reason, as `booking-identity.ts` and `premium-eligibility.ts`.
+ */
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 export async function createOrUpdateUser(userData: UserData) {
     try {
         const db = await connectMongo()
-        const userExists = await db.collection("users").findOne({ email: userData.email })
+
+        // Case-insensitive on purpose. `users.email` has no `lowercase: true` (same trap as
+        // `Bookings.customerEmail`), so an exact match missed an existing account whenever the
+        // buyer typed a different capitalisation than they signed up with — and the unique
+        // index is case-sensitive too, so the insert below then created a SECOND row for the
+        // same person instead of failing. Every other email lookup in checkout already matches
+        // this way; this was the last one that didn't.
+        const userExists = await db
+            .collection("users")
+            .findOne({ email: { $regex: `^${escapeRegex(userData.email.trim())}$`, $options: "i" } })
 
         let userId
 
