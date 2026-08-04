@@ -49,7 +49,7 @@ const PremiumPaywallModal: React.FC<Props> = ({
 	onClose,
 	returnTo,
 	title = "Unlock Jetzy Premium",
-	message = "Host Premium Events and give your attendees member pricing.",
+	message,
 	benefits = PREMIUM_BENEFITS,
 }) => {
 	const [step, setStep] = useState<"pitch" | "plan">("pitch")
@@ -156,9 +156,11 @@ const PremiumPaywallModal: React.FC<Props> = ({
 							<div className="rounded-lg p-6 mb-6" style={{ background: "rgba(245,197,24,0.15)", border: "1px solid rgba(245,197,24,0.3)" }}>
 								<p className="text-2xl font-bold text-center" style={{ color: "#F5C518" }}>{title}</p>
 							</div>
-							<p className="text-gray-400 text-sm mb-6">
-								{message}
-							</p>
+							{message && (
+								<p className="text-gray-400 text-sm mb-6">
+									{message}
+								</p>
+							)}
 							{benefits.length > 0 && (
 								<ul className="flex flex-col gap-3 text-left mb-6">
 									{benefits.map((benefit) => (
