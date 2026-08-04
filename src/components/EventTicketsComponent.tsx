@@ -368,7 +368,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         isOpen={showPremiumPromo}
         onClose={() => setShowPremiumPromo(false)}
         returnTo={eventPath(event.slug)}
-        title="Save with Jetzy Premium"
         message={`Subscribe to Jetzy Premium and save ${memberDiscountPercentage}% on this and every other Premium Event.`}
       />
 
