@@ -25,4 +25,10 @@ export const ROUTES = {
 	home: "/",
 	eventDetails: "/[slug]",
 	terms: "/terms",
+	// A guest's own tickets. Not to be confused with `dashboard.bookings` above, which is
+	// the host-side view of who booked events *you* run.
+	myBookings: "/my-bookings",
+	// Mobile-facing bridge page: plan picker + Stripe subscription checkout, entered via
+	// magicToken and returning to the app via deep link when done.
+	subscribe: "/subscribe",
 }

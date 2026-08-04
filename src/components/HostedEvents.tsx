@@ -13,6 +13,8 @@ import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { eventHasAnyApprovalTicket } from "@/lib/ticket-approval"
 import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
+import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
+import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
 import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
@@ -135,19 +137,17 @@ export default function HostedEvents({ event }: Props) {
 	const canManage = isAdmin || isOwner
 	const isDatePollActive = !!(clonedEvent?.datePoll?.isActive && clonedEvent?.datePoll?.options?.length)
 
-	// Cancel-own-booking flow (free events only)
-	// Treat event as free if isPaid is not true OR every ticket price is 0
-	const isFreeEvent = !!clonedEvent && (
-		clonedEvent.isPaid !== true ||
-		(Array.isArray(clonedEvent.tickets) && clonedEvent.tickets.length > 0 && clonedEvent.tickets.every((t: any) => Number(t?.price) === 0))
-	)
+	// Cancel-own-booking flow. This used to be gated to free events, which meant a paid
+	// booking could never be cancelled from anywhere in the product. The API decides
+	// eligibility now (see lib/booking-cancellation.ts) and returns `canCancel` with it.
 	const { data: myBookingResp, refetch: refetchMyBooking } = useQuery({
 		queryKey: ["myBookingForEvent", clonedEvent?._id?.toString()],
 		queryFn: () => axios.get(`/api/bookings/my-for-event?eventId=${clonedEvent?._id}`).then((r) => r.data),
-		enabled: !!session && !!clonedEvent?._id && isFreeEvent,
+		enabled: !!session && !!clonedEvent?._id,
 	})
 	const myBooking = myBookingResp?.data ?? null
 	const [isCancelling, setIsCancelling] = useState(false)
+	const [showCancelDialog, setShowCancelDialog] = useState(false)
 
 	// Badge counts for the admin Approvals tab, so a host sees there's something waiting —
 	// and that a card hold is about to lapse — without having to open the tab.
@@ -163,7 +163,8 @@ export default function HostedEvents({ event }: Props) {
 		return isPendingBooking(b) && remaining !== null && remaining > 0 && remaining < 48 * 60 * 60 * 1000
 	}).length ?? 0
 
-	const handleCancelBooking = async () => {
+	// Opens the confirm dialog, after checking there is actually something to cancel.
+	const requestCancelBooking = () => {
 		// Not logged in → push to login with callback
 		if (!session) {
 			toast({ title: "Please log in to cancel your booking", status: "info" })
@@ -183,13 +184,23 @@ export default function HostedEvents({ event }: Props) {
 			return
 		}
 
-		if (!window.confirm("Cancel your booking for this event? This cannot be undone.")) return
+		if (!myBooking.canCancel) {
+			toast({ title: myBooking.cancelBlockedReason || "This booking can no longer be cancelled.", status: "warning" })
+			return
+		}
+
+		setShowCancelDialog(true)
+	}
+
+	const handleCancelBooking = async () => {
+		if (!myBooking?.bookingRef) return
 
 		setIsCancelling(true)
 		try {
 			const res = await axios.post("/api/bookings/cancel", { bookingRef: myBooking.bookingRef })
 			if (res.data?.status) {
 				toast({ title: "Booking cancelled", status: "success" })
+				setShowCancelDialog(false)
 				await refetchMyBooking()
 			} else {
 				toast({ title: res.data?.message || "Cancel failed", status: "error" })
@@ -450,10 +461,11 @@ export default function HostedEvents({ event }: Props) {
 											Get Tickets
 										</a>
 									)}
-									{/* Nothing to cancel once the event is over — hide for everyone. */}
-									{isFreeEvent && !isEnded && (
+									{/* Only shown when the viewer actually has a cancellable booking — the
+									    API decides that, including the event-start cutoff. */}
+									{myBooking?.canCancel && !isEnded && (
 										<button
-											onClick={handleCancelBooking}
+											onClick={requestCancelBooking}
 											disabled={isCancelling}
 											className="bg-[#7C1D1D] text-white font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm disabled:opacity-60 disabled:cursor-not-allowed"
 										>
@@ -658,7 +670,19 @@ export default function HostedEvents({ event }: Props) {
 					</div>
 				</div>
 				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
-				
+
+			{/* Cancelling is irreversible and, for a paid booking, costs the guest their
+			    money — so it goes through the shared warning dialog, never window.confirm. */}
+			<CancelBookingDialog
+				isOpen={showCancelDialog}
+				onClose={() => setShowCancelDialog(false)}
+				onConfirm={handleCancelBooking}
+				isLoading={isCancelling}
+				eventName={stripHtml(clonedEvent?.name || "")}
+				moneyState={(myBooking?.moneyState || "free") as MoneyState}
+				amount={Number(myBooking?.moneyAmount || 0)}
+			/>
+	
 				{/* QR Code Modal for Event */}
 				{canManage && (
 					<QRCodeModal

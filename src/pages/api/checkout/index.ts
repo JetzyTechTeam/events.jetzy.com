@@ -1,11 +1,13 @@
 import { isPendingAdminApproval } from "@/lib/event-approval"
+import { buildTicketPricing, isBelowStripeMinimum, STRIPE_MIN_CHARGE_USD } from "@/lib/ticket-pricing"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { uniqueId } from "@Jetzy/lib/utils"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
-import { findUserRecord } from "@/lib/premium"
+import { resolveMemberDiscountPercentage } from "@/lib/premium-eligibility"
+import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
 
 type BodyParams = {
@@ -132,46 +134,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Non-critical error, continue
 		}
 
-		// Validate and get referral code if provided
+		// Validate and get referral code if provided. The modal's green tick is only a
+		// preview — the code can be deactivated or exhausted before submit, so re-check.
 		let referralCodeData: { code: string; discountPercentage: number } | null = null
-		if (referralCode) {
-			try {
-				const { ReferralCodes } = await import("@/models/events/referral-codes")
-				const { Types } = await import("mongoose")
-
-				const eventIdToQuery = tickets[0]?.eventId
-				if (!eventIdToQuery || !Types.ObjectId.isValid(eventIdToQuery)) {
-					console.error("[checkout/index] Invalid event ID in tickets:", eventIdToQuery)
-					return sendResponse(res, null, "Invalid event ID", false, ResCode.BAD_REQUEST)
-				}
-
-				const codeRecord = await ReferralCodes.findOne({
-					eventId: new Types.ObjectId(eventIdToQuery),
-					code: referralCode.trim().toUpperCase(),
-					isDeleted: false,
-					isActive: true,
-				})
-
-				if (!codeRecord) {
-					console.warn("[checkout/index] Referral code not found or inactive for this event:", referralCode)
-					return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
-				}
-
-				// Check if code has reached max uses
-				if (codeRecord.maxUses !== null && codeRecord.maxUses !== undefined && codeRecord.usageCount >= codeRecord.maxUses) {
-					console.warn("[checkout/index] Referral code max uses reached")
-					return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
-				}
-
-				referralCodeData = {
-					code: codeRecord.code,
-					discountPercentage: codeRecord.discountPercentage,
-				}
-				console.log("[checkout/index] Referral code applied:", referralCodeData)
-			} catch (referralError: any) {
-				console.error("[checkout/index] Error validating referral code:", referralError)
-				return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
+		try {
+			const referralResult = await validateReferralCodeForEvent(tickets[0]?.eventId, referralCode)
+			if (!referralResult.ok) {
+				console.warn("[checkout/index] Referral code rejected:", referralResult.message, referralCode)
+				return sendResponse(res, null, referralResult.message, false, ResCode.BAD_REQUEST)
 			}
+			referralCodeData = referralResult.data
+			if (referralCodeData) console.log("[checkout/index] Referral code applied:", referralCodeData)
+		} catch (referralError: any) {
+			console.error("[checkout/index] Error validating referral code:", referralError)
+			return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
 		// using price api from stripe create price for the tickets selected
@@ -202,24 +178,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Private events are unlisted rather than invite-only — no access code required.
 
+		// Who is buying, if anyone is logged in. Resolved once and carried into the Stripe
+		// metadata so the booking created at fulfilment can be linked back to the account —
+		// without it, every paid booking has no `bookerUserId` and can only ever be found by
+		// whatever email was typed into the form.
+		const buyerSession = await getServerSession(req, res, authOptions)
+		const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
+
 		// Jetzy Premium member discount — stacks with a referral code (see combined
 		// coupon math below): the member discount comes off first, then the referral
 		// code takes its cut off what's left.
+		//
+		// Resolved from the CHECKOUT EMAIL, not the session — the booking, ticket and account
+		// all attach to that address, so it's the only identity that can't disagree with
+		// itself. See `src/lib/premium-eligibility.ts` for the full reasoning.
 		let premiumMemberDiscountData: { percentage: number } | null = null
-		if (event.premium && Number(event.premiumMemberDiscountPercentage) > 0) {
-			try {
-				const buyerSession = await getServerSession(req, res, authOptions)
-				const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
-				if (buyerId) {
-					const record = await findUserRecord(buyerId)
-					if (record?.doc?.premiumSubscription?.active) {
-						premiumMemberDiscountData = { percentage: Number(event.premiumMemberDiscountPercentage) }
-						console.log("[checkout/index] Jetzy Premium member discount applied:", premiumMemberDiscountData)
-					}
-				}
-			} catch (memberDiscountError: any) {
-				console.error("[checkout/index] Error resolving Premium member discount:", memberDiscountError)
+		try {
+			const memberPercentage = await resolveMemberDiscountPercentage(event as any, user.email)
+			if (memberPercentage > 0) {
+				premiumMemberDiscountData = { percentage: memberPercentage }
+				console.log("[checkout/index] Jetzy Premium member discount applied:", premiumMemberDiscountData)
 			}
+		} catch (memberDiscountError: any) {
+			// Never fall through to a full-price session on a failed lookup. The buyer was
+			// quoted a discounted total in the modal; charging them in full instead is worse
+			// than making them retry — same rule as the coupon-creation branch below.
+			console.error("[checkout/index] Error resolving Premium member discount:", memberDiscountError)
+			return sendResponse(res, null, "We couldn't verify your Premium discount. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
 		// Validate required custom questions
@@ -280,6 +265,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${cleanBaseUrl}/cancel`
 
+		// Stripe refuses any charge under $0.50 — a manual-capture hold included — and the
+		// rejection surfaces as an opaque 500 at the buyer's checkout. Catch it here with
+		// real numbers. This covers both an event saved at a sub-minimum price before that
+		// was validated, and a discount that drags an otherwise fine total under the floor.
+		// Unit prices come from the event record rather than the request body, so the figure
+		// matches what Stripe is actually being asked to charge.
+		const chargeSubtotal = tickets.reduce((sum, ticket) => {
+			const stored = (event.tickets || []).find((et: any) => et?.stripeProductId === ticket.priceId)
+			const unitPrice = Number(stored?.price ?? ticket.price) || 0
+			return sum + unitPrice * (Number(ticket.quantity) || 0)
+		}, 0)
+		const chargePricing = buildTicketPricing({
+			subtotal: chargeSubtotal,
+			referralCode: referralCodeData?.code,
+			referralPercentage: referralCodeData?.discountPercentage,
+			premiumPercentage: premiumMemberDiscountData?.percentage,
+		})
+		if (isBelowStripeMinimum(chargePricing.total)) {
+			console.warn("[checkout/index] Order below Stripe minimum:", { subtotal: chargeSubtotal, total: chargePricing.total })
+			return sendResponse(
+				res,
+				null,
+				`This order comes to $${chargePricing.total.toFixed(2)}. Payments must be at least $${STRIPE_MIN_CHARGE_USD.toFixed(2)} — please contact the host.`,
+				false,
+				ResCode.BAD_REQUEST,
+			)
+		}
+
 		// Stripe Checkout Sessions only support a single discount, so when both a
 		// referral code and a Premium member discount apply, they're combined into ONE
 		// coupon that reproduces "member discount off first, then referral code off the
@@ -298,11 +311,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
 		if (combinedPercentOff && combinedPercentOff > 0) {
 			try {
-				const couponName = referralCodeData && premiumMemberDiscountData
-					? `Jetzy Premium Member + Referral: ${referralCodeData.code}`
+				const rawCouponName = referralCodeData && premiumMemberDiscountData
+					? `Premium + Referral ${referralCodeData.code}`
 					: referralCodeData
 						? `Referral: ${referralCodeData.code}`
 						: 'Jetzy Premium Member Discount'
+
+				// Stripe hard-limits coupon.name to 40 characters and rejects the whole call
+				// if it's longer. The name is built from a host-supplied referral code, so it
+				// must be clamped: the old combined label came to 42 chars, which meant every
+				// stacked Premium+referral checkout threw here, got swallowed below, and the
+				// buyer was charged full price with no discount at all.
+				const couponName = rawCouponName.slice(0, 40)
 
 				const coupon = await stripe.coupons.create({
 					percent_off: combinedPercentOff,
@@ -314,7 +334,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					coupon: coupon.id,
 				}]
 			} catch (couponError: any) {
-				console.error("[checkout/index] Error creating Stripe coupon:", couponError)
+				// Never fall through to a full-price session. The buyer was promised a
+				// discount; charging them in full instead is worse than making them retry.
+				console.error("[checkout/index] Coupon creation failed:", couponError?.message || couponError)
+				return sendResponse(res, null, "We couldn't apply your discount. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 			}
 		}
 
@@ -331,6 +354,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			acceptedTermsAt: acceptedTermsAt.toISOString(),
 			bookingRef,
 			requiresApproval: requiresApproval ? "true" : "false",
+			...(buyerId ? { bookerUserId: String(buyerId) } : {}),
 		}
 
 		if (referralCodeData) {
@@ -400,7 +424,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	} catch (error: any) {
 		console.error("[checkout/index] CRITICAL ERROR:", error.message || error)
 		if (error.stack) console.error(error.stack)
+		// The top-level `message` matters: the client toaster reads `err.message` and, when
+		// the only message was nested under `error`, every failure here rendered as the
+		// useless "Something went wrong. Please try again." `error` is kept for callers
+		// that already read that shape.
 		return res.status(500).json({
+			status: false,
+			message: error.message || "An unexpected server error occurred",
 			error: {
 				code: "500",
 				message: error.message || "An unexpected server error occurred"

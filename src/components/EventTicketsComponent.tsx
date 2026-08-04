@@ -11,6 +11,8 @@ import { IEvent } from "@/models/events/types";
 import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
+import { buildTicketPricing } from "@/lib/ticket-pricing";
+import { eventMemberDiscountPercentage } from "@/lib/premium-discount";
 import {
   Button,
   Modal,
@@ -42,8 +44,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const [showPremiumPromo, setShowPremiumPromo] = useState(false);
   usePremiumSubscriptionReturn();
 
-  const memberDiscountPercentage = Number(event.premiumMemberDiscountPercentage) || 0;
-  const hasMemberDiscount = !!event.premium && memberDiscountPercentage > 0;
+  const memberDiscountPercentage = eventMemberDiscountPercentage(event as any);
+  const hasMemberDiscount = memberDiscountPercentage > 0;
 
   // format the event tickets
   const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
@@ -149,6 +151,22 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
     });
   };
 
+  // Running total for the current selection.
+  //
+  // The member rate here is a PREVIEW off the session — this card has no email field, and
+  // eligibility is settled against the address typed at checkout (see
+  // `src/lib/premium-eligibility.ts`). It still has to be applied: showing discounted
+  // per-ticket prices above and an undiscounted total here was the bug this replaces.
+  const selectionSubtotal = tickets.reduce(
+    (acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc),
+    0
+  );
+  const showsMemberPreview = hasMemberDiscount && isPremium && selectionSubtotal > 0;
+  const selectionPricing = buildTicketPricing({
+    subtotal: selectionSubtotal,
+    premiumPercentage: showsMemberPreview ? memberDiscountPercentage : 0,
+  });
+
   const anyTicketNeedsApproval = eventHasAnyApprovalTicket(event as any);
   const allTicketsNeedApproval = eventRequiresApprovalForAllTickets(event as any);
   const hasPaidApprovalTicket = ticketsItems.some((t) => t.requireApproval && Number(t.price) > 0);
@@ -190,10 +208,16 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
               <div className="flex items-center gap-2">
                 <StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
                 <div>
-                  <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>Premium Event</p>
+                  {/* For a member the headline confirms THEIR status — "Premium Event" is a
+                      fact about the event they can already see. And the saving is phrased as
+                      pending, not settled: eligibility is decided by the email entered at
+                      checkout, so a member who books with a different address gets nothing. */}
+                  <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>
+                    {isPremium ? "You're a Jetzy Premium member" : "Premium Event"}
+                  </p>
                   <p className="text-gray-300 text-xs mt-1">
                     {isPremium
-                      ? `As a Jetzy Premium member, you save ${memberDiscountPercentage}% on this event.`
+                      ? `You save ${memberDiscountPercentage}% on this event — applied at checkout.`
                       : `Jetzy Premium members save ${memberDiscountPercentage}% on this event.`}
                   </p>
                 </div>
@@ -340,17 +364,19 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             {/* Total Price to pay */}
             <div className="text-center sm:text-right">
               <h3 className="text-2xl font-semibold">
-                {tickets
-                  .reduce(
-                    (acc, ticket) =>
-                      ticket.isSelected ? acc + ticket.price : acc,
-                    0
-                  )
-                  .toLocaleString("en-US", {
-                    style: "currency",
-                    currency: "usd",
-                  })}
+                {selectionPricing.total.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "usd",
+                })}
               </h3>
+              {/* Session-based preview. Eligibility is settled against the email typed at
+                  checkout, so say the number isn't final rather than let the modal appear
+                  to change it. A referral code can lower it further there too. */}
+              {showsMemberPreview && (
+                <p className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
+                  Member price ({memberDiscountPercentage}% off) — confirmed at checkout
+                </p>
+              )}
             </div>
 
             <button
@@ -368,7 +394,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         isOpen={showPremiumPromo}
         onClose={() => setShowPremiumPromo(false)}
         returnTo={eventPath(event.slug)}
-        title="Save with Jetzy Premium"
         message={`Subscribe to Jetzy Premium and save ${memberDiscountPercentage}% on this and every other Premium Event.`}
       />
 

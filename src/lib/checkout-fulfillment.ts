@@ -80,7 +80,7 @@ const parseCustomAnswers = (metadata: SessionMetadata) => {
 	return answers
 }
 
-const incrementReferralUsage = async (code?: string) => {
+export const incrementReferralUsage = async (code?: string) => {
 	if (!code) return
 	try {
 		const { ReferralCodes } = await import("@/models/events/referral-codes")
@@ -154,6 +154,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			status: isPaidNow ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
 			eventId: metadata.eventId,
 			bookingRef,
+			// Present only when the buyer was logged in at checkout. Bookings made before this
+			// was carried through the metadata have none and resolve by email instead.
+			...(metadata.bookerUserId ? { bookerUserId: metadata.bookerUserId } : {}),
 			customerName: `${metadata.firstName || ""} ${metadata.lastName || ""}`.trim(),
 			customerEmail: metadata.email,
 			customerPhone: metadata.phone,

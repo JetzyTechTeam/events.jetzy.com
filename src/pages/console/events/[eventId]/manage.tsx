@@ -84,6 +84,7 @@ import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
+import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import EventSlugField from "@/components/events/EventSlugField"
 import { isPendingAdminApproval } from "@/lib/event-approval"
 import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
@@ -1729,6 +1730,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																// without one impossible to edit.
 																if (!tempTicket.title.trim()) {
 																	toast({ title: "Missing ticket name", description: "You need to provide a ticket name.", status: "error", duration: 4000, isClosable: true })
+																	return
+																}
+																// Stripe won't charge under $0.50, so a ticket priced there can never
+																// be sold — the failure would only surface at the buyer's checkout.
+																if (isBelowStripeMinimum(tempTicket.price)) {
+																	toast({ title: "Price too low", description: BELOW_MIN_PRICE_MESSAGE, status: "error", duration: 5000, isClosable: true })
 																	return
 																}
 																// Blank price means free. `parseFloat("")` is NaN, which would

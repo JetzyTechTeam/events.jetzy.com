@@ -85,7 +85,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                   _hover={{ bg: "whiteAlpha.200", color: "white" }}
                   onClick={() => router.push(ROUTES.dashboard.bookings.index)}
                 >
-                  Bookings
+                  Event Bookings
                 </Button>
               </Flex>
             )}
@@ -101,6 +101,21 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                 onClick={() => router.push(ROUTES.dashboard.events.index)}
               >
                 Dashboard
+              </Button>
+            )}
+
+            {/* A guest's own tickets. Shown to admins too — they book events as well.
+                Distinct from "Event Bookings" above, which is the host-side list. */}
+            {!hideEventNav && (
+              <Button
+                variant="ghost"
+                size="sm"
+                color="gray.300"
+                _hover={{ bg: "whiteAlpha.200", color: "white" }}
+                display={{ base: "none", md: "flex" }}
+                onClick={() => router.push(ROUTES.myBookings)}
+              >
+                My Bookings
               </Button>
             )}
 
@@ -157,13 +172,18 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                       Create Event
                     </MenuItem>
                     <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} display={{ base: "flex", md: "none" }} onClick={() => router.push(ROUTES.dashboard.bookings.index)}>
-                      Bookings
+                      Event Bookings
                     </MenuItem>
                   </>
                 )}
                 {isAdmin && !hideEventNav && (
                   <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} display={{ base: "flex", md: "none" }} onClick={() => router.push(ROUTES.dashboard.events.index)}>
                     Dashboard
+                  </MenuItem>
+                )}
+                {!hideEventNav && (
+                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} display={{ base: "flex", md: "none" }} onClick={() => router.push(ROUTES.myBookings)}>
+                    My Bookings
                   </MenuItem>
                 )}
                 <MenuItem

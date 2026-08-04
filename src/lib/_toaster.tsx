@@ -30,12 +30,14 @@ export const ServerErrors = (title?: string, error?: any) => {
   const extractMessage = (err: any): string => {
     if (!err) return "Something went wrong. Please try again."
     if (typeof err === "string") return err
-    // Server response shape: { status, message, data }
-    if (err?.message && err.message !== "Rejected") return err.message
-    // Zod errors array
+    // Zod errors array — checked BEFORE `message`, because a validation failure carries a
+    // generic top-level message ("Your request could not be complete…") and the actual
+    // reason only in `data[]`. Preferring `message` hid every field error.
     if (Array.isArray(err?.data) && err.data.length > 0) {
       return err.data.map((e: any) => e?.message || JSON.stringify(e)).join(", ")
     }
+    // Server response shape: { status, message, data }
+    if (err?.message && err.message !== "Rejected") return err.message
     if (Array.isArray(err) && err.length > 0) {
       return err.map((e: any) => e?.message || JSON.stringify(e)).join(", ")
     }

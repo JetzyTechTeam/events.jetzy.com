@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
-import { StarIcon } from "@heroicons/react/24/solid"
+import { CheckIcon, StarIcon } from "@heroicons/react/24/solid"
 import Spinner from "@/components/misc/Spinner"
 import { Error as ErrorToast, Info as InfoToast } from "@/lib/_toaster"
 import { PREMIUM_STATUS_QUERY_KEY } from "@/hooks/usePremiumStatus"
@@ -13,6 +13,15 @@ import { PREMIUM_STATUS_QUERY_KEY } from "@/hooks/usePremiumStatus"
 // straight into Stripe instead of making them click Subscribe a second time.
 const RESUME_PARAM = "premiumSubscribe"
 const RESUME_SESSION_KEY = "jetzy_premium_resume_handled"
+
+// What membership actually gets you — shown in every context the pitch appears in.
+// Callers can pass a trimmed list via the `benefits` prop.
+const PREMIUM_BENEFITS = [
+	"Exclusive events",
+	"Exclusive networking",
+	"Customized matching",
+	"Premium member pricing on ticketed events",
+]
 
 type PlanInfo = {
 	name: string
@@ -27,6 +36,7 @@ type Props = {
 	returnTo: string
 	title?: string
 	message?: string
+	benefits?: string[]
 }
 
 // Structurally mirrors EventCheckoutModel.tsx: one modal shell, multiple internal states
@@ -38,8 +48,9 @@ const PremiumPaywallModal: React.FC<Props> = ({
 	isOpen,
 	onClose,
 	returnTo,
-	title = "Subscribe to Jetzy Premium",
-	message = "Host Premium Events and give your attendees member pricing.",
+	title = "Unlock Jetzy Premium",
+	message,
+	benefits = PREMIUM_BENEFITS,
 }) => {
 	const [step, setStep] = useState<"pitch" | "plan">("pitch")
 	const { status: sessionStatus } = useSession()
@@ -137,7 +148,7 @@ const PremiumPaywallModal: React.FC<Props> = ({
 				</button>
 
 				{step === "pitch" ? (
-					<div className="p-6 space-y-6">
+					<div className="p-6 space-y-6 overflow-y-auto">
 						<div className="text-center">
 							<div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "rgba(245,197,24,0.15)" }}>
 								<StarIcon className="w-8 h-8" style={{ color: "#F5C518" }} />
@@ -145,9 +156,21 @@ const PremiumPaywallModal: React.FC<Props> = ({
 							<div className="rounded-lg p-6 mb-6" style={{ background: "rgba(245,197,24,0.15)", border: "1px solid rgba(245,197,24,0.3)" }}>
 								<p className="text-2xl font-bold text-center" style={{ color: "#F5C518" }}>{title}</p>
 							</div>
-							<p className="text-gray-400 text-sm mb-6">
-								{message}
-							</p>
+							{message && (
+								<p className="text-gray-400 text-sm mb-6">
+									{message}
+								</p>
+							)}
+							{benefits.length > 0 && (
+								<ul className="flex flex-col gap-3 text-left mb-6">
+									{benefits.map((benefit) => (
+										<li key={benefit} className="flex items-start gap-3">
+											<CheckIcon className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
+											<span className="text-sm text-gray-200">{benefit}</span>
+										</li>
+									))}
+								</ul>
+							)}
 							<div className="flex flex-col gap-3">
 								<button
 									onClick={() => setStep("plan")}
@@ -165,7 +188,7 @@ const PremiumPaywallModal: React.FC<Props> = ({
 						</div>
 					</div>
 				) : (
-					<div className="p-6 space-y-6">
+					<div className="p-6 space-y-6 overflow-y-auto">
 						<div className="text-center">
 							<h2 className="text-2xl font-bold text-white mb-4">Jetzy Premium Events</h2>
 

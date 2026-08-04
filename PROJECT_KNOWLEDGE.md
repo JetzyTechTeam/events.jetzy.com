@@ -55,7 +55,11 @@ Fields: slug (unique), name, privacy (public/private/group), status (draft/publi
 IEvent, IEventTicket, ICustomQuestion, IDatePoll, IDatePollOption, IBookings, IEventTracker, IReferralCode
 
 ### `src/models/events/bookings.ts` — IBookings
-Fields: bookingRef (unique), eventId, tickets[], status (pending/approved/confirmed/cancelled/failed/refunded), customerName, customerEmail, customerPhone, subTotal, tax, total, referralCode, discountAmount, customAnswers[]
+Fields: bookingRef (unique), eventId, bookerUserId?, tickets[], status (pending/approved/confirmed/cancelled/rejected/failed/refunded), customerName, customerEmail, customerPhone, subTotal, tax, total, referralCode, discountAmount, customAnswers[], payment{}, **cancelledAt?**, **cancelledBy?** (`guest|host|admin`, no defaults)
+
+- `status` also carries values this repo never writes — **`checked_in` is live in production** (written by the mobile app / admin portal against the shared collection). Never treat `BookingStatus` as an exhaustive allowlist; classify by exclusion (`!isPending && !isCancelled`) instead.
+- `status: "refunded"` has **never been written** — see "No refunds" below.
+- `customerEmail` has **no `lowercase: true`** — always match it case-insensitively via `src/lib/booking-identity.ts`.
 
 ### `src/models/events/referral-codes.ts` — IReferralCode
 Fields: eventId, code (unique, uppercase), discountPercentage (0-100), commissionPercentage (0-100), isActive, usageCount, maxUses, createdBy, isDeleted
@@ -221,12 +225,36 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 ### Checkout
 `/api/checkout/index`, `/api/checkout/confirm`, `/api/checkout/free-events`
 
+| Method | Route | Access |
+|---|---|---|
+| POST | `/api/premium/check-email` | public — preview only, see "Jetzy Premium member discount" |
+
 ### Waiting List
 `/api/waiting-list/[eventId]`, `/api/waiting-list/add`, `/api/waiting-list/approve`, `/api/waiting-list/remove`
 
 ### Bookings
-`/api/bookings/cancel`, `/api/bookings/delete`
+`/api/bookings/mine` — **GET, session required.** The guest's own bookings for `/my-bookings`. Matches on `bookerUserId` OR case-insensitive `customerEmail` via `buildBookerMatchClauses`. Loads up to 500, joins events, then filters/sorts/paginates **in JS** so `getEventStatus` stays the single source of truth for upcoming-vs-past. Query: `filter` (`all|upcoming|past|pending|confirmed|cancelled`), `page`, `limit`, `search`. Projects out `payment.paymentIntentId` / `payment.checkoutSessionId`. Returns `{ items, pagination, counts }` with per-row `moneyState`, `moneyAmount`, `canCancel`, `cancelBlockedReason`, `eventStatus`, `ticketCount`.
+
+`/api/bookings/preview` — **GET, unauthenticated, keyed by `bookingRef`.** Backs the emailed cancel link (`/cancel-booking`). Returns only event name/slug/date, ticket count, money state and cancel eligibility. **Never** returns customer email, phone, custom answers or Stripe ids — the ref is a bearer token and a leaked one must not harvest PII.
+
+`/api/bookings/cancel` — POST `{ bookingRef }`. Session ⇒ admin, event owner, or the booker; no session ⇒ `bookingRef` as bearer token (email link). **Guests and bearer-token callers are held to the event-start cutoff** (`canGuestCancel`); admins/owners are not. Releases an uncaptured hold, **never refunds**, sets `cancelledAt`/`cancelledBy`, deletes the `CheckIn` row, decrements `EventTracker` only when the booking was CONFIRMED, then emails guest (`sendBookingCancellation`) + host and `ADMIN_NOTIFICATION_EMAIL` (`sendHostCancellationNotice`). Both emails are best-effort. Returns `{ booking, moneyState, releasedAmount, cancelledBy }`.
+
+`/api/bookings/my-for-event` — GET `?eventId`. The caller's live booking for one event, plus `moneyState`/`moneyAmount`/`canCancel`. Excludes CANCELLED/REJECTED/FAILED.
+
+`/api/bookings/delete`
 `/api/bookings/approve`, `/api/bookings/reject` — Require-Approval flow (admin OR event owner; keyed by `{ bookingRef }`). Approve → PENDING→CONFIRMED, consumes capacity, QR + `sendTicketConfirmation` to attendee, `sendAdminApprovalNotice(kind:"approved")` to contact@. Reject → PENDING→REJECTED, no email.
+
+### No refunds — by decision, not by omission
+**Do not add `stripe.refunds.create` anywhere.** Cancelling a booking whose payment was already captured releases the seat and keeps the money; the guest is warned before confirming.
+
+Why: there is no Stripe Connect in this codebase (no `application_fee_amount`, `transfer_data`, `on_behalf_of`, `stripeAccount`), so every charge lands in Jetzy's own balance, and Stripe does not return its processing fee on a refund — *"Stripe's processing fees from the original transaction aren't returned."* A refund is therefore a straight ~2.9% + $0.30 loss with nothing recovered. Nothing is added to the buyer's total to cover it either: `tax` is always 0 and `calculateVAT` (`lib/utilities.ts`) is dead code with zero callers.
+
+Cancelling an **uncaptured** authorization hold is *not* a refund — it costs $0, the guest was never charged, and it must always happen. Stripe explicitly recommends this over refunding.
+
+Consequences to preserve:
+- `BookingStatus.REFUNDED` stays in the enum for the mobile app but is never written. The "Refunded" option was removed from `bookingFilter.tsx` because it only ever returned an empty list.
+- `sendBookingCancellation` must never claim a refund. It renders one of three money blocks off `moneyState`.
+- A cancelled booking with `payment.status: "captured"` is correct and intentional — the money really is still ours.
 
 ### Private events are UNLISTED, not invite-only
 
@@ -264,6 +292,92 @@ The confirmation email showed per-ticket prices but **no discount and no total**
 - **Booking schema gained `referralDiscountPercentage` and `premiumMemberDiscountPercentage`** (optional, no default). Only `discountAmount` and a boolean were stored before, so `approve.ts` — which emails later from the booking — couldn't split the two. Legacy bookings leave them undefined and fall back to one combined line.
 - `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
 - **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
+
+### Jetzy Premium member discount — resolved by EMAIL, not session
+
+A premium event (`event.premium`) is open to everyone; a subscription just unlocks
+`event.premiumMemberDiscountPercentage`. Eligibility used to be read off the NextAuth session
+(`if (buyerId)` in `checkout/index.ts`, no `else`), which broke three ways at once: a guest who
+pays for Premium got nothing silently, a logged-in member who typed a different email got a
+discount on a booking belonging to that other address, and the modal preview could quote a
+total Stripe never charged.
+
+**The email typed into the checkout form is now the sole authority**, logged in or not. It is
+the address the booking, ticket, QR code and auto-created Jetzy account all attach to, so it is
+the only identity that cannot disagree with itself.
+
+- **[src/lib/premium-eligibility.ts](src/lib/premium-eligibility.ts)** — `isPremiumEmail`,
+  `resolveMemberDiscountPercentage`. **Server only**: it loads the user models.
+- **[src/lib/premium-discount.ts](src/lib/premium-discount.ts)** — `eventMemberDiscountPercentage`,
+  pure and isomorphic. React components import **this** one. Keeping them apart is what stops
+  mongoose reaching the client bundle.
+- **The email lookup MUST be a case-insensitive regex.** Neither `Users.email` nor
+  `EventUsers.email` declares `lowercase: true` — same trap as `Bookings.customerEmail`. An
+  exact match silently misses every subscriber who signed up with a capital letter.
+- Both user collections are searched (`Users`, then `EventUsers`), mirroring `findUserRecord`
+  in [premium.ts](src/lib/premium.ts).
+- **A failed lookup fails the checkout** (500), it does not fall through to full price. The
+  buyer was quoted a discounted total; charging them in full is worse than a retry. Same rule
+  as the coupon-creation branch.
+- Session is still read for `metadata.bookerUserId`, and drives only two UI things: prefilling
+  the email, and the amber "this isn't the email on your Premium account" nudge.
+
+**`POST /api/premium/check-email`** `{ email, eventId }` → `{ isPremiumMember, discountPercentage }`.
+Unauthenticated by necessity — a guest subscriber has no session. **Preview only**; both
+checkout endpoints resolve again server-side.
+
+> **Accepted trade-off:** this lets an unauthenticated caller learn whether an address has a
+> Premium subscription, and claim a member rate using someone else's. Deliberate product
+> decision. Mitigations: it answers `false` without touching the user collections unless the
+> event actually offers a member rate, returns no PII, and is rate-limited per IP. The ticket
+> still goes to the typed address, so a discount claimed on a stranger's email buys a ticket
+> you never receive.
+
+**Client states** in [EventCheckoutModel.tsx](src/components/EventCheckoutModel.tsx), debounced
+500 ms on the email field exactly like the referral field: unchecked → gray "members save X%";
+member → green "X% off applied"; not a member *but* session is premium → amber mismatch +
+"Use `<session email>`" button; not a member → gold Subscribe promo.
+
+[EventTicketsComponent.tsx](src/components/EventTicketsComponent.tsx) shows a **session-based
+preview** — it has no email field. Its running total now applies the member rate (it used to
+show discounted per-ticket prices above an undiscounted total) and is labelled "confirmed at
+checkout" so the modal correcting it reads as expected.
+
+### `free-events.ts` is a real checkout path, not a shortcut
+
+Two things changed together here:
+
+- **Free-vs-Stripe is decided on the DISCOUNTED total** (`pricing.total === 0`), not the ticket
+  prices. An order discounted to exactly $0 has nothing for Stripe to do — and an approval
+  order asking Stripe to authorize $0 with `capture_method: "manual"` is rejected outright,
+  which surfaced as an opaque failure at the very end of checkout. `isBelowStripeMinimum`
+  deliberately treats $0 as free, so it never caught this.
+- **The endpoint no longer trusts the request body.** It issues a booking with no payment step,
+  so a client-supplied price was a client-supplied authorization: a crafted POST booked a paid
+  ticket for free. `resolveOrder` rebuilds names, prices and the subtotal from the event
+  record, aborts on a ticket id that isn't on the event (an unknown ticket must not quietly
+  contribute $0), re-validates the referral code, resolves the member rate by email, and
+  **rejects anything where `pricing.total !== 0`**.
+
+It now records `referralCode`, `discountAmount`, `referralDiscountPercentage`,
+`premiumMemberDiscountPercentage` and `premiumMemberDiscountApplied` — matching what
+`checkout-fulfillment.ts` writes — and increments referral usage on the **confirmed** branch
+only. Approval-pending bookings must not burn a use; that latch belongs to `bookings/approve.ts`.
+
+**[src/lib/referral-validation.ts](src/lib/referral-validation.ts)** (`validateReferralCodeForEvent`)
+is now the single server-side referral check, shared by both checkout endpoints. The public
+`referral-codes/validate` route is only a modal preview and proves nothing — a code can be
+deactivated or exhausted between the green tick and submit.
+
+### Stripe's $0.50 minimum charge
+
+Stripe refuses any charge under **50¢ USD**, manual-capture approval holds included. A ticket priced at $0.20 looked fine everywhere until a buyer reached checkout, where session creation threw and they saw a generic 500.
+
+- `STRIPE_MIN_CHARGE_USD`, `isBelowStripeMinimum`, `BELOW_MIN_PRICE_MESSAGE` live in [src/lib/ticket-pricing.ts](src/lib/ticket-pricing.ts) — pure, so forms and APIs validate identically. **$0 is free and always allowed**; only $0.01–$0.49 is rejected.
+- Enforced in both ticket modals ([create.tsx](src/pages/console/events/create.tsx), [manage.tsx](src/pages/console/events/[eventId]/manage.tsx)) and in the `price` zod field of [create.ts](src/pages/api/events/create.ts) and [update.ts](src/pages/api/events/[eventId]/update.ts). The server check is the real guard — the mobile app posts the same schema. Re-saving an event with a legacy sub-minimum ticket is blocked until it is repriced.
+- [checkout/index.ts](src/pages/api/checkout/index.ts) guards the **order total** separately, because form validation cannot see events already saved at a bad price, nor a discount dragging a valid total under the floor ($2.00 × 90% referral = $0.20). It prices from the event record, not the request body.
+- The route's 500 handler now sets a **top-level `message`** alongside the nested `error`. `ServerErrors` in [_toaster.tsx](src/lib/_toaster.tsx) reads only `err.message`, so previously every failure here surfaced as "Something went wrong. Please try again."
+- `unit_amount` uses `Math.round(price * 100)` in all three price-creating routes. Unrounded, `19.99 * 100` is `1998.9999999999998` and Stripe rejects a non-integer.
 
 ### Custom event slugs
 
@@ -382,7 +496,8 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 | Signup | `src/pages/signup.tsx` | |
 | QR signup | `src/pages/jetzyqrsignup.tsx` | Invite code is FIRST field (optional, live-verified vs main backend). No name field — `firstName` derived from email local-part. Success screen says log in + "Forgot Password" (no temp password shown). |
 | Success | `src/pages/success.tsx` | |
-| Cancel booking | `src/pages/cancel-booking.tsx` | |
+| **My Bookings** | `src/pages/my-bookings/index.tsx` | **login required** (`authorizedOnly`). The guest's own tickets. Not to be confused with `/console/bookings`, which is the host-side list of who booked events *you* run. |
+| Cancel booking | `src/pages/cancel-booking.tsx` | unauthenticated, `?bookingRef=` from the confirmation email. Loads `/api/bookings/preview` to show what's being cancelled + the non-refundable warning. |
 | Terms | `src/pages/terms.tsx` | |
 
 ### Social Share Meta (event links)
@@ -418,6 +533,9 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 
 ## Lib Files (`src/lib/`)
 - `authSession.ts` — auth guards
+- `booking-identity.ts` — **the** answer to "is this booking mine?". `buildBookerMatchClauses(session)` (Mongo `$or`), `sessionOwnsBooking(session, booking)`, `sessionUserId`, `sessionIsAdmin`. Matches `bookerUserId` OR a **case-insensitive anchored regex** on `customerEmail`. Before this, three call sites used three different comparison semantics and `my-for-event.ts` silently missed every booking stored with a capital letter in the email (4 such rows in prod).
+- `booking-cancellation.ts` — cancellation rules + money state. `bookingMoneyState` (`free|hold|captured|released|unknown`), `bookingMoneyAmount`, `hasEventStarted`, `canGuestCancel`, `NON_REFUNDABLE_MESSAGE`. **`unknown`** = non-zero `total` but no `payment` sub-doc: 238 production bookings are in this state (pre-`payment` legacy rows, plus `waiting-list/approve.ts` which still creates priced bookings with no payment). It must never render as "Free booking" (it may have been paid) nor as "charged" (it may not have been) — every surface phrases it conditionally. `hasEventStarted` compares the exact `startsOn` instant — deliberately **not** `getEventStatus`, which keeps the whole start day alive (right for badges, wrong for a cutoff). No `startsOn` (TBD/date poll) ⇒ not started ⇒ still cancellable.
+- `booking-status.ts` — `isCancelledBooking`, `isPendingBooking`, `isAuthorizedHold`, `isCapturedBooking`, `isCaptureFailed`, `isHoldExpired`, `holdTimeRemaining`
 - `connect-db.ts` / `db.ts` — DB connection
 - `helpers.ts` / `utilities.ts` / `utils.ts` — general helpers
 - `email-service.ts` — SendGrid templates (event update emails etc.)
@@ -524,6 +642,30 @@ Debounced (~2s) autosave with a "Saving… / Saved / Unsaved" pill next to the S
 - Autosave bypasses the redux thunks (which toast) and calls service APIs directly: `CreateEventApis`/`UpdateEventApis`/`SaveDraftRevisionApis`/`DiscardDraftRevisionApis`. Always stores `status:'draft'`; never runs the published Zod schema.
 - Schema: `draftRevision: { payload, savedAt }` (Mixed, optional) on `src/models/events/index.ts` + `IEvent`. `update.ts` `$unset`s it on every real save. New route `src/pages/api/events/[eventId]/draft-revision.ts` (POST save / DELETE discard, admin-or-owner).
 - Shared UI/logic: `src/components/events/AutosaveManager.tsx` — `<AutosaveManager>` (inside Formik, debounces via `useFormikContext`), `<AutosaveStatusPill>`, `buildEventPayload(values, images, videos, overrides)`. Media (`uploadedImages`/`uploadedVideos`) merged in via `mediaVersion` signature since it lives outside Formik.
+
+## Feature: My Bookings (guest-facing) + cancellation
+
+Guest-side counterpart to `/console/bookings`. Before this, a guest had no way to see a booking after the confirmation email, and self-cancel only worked on free events.
+
+**Page** `src/pages/my-bookings/index.tsx` — `authorizedOnly` SSR guard, public `Navbar`, dark card grid. Filter + page live in the URL (same convention as My Events). Chips: All / Upcoming / Past / Pending / Confirmed / Cancelled, each with a live count. Data via react-query + axios against `/api/bookings/mine`.
+
+**Components** (`src/components/bookings/`)
+- `BookingCard.tsx` — reproduces the public `EventCard` visual shell (`#1e1e1e` / `#434343`, 200px cover, `scale(1.03)` hover, fixed `h="24"` date+location block). Deliberately a *separate* component: `EventCard` is module-local inside `EventsListing.tsx`, fetches per-event totals and carries the admin Edit pill — reusing it would drag booking concerns into the public listing. Badge shows booking status + event time status; cancelled cards render at `opacity 0.55` with the title struck through. Unknown statuses fall back to the **confirmed** badge, never "pending approval".
+- `BookingDetailModal.tsx` — house modal recipe (`#1E1E1E`, `#9C9C9C` labels). Event link via `eventPath` (never interpolate a slug), price breakdown via `pricingFromBooking`, hold expiry via `HoldExpiry`, custom answers, Cancel button.
+- `CancelBookingDialog.tsx` — shared `AlertDialog` used by My Bookings, the event page and the host table. **Its whole purpose is the money warning**; copy switches on `moneyState` (`hold` → "you were not charged"; `captured` → red "non-refundable, will NOT be returned"). `asManager` flips the wording for host/admin.
+- `PaymentBadge.tsx` — `PaymentBadge` + `HoldExpiry`, extracted from `ApprovalRequests.tsx` so the approvals panel, host table and guest modal can never disagree about whether a card was charged.
+
+**Cancellation rules** — all in `src/lib/booking-cancellation.ts`, never re-derived inline.
+- Cutoff is **event start**. Guests may cancel free, held and captured bookings until `startsOn`; after that the button is hidden and the API returns 403. TBD/date-poll events stay cancellable.
+- Hosts and admins have **no cutoff** — they need to clean up after an event too.
+- **No refunds** in any path (see "No refunds — by decision" above).
+- Capacity is released only when the booking was CONFIRMED (a PENDING approval never incremented the tracker). The `CheckIn` row is deleted.
+
+**Host side**
+- `BookingEventsDetailsTable.tsx` gained a Payment column (`PaymentBadge`) and a **Cancel** action. Cancel is gated on the new `canManage` prop (admin **or** owner); Delete stays `isAdmin`-only. `/console/bookings/[eventId]` now projects the `payment` sub-doc (minus Stripe ids) and serializes its dates.
+- `sendHostCancellationNotice` emails the event owner + `ADMIN_NOTIFICATION_EMAIL` on every cancellation; non-fatal by design.
+
+**User linkage** — paid bookings previously had **no `bookerUserId`** (35 such rows in prod); it was only ever written by `free-events.ts`. Fixed forward: `checkout/index.ts` puts `bookerUserId` in the Stripe metadata and `checkout-fulfillment.ts` persists it. Older bookings still resolve by email, which is why the email match must stay case-insensitive.
 
 ## Feature: Event Sorting & Status Badges
 Canonical order everywhere: **live → future → tbd → past**. Single source of truth in `src/utils/eventSort.ts`:

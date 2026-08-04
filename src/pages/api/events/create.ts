@@ -10,6 +10,7 @@ import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import { findUserRecord } from "@/lib/premium"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
+import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -59,7 +60,9 @@ const schema = zod.object({
 		zod.object({
 			id: zod.string().nonempty(),
 			title: zod.string().nonempty(),
-			price: zod.number().nonnegative(),
+			// Free ($0) is fine; anything between a cent and 49c is not, because Stripe
+			// refuses the charge and the host would only find out at a buyer's checkout.
+			price: zod.number().nonnegative().refine((p) => !isBelowStripeMinimum(p), BELOW_MIN_PRICE_MESSAGE),
 			description: zod.string().optional(),
 			// `.optional()` and never `.default(false)` — undefined must stay undefined so the
 			// ticket inherits the event-level requireApproval.
@@ -187,7 +190,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// If event is paid and has tickets, lets format the tickets and create stripe prices for each ticket
 		const formattedTickets: Stripe.PriceCreateParams[] = tickets.map((ticket) => ({
-			unit_amount: ticket.price * 100,
+			// Math.round, not `* 100` alone: 19.99 * 100 is 1998.9999999999998 in floating
+			// point, and Stripe rejects a non-integer unit_amount. Matches clone.ts.
+			unit_amount: Math.round(ticket.price * 100),
 			currency: "usd",
 			product_data: {
 				name: ticket.title,

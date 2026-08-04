@@ -9,6 +9,22 @@
  * crediting the whole reduction to whichever one happens to be named.
  */
 
+/**
+ * Stripe refuses to create a charge below 50¢ USD — including a manual-capture
+ * authorization, so approval holds are not exempt. A ticket priced between $0.01 and
+ * $0.49 therefore looks fine everywhere until the buyer reaches checkout, where the
+ * session creation fails outright. Validate against this before money is involved.
+ */
+export const STRIPE_MIN_CHARGE_USD = 0.5
+
+/** True for an amount that is payable in principle but below Stripe's floor. $0 is free, not below. */
+export const isBelowStripeMinimum = (amount: number): boolean => {
+	const value = Number(amount)
+	return Number.isFinite(value) && value > 0 && value < STRIPE_MIN_CHARGE_USD
+}
+
+export const BELOW_MIN_PRICE_MESSAGE = "Ticket price must be $0 (free) or at least $0.50 — Stripe won't process a smaller charge."
+
 export type PricingLine = { label: string; amount: number }
 
 export type TicketPricing = {

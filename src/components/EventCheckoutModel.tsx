@@ -5,6 +5,12 @@ import React, { useState, useEffect, useCallback, useRef } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { selectionRequiresApproval } from "@/lib/ticket-approval"
+import { buildTicketPricing } from "@/lib/ticket-pricing"
+import { eventMemberDiscountPercentage } from "@/lib/premium-discount"
+import { usePremiumStatus } from "@/hooks/usePremiumStatus"
+import { useSession } from "next-auth/react"
+import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal"
+import { StarIcon } from "@heroicons/react/24/solid"
 
 export default function EventCheckoutModel({ event, eventData }: { event: string; eventData?: any }) {
 	// const [acceptTerms, setAcceptTerms] = useState(false)
@@ -22,6 +28,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
 	const [pendingApproval, setPendingApproval] = useState(false)
 	const [acceptedTerms, setAcceptedTerms] = useState(false)
+	// The T&C checkbox sits at the bottom of a long scrolling form, so a buyer who misses it
+	// has no idea why nothing happens. Surfaced in the PINNED header, which never scrolls away.
+	const [termsError, setTermsError] = useState(false)
+	const termsRef = useRef<HTMLLabelElement | null>(null)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -38,6 +48,38 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 	const [referralCodeValid, setReferralCodeValid] = useState<boolean | null>(null)
 	const [referralCodeDiscount, setReferralCodeDiscount] = useState<number | null>(null)
+
+	// Jetzy Premium member discount.
+	//
+	// Eligibility follows the EMAIL TYPED BELOW, not the session — the booking, the ticket
+	// and the Jetzy account all attach to that address, so it's the only identity that can't
+	// disagree with itself. A guest who subscribes still gets their discount, and a logged-in
+	// member who types someone else's address doesn't silently get one on a booking that
+	// isn't theirs. `src/lib/premium-eligibility.ts` has the full reasoning; the server
+	// resolves it again the same way and stays authoritative.
+	const { data: session } = useSession()
+	const { isPremium: sessionIsPremium } = usePremiumStatus()
+	const sessionEmail = session?.user?.email || ""
+	const eventMemberPct = eventMemberDiscountPercentage(liveEventData)
+	// null = not checked yet (or the address just changed) — distinct from a checked "no".
+	const [emailIsPremium, setEmailIsPremium] = useState<boolean | null>(null)
+	const [checkingPremiumEmail, setCheckingPremiumEmail] = useState(false)
+	const [showPremiumPromo, setShowPremiumPromo] = useState(false)
+	const premiumEmailTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+	// Monotonic id so a slow reply for a previous address can't overwrite a newer verdict.
+	const premiumCheckIdRef = useRef(0)
+	const memberDiscountPercentage = emailIsPremium === true ? eventMemberPct : 0
+
+	// Live preview of what the buyer will actually pay. Built with the same helper the
+	// server, the confirmation email and the success page use, so all four agree — but the
+	// server recomputes independently and stays authoritative.
+	const appliedReferralPercentage = referralCodeValid === true ? (referralCodeDiscount ?? 0) : 0
+	const pricing = buildTicketPricing({
+		subtotal: selectionTotal,
+		referralCode: appliedReferralPercentage > 0 ? formData.referralCode?.trim().toUpperCase() : undefined,
+		referralPercentage: appliedReferralPercentage,
+		premiumPercentage: memberDiscountPercentage,
+	})
 	const [validatingReferralCode, setValidatingReferralCode] = useState(false)
 	const referralCodeValidationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -60,6 +102,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// Reset validation state when code changes
 			setReferralCodeValid(null)
 			setReferralCodeDiscount(null)
+		}
+		if (name === "email") {
+			// Drop the previous verdict immediately so the total can't keep showing a member
+			// discount that belonged to a different address. The debounced effect re-checks.
+			setEmailIsPremium(null)
 		}
 	}
 
@@ -113,7 +160,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 		if (checkoutStep === "details") {
 			if (!acceptedTerms) {
+				// Banner in the pinned header + scroll the checkbox into view. The toast alone
+				// isn't enough: the box is off-screen at the bottom of the form, so being told
+				// to tick it doesn't tell you where it is.
+				setTermsError(true)
 				Error("Terms Required", "Please agree to the Terms & Conditions to continue.")
+				termsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
 				return
 			}
 
@@ -161,11 +213,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			label: event,
 		})
 
-		// Detect free ticket flow (total = $0) — skip Stripe and register directly.
-		// Paid approval orders still go through Stripe; they just authorize instead of charge.
-		const totalPrice = tickets.reduce((sum, t) => sum + ((t as any).price ?? 0) * ((t as any).quantity ?? 1), 0)
-
-		if (totalPrice === 0) {
+		// Detect free ticket flow — skip Stripe and register directly. Paid approval orders
+		// still go through Stripe; they just authorize instead of charge.
+		//
+		// The decision is on the DISCOUNTED total, not the ticket prices. An order discounted
+		// all the way to $0 has nothing for Stripe to do — and an approval order asking Stripe
+		// to authorize $0 with manual capture is rejected outright, which used to surface as
+		// an opaque failure at the very end of checkout.
+		if (pricing.total === 0) {
 			const eventId = (tickets[0] as any)?.eventId || eventData?._id
 			const customAnswersArray = Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 			try {
@@ -176,6 +231,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 						tickets: JSON.stringify(tickets),
 						user: JSON.stringify(formData),
 						eventId,
+						// Sent so the server can reproduce the same $0 and record WHY it was free.
+						referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
 						customAnswers: JSON.stringify(customAnswersArray),
 						acceptedTerms: acceptedTerms,
 					}),
@@ -268,12 +325,96 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		}
 	}, [showWaitingList, waitingListRegistered, formData.firstName, formData.lastName, formData.email, formData.phone, handleJoinWaitingList])
 
+	// Prefill from the session and from the ?ref= link the buyer arrived on, once per open.
+	// Prefilling the email matters beyond convenience: it's what stops a logged-in Premium
+	// member from typing a different address by default and losing their discount.
+	useEffect(() => {
+		if (!showCheckout) return
+
+		if (session?.user) {
+			const [firstFromName = "", ...restOfName] = (session.user.name || "").trim().split(/\s+/)
+			setFormData((prev) => ({
+				...prev,
+				email: prev.email || sessionEmail,
+				firstName: prev.firstName || (session.user as any)?.firstName || firstFromName,
+				lastName: prev.lastName || (session.user as any)?.lastName || restOfName.join(" "),
+			}))
+		}
+
+		// `[slug].tsx` stashes ?ref= here on arrival — until now nothing read it back, so a
+		// buyer who followed a referral link still had to type the code by hand.
+		try {
+			const storedReferral = window.sessionStorage.getItem("jetzy_referral_code")
+			if (storedReferral) {
+				setFormData((prev) => (prev.referralCode ? prev : { ...prev, referralCode: storedReferral.toUpperCase().trim() }))
+				handleValidateReferralCode(storedReferral)
+			}
+		} catch {
+			// sessionStorage can throw in private-mode/embedded browsers — prefill is optional.
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [showCheckout, sessionEmail])
+
+	// Is the address in the form attached to an active Premium subscription?
+	// Preview only — `api/checkout` resolves it again server-side before charging.
+	const checkPremiumEmail = useCallback(async (email: string, memberPct: number, eventId?: string) => {
+		const trimmed = email.trim()
+
+		// Nothing to gain by asking when the event offers no member rate.
+		if (memberPct <= 0 || !eventId || !trimmed || !/^\S+@\S+\.\S+$/.test(trimmed)) {
+			setEmailIsPremium(null)
+			return
+		}
+
+		// Only the newest request may write. Debouncing narrows the window but doesn't close
+		// it — two addresses can still be in flight at once, and a slow reply for the previous
+		// one landing last would show a verdict for an address the buyer already changed.
+		const requestId = ++premiumCheckIdRef.current
+
+		setCheckingPremiumEmail(true)
+		try {
+			const response = await fetch("/api/premium/check-email", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: trimmed, eventId }),
+			})
+			const result = await response.json()
+			if (requestId !== premiumCheckIdRef.current) return
+			setEmailIsPremium(result?.status ? !!result?.data?.isPremiumMember : false)
+		} catch (error) {
+			console.error("Error checking Premium status for email:", error)
+			if (requestId !== premiumCheckIdRef.current) return
+			// Treat an unreachable check as "not a member" so the preview never promises a
+			// discount the server won't honour. The server decides for real either way.
+			setEmailIsPremium(false)
+		} finally {
+			if (requestId === premiumCheckIdRef.current) setCheckingPremiumEmail(false)
+		}
+	}, [])
+
+	// Re-check whenever the address settles or the live event data arrives (the member rate
+	// isn't known until that fetch resolves). Depends on the event ID as a string rather than
+	// the redux ticket array, so a new array identity can't keep re-arming the debounce and
+	// stop the check from ever firing.
+	const checkoutEventId: string | undefined = (tickets[0] as any)?.eventId || eventData?._id
+	useEffect(() => {
+		if (!showCheckout) return
+		if (premiumEmailTimeoutRef.current) clearTimeout(premiumEmailTimeoutRef.current)
+		premiumEmailTimeoutRef.current = setTimeout(() => {
+			checkPremiumEmail(formData.email, eventMemberPct, checkoutEventId)
+		}, 500)
+		return () => {
+			if (premiumEmailTimeoutRef.current) clearTimeout(premiumEmailTimeoutRef.current)
+		}
+	}, [showCheckout, formData.email, eventMemberPct, checkoutEventId, checkPremiumEmail])
+
 	// Fetch live event data (including questions) every time checkout opens
 	useEffect(() => {
 		if (!showCheckout) {
 			setFreeRegistrationSuccess(false)
 			setPendingApproval(false)
 			setAcceptedTerms(false)
+			setTermsError(false)
 			return
 		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
@@ -390,6 +531,19 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								{/* Pinned header */}
 								<div className="px-6 pt-6 pb-2 shrink-0">
 									<h2 className="text-2xl font-bold">Checkout</h2>
+									{/* Stays visible while the buyer scrolls back down to find the box. */}
+									{termsError && checkoutStep === "details" && (
+										<button
+											type="button"
+											onClick={() => termsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+											className="w-full text-left mt-3 rounded-lg p-3 bg-red-500/15 border border-red-500/50"
+										>
+											<p className="text-red-400 text-sm font-semibold">Terms &amp; Conditions required</p>
+											<p className="text-gray-300 text-xs mt-0.5">
+												Tick the box at the bottom of this form to continue. <span className="underline">Take me there</span>
+											</p>
+										</button>
+									)}
 								</div>
 
 								{/* Scrollable content */}
@@ -403,7 +557,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												<p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
 												<p className="text-gray-300 text-xs mt-1">
 													{selectionTotal > 0
-														? `Your card will be authorized for ${selectionTotal.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged. You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
+														// Quote the DISCOUNTED total — that's what Stripe actually holds.
+														? `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged. You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
 														: "Your registration is subject to host approval."}
 												</p>
 											</div>
@@ -475,15 +630,88 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
 											required
 										/>
-										<input
-											type="email"
-											name="email"
-											placeholder="Email"
-											value={formData.email}
-											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-											required
-										/>
+										<div>
+											<div className="relative">
+												<input
+													type="email"
+													name="email"
+													placeholder="Email"
+													value={formData.email}
+													onChange={handleInputChange}
+													className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+													required
+												/>
+												{checkingPremiumEmail && (
+													<div className="absolute right-3 top-1/2 -translate-y-1/2">
+														<Spinner />
+													</div>
+												)}
+											</div>
+
+											{/* Premium member status for THIS address. Only shown when the event
+											    actually offers a member rate — otherwise it's noise. */}
+											{eventMemberPct > 0 && !checkingPremiumEmail && (
+												<>
+													{emailIsPremium === true && (
+														<p className="text-sm text-green-500 mt-1.5 font-medium">
+															✓ Jetzy Premium member — {eventMemberPct}% off applied.
+														</p>
+													)}
+
+													{/* The mismatch case: they ARE a member, but they've typed an address
+													    that isn't the one their subscription is on. The booking and ticket
+													    would go to the typed address, so the discount can't follow the
+													    session — say so, and offer the one-click fix. */}
+													{emailIsPremium === false && sessionIsPremium && (
+														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(247,148,50,0.12)", border: "1px solid rgba(247,148,50,0.4)" }}>
+															<p className="text-xs" style={{ color: "#F79432" }}>
+																This isn&apos;t the email on your Jetzy Premium account, so the {eventMemberPct}% member discount doesn&apos;t apply to it.
+															</p>
+															{sessionEmail && (
+																<button
+																	type="button"
+																	onClick={() => {
+																		setFormData((prev) => ({ ...prev, email: sessionEmail }))
+																		setEmailIsPremium(null)
+																	}}
+																	className="text-xs font-bold underline mt-1"
+																	style={{ color: "#F79432" }}
+																>
+																	Use {sessionEmail}
+																</button>
+															)}
+														</div>
+													)}
+
+													{/* Not a member on this address and no Premium session either — the
+													    ordinary upsell. */}
+													{emailIsPremium === false && !sessionIsPremium && (
+														<div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg p-2.5" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+															<div className="flex items-center gap-2">
+																<StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
+																<p className="text-xs" style={{ color: "#F5C518" }}>
+																	Jetzy Premium members save {eventMemberPct}% on this event.
+																</p>
+															</div>
+															<button
+																type="button"
+																onClick={() => setShowPremiumPromo(true)}
+																className="text-xs font-bold underline flex-shrink-0"
+																style={{ color: "#F5C518" }}
+															>
+																Subscribe
+															</button>
+														</div>
+													)}
+
+													{emailIsPremium === null && (
+														<p className="text-xs text-gray-400 mt-1.5">
+															Jetzy Premium members save {eventMemberPct}% — enter the email on your Premium account to apply it.
+														</p>
+													)}
+												</>
+											)}
+										</div>
 										<input
 											type="tel"
 											name="phone"
@@ -498,11 +726,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
 
 										{/* Terms & Conditions — required to register */}
-										<label className="flex items-start gap-2 text-white cursor-pointer text-sm">
+										<label
+											ref={termsRef}
+											className={`flex items-start gap-2 text-white cursor-pointer text-sm rounded-lg transition-colors ${termsError ? "bg-red-500/10 border border-red-500/50 p-2.5 -m-0.5" : ""}`}
+										>
 											<input
 												type="checkbox"
 												checked={acceptedTerms}
-												onChange={(e) => setAcceptedTerms(e.target.checked)}
+												onChange={(e) => {
+													setAcceptedTerms(e.target.checked)
+													if (e.target.checked) setTermsError(false)
+												}}
 												className="mt-0.5"
 											/>
 											<span>
@@ -642,6 +876,29 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 									)}
 								</div>
 
+								{/* Order summary. Only for paid selections — a free RSVP has nothing to
+								    break down and the rows would just be noise. */}
+								{selectionTotal > 0 && (
+									<div className="px-6 pt-4 shrink-0">
+										<div className="rounded-lg bg-[#1A1A1A] border border-[#2E2E2E] p-3 text-sm">
+											<div className="flex justify-between text-gray-300">
+												<span>Subtotal</span>
+												<span>{pricing.subtotal.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+											</div>
+											{pricing.lines.map((line) => (
+												<div key={line.label} className="flex justify-between text-green-400 mt-1">
+													<span>{line.label}</span>
+													<span>-{line.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+												</div>
+											))}
+											<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
+												<span>Total</span>
+												<span>{pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+											</div>
+										</div>
+									</div>
+								)}
+
 								{/* Pinned action buttons */}
 								<div className="px-6 py-4 shrink-0 border-t border-[#2E2E2E]">
 									{checkoutStep === "questions" ? (
@@ -653,7 +910,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										</div>
 									) : (
 										<button
-											disabled={isLoading || (checkoutStep === "details" && !acceptedTerms)}
+											// Deliberately NOT disabled on missing terms. A dead button explains
+											// nothing; letting the click through is what triggers the banner.
+											disabled={isLoading}
 											type="submit"
 											className="w-full bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
 										>
@@ -666,6 +925,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					</div>
 				</div>
 			)}
+
+			{/* Subscribe flow for a buyer who isn't a member yet. Returns them to the event
+			    page, where reopening checkout re-checks their address. */}
+			<PremiumPaywallModal
+				isOpen={showPremiumPromo}
+				onClose={() => setShowPremiumPromo(false)}
+				returnTo={typeof window !== "undefined" ? window.location.pathname : "/"}
+				title="Save on this event"
+				message={eventMemberPct > 0 ? `Jetzy Premium members save ${eventMemberPct}% on this event.` : undefined}
+			/>
 		</>
 	)
 }

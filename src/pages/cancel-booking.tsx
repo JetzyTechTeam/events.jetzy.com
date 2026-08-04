@@ -7,15 +7,37 @@ export default function CancelBookingPage() {
 	const { bookingRef } = router.query
 	const [loading, setLoading] = useState(false)
 	const [booking, setBooking] = useState<any>(null)
+	const [preview, setPreview] = useState<any>(null)
+	const [loadingPreview, setLoadingPreview] = useState(true)
 	const [error, setError] = useState('')
 	const [cancelled, setCancelled] = useState(false)
 
+	// Load what is actually being cancelled. Without this the page asked people to confirm
+	// something it couldn't name — and it can't show the right money warning either.
 	useEffect(() => {
-		if (bookingRef) {
-			// You could fetch booking details here if needed
-			// For now, we'll just show the cancellation form
+		if (!router.isReady) return
+		if (!bookingRef) {
+			setLoadingPreview(false)
+			setError('Invalid booking reference')
+			return
 		}
-	}, [bookingRef])
+
+		let active = true
+		axios
+			.get(`/api/bookings/preview?bookingRef=${encodeURIComponent(String(bookingRef))}`)
+			.then((res) => {
+				if (!active) return
+				if (res.data?.status) setPreview(res.data.data)
+				else setError(res.data?.message || 'Booking not found')
+			})
+			.catch((err) => {
+				if (!active) return
+				setError(err.response?.data?.message || 'We could not load this booking.')
+			})
+			.finally(() => active && setLoadingPreview(false))
+
+		return () => { active = false }
+	}, [router.isReady, bookingRef])
 
 	const handleCancelBooking = async () => {
 		if (!bookingRef) {
@@ -33,7 +55,7 @@ export default function CancelBookingPage() {
 
 			if (response.data.status) {
 				setCancelled(true)
-				setBooking(response.data.data)
+				setBooking(response.data.data?.booking)
 			} else {
 				setError(response.data.message || 'Failed to cancel booking')
 			}
@@ -107,8 +129,53 @@ export default function CancelBookingPage() {
 							<p className="text-sm text-gray-600">
 								<strong>Booking Reference:</strong> {bookingRef}
 							</p>
+							{preview?.event?.name && (
+								<p className="text-sm text-gray-600 mt-1">
+									<strong>Event:</strong> {preview.event.name}
+								</p>
+							)}
+							{preview?.ticketCount ? (
+								<p className="text-sm text-gray-600 mt-1">
+									<strong>Tickets:</strong> {preview.ticketCount}
+								</p>
+							) : null}
 						</div>
 					)}
+
+					{/* Jetzy issues no refunds — a guest about to lose money must be told before
+					    they press the button, not after. */}
+					{preview?.moneyState === 'captured' && (
+						<div className="bg-red-50 border border-red-300 rounded-lg p-4 mb-6 text-left">
+							<p className="text-red-700 text-sm font-bold mb-1">This booking is non-refundable.</p>
+							<p className="text-red-700 text-sm">
+								${Number(preview.moneyAmount || 0).toFixed(2)} was paid for this booking and will NOT be returned to you.
+							</p>
+						</div>
+					)}
+					{preview?.moneyState === 'unknown' && (
+						<div className="bg-red-50 border border-red-300 rounded-lg p-4 mb-6 text-left">
+							<p className="text-red-700 text-sm font-bold mb-1">This booking is non-refundable.</p>
+							<p className="text-red-700 text-sm">
+								If a payment of ${Number(preview.moneyAmount || 0).toFixed(2)} was made for this booking, it will NOT be
+								returned to you.
+							</p>
+						</div>
+					)}
+					{preview?.moneyState === 'hold' && (
+						<div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-left">
+							<p className="text-blue-700 text-sm">
+								You have not been charged. The ${Number(preview.moneyAmount || 0).toFixed(2)} hold on your card will be
+								released immediately.
+							</p>
+						</div>
+					)}
+
+					{preview && !preview.canCancel && (
+						<div className="bg-gray-100 border border-gray-300 rounded-lg p-4 mb-6">
+							<p className="text-gray-700 text-sm">{preview.cancelBlockedReason || 'This booking can no longer be cancelled.'}</p>
+						</div>
+					)}
+
 					{error && (
 						<div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
 							<p className="text-red-600 text-sm">{error}</p>
@@ -117,10 +184,10 @@ export default function CancelBookingPage() {
 					<div className="flex flex-col sm:flex-row gap-4 justify-center">
 						<button
 							onClick={handleCancelBooking}
-							disabled={loading}
+							disabled={loading || loadingPreview || (!!preview && !preview.canCancel)}
 							className="bg-red-600 text-white px-6 py-3 rounded-full hover:bg-red-700 transition-all transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-							{loading ? 'Cancelling...' : 'Yes, Cancel My Booking'}
+							{loading ? 'Cancelling...' : loadingPreview ? 'Loading...' : 'Yes, Cancel My Booking'}
 						</button>
 					</div>
 				</div>

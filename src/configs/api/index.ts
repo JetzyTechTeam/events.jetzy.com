@@ -95,7 +95,23 @@ HTTPClient.interceptors.response.use(
 		return Promise.resolve(response?.data)
 	},
 	(error) => {
-		return Promise.reject(error?.response?.data)
+		const body = error?.response?.data
+
+		// Validation failures answer with a generic top-level `message` and the real reasons
+		// in `data[]` (zod issues). `createAsyncThunk` serializes a rejection down to
+		// name/message/stack/code, so `data` is dropped before any toast sees it and every
+		// field error rendered as "Your request could not be complete". Fold the issues into
+		// `message` here — that survives serialization — while leaving `data` intact for the
+		// callers that read it directly.
+		if (body && Array.isArray(body.data) && body.data.length > 0) {
+			const detail = body.data
+				.map((issue: any) => (typeof issue === "string" ? issue : issue?.message))
+				.filter(Boolean)
+				.join(" ")
+			if (detail) return Promise.reject({ ...body, message: detail })
+		}
+
+		return Promise.reject(body)
 	},
 )
 
