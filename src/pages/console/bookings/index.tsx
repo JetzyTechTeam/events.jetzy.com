@@ -36,6 +36,17 @@ export type Booking = {
 	customerPhone: string;
 	total: number;
 	createdAt: string;
+	cancelledAt?: string | null;
+	cancelledBy?: "guest" | "host" | "admin" | null;
+	/** Stripe money state, minus the identifiers. Absent on free bookings. */
+	payment?: {
+		status?: string;
+		amount?: number;
+		currency?: string;
+		authExpiresAt?: string | null;
+		capturedAt?: string | null;
+		canceledAt?: string | null;
+	} | null;
 };
 
 export type Exportable = {

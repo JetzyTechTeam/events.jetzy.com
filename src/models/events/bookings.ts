@@ -144,6 +144,17 @@ const bookingSchema = new Schema<IBookings>(
 			type: Date,
 			required: false,
 		},
+		// Set when the booking is cancelled. No defaults: bookings predating this leave both
+		// undefined rather than claiming they were cancelled by a guest at the epoch.
+		cancelledAt: {
+			type: Date,
+			required: false,
+		},
+		cancelledBy: {
+			type: String,
+			enum: ["guest", "host", "admin"],
+			required: false,
+		},
 		isDeleted: {
 			type: Boolean,
 			default: false,

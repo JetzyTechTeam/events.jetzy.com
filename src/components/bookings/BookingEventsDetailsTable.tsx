@@ -6,18 +6,31 @@ import { Exportable } from "@/pages/console/bookings"
 import { downloadExcel } from "react-export-table-to-excel"
 import { Booking } from "@/pages/console/bookings"
 import { isCancelledBooking } from "@/lib/booking-status"
+import { PaymentBadge } from "@/components/bookings/PaymentBadge"
+import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
+import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking-cancellation"
 
 type Props = {
 	rows: Booking[]
 	exportable: Exportable[]
 	checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }>
 	isAdmin?: boolean
+	/**
+	 * True when the viewer may act on these bookings — admin OR the event's owner. The page
+	 * only renders for those two, so this is effectively always true; it stays an explicit
+	 * prop rather than reusing `isAdmin` (which gates Delete) so a host gets Cancel without
+	 * also getting Delete.
+	 */
+	canManage?: boolean
 	onDeleteSuccess?: () => void
+	onCancelSuccess?: () => void
 }
 
-const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, isAdmin, onDeleteSuccess }) => {
+const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, isAdmin, canManage, onDeleteSuccess, onCancelSuccess }) => {
 	const [loading, setLoading] = useState(false)
 	const [deletingRef, setDeletingRef] = useState<string | null>(null)
+	const [cancellingRef, setCancellingRef] = useState<string | null>(null)
+	const [cancelTarget, setCancelTarget] = useState<Booking | null>(null)
 	const [localRows, setLocalRows] = useState(rows)
 
 	// Re-sync when SSR returns new rows (e.g. after applying search/filters);
@@ -75,6 +88,33 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 		}
 	}
 
+	// Cancelling never returns money — Jetzy issues no refunds. A captured payment stays
+	// captured; only an uncaptured hold is released. The dialog says so explicitly.
+	const handleCancel = async () => {
+		if (!cancelTarget) return
+		const bookingRef = cancelTarget.bookingRef
+		setCancellingRef(bookingRef)
+		try {
+			const res = await fetch("/api/bookings/cancel", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ bookingRef }),
+			})
+			const data = await res.json()
+			if (data.status) {
+				setLocalRows(prev => prev.map(r => (r.bookingRef === bookingRef ? { ...r, status: "cancelled" } : r)))
+				setCancelTarget(null)
+				onCancelSuccess?.()
+			} else {
+				alert(data.message || "Failed to cancel booking.")
+			}
+		} catch {
+			alert("Network error.")
+		} finally {
+			setCancellingRef(null)
+		}
+	}
+
 	if (loading) {
 		return (
 			<Flex justify="center" align="center" height="300px">
@@ -98,10 +138,11 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 							<Th>Reference</Th>
 							<Th>Amount</Th>
 							<Th>Status</Th>
+							<Th>Payment</Th>
 							<Th>Customer</Th>
 							<Th>Check-in</Th>
 							<Th>Date</Th>
-							{isAdmin && <Th></Th>}
+							{(isAdmin || canManage) && <Th></Th>}
 						</Tr>
 					</Thead>
 					<Tbody>
@@ -125,6 +166,14 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 									<Td>{row.total.toLocaleString("en-US", { style: "currency", currency: "USD" })}</Td>
 									<Td>
 										<Badge colorScheme={cancelled ? "red" : row.status === "pending" ? "yellow" : "green"}>{row.status}</Badge>
+									</Td>
+									<Td>
+										{row.payment?.status
+											? <PaymentBadge booking={row} />
+											: Number(row.total || 0) > 0
+												// Priced but no payment record — not the same thing as free.
+												? <Text color="#9C9C9C">Not recorded</Text>
+												: <Text color="#9C9C9C">Free</Text>}
 									</Td>
 									<Td>
 										<Box>
@@ -157,17 +206,32 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 										)}
 									</Td>
 									<Td>{new Date(row.createdAt).toLocaleString()}</Td>
-									{isAdmin && (
+									{(isAdmin || canManage) && (
 										<Td>
-											<Button
-												size="xs"
-												colorScheme="red"
-												variant="ghost"
-												isLoading={deletingRef === row.bookingRef}
-												onClick={() => handleDelete(row.bookingRef)}
-											>
-												Delete
-											</Button>
+											<Flex gap={1}>
+												{canManage && !cancelled && (
+													<Button
+														size="xs"
+														colorScheme="orange"
+														variant="ghost"
+														isLoading={cancellingRef === row.bookingRef}
+														onClick={() => setCancelTarget(row)}
+													>
+														Cancel
+													</Button>
+												)}
+												{isAdmin && (
+													<Button
+														size="xs"
+														colorScheme="red"
+														variant="ghost"
+														isLoading={deletingRef === row.bookingRef}
+														onClick={() => handleDelete(row.bookingRef)}
+													>
+														Delete
+													</Button>
+												)}
+											</Flex>
 										</Td>
 									)}
 								</Tr>
@@ -176,6 +240,17 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 					</Tbody>
 				</Table>
 			</TableContainer>
+
+			<CancelBookingDialog
+				isOpen={!!cancelTarget}
+				onClose={() => setCancelTarget(null)}
+				onConfirm={handleCancel}
+				isLoading={!!cancellingRef}
+				moneyState={(cancelTarget ? bookingMoneyState(cancelTarget as any) : "free") as MoneyState}
+				amount={cancelTarget ? bookingMoneyAmount(cancelTarget as any) : 0}
+				asManager
+				guestName={cancelTarget?.customerName}
+			/>
 		</>
 	)
 }

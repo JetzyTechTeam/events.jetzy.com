@@ -2,6 +2,8 @@ import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
+import { MoneyState } from "@/lib/booking-cancellation"
+import { getEventZone } from "@/utils/eventTime"
 import sgMail from "@sendgrid/mail"
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -90,6 +92,28 @@ type BookingCancellationData = {
   }>
   orderNumber: string
   totalAmount: number
+  /**
+   * Where the money sat when the booking was cancelled. Drives which money block the
+   * email renders. Omitted (legacy callers) falls back to "free" — no money claim at all,
+   * which is the only safe default now that Jetzy issues no refunds.
+   */
+  moneyState?: MoneyState
+  /** Who pulled the trigger; changes the opening line ("you cancelled" vs "the host cancelled"). */
+  cancelledBy?: "guest" | "host" | "admin"
+}
+
+type HostCancellationNoticeData = {
+  event: IEvent
+  eventId: string
+  guestName: string
+  guestEmail: string
+  guestPhone?: string
+  ticketCount: number
+  orderNumber: string
+  totalAmount: number
+  moneyState: MoneyState
+  cancelledBy: "guest" | "host" | "admin"
+  organizerEmail?: string
 }
 
 type WaitingListEmailData = {
@@ -1681,22 +1705,91 @@ export const sendOrganizerSaleNotification = async ({
   }
 }
 
-export const sendBookingCancellation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, totalAmount }: BookingCancellationData) => {
+/**
+ * Money block for a cancellation email.
+ *
+ * Jetzy issues no refunds, so this must never promise one. The three states are genuinely
+ * different for the guest and must read differently: a released hold means they were never
+ * charged at all, a captured payment means the money is gone and staying gone, and a free
+ * booking has no money to talk about.
+ */
+const cancellationMoneyBlock = (moneyState: MoneyState, amount: number): string => {
+  if (moneyState === "hold" || moneyState === "released") {
+    return `
+      <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #1877F2;">
+        <h3 style="color: #1877F2; margin: 0 0 10px 0;">You were not charged</h3>
+        <p style="color: #1C1E21; margin: 0;">
+          The ${formatMoney(amount)} authorization hold on your card has been released. Depending on your
+          bank, it may take 5&ndash;10 business days to disappear from your statement.
+        </p>
+      </div>
+    `
+  }
+
+  if (moneyState === "captured") {
+    return `
+      <div style="background-color: #FEF2F2; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #DC2626;">
+        <h3 style="color: #DC2626; margin: 0 0 10px 0;">This booking is non-refundable</h3>
+        <p style="color: #1C1E21; margin: 0;">
+          ${formatMoney(amount)} was paid for this booking. Under our booking policy this payment is
+          non-refundable and will not be returned.
+        </p>
+      </div>
+    `
+  }
+
+  // We hold no payment record for this booking, so we can't say whether it was charged.
+  // The copy stays conditional rather than guessing in either direction.
+  if (moneyState === "unknown") {
+    return `
+      <div style="background-color: #FEF2F2; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #DC2626;">
+        <h3 style="color: #DC2626; margin: 0 0 10px 0;">This booking is non-refundable</h3>
+        <p style="color: #1C1E21; margin: 0;">
+          If a payment of ${formatMoney(amount)} was made for this booking, under our booking policy it is
+          non-refundable and will not be returned.
+        </p>
+      </div>
+    `
+  }
+
+  return ""
+}
+
+export const sendBookingCancellation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, totalAmount, moneyState = "free", cancelledBy = "guest" }: BookingCancellationData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (!baseUrl) {
     throw new Error("NEXT_PUBLIC_URL environment variable is required")
   }
-  console.log("[sendBookingCancellation] Called with:", { email, orderNumber, eventName: event.name, ticketCount: tickets.length })
+  console.log("[sendBookingCancellation] Called with:", { email, orderNumber, eventName: event.name, ticketCount: tickets.length, moneyState, cancelledBy })
+
+  // Every other send function skips on localhost; this one didn't, so local dev mailed real
+  // guests every time a booking was cancelled.
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] Booking cancellation email skipped - would send to:", email)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
 
   try {
-    // Format event start and end time
-    const eventTimezone = event.timezone.split(') ')[1]
-    const start = dayjs.utc(event.startsOn).tz(eventTimezone)
-    const end = dayjs.utc(event.endsOn).tz(eventTimezone)
-    const startTimestamp = `${start.format('ddd MMM DD YYYY')}${event.hasStartTime !== false ? ` ${start.format('hh:mm A')}` : ''}`
-    const endTimestamp = `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}`
-    const timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
+    // Dates are optional on an event (TBD / date poll), and `timezone` is not guaranteed to
+    // carry the "(UTC+00:00) Region/City" prefix — splitting on it blindly used to throw.
+    const eventTimezone = getEventZone(event.timezone)
+    const startTimestamp = event.startsOn
+      ? (() => {
+        const start = dayjs.utc(event.startsOn).tz(eventTimezone)
+        return `${start.format('ddd MMM DD YYYY')}${event.hasStartTime !== false ? ` ${start.format('hh:mm A')}` : ''}`
+      })()
+      : ""
+    const endTimestamp = event.endsOn
+      ? (() => {
+        const end = dayjs.utc(event.endsOn).tz(eventTimezone)
+        return `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}`
+      })()
+      : ""
+    const timestamp = startTimestamp
+      ? (endTimestamp ? `From: ${startTimestamp} To: ${endTimestamp}` : startTimestamp)
+      : "Date to be decided"
     const location = event.location
+    const cancelledByHost = cancelledBy !== "guest"
 
     await sgMail.send({
       to: [email, "tech@jetzyapp.com"],
@@ -1709,7 +1802,9 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
             <h2 style="color: #856404; margin-bottom: 15px;">Your Booking Has Been Cancelled</h2>
             <p style="color: #856404; margin: 0;">
-              We're sorry to inform you that your booking for "${decodeHTMLEntities(event.name)}" has been cancelled.
+              ${cancelledByHost
+        ? `Your booking for "${decodeHTMLEntities(event.name)}" has been cancelled by the event host.`
+        : `Your booking for "${decodeHTMLEntities(event.name)}" has been cancelled as requested.`}
             </p>
           </div>
 
@@ -1745,15 +1840,18 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
           .join("")}
           </div>
           
+          ${moneyState !== "free" ? `
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="color: #333; margin: 0;">Total Amount Refunded: $${totalAmount.toFixed(2)}</h3>
+            <h3 style="color: #333; margin: 0;">Booking Total: ${formatMoney(totalAmount)}</h3>
           </div>
+          ` : ""}
+
+          ${cancellationMoneyBlock(moneyState, totalAmount)}
 
           <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #1877F2;">
             <h2 style="color: #1877F2; margin-bottom: 15px;">Important Information</h2>
             <p style="color: #1C1E21; margin-bottom: 10px;">
-              Your tickets have been released and are now available for other attendees. 
-              If you were charged for this booking, a refund will be processed according to our refund policy.
+              Your tickets have been released and are now available for other attendees.
             </p>
             <p style="color: #1C1E21; margin-top: 10px;">
               If you have any questions about this cancellation or need assistance, please don't hesitate to contact us.
@@ -1770,7 +1868,20 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
           </div>
         </div>
       `),
-      text: `Booking Cancellation Confirmation for ${event.name}.\n\nYour booking has been cancelled and a refund of $${totalAmount.toFixed(2)} has been processed.\n\nThank you for choosing Jetzy Events!`,
+      text: [
+        `Booking Cancellation Confirmation for ${event.name}.`,
+        "",
+        cancelledByHost ? "Your booking has been cancelled by the event host." : "Your booking has been cancelled as requested.",
+        moneyState === "hold" || moneyState === "released"
+          ? `You were not charged — the ${formatMoney(totalAmount)} hold on your card has been released.`
+          : moneyState === "captured"
+            ? `${formatMoney(totalAmount)} was paid for this booking. Under our booking policy this payment is non-refundable and will not be returned.`
+            : moneyState === "unknown"
+              ? `If a payment of ${formatMoney(totalAmount)} was made for this booking, under our booking policy it is non-refundable and will not be returned.`
+              : "",
+        "",
+        "Thank you for choosing Jetzy Events!",
+      ].filter(Boolean).join("\n"),
     })
 
     console.log("[sendBookingCancellation] Email sent successfully to:", email)
@@ -1782,6 +1893,106 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
       console.error("[sendBookingCancellation] SendGrid response:", JSON.stringify(error.response.body, null, 2))
     }
     throw error
+  }
+}
+
+/**
+ * Tells the host (and the Jetzy inbox) that a seat just came back. Non-fatal by design —
+ * a guest's cancellation must never fail because an operational email bounced.
+ */
+export const sendHostCancellationNotice = async ({
+  event,
+  eventId,
+  guestName,
+  guestEmail,
+  guestPhone,
+  ticketCount,
+  orderNumber,
+  totalAmount,
+  moneyState,
+  cancelledBy,
+  organizerEmail,
+}: HostCancellationNoticeData) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+  const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
+
+  if (baseUrl?.includes("localhost")) {
+    console.log("[LOCALHOST MODE] Host cancellation notice skipped - would send to:", organizerEmail, adminEmail)
+    return
+  }
+
+  // De-duplicate: the host may well be the admin address on a Jetzy-run event.
+  const recipients = Array.from(new Set([organizerEmail, adminEmail].filter(Boolean))) as string[]
+  if (recipients.length === 0) {
+    console.warn("[sendHostCancellationNotice] No recipients resolved; skipping.")
+    return
+  }
+
+  const moneyLine =
+    moneyState === "captured"
+      ? `${formatMoney(totalAmount)} was collected and is <strong>not</strong> refunded.`
+      : moneyState === "hold" || moneyState === "released"
+        ? `The ${formatMoney(totalAmount)} card hold was released — nothing was ever collected.`
+        : moneyState === "unknown"
+          ? `Booking total was ${formatMoney(totalAmount)}, but there is no payment record against it — check Stripe if you need to confirm whether it was collected. Nothing has been refunded.`
+          : "This was a free booking; no money was involved."
+
+  const manageUrl = `${(baseUrl || "").replace(/\/$/, "")}/console/events/${eventId}/manage`
+
+  try {
+    await sgMail.send({
+      to: recipients,
+      from: { email: senderEmail, name: "Jetzy Events" },
+      subject: `Jetzy [Booking Cancelled] ${decodeHTMLEntities(event.name)} — ${guestName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">A booking was cancelled</h1>
+
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+            <p style="color: #856404; margin: 0;">
+              <strong>${ticketCount} ${ticketCount === 1 ? "ticket" : "tickets"}</strong> for
+              "${decodeHTMLEntities(event.name)}" ${cancelledBy === "guest" ? "were cancelled by the guest" : `were cancelled by the ${cancelledBy}`}
+              and are back in your available capacity.
+            </p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">Guest</h2>
+            <p style="margin: 6px 0;"><strong>Name:</strong> ${guestName}</p>
+            <p style="margin: 6px 0;"><strong>Email:</strong> ${guestEmail}</p>
+            ${guestPhone ? `<p style="margin: 6px 0;"><strong>Phone:</strong> ${guestPhone}</p>` : ""}
+            <p style="margin: 6px 0;"><strong>Booking Ref:</strong> ${orderNumber}</p>
+            <p style="margin: 6px 0;"><strong>Cancelled:</strong> ${new Date().toUTCString()}</p>
+          </div>
+
+          <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="color: #333; margin-bottom: 15px;">Payment</h2>
+            <p style="margin: 0;">${moneyLine}</p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${manageUrl}" style="background-color: #F79432; color: #000; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+              Manage Event
+            </a>
+          </div>
+
+          <div style="margin-top: 30px; padding-top: 25px; border-top: 2px solid #E5E7EB;">
+            <p style="color: #9CA3AF; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+              Questions? Contact us at <a href="mailto:${CONTACT_EMAIL}" style="color: #1877F2; text-decoration: none;">${CONTACT_EMAIL}</a>
+            </p>
+            <p style="color: #9CA3AF; font-size: 11px; line-height: 1.4; margin: 10px 0 0 0; text-align: center;">
+              &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+            </p>
+          </div>
+        </div>
+      `),
+      text: `Booking cancelled for ${event.name}.\n\nGuest: ${guestName} (${guestEmail})\nTickets: ${ticketCount}\nRef: ${orderNumber}\n${moneyLine.replace(/<[^>]+>/g, "")}\n\nManage: ${manageUrl}`,
+    })
+    console.log("[sendHostCancellationNotice] Sent to:", recipients.join(", "))
+  } catch (error: any) {
+    // Non-fatal — the cancellation itself already succeeded.
+    console.error("[sendHostCancellationNotice] Failed to send:", error?.message || error)
   }
 }
 

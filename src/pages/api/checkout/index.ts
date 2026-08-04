@@ -203,14 +203,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Private events are unlisted rather than invite-only — no access code required.
 
+		// Who is buying, if anyone is logged in. Resolved once and carried into the Stripe
+		// metadata so the booking created at fulfilment can be linked back to the account —
+		// without it, every paid booking has no `bookerUserId` and can only ever be found by
+		// whatever email was typed into the form.
+		const buyerSession = await getServerSession(req, res, authOptions)
+		const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
+
 		// Jetzy Premium member discount — stacks with a referral code (see combined
 		// coupon math below): the member discount comes off first, then the referral
 		// code takes its cut off what's left.
 		let premiumMemberDiscountData: { percentage: number } | null = null
 		if (event.premium && Number(event.premiumMemberDiscountPercentage) > 0) {
 			try {
-				const buyerSession = await getServerSession(req, res, authOptions)
-				const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
 				if (buyerId) {
 					const record = await findUserRecord(buyerId)
 					if (record?.doc?.premiumSubscription?.active) {
@@ -370,6 +375,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			acceptedTermsAt: acceptedTermsAt.toISOString(),
 			bookingRef,
 			requiresApproval: requiresApproval ? "true" : "false",
+			...(buyerId ? { bookerUserId: String(buyerId) } : {}),
 		}
 
 		if (referralCodeData) {

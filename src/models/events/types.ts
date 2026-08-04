@@ -165,6 +165,9 @@ export interface IBookings extends IBaseModelProps {
 	payment?: IBookingPayment
 	acceptedTerms?: boolean
 	acceptedTermsAt?: Date
+	/** Set on cancellation; undefined on bookings cancelled before this was tracked. */
+	cancelledAt?: Date
+	cancelledBy?: "guest" | "host" | "admin"
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }

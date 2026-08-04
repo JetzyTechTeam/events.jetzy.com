@@ -55,7 +55,11 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
           exportable={exportable}
           checkInMap={checkInMap}
           isAdmin={isAdmin}
+          // getServerSideProps already redirects anyone who is neither admin nor the
+          // event's owner, so everyone who reaches this page may manage these bookings.
+          canManage
           onDeleteSuccess={() => router.replace(router.asPath)}
+          onCancelSuccess={() => router.replace(router.asPath)}
         />
       </div>
     </ConsoleLayout>
@@ -144,6 +148,15 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     customerPhone: 1,
     total: 1,
     createdAt: 1,
+    cancelledAt: 1,
+    cancelledBy: 1,
+    // Money state for the host, minus the Stripe identifiers — those never reach a browser.
+    "payment.status": 1,
+    "payment.amount": 1,
+    "payment.currency": 1,
+    "payment.authExpiresAt": 1,
+    "payment.capturedAt": 1,
+    "payment.canceledAt": 1,
   })
     .sort({ createdAt: -1 })
     .lean()
@@ -206,6 +219,16 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
         _id: b._id.toString(),
         eventId: b.eventId.toString(),
         createdAt: b.createdAt ? b.createdAt.toString() : "",
+        cancelledAt: b.cancelledAt ? b.cancelledAt.toISOString() : null,
+        // Dates inside the payment sub-doc have to be serialized too or Next refuses the props.
+        payment: b.payment
+          ? {
+            ...b.payment,
+            authExpiresAt: b.payment.authExpiresAt ? b.payment.authExpiresAt.toISOString() : null,
+            capturedAt: b.payment.capturedAt ? b.payment.capturedAt.toISOString() : null,
+            canceledAt: b.payment.canceledAt ? b.payment.canceledAt.toISOString() : null,
+          }
+          : null,
         tickets: b.tickets.map((t: any) => ({
           ticketId: t.ticketId.toString(),
           quantity: t.quantity,

@@ -42,7 +42,9 @@ export default function BookingFilters({ eventId, initialFilters }: Props) {
                 <option value="pending" style={{ background: "#1a1a1a", color: "white" }}>Pending</option>
                 <option value="approved" style={{ background: "#1a1a1a", color: "white" }}>Approved</option>
                 <option value="cancelled" style={{ background: "#1a1a1a", color: "white" }}>Cancelled</option>
-                <option value="refunded" style={{ background: "#1a1a1a", color: "white" }}>Refunded</option>
+                {/* No "Refunded" option: Jetzy issues no refunds, so BookingStatus.REFUNDED is
+                    never written and the filter only ever returned an empty list. */}
+                <option value="rejected" style={{ background: "#1a1a1a", color: "white" }}>Declined</option>
                 <option value="failed" style={{ background: "#1a1a1a", color: "white" }}>Failed</option>
             </Select>
             <Select placeholder="Check-in Status" value={checkedIn} onChange={(e) => setCheckedIn(e.target.value)} width="175px" bg="#1a1a1a" color="white" borderColor="#444" _focus={{ borderColor: "#F79432" }} sx={{ option: { background: "#1a1a1a", color: "white" } }}>
