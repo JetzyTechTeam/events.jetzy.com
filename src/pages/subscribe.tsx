@@ -205,7 +205,16 @@ export default function SubscribePage() {
 							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Everything in Basic
 						</li>
 						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Member pricing on ticketed events
+							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Invite-only events and experiences
+						</li>
+						<li className="flex gap-2">
+							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Curated networking with fellow members
+						</li>
+						<li className="flex gap-2">
+							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Personalized match recommendations
+						</li>
+						<li className="flex gap-2">
+							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Member-only pricing and discounts
 						</li>
 						<li className="flex gap-2">
 							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Host Premium Events with member-only
