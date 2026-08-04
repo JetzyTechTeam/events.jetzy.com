@@ -6,6 +6,9 @@ import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
+import { resolveMemberDiscountPercentage } from "@/lib/premium-eligibility"
+import { validateReferralCodeForEvent } from "@/lib/referral-validation"
+import { incrementReferralUsage } from "@/lib/checkout-fulfillment"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus } from "@/models/events/types"
@@ -33,6 +36,38 @@ type BodyParams = {
 	}
 	eventId: string
 	customAnswers?: Array<{ questionId: string; answer: any }>
+}
+
+type ResolvedTicketRow = { name: string; price: number; quantity: number; desc: string }
+
+/**
+ * Re-resolve the order against the EVENT RECORD, never trusting the request body.
+ *
+ * This endpoint issues a booking with no payment step, so a client-supplied price is a
+ * client-supplied authorization. Returns `null` when a submitted ticket id isn't on the event
+ * at all — an unknown ticket must abort, not quietly contribute $0 and slip past the
+ * free-order check below.
+ */
+const resolveOrder = (event: any, tickets: BodyParams["tickets"]): { rows: ResolvedTicketRow[]; subtotal: number } | null => {
+	const eventTickets: any[] = Array.isArray(event?.tickets) ? event.tickets : []
+	const rows: ResolvedTicketRow[] = []
+	let subtotal = 0
+
+	for (const ticket of tickets) {
+		const stored = eventTickets.find(
+			(et: any) => String(et?._id) === String(ticket.id) || (!!ticket.priceId && et?.stripeProductId === ticket.priceId),
+		)
+		if (!stored) return null
+
+		const quantity = Number(ticket.quantity) || 0
+		if (quantity <= 0) return null
+
+		const price = Number(stored.price) || 0
+		subtotal += price * quantity
+		rows.push({ name: stored.name, price, quantity, desc: stored.desc || "" })
+	}
+
+	return { rows, subtotal: Math.round((subtotal + Number.EPSILON) * 100) / 100 }
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -100,7 +135,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const reference = uniqueId(20)
 		const bookingRef = `JZ-${reference}`
 
-		const subtotal = tickets.reduce((acc, t) => acc + t.price * t.quantity, 0)
+		// ---- Pricing. This endpoint hands out a booking with no payment step, so every
+		// figure below comes from the database, never from the request body. ----
+		const order = resolveOrder(event, tickets)
+		if (!order) {
+			return sendResponse(res, null, "One of the selected tickets is no longer available.", false, 400)
+		}
+		const { rows: orderRows, subtotal } = order
+
+		// A discount can legitimately bring a paid order to exactly $0 (e.g. a 100% referral
+		// code, or a member rate that cancels the price out), and those orders are routed
+		// here rather than to Stripe — Stripe rejects a $0 charge, and rejects a $0
+		// manual-capture authorization outright, which is what an approval order needs.
+		const referralResult = await validateReferralCodeForEvent(eventId, req.body?.referralCode)
+		if (!referralResult.ok) {
+			return sendResponse(res, null, referralResult.message, false, 400)
+		}
+		const referralCodeData = referralResult.data
+
+		let memberDiscountPercentage = 0
+		try {
+			memberDiscountPercentage = await resolveMemberDiscountPercentage(event as any, user.email)
+		} catch (memberDiscountError) {
+			console.error("[checkout/free-events] Error resolving Premium member discount:", memberDiscountError)
+			return sendResponse(res, null, "We couldn't verify your Premium discount. Please try again.", false, 500)
+		}
+
+		const pricing = buildTicketPricing({
+			subtotal,
+			referralCode: referralCodeData?.code,
+			referralPercentage: referralCodeData?.discountPercentage,
+			premiumPercentage: memberDiscountPercentage,
+		})
+
+		// The free path issues a CONFIRMED (or approval-pending) booking without charging
+		// anything. Anything with money still owing must go through Stripe.
+		if (pricing.total !== 0) {
+			console.warn("[checkout/free-events] Rejected non-free order:", { eventId, subtotal, total: pricing.total })
+			return sendResponse(res, null, "This order isn't free — please complete checkout.", false, 400)
+		}
+
+		const discountAmount = Math.round((subtotal - pricing.total + Number.EPSILON) * 100) / 100
+
+		// Two very different orders reach this endpoint: tickets that were always $0, and a
+		// priced order discounted all the way down to $0. Only the second one actually used a
+		// discount. On a $0 ticket a referral code and a member rate reduce nothing, so they
+		// must not be recorded as applied — and must not burn one of the code's `maxUses`.
+		const discountsDidWork = subtotal > 0
 
 		// Capture logged-in user (if any) so they can later cancel even when booking email differs
 		const session = await getServerSession(req, res, authOptions)
@@ -127,6 +208,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			})),
 			subTotal: subtotal,
 			total: 0,
+			// Why it was free. An order discounted down to $0 records the rates so the email and
+			// My Bookings can itemise it, exactly as `checkout-fulfillment.ts` does for the
+			// Stripe path. The code itself is kept either way, for attribution.
+			...(referralCodeData ? { referralCode: referralCodeData.code } : {}),
+			discountAmount,
+			premiumMemberDiscountApplied: discountsDidWork && memberDiscountPercentage > 0,
+			...(discountsDidWork && referralCodeData ? { referralDiscountPercentage: referralCodeData.discountPercentage } : {}),
+			...(discountsDidWork && memberDiscountPercentage > 0 ? { premiumMemberDiscountPercentage: memberDiscountPercentage } : {}),
 			customAnswers: customAnswers.map((a) => ({
 				questionId: a.questionId,
 				answer: a.answer,
@@ -144,7 +233,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// ---- Require-Approval branch: notify attendee (pending) + admin, then stop ----
 		if (requiresApproval) {
-			const ticketSummary = tickets.map((t) => ({ name: t.name, quantity: t.quantity }))
+			const ticketSummary = orderRows.map((t) => ({ name: t.name, quantity: t.quantity }))
 			try {
 				await sendApprovalPending({
 					event,
@@ -176,6 +265,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Update event tracker capacity (confirmed bookings only)
 		await booking.updateEventTracker()
 
+		// Confirmed only. An approval-pending booking must NOT burn a referral use — that
+		// latch belongs to `bookings/approve.ts`, same as the Stripe path. Nor may a code burn
+		// a use against $0 tickets, where it discounted nothing.
+		if (discountsDidWork) await incrementReferralUsage(referralCodeData?.code)
+
 		// Send confirmation email
 		try {
 			let qrCodeImageUrl: string | undefined
@@ -190,16 +284,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				lastName: user.lastName,
 				email: user.email,
 				phone: user.phone,
-				tickets: tickets.map((ticket) => ({
-					name: ticket.name,
-					price: ticket.price,
-					quantity: ticket.quantity,
-					desc: ticket.desc,
-				})),
+				// Names and prices from the event record, so the line items can't disagree
+				// with the Subtotal below them.
+				tickets: orderRows,
 				orderNumber: bookingRef,
 				qrCodeImageUrl,
-				// Free registration: shows Subtotal/Total explicitly rather than nothing at all.
-				pricing: buildTicketPricing({ subtotal, total: 0 }),
+				// Shows Subtotal/Total explicitly rather than nothing at all — and itemises the
+				// discounts when the order was priced but discounted down to $0.
+				pricing,
 			})
 		} catch (emailError) {
 			console.error("Failed to send free ticket confirmation email:", emailError)

@@ -6,7 +6,8 @@ import { uniqueId } from "@Jetzy/lib/utils"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
-import { findUserRecord } from "@/lib/premium"
+import { resolveMemberDiscountPercentage } from "@/lib/premium-eligibility"
+import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
 
 type BodyParams = {
@@ -133,46 +134,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Non-critical error, continue
 		}
 
-		// Validate and get referral code if provided
+		// Validate and get referral code if provided. The modal's green tick is only a
+		// preview — the code can be deactivated or exhausted before submit, so re-check.
 		let referralCodeData: { code: string; discountPercentage: number } | null = null
-		if (referralCode) {
-			try {
-				const { ReferralCodes } = await import("@/models/events/referral-codes")
-				const { Types } = await import("mongoose")
-
-				const eventIdToQuery = tickets[0]?.eventId
-				if (!eventIdToQuery || !Types.ObjectId.isValid(eventIdToQuery)) {
-					console.error("[checkout/index] Invalid event ID in tickets:", eventIdToQuery)
-					return sendResponse(res, null, "Invalid event ID", false, ResCode.BAD_REQUEST)
-				}
-
-				const codeRecord = await ReferralCodes.findOne({
-					eventId: new Types.ObjectId(eventIdToQuery),
-					code: referralCode.trim().toUpperCase(),
-					isDeleted: false,
-					isActive: true,
-				})
-
-				if (!codeRecord) {
-					console.warn("[checkout/index] Referral code not found or inactive for this event:", referralCode)
-					return sendResponse(res, null, "Invalid or inactive referral code", false, ResCode.BAD_REQUEST)
-				}
-
-				// Check if code has reached max uses
-				if (codeRecord.maxUses !== null && codeRecord.maxUses !== undefined && codeRecord.usageCount >= codeRecord.maxUses) {
-					console.warn("[checkout/index] Referral code max uses reached")
-					return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
-				}
-
-				referralCodeData = {
-					code: codeRecord.code,
-					discountPercentage: codeRecord.discountPercentage,
-				}
-				console.log("[checkout/index] Referral code applied:", referralCodeData)
-			} catch (referralError: any) {
-				console.error("[checkout/index] Error validating referral code:", referralError)
-				return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
+		try {
+			const referralResult = await validateReferralCodeForEvent(tickets[0]?.eventId, referralCode)
+			if (!referralResult.ok) {
+				console.warn("[checkout/index] Referral code rejected:", referralResult.message, referralCode)
+				return sendResponse(res, null, referralResult.message, false, ResCode.BAD_REQUEST)
 			}
+			referralCodeData = referralResult.data
+			if (referralCodeData) console.log("[checkout/index] Referral code applied:", referralCodeData)
+		} catch (referralError: any) {
+			console.error("[checkout/index] Error validating referral code:", referralError)
+			return sendResponse(res, null, "Error validating referral code", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
 		// using price api from stripe create price for the tickets selected
@@ -213,19 +188,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Jetzy Premium member discount — stacks with a referral code (see combined
 		// coupon math below): the member discount comes off first, then the referral
 		// code takes its cut off what's left.
+		//
+		// Resolved from the CHECKOUT EMAIL, not the session — the booking, ticket and account
+		// all attach to that address, so it's the only identity that can't disagree with
+		// itself. See `src/lib/premium-eligibility.ts` for the full reasoning.
 		let premiumMemberDiscountData: { percentage: number } | null = null
-		if (event.premium && Number(event.premiumMemberDiscountPercentage) > 0) {
-			try {
-				if (buyerId) {
-					const record = await findUserRecord(buyerId)
-					if (record?.doc?.premiumSubscription?.active) {
-						premiumMemberDiscountData = { percentage: Number(event.premiumMemberDiscountPercentage) }
-						console.log("[checkout/index] Jetzy Premium member discount applied:", premiumMemberDiscountData)
-					}
-				}
-			} catch (memberDiscountError: any) {
-				console.error("[checkout/index] Error resolving Premium member discount:", memberDiscountError)
+		try {
+			const memberPercentage = await resolveMemberDiscountPercentage(event as any, user.email)
+			if (memberPercentage > 0) {
+				premiumMemberDiscountData = { percentage: memberPercentage }
+				console.log("[checkout/index] Jetzy Premium member discount applied:", premiumMemberDiscountData)
 			}
+		} catch (memberDiscountError: any) {
+			// Never fall through to a full-price session on a failed lookup. The buyer was
+			// quoted a discounted total in the modal; charging them in full instead is worse
+			// than making them retry — same rule as the coupon-creation branch below.
+			console.error("[checkout/index] Error resolving Premium member discount:", memberDiscountError)
+			return sendResponse(res, null, "We couldn't verify your Premium discount. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
 		// Validate required custom questions

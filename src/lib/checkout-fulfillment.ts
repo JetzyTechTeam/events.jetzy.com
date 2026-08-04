@@ -80,7 +80,7 @@ const parseCustomAnswers = (metadata: SessionMetadata) => {
 	return answers
 }
 
-const incrementReferralUsage = async (code?: string) => {
+export const incrementReferralUsage = async (code?: string) => {
 	if (!code) return
 	try {
 		const { ReferralCodes } = await import("@/models/events/referral-codes")

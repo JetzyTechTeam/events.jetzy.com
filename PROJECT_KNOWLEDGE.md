@@ -225,6 +225,10 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 ### Checkout
 `/api/checkout/index`, `/api/checkout/confirm`, `/api/checkout/free-events`
 
+| Method | Route | Access |
+|---|---|---|
+| POST | `/api/premium/check-email` | public — preview only, see "Jetzy Premium member discount" |
+
 ### Waiting List
 `/api/waiting-list/[eventId]`, `/api/waiting-list/add`, `/api/waiting-list/approve`, `/api/waiting-list/remove`
 
@@ -288,6 +292,82 @@ The confirmation email showed per-ticket prices but **no discount and no total**
 - **Booking schema gained `referralDiscountPercentage` and `premiumMemberDiscountPercentage`** (optional, no default). Only `discountAmount` and a boolean were stored before, so `approve.ts` — which emails later from the booking — couldn't split the two. Legacy bookings leave them undefined and fall back to one combined line.
 - `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
 - **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
+
+### Jetzy Premium member discount — resolved by EMAIL, not session
+
+A premium event (`event.premium`) is open to everyone; a subscription just unlocks
+`event.premiumMemberDiscountPercentage`. Eligibility used to be read off the NextAuth session
+(`if (buyerId)` in `checkout/index.ts`, no `else`), which broke three ways at once: a guest who
+pays for Premium got nothing silently, a logged-in member who typed a different email got a
+discount on a booking belonging to that other address, and the modal preview could quote a
+total Stripe never charged.
+
+**The email typed into the checkout form is now the sole authority**, logged in or not. It is
+the address the booking, ticket, QR code and auto-created Jetzy account all attach to, so it is
+the only identity that cannot disagree with itself.
+
+- **[src/lib/premium-eligibility.ts](src/lib/premium-eligibility.ts)** — `isPremiumEmail`,
+  `resolveMemberDiscountPercentage`. **Server only**: it loads the user models.
+- **[src/lib/premium-discount.ts](src/lib/premium-discount.ts)** — `eventMemberDiscountPercentage`,
+  pure and isomorphic. React components import **this** one. Keeping them apart is what stops
+  mongoose reaching the client bundle.
+- **The email lookup MUST be a case-insensitive regex.** Neither `Users.email` nor
+  `EventUsers.email` declares `lowercase: true` — same trap as `Bookings.customerEmail`. An
+  exact match silently misses every subscriber who signed up with a capital letter.
+- Both user collections are searched (`Users`, then `EventUsers`), mirroring `findUserRecord`
+  in [premium.ts](src/lib/premium.ts).
+- **A failed lookup fails the checkout** (500), it does not fall through to full price. The
+  buyer was quoted a discounted total; charging them in full is worse than a retry. Same rule
+  as the coupon-creation branch.
+- Session is still read for `metadata.bookerUserId`, and drives only two UI things: prefilling
+  the email, and the amber "this isn't the email on your Premium account" nudge.
+
+**`POST /api/premium/check-email`** `{ email, eventId }` → `{ isPremiumMember, discountPercentage }`.
+Unauthenticated by necessity — a guest subscriber has no session. **Preview only**; both
+checkout endpoints resolve again server-side.
+
+> **Accepted trade-off:** this lets an unauthenticated caller learn whether an address has a
+> Premium subscription, and claim a member rate using someone else's. Deliberate product
+> decision. Mitigations: it answers `false` without touching the user collections unless the
+> event actually offers a member rate, returns no PII, and is rate-limited per IP. The ticket
+> still goes to the typed address, so a discount claimed on a stranger's email buys a ticket
+> you never receive.
+
+**Client states** in [EventCheckoutModel.tsx](src/components/EventCheckoutModel.tsx), debounced
+500 ms on the email field exactly like the referral field: unchecked → gray "members save X%";
+member → green "X% off applied"; not a member *but* session is premium → amber mismatch +
+"Use `<session email>`" button; not a member → gold Subscribe promo.
+
+[EventTicketsComponent.tsx](src/components/EventTicketsComponent.tsx) shows a **session-based
+preview** — it has no email field. Its running total now applies the member rate (it used to
+show discounted per-ticket prices above an undiscounted total) and is labelled "confirmed at
+checkout" so the modal correcting it reads as expected.
+
+### `free-events.ts` is a real checkout path, not a shortcut
+
+Two things changed together here:
+
+- **Free-vs-Stripe is decided on the DISCOUNTED total** (`pricing.total === 0`), not the ticket
+  prices. An order discounted to exactly $0 has nothing for Stripe to do — and an approval
+  order asking Stripe to authorize $0 with `capture_method: "manual"` is rejected outright,
+  which surfaced as an opaque failure at the very end of checkout. `isBelowStripeMinimum`
+  deliberately treats $0 as free, so it never caught this.
+- **The endpoint no longer trusts the request body.** It issues a booking with no payment step,
+  so a client-supplied price was a client-supplied authorization: a crafted POST booked a paid
+  ticket for free. `resolveOrder` rebuilds names, prices and the subtotal from the event
+  record, aborts on a ticket id that isn't on the event (an unknown ticket must not quietly
+  contribute $0), re-validates the referral code, resolves the member rate by email, and
+  **rejects anything where `pricing.total !== 0`**.
+
+It now records `referralCode`, `discountAmount`, `referralDiscountPercentage`,
+`premiumMemberDiscountPercentage` and `premiumMemberDiscountApplied` — matching what
+`checkout-fulfillment.ts` writes — and increments referral usage on the **confirmed** branch
+only. Approval-pending bookings must not burn a use; that latch belongs to `bookings/approve.ts`.
+
+**[src/lib/referral-validation.ts](src/lib/referral-validation.ts)** (`validateReferralCodeForEvent`)
+is now the single server-side referral check, shared by both checkout endpoints. The public
+`referral-codes/validate` route is only a modal preview and proves nothing — a code can be
+deactivated or exhausted between the green tick and submit.
 
 ### Stripe's $0.50 minimum charge
 
