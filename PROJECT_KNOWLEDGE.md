@@ -322,6 +322,25 @@ cannot be authorized-now-captured-on-approval. Enforced in both event forms, in 
 zod `superRefine`, and in `update.ts` against the *resolved* flags (incoming value else stored)
 so a stale form can't sneak the combination through. A bundled ticket must also cost > $0.
 
+**The typed email owns the membership — not the session.** `subscriberId` in
+`checkout/index.ts` is `userDoc?._id || buyerId`. It shipped as `buyerId || userDoc?._id`,
+which split the flow in half: eligibility was checked against the typed address while the
+subscription was created for whoever happened to be logged in. Buying a bundled ticket for
+someone else therefore gave *them* the ticket and *you* the membership — and because their
+account was never activated, `isPremiumEmail` kept returning false, so every repeat purchase
+stacked another subscription onto the logged-in user's single Stripe customer. Symptom: three
+live subscriptions in one person's billing portal for tickets bought under other addresses.
+
+`bookerUserId` deliberately stays the **session** user: the booking does belong to whoever
+paid, and `booking-identity.ts` matches on `bookerUserId` OR `customerEmail`, so both parties
+still see the ticket. Only the membership follows the email.
+
+`hasActivePremiumSubscription(customerId)` in `premium.ts` is the second half of that guard —
+it asks **Stripe** for a live subscription on the Premium product before creating one, because
+`isPremiumEmail` reads `premiumSubscription.active`, which only exists once the webhook lands
+and so cannot catch two purchases in quick succession. It returns false on error rather than
+throwing: a duplicate subscription is recoverable, a refused checkout is not.
+
 **Session details that bite:**
 - `customer`, never `customer_email` — Stripe rejects both together, and the subscription must
   attach to a real Customer. `resolveStripeCustomerForUser` (`src/lib/premium.ts`) persists

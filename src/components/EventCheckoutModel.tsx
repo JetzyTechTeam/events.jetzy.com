@@ -805,6 +805,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													{premiumPlanLabel
 														? ` I understand ${premiumPlanLabel} will be charged with my ticket today and will renew every ${premiumInterval} until I cancel.`
 														: " I understand the membership fee will be charged with my ticket today and will renew until I cancel."}
+													{/* The membership follows the TYPED address, not the logged-in one.
+													    Buying a ticket for someone else gives THEM the membership, so name
+													    the recipient rather than letting the buyer assume it is theirs. */}
+													{sessionEmail && formData.email.trim() && formData.email.trim().toLowerCase() !== sessionEmail.trim().toLowerCase() && (
+														<span className="block mt-1.5 text-gray-300">
+															This membership will belong to <strong>{formData.email.trim()}</strong> — not {sessionEmail}. It will be managed and cancelled from that account.
+														</span>
+													)}
 												</span>
 											</label>
 										)}

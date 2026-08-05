@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { isPremiumEmail } from "@/lib/premium-eligibility"
 import { selectionIncludesPremium, type BundleMode } from "@/lib/premium-bundle"
-import { getPremiumPrice, resolveStripeCustomerForUser } from "@/lib/premium"
+import { getPremiumPrice, hasActivePremiumSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
 
@@ -405,7 +405,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// ran above and matches case-insensitively, so an existing account is reused.
 				const { Users } = await import("@/models/userModal")
 				const userDoc = await Users.findOne({ email: { $regex: `^${user.email.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }).select("_id")
-				const subscriberId = buyerId || userDoc?._id
+
+				// The TYPED EMAIL owns the membership, not the session.
+				//
+				// This used to read `buyerId || userDoc?._id`, which split the flow in half:
+				// eligibility was checked against the typed address while the subscription was
+				// created for whoever happened to be logged in. Buying a bundled ticket for
+				// someone else gave THEM the ticket and YOU the membership — and because their
+				// account was never activated, every repeat purchase stacked another
+				// subscription onto the logged-in user's single Stripe customer.
+				//
+				// `createOrUpdateUser` ran earlier with this address, so the document exists.
+				// `buyerId` remains only as a fallback for the case where that call failed and
+				// there would otherwise be nobody to attach the subscription to.
+				const subscriberId = userDoc?._id || buyerId
 				if (!subscriberId) {
 					console.error("[checkout/index] Bundled checkout has no user to attach the subscription to:", user.email)
 					return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
@@ -414,25 +427,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const premiumPrice = await getPremiumPrice()
 				const customerId = await resolveStripeCustomerForUser(String(subscriberId), user.email)
 
-				subscriptionExtras = {
-					mode: "subscription",
-					// `customer` and `customer_email` are mutually exclusive; the subscription
-					// must attach to a real Customer, so that one wins.
-					customer: customerId,
-					line_items: [...prices, { price: premiumPrice.id, quantity: 1 }],
-					subscription_data: {
-						metadata: { userId: String(subscriberId), bookingRef, eventId: String(event._id) },
-					},
+				// Ask STRIPE, not our own copy, whether they're already subscribed.
+				// `isPremiumEmail` above reads `premiumSubscription.active`, which is only set
+				// once the webhook lands — so two purchases in quick succession, or any webhook
+				// delay, would still double-subscribe. Stripe is the source of truth for billing
+				// state; Mongo is a cache that can lag.
+				if (await hasActivePremiumSubscription(customerId)) {
+					console.warn("[checkout/index] Customer already has an active subscription; charging for the ticket only:", customerId)
+					bundleMode = "already-member"
 				}
-				// Read back by the webhook, which must activate Premium AND fulfil the ticket.
-				metadata.purpose = "ticket+premium"
-				metadata.userId = String(subscriberId)
-				// So /success can show the membership as its own line. It can't be derived
-				// there: `amount_total` is the combined first invoice, and subtracting the
-				// ticket total would silently absorb any proration or rounding.
-				if (premiumPrice.unit_amount != null) {
-					metadata.premiumAmount = (premiumPrice.unit_amount / 100).toFixed(2)
-					metadata.premiumInterval = premiumPrice.recurring?.interval || "month"
+
+				if (bundleMode === "bundle") {
+					subscriptionExtras = {
+						mode: "subscription",
+						// `customer` and `customer_email` are mutually exclusive; the subscription
+						// must attach to a real Customer, so that one wins.
+						customer: customerId,
+						line_items: [...prices, { price: premiumPrice.id, quantity: 1 }],
+						subscription_data: {
+							metadata: { userId: String(subscriberId), bookingRef, eventId: String(event._id) },
+						},
+					}
+					// Read back by the webhook, which must activate Premium AND fulfil the ticket.
+					metadata.purpose = "ticket+premium"
+					metadata.userId = String(subscriberId)
+					// So /success can show the membership as its own line. It can't be derived
+					// there: `amount_total` is the combined first invoice, and subtracting the
+					// ticket total would silently absorb any proration or rounding.
+					if (premiumPrice.unit_amount != null) {
+						metadata.premiumAmount = (premiumPrice.unit_amount / 100).toFixed(2)
+						metadata.premiumInterval = premiumPrice.recurring?.interval || "month"
+					}
 				}
 			} catch (bundleSetupError: any) {
 				console.error("[checkout/index] Failed to set up bundled subscription:", bundleSetupError?.message || bundleSetupError)

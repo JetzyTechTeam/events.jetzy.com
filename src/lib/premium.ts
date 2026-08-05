@@ -52,6 +52,39 @@ export async function findUserByStripeCustomerId(customerId: string): Promise<{ 
 }
 
 /**
+ * Does this Stripe customer already have a live Premium subscription?
+ *
+ * Asks STRIPE rather than our `premiumSubscription.active` copy, which is only written once
+ * the webhook lands. Two bundled purchases in quick succession — or any webhook delay —
+ * would otherwise each see "not a member yet" and create a second subscription against the
+ * same customer. Stripe is the source of truth for billing state; Mongo is a cache.
+ *
+ * `trialing` counts as active: they are on the plan and will be billed.
+ *
+ * Returns false on error rather than throwing. A failed lookup must not block a purchase —
+ * the worst case is the duplicate this guard exists to catch, which is recoverable, whereas
+ * refusing a valid checkout is not.
+ */
+export async function hasActivePremiumSubscription(customerId: string): Promise<boolean> {
+	if (!customerId) return false
+	try {
+		const stripe = getStripeClient()
+		const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 })
+		return subscriptions.data.some(
+			(subscription) =>
+				(subscription.status === "active" || subscription.status === "trialing") &&
+				subscription.items.data.some((item) => {
+					const product = item.price?.product
+					return (typeof product === "string" ? product : product?.id) === PREMIUM_PRODUCT_ID
+				}),
+		)
+	} catch (error) {
+		console.error("[premium] hasActivePremiumSubscription failed:", error)
+		return false
+	}
+}
+
+/**
  * Who to email about a subscription, resolved from its Stripe customer id.
  *
  * Membership can be acquired as a side effect of buying a ticket, so the person on the
