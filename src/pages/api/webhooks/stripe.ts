@@ -1,5 +1,12 @@
 import { ensureDbConnected } from "@/configs/database"
-import { getStripeClient, setPremiumStatusByStripeCustomerId, setUserPremiumStatus } from "@/lib/premium"
+import {
+	findEmailRecipientByStripeCustomerId,
+	findUserByStripeCustomerId,
+	getStripeClient,
+	setPremiumStatusByStripeCustomerId,
+	setUserPremiumStatus,
+} from "@/lib/premium"
+import { sendMembershipCancelled, sendMembershipPaymentFailed, sendMembershipRenewed } from "@/lib/send-grid"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
 
@@ -163,6 +170,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			case "customer.subscription.updated": {
 				const subscription = event.data.object as Stripe.Subscription
 				const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+
+				// Read the stored flag BEFORE writing, so a cancellation can be detected as a
+				// transition. With the portal set to "cancel at end of billing period" this is
+				// the only signal that the member cancelled — `customer.subscription.deleted`
+				// doesn't arrive until the period actually ends, up to a month later.
+				const previous = await findUserByStripeCustomerId(customerId)
+				const wasCancelling = !!previous?.doc?.premiumSubscription?.cancelAtPeriodEnd
+
 				await setPremiumStatusByStripeCustomerId(customerId, {
 					active: subscription.status === "active" || subscription.status === "trialing",
 					stripeSubscriptionId: subscription.id,
@@ -170,16 +185,76 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					currentPeriodEnd: new Date(subscription.current_period_end * 1000),
 					cancelAtPeriodEnd: subscription.cancel_at_period_end,
 				})
+
+				if (!wasCancelling && subscription.cancel_at_period_end) {
+					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+					if (recipient) {
+						await sendMembershipCancelled({
+							...recipient,
+							endsOn: new Date(subscription.current_period_end * 1000),
+							alreadyEnded: false,
+						})
+					}
+				}
 				break
 			}
 
 			case "customer.subscription.deleted": {
 				const subscription = event.data.object as Stripe.Subscription
 				const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+
+				// Resolve the recipient BEFORE the update — the write doesn't clear the customer
+				// id, but reading first keeps this independent of that.
+				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+
 				await setPremiumStatusByStripeCustomerId(customerId, {
 					active: false,
 					status: subscription.status,
 					cancelAtPeriodEnd: false,
+				})
+
+				if (recipient) {
+					await sendMembershipCancelled({ ...recipient, alreadyEnded: true })
+				}
+				break
+			}
+
+			// Renewals. `subscription_create` is the FIRST invoice — that one is the bundled
+			// ticket purchase, already covered by the ticket confirmation email, so emailing
+			// here too would send two receipts for one transaction.
+			case "invoice.paid": {
+				const invoice = event.data.object as Stripe.Invoice
+				const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
+				if (!customerId || invoice.billing_reason !== "subscription_cycle") break
+
+				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+				if (!recipient) break
+
+				const line = invoice.lines?.data?.[0]
+				await sendMembershipRenewed({
+					...recipient,
+					amount: (invoice.amount_paid ?? 0) / 100,
+					interval: line?.price?.recurring?.interval || "month",
+					nextBillingDate: invoice.period_end ? new Date(invoice.period_end * 1000) : undefined,
+				})
+				break
+			}
+
+			// A failed renewal. Without this the card expires, Stripe gives up retrying, and
+			// the member loses access having never been told anything was wrong.
+			case "invoice.payment_failed": {
+				const invoice = event.data.object as Stripe.Invoice
+				const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
+				if (!customerId || !invoice.subscription) break
+
+				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+				if (!recipient) break
+
+				const line = invoice.lines?.data?.[0]
+				await sendMembershipPaymentFailed({
+					...recipient,
+					amount: (invoice.amount_due ?? 0) / 100,
+					interval: line?.price?.recurring?.interval || "month",
 				})
 				break
 			}

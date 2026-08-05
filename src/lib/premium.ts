@@ -51,6 +51,24 @@ export async function findUserByStripeCustomerId(customerId: string): Promise<{ 
 	return null
 }
 
+/**
+ * Who to email about a subscription, resolved from its Stripe customer id.
+ *
+ * Membership can be acquired as a side effect of buying a ticket, so the person on the
+ * other end may not think of themselves as a subscriber at all — which is exactly why
+ * every charge, failure and ending has to reach them. Returns null when the customer
+ * can't be matched; callers treat that as "skip the email", never as an error worth
+ * failing a webhook over.
+ */
+export async function findEmailRecipientByStripeCustomerId(
+	customerId: string,
+): Promise<{ email: string; firstName?: string } | null> {
+	const record = await findUserByStripeCustomerId(customerId)
+	const email = record?.doc?.email
+	if (!email) return null
+	return { email, firstName: record?.doc?.firstName }
+}
+
 export async function setUserPremiumStatus(userId: string, data: Partial<PremiumSubscriptionData>): Promise<void> {
 	const record = await findUserRecord(userId)
 	if (!record) {

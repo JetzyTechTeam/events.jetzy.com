@@ -347,6 +347,24 @@ subscription session has no `session.payment_intent`, and writing `paymentIntent
 orphans every capture/cancel path) and accepts a settled subscription session, since
 `payment_status` is `no_payment_required` for a trial or a 100%-off coupon.
 
+**Membership lifecycle emails.** Because membership can be acquired as a side effect of
+buying a ticket, the recipient may not think of themselves as a subscriber — so every charge,
+failure and ending is announced. `send-grid.ts` gained `sendMembershipRenewed`,
+`sendMembershipPaymentFailed` and `sendMembershipCancelled`, all fired from the webhook:
+
+- `invoice.paid` emails **only** when `billing_reason === "subscription_cycle"`. The first
+  invoice is the bundled ticket purchase, which the ticket confirmation already covers —
+  emailing there too would send two receipts for one transaction.
+- `invoice.payment_failed` is the important one: without it a card expires, Stripe stops
+  retrying, and the member loses access having never been told.
+- Cancellation is detected inside `customer.subscription.updated` as a **transition** — the
+  stored `cancelAtPeriodEnd` flipping false → true. With the portal set to "cancel at end of
+  billing period", `customer.subscription.deleted` doesn't arrive until the period ends, up to
+  a month later, so it can't be the trigger for "you cancelled". `deleted` sends the separate
+  "has ended" variant.
+- Every send is best-effort and swallows its own errors. A failed email must never fail a
+  webhook, because Stripe would retry the whole delivery and duplicate the side effects.
+
 **Cancellation and disclosure — required, not optional.** There was previously *no* way to
 cancel a subscription anywhere: `cancel_at_period_end` was only ever read back. Selling
 membership as a side effect of a ticket made that untenable, so `POST /api/subscriptions/portal`
