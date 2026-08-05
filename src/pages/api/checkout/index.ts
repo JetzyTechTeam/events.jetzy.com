@@ -7,7 +7,8 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { isPremiumEmail } from "@/lib/premium-eligibility"
-import { selectionIncludesPremium, type BundleMode } from "@/lib/premium-bundle"
+import { premiumAllowanceMessage, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionIncludesPremium, type BundleMode } from "@/lib/premium-bundle"
+import { getPremiumTicketAllowance } from "@/lib/premium-ticket-limit"
 import { getPremiumPrice, hasActivePremiumSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
@@ -211,13 +212,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 			console.log("[checkout/index] Bundle mode:", bundleMode)
 
-			// A recurring charge needs its own explicit yes, separate from the event T&C.
-			// Enforced here and not only in the modal: the client decides what to display,
-			// the server decides what may be charged.
-			if (bundleMode === "bundle") {
-				const acceptedMembership = req.body?.acceptedMembership === true || req.body?.acceptedMembership === "true"
-				if (!acceptedMembership) {
-					return sendResponse(res, null, "Please confirm you want to join Jetzy Premium to continue.", false, ResCode.BAD_REQUEST)
+			// ---- Premium ticket caps. The client caps too, but the body is attacker-controlled. ----
+			if (selectionBundles) {
+				// Resolve the quantities against the EVENT record for the same reason as
+				// `selectionBundles` above: a crafted body could otherwise drop `includesPremium`
+				// and slip an uncapped quantity through.
+				const premiumQuantity = tickets.reduce((sum, t) => {
+					const stored = (event.tickets || []).find((et: any) => String(et._id) === String(t.id))
+					if (!stored?.includesPremium) return sum
+					return sum + (Number(t.quantity) || 0)
+				}, 0)
+
+				if (premiumQuantity > PREMIUM_TICKET_MAX_PER_ORDER) {
+					console.warn("[checkout/index] Premium per-order cap exceeded:", { premiumQuantity, email: user.email })
+					return sendResponse(res, null, premiumOrderCapMessage(), false, ResCode.BAD_REQUEST)
+				}
+
+				// And the cap across every order this address has placed for this event —
+				// without it, three orders of two quietly reach six.
+				const allowance = await getPremiumTicketAllowance(String(event._id), user.email)
+				if (premiumQuantity > allowance.remaining) {
+					console.warn("[checkout/index] Premium per-event allowance exceeded:", {
+						email: user.email,
+						requested: premiumQuantity,
+						...allowance,
+					})
+					return sendResponse(res, null, premiumAllowanceMessage(allowance.remaining), false, ResCode.BAD_REQUEST)
 				}
 			}
 		} catch (bundleError: any) {

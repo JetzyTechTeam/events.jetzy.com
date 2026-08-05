@@ -95,3 +95,32 @@ export const hasBundleApprovalConflict = (ticket?: BundleTicketLike | null): boo
 /** A bundled ticket must cost something — there is no free path that can start a subscription. */
 export const BUNDLE_FREE_TICKET_MESSAGE =
 	"A ticket that includes Jetzy Premium must have a price — a free registration can't start a subscription."
+
+/**
+ * How many Jetzy Premium tickets one person may buy for a single event.
+ *
+ * Both numbers are 2 and are deliberately separate constants: the first bounds a single
+ * order, the second bounds the person across every order they place for that event. Without
+ * the second, three orders of two would quietly reach six.
+ *
+ * The limit is PER EVENT, not lifetime — a repeat customer should not be locked out of a
+ * third Premium event forever.
+ */
+export const PREMIUM_TICKET_MAX_PER_ORDER = 2
+export const PREMIUM_TICKET_LIMIT_PER_EVENT = 2
+
+export const premiumOrderCapMessage = () =>
+	`You can buy at most ${PREMIUM_TICKET_MAX_PER_ORDER} Jetzy Premium tickets in one order.`
+
+/** Shown when the buyer has already used part or all of their allowance for this event. */
+export const premiumAllowanceMessage = (remaining: number) =>
+	remaining <= 0
+		? `You've already bought the maximum of ${PREMIUM_TICKET_LIMIT_PER_EVENT} Jetzy Premium tickets for this event.`
+		: `You can buy ${remaining} more Jetzy Premium ticket${remaining === 1 ? "" : "s"} for this event.`
+
+/** Total quantity of bundled tickets in a selection. */
+export const premiumQuantityInSelection = (tickets?: BundleTicketLike[] | null): number =>
+	(tickets || []).reduce((sum, ticket) => {
+		if (ticket.isSelected === false || !ticketIncludesPremium(ticket)) return sum
+		return sum + (Number((ticket as any).quantity) || 0)
+	}, 0)

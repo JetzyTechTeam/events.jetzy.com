@@ -12,7 +12,7 @@ import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
 import { buildTicketPricing } from "@/lib/ticket-pricing";
-import { eventHasAnyPremiumTicket, selectionIncludesPremium } from "@/lib/premium-bundle";
+import { eventHasAnyPremiumTicket, premiumOrderCapMessage, premiumQuantityInSelection, PREMIUM_TICKET_MAX_PER_ORDER, selectionIncludesPremium } from "@/lib/premium-bundle";
 import { usePremiumPlan } from "@/hooks/usePremiumPlan";
 import {
   Button,
@@ -87,7 +87,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const handleQuantityChange = (id: string, delta: number) => {
     setTickets((prevTickets) =>
       prevTickets.map((ticket, index) => {
-        const newQty = Math.max(0, ticket.quantity + delta);
+        // A Premium ticket also sells a membership, so it is capped. Everything else is
+        // unbounded, as before. The `+` button is disabled at the cap too — this clamp is
+        // the backstop for a rapid double-click landing two increments in one batch.
+        const maxQty = ticket.includesPremium ? PREMIUM_TICKET_MAX_PER_ORDER : Infinity;
+        const newQty = Math.min(maxQty, Math.max(0, ticket.quantity + delta));
         const ticketItem = ticketsItems[index];
 
         return ticket.id === id
@@ -132,6 +136,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
     if (event.isPaid && !hasSelected) {
       setLoader(false);
       Error("Ticket Required", "Please select at least one ticket.");
+      return;
+    }
+
+    // Backstop for the stepper cap — this is the single funnel into redux, so anything that
+    // got past the disabled button (stale state, a devtools nudge) stops here.
+    if (premiumQuantityInSelection(tickets as any) > PREMIUM_TICKET_MAX_PER_ORDER) {
+      setLoader(false);
+      Error("Too many tickets", premiumOrderCapMessage());
       return;
     }
 
@@ -350,11 +362,23 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                           </p>
                           <button
                             onClick={() => handleQuantityChange(ticket.id, 1)}
-                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
+                            disabled={!!ticket.includesPremium && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER}
+                            title={
+                              ticket.includesPremium && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER
+                                ? premiumOrderCapMessage()
+                                : undefined
+                            }
+                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black"
                           >
                             +
                           </button>
                         </div>
+                      )}
+                      {/* Say why the stepper stopped, rather than leaving a dead button. */}
+                      {ticket.includesPremium && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER && (
+                        <p className="text-xs mt-1.5 text-right" style={{ color: "#F5C518" }}>
+                          {premiumOrderCapMessage()}
+                        </p>
                       )}
                     </div>
                   </div>

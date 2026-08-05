@@ -4,6 +4,7 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import { Types } from "mongoose"
 import { isPremiumEmail } from "@/lib/premium-eligibility"
 import { eventHasAnyPremiumTicket } from "@/lib/premium-bundle"
+import { getPremiumTicketAllowance } from "@/lib/premium-ticket-limit"
 
 /**
  * "Does this email already have Jetzy Premium?"
@@ -95,11 +96,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, { isPremiumMember: false, sellsPremium: false }, "No membership sold on this event", true, ResCode.OK)
 		}
 
-		const isPremiumMember = await isPremiumEmail(String(email))
+		// Membership status and remaining allowance are answered together: the modal needs
+		// both off the same debounced keystroke, and splitting them would mean two requests
+		// and two rate-limit buckets for one question.
+		const [isPremiumMember, allowance] = await Promise.all([
+			isPremiumEmail(String(email)),
+			getPremiumTicketAllowance(String(eventId), String(email)),
+		])
 
 		return sendResponse(
 			res,
-			{ isPremiumMember, sellsPremium: true },
+			{
+				isPremiumMember,
+				sellsPremium: true,
+				// How many Premium tickets this address may still buy FOR THIS EVENT.
+				premiumTicketLimit: allowance.limit,
+				premiumTicketsUsed: allowance.used,
+				premiumTicketsRemaining: allowance.remaining,
+			},
 			isPremiumMember ? "Premium member" : "Not a premium member",
 			true,
 			ResCode.OK,

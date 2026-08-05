@@ -6,7 +6,8 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { selectionIncludesPremium } from "@/lib/premium-bundle"
+import { premiumAllowanceMessage, premiumQuantityInSelection, selectionIncludesPremium } from "@/lib/premium-bundle"
+import { ROUTES } from "@/configs/routes"
 import { usePremiumPlan } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
@@ -32,10 +33,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// has no idea why nothing happens. Surfaced in the PINNED header, which never scrolls away.
 	const [termsError, setTermsError] = useState(false)
 	const termsRef = useRef<HTMLLabelElement | null>(null)
-	// Explicit consent to the recurring charge, kept separate from the event T&C above.
-	const [acceptedMembership, setAcceptedMembership] = useState(false)
-	const [membershipConsentError, setMembershipConsentError] = useState(false)
-	const membershipConsentRef = useRef<HTMLLabelElement | null>(null)
+	// The buyer has already used part of their Premium allowance for this event.
+	const [allowanceError, setAllowanceError] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -75,6 +74,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const { label: premiumPlanLabel, interval: premiumInterval, amount: premiumAmount } = usePremiumPlan(selectionSellsPremium)
 	// Charged only when the ticket bundles it AND this address isn't already a member.
 	const willBeChargedForPremium = selectionSellsPremium && emailIsPremium === false
+	// How many more Premium tickets this address may buy for THIS event. null = not checked.
+	const [premiumTicketsRemaining, setPremiumTicketsRemaining] = useState<number | null>(null)
+	const selectedPremiumQuantity = premiumQuantityInSelection(tickets as any)
 
 	// Live preview of what the buyer will actually pay. Built with the same helper the
 	// server, the confirmation email and the success page use, so all four agree — but the
@@ -112,14 +114,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setReferralCodeDiscount(null)
 		}
 		if (name === "email") {
-			// Drop the previous verdict immediately so the total can't keep claiming this
-			// address is a member. The debounced effect re-checks.
+			// Drop the previous verdicts immediately so neither the total nor the allowance
+			// keeps describing a different address. The debounced effect re-checks both.
 			setEmailIsPremium(null)
-			// The consent belongs to a specific address. Changing it means the buyer may no
-			// longer be the person who agreed, so make them agree again rather than carrying
-			// a tick across to a different email.
-			setAcceptedMembership(false)
-			setMembershipConsentError(false)
+			setPremiumTicketsRemaining(null)
+			setAllowanceError(false)
 		}
 	}
 
@@ -182,11 +181,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				return
 			}
 
-			// The membership is a separate, ongoing commitment — it needs its own yes.
-			if (willBeChargedForPremium && !acceptedMembership) {
-				setMembershipConsentError(true)
-				Error("Membership Confirmation Required", "Please confirm you want to join Jetzy Premium to continue.")
-				membershipConsentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+			// The per-event Premium allowance, counted across every order this address has
+			// placed. The server re-checks; this just avoids a pointless trip to Stripe.
+			if (selectionSellsPremium && premiumTicketsRemaining !== null && selectedPremiumQuantity > premiumTicketsRemaining) {
+				setAllowanceError(true)
+				Error("Ticket limit reached", premiumAllowanceMessage(premiumTicketsRemaining))
 				return
 			}
 
@@ -283,9 +282,6 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					user: JSON.stringify(formData),
 					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
 					acceptedTerms: acceptedTerms,
-					// Consent to the recurring charge. Re-checked server-side — the server
-					// decides for itself whether this order starts a membership.
-					acceptedMembership: acceptedMembership,
 					customAnswers: JSON.stringify(
 						Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 					),
@@ -387,6 +383,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		// Nothing to gain by asking when no selected ticket sells a membership.
 		if (!sellsPremium || !eventId || !trimmed || !/^\S+@\S+\.\S+$/.test(trimmed)) {
 			setEmailIsPremium(null)
+			setPremiumTicketsRemaining(null)
 			return
 		}
 
@@ -405,6 +402,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			const result = await response.json()
 			if (requestId !== premiumCheckIdRef.current) return
 			setEmailIsPremium(result?.status ? !!result?.data?.isPremiumMember : false)
+			// Membership status and remaining allowance come back together — one request,
+			// one debounce, one rate-limit bucket.
+			const remaining = result?.data?.premiumTicketsRemaining
+			setPremiumTicketsRemaining(typeof remaining === "number" ? remaining : null)
 		} catch (error) {
 			console.error("Error checking Premium status for email:", error)
 			if (requestId !== premiumCheckIdRef.current) return
@@ -412,6 +413,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// the preview. Erring the other way would hide a recurring charge the server may
 			// still apply, which is the worse surprise. The server decides for real either way.
 			setEmailIsPremium(false)
+			// Leave the allowance unknown rather than guessing — the server enforces it, and
+			// blocking a legitimate buyer on a failed lookup would be worse than a rejected
+			// checkout with a clear message.
+			setPremiumTicketsRemaining(null)
 		} finally {
 			if (requestId === premiumCheckIdRef.current) setCheckingPremiumEmail(false)
 		}
@@ -439,8 +444,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setPendingApproval(false)
 			setAcceptedTerms(false)
 			setTermsError(false)
-			setAcceptedMembership(false)
-			setMembershipConsentError(false)
+			setAllowanceError(false)
+			setPremiumTicketsRemaining(null)
 			return
 		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
@@ -558,24 +563,26 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								<div className="px-6 pt-6 pb-2 shrink-0">
 									<h2 className="text-2xl font-bold">Checkout</h2>
 									{/* Stays visible while the buyer scrolls back down to find the box. */}
-									{(termsError || membershipConsentError) && checkoutStep === "details" && (
+									{termsError && checkoutStep === "details" && (
 										<button
 											type="button"
-											onClick={() =>
-												(membershipConsentError ? membershipConsentRef : termsRef).current?.scrollIntoView({
-													behavior: "smooth",
-													block: "center",
-												})
-											}
+											onClick={() => termsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
 											className="w-full text-left mt-3 rounded-lg p-3 bg-red-500/15 border border-red-500/50"
 										>
-											<p className="text-red-400 text-sm font-semibold">
-												{membershipConsentError ? "Confirm your Jetzy Premium membership" : "Terms & Conditions required"}
-											</p>
+											<p className="text-red-400 text-sm font-semibold">Terms &amp; Conditions required</p>
 											<p className="text-gray-300 text-xs mt-0.5">
 												Tick the box at the bottom of this form to continue. <span className="underline">Take me there</span>
 											</p>
 										</button>
+									)}
+
+									{/* The allowance is spent — there is no box to tick, so this explains
+									    rather than pointing anywhere. */}
+									{allowanceError && checkoutStep === "details" && premiumTicketsRemaining !== null && (
+										<div className="mt-3 rounded-lg p-3 bg-red-500/15 border border-red-500/50">
+											<p className="text-red-400 text-sm font-semibold">Ticket limit reached</p>
+											<p className="text-gray-300 text-xs mt-0.5">{premiumAllowanceMessage(premiumTicketsRemaining)}</p>
+										</div>
 									)}
 								</div>
 
@@ -771,51 +778,31 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											</span>
 										</label>
 
-										{/* SEPARATE consent for the recurring charge.
-										    Deliberately not folded into the event T&C above: agreeing to
-										    attend an event is not agreeing to an ongoing monthly payment,
-										    and card-network rules expect the subscriber to accept the
-										    recurring terms explicitly. Only shown when this purchase would
-										    actually start a membership — an existing member sees nothing. */}
-										{willBeChargedForPremium && (
-											<label
-												ref={membershipConsentRef}
-												className={`flex items-start gap-2 cursor-pointer text-sm rounded-lg p-2.5 transition-colors ${
-													membershipConsentError
-														? "bg-red-500/10 border border-red-500/50"
-														: ""
-												}`}
-												style={
-													membershipConsentError
-														? undefined
-														: { background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }
-												}
-											>
-												<input
-													type="checkbox"
-													checked={acceptedMembership}
-													onChange={(e) => {
-														setAcceptedMembership(e.target.checked)
-														if (e.target.checked) setMembershipConsentError(false)
-													}}
-													className="mt-0.5"
-												/>
-												<span style={{ color: "#F5C518" }}>
-													I want to become a <strong>Jetzy Premium</strong> member.
-													{premiumPlanLabel
-														? ` I understand ${premiumPlanLabel} will be charged with my ticket today and will renew every ${premiumInterval} until I cancel.`
-														: " I understand the membership fee will be charged with my ticket today and will renew until I cancel."}
-													{/* The membership follows the TYPED address, not the logged-in one.
-													    Buying a ticket for someone else gives THEM the membership, so name
-													    the recipient rather than letting the buyer assume it is theirs. */}
-													{sessionEmail && formData.email.trim() && formData.email.trim().toLowerCase() !== sessionEmail.trim().toLowerCase() && (
-														<span className="block mt-1.5 text-gray-300">
-															This membership will belong to <strong>{formData.email.trim()}</strong> — not {sessionEmail}. It will be managed and cancelled from that account.
-														</span>
-													)}
-												</span>
-											</label>
+										{/* Where an existing member goes to cancel or change their card.
+										    Opens in a NEW TAB on purpose — navigating away mid-checkout
+										    would discard everything typed above. The page itself handles
+										    logged-out visitors by routing through login and back. */}
+										{selectionSellsPremium && (
+											<p className="text-xs text-gray-400">
+												Already a Jetzy Premium member, or want to cancel later?{" "}
+												<a
+													href={ROUTES.manageMembership}
+													target="_blank"
+													rel="noreferrer"
+													className="text-[#F79432] underline"
+												>
+													Manage your subscription
+												</a>
+												.
+											</p>
 										)}
+
+										{/* The separate "I want to become a Jetzy Premium member" checkbox was
+										    removed: the recurring terms now live in the Terms & Conditions the box
+										    above links to. The DISCLOSURE blocks stay, and must — the amount, the
+										    interval and "renews until you cancel" are still stated under the email
+										    field and in the order summary, so the recurring charge is never
+										    invisible at the point of purchase. */}
 									</div>
 									)}
 
