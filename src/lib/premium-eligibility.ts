@@ -1,32 +1,32 @@
 /**
- * "Does this buyer get the Jetzy Premium member rate?" — one answer, used everywhere.
+ * "Does this buyer already have Jetzy Premium?" — one answer, used everywhere.
  *
  * The authority is the EMAIL ON THE CHECKOUT FORM, not the NextAuth session.
  *
  * That is deliberate. The booking, the ticket email, the QR code and the auto-created Jetzy
- * account all attach to whatever email was typed into the checkout form. Granting the
- * discount off the session instead meant three different things went wrong at once:
+ * account all attach to whatever email was typed into the checkout form. Reading the session
+ * instead meant three different things went wrong at once:
  *
- *   - a guest who pays for Premium got no discount, silently, because there was no session;
- *   - a logged-in member who typed a different email got the discount on a booking that
- *     belonged to someone else's address;
+ *   - a guest who already pays for Premium wasn't recognised, silently, having no session;
+ *   - a logged-in member who typed a different email had someone else's address treated as
+ *     their own;
  *   - the modal preview and the Stripe charge could quote different totals.
  *
  * Resolving off the email collapses all three into one rule that the client preview, the
- * Stripe coupon, the booking record and the confirmation email can all agree on.
+ * Stripe session, the booking record and the confirmation email can all agree on.
+ *
+ * Under the bundle model this decides whether MONEY IS CHARGED, not merely how much comes
+ * off: a ticket with `includesPremium` charges the subscription to everyone except an
+ * existing member. Getting it wrong either double-bills a subscriber or hands someone a
+ * membership they weren't billed for.
  *
  * TRADE-OFF (accepted, deliberate): this lets an unauthenticated caller learn whether an
- * address has a Premium subscription, and claim a member rate using someone else's address.
- * `/api/premium/check-email` limits the blast radius — it only answers for events that
- * actually offer a member rate, and returns no PII. The ticket still goes to the typed
- * address, so a discount claimed against a stranger's email buys a ticket you never receive.
- */
-
-import { eventMemberDiscountPercentage } from "@/lib/premium-discount"
-
-/**
- * SERVER ONLY — this module loads the user models. React components that need the
- * event-level rate must import `@/lib/premium-discount` instead.
+ * address has a Premium subscription. `/api/premium/check-email` limits the blast radius —
+ * it only answers for events that actually sell a membership, and returns no PII.
+ *
+ * SERVER ONLY — this module loads the user models. React components that need to know
+ * whether a ticket sells a membership must import `@/lib/premium-bundle` instead, which is
+ * pure and isomorphic.
  */
 
 /**
@@ -34,10 +34,6 @@ import { eventMemberDiscountPercentage } from "@/lib/premium-discount"
  * Same helper, same reason, as `booking-identity.ts`.
  */
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-
-type EventLike = { premium?: boolean; premiumMemberDiscountPercentage?: number } | null | undefined
-
-export { eventMemberDiscountPercentage }
 
 /**
  * Is this address attached to an account with an active Premium subscription?
@@ -69,22 +65,3 @@ export async function isPremiumEmail(email: string): Promise<boolean> {
 	return !!inEventUsers
 }
 
-/**
- * Authoritative resolution for a checkout: the percentage to actually discount, or 0.
- *
- * Callers must NOT re-derive this. The result feeds `buildTicketPricing`'s
- * `premiumPercentage` and the combined Stripe coupon, where the member rate comes off first
- * and a referral code takes its cut off the remainder.
- *
- * Errors propagate. A failed lookup must not be silently downgraded to "no discount" — the
- * buyer was quoted a discounted total, and charging them in full instead is worse than
- * making them retry (same rule as the coupon-creation branch in `checkout/index.ts`).
- */
-export async function resolveMemberDiscountPercentage(event: EventLike, email: string): Promise<number> {
-	const pct = eventMemberDiscountPercentage(event)
-	// Short-circuit before touching the user collections: an event with no member rate has
-	// nothing to look up, and skipping the query keeps the enumeration surface narrow.
-	if (pct === 0) return 0
-
-	return (await isPremiumEmail(email)) ? pct : 0
-}

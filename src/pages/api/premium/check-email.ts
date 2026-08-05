@@ -2,22 +2,27 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Types } from "mongoose"
-import { eventMemberDiscountPercentage, isPremiumEmail } from "@/lib/premium-eligibility"
+import { isPremiumEmail } from "@/lib/premium-eligibility"
+import { eventHasAnyPremiumTicket } from "@/lib/premium-bundle"
 
 /**
- * "Does this email get the member rate on this event?"
+ * "Does this email already have Jetzy Premium?"
  *
- * Deliberately unauthenticated — the whole point is that a guest who pays for Jetzy Premium
- * can be recognised by the address they type into checkout, before they have logged in.
- * `src/lib/premium-eligibility.ts` explains why the email, not the session, is the authority.
+ * Used when a ticket SELLS a membership (`IEventTicket.includesPremium`): an existing member
+ * pays for the ticket alone, everyone else is also charged the monthly subscription. So this
+ * decides whether a recurring charge appears in the checkout preview — a price disclosure,
+ * not a nicety.
  *
- * This endpoint is only a PREVIEW so the modal can show an honest total. `api/checkout` and
- * `api/checkout/free-events` resolve the rate again server-side and stay authoritative.
+ * Deliberately unauthenticated — the whole point is that a guest who already pays for Jetzy
+ * Premium can be recognised by the address they type into checkout, before they have logged
+ * in. `src/lib/premium-eligibility.ts` explains why the email, not the session, is authority.
+ *
+ * PREVIEW ONLY. `api/checkout` resolves membership again server-side and stays authoritative.
  *
  * Two things keep the enumeration surface narrow, since anyone can call this:
- *   1. It answers `false` without touching the user collections unless the event actually
- *      offers a member rate. Most events don't, so most probes learn nothing.
- *   2. The response carries no PII — just a boolean and the event's own public perk rate.
+ *   1. It answers `false` without touching the user collections unless a ticket on the event
+ *      actually sells a membership. Most events don't, so most probes learn nothing.
+ *   2. The response carries no PII — just two booleans.
  * Plus the rate limit below.
  */
 
@@ -78,31 +83,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const { Events } = await import("@/models/events")
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
-			.select("premium premiumMemberDiscountPercentage")
+			.select("tickets.includesPremium")
 			.lean()
 
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 		}
 
-		const discountPercentage = eventMemberDiscountPercentage(event as any)
-
-		// No member rate on this event — answer without looking the address up at all.
-		if (discountPercentage === 0) {
-			return sendResponse(res, { isPremiumMember: false, discountPercentage: 0 }, "No member discount on this event", true, ResCode.OK)
+		// No ticket here sells a membership — answer without looking the address up at all.
+		if (!eventHasAnyPremiumTicket(event as any)) {
+			return sendResponse(res, { isPremiumMember: false, sellsPremium: false }, "No membership sold on this event", true, ResCode.OK)
 		}
 
 		const isPremiumMember = await isPremiumEmail(String(email))
 
 		return sendResponse(
 			res,
-			{
-				isPremiumMember,
-				discountPercentage: isPremiumMember ? discountPercentage : 0,
-				// The event's own perk rate, so the modal can say "members save X%" even when
-				// this particular address isn't one. Public information already on the page.
-				eventMemberDiscountPercentage: discountPercentage,
-			},
+			{ isPremiumMember, sellsPremium: true },
 			isPremiumMember ? "Premium member" : "Not a premium member",
 			true,
 			ResCode.OK,

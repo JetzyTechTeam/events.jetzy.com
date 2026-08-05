@@ -12,7 +12,8 @@ import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
 import { buildTicketPricing } from "@/lib/ticket-pricing";
-import { eventMemberDiscountPercentage } from "@/lib/premium-discount";
+import { eventHasAnyPremiumTicket, selectionIncludesPremium } from "@/lib/premium-bundle";
+import { usePremiumPlan } from "@/hooks/usePremiumPlan";
 import {
   Button,
   Modal,
@@ -32,7 +33,6 @@ import { stripHtml } from "@/utils/text";
 import { StarIcon } from "@heroicons/react/24/solid";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
-import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
 
 type Props = {
   event: IEvent;
@@ -44,8 +44,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const [showPremiumPromo, setShowPremiumPromo] = useState(false);
   usePremiumSubscriptionReturn();
 
-  const memberDiscountPercentage = eventMemberDiscountPercentage(event as any);
-  const hasMemberDiscount = memberDiscountPercentage > 0;
+  // Does any ticket on this event sell a Jetzy Premium membership?
+  const eventSellsPremium = eventHasAnyPremiumTicket(event as any);
+  // Only fetched when it's actually relevant — the endpoint is public, but there's no reason
+  // to hit Stripe's plan on every event page.
+  const { label: premiumPlanLabel, interval: premiumInterval, amount: premiumAmount } = usePremiumPlan(eventSellsPremium);
 
   // format the event tickets
   const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
@@ -63,6 +66,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         // Resolved (per-ticket flag, event fallback) so downstream consumers don't have to
         // re-derive it. This has to survive into the checkout payload.
         requireApproval: ticketApprovalFlag(event as any, ticket as any),
+        // Whether buying this ticket also starts a Jetzy Premium subscription. The server
+        // re-reads it from the event record, so this is only for display and selection state.
+        includesPremium: !!(ticket as any).includesPremium,
       };
     });
 
@@ -153,18 +159,23 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
   // Running total for the current selection.
   //
-  // The member rate here is a PREVIEW off the session — this card has no email field, and
+  // Membership status here is a PREVIEW off the session — this card has no email field, and
   // eligibility is settled against the address typed at checkout (see
-  // `src/lib/premium-eligibility.ts`). It still has to be applied: showing discounted
-  // per-ticket prices above and an undiscounted total here was the bug this replaces.
+  // `src/lib/premium-eligibility.ts`). It is shown anyway because the buyer needs to know
+  // BEFORE they hit Checkout that a recurring charge is attached.
   const selectionSubtotal = tickets.reduce(
     (acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc),
     0
   );
-  const showsMemberPreview = hasMemberDiscount && isPremium && selectionSubtotal > 0;
+  // Does the CURRENT selection add a membership? Only for a non-member: an existing
+  // subscriber pays the ticket alone.
+  const selectionAddsPremium =
+    selectionIncludesPremium(tickets.filter((t) => t.isSelected) as any) && !isPremium;
   const selectionPricing = buildTicketPricing({
     subtotal: selectionSubtotal,
-    premiumPercentage: showsMemberPreview ? memberDiscountPercentage : 0,
+    ...(selectionAddsPremium && premiumAmount != null
+      ? { recurring: { label: "Jetzy Premium membership", amount: premiumAmount, interval: premiumInterval } }
+      : {}),
   });
 
   const anyTicketNeedsApproval = eventHasAnyApprovalTicket(event as any);
@@ -201,36 +212,25 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </div>
           </div>
 
-          {/* Member pricing notice — Premium Events are open to everyone; a subscription
-              just unlocks a discount, so this is a promo, not a gate. */}
-          {hasMemberDiscount && (
-            <div className="flex items-center justify-between gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-              <div className="flex items-center gap-2">
-                <StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
-                <div>
-                  {/* For a member the headline confirms THEIR status — "Premium Event" is a
-                      fact about the event they can already see. And the saving is phrased as
-                      pending, not settled: eligibility is decided by the email entered at
-                      checkout, so a member who books with a different address gets nothing. */}
-                  <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>
-                    {isPremium ? "You're a Jetzy Premium member" : "Premium Event"}
-                  </p>
-                  <p className="text-gray-300 text-xs mt-1">
-                    {isPremium
-                      ? `You save ${memberDiscountPercentage}% on this event — applied at checkout.`
-                      : `Jetzy Premium members save ${memberDiscountPercentage}% on this event.`}
-                  </p>
-                </div>
+          {/* Bundled-membership notice. A ticket can SELL Jetzy Premium: non-members pay the
+              ticket plus the subscription, existing members pay for the ticket alone. The
+              recurring amount and interval must be visible BEFORE purchase, not just on the
+              receipt — so this states them plainly rather than teasing a perk. */}
+          {eventSellsPremium && (
+            <div className="flex items-start gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+              <StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
+              <div>
+                <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>
+                  {isPremium ? "You're a Jetzy Premium member" : "Includes Jetzy Premium"}
+                </p>
+                <p className="text-gray-300 text-xs mt-1">
+                  {isPremium
+                    ? "You already have Jetzy Premium, so you'll only pay the ticket price."
+                    : premiumPlanLabel
+                      ? `Some tickets here include a Jetzy Premium membership at ${premiumPlanLabel}, charged with your ticket and renewing every ${premiumInterval} until you cancel.`
+                      : "Some tickets here include a Jetzy Premium membership, charged with your ticket and renewing until you cancel."}
+                </p>
               </div>
-              {!isPremium && (
-                <button
-                  onClick={() => setShowPremiumPromo(true)}
-                  className="text-xs font-bold underline flex-shrink-0"
-                  style={{ color: "#F5C518" }}
-                >
-                  Subscribe
-                </button>
-              )}
             </div>
           )}
 
@@ -311,22 +311,22 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                     </div>
 
                     <div className="flex flex-col items-start sm:items-end w-full sm:w-1/3 mt-4 sm:mt-0 pt-3 sm:pt-0">
-                      {hasMemberDiscount && isPremium && staticTickets[index].price > 0 ? (
-                        <>
-                          <p className="text-sm text-gray-500 line-through">
-                            {staticTickets[index].price.toLocaleString("en-US", { style: "currency", currency: "usd" })}
-                          </p>
-                          <p className="font-bold text-2xl" style={{ color: "#F5C518" }}>
-                            {(staticTickets[index].price * (1 - memberDiscountPercentage / 100)).toLocaleString("en-US", { style: "currency", currency: "usd" })}
-                          </p>
-                          <p className="text-xs" style={{ color: "#F5C518" }}>Member price ({memberDiscountPercentage}% off)</p>
-                        </>
-                      ) : (
-                        <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
-                          {staticTickets[index].price.toLocaleString("en-US", {
-                            style: "currency",
-                            currency: "usd",
-                          })}
+                      <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                        {staticTickets[index].price.toLocaleString("en-US", {
+                          style: "currency",
+                          currency: "usd",
+                        })}
+                      </p>
+
+                      {/* Per-ticket recurring disclosure. Only this ticket sells the
+                          membership, so the notice belongs on the ticket, not the event. */}
+                      {ticket.includesPremium && (
+                        <p className="text-xs mt-1 text-right sm:text-right" style={{ color: "#F5C518" }}>
+                          {isPremium
+                            ? "Includes Jetzy Premium — you're already a member, so you pay the ticket price only."
+                            : premiumPlanLabel
+                              ? `+ Jetzy Premium ${premiumPlanLabel}, renews until cancelled`
+                              : "+ Jetzy Premium membership, renews until cancelled"}
                         </p>
                       )}
 
@@ -369,12 +369,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   currency: "usd",
                 })}
               </h3>
-              {/* Session-based preview. Eligibility is settled against the email typed at
-                  checkout, so say the number isn't final rather than let the modal appear
-                  to change it. A referral code can lower it further there too. */}
-              {showsMemberPreview && (
+              {/* The membership is charged with the ticket but is NOT part of the ticket
+                  total, so it's spelled out separately rather than silently folded in.
+                  Session-based preview: the real check is against the email typed at
+                  checkout, and a referral code can lower the ticket further there. */}
+              {selectionAddsPremium && (
                 <p className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
-                  Member price ({memberDiscountPercentage}% off) — confirmed at checkout
+                  {premiumPlanLabel
+                    ? `+ Jetzy Premium ${premiumPlanLabel} — confirmed at checkout`
+                    : "+ Jetzy Premium membership — confirmed at checkout"}
                 </p>
               )}
             </div>
@@ -389,13 +392,6 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
           </div>
         </div>
       </div>
-
-      <PremiumPaywallModal
-        isOpen={showPremiumPromo}
-        onClose={() => setShowPremiumPromo(false)}
-        returnTo={eventPath(event.slug)}
-        message={`Subscribe to Jetzy Premium and save ${memberDiscountPercentage}% on this and every other Premium Event.`}
-      />
 
       {/* map section  */}
       {/* <div className="max-w-4xl mx-auto mt-5 bg-[#5656561e] border border-[#434343] rounded-2xl p-6">

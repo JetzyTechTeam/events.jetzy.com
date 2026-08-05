@@ -143,7 +143,6 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
           >
             {STATUS_LABEL[timeStatus]}
           </Box>
-          {event.premium && <PremiumBadge variant="badge" />}
         </Flex>
         {event.images && event.images.length > 0 ? (
           <Image

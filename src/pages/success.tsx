@@ -167,8 +167,15 @@ const CheckoutSuccessPage: React.FC = () => {
 	const subtotal = orderItems.reduce((acc, item) => {
 		return acc + item.price * item.quantity
 	}, 0)
-	// Stripe's amount_total is the authoritative charged amount (cents), already discounted
-	const finalTotal = typeof sessionData?.amount_total === "number" ? sessionData.amount_total / 100 : subtotal
+	// The TICKET total. On a bundled order (a ticket that sells Jetzy Premium) the session is
+	// `mode: "subscription"` and `amount_total` is the whole first invoice — ticket plus the
+	// first month of membership — so using it here would overstate what the ticket cost.
+	// Checkout stamps the ticket-only figure into metadata for exactly this reason; the
+	// `amount_total` fallback covers sessions created before that.
+	const metaTicketTotal = parseFloat(sessionData?.metadata?.ticketTotal ?? "")
+	const finalTotal = Number.isFinite(metaTicketTotal)
+		? metaTicketTotal
+		: (typeof sessionData?.amount_total === "number" ? sessionData.amount_total / 100 : subtotal)
 	const referralCode: string | undefined = sessionData?.metadata?.referralCode
 
 	// Split the discount into its Premium and referral parts. Checkout writes the two

@@ -122,7 +122,6 @@ export default function BookingCard({ booking, onClick }: { booking: BookingRow;
 					>
 						{STATUS_LABEL[booking.eventStatus] || "TBD"}
 					</Box>
-					{event.premium && <PremiumBadge variant="badge" />}
 				</Flex>
 
 				{event.images && event.images.length > 0 ? (

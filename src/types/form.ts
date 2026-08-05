@@ -66,10 +66,6 @@ export type CreateEventFormData = {
 	benefits?: string
 	locationDisclosedAfterBooking?: boolean
 	showOnMobile?: boolean
-	premium?: boolean
-	// Allows a transient "" while the field is cleared mid-edit; always normalised to a
-	// clamped number before it's sent to the API (see AutosaveManager.buildEventPayload).
-	premiumMemberDiscountPercentage?: number | ""
 	datePoll?: {
 		isActive: boolean
 		question?: string

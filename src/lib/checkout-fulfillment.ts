@@ -50,6 +50,12 @@ type SessionMetadata = {
 	referralDiscountPercentage?: string
 	premiumMemberDiscount?: string
 	premiumMemberDiscountPercentage?: string
+	/** Ticket-only figures, stamped at session creation — see the totals block below. */
+	ticketSubtotal?: string
+	ticketTotal?: string
+	/** "ticket+premium" on a bundled order; the subscriber the membership attaches to. */
+	purpose?: string
+	userId?: string
 	acceptedTerms?: string
 	acceptedTermsAt?: string
 	requiresApproval?: string
@@ -98,7 +104,14 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	await ensureDbConnected()
 	const stripe = getStripeClient()
 
-	const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] })
+	// `invoice.payment_intent` matters for BUNDLED tickets (`IEventTicket.includesPremium`),
+	// which are `mode: "subscription"` sessions carrying the ticket as a one-time line item.
+	// There `session.payment_intent` is null and the real PaymentIntent hangs off the first
+	// invoice. Without this expansion `payment.paymentIntentId` is written `undefined`, which
+	// orphans every capture/cancel path that looks a booking up by it.
+	const session = await stripe.checkout.sessions.retrieve(sessionId, {
+		expand: ["payment_intent", "invoice.payment_intent"],
+	})
 	if (!session) return { created: false, booking: null, event: null, requiresApproval: false, session: null, reason: "no-session" }
 
 	const metadata = (session.metadata || {}) as SessionMetadata
@@ -112,15 +125,30 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		return { created: false, booking: existing, event, requiresApproval, session, reason: "already-exists" }
 	}
 
-	const pi = (typeof session.payment_intent === "string" ? null : session.payment_intent) as Stripe.PaymentIntent | null
-	const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : pi?.id
+	// A bundled order pays through the subscription's first invoice, so fall back to that
+	// invoice's PaymentIntent when the session has none of its own.
+	const invoice = (typeof session.invoice === "string" ? null : session.invoice) as Stripe.Invoice | null
+	const invoicePi = (invoice && typeof invoice.payment_intent !== "string" ? invoice.payment_intent : null) as Stripe.PaymentIntent | null
+	const pi = ((typeof session.payment_intent === "string" ? null : session.payment_intent) as Stripe.PaymentIntent | null) || invoicePi
+	const paymentIntentId =
+		(typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id) ||
+		(invoice && typeof invoice.payment_intent === "string" ? invoice.payment_intent : invoicePi?.id)
+
+	const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id
 
 	const isPaidNow = session.payment_status === "paid"
 	// Manual capture leaves the session "unpaid" while the PaymentIntent sits in
 	// `requires_capture`. That is a successfully authorized approval order, not a failure.
+	// (Never true on a bundled order — subscription mode has no manual capture, which is why
+	// a bundled ticket may not require approval.)
 	const isAuthorized = !isPaidNow && requiresApproval && pi?.status === "requires_capture"
+	// A subscription session settles as `no_payment_required` when the first invoice needed no
+	// charge — a trial, or a 100%-off coupon. The ticket was still bought, so treating that as
+	// "not payable" would silently drop the booking.
+	const isSubscriptionSettled =
+		!isPaidNow && !!subscriptionId && (session.status === "complete" || invoice?.status === "paid" || session.payment_status === "no_payment_required")
 
-	if (!isPaidNow && !isAuthorized) {
+	if (!isPaidNow && !isAuthorized && !isSubscriptionSettled) {
 		return { created: false, booking: null, event: null, requiresApproval, session, reason: "not-payable" }
 	}
 
@@ -132,12 +160,27 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	}
 
 	const customAnswers = parseCustomAnswers(metadata)
-	const subtotal = tickets.reduce((acc, t) => acc + (t.price || 0) * (t.quantity || 0), 0)
-	const total = session.amount_total ? session.amount_total / 100 : 0
 
-	// Jetzy Premium member discount stacks with a referral code (see checkout/index.ts):
-	// the member discount comes off first, then the referral code takes its cut off the
-	// remainder — e.g. 80% member + 20% referral = 84% off total, not 100%.
+	// TICKET-ONLY figures.
+	//
+	// `session.amount_total` is the whole first invoice, so on a bundled order it includes the
+	// first month of Jetzy Premium. A booking must record what the TICKET cost — otherwise the
+	// receipt, My Bookings and every downstream total are inflated by the membership fee.
+	// `checkout/index.ts` therefore stamps the ticket figures into metadata at session
+	// creation; the `amount_total` fallback is only for sessions created before that.
+	const metaSubtotal = metadata.ticketSubtotal !== undefined ? parseFloat(metadata.ticketSubtotal) : NaN
+	const metaTotal = metadata.ticketTotal !== undefined ? parseFloat(metadata.ticketTotal) : NaN
+
+	const subtotal = Number.isFinite(metaSubtotal)
+		? metaSubtotal
+		: tickets.reduce((acc, t) => acc + (t.price || 0) * (t.quantity || 0), 0)
+	const total = Number.isFinite(metaTotal)
+		? metaTotal
+		: (session.amount_total ? session.amount_total / 100 : 0)
+
+	// The Premium member discount was retired — a referral code is the only discount left.
+	// `premiumMemberDiscount*` is still read so bookings created by an in-flight session from
+	// before the change still record what they were actually charged.
 	const premiumMemberDiscountApplied = metadata.premiumMemberDiscount === "true"
 	const referralPercent = metadata.referralCode && metadata.referralDiscountPercentage ? parseFloat(metadata.referralDiscountPercentage) : 0
 	const premiumPercent = premiumMemberDiscountApplied && metadata.premiumMemberDiscountPercentage ? parseFloat(metadata.premiumMemberDiscountPercentage) : 0
@@ -146,6 +189,28 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	const discountAmount = combinedDiscountFraction > 0
 		? Math.round((subtotal * combinedDiscountFraction + Number.EPSILON) * 100) / 100
 		: 0
+
+	// The membership this purchase started, if any. Read back from the SUBSCRIPTION rather
+	// than from our own config so the receipt quotes the amount and interval Stripe will
+	// actually bill — a plan price changed between checkout and fulfilment would otherwise
+	// make the email wrong. Never fatal: a missing receipt line beats a lost booking.
+	let recurringCharge: { label: string; amount: number; interval: string } | undefined
+	if (subscriptionId) {
+		try {
+			const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+			const item = subscription.items?.data?.[0]
+			const price = item?.price
+			if (price?.unit_amount != null) {
+				recurringCharge = {
+					label: "Jetzy Premium membership",
+					amount: price.unit_amount / 100,
+					interval: price.recurring?.interval || "month",
+				}
+			}
+		} catch (subscriptionError) {
+			console.error("[checkout-fulfillment] Couldn't read subscription for receipt:", subscriptionError)
+		}
+	}
 
 	const now = new Date()
 	let booking: IBookings | null = null
@@ -176,6 +241,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				provider: "stripe",
 				checkoutSessionId: session.id,
 				paymentIntentId,
+				// Present only on a bundled order, so a support question about a recurring
+				// charge can be traced from the booking back to the subscription that started it.
+				...(subscriptionId ? { subscriptionId } : {}),
 				captureMethod: isAuthorized ? "manual" : "automatic",
 				status: isAuthorized ? "authorized" : "captured",
 				amount: total,
@@ -263,14 +331,17 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			referralCode: metadata.referralCode,
 			discountAmount: discountAmount > 0 ? discountAmount : undefined,
 			discountPercentage: effectiveDiscountPercentage > 0 ? effectiveDiscountPercentage : undefined,
-			// Itemised so Premium and referral show as separate lines, and the Total is the
-			// amount Stripe actually charged rather than a recomputed figure.
+			// Itemised, with the Total being what the TICKET cost rather than a recomputed
+			// figure. A bundled order also carries the membership as a recurring line, so the
+			// receipt states the renewal amount and interval — required for a subscription
+			// the buyer acquired as part of a ticket purchase.
 			pricing: buildTicketPricing({
 				subtotal,
 				referralCode: metadata.referralCode,
 				referralPercentage: referralPercent,
 				premiumPercentage: premiumPercent,
 				total,
+				...(recurringCharge ? { recurring: recurringCharge } : {}),
 			}),
 			qrCodeImageUrl,
 		})

@@ -21,6 +21,7 @@ import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 import PremiumBadge from "@/components/premium/PremiumBadge";
 import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
+import { Error as ErrorToast } from "@/lib/_toaster";
 
 type NavbarProps = {
   hideEventNav?: boolean;
@@ -38,6 +39,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
   const isUser = userRole === "user";
   const { isPremium } = usePremiumStatus();
   const [showPremiumPaywall, setShowPremiumPaywall] = React.useState(false);
+  const [openingPortal, setOpeningPortal] = React.useState(false);
   usePremiumSubscriptionReturn();
 
   return (
@@ -200,6 +202,38 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                 >
                   Share Profile
                 </MenuItem>
+                {/* The ONLY way to stop a Jetzy Premium subscription. A bundled ticket can
+                    start one as a side effect of a purchase, so this must always be reachable
+                    for a member — see api/subscriptions/portal.ts. */}
+                {isPremium && (
+                  <MenuItem
+                    bg="#1a1a1a"
+                    _hover={{ bg: "gray.700" }}
+                    isDisabled={openingPortal}
+                    onClick={async () => {
+                      setOpeningPortal(true)
+                      try {
+                        const res = await fetch("/api/subscriptions/portal", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ returnTo: router.asPath }),
+                        })
+                        const result = await res.json()
+                        if (result?.status && result?.data?.url) {
+                          window.location.href = result.data.url
+                          return
+                        }
+                        ErrorToast("Couldn't open billing", result?.message || "Please try again.")
+                      } catch {
+                        ErrorToast("Couldn't open billing", "Please try again.")
+                      } finally {
+                        setOpeningPortal(false)
+                      }
+                    }}
+                  >
+                    {openingPortal ? "Opening…" : "Manage membership"}
+                  </MenuItem>
+                )}
                 <MenuItem
                   bg="#1a1a1a"
                   _hover={{ bg: "gray.700" }}

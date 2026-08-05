@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { findUserRecord } from "@/lib/premium"
+import { BUNDLE_APPROVAL_CONFLICT_MESSAGE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -67,6 +67,19 @@ const schema = zod.object({
 			// `.optional()` and never `.default(false)` — undefined must stay undefined so the
 			// ticket inherits the event-level requireApproval.
 			requireApproval: zod.boolean().optional(),
+			// Sells a Jetzy Premium membership with the ticket.
+			includesPremium: zod.boolean().optional(),
+		}).superRefine((ticket, ctx) => {
+			// Stripe has no manual capture in subscription mode, so a bundled ticket can't be
+			// authorized-now-captured-on-approval. Reject rather than let a host configure
+			// something that would fail at the buyer's checkout.
+			if (ticket.includesPremium && ticket.requireApproval) {
+				ctx.addIssue({ code: zod.ZodIssueCode.custom, message: BUNDLE_APPROVAL_CONFLICT_MESSAGE, path: ["requireApproval"] })
+			}
+			// A subscription needs a real charge to start against.
+			if (ticket.includesPremium && !(ticket.price > 0)) {
+				ctx.addIssue({ code: zod.ZodIssueCode.custom, message: BUNDLE_FREE_TICKET_MESSAGE, path: ["price"] })
+			}
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -75,8 +88,10 @@ const schema = zod.object({
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional().default(true),
-	premium: zod.boolean().optional().default(false),
-	premiumMemberDiscountPercentage: zod.number().min(0).max(100).optional().default(0),
+	// DEPRECATED — the "Premium Event" concept was retired. Still accepted so an older mobile
+	// client posting them doesn't fail validation, but both are ignored.
+	premium: zod.boolean().optional(),
+	premiumMemberDiscountPercentage: zod.number().min(0).max(100).optional(),
 	status: zod.enum(['draft', 'published']).optional().default('published'),
 	interests: zod.array(zod.string()).optional().default([]),
 	datePoll: zod.object({
@@ -106,7 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
+		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		// Resolve the event URL. A host-supplied slug is validated and made unique; a blank
 		// one is derived from the event name, falling back to a random id when the name has
@@ -123,18 +138,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				: (generateRandomId(10) as string)
 		}
 
-		// Only Jetzy Premium subscribers (or admins) can host a Premium Event
-		if (premium) {
-			const userRole = (session.user as any)?.role
-			const isAdmin = userRole === "admin" || userRole === "super admin"
-			if (!isAdmin) {
-				const userId = (session.user as any)?._id
-				const record = await findUserRecord(userId)
-				if (!record?.doc?.premiumSubscription?.active) {
-					return sendResponse(res, null, "Only Jetzy Premium members can host Premium Events. Subscribe to Jetzy Premium to continue.", false, ResCode.FORBIDDEN)
-				}
-			}
-		}
+		// The "Premium Event" hosting gate is gone along with the member-discount model —
+		// anyone may create any event. Membership is now sold per ticket instead.
 
 		if (!tickets || tickets.length === 0) {
 			tickets = [{
@@ -150,10 +155,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// rule has been removed. `requireApproval` is the event-level default; individual
 		// tickets may override it.
 
-		// Private Premium Events always require host approval, regardless of ticket pricing.
-		// This is now the only gate on them: private events are unlisted rather than
-		// invite-only, so anyone with the link can request a spot — the host still decides.
-		if (premium && privacy === "private") requireApproval = true
+		// The old "private Premium Events always require approval" rule is gone with the
+		// Premium Event concept. It would also have collided head-on with bundled tickets,
+		// which cannot require approval at all (no manual capture in subscription mode).
 
 		const effectiveTimezone = timezone && timezone.trim() !== '' ? timezone : 'UTC'
 		const extractedTimeZone = effectiveTimezone.split(') ')[1] || effectiveTimezone
@@ -236,12 +240,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				stripeProductId: stripeProducts[index].id,
 				// Only persist an explicit override; leaving it unset means "inherit the event".
 				...((ticket as any).requireApproval !== undefined ? { requireApproval: (ticket as any).requireApproval } : {}),
+				includesPremium: !!(ticket as any).includesPremium,
 			})),
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 			showOnMobile: showOnMobile ?? true,
-			premium: premium ?? false,
-			premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
 			status: status ?? 'published',
 			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0

@@ -49,8 +49,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		switch (event.type) {
 			case "checkout.session.completed": {
 				const checkoutSession = event.data.object as Stripe.Checkout.Session
-				if (checkoutSession.mode === "subscription" && checkoutSession.subscription) {
-					const userId = checkoutSession.client_reference_id || (checkoutSession.metadata as any)?.userId
+
+				// Dispatch on what the session CONTAINS, not on its `mode`.
+				//
+				// A bundled ticket (see `IEventTicket.includesPremium`) is a `mode: "subscription"`
+				// session that also carries the ticket as a one-time line item — so it needs BOTH
+				// branches. These used to be `if (subscription) … else if (payment)`, which meant
+				// such a session activated Premium and never created the booking: no Bookings row,
+				// no capacity consumed, no QR, no ticket email, no referral increment, while the
+				// buyer was charged in full.
+				const sessionMetadata = (checkoutSession.metadata || {}) as Record<string, string | undefined>
+
+				if (checkoutSession.subscription) {
+					const userId = sessionMetadata.userId || checkoutSession.client_reference_id
 					const subscription = await stripe.subscriptions.retrieve(
 						typeof checkoutSession.subscription === "string" ? checkoutSession.subscription : checkoutSession.subscription.id,
 					)
@@ -63,11 +74,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							currentPeriodEnd: new Date(subscription.current_period_end * 1000),
 							cancelAtPeriodEnd: subscription.cancel_at_period_end,
 						})
+					} else {
+						// A subscription nobody owns can still bill. Loud, because the only fix is
+						// manual. `client_reference_id` is single-valued and the ticket flow claims
+						// it, which is exactly why bundled sessions carry `metadata.userId`.
+						console.error("[webhooks/stripe] Subscription with no resolvable user:", checkoutSession.id)
 					}
-				} else if (checkoutSession.mode === "payment") {
-					// Ticket purchase. This is the authoritative fulfilment path: without it a
-					// buyer who never returns to /success would leave a live card hold with no
-					// booking row anywhere. Idempotent, so racing /success is harmless.
+				}
+
+				// Ticket purchase. The authoritative fulfilment path: without it a buyer who
+				// never returns to /success would leave a live card hold — or a paid ticket —
+				// with no booking row anywhere. Idempotent on bookingRef, so racing /success
+				// is harmless.
+				if (sessionMetadata.bookingRef) {
 					const { fulfillCheckoutSessionById } = await import("@/lib/checkout-fulfillment")
 					await fulfillCheckoutSessionById(checkoutSession.id)
 				}

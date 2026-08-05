@@ -1555,11 +1555,35 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                   )
                   .join("")}
                 <tr>
-                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Total</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">${resolvedPricing.recurring ? "Ticket total" : "Total"}</td>
                   <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${resolvedPricing.total.toFixed(2)}</td>
                 </tr>
+                ${resolvedPricing.recurring
+                  ? `
+                <tr>
+                  <td style="padding: 6px 15px; color: #333;">${resolvedPricing.recurring.label}</td>
+                  <td style="padding: 6px 15px; color: #333; text-align: right;">$${resolvedPricing.recurring.amount.toFixed(2)}/${resolvedPricing.recurring.interval}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Charged today</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${(resolvedPricing.dueToday ?? resolvedPricing.total).toFixed(2)}</td>
+                </tr>`
+                  : ""}
               </table>
             `}
+
+            ${resolvedPricing.recurring
+              ? `
+            <div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin-top: 15px;">
+              <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your Jetzy Premium membership</p>
+              <p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
+                This ticket included a Jetzy Premium membership. It renews at
+                <strong>$${resolvedPricing.recurring.amount.toFixed(2)} every ${resolvedPricing.recurring.interval}</strong>
+                until you cancel. You can cancel any time from
+                <strong>Manage membership</strong> in your Jetzy account menu.
+              </p>
+            </div>`
+              : ""}
           </div>
 
           ${qrCodeValid ? `

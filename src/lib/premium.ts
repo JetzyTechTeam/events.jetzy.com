@@ -66,6 +66,46 @@ export async function setUserPremiumStatus(userId: string, data: Partial<Premium
 	})
 }
 
+/**
+ * The Stripe Price the Premium subscription is sold at.
+ *
+ * Resolved from the product's `default_price` rather than a stored id, so swapping the plan
+ * in the Stripe dashboard needs no deploy. Throws rather than returning null — every caller
+ * treats a missing price as fatal.
+ */
+export async function getPremiumPrice(): Promise<Stripe.Price> {
+	const stripe = getStripeClient()
+	const product = await stripe.products.retrieve(PREMIUM_PRODUCT_ID, { expand: ["default_price"] })
+	const price = product.default_price as Stripe.Price | null
+	if (!price) throw new Error("Premium plan has no active default price configured.")
+	return price
+}
+
+/**
+ * Get (or create) the Stripe Customer for a Jetzy user, persisting the id.
+ *
+ * Persisting matters beyond convenience: `customer.subscription.updated` / `.deleted` and
+ * every renewal resolve the user via `premiumSubscription.stripeCustomerId`
+ * (`setPremiumStatusByStripeCustomerId`). A subscription created against a customer id that
+ * was never written back is unattributable — the user would be billed with no way for the
+ * webhook to find them.
+ *
+ * Shared by `api/subscriptions/checkout.ts` and the bundled-ticket path in `api/checkout`.
+ */
+export async function resolveStripeCustomerForUser(userId: string, email: string): Promise<string> {
+	const record = await findUserRecord(userId)
+	if (!record) throw new Error(`resolveStripeCustomerForUser: user not found (${userId})`)
+
+	const { model, doc } = record
+	const existing: string | undefined = doc.premiumSubscription?.stripeCustomerId
+	if (existing) return existing
+
+	const stripe = getStripeClient()
+	const customer = await stripe.customers.create({ email, metadata: { userId: String(userId) } })
+	await model.findByIdAndUpdate(doc._id, { $set: { "premiumSubscription.stripeCustomerId": customer.id } })
+	return customer.id
+}
+
 export async function setPremiumStatusByStripeCustomerId(customerId: string, data: Partial<PremiumSubscriptionData>): Promise<void> {
 	const record = await findUserByStripeCustomerId(customerId)
 	if (!record) {
