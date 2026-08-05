@@ -408,6 +408,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			location: event.location,
 			// Seeded so re-saving an event doesn't wipe a venue name that was already stored.
 			venueName: (event as any).venueName || "",
+			entrance: (event as any).entrance || "",
 			capacity: event.capacity,
 			requireApproval: event.requireApproval,
 			isPaid: event.isPaid,
@@ -1295,6 +1296,22 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																)}
 															</Field>
 														</InputGroup>
+													</FormControl>
+
+													<FormControl mb={4}>
+														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>
+															Entrance <span style={{ color: "#868686" }}>(optional)</span>
+														</FormLabel>
+														<Field
+															as={Input}
+															name="entrance"
+															placeholder="e.g. West side at 69th Street"
+															maxLength={200}
+															className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
+														/>
+														<Text fontSize="xs" color="gray.500" mt={1}>
+															Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
+														</Text>
 													</FormControl>
 
 													<FormControl>

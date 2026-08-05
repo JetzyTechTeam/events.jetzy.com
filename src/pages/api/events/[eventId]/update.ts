@@ -34,6 +34,8 @@ const schema = zod.object({
 	location: zod.string().optional(),
 	// The venue on its own, from the Places selection.
 	venueName: zod.string().optional(),
+	// Arrival instructions. Email-only; see the schema comment.
+	entrance: zod.string().max(200).optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
@@ -114,7 +116,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -251,6 +253,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// autosave built from a stale form, may not send `venueName` at all. Writing
 				// `undefined` would wipe a venue name that was set by hand.
 				...(venueName !== undefined ? { venueName } : {}),
+				// Same preserve-on-omit rule — an autosave from a stale form must not wipe it.
+				...(entrance !== undefined ? { entrance } : {}),
 				// Only overwrite saved coordinates when the client actually sent new ones
 				// (e.g. the user re-picked a location) — otherwise leave the existing
 				// coordinates untouched instead of wiping them with undefined.

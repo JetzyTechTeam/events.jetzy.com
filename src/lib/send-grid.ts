@@ -2,6 +2,7 @@ import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
+import { mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventZone } from "@/utils/eventTime"
 import sgMail from "@sendgrid/mail"
@@ -1024,15 +1025,14 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       const endTimestamp = `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}`
       timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
     }
-    // Always use real location in emails — locationDisclosedAfterBooking only masks on the public event page
-    let location = event.location
-    const locationLower = location.toLowerCase()
-
-    if ((!location || locationLower.includes("disclosed after registration") || locationLower.includes("location hidden")) && event.venueName) {
-      location = event.venueName
-    } else if (event.venueName && event.venueName.trim() !== "" && !location.includes(event.venueName)) {
-      location = `${event.venueName}, ${location}`
-    }
+    // Always use the real location in emails — `locationDisclosedAfterBooking` only masks the
+    // PUBLIC event page, and someone holding a ticket is entitled to the address.
+    //
+    // `venueName` is a FALLBACK, never a prefix. Prepending it produced a doubled address
+    // whenever the two strings differed by so much as punctuation — see event-location.ts.
+    const location = resolveGuestLocation(event as any)
+    const locationMapsUrl = mapsLinkFor(location)
+    const entrance = resolveEntrance(event as any)
 
     const subtotal = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
     const finalTotal = discountAmount && discountAmount > 0 ? subtotal - discountAmount : subtotal
@@ -1516,7 +1516,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
             <p><strong>Date and Time: </strong>${timestamp}</p>
-            <p><strong>Venue: </strong>${location}</p>
+            <p><strong>Venue: </strong><a href="${locationMapsUrl}" target="_blank" rel="noreferrer" style="color: #F79432; text-decoration: underline;">${location}</a></p>
+            ${entrance ? `<p><strong>Entrance: </strong>${entrance}</p>` : ""}
             <p><strong>Organizer: </strong>${(event.ownerId as any)?.firstName ? `${(event.ownerId as any).firstName} ${(event.ownerId as any).lastName}` : (event.host?.name || "Jetzy Events")}</p>
             ${(event.ownerId as any)?.email ? `<p><strong>Email: </strong>${(event.ownerId as any).email}</p>` : (event.host?.email ? `<p><strong>Email: </strong>${event.host.email}</p>` : "")}
             ${(event.ownerId as any)?.phone ? `<p><strong>Phone: </strong>${(event.ownerId as any).phone}</p>` : (event.host?.phone ? `<p><strong>Phone: </strong>${event.host.phone}</p>` : "")}
@@ -1628,7 +1629,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
         </div>
       `),
-      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}\n\nThank you for choosing Jetzy Events!`,
+      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}\nDirections: ${locationMapsUrl}${entrance ? `\nEntrance: ${entrance}` : ""}\n\nThank you for choosing Jetzy Events!`,
     }
 
     console.log("[sendTicketConfirmation] Sending email with payload:", {

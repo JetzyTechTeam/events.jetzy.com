@@ -50,6 +50,8 @@ export type CreateEventFormData = {
 	location: string
 	/** Venue on its own, e.g. "Mineral Springs, Central Park". Empty for a plain address. */
 	venueName?: string
+	/** Arrival instructions. Sent in confirmation emails only, never shown on the event page. */
+	entrance?: string
 	longitude?: number
 	latitude?: number
 	placeId?: string

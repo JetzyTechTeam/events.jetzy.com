@@ -43,6 +43,8 @@ const schema = zod.object({
 	// nothing used to write it, which is why `event-helpers.ts` carries a hardcoded
 	// event-id → venue map as a manual stand-in.
 	venueName: zod.string().optional(),
+	// Arrival instructions. Email-only; see the schema comment.
+	entrance: zod.string().max(200).optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
@@ -125,7 +127,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		// Resolve the event URL. A host-supplied slug is validated and made unique; a blank
 		// one is derived from the event name, falling back to a random id when the name has
@@ -218,6 +220,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			name,
 			location,
 			...(venueName ? { venueName } : {}),
+			...(entrance ? { entrance } : {}),
 			coordinates: {
 				long: longitude,
 				lat: latitude,

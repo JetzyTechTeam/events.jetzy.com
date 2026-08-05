@@ -162,6 +162,14 @@ const eventsSchema = new Schema<IEvent>(
 			type: String,
 			required: false,
 		},
+		// Arrival instructions, e.g. "West side at 69th Street". EMAIL ONLY — deliberately
+		// not rendered on the public event page: it's useful to someone on their way and
+		// noise to someone browsing. Exists because hosts were appending this to the
+		// location field for want of anywhere to put it, which corrupted the address.
+		entrance: {
+			type: String,
+			required: false,
+		},
 		coordinates: {
 			long: {
 				type: Number,

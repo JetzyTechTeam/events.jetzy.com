@@ -75,6 +75,8 @@ export interface IEvent extends IBaseModelProps {
 	privacy: 'public' | 'private';
 	adminApprovalStatus?: 'pending' | 'approved';
 	showOnMobile?: boolean;
+	/** Arrival instructions shown in confirmation emails only, never on the event page. */
+	entrance?: string;
 	/** @deprecated The member-discount model was retired; membership is sold per ticket via `IEventTicket.includesPremium`. */
 	premiumMemberDiscountPercentage?: number;
 	/** @deprecated No longer generated or enforced — private events are unlisted, not invite-only. */
