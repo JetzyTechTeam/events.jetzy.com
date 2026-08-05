@@ -48,6 +48,8 @@ export type CreateEventFormData = {
 	/** Host-chosen event URL. Blank on create derives one from the name. */
 	slug?: string
 	location: string
+	/** Venue on its own, e.g. "Mineral Springs, Central Park". Empty for a plain address. */
+	venueName?: string
 	longitude?: number
 	latitude?: number
 	placeId?: string

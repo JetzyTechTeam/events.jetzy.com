@@ -72,6 +72,7 @@ import RichTextEditor from "@/components/misc/RichTextEditor";
 import InterestsSelector from "@/components/events/InterestsSelector";
 import { useSession } from "next-auth/react";
 import { BUNDLE_APPROVAL_CONFLICT_MESSAGE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle";
+import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
 
@@ -88,6 +89,9 @@ const initialValues = {
   endTime: "",
   endDate: "",
   location: "",
+  // Set from the Places selection alongside `location`; blank when the host typed an
+  // address freehand rather than picking a venue.
+  venueName: "",
   requireApproval: false,
   tickets: [],
   images: [],
@@ -186,23 +190,22 @@ const CreateEventPage = () => {
     }
   };
 
+  // Remembers the text produced by the last selection, so focusing an untouched field can
+  // be told apart from the user actually editing it.
+  const lastPickedLocationRef = React.useRef<string>("");
+
   const { ref } = usePlacesWidget({
     apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
     onPlaceSelected: (place) => {
-      if (formikRef.current) {
-        formikRef.current?.setFieldValue("location", place.formatted_address);
-        // Get the geometry location coordinates
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-
-        // Get the place id
-        const placeId = place.place_id;
-
-        // set the location coordinates and place id
-        formikRef.current?.setFieldValue("latitude", lat);
-        formikRef.current?.setFieldValue("longitude", lng);
-        formikRef.current?.setFieldValue("placeId", placeId);
-      }
+      if (!formikRef.current) return;
+      // Keeps the venue name the user actually clicked — see src/lib/google-place.ts.
+      const picked = buildPlaceSelection(place);
+      formikRef.current.setFieldValue("location", picked.location);
+      formikRef.current.setFieldValue("venueName", picked.venueName);
+      formikRef.current.setFieldValue("latitude", picked.latitude);
+      formikRef.current.setFieldValue("longitude", picked.longitude);
+      formikRef.current.setFieldValue("placeId", picked.placeId);
+      lastPickedLocationRef.current = picked.location;
     },
     options: {
       fields: [
@@ -633,7 +636,28 @@ const CreateEventPage = () => {
                       <InputLeftElement h="48px" pointerEvents="none"><LocationSVG /></InputLeftElement>
                       <Field name="location">
                         {({ field }: any) => (
-                          <Input {...field} ref={ref} id="location" placeholder="Choose Location" className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
+                          <Input
+                          {...field}
+                          ref={ref}
+                          id="location"
+                          placeholder="Choose Location"
+                          // Google's own docs require this; without it the browser's saved-form
+                          // dropdown renders on top of the Places one.
+                          autoComplete="off"
+                          onFocus={() => {
+                            // Suppress the stale re-query on an untouched saved value.
+                            if (field.value && field.value === lastPickedLocationRef.current) suppressPlacesDropdown()
+                          }}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                            // The moment they type, they mean to search again.
+                            allowPlacesDropdown()
+                            field.onChange(e)
+                          }}
+                          onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+                            allowPlacesDropdown()
+                            field.onBlur(e)
+                          }}
+                          className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
                         )}
                       </Field>
                     </InputGroup>
