@@ -2,7 +2,7 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
-import { BUNDLE_APPROVAL_CONFLICT_MESSAGE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
+import { BUNDLE_APPROVAL_NOTICE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
@@ -529,14 +529,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			return
 		}
 
-		// Stripe has no manual capture in subscription mode, so a ticket that sells a membership
-		// can't also be held for host approval — and a subscription needs a real charge to start
-		// against. Caught here so the host sees it before the API rejects the save.
-		const bundleConflict = values.tickets?.find((t) => t.includesPremium && (t.requireApproval ?? values.requireApproval))
-		if (bundleConflict) {
-			Error("Validation Error", `"${bundleConflict.title}": ${BUNDLE_APPROVAL_CONFLICT_MESSAGE}`)
-			return
-		}
+		// A bundled ticket may require approval — the card is held for ticket + first membership
+		// period and the subscription starts on approval. It still needs a real price to hold.
 		const bundleFree = values.tickets?.find((t) => t.includesPremium && !(Number(t.price) > 0))
 		if (bundleFree) {
 			Error("Validation Error", `"${bundleFree.title}": ${BUNDLE_FREE_TICKET_MESSAGE}`)
@@ -1685,8 +1679,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																	</Box>
 																	<Switch
 																		colorScheme="orange"
-																		isDisabled={!!tempTicket.includesPremium}
-																		isChecked={!tempTicket.includesPremium && (tempTicket.requireApproval ?? values.requireApproval)}
+																		isChecked={tempTicket.requireApproval ?? values.requireApproval}
 																		onChange={(e) => setTempTicket({ ...tempTicket, requireApproval: e.target.checked })}
 																	/>
 																</Flex>
@@ -1702,10 +1695,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																				? "Buyers who aren't members pay this ticket price plus the Jetzy Premium subscription, which then renews monthly. Existing members pay the ticket price only."
 																				: "Sell a Jetzy Premium membership with this ticket."}
 																		</Text>
-																		{tempTicket.includesPremium && (
+																		{tempTicket.includesPremium && (tempTicket.requireApproval ?? values.requireApproval) && (
 																			<Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
-																				Approval is turned off for this ticket — a membership starts billing
-																				immediately, so the payment can&apos;t be held.
+																				{BUNDLE_APPROVAL_NOTICE}
 																			</Text>
 																		)}
 																		{tempTicket.includesPremium && !(Number(tempTicket.price) > 0) && (
@@ -1717,15 +1709,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																	<Switch
 																		colorScheme="yellow"
 																		isChecked={!!tempTicket.includesPremium}
-																		onChange={(e) =>
-																			setTempTicket({
-																				...tempTicket,
-																				includesPremium: e.target.checked,
-																				// Force the override OFF rather than leaving it undefined:
-																				// undefined would inherit the event default, which may be On.
-																				...(e.target.checked ? { requireApproval: false } : {}),
-																			})
-																		}
+																		onChange={(e) => setTempTicket({ ...tempTicket, includesPremium: e.target.checked })}
 																	/>
 																</Flex>
 															</FormControl>

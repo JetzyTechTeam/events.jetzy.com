@@ -597,8 +597,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												<p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
 												<p className="text-gray-300 text-xs mt-1">
 													{selectionTotal > 0
-														// Quote the DISCOUNTED total — that's what Stripe actually holds.
-														? `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged. You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
+														// Quote what Stripe actually holds: the DISCOUNTED ticket total, plus
+														// the first membership period when the ticket sells one. `dueToday`
+														// already carries that sum.
+														? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged.${pricing.recurring ? " That covers your ticket and your first Jetzy Premium month — your membership starts only if the host approves." : ""} You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
 														: "Your registration is subject to host approval."}
 												</p>
 											</div>
@@ -705,10 +707,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
 															<div className="flex items-start gap-2">
 																<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
+																{/* On an approval ticket nothing is charged yet — the membership is
+																    held alongside the ticket and only starts if the host approves.
+																    Saying "charged today" there would simply be untrue. */}
 																<p className="text-xs" style={{ color: "#F5C518" }}>
-																	{premiumPlanLabel
-																		? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's charged with your ticket today and renews every ${premiumInterval} until you cancel.`
-																		: "This ticket includes a Jetzy Premium membership, charged with your ticket today and renewing until you cancel."}
+																	{selectionNeedsApproval
+																		? premiumPlanLabel
+																			? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves. It then renews every ${premiumInterval} until you cancel.`
+																			: "This ticket includes a Jetzy Premium membership. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves."
+																		: premiumPlanLabel
+																			? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's charged with your ticket today and renews every ${premiumInterval} until you cancel.`
+																			: "This ticket includes a Jetzy Premium membership, charged with your ticket today and renewing until you cancel."}
 																</p>
 															</div>
 
@@ -970,12 +979,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 														</span>
 													</div>
 													<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
-														<span>Due today</span>
+														{/* Nothing is taken on an approval order — it's a hold, not a charge. */}
+														<span>{selectionNeedsApproval ? "Held today" : "Due today"}</span>
 														<span>{(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
 													</div>
 													<p className="text-xs text-gray-400 mt-2">
-														Your membership then renews at{" "}
-														{pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{pricing.recurring.interval} until you cancel. You can cancel any time from your account.
+														{selectionNeedsApproval
+															? `If the host approves, you're charged this amount and your membership begins, renewing at ${pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${pricing.recurring.interval} until you cancel. If they decline, nothing is charged.`
+															: `Your membership then renews at ${pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${pricing.recurring.interval} until you cancel. You can cancel any time from your account.`}
 													</p>
 												</>
 											)}

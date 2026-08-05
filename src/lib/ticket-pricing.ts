@@ -162,6 +162,11 @@ export function pricingFromBooking(
 		premiumMemberDiscountPercentage?: number
 	},
 	fallbackSubtotal?: number,
+	/**
+	 * Set when this booking also started a Jetzy Premium membership — e.g. an approval that
+	 * captured the first period. Never part of `total`, which is the ticket alone.
+	 */
+	recurring?: RecurringCharge | null,
 ): TicketPricing {
 	return buildTicketPricing({
 		subtotal: booking.subTotal ?? fallbackSubtotal ?? 0,
@@ -170,5 +175,6 @@ export function pricingFromBooking(
 		premiumPercentage: booking.premiumMemberDiscountPercentage,
 		total: booking.total,
 		combinedDiscountAmount: booking.discountAmount,
+		recurring,
 	})
 }

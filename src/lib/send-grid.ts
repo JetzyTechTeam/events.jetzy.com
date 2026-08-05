@@ -361,7 +361,15 @@ type ApprovalEmailData = {
    * charged. Free/RSVP approvals omit it and every block below renders exactly as
    * it did before paid approval shipped.
    */
-  payment?: { amount: number; expiresAt?: Date | string | null }
+  payment?: {
+    amount: number
+    expiresAt?: Date | string | null
+    /**
+     * Present when the held ticket also sells a Jetzy Premium membership. The membership
+     * does NOT start until the host approves — the hold merely covers its first period.
+     */
+    premium?: { amount: number; interval: string }
+  }
 }
 
 const formatMoney = (amount: number) => `$${Number(amount || 0).toFixed(2)}`
@@ -393,6 +401,14 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
               charge and your ticket is emailed to you. If your request is declined${holdDeadline ? ` — or the host doesn't respond by then —` : ""}
               the hold is released automatically.
             </p>
+            ${payment.premium
+      ? `<p style="color: #0d47a1; margin: 12px 0 0 0; line-height: 1.6;">
+              That hold includes <strong>${formatMoney(payment.premium.amount)}</strong> for your first
+              Jetzy Premium ${payment.premium.interval}. Your membership does <strong>not</strong> start
+              unless the host approves — and if it does, it renews at
+              ${formatMoney(payment.premium.amount)} per ${payment.premium.interval} until you cancel.
+            </p>`
+      : ""}
             <p style="color: #666; margin: 12px 0 0 0; font-size: 13px;">
               Depending on your bank, a released hold can take 5&ndash;10 business days to disappear from your statement.
             </p>
@@ -401,8 +417,8 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
   const nextSteps = payment
     ? `
               <li>The host will review your request.</li>
-              <li>If approved, your card is charged ${formatMoney(payment.amount)} and you'll receive your ticket by email.</li>
-              <li>If declined, the hold is released and you are not charged.</li>
+              <li>If approved, your card is charged ${formatMoney(payment.amount)}${payment.premium ? " and your Jetzy Premium membership begins" : ""}, and you'll receive your ticket by email.</li>
+              <li>If declined, the hold is released${payment.premium ? " and no membership is created" : ""} — you are not charged.</li>
               <li>No further action is needed from you right now.</li>`
     : `
               <li>The host will review your request.</li>
