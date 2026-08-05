@@ -133,6 +133,17 @@ export default function LoginPage() {
 				return
 			}
 
+			// The account exists but has no password — it was created automatically when they
+			// bought a ticket, so they have never chosen one. Point at the two ways in rather
+			// than leaving them stuck on a password form they can't satisfy.
+			if (res.error === 'NO_PASSWORD_SET' || res.error.includes('NO_PASSWORD_SET')) {
+				ServerErrors("Set a password to continue", {
+					message:
+						"This account was created when you bought a ticket, so it doesn't have a password yet. Use “Send me a login code instead” below, or “Forgot your password?” to set one.",
+				})
+				return
+			}
+
 			// format an error message
 			const error = { message: res?.error }
 			ServerErrors("Sorry", error)
