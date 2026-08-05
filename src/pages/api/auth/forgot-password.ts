@@ -20,9 +20,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const decodedEmail = email.toLowerCase().trim()
         const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
 
+        // Case-insensitive: neither collection declares `lowercase: true` on `email`, so an
+        // account created as `Fahad@Example.com` is invisible to an exact match on the
+        // lowercased input. It would silently return the anti-enumeration success and send
+        // nothing — leaving the person with no way back into an account they may have
+        // acquired automatically at checkout. Same trap `booking-identity.ts` documents.
+        const emailMatch = {
+            email: { $regex: `^${decodedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+        }
+
         // Find user in either collection
-        const eventUser = await EventUsers.findOne({ email: decodedEmail })
-        const legacyUser = !eventUser ? await Users.findOne({ email: decodedEmail }) : null
+        const eventUser = await EventUsers.findOne(emailMatch)
+        const legacyUser = !eventUser ? await Users.findOne(emailMatch) : null
 
         // Always return success to prevent email enumeration
         if (!eventUser && !legacyUser) {
@@ -32,16 +41,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const resetToken = crypto.randomBytes(32).toString("hex")
         const resetTokenExpiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
 
-        // Store the reset token
+        // Store the reset token. Written by _id rather than by email — we already hold the
+        // document, and re-querying by the lowercased address would miss it for exactly the
+        // accounts the regex above just rescued.
         if (eventUser) {
-            await EventUsers.findOneAndUpdate(
-                { email: decodedEmail },
+            await EventUsers.findByIdAndUpdate(
+                eventUser._id,
                 { $set: { passwordResetToken: resetToken, passwordResetTokenExpiresAt: resetTokenExpiresAt } },
                 { strict: false }
             )
         } else if (legacyUser) {
-            await Users.findOneAndUpdate(
-                { email: decodedEmail },
+            await Users.findByIdAndUpdate(
+                legacyUser._id,
                 { $set: { passwordResetToken: resetToken, passwordResetTokenExpiresAt: resetTokenExpiresAt } },
                 { strict: false }
             )

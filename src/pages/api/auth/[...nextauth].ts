@@ -115,6 +115,21 @@ export const authOptions: NextAuthOptions = {
           }
           // ──────────────────────────────────────────────────────────────────
 
+          // An account can exist with NO password: `createOrUpdateUser` creates one for every
+          // ticket buyer at checkout, and it sets no password field at all. Calling
+          // bcrypt.compare with an undefined hash throws the raw library error
+          // "data and hash arguments required", which used to surface verbatim in the login
+          // dialog — telling the buyer nothing about what to do next.
+          //
+          // This matters more than it looks: someone who bought a ticket that bundled Jetzy
+          // Premium NEEDS to sign in to cancel their subscription. Both escape hatches on the
+          // login page work for these accounts — a login code skips the password check
+          // entirely, and a reset sets one.
+          if (!isMagicLogin && !user.password) {
+            console.log('Login blocked: account has no password set for', email);
+            throw new Error("NO_PASSWORD_SET");
+          }
+
           const isPasswordCorrect = isMagicLogin || await bcrypt.compare(password, user.password);
           if (!isPasswordCorrect) {
             console.log('Password mismatch');

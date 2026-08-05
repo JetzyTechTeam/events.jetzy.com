@@ -18,20 +18,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const decodedEmail = decodeURIComponent(email).toLowerCase().trim()
 
-        // Find user with valid reset token in EventUsers first
-        let user = await EventUsers.findOne({
-            email: decodedEmail,
+        // Case-insensitive, for the same reason as forgot-password: `email` has no
+        // `lowercase: true` in either collection, so an account stored as `Fahad@Example.com`
+        // would reject its own valid reset link as "invalid or expired".
+        const emailMatch = {
+            email: { $regex: `^${decodedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+        }
+        const tokenMatch = {
+            ...emailMatch,
             passwordResetToken: token,
-            passwordResetTokenExpiresAt: { $gt: new Date() }
-        })
+            passwordResetTokenExpiresAt: { $gt: new Date() },
+        }
+
+        // Find user with valid reset token in EventUsers first
+        let user = await EventUsers.findOne(tokenMatch)
 
         let collection: "event" | "users" = "event"
         if (!user) {
-            user = await Users.findOne({
-                email: decodedEmail,
-                passwordResetToken: token,
-                passwordResetTokenExpiresAt: { $gt: new Date() }
-            })
+            user = await Users.findOne(tokenMatch)
             collection = "users"
         }
 
@@ -50,14 +54,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Only update the collection(s) where the user actually exists
         // Do NOT blindly update both — that can create ghost fields on non-existent records
         const updates = []
-        const eventUserExists = await EventUsers.findOne({ email: decodedEmail })
-        const legacyUserExists = await Users.findOne({ email: decodedEmail })
+        const eventUserExists = await EventUsers.findOne(emailMatch)
+        const legacyUserExists = await Users.findOne(emailMatch)
 
         if (eventUserExists) {
-            updates.push(EventUsers.findOneAndUpdate({ email: decodedEmail }, { $set: updatePayload }))
+            updates.push(EventUsers.findByIdAndUpdate(eventUserExists._id, { $set: updatePayload }))
         }
         if (legacyUserExists) {
-            updates.push(Users.findOneAndUpdate({ email: decodedEmail }, { $set: updatePayload }, { strict: false }))
+            updates.push(Users.findByIdAndUpdate(legacyUserExists._id, { $set: updatePayload }, { strict: false }))
         }
 
         await Promise.all(updates)
