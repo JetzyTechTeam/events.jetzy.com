@@ -7,7 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { findUserRecord } from "@/lib/premium"
+import { BUNDLE_APPROVAL_CONFLICT_MESSAGE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
 import { buildUniqueSlug, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -32,6 +32,10 @@ const schema = zod.object({
 	// Host-chosen event URL. Omitted means "leave unchanged" — never blanked.
 	slug: zod.string().optional(),
 	location: zod.string().optional(),
+	// The venue on its own, from the Places selection.
+	venueName: zod.string().optional(),
+	// Arrival instructions. Email-only; see the schema comment.
+	entrance: zod.string().max(200).optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
@@ -59,6 +63,8 @@ const schema = zod.object({
 			description: zod.string().optional(),
 			// `.optional()` and never `.default(false)` — see the preserve-on-omit logic below.
 			requireApproval: zod.boolean().optional(),
+			// Sells a Jetzy Premium membership with the ticket. Also preserve-on-omit.
+			includesPremium: zod.boolean().optional(),
 		}),
 	),
 	isPaid: zod.boolean(),
@@ -66,6 +72,8 @@ const schema = zod.object({
 	timezone: zod.string().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
+	// DEPRECATED — the "Premium Event" concept was retired. Still accepted so an older client
+	// posting them doesn't fail validation, but both are ignored.
 	premium: zod.boolean().optional(),
 	premiumMemberDiscountPercentage: zod.number().min(0).max(100).optional(),
 	status: zod.enum(['draft', 'published']).optional(),
@@ -108,7 +116,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premium, premiumMemberDiscountPercentage, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -163,14 +171,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			resolvedSlug = await buildUniqueSlug(Events, check.slug, { excludeEventId: String(event._id) })
 		}
 
-		// Only Jetzy Premium subscribers (or admins) can newly turn an event Premium —
-		// an already-premium event stays premium even if the host's subscription later lapses.
-		if (premium && !event.premium && !isAdmin) {
-			const record = await findUserRecord(userId)
-			if (!record?.doc?.premiumSubscription?.active) {
-				return sendResponse(res, null, "Only Jetzy Premium members can host Premium Events. Subscribe to Jetzy Premium to continue.", false, ResCode.FORBIDDEN)
-			}
-		}
+		// The "Premium Event" hosting gate is gone with the member-discount model — membership
+		// is sold per ticket now, so there is nothing to gate here.
 
 		// Preserve each ticket's existing _id/stripeProductId across edits (client `ticket.id` is the
 		// previous `_id.toString()`) — bookings reference tickets by _id, so regenerating it here would
@@ -178,6 +180,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// ticket is new or its price actually changed.
 		const existingTicketById = new Map<string, any>()
 		;(event.tickets || []).forEach((t: any) => existingTicketById.set(t._id?.toString(), t))
+
+		// Validate the bundle rules against the RESOLVED flags (incoming value, else stored),
+		// before anything is written or any Stripe price is minted. Enforced here as well as
+		// in the form: Stripe has no manual capture in subscription mode, so a bundled ticket
+		// can't be held for approval, and a subscription needs a real charge to start against.
+		for (const ticket of tickets) {
+			const existing = existingTicketById.get(ticket.id.toString())
+			const willBundle = ticket.includesPremium !== undefined ? ticket.includesPremium : !!existing?.includesPremium
+			if (!willBundle) continue
+
+			const willRequireApproval =
+				ticket.requireApproval !== undefined ? ticket.requireApproval
+					: existing?.requireApproval !== undefined ? existing.requireApproval
+						: !!requireApproval
+			if (willRequireApproval) {
+				return sendResponse(res, null, BUNDLE_APPROVAL_CONFLICT_MESSAGE, false, ResCode.BAD_REQUEST)
+			}
+			if (!(ticket.price > 0)) {
+				return sendResponse(res, null, BUNDLE_FREE_TICKET_MESSAGE, false, ResCode.BAD_REQUEST)
+			}
+		}
 
 		const resolvedTickets = await Promise.all(tickets.map(async (ticket) => {
 			const existing = existingTicketById.get(ticket.id.toString())
@@ -200,25 +223,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					: existing?.requireApproval !== undefined ? existing.requireApproval
 						: undefined
 
+			// Same preserve-on-omit rule as above, so a stale form or an older client can't
+			// silently un-bundle a ticket that was already selling membership.
+			const resolvedIncludesPremium =
+				ticket.includesPremium !== undefined ? ticket.includesPremium : !!existing?.includesPremium
+
 			return {
 				...(existing ? { _id: existing._id } : {}),
 				name: ticket.title,
 				desc: ticket.description,
 				price: ticket.price.toFixed(2),
 				stripeProductId,
-				// Private Premium Events force approval on every ticket — a per-ticket override
-				// can't be used to bypass the invite-only approval requirement.
-				...((premium && privacy === "private")
-					? { requireApproval: true }
-					: (resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {})),
+				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
+				includesPremium: resolvedIncludesPremium,
 			}
 		}))
 
-		// Private Premium Events are invite-only — always require host approval on top
-		// of the invite-link/code gate, regardless of ticket pricing. Otherwise this is
-		// just the event-level default that tickets without their own flag inherit
-		// (see src/lib/ticket-approval.ts) — paid tickets support approval now too.
-		const effectiveRequireApproval = (premium && privacy === "private") ? true : requireApproval
+		// The event-level default that tickets without their own flag inherit
+		// (see src/lib/ticket-approval.ts). The old private-Premium force-on rule is gone.
+		const effectiveRequireApproval = requireApproval
 
 		// Find the event by id and update it
 		const updateDoc: any = {
@@ -226,6 +249,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				name,
 				...(resolvedSlug !== undefined ? { slug: resolvedSlug } : {}),
 				location,
+				// Same preserve-on-omit rule as the coordinates below: an older client, or an
+				// autosave built from a stale form, may not send `venueName` at all. Writing
+				// `undefined` would wipe a venue name that was set by hand.
+				...(venueName !== undefined ? { venueName } : {}),
+				// Same preserve-on-omit rule — an autosave from a stale form must not wipe it.
+				...(entrance !== undefined ? { entrance } : {}),
 				// Only overwrite saved coordinates when the client actually sent new ones
 				// (e.g. the user re-picked a location) — otherwise leave the existing
 				// coordinates untouched instead of wiping them with undefined.
@@ -255,8 +284,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				benefits,
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 				showOnMobile: showOnMobile ?? false,
-				premium: premium ?? false,
-				premiumMemberDiscountPercentage: premium ? (premiumMemberDiscountPercentage ?? 0) : 0,
 				status: status ?? 'published',
 				interests: interests ?? [],
 				...(datePoll?.isActive && datePoll.options?.length > 0 ? {

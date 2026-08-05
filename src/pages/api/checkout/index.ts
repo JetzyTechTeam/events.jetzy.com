@@ -6,7 +6,10 @@ import { uniqueId } from "@Jetzy/lib/utils"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
-import { resolveMemberDiscountPercentage } from "@/lib/premium-eligibility"
+import { isPremiumEmail } from "@/lib/premium-eligibility"
+import { premiumAllowanceMessage, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionIncludesPremium, type BundleMode } from "@/lib/premium-bundle"
+import { getPremiumTicketAllowance } from "@/lib/premium-ticket-limit"
+import { getPremiumPrice, hasActivePremiumSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
 
@@ -185,26 +188,63 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const buyerSession = await getServerSession(req, res, authOptions)
 		const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
 
-		// Jetzy Premium member discount — stacks with a referral code (see combined
-		// coupon math below): the member discount comes off first, then the referral
-		// code takes its cut off what's left.
+		// Does this order sell a Jetzy Premium membership?
 		//
-		// Resolved from the CHECKOUT EMAIL, not the session — the booking, ticket and account
-		// all attach to that address, so it's the only identity that can't disagree with
-		// itself. See `src/lib/premium-eligibility.ts` for the full reasoning.
-		let premiumMemberDiscountData: { percentage: number } | null = null
+		// Membership is no longer a discount — a ticket can BUNDLE it. Whether the buyer is
+		// already a member is resolved from the CHECKOUT EMAIL, not the session: the booking,
+		// the ticket and the account all attach to that address, so it's the only identity
+		// that can't disagree with itself. See `src/lib/premium-eligibility.ts`.
+		//
+		//   "none"           → ordinary paid ticket, `mode: "payment"`.
+		//   "already-member" → bundled ticket bought by an existing subscriber. Charge the
+		//                      ticket alone; a second subscription would be a billing incident.
+		//   "bundle"         → `mode: "subscription"` with the ticket as a one-time line item.
+		let bundleMode: BundleMode = "none"
 		try {
-			const memberPercentage = await resolveMemberDiscountPercentage(event as any, user.email)
-			if (memberPercentage > 0) {
-				premiumMemberDiscountData = { percentage: memberPercentage }
-				console.log("[checkout/index] Jetzy Premium member discount applied:", premiumMemberDiscountData)
+			const selectionBundles = selectionIncludesPremium(
+				// Resolve the flag from the EVENT record, not the request body — the client
+				// could otherwise turn the subscription line item off and buy a bundled ticket
+				// at the plain ticket price.
+				tickets.map((t) => (event.tickets || []).find((et: any) => String(et._id) === String(t.id)) as any).filter(Boolean),
+			)
+			if (selectionBundles) {
+				bundleMode = (await isPremiumEmail(user.email)) ? "already-member" : "bundle"
 			}
-		} catch (memberDiscountError: any) {
-			// Never fall through to a full-price session on a failed lookup. The buyer was
-			// quoted a discounted total in the modal; charging them in full instead is worse
-			// than making them retry — same rule as the coupon-creation branch below.
-			console.error("[checkout/index] Error resolving Premium member discount:", memberDiscountError)
-			return sendResponse(res, null, "We couldn't verify your Premium discount. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+			console.log("[checkout/index] Bundle mode:", bundleMode)
+
+			// ---- Premium ticket caps. The client caps too, but the body is attacker-controlled. ----
+			if (selectionBundles) {
+				// Resolve the quantities against the EVENT record for the same reason as
+				// `selectionBundles` above: a crafted body could otherwise drop `includesPremium`
+				// and slip an uncapped quantity through.
+				const premiumQuantity = tickets.reduce((sum, t) => {
+					const stored = (event.tickets || []).find((et: any) => String(et._id) === String(t.id))
+					if (!stored?.includesPremium) return sum
+					return sum + (Number(t.quantity) || 0)
+				}, 0)
+
+				if (premiumQuantity > PREMIUM_TICKET_MAX_PER_ORDER) {
+					console.warn("[checkout/index] Premium per-order cap exceeded:", { premiumQuantity, email: user.email })
+					return sendResponse(res, null, premiumOrderCapMessage(), false, ResCode.BAD_REQUEST)
+				}
+
+				// And the cap across every order this address has placed for this event —
+				// without it, three orders of two quietly reach six.
+				const allowance = await getPremiumTicketAllowance(String(event._id), user.email)
+				if (premiumQuantity > allowance.remaining) {
+					console.warn("[checkout/index] Premium per-event allowance exceeded:", {
+						email: user.email,
+						requested: premiumQuantity,
+						...allowance,
+					})
+					return sendResponse(res, null, premiumAllowanceMessage(allowance.remaining), false, ResCode.BAD_REQUEST)
+				}
+			}
+		} catch (bundleError: any) {
+			// Never guess. Charging a member for a second subscription, or handing a
+			// non-member a membership they weren't billed for, are both worse than a retry.
+			console.error("[checkout/index] Error resolving Premium bundle mode:", bundleError)
+			return sendResponse(res, null, "We couldn't verify your Jetzy Premium status. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
 		// Validate required custom questions
@@ -280,7 +320,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			subtotal: chargeSubtotal,
 			referralCode: referralCodeData?.code,
 			referralPercentage: referralCodeData?.discountPercentage,
-			premiumPercentage: premiumMemberDiscountData?.percentage,
 		})
 		if (isBelowStripeMinimum(chargePricing.total)) {
 			console.warn("[checkout/index] Order below Stripe minimum:", { subtotal: chargeSubtotal, total: chargePricing.total })
@@ -293,41 +332,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			)
 		}
 
-		// Stripe Checkout Sessions only support a single discount, so when both a
-		// referral code and a Premium member discount apply, they're combined into ONE
-		// coupon that reproduces "member discount off first, then referral code off the
-		// remainder" — e.g. 80% member + 20% referral = 84% off total, not 100%.
-		let combinedPercentOff: number | null = null
-		if (referralCodeData && premiumMemberDiscountData) {
-			const remainingAfterMember = 1 - premiumMemberDiscountData.percentage / 100
-			const remainingAfterBoth = remainingAfterMember * (1 - referralCodeData.discountPercentage / 100)
-			combinedPercentOff = Math.round((1 - remainingAfterBoth) * 10000) / 100 // 2 decimal places
-		} else if (referralCodeData) {
-			combinedPercentOff = referralCodeData.discountPercentage
-		} else if (premiumMemberDiscountData) {
-			combinedPercentOff = premiumMemberDiscountData.percentage
-		}
-
+		// A referral code is the only discount left — the Premium member discount was retired.
 		let discountConfig: Stripe.Checkout.SessionCreateParams.Discount[] | undefined = undefined
-		if (combinedPercentOff && combinedPercentOff > 0) {
+		if (referralCodeData && referralCodeData.discountPercentage > 0) {
 			try {
-				const rawCouponName = referralCodeData && premiumMemberDiscountData
-					? `Premium + Referral ${referralCodeData.code}`
-					: referralCodeData
-						? `Referral: ${referralCodeData.code}`
-						: 'Jetzy Premium Member Discount'
+				// Stripe hard-limits coupon.name to 40 characters and rejects the whole call if
+				// it's longer. The name embeds a host-supplied referral code, so clamp it.
+				const couponName = `Referral: ${referralCodeData.code}`.slice(0, 40)
 
-				// Stripe hard-limits coupon.name to 40 characters and rejects the whole call
-				// if it's longer. The name is built from a host-supplied referral code, so it
-				// must be clamped: the old combined label came to 42 chars, which meant every
-				// stacked Premium+referral checkout threw here, got swallowed below, and the
-				// buyer was charged full price with no discount at all.
-				const couponName = rawCouponName.slice(0, 40)
+				// On a bundled order the session-level discount would otherwise apply to the
+				// WHOLE first invoice — quietly taking the host's referral percentage off
+				// Jetzy's subscription revenue too. Restrict the coupon to the ticket products.
+				//
+				// `applies_to` takes PRODUCT ids, but `ticket.stripeProductId` actually holds a
+				// PRICE id (`api/events/create.ts` calls `stripe.prices.create`), so the product
+				// has to be read back off the price.
+				let appliesTo: Stripe.CouponCreateParams.AppliesTo | undefined = undefined
+				if (bundleMode === "bundle") {
+					const productIds = await Promise.all(
+						tickets.map(async (t) => {
+							const price = await stripe.prices.retrieve(t.priceId)
+							return typeof price.product === "string" ? price.product : price.product.id
+						}),
+					)
+					appliesTo = { products: Array.from(new Set(productIds)) }
+				}
 
 				const coupon = await stripe.coupons.create({
-					percent_off: combinedPercentOff,
+					percent_off: referralCodeData.discountPercentage,
 					duration: 'once',
 					name: couponName,
+					...(appliesTo ? { applies_to: appliesTo } : {}),
 				})
 
 				discountConfig = [{
@@ -361,10 +396,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata.referralCode = referralCodeData.code
 			metadata.referralDiscountPercentage = referralCodeData.discountPercentage.toString()
 		}
-		if (premiumMemberDiscountData) {
-			metadata.premiumMemberDiscount = "true"
-			metadata.premiumMemberDiscountPercentage = premiumMemberDiscountData.percentage.toString()
-		}
+
+		// The TICKET-ONLY figures. On a bundled session Stripe's `amount_total` is the whole
+		// first invoice (ticket + first month of membership), so fulfilment must never derive
+		// the booking total from it — it reads these instead.
+		metadata.ticketSubtotal = chargePricing.subtotal.toFixed(2)
+		metadata.ticketTotal = chargePricing.total.toFixed(2)
 
 		if (customAnswers && customAnswers.length > 0) {
 			customAnswers.forEach(ans => {
@@ -372,6 +409,80 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Truncate to 500 characters to fit Stripe metadata limits safely
 				metadata[`ans_${ans.questionId}`] = val.slice(0, 500);
 			});
+		}
+
+		// ---- Bundled order: one session that buys the ticket AND starts the subscription ----
+		//
+		// Stripe allows a `mode: "subscription"` session to carry one-time line items next to
+		// the recurring one; the one-time items are billed on the FIRST INVOICE only and the
+		// subscription renews by itself afterwards.
+		let subscriptionExtras: Partial<Stripe.Checkout.SessionCreateParams> = {}
+		if (bundleMode === "bundle") {
+			try {
+				// The buyer needs a durable Jetzy account and a Stripe Customer: every renewal
+				// and cancellation webhook resolves them by `premiumSubscription.stripeCustomerId`.
+				// A guest is auto-created here from the email they typed — `createOrUpdateUser`
+				// ran above and matches case-insensitively, so an existing account is reused.
+				const { Users } = await import("@/models/userModal")
+				const userDoc = await Users.findOne({ email: { $regex: `^${user.email.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }).select("_id")
+
+				// The TYPED EMAIL owns the membership, not the session.
+				//
+				// This used to read `buyerId || userDoc?._id`, which split the flow in half:
+				// eligibility was checked against the typed address while the subscription was
+				// created for whoever happened to be logged in. Buying a bundled ticket for
+				// someone else gave THEM the ticket and YOU the membership — and because their
+				// account was never activated, every repeat purchase stacked another
+				// subscription onto the logged-in user's single Stripe customer.
+				//
+				// `createOrUpdateUser` ran earlier with this address, so the document exists.
+				// `buyerId` remains only as a fallback for the case where that call failed and
+				// there would otherwise be nobody to attach the subscription to.
+				const subscriberId = userDoc?._id || buyerId
+				if (!subscriberId) {
+					console.error("[checkout/index] Bundled checkout has no user to attach the subscription to:", user.email)
+					return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+				}
+
+				const premiumPrice = await getPremiumPrice()
+				const customerId = await resolveStripeCustomerForUser(String(subscriberId), user.email)
+
+				// Ask STRIPE, not our own copy, whether they're already subscribed.
+				// `isPremiumEmail` above reads `premiumSubscription.active`, which is only set
+				// once the webhook lands — so two purchases in quick succession, or any webhook
+				// delay, would still double-subscribe. Stripe is the source of truth for billing
+				// state; Mongo is a cache that can lag.
+				if (await hasActivePremiumSubscription(customerId)) {
+					console.warn("[checkout/index] Customer already has an active subscription; charging for the ticket only:", customerId)
+					bundleMode = "already-member"
+				}
+
+				if (bundleMode === "bundle") {
+					subscriptionExtras = {
+						mode: "subscription",
+						// `customer` and `customer_email` are mutually exclusive; the subscription
+						// must attach to a real Customer, so that one wins.
+						customer: customerId,
+						line_items: [...prices, { price: premiumPrice.id, quantity: 1 }],
+						subscription_data: {
+							metadata: { userId: String(subscriberId), bookingRef, eventId: String(event._id) },
+						},
+					}
+					// Read back by the webhook, which must activate Premium AND fulfil the ticket.
+					metadata.purpose = "ticket+premium"
+					metadata.userId = String(subscriberId)
+					// So /success can show the membership as its own line. It can't be derived
+					// there: `amount_total` is the combined first invoice, and subtracting the
+					// ticket total would silently absorb any proration or rounding.
+					if (premiumPrice.unit_amount != null) {
+						metadata.premiumAmount = (premiumPrice.unit_amount / 100).toFixed(2)
+						metadata.premiumInterval = premiumPrice.recurring?.interval || "month"
+					}
+				}
+			} catch (bundleSetupError: any) {
+				console.error("[checkout/index] Failed to set up bundled subscription:", bundleSetupError?.message || bundleSetupError)
+				return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+			}
 		}
 
 		// create a checkout session
@@ -383,11 +494,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			success_url: successUrl,
 			cancel_url: cancelUrl,
 			metadata: metadata,
-			customer_email: user.email,
+			// Stripe rejects `customer` and `customer_email` together, and a bundled order
+			// must attach to a real Customer so the subscription is resolvable later.
+			...(bundleMode === "bundle" ? {} : { customer_email: user.email }),
 			discounts: discountConfig,
+			// Overrides mode/line_items/customer for a bundled order. Spread before the
+			// approval block below, which can never coexist with it.
+			...subscriptionExtras,
 			// Approval orders authorize the card without charging it. Everything below is
 			// spread in conditionally so the ordinary paid path is byte-identical to before.
-			...(requiresApproval
+			//
+			// `bundleMode !== "bundle"` is a belt-and-braces guard: the combination is already
+			// rejected by the event forms and the create/update schemas, because
+			// `payment_intent_data` does not exist in subscription mode. If a legacy ticket
+			// somehow carries both, charge normally rather than send Stripe an invalid session.
+			...(requiresApproval && bundleMode !== "bundle"
 				? {
 					submit_type: "book" as const,
 					payment_intent_data: {

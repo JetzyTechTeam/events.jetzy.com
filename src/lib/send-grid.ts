@@ -2,6 +2,7 @@ import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
+import { mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventZone } from "@/utils/eventTime"
 import sgMail from "@sendgrid/mail"
@@ -1024,15 +1025,14 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
       const endTimestamp = `${end.format('ddd MMM DD YYYY')}${event.hasEndTime !== false ? ` ${end.format('hh:mm A')}` : ''}`
       timestamp = `From: ${startTimestamp} To: ${endTimestamp}`
     }
-    // Always use real location in emails — locationDisclosedAfterBooking only masks on the public event page
-    let location = event.location
-    const locationLower = location.toLowerCase()
-
-    if ((!location || locationLower.includes("disclosed after registration") || locationLower.includes("location hidden")) && event.venueName) {
-      location = event.venueName
-    } else if (event.venueName && event.venueName.trim() !== "" && !location.includes(event.venueName)) {
-      location = `${event.venueName}, ${location}`
-    }
+    // Always use the real location in emails — `locationDisclosedAfterBooking` only masks the
+    // PUBLIC event page, and someone holding a ticket is entitled to the address.
+    //
+    // `venueName` is a FALLBACK, never a prefix. Prepending it produced a doubled address
+    // whenever the two strings differed by so much as punctuation — see event-location.ts.
+    const location = resolveGuestLocation(event as any)
+    const locationMapsUrl = mapsLinkFor(location)
+    const entrance = resolveEntrance(event as any)
 
     const subtotal = tickets.reduce((sum, ticket) => sum + ticket.price * ticket.quantity, 0)
     const finalTotal = discountAmount && discountAmount > 0 ? subtotal - discountAmount : subtotal
@@ -1516,7 +1516,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
             <p><strong>Date and Time: </strong>${timestamp}</p>
-            <p><strong>Venue: </strong>${location}</p>
+            <p><strong>Venue: </strong><a href="${locationMapsUrl}" target="_blank" rel="noreferrer" style="color: #F79432; text-decoration: underline;">${location}</a></p>
+            ${entrance ? `<p><strong>Entrance: </strong>${entrance}</p>` : ""}
             <p><strong>Organizer: </strong>${(event.ownerId as any)?.firstName ? `${(event.ownerId as any).firstName} ${(event.ownerId as any).lastName}` : (event.host?.name || "Jetzy Events")}</p>
             ${(event.ownerId as any)?.email ? `<p><strong>Email: </strong>${(event.ownerId as any).email}</p>` : (event.host?.email ? `<p><strong>Email: </strong>${event.host.email}</p>` : "")}
             ${(event.ownerId as any)?.phone ? `<p><strong>Phone: </strong>${(event.ownerId as any).phone}</p>` : (event.host?.phone ? `<p><strong>Phone: </strong>${event.host.phone}</p>` : "")}
@@ -1555,11 +1556,35 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                   )
                   .join("")}
                 <tr>
-                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Total</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">${resolvedPricing.recurring ? "Ticket total" : "Total"}</td>
                   <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${resolvedPricing.total.toFixed(2)}</td>
                 </tr>
+                ${resolvedPricing.recurring
+                  ? `
+                <tr>
+                  <td style="padding: 6px 15px; color: #333;">${resolvedPricing.recurring.label}</td>
+                  <td style="padding: 6px 15px; color: #333; text-align: right;">$${resolvedPricing.recurring.amount.toFixed(2)}/${resolvedPricing.recurring.interval}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Charged today</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${(resolvedPricing.dueToday ?? resolvedPricing.total).toFixed(2)}</td>
+                </tr>`
+                  : ""}
               </table>
             `}
+
+            ${resolvedPricing.recurring
+              ? `
+            <div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin-top: 15px;">
+              <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your Jetzy Premium membership</p>
+              <p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
+                This ticket included a Jetzy Premium membership. It renews at
+                <strong>$${resolvedPricing.recurring.amount.toFixed(2)} every ${resolvedPricing.recurring.interval}</strong>
+                until you cancel. You can cancel any time from
+                <strong>Manage membership</strong> in your Jetzy account menu.
+              </p>
+            </div>`
+              : ""}
           </div>
 
           ${qrCodeValid ? `
@@ -1604,7 +1629,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
         </div>
       `),
-      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}\n\nThank you for choosing Jetzy Events!`,
+      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}\nDirections: ${locationMapsUrl}${entrance ? `\nEntrance: ${entrance}` : ""}\n\nThank you for choosing Jetzy Events!`,
     }
 
     console.log("[sendTicketConfirmation] Sending email with payload:", {
@@ -2894,4 +2919,156 @@ export const sendChatMessageNotification = async ({
     console.error("❌ Failed to send chat message notification email:", error)
     throw error
   }
+}
+
+/* ------------------------------------------------------------------------- *
+ * Jetzy Premium membership lifecycle emails
+ *
+ * A membership can now be acquired as a side effect of buying a ticket
+ * (`IEventTicket.includesPremium`), so the buyer may not think of themselves as
+ * having "subscribed to" anything. That makes these three messages more important
+ * than they would be for a deliberate signup: every recurring charge, every failure
+ * and every ending has to be announced, and each one says how to cancel.
+ *
+ * All three are best-effort — a failed send must never break webhook processing.
+ * ------------------------------------------------------------------------- */
+
+type MembershipEmailData = {
+	email: string
+	firstName?: string
+	/** Major units (dollars). */
+	amount: number
+	interval: string
+	/** Start of the next period, for renewal/cancellation copy. */
+	nextBillingDate?: Date
+}
+
+const membershipShell = (bodyHtml: string, accent: string) => wrapHtml(`
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+    <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 4px solid ${accent};">
+      ${bodyHtml}
+      <p style="color: #6B7280; font-size: 13px; line-height: 1.6; margin: 25px 0 0 0; border-top: 1px solid #e5e7eb; padding-top: 15px;">
+        Manage or cancel your membership any time from <strong>Manage membership</strong> in your account menu.
+        Questions? Reply to this email or contact us at ${CONTACT_EMAIL}.
+      </p>
+    </div>
+  </div>
+`)
+
+const money = (n: number) => `$${n.toFixed(2)}`
+
+/** Sent on each RENEWAL — never on the first invoice, which the ticket receipt already covers. */
+export const sendMembershipRenewed = async ({ email, firstName, amount, interval, nextBillingDate }: MembershipEmailData) => {
+	const name = firstName || email.split("@")[0]
+	const nextLine = nextBillingDate
+		? `Your next payment is due on ${dayjs(nextBillingDate).format("MMMM D, YYYY")}.`
+		: ""
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: { email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(), name: "Jetzy" },
+			subject: `Your Jetzy Premium membership renewed — ${money(amount)}`,
+			html: membershipShell(`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
+          Your Jetzy Premium membership has renewed. We've charged <strong>${money(amount)}</strong> for another ${interval}.
+        </p>
+        ${nextLine ? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${nextLine}</p>` : ""}
+      `, "#F5C518"),
+			text: `Hi ${name},\n\nYour Jetzy Premium membership has renewed. We've charged ${money(amount)} for another ${interval}.\n${nextLine}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
+		})
+		console.log(`✅ Membership renewal email sent to: ${email}`)
+	} catch (error) {
+		console.error("❌ Failed to send membership renewal email:", error)
+	}
+}
+
+/**
+ * Sent when a renewal payment FAILS. The most important of the three: without it a
+ * member's card expires, Stripe stops retrying, and they lose membership silently.
+ */
+export const sendMembershipPaymentFailed = async ({ email, firstName, amount, interval }: MembershipEmailData) => {
+	const name = firstName || email.split("@")[0]
+	const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: { email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(), name: "Jetzy" },
+			subject: "Action needed: your Jetzy Premium payment didn't go through",
+			html: membershipShell(`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
+          We couldn't take the <strong>${money(amount)}</strong> payment for your Jetzy Premium membership.
+          This usually means the card on file has expired or was declined.
+        </p>
+        <div style="background-color:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:15px;margin:20px 0;">
+          <p style="color:#991B1B;font-size:14px;line-height:1.6;margin:0;">
+            We'll retry over the next few days. If the payment still doesn't go through,
+            your membership will end.
+          </p>
+        </div>
+        <div style="text-align:center;margin:25px 0;">
+          <a href="${baseUrl}" style="background-color:#F5C518;color:#000;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;">
+            Update your card
+          </a>
+        </div>
+        <p style="color:#4B5563;font-size:14px;line-height:1.6;margin:15px 0 0 0;">
+          Sign in and choose <strong>Manage membership</strong> from your account menu to update your payment details.
+        </p>
+      `, "#DC2626"),
+			text: `Hi ${name},\n\nWe couldn't take the ${money(amount)} payment for your Jetzy Premium membership. The card on file may have expired or been declined.\n\nWe'll retry over the next few days. If the payment still doesn't go through, your membership will end.\n\nSign in at ${baseUrl} and choose "Manage membership" to update your card.\n\n— Team Jetzy`,
+		})
+		console.log(`✅ Membership payment-failed email sent to: ${email}`)
+	} catch (error) {
+		console.error("❌ Failed to send membership payment-failed email:", error)
+	}
+}
+
+/**
+ * Sent when a membership is SCHEDULED to end (cancelled, still active until the period
+ * ends) or has ACTUALLY ended. One function, two states — the difference matters to the
+ * reader, who otherwise can't tell whether they still have access.
+ */
+export const sendMembershipCancelled = async ({
+	email,
+	firstName,
+	endsOn,
+	alreadyEnded,
+}: {
+	email: string
+	firstName?: string
+	endsOn?: Date
+	alreadyEnded: boolean
+}) => {
+	const name = firstName || email.split("@")[0]
+	const endsOnLabel = endsOn ? dayjs(endsOn).format("MMMM D, YYYY") : null
+
+	const headline = alreadyEnded
+		? "Your Jetzy Premium membership has ended."
+		: endsOnLabel
+			? `Your Jetzy Premium membership is set to end on <strong>${endsOnLabel}</strong>.`
+			: "Your Jetzy Premium membership is set to end at the close of your current billing period."
+
+	const body = alreadyEnded
+		? "You won't be charged again. Any tickets you've already bought are unaffected and remain valid."
+		: "You keep full access until then, and you won't be charged again. Any tickets you've already bought are unaffected and remain valid."
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: { email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(), name: "Jetzy" },
+			subject: alreadyEnded ? "Your Jetzy Premium membership has ended" : "Your Jetzy Premium membership is scheduled to end",
+			html: membershipShell(`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${body}</p>
+      `, "#6B7280"),
+			text: `Hi ${name},\n\n${stripHtml(headline)}\n\n${body}\n\n— Team Jetzy`,
+		})
+		console.log(`✅ Membership cancellation email sent to: ${email} (alreadyEnded=${alreadyEnded})`)
+	} catch (error) {
+		console.error("❌ Failed to send membership cancellation email:", error)
+	}
 }

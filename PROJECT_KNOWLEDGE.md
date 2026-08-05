@@ -293,7 +293,116 @@ The confirmation email showed per-ticket prices but **no discount and no total**
 - `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
 - **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
 
-### Jetzy Premium member discount — resolved by EMAIL, not session
+### Jetzy Premium is SOLD PER TICKET (replaced the member discount)
+
+The member discount was retired. Premium is no longer taken *off* a ticket — it is **sold with
+one**. `eventTicketsSchema.includesPremium` (Boolean, `default: false`) makes a ticket bundle a
+membership:
+
+- buyer is **already a member** → charged the ticket price only, ordinary `mode: "payment"`;
+- buyer is **not a member** → charged ticket **+** the monthly subscription in ONE
+  `mode: "subscription"` session, with the ticket as a one-time line item. Stripe bills
+  one-time items on the **first invoice only**; the subscription renews by itself.
+
+`event.premium` and `event.premiumMemberDiscountPercentage` are **deprecated** — kept on the
+schema so the mobile app sharing the collection is undisturbed (same treatment as
+`privateAccessCode`), but nothing reads them. Gone with them: the "only members may host"
+gate, the Premium Event badge, and the private-premium force-approval rule.
+
+**Helpers.** `src/lib/premium-bundle.ts` is pure/isomorphic (React-safe) —
+`ticketIncludesPremium`, `eventHasAnyPremiumTicket`, `selectionIncludesPremium`,
+`resolveBundleMode`. `src/lib/premium-eligibility.ts` is **server only** (loads the user
+models) — `isPremiumEmail`. Membership still resolves from the **checkout email, not the
+session**; under this model that decides whether money is charged, not merely how much comes
+off, so getting it wrong either double-bills a subscriber or gives away a membership.
+
+**Approval and bundling are mutually exclusive.** `payment_intent_data` is documented as
+`payment`-mode only, so there is no manual capture in subscription mode and a bundled ticket
+cannot be authorized-now-captured-on-approval. Enforced in both event forms, in `create.ts`
+zod `superRefine`, and in `update.ts` against the *resolved* flags (incoming value else stored)
+so a stale form can't sneak the combination through. A bundled ticket must also cost > $0.
+
+**The typed email owns the membership — not the session.** `subscriberId` in
+`checkout/index.ts` is `userDoc?._id || buyerId`. It shipped as `buyerId || userDoc?._id`,
+which split the flow in half: eligibility was checked against the typed address while the
+subscription was created for whoever happened to be logged in. Buying a bundled ticket for
+someone else therefore gave *them* the ticket and *you* the membership — and because their
+account was never activated, `isPremiumEmail` kept returning false, so every repeat purchase
+stacked another subscription onto the logged-in user's single Stripe customer. Symptom: three
+live subscriptions in one person's billing portal for tickets bought under other addresses.
+
+`bookerUserId` deliberately stays the **session** user: the booking does belong to whoever
+paid, and `booking-identity.ts` matches on `bookerUserId` OR `customerEmail`, so both parties
+still see the ticket. Only the membership follows the email.
+
+`hasActivePremiumSubscription(customerId)` in `premium.ts` is the second half of that guard —
+it asks **Stripe** for a live subscription on the Premium product before creating one, because
+`isPremiumEmail` reads `premiumSubscription.active`, which only exists once the webhook lands
+and so cannot catch two purchases in quick succession. It returns false on error rather than
+throwing: a duplicate subscription is recoverable, a refused checkout is not.
+
+**Session details that bite:**
+- `customer`, never `customer_email` — Stripe rejects both together, and the subscription must
+  attach to a real Customer. `resolveStripeCustomerForUser` (`src/lib/premium.ts`) persists
+  `premiumSubscription.stripeCustomerId`; without it every renewal/cancel webhook, which
+  resolves the user by that id, is unattributable.
+- The referral coupon is scoped with `applies_to.products`, or a session-level discount takes
+  the host's percentage off Jetzy's subscription revenue too. `ticket.stripeProductId` holds a
+  **price** id (`create.ts` calls `stripe.prices.create`), so the product id must be read back
+  off the price.
+- **`metadata.ticketTotal` / `ticketSubtotal` are authoritative, not `session.amount_total`** —
+  on a bundled session `amount_total` is the whole first invoice. Read by
+  `checkout-fulfillment.ts` and `success.tsx`.
+- `client_reference_id` is single-valued and the ticket flow claims it, so bundled sessions
+  carry `metadata.userId` for the subscription side.
+
+**The webhook dispatches on metadata, not `mode`.** `webhooks/stripe.ts` used to read
+`if (mode === "subscription") … else if (mode === "payment")` — mutually exclusive, so a
+bundled session activated Premium and **never created the booking**: no `Bookings` row, no
+`updateEventTracker()`, no QR, no ticket email, no referral increment, while the buyer was
+charged in full. Now `if (session.subscription)` activates and `if (metadata.bookingRef)`
+fulfils; both run. `fulfillCheckoutSessionById` also expands `invoice.payment_intent` (a
+subscription session has no `session.payment_intent`, and writing `paymentIntentId: undefined`
+orphans every capture/cancel path) and accepts a settled subscription session, since
+`payment_status` is `no_payment_required` for a trial or a 100%-off coupon.
+
+**Membership lifecycle emails.** Because membership can be acquired as a side effect of
+buying a ticket, the recipient may not think of themselves as a subscriber — so every charge,
+failure and ending is announced. `send-grid.ts` gained `sendMembershipRenewed`,
+`sendMembershipPaymentFailed` and `sendMembershipCancelled`, all fired from the webhook:
+
+- `invoice.paid` emails **only** when `billing_reason === "subscription_cycle"`. The first
+  invoice is the bundled ticket purchase, which the ticket confirmation already covers —
+  emailing there too would send two receipts for one transaction.
+- `invoice.payment_failed` is the important one: without it a card expires, Stripe stops
+  retrying, and the member loses access having never been told.
+- Cancellation is detected inside `customer.subscription.updated` as a **transition** — the
+  stored `cancelAtPeriodEnd` flipping false → true. With the portal set to "cancel at end of
+  billing period", `customer.subscription.deleted` doesn't arrive until the period ends, up to
+  a month later, so it can't be the trigger for "you cancelled". `deleted` sends the separate
+  "has ended" variant.
+- Every send is best-effort and swallows its own errors. A failed email must never fail a
+  webhook, because Stripe would retry the whole delivery and duplicate the side effects.
+
+**Cancellation and disclosure — required, not optional.** There was previously *no* way to
+cancel a subscription anywhere: `cancel_at_period_end` was only ever read back. Selling
+membership as a side effect of a ticket made that untenable, so `POST /api/subscriptions/portal`
+(Stripe Billing Portal) plus "Manage membership" in the navbar now exist. **The portal must be
+configured once per Stripe environment** or the call fails. The recurring amount and interval
+are shown on the ticket card, in the checkout modal and on the receipt *before* purchase —
+`usePremiumPlan` supplies the figure, `TicketPricing.recurring` / `dueToday` carry it. It is
+deliberately NOT part of `lines`, which are all deductions, nor of `total`, which means "what
+the ticket cost".
+
+`buildTicketPricing`'s `premiumPercentage` survives as **historical only**, so
+`pricingFromBooking` can still itemise bookings made while the discount existed. Never pass it
+for a new order.
+
+### Jetzy Premium member discount — resolved by EMAIL, not session (SUPERSEDED)
+
+> Retained for context on pre-existing bookings. The discount described below no longer runs —
+> see the section above. Booking fields `premiumMemberDiscountApplied` /
+> `premiumMemberDiscountPercentage` remain readable so old receipts still itemise.
 
 A premium event (`event.premium`) is open to everyone; a subscription just unlocks
 `event.premiumMemberDiscountPercentage`. Eligibility used to be read off the NextAuth session

@@ -30,6 +30,22 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 			type: Boolean,
 			required: false,
 		},
+		// Sells a Jetzy Premium membership alongside the ticket. A buyer who is not already a
+		// member is charged the ticket price PLUS the monthly subscription, in one Stripe
+		// Checkout Session (`mode: "subscription"` with the ticket as a one-time line item);
+		// an existing member is charged for the ticket alone.
+		//
+		// `default: false` is correct here, unlike `requireApproval` above — there is no
+		// inherit-from-event semantics to preserve, so pinning legacy tickets to "off" is
+		// exactly the intended meaning.
+		//
+		// MUTUALLY EXCLUSIVE with `requireApproval`: Stripe has no manual capture in
+		// subscription mode, so a bundled ticket cannot be authorized-now-captured-on-approval.
+		// Enforced in the event forms and in the create/update zod schemas.
+		includesPremium: {
+			type: Boolean,
+			default: false,
+		},
 	},
 	{ timestamps: true },
 )
@@ -146,6 +162,14 @@ const eventsSchema = new Schema<IEvent>(
 			type: String,
 			required: false,
 		},
+		// Arrival instructions, e.g. "West side at 69th Street". EMAIL ONLY — deliberately
+		// not rendered on the public event page: it's useful to someone on their way and
+		// noise to someone browsing. Exists because hosts were appending this to the
+		// location field for want of anywhere to put it, which corrupted the address.
+		entrance: {
+			type: String,
+			required: false,
+		},
 		coordinates: {
 			long: {
 				type: Number,
@@ -228,11 +252,17 @@ const eventsSchema = new Schema<IEvent>(
 			type: Boolean,
 			default: true,
 		},
+		// DEPRECATED — the "Premium Event" concept was retired. It used to gate who could HOST
+		// and carry a member discount; membership is now SOLD per ticket via
+		// `eventTicketsSchema.includesPremium` instead of discounting one. Nothing reads or
+		// writes either field any more. Kept so existing documents (and the mobile app reading
+		// the same collection) are undisturbed; safe to drop later, like `privateAccessCode`.
 		premium: {
 			type: Boolean,
-			default: false, // true = only Jetzy Premium subscribers can host; anyone can book, members get a discount
+			default: false,
 		},
-		// Host-configured member perk, only meaningful when premium: true
+		// DEPRECATED — see `premium` above. Historical bookings keep their own copy of the rate
+		// in `Bookings.premiumMemberDiscountPercentage` so past receipts still itemise.
 		premiumMemberDiscountPercentage: {
 			type: Number,
 			default: 0,

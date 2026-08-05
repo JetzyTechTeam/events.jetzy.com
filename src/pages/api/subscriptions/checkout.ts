@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getStripeClient, PREMIUM_PRODUCT_ID } from "@/lib/premium"
+import { findUserRecord, getPremiumPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -36,18 +36,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const stripe = getStripeClient()
 
-		const product = await stripe.products.retrieve(PREMIUM_PRODUCT_ID, { expand: ["default_price"] })
-		const price = product.default_price as Stripe.Price | null
-		if (!price) {
-			return sendResponse(res, null, "Premium plan has no active price configured.", false, ResCode.INTERNAL_SERVER_ERROR)
-		}
-
-		let stripeCustomerId: string | undefined = doc.premiumSubscription?.stripeCustomerId
-		if (!stripeCustomerId) {
-			const customer = await stripe.customers.create({ email, metadata: { userId } })
-			stripeCustomerId = customer.id
-			await model.findByIdAndUpdate(doc._id, { $set: { "premiumSubscription.stripeCustomerId": stripeCustomerId } })
-		}
+		const price = await getPremiumPrice()
+		const stripeCustomerId = await resolveStripeCustomerForUser(userId, email)
 
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
 		const successUrl = `${baseUrl}${returnTo}?premium_session_id={CHECKOUT_SESSION_ID}`

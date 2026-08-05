@@ -31,4 +31,8 @@ export const ROUTES = {
 	// Mobile-facing bridge page: plan picker + Stripe subscription checkout, entered via
 	// magicToken and returning to the app via deep link when done.
 	subscribe: "/subscribe",
+	// Single entry point for cancelling or changing a Jetzy Premium membership. Handles
+	// logged-out visitors by routing through login and back, so it can be linked from
+	// anywhere — including mid-checkout, before the buyer has an account.
+	manageMembership: "/manage-membership",
 }

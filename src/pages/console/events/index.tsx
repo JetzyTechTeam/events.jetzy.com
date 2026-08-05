@@ -301,7 +301,6 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								DRAFT
 							</span>
 						)}
-						{(event as any).premium && <PremiumBadge size="xs" />}
 						{isPendingAdminApproval(event as any) && (
 							<span className="px-2 py-0.5 bg-[#3A2A00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
 								PENDING APPROVAL

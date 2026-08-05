@@ -6,7 +6,7 @@ import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { resolveMemberDiscountPercentage } from "@/lib/premium-eligibility"
+import { selectionIncludesPremium } from "@/lib/premium-bundle"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import { incrementReferralUsage } from "@/lib/checkout-fulfillment"
 import { ensureDbConnected } from "@/configs/database"
@@ -143,6 +143,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 		const { rows: orderRows, subtotal } = order
 
+		// A ticket that sells a Jetzy Premium membership can never come through here: there is
+		// no charge to start a subscription against. Resolved from the EVENT record, not the
+		// request body, so the flag can't be dropped by a crafted POST to dodge the fee.
+		const selectionBundlesPremium = selectionIncludesPremium(
+			tickets.map((t) => (event.tickets || []).find((et: any) => String(et._id) === String(t.id)) as any).filter(Boolean),
+		)
+		if (selectionBundlesPremium) {
+			console.warn("[checkout/free-events] Rejected bundled-premium ticket on the free path:", { eventId })
+			return sendResponse(res, null, "This ticket includes Jetzy Premium — please complete checkout.", false, 400)
+		}
+
 		// A discount can legitimately bring a paid order to exactly $0 (e.g. a 100% referral
 		// code, or a member rate that cancels the price out), and those orders are routed
 		// here rather than to Stripe — Stripe rejects a $0 charge, and rejects a $0
@@ -153,19 +164,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 		const referralCodeData = referralResult.data
 
-		let memberDiscountPercentage = 0
-		try {
-			memberDiscountPercentage = await resolveMemberDiscountPercentage(event as any, user.email)
-		} catch (memberDiscountError) {
-			console.error("[checkout/free-events] Error resolving Premium member discount:", memberDiscountError)
-			return sendResponse(res, null, "We couldn't verify your Premium discount. Please try again.", false, 500)
-		}
-
 		const pricing = buildTicketPricing({
 			subtotal,
 			referralCode: referralCodeData?.code,
 			referralPercentage: referralCodeData?.discountPercentage,
-			premiumPercentage: memberDiscountPercentage,
 		})
 
 		// The free path issues a CONFIRMED (or approval-pending) booking without charging
@@ -213,9 +215,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Stripe path. The code itself is kept either way, for attribution.
 			...(referralCodeData ? { referralCode: referralCodeData.code } : {}),
 			discountAmount,
-			premiumMemberDiscountApplied: discountsDidWork && memberDiscountPercentage > 0,
 			...(discountsDidWork && referralCodeData ? { referralDiscountPercentage: referralCodeData.discountPercentage } : {}),
-			...(discountsDidWork && memberDiscountPercentage > 0 ? { premiumMemberDiscountPercentage: memberDiscountPercentage } : {}),
 			customAnswers: customAnswers.map((a) => ({
 				questionId: a.questionId,
 				answer: a.answer,

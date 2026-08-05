@@ -26,6 +26,8 @@ import axios from "axios"
 import Link from "next/link"
 import { signOut, useSession } from "next-auth/react"
 import { useAppDispatch } from "@Jetzy/redux/stores"
+import { usePremiumStatus } from "@/hooks/usePremiumStatus"
+import { useBillingPortal } from "@/hooks/useBillingPortal"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import Linkify from "linkify-react"
 import linkifyHtml from "linkify-html"
@@ -101,6 +103,9 @@ export default function HostedEvents({ event }: Props) {
 	const { data: session } = useSession()
 	const router = useRouter()
 	const dispatch = useAppDispatch()
+
+	const { isPremium: isPremiumMember } = usePremiumStatus()
+	const { openPortal, isOpening: isOpeningPortal, label: portalLabel } = useBillingPortal()
 
 	// Canonical logout — mirrors src/components/misc/Navbar.tsx (LOGOUT-SAFETY RULE in CLAUDE.md):
 	// targeted removeItem only (never localStorage.clear()), then destroySession, then signOut.
@@ -305,6 +310,19 @@ export default function HostedEvents({ event }: Props) {
 								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
 									Manage Event
 								</Link>
+							)}
+							{/* A membership can be bought from this very page, so the way to cancel it
+							    has to be reachable from here too — not only from /my-bookings. */}
+							{session && isPremiumMember && (
+								<button
+									type="button"
+									onClick={openPortal}
+									disabled={isOpeningPortal}
+									className="border py-2 px-4 rounded-lg disabled:opacity-50"
+									style={{ borderColor: "#F5C518", color: "#F5C518" }}
+								>
+									{portalLabel}
+								</button>
 							)}
 							{session ? (
 								<button

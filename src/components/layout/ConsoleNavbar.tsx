@@ -13,6 +13,8 @@ import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import { getUserSlug } from "@Jetzy/lib/utils"
 import QRCodeModal from "@Jetzy/components/events/QRCodeModal"
+import { usePremiumStatus } from "@/hooks/usePremiumStatus"
+import { useBillingPortal } from "@/hooks/useBillingPortal"
 
 const navigation = [
 	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
@@ -26,6 +28,8 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	// Logout user from system
 	const { data: session } = useSession()
 	const dispatch = useAppDispatch()
+	const { isPremium: isPremiumMember } = usePremiumStatus()
+	const { openPortal, label: portalLabel } = useBillingPortal()
 
 	const logout = () => {
 		// Clear Redux session storage first
@@ -178,6 +182,20 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 														</Link>
 													)}
 												</Menu.Item>
+												{/* Hosts subscribe too, and a membership bought with a ticket has to be
+												    cancellable from wherever the member happens to be. */}
+												{isPremiumMember && (
+													<Menu.Item>
+														{({ active }) => (
+															<a
+																onClick={openPortal}
+																className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}
+															>
+																{portalLabel}
+															</a>
+														)}
+													</Menu.Item>
+												)}
 												<Menu.Item>
 													{({ active }) => (
 														<a

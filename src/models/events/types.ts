@@ -8,6 +8,12 @@ export interface IEventTicket {
 	stripeProductId: string
 	/** Per-ticket override. `undefined` inherits the event-level `requireApproval`. */
 	requireApproval?: boolean
+	/**
+	 * Sells a Jetzy Premium membership with the ticket. Non-members pay ticket + monthly
+	 * subscription in one Stripe session; existing members pay for the ticket alone.
+	 * Mutually exclusive with `requireApproval` — no manual capture in subscription mode.
+	 */
+	includesPremium?: boolean
 	_id: Types.ObjectId
 	updatedAt: string
 	createdAt: string
@@ -69,10 +75,14 @@ export interface IEvent extends IBaseModelProps {
 	privacy: 'public' | 'private';
 	adminApprovalStatus?: 'pending' | 'approved';
 	showOnMobile?: boolean;
+	/** Arrival instructions shown in confirmation emails only, never on the event page. */
+	entrance?: string;
+	/** @deprecated The member-discount model was retired; membership is sold per ticket via `IEventTicket.includesPremium`. */
 	premiumMemberDiscountPercentage?: number;
 	/** @deprecated No longer generated or enforced — private events are unlisted, not invite-only. */
 	privateAccessCode?: string;
-	premium?: boolean; // If true, only Jetzy Premium subscribers can book this event
+	/** @deprecated The "Premium Event" concept was retired — no hosting gate, no badge, no discount. */
+	premium?: boolean;
 	status?: 'draft' | 'published';
 	// Shadow "draft 2" of a published event: autosaved edits not yet committed to the live event
 	draftRevision?: { payload: any; savedAt: string | Date } | null;
@@ -124,6 +134,8 @@ export interface IBookingPayment {
 	provider?: string
 	checkoutSessionId?: string
 	paymentIntentId?: string
+	/** Set only when the ticket bundled a Jetzy Premium membership. */
+	subscriptionId?: string
 	captureMethod?: "automatic" | "manual"
 	status?: BookingPaymentStatus
 	/** Major units (dollars), matching `booking.total`. */

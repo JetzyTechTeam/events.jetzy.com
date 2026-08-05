@@ -6,10 +6,11 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { eventMemberDiscountPercentage } from "@/lib/premium-discount"
+import { premiumAllowanceMessage, premiumQuantityInSelection, selectionIncludesPremium } from "@/lib/premium-bundle"
+import { ROUTES } from "@/configs/routes"
+import { usePremiumPlan } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
-import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal"
 import { StarIcon } from "@heroicons/react/24/solid"
 
 export default function EventCheckoutModel({ event, eventData }: { event: string; eventData?: any }) {
@@ -32,6 +33,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// has no idea why nothing happens. Surfaced in the PINNED header, which never scrolls away.
 	const [termsError, setTermsError] = useState(false)
 	const termsRef = useRef<HTMLLabelElement | null>(null)
+	// The buyer has already used part of their Premium allowance for this event.
+	const [allowanceError, setAllowanceError] = useState(false)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -49,26 +52,31 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [referralCodeValid, setReferralCodeValid] = useState<boolean | null>(null)
 	const [referralCodeDiscount, setReferralCodeDiscount] = useState<number | null>(null)
 
-	// Jetzy Premium member discount.
+	// Jetzy Premium membership sold with the ticket.
 	//
-	// Eligibility follows the EMAIL TYPED BELOW, not the session — the booking, the ticket
-	// and the Jetzy account all attach to that address, so it's the only identity that can't
-	// disagree with itself. A guest who subscribes still gets their discount, and a logged-in
-	// member who types someone else's address doesn't silently get one on a booking that
-	// isn't theirs. `src/lib/premium-eligibility.ts` has the full reasoning; the server
-	// resolves it again the same way and stays authoritative.
+	// Whether the buyer already has one follows the EMAIL TYPED BELOW, not the session — the
+	// booking, the ticket and the Jetzy account all attach to that address, so it's the only
+	// identity that can't disagree with itself. A guest who already subscribes isn't charged
+	// twice, and a logged-in member who types someone else's address doesn't get that other
+	// person's membership counted as their own. `src/lib/premium-eligibility.ts` has the full
+	// reasoning; the server resolves it again the same way and stays authoritative.
 	const { data: session } = useSession()
 	const { isPremium: sessionIsPremium } = usePremiumStatus()
 	const sessionEmail = session?.user?.email || ""
-	const eventMemberPct = eventMemberDiscountPercentage(liveEventData)
+	// Does the CURRENT selection sell a membership?
+	const selectionSellsPremium = selectionIncludesPremium(tickets as any)
 	// null = not checked yet (or the address just changed) — distinct from a checked "no".
 	const [emailIsPremium, setEmailIsPremium] = useState<boolean | null>(null)
 	const [checkingPremiumEmail, setCheckingPremiumEmail] = useState(false)
-	const [showPremiumPromo, setShowPremiumPromo] = useState(false)
 	const premiumEmailTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 	// Monotonic id so a slow reply for a previous address can't overwrite a newer verdict.
 	const premiumCheckIdRef = useRef(0)
-	const memberDiscountPercentage = emailIsPremium === true ? eventMemberPct : 0
+	const { label: premiumPlanLabel, interval: premiumInterval, amount: premiumAmount } = usePremiumPlan(selectionSellsPremium)
+	// Charged only when the ticket bundles it AND this address isn't already a member.
+	const willBeChargedForPremium = selectionSellsPremium && emailIsPremium === false
+	// How many more Premium tickets this address may buy for THIS event. null = not checked.
+	const [premiumTicketsRemaining, setPremiumTicketsRemaining] = useState<number | null>(null)
+	const selectedPremiumQuantity = premiumQuantityInSelection(tickets as any)
 
 	// Live preview of what the buyer will actually pay. Built with the same helper the
 	// server, the confirmation email and the success page use, so all four agree — but the
@@ -78,7 +86,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		subtotal: selectionTotal,
 		referralCode: appliedReferralPercentage > 0 ? formData.referralCode?.trim().toUpperCase() : undefined,
 		referralPercentage: appliedReferralPercentage,
-		premiumPercentage: memberDiscountPercentage,
+		...(willBeChargedForPremium && premiumAmount != null
+			? { recurring: { label: "Jetzy Premium membership", amount: premiumAmount, interval: premiumInterval } }
+			: {}),
 	})
 	const [validatingReferralCode, setValidatingReferralCode] = useState(false)
 	const referralCodeValidationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -104,9 +114,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setReferralCodeDiscount(null)
 		}
 		if (name === "email") {
-			// Drop the previous verdict immediately so the total can't keep showing a member
-			// discount that belonged to a different address. The debounced effect re-checks.
+			// Drop the previous verdicts immediately so neither the total nor the allowance
+			// keeps describing a different address. The debounced effect re-checks both.
 			setEmailIsPremium(null)
+			setPremiumTicketsRemaining(null)
+			setAllowanceError(false)
 		}
 	}
 
@@ -166,6 +178,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				setTermsError(true)
 				Error("Terms Required", "Please agree to the Terms & Conditions to continue.")
 				termsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+				return
+			}
+
+			// The per-event Premium allowance, counted across every order this address has
+			// placed. The server re-checks; this just avoids a pointless trip to Stripe.
+			if (selectionSellsPremium && premiumTicketsRemaining !== null && selectedPremiumQuantity > premiumTicketsRemaining) {
+				setAllowanceError(true)
+				Error("Ticket limit reached", premiumAllowanceMessage(premiumTicketsRemaining))
 				return
 			}
 
@@ -357,12 +377,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 	// Is the address in the form attached to an active Premium subscription?
 	// Preview only — `api/checkout` resolves it again server-side before charging.
-	const checkPremiumEmail = useCallback(async (email: string, memberPct: number, eventId?: string) => {
+	const checkPremiumEmail = useCallback(async (email: string, sellsPremium: boolean, eventId?: string) => {
 		const trimmed = email.trim()
 
-		// Nothing to gain by asking when the event offers no member rate.
-		if (memberPct <= 0 || !eventId || !trimmed || !/^\S+@\S+\.\S+$/.test(trimmed)) {
+		// Nothing to gain by asking when no selected ticket sells a membership.
+		if (!sellsPremium || !eventId || !trimmed || !/^\S+@\S+\.\S+$/.test(trimmed)) {
 			setEmailIsPremium(null)
+			setPremiumTicketsRemaining(null)
 			return
 		}
 
@@ -381,19 +402,27 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			const result = await response.json()
 			if (requestId !== premiumCheckIdRef.current) return
 			setEmailIsPremium(result?.status ? !!result?.data?.isPremiumMember : false)
+			// Membership status and remaining allowance come back together — one request,
+			// one debounce, one rate-limit bucket.
+			const remaining = result?.data?.premiumTicketsRemaining
+			setPremiumTicketsRemaining(typeof remaining === "number" ? remaining : null)
 		} catch (error) {
 			console.error("Error checking Premium status for email:", error)
 			if (requestId !== premiumCheckIdRef.current) return
-			// Treat an unreachable check as "not a member" so the preview never promises a
-			// discount the server won't honour. The server decides for real either way.
+			// Treat an unreachable check as "not a member": that shows the membership charge in
+			// the preview. Erring the other way would hide a recurring charge the server may
+			// still apply, which is the worse surprise. The server decides for real either way.
 			setEmailIsPremium(false)
+			// Leave the allowance unknown rather than guessing — the server enforces it, and
+			// blocking a legitimate buyer on a failed lookup would be worse than a rejected
+			// checkout with a clear message.
+			setPremiumTicketsRemaining(null)
 		} finally {
 			if (requestId === premiumCheckIdRef.current) setCheckingPremiumEmail(false)
 		}
 	}, [])
 
-	// Re-check whenever the address settles or the live event data arrives (the member rate
-	// isn't known until that fetch resolves). Depends on the event ID as a string rather than
+	// Re-check whenever the address settles. Depends on the event ID as a string rather than
 	// the redux ticket array, so a new array identity can't keep re-arming the debounce and
 	// stop the check from ever firing.
 	const checkoutEventId: string | undefined = (tickets[0] as any)?.eventId || eventData?._id
@@ -401,12 +430,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		if (!showCheckout) return
 		if (premiumEmailTimeoutRef.current) clearTimeout(premiumEmailTimeoutRef.current)
 		premiumEmailTimeoutRef.current = setTimeout(() => {
-			checkPremiumEmail(formData.email, eventMemberPct, checkoutEventId)
+			checkPremiumEmail(formData.email, selectionSellsPremium, checkoutEventId)
 		}, 500)
 		return () => {
 			if (premiumEmailTimeoutRef.current) clearTimeout(premiumEmailTimeoutRef.current)
 		}
-	}, [showCheckout, formData.email, eventMemberPct, checkoutEventId, checkPremiumEmail])
+	}, [showCheckout, formData.email, selectionSellsPremium, checkoutEventId, checkPremiumEmail])
 
 	// Fetch live event data (including questions) every time checkout opens
 	useEffect(() => {
@@ -415,6 +444,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setPendingApproval(false)
 			setAcceptedTerms(false)
 			setTermsError(false)
+			setAllowanceError(false)
+			setPremiumTicketsRemaining(null)
 			return
 		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
@@ -544,6 +575,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											</p>
 										</button>
 									)}
+
+									{/* The allowance is spent — there is no box to tick, so this explains
+									    rather than pointing anywhere. */}
+									{allowanceError && checkoutStep === "details" && premiumTicketsRemaining !== null && (
+										<div className="mt-3 rounded-lg p-3 bg-red-500/15 border border-red-500/50">
+											<p className="text-red-400 text-sm font-semibold">Ticket limit reached</p>
+											<p className="text-gray-300 text-xs mt-0.5">{premiumAllowanceMessage(premiumTicketsRemaining)}</p>
+										</div>
+									)}
 								</div>
 
 								{/* Scrollable content */}
@@ -648,65 +688,59 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												)}
 											</div>
 
-											{/* Premium member status for THIS address. Only shown when the event
-											    actually offers a member rate — otherwise it's noise. */}
-											{eventMemberPct > 0 && !checkingPremiumEmail && (
+											{/* Membership status for THIS address. Only shown when the selected
+											    ticket actually sells a membership — otherwise it's noise.
+											    The address decides whether a recurring charge is added, so this
+											    is a price disclosure, not a nicety. */}
+											{selectionSellsPremium && !checkingPremiumEmail && (
 												<>
 													{emailIsPremium === true && (
 														<p className="text-sm text-green-500 mt-1.5 font-medium">
-															✓ Jetzy Premium member — {eventMemberPct}% off applied.
+															✓ You already have Jetzy Premium — you&apos;ll only pay for the ticket.
 														</p>
 													)}
 
-													{/* The mismatch case: they ARE a member, but they've typed an address
-													    that isn't the one their subscription is on. The booking and ticket
-													    would go to the typed address, so the discount can't follow the
-													    session — say so, and offer the one-click fix. */}
-													{emailIsPremium === false && sessionIsPremium && (
-														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(247,148,50,0.12)", border: "1px solid rgba(247,148,50,0.4)" }}>
-															<p className="text-xs" style={{ color: "#F79432" }}>
-																This isn&apos;t the email on your Jetzy Premium account, so the {eventMemberPct}% member discount doesn&apos;t apply to it.
-															</p>
-															{sessionEmail && (
-																<button
-																	type="button"
-																	onClick={() => {
-																		setFormData((prev) => ({ ...prev, email: sessionEmail }))
-																		setEmailIsPremium(null)
-																	}}
-																	className="text-xs font-bold underline mt-1"
-																	style={{ color: "#F79432" }}
-																>
-																	Use {sessionEmail}
-																</button>
-															)}
-														</div>
-													)}
-
-													{/* Not a member on this address and no Premium session either — the
-													    ordinary upsell. */}
-													{emailIsPremium === false && !sessionIsPremium && (
-														<div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg p-2.5" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-															<div className="flex items-center gap-2">
-																<StarIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#F5C518" }} />
+													{/* Not a member on this address: the membership WILL be charged. */}
+													{emailIsPremium === false && (
+														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+															<div className="flex items-start gap-2">
+																<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
 																<p className="text-xs" style={{ color: "#F5C518" }}>
-																	Jetzy Premium members save {eventMemberPct}% on this event.
+																	{premiumPlanLabel
+																		? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's charged with your ticket today and renews every ${premiumInterval} until you cancel.`
+																		: "This ticket includes a Jetzy Premium membership, charged with your ticket today and renewing until you cancel."}
 																</p>
 															</div>
-															<button
-																type="button"
-																onClick={() => setShowPremiumPromo(true)}
-																className="text-xs font-bold underline flex-shrink-0"
-																style={{ color: "#F5C518" }}
-															>
-																Subscribe
-															</button>
+
+															{/* The mismatch case: they ARE a member, but on a different address.
+															    Left as-is they'd be billed a SECOND subscription — so this is a
+															    warning about a duplicate charge, not an upsell. */}
+															{sessionIsPremium && sessionEmail && (
+																<div className="mt-2 pt-2" style={{ borderTop: "1px solid rgba(245,197,24,0.3)" }}>
+																	<p className="text-xs" style={{ color: "#F79432" }}>
+																		Your Jetzy Premium account is on a different email. Use it, or you&apos;ll be charged for a second membership.
+																	</p>
+																	<button
+																		type="button"
+																		onClick={() => {
+																			setFormData((prev) => ({ ...prev, email: sessionEmail }))
+																			setEmailIsPremium(null)
+																		}}
+																		className="text-xs font-bold underline mt-1"
+																		style={{ color: "#F79432" }}
+																	>
+																		Use {sessionEmail}
+																	</button>
+																</div>
+															)}
 														</div>
 													)}
 
 													{emailIsPremium === null && (
 														<p className="text-xs text-gray-400 mt-1.5">
-															Jetzy Premium members save {eventMemberPct}% — enter the email on your Premium account to apply it.
+															{premiumPlanLabel
+																? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. Enter your email — if you're already a member, you won't be charged for it again.`
+																: "This ticket includes a Jetzy Premium membership. Enter your email — if you're already a member, you won't be charged for it again."}
 														</p>
 													)}
 												</>
@@ -743,6 +777,32 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-[#F79432] underline">Terms &amp; Conditions</a>. By registering for this event, I agree to the creation of a Jetzy account.
 											</span>
 										</label>
+
+										{/* Where an existing member goes to cancel or change their card.
+										    Opens in a NEW TAB on purpose — navigating away mid-checkout
+										    would discard everything typed above. The page itself handles
+										    logged-out visitors by routing through login and back. */}
+										{selectionSellsPremium && (
+											<p className="text-xs text-gray-400">
+												Already a Jetzy Premium member, or want to cancel later?{" "}
+												<a
+													href={ROUTES.manageMembership}
+													target="_blank"
+													rel="noreferrer"
+													className="text-[#F79432] underline"
+												>
+													Manage your subscription
+												</a>
+												.
+											</p>
+										)}
+
+										{/* The separate "I want to become a Jetzy Premium member" checkbox was
+										    removed: the recurring terms now live in the Terms & Conditions the box
+										    above links to. The DISCLOSURE blocks stay, and must — the amount, the
+										    interval and "renews until you cancel" are still stated under the email
+										    field and in the order summary, so the recurring charge is never
+										    invisible at the point of purchase. */}
 									</div>
 									)}
 
@@ -892,9 +952,33 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												</div>
 											))}
 											<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
-												<span>Total</span>
+												{/* Only qualify it as the TICKET total when a membership row follows —
+												    otherwise "Ticket total" reads as though something else is coming. */}
+												<span>{pricing.recurring ? "Ticket total" : "Total"}</span>
 												<span>{pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
 											</div>
+
+											{/* The membership is an ADDITION, not a discount, and it recurs — so
+											    it gets its own row and its own "due today" line rather than being
+											    folded into the ticket total. */}
+											{pricing.recurring && (
+												<>
+													<div className="flex justify-between mt-1" style={{ color: "#F5C518" }}>
+														<span>{pricing.recurring.label}</span>
+														<span>
+															{pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{pricing.recurring.interval}
+														</span>
+													</div>
+													<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
+														<span>Due today</span>
+														<span>{(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+													</div>
+													<p className="text-xs text-gray-400 mt-2">
+														Your membership then renews at{" "}
+														{pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{pricing.recurring.interval} until you cancel. You can cancel any time from your account.
+													</p>
+												</>
+											)}
 										</div>
 									</div>
 								)}
@@ -926,15 +1010,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				</div>
 			)}
 
-			{/* Subscribe flow for a buyer who isn't a member yet. Returns them to the event
-			    page, where reopening checkout re-checks their address. */}
-			<PremiumPaywallModal
-				isOpen={showPremiumPromo}
-				onClose={() => setShowPremiumPromo(false)}
-				returnTo={typeof window !== "undefined" ? window.location.pathname : "/"}
-				title="Save on this event"
-				message={eventMemberPct > 0 ? `Jetzy Premium members save ${eventMemberPct}% on this event.` : undefined}
-			/>
+			{/* No separate subscribe modal here any more: a bundled ticket sells the membership
+			    as part of this checkout, so sending the buyer off to a second Stripe flow
+			    mid-purchase would only risk charging them twice. */}
 		</>
 	)
 }

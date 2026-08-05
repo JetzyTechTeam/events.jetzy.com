@@ -27,11 +27,31 @@ export const BELOW_MIN_PRICE_MESSAGE = "Ticket price must be $0 (free) or at lea
 
 export type PricingLine = { label: string; amount: number }
 
+/**
+ * A charge that recurs after this order — today only the Jetzy Premium membership sold with
+ * a bundled ticket. Deliberately NOT folded into `lines`, which are all deductions: the
+ * membership is an addition, and it is not part of `total` because `total` means "what this
+ * ticket order costs". The first month is billed with the ticket on Stripe's first invoice.
+ */
+export type RecurringCharge = {
+	label: string
+	amount: number
+	/** Billing period, e.g. "month". Straight from the Stripe price's `recurring.interval`. */
+	interval: string
+}
+
 export type TicketPricing = {
 	subtotal: number
 	/** Discount lines, each a positive amount to be shown as a deduction. */
 	lines: PricingLine[]
 	total: number
+	/** Present only when the order also starts a subscription. */
+	recurring?: RecurringCharge
+	/**
+	 * What the card is actually charged today: `total` plus the first period of `recurring`.
+	 * Present only alongside `recurring`, so existing callers keep reading `total` unchanged.
+	 */
+	dueToday?: number
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -53,6 +73,11 @@ export type BuildPricingInput = {
 	 * combined discount amount, shown as one unattributed line.
 	 */
 	combinedDiscountAmount?: number | null
+	/**
+	 * Set when the ticket bundles a Jetzy Premium membership and the buyer isn't already a
+	 * member. Adds a recurring line and `dueToday`; never affects `total`.
+	 */
+	recurring?: RecurringCharge | null
 }
 
 export function buildTicketPricing({
@@ -62,15 +87,20 @@ export function buildTicketPricing({
 	premiumPercentage,
 	total,
 	combinedDiscountAmount,
+	recurring,
 }: BuildPricingInput): TicketPricing {
 	const base = round2(Math.max(0, Number(subtotal) || 0))
+	// HISTORICAL ONLY. The Premium member discount was retired — membership is now sold with
+	// the ticket (`IEventTicket.includesPremium`), not taken off it. Nothing in the live
+	// checkout path passes this any more; it exists so `pricingFromBooking` can still itemise
+	// bookings made while the discount existed. Do not reintroduce it for new orders.
 	const premiumPct = Math.max(0, Number(premiumPercentage) || 0)
 	const referralPct = Math.max(0, Number(referralPercentage) || 0)
 
 	const lines: PricingLine[] = []
 
 	if (premiumPct > 0 || referralPct > 0) {
-		// Premium first, referral on what's left — the order the Stripe coupon encodes.
+		// Premium first, referral on what's left — the order the old Stripe coupon encoded.
 		const premiumAmount = round2(base * (premiumPct / 100))
 		const referralAmount = round2(base * (1 - premiumPct / 100) * (referralPct / 100))
 
@@ -103,6 +133,18 @@ export function buildTicketPricing({
 		if (drift !== 0) {
 			const last = lines[lines.length - 1]
 			last.amount = round2(Math.max(0, last.amount + drift))
+		}
+	}
+
+	if (recurring && recurring.amount > 0) {
+		return {
+			subtotal: base,
+			lines,
+			total: resolvedTotal,
+			recurring,
+			// Stripe puts the one-time ticket and the first subscription period on the same
+			// first invoice, so this is the figure the buyer's card sees today.
+			dueToday: round2(resolvedTotal + recurring.amount),
 		}
 	}
 

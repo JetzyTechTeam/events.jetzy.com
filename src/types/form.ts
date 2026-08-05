@@ -48,6 +48,10 @@ export type CreateEventFormData = {
 	/** Host-chosen event URL. Blank on create derives one from the name. */
 	slug?: string
 	location: string
+	/** Venue on its own, e.g. "Mineral Springs, Central Park". Empty for a plain address. */
+	venueName?: string
+	/** Arrival instructions. Sent in confirmation emails only, never shown on the event page. */
+	entrance?: string
 	longitude?: number
 	latitude?: number
 	placeId?: string
@@ -66,10 +70,6 @@ export type CreateEventFormData = {
 	benefits?: string
 	locationDisclosedAfterBooking?: boolean
 	showOnMobile?: boolean
-	premium?: boolean
-	// Allows a transient "" while the field is cleared mid-edit; always normalised to a
-	// clamped number before it's sent to the API (see AutosaveManager.buildEventPayload).
-	premiumMemberDiscountPercentage?: number | ""
 	datePoll?: {
 		isActive: boolean
 		question?: string

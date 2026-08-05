@@ -18,7 +18,7 @@ export default function TermsPage() {
 				</div>
 
 				<h1 className="text-3xl font-bold mb-6">Terms and Conditions</h1>
-				<p className="mb-4 text-gray-400">Last Updated: March 30, 2026</p>
+				<p className="mb-4 text-gray-400">Last Updated: August 5, 2026</p>
 
 				<div className="prose prose-invert max-w-none space-y-6 text-gray-300 text-sm leading-relaxed">
 					<p>
@@ -41,6 +41,52 @@ export default function TermsPage() {
 					<p>
 						<span className="font-semibold text-white block mb-1">1.2 Jetzy Membership.</span>
 						By creating an Account, you also agree to become a Jetzy member and to receive Jetzy-related communications (including event updates, product news, and marketing emails). You may opt out of marketing emails at any time via the unsubscribe link in any email; transactional and account-related messages will continue to be sent.
+					</p>
+					{/* Recurring-billing disclosure. The checkout T&C checkbox links here, and this
+					    is now the only place the auto-renewal terms are set out in full — the
+					    separate consent checkbox was removed. Keep it consistent with what the
+					    code actually does: see src/lib/premium-bundle.ts (how a ticket sells a
+					    membership), src/pages/api/subscriptions/portal.ts (cancellation) and
+					    NON_REFUNDABLE_MESSAGE in src/lib/booking-cancellation.ts. */}
+					<p>
+						<span className="font-semibold text-white block mb-1">1.2.1 Jetzy Premium Membership (Paid Subscription).</span>
+						Jetzy Premium is a paid subscription, separate from the free Jetzy membership described above. You may
+						start a Jetzy Premium subscription either directly or by purchasing an event ticket that includes it. Where
+						a ticket includes Jetzy Premium, this is stated on the ticket and in the checkout summary before you pay,
+						together with the subscription price and billing frequency.
+					</p>
+					<p>
+						<span className="font-semibold text-white block mb-1">1.2.2 Automatic Renewal and Billing.</span>
+						<span className="font-bold text-white uppercase italic block mb-2">
+							YOUR JETZY PREMIUM SUBSCRIPTION RENEWS AUTOMATICALLY. THE SUBSCRIPTION FEE WILL BE CHARGED TO YOUR
+							PAYMENT METHOD AT THE START OF EACH BILLING PERIOD, AT THE PRICE AND FREQUENCY SHOWN AT CHECKOUT, AND
+							WILL CONTINUE UNTIL YOU CANCEL.
+						</span>
+						The first subscription period is charged at the same time as the ticket, on the same payment method. Payments
+						are processed by Stripe. If a renewal payment fails, we will notify you and may retry; if payment cannot be
+						collected, your membership will end. We may change the subscription price on notice to you, effective from
+						your next billing period.
+					</p>
+					<p>
+						<span className="font-semibold text-white block mb-1">1.2.3 Your Membership Follows the Email You Enter.</span>
+						A Jetzy Premium membership belongs to the email address entered at checkout, not necessarily the account
+						you are signed in to. If you buy a ticket that includes Jetzy Premium on behalf of someone else, the
+						membership will belong to the address you enter for them, and it must be managed and cancelled from that
+						account.
+					</p>
+					<p>
+						<span className="font-semibold text-white block mb-1">1.2.4 Cancelling.</span>
+						You may cancel your Jetzy Premium subscription at any time via <span className="text-white font-semibold">Manage membership</span> in
+						your account menu, or at <Link href={ROUTES.manageMembership} className="text-[#F79432] underline">the Manage membership page</Link>.
+						Cancellation stops future renewals; unless stated otherwise at the time of cancellation, your membership
+						remains active until the end of the billing period you have already paid for, and you will not be charged
+						again. Cancelling a membership does not cancel or refund any event ticket you have already purchased, and
+						cancelling a ticket does not cancel your membership — the two are independent.
+					</p>
+					<p>
+						<span className="font-semibold text-white block mb-1">1.2.5 No Refunds.</span>
+						Except where required by law, subscription fees and ticket purchases are non-refundable, including for
+						partly used billing periods and for events you do not attend.
 					</p>
 					<p>
 						<span className="font-semibold text-white block mb-1">1.3 Account Responsibilities.</span>

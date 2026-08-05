@@ -8,6 +8,13 @@ export type TicketData = {
   description: string
   /** Per-ticket approval override. `undefined` inherits the event-level setting. */
   requireApproval?: boolean
+  /**
+   * Sells a Jetzy Premium membership with the ticket: a non-member pays the ticket price
+   * plus the monthly subscription; an existing member pays for the ticket alone.
+   * Mutually exclusive with `requireApproval` — Stripe has no manual capture in
+   * subscription mode, so a bundled ticket can't be held for approval.
+   */
+  includesPremium?: boolean
 }
 
 export interface TicketCardProps {

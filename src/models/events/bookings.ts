@@ -22,6 +22,11 @@ const bookingPaymentSchema = new Schema(
 		provider: { type: String, default: "stripe" },
 		checkoutSessionId: { type: String, index: true },
 		paymentIntentId: { type: String, index: true },
+		// Set only when the ticket bundled a Jetzy Premium membership — the subscription that
+		// this purchase started. Lets a question about a later recurring charge be traced back
+		// to the booking that began it. The subscription outlives the booking; cancelling one
+		// never touches the other.
+		subscriptionId: { type: String, index: true },
 		captureMethod: { type: String, enum: ["automatic", "manual"], default: "automatic" },
 		status: {
 			type: String,

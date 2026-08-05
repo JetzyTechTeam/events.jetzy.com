@@ -93,3 +93,13 @@ select option:checked {
 .rich-content em { font-style: italic; }
 .rich-content s { text-decoration: line-through; }
 .rich-content img { max-width: 100%; border-radius: 6px; margin: 2px 4px; display: inline-block; vertical-align: middle; }
+
+/* Google Places autocomplete.
+   The widget appends `.pac-container` to <body>, outside React, and re-queries whenever the
+   input regains focus. On a saved location that meant clicking back into the field fired a
+   fresh search for the stored text — and with `types: ["establishment"]` it returned
+   unrelated businesses on the same street. The event forms add this class while the value
+   is unchanged since selection, and drop it the moment the user actually edits. */
+body.jetzy-hide-pac .pac-container {
+  display: none !important;
+}
