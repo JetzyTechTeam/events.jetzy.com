@@ -177,6 +177,8 @@ const CheckoutSuccessPage: React.FC = () => {
 		? metaTicketTotal
 		: (typeof sessionData?.amount_total === "number" ? sessionData.amount_total / 100 : subtotal)
 	const referralCode: string | undefined = sessionData?.metadata?.referralCode
+	// Present only when this purchase also started a membership (bundled ticket, non-member).
+	const metaPremiumAmount = parseFloat(sessionData?.metadata?.premiumAmount ?? "") || 0
 
 	// Split the discount into its Premium and referral parts. Checkout writes the two
 	// rates separately (`referralDiscountPercentage` / `premiumMemberDiscountPercentage`);
@@ -191,6 +193,18 @@ const CheckoutSuccessPage: React.FC = () => {
 		premiumPercentage: parseFloat(sessionData?.metadata?.premiumMemberDiscountPercentage ?? "0"),
 		total: finalTotal,
 		combinedDiscountAmount: Math.max(0, subtotal - finalTotal),
+		// A bundled ticket also started a Jetzy Premium membership. Stamped into metadata at
+		// checkout rather than derived here: `amount_total` is the combined first invoice, and
+		// subtracting the ticket total would silently absorb any proration or rounding.
+		...(metaPremiumAmount > 0
+			? {
+				recurring: {
+					label: "Jetzy Premium membership",
+					amount: metaPremiumAmount,
+					interval: sessionData?.metadata?.premiumInterval || "month",
+				},
+			}
+			: {}),
 	})
 
 	const displayEvent = eventData || parsedEvent
@@ -303,9 +317,35 @@ const CheckoutSuccessPage: React.FC = () => {
 								</>
 							)}
 							<div className="flex justify-between border-t pt-3">
-								<span className="text-gray-800 font-bold">{pendingApproval ? "Amount on hold" : "Total"}</span>
+								<span className="text-gray-800 font-bold">
+									{pendingApproval ? "Amount on hold" : pricing.recurring ? "Ticket total" : "Total"}
+								</span>
 								<span className={`font-bold ${pendingApproval ? "text-amber-600" : "text-gray-800"}`}>${finalTotal.toFixed(2)}</span>
 							</div>
+
+							{/* The membership is charged alongside the ticket but is not part of the
+							    ticket total, and unlike everything else here it repeats — so it gets
+							    its own row, its own "charged today", and the renewal terms. */}
+							{pricing.recurring && (
+								<>
+									<div className="flex justify-between" style={{ color: "#B7860B" }}>
+										<span>{pricing.recurring.label}</span>
+										<span>${pricing.recurring.amount.toFixed(2)}/{pricing.recurring.interval}</span>
+									</div>
+									<div className="flex justify-between border-t pt-3">
+										<span className="text-gray-800 font-bold">Charged today</span>
+										<span className="font-bold text-gray-800">${(pricing.dueToday ?? finalTotal).toFixed(2)}</span>
+									</div>
+									<div className="mt-3 rounded-lg p-3" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+										<p className="text-sm font-semibold" style={{ color: "#8A6D0B" }}>Your Jetzy Premium membership is active</p>
+										<p className="text-xs text-gray-600 mt-1">
+											It renews at ${pricing.recurring.amount.toFixed(2)} every {pricing.recurring.interval} until you cancel.
+											You can cancel any time from <strong>Manage membership</strong> in your account menu.
+										</p>
+									</div>
+								</>
+							)}
+
 							{pendingApproval && (
 								<p className="text-xs text-gray-500 pt-1">Not charged yet — only captured if the host approves.</p>
 							)}

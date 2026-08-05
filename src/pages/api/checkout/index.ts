@@ -417,6 +417,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Read back by the webhook, which must activate Premium AND fulfil the ticket.
 				metadata.purpose = "ticket+premium"
 				metadata.userId = String(subscriberId)
+				// So /success can show the membership as its own line. It can't be derived
+				// there: `amount_total` is the combined first invoice, and subtracting the
+				// ticket total would silently absorb any proration or rounding.
+				if (premiumPrice.unit_amount != null) {
+					metadata.premiumAmount = (premiumPrice.unit_amount / 100).toFixed(2)
+					metadata.premiumInterval = premiumPrice.recurring?.interval || "month"
+				}
 			} catch (bundleSetupError: any) {
 				console.error("[checkout/index] Failed to set up bundled subscription:", bundleSetupError?.message || bundleSetupError)
 				return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)

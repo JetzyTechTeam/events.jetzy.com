@@ -890,7 +890,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												</div>
 											))}
 											<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
-												<span>Ticket total</span>
+												{/* Only qualify it as the TICKET total when a membership row follows —
+												    otherwise "Ticket total" reads as though something else is coming. */}
+												<span>{pricing.recurring ? "Ticket total" : "Total"}</span>
 												<span>{pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
 											</div>
 
