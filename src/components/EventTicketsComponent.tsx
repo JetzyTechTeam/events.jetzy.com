@@ -146,6 +146,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         priceId: ticket.priceId,
         eventId: ticket.eventId,
         requireApproval: ticket.requireApproval,
+        // Must survive into redux: the checkout modal decides whether to check the buyer's
+        // membership, show the recurring disclosure and ask for subscription consent from
+        // THIS flag. Dropping it here made every bundled ticket look ordinary in the modal.
+        includesPremium: ticket.includesPremium,
       }))
       .filter((ticket) => ticket.isSelected);
 

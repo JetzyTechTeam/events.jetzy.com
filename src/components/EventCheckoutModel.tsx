@@ -32,6 +32,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// has no idea why nothing happens. Surfaced in the PINNED header, which never scrolls away.
 	const [termsError, setTermsError] = useState(false)
 	const termsRef = useRef<HTMLLabelElement | null>(null)
+	// Explicit consent to the recurring charge, kept separate from the event T&C above.
+	const [acceptedMembership, setAcceptedMembership] = useState(false)
+	const [membershipConsentError, setMembershipConsentError] = useState(false)
+	const membershipConsentRef = useRef<HTMLLabelElement | null>(null)
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -108,9 +112,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setReferralCodeDiscount(null)
 		}
 		if (name === "email") {
-			// Drop the previous verdict immediately so the total can't keep showing a member
-			// discount that belonged to a different address. The debounced effect re-checks.
+			// Drop the previous verdict immediately so the total can't keep claiming this
+			// address is a member. The debounced effect re-checks.
 			setEmailIsPremium(null)
+			// The consent belongs to a specific address. Changing it means the buyer may no
+			// longer be the person who agreed, so make them agree again rather than carrying
+			// a tick across to a different email.
+			setAcceptedMembership(false)
+			setMembershipConsentError(false)
 		}
 	}
 
@@ -170,6 +179,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				setTermsError(true)
 				Error("Terms Required", "Please agree to the Terms & Conditions to continue.")
 				termsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+				return
+			}
+
+			// The membership is a separate, ongoing commitment — it needs its own yes.
+			if (willBeChargedForPremium && !acceptedMembership) {
+				setMembershipConsentError(true)
+				Error("Membership Confirmation Required", "Please confirm you want to join Jetzy Premium to continue.")
+				membershipConsentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
 				return
 			}
 
@@ -266,6 +283,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					user: JSON.stringify(formData),
 					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
 					acceptedTerms: acceptedTerms,
+					// Consent to the recurring charge. Re-checked server-side — the server
+					// decides for itself whether this order starts a membership.
+					acceptedMembership: acceptedMembership,
 					customAnswers: JSON.stringify(
 						Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 					),
@@ -419,6 +439,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setPendingApproval(false)
 			setAcceptedTerms(false)
 			setTermsError(false)
+			setAcceptedMembership(false)
+			setMembershipConsentError(false)
 			return
 		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
@@ -536,13 +558,20 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								<div className="px-6 pt-6 pb-2 shrink-0">
 									<h2 className="text-2xl font-bold">Checkout</h2>
 									{/* Stays visible while the buyer scrolls back down to find the box. */}
-									{termsError && checkoutStep === "details" && (
+									{(termsError || membershipConsentError) && checkoutStep === "details" && (
 										<button
 											type="button"
-											onClick={() => termsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+											onClick={() =>
+												(membershipConsentError ? membershipConsentRef : termsRef).current?.scrollIntoView({
+													behavior: "smooth",
+													block: "center",
+												})
+											}
 											className="w-full text-left mt-3 rounded-lg p-3 bg-red-500/15 border border-red-500/50"
 										>
-											<p className="text-red-400 text-sm font-semibold">Terms &amp; Conditions required</p>
+											<p className="text-red-400 text-sm font-semibold">
+												{membershipConsentError ? "Confirm your Jetzy Premium membership" : "Terms & Conditions required"}
+											</p>
 											<p className="text-gray-300 text-xs mt-0.5">
 												Tick the box at the bottom of this form to continue. <span className="underline">Take me there</span>
 											</p>
@@ -741,6 +770,44 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-[#F79432] underline">Terms &amp; Conditions</a>. By registering for this event, I agree to the creation of a Jetzy account.
 											</span>
 										</label>
+
+										{/* SEPARATE consent for the recurring charge.
+										    Deliberately not folded into the event T&C above: agreeing to
+										    attend an event is not agreeing to an ongoing monthly payment,
+										    and card-network rules expect the subscriber to accept the
+										    recurring terms explicitly. Only shown when this purchase would
+										    actually start a membership — an existing member sees nothing. */}
+										{willBeChargedForPremium && (
+											<label
+												ref={membershipConsentRef}
+												className={`flex items-start gap-2 cursor-pointer text-sm rounded-lg p-2.5 transition-colors ${
+													membershipConsentError
+														? "bg-red-500/10 border border-red-500/50"
+														: ""
+												}`}
+												style={
+													membershipConsentError
+														? undefined
+														: { background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }
+												}
+											>
+												<input
+													type="checkbox"
+													checked={acceptedMembership}
+													onChange={(e) => {
+														setAcceptedMembership(e.target.checked)
+														if (e.target.checked) setMembershipConsentError(false)
+													}}
+													className="mt-0.5"
+												/>
+												<span style={{ color: "#F5C518" }}>
+													I want to become a <strong>Jetzy Premium</strong> member.
+													{premiumPlanLabel
+														? ` I understand ${premiumPlanLabel} will be charged with my ticket today and will renew every ${premiumInterval} until I cancel.`
+														: " I understand the membership fee will be charged with my ticket today and will renew until I cancel."}
+												</span>
+											</label>
+										)}
 									</div>
 									)}
 

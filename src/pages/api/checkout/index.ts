@@ -210,6 +210,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				bundleMode = (await isPremiumEmail(user.email)) ? "already-member" : "bundle"
 			}
 			console.log("[checkout/index] Bundle mode:", bundleMode)
+
+			// A recurring charge needs its own explicit yes, separate from the event T&C.
+			// Enforced here and not only in the modal: the client decides what to display,
+			// the server decides what may be charged.
+			if (bundleMode === "bundle") {
+				const acceptedMembership = req.body?.acceptedMembership === true || req.body?.acceptedMembership === "true"
+				if (!acceptedMembership) {
+					return sendResponse(res, null, "Please confirm you want to join Jetzy Premium to continue.", false, ResCode.BAD_REQUEST)
+				}
+			}
 		} catch (bundleError: any) {
 			// Never guess. Charging a member for a second subscription, or handing a
 			// non-member a membership they weren't billed for, are both worse than a retry.
