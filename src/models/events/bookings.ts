@@ -27,6 +27,23 @@ const bookingPaymentSchema = new Schema(
 		// to the booking that began it. The subscription outlives the booking; cancelling one
 		// never touches the other.
 		subscriptionId: { type: String, index: true },
+		// ---- Bundled ticket that ALSO requires approval ----
+		// The subscription for these is created at approval, not at checkout, so everything
+		// needed to create it has to live here: `api/bookings/approve.ts` works from the
+		// booking document and never sees the Stripe Checkout Session or its metadata.
+		//
+		// `premiumPriceId` is stored rather than re-resolved at approval on purpose — a plan
+		// price change while the request sits pending must not silently move the buyer onto a
+		// rate they were never quoted.
+		premiumStatus: {
+			type: String,
+			enum: ["pending", "active", "failed"],
+			required: false,
+		},
+		/** Major units, the membership portion of `amount`. */
+		premiumAmount: { type: Number, required: false },
+		premiumPriceId: { type: String, required: false },
+		premiumInterval: { type: String, required: false },
 		captureMethod: { type: String, enum: ["automatic", "manual"], default: "automatic" },
 		status: {
 			type: String,

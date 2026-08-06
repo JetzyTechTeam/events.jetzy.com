@@ -78,19 +78,23 @@ export const resolveBundleMode = (tickets: BundleTicketLike[] | null | undefined
 }
 
 /**
- * A bundled ticket cannot also require approval.
+ * A bundled ticket CAN require approval — but it is charged a different way.
  *
- * Approval holds work by authorizing the card and capturing later
- * (`payment_intent_data.capture_method: "manual"`), and Stripe documents
- * `payment_intent_data` as applying to `payment` mode only — there is no manual capture in
- * subscription mode. Rather than let a host configure something that cannot be charged, the
- * combination is rejected in the event forms and in the create/update schemas.
+ * Stripe documents `payment_intent_data` (and therefore `capture_method: "manual"`) as
+ * applying to `payment` mode only; there is no manual capture in subscription mode. So a
+ * bundled ticket that needs approval cannot be sold as a subscription session at all.
+ *
+ * Instead it is sold as a `mode: "payment"` session holding ticket + the first membership
+ * period as one manual-capture authorization, and the subscription is created by us in
+ * `api/bookings/approve.ts` once the host approves — with a trial covering the period that
+ * capture already paid for, so the buyer isn't billed twice.
+ *
+ * The alternative (capture the ticket now, bill the membership separately afterwards) was
+ * rejected: that second charge is off-session and can be declined or demand 3-D Secure with
+ * nobody present, leaving an approved booking and a valid ticket with no membership.
  */
-export const BUNDLE_APPROVAL_CONFLICT_MESSAGE =
-	"A ticket that includes Jetzy Premium can't also require approval — the membership starts billing immediately, so the payment can't be held."
-
-export const hasBundleApprovalConflict = (ticket?: BundleTicketLike | null): boolean =>
-	ticketIncludesPremium(ticket) && ticket?.requireApproval === true
+export const BUNDLE_APPROVAL_NOTICE =
+	"The card is held for the ticket plus the first membership period. Nothing is charged, and Jetzy Premium doesn't start, until you approve."
 
 /** A bundled ticket must cost something — there is no free path that can start a subscription. */
 export const BUNDLE_FREE_TICKET_MESSAGE =

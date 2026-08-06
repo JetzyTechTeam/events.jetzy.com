@@ -7,7 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { BUNDLE_APPROVAL_CONFLICT_MESSAGE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
+import { BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
 import { buildUniqueSlug, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -190,13 +190,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const willBundle = ticket.includesPremium !== undefined ? ticket.includesPremium : !!existing?.includesPremium
 			if (!willBundle) continue
 
-			const willRequireApproval =
-				ticket.requireApproval !== undefined ? ticket.requireApproval
-					: existing?.requireApproval !== undefined ? existing.requireApproval
-						: !!requireApproval
-			if (willRequireApproval) {
-				return sendResponse(res, null, BUNDLE_APPROVAL_CONFLICT_MESSAGE, false, ResCode.BAD_REQUEST)
-			}
+			// A bundled ticket MAY now require approval — it is held as a `mode: "payment"`
+			// authorization and the subscription is created at approval time.
 			if (!(ticket.price > 0)) {
 				return sendResponse(res, null, BUNDLE_FREE_TICKET_MESSAGE, false, ResCode.BAD_REQUEST)
 			}

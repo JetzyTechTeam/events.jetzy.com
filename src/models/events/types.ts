@@ -136,9 +136,23 @@ export interface IBookingPayment {
 	paymentIntentId?: string
 	/** Set only when the ticket bundled a Jetzy Premium membership. */
 	subscriptionId?: string
+	/**
+	 * Bundled ticket that also requires approval: the subscription is created at APPROVAL,
+	 * so everything needed to create it lives here — `approve.ts` never sees the Stripe
+	 * session. `pending` = held, not yet started; `failed` = money captured but the
+	 * subscription could not be created, and someone owes them a membership.
+	 */
+	premiumStatus?: "pending" | "active" | "failed"
+	/** Major units, the membership portion of `amount`. */
+	premiumAmount?: number
+	premiumPriceId?: string
+	premiumInterval?: string
 	captureMethod?: "automatic" | "manual"
 	status?: BookingPaymentStatus
-	/** Major units (dollars), matching `booking.total`. */
+	/**
+	 * Major units. What the CARD is held for or charged — ticket plus any membership
+	 * portion. Deliberately not the same as `booking.total`, which is the ticket alone.
+	 */
 	amount?: number
 	currency?: string
 	authorizedAt?: Date

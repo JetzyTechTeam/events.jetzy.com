@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { BUNDLE_APPROVAL_CONFLICT_MESSAGE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
+import { BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -76,13 +76,11 @@ const schema = zod.object({
 			// Sells a Jetzy Premium membership with the ticket.
 			includesPremium: zod.boolean().optional(),
 		}).superRefine((ticket, ctx) => {
-			// Stripe has no manual capture in subscription mode, so a bundled ticket can't be
-			// authorized-now-captured-on-approval. Reject rather than let a host configure
-			// something that would fail at the buyer's checkout.
-			if (ticket.includesPremium && ticket.requireApproval) {
-				ctx.addIssue({ code: zod.ZodIssueCode.custom, message: BUNDLE_APPROVAL_CONFLICT_MESSAGE, path: ["requireApproval"] })
-			}
-			// A subscription needs a real charge to start against.
+			// A bundled ticket MAY now require approval. It is sold as a `mode: "payment"`
+			// session holding ticket + the first membership period, and the subscription is
+			// created on approval — see `api/bookings/approve.ts`.
+			//
+			// A subscription still needs a real charge to start against.
 			if (ticket.includesPremium && !(ticket.price > 0)) {
 				ctx.addIssue({ code: zod.ZodIssueCode.custom, message: BUNDLE_FREE_TICKET_MESSAGE, path: ["price"] })
 			}

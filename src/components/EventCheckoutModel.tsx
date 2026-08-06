@@ -597,8 +597,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												<p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
 												<p className="text-gray-300 text-xs mt-1">
 													{selectionTotal > 0
-														// Quote the DISCOUNTED total — that's what Stripe actually holds.
-														? `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged. You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
+														// Quote what Stripe actually holds: the DISCOUNTED ticket total, plus
+														// the first membership period when the ticket sells one. `dueToday`
+														// already carries that sum.
+														? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged.${pricing.recurring ? " That covers your ticket and your first Jetzy Premium month — your membership starts only if the host approves." : ""} You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
 														: "Your registration is subject to host approval."}
 												</p>
 											</div>
@@ -705,10 +707,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
 															<div className="flex items-start gap-2">
 																<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
+																{/* On an approval ticket nothing is charged yet — the membership is
+																    held alongside the ticket and only starts if the host approves.
+																    Saying "charged today" there would simply be untrue. */}
 																<p className="text-xs" style={{ color: "#F5C518" }}>
-																	{premiumPlanLabel
-																		? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's charged with your ticket today and renews every ${premiumInterval} until you cancel.`
-																		: "This ticket includes a Jetzy Premium membership, charged with your ticket today and renewing until you cancel."}
+																	{selectionNeedsApproval
+																		? premiumPlanLabel
+																			? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves. It then renews every ${premiumInterval} until you cancel.`
+																			: "This ticket includes a Jetzy Premium membership. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves."
+																		: premiumPlanLabel
+																			? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's charged with your ticket today and renews every ${premiumInterval} until you cancel.`
+																			: "This ticket includes a Jetzy Premium membership, charged with your ticket today and renewing until you cancel."}
 																</p>
 															</div>
 
@@ -743,6 +752,25 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																: "This ticket includes a Jetzy Premium membership. Enter your email — if you're already a member, you won't be charged for it again."}
 														</p>
 													)}
+
+													{/* Sits under the email field because that's what it's about — the
+													    address decides whose membership this is, so the way to manage
+													    one belongs next to it rather than down beside the T&C.
+													    Opens in a NEW TAB: navigating away mid-checkout would discard
+													    everything typed above. The page handles logged-out visitors by
+													    routing through login and back. */}
+													<p className="text-xs text-gray-400 mt-1.5">
+														Already a Jetzy Premium member, or want to cancel later?{" "}
+														<a
+															href={ROUTES.manageMembership}
+															target="_blank"
+															rel="noreferrer"
+															className="text-[#F79432] underline"
+														>
+															Manage your subscription
+														</a>
+														.
+													</p>
 												</>
 											)}
 										</div>
@@ -777,25 +805,6 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-[#F79432] underline">Terms &amp; Conditions</a>. By registering for this event, I agree to the creation of a Jetzy account.
 											</span>
 										</label>
-
-										{/* Where an existing member goes to cancel or change their card.
-										    Opens in a NEW TAB on purpose — navigating away mid-checkout
-										    would discard everything typed above. The page itself handles
-										    logged-out visitors by routing through login and back. */}
-										{selectionSellsPremium && (
-											<p className="text-xs text-gray-400">
-												Already a Jetzy Premium member, or want to cancel later?{" "}
-												<a
-													href={ROUTES.manageMembership}
-													target="_blank"
-													rel="noreferrer"
-													className="text-[#F79432] underline"
-												>
-													Manage your subscription
-												</a>
-												.
-											</p>
-										)}
 
 										{/* The separate "I want to become a Jetzy Premium member" checkbox was
 										    removed: the recurring terms now live in the Terms & Conditions the box
@@ -970,12 +979,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 														</span>
 													</div>
 													<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
-														<span>Due today</span>
+														{/* Nothing is taken on an approval order — it's a hold, not a charge. */}
+														<span>{selectionNeedsApproval ? "Held today" : "Due today"}</span>
 														<span>{(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
 													</div>
 													<p className="text-xs text-gray-400 mt-2">
-														Your membership then renews at{" "}
-														{pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{pricing.recurring.interval} until you cancel. You can cancel any time from your account.
+														{selectionNeedsApproval
+															? `If the host approves, you're charged this amount and your membership begins, renewing at ${pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${pricing.recurring.interval} until you cancel. If they decline, nothing is charged.`
+															: `Your membership then renews at ${pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${pricing.recurring.interval} until you cancel. You can cancel any time from your account.`}
 													</p>
 												</>
 											)}

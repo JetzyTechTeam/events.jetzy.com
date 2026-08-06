@@ -1,7 +1,7 @@
 import Stripe from "stripe"
 import { ensureDbConnected } from "@/configs/database"
 import { getStripeClient } from "@/lib/premium"
-import { buildTicketPricing } from "@/lib/ticket-pricing"
+import { buildTicketPricing, type RecurringCharge } from "@/lib/ticket-pricing"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
@@ -56,6 +56,11 @@ type SessionMetadata = {
 	/** "ticket+premium" on a bundled order; the subscriber the membership attaches to. */
 	purpose?: string
 	userId?: string
+	/** Bundled AND held for approval — the subscription is created in `approve.ts`. */
+	premiumPendingApproval?: string
+	premiumAmount?: string
+	premiumInterval?: string
+	premiumPriceId?: string
 	acceptedTerms?: string
 	acceptedTermsAt?: string
 	requiresApproval?: string
@@ -194,7 +199,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	// than from our own config so the receipt quotes the amount and interval Stripe will
 	// actually bill — a plan price changed between checkout and fulfilment would otherwise
 	// make the email wrong. Never fatal: a missing receipt line beats a lost booking.
-	let recurringCharge: { label: string; amount: number; interval: string } | undefined
+	let recurringCharge: RecurringCharge | undefined
 	if (subscriptionId) {
 		try {
 			const subscription = await stripe.subscriptions.retrieve(subscriptionId)
@@ -205,12 +210,29 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					label: "Jetzy Premium membership",
 					amount: price.unit_amount / 100,
 					interval: price.recurring?.interval || "month",
+					// The first period was paid on this invoice, so the next real charge is the
+					// end of the current period. Naming it stops the receipt implying they're
+					// about to be billed again straight away.
+					firstRenewalAt: subscription.current_period_end
+						? new Date(subscription.current_period_end * 1000)
+						: undefined,
 				}
 			}
 		} catch (subscriptionError) {
 			console.error("[checkout-fulfillment] Couldn't read subscription for receipt:", subscriptionError)
 		}
 	}
+
+	// A bundled ticket that ALSO requires approval is held in payment mode, with the first
+	// membership period as a one-time line item, and the subscription is created only when the
+	// host approves. Everything approve.ts needs must be stored on the booking — it works from
+	// the booking document and never sees this session or its metadata.
+	const premiumPendingApproval = metadata.premiumPendingApproval === "true"
+	const heldPremiumAmount = premiumPendingApproval ? parseFloat(metadata.premiumAmount || "") || 0 : 0
+
+	// What the CARD is held for or charged. Distinct from `total`, which is the ticket alone —
+	// writing `total` here would tell the host "$80 on hold" when $100 is actually held.
+	const chargedAmount = Math.round((total + heldPremiumAmount + Number.EPSILON) * 100) / 100
 
 	const now = new Date()
 	let booking: IBookings | null = null
@@ -244,9 +266,20 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				// Present only on a bundled order, so a support question about a recurring
 				// charge can be traced from the booking back to the subscription that started it.
 				...(subscriptionId ? { subscriptionId } : {}),
+				// Held for approval, not yet started. `approve.ts` reads these to create the
+				// real subscription; the price id is stored rather than re-resolved so a plan
+				// price change while the request waits can't move the buyer onto a new rate.
+				...(premiumPendingApproval
+					? {
+						premiumStatus: "pending" as const,
+						premiumAmount: heldPremiumAmount,
+						premiumPriceId: metadata.premiumPriceId,
+						premiumInterval: metadata.premiumInterval || "month",
+					}
+					: {}),
 				captureMethod: isAuthorized ? "manual" : "automatic",
 				status: isAuthorized ? "authorized" : "captured",
-				amount: total,
+				amount: chargedAmount,
 				currency: session.currency || "usd",
 				...(isAuthorized
 					? { authorizedAt: now, authExpiresAt: new Date(now.getTime() + AUTH_HOLD_DAYS * 24 * 60 * 60 * 1000) }
@@ -284,7 +317,16 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				email: metadata.email || "",
 				tickets: ticketSummary,
 				eventId: String(metadata.eventId),
-				payment: { amount: total, expiresAt: booking.payment?.authExpiresAt },
+				// The HELD amount, not the ticket total — on a bundled request the hold also
+				// covers the first membership period, and quoting less would understate what
+				// the guest sees on their statement.
+				payment: {
+					amount: chargedAmount,
+					expiresAt: booking.payment?.authExpiresAt,
+					...(heldPremiumAmount > 0
+						? { premium: { amount: heldPremiumAmount, interval: metadata.premiumInterval || "month" } }
+						: {}),
+				},
 			})
 		} catch (emailError) {
 			console.error("[checkout-fulfillment] Failed to send approval-pending email:", emailError)

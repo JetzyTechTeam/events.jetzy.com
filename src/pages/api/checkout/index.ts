@@ -458,25 +458,66 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				}
 
 				if (bundleMode === "bundle") {
-					subscriptionExtras = {
-						mode: "subscription",
-						// `customer` and `customer_email` are mutually exclusive; the subscription
-						// must attach to a real Customer, so that one wins.
-						customer: customerId,
-						line_items: [...prices, { price: premiumPrice.id, quantity: 1 }],
-						subscription_data: {
-							metadata: { userId: String(subscriberId), bookingRef, eventId: String(event._id) },
-						},
-					}
 					// Read back by the webhook, which must activate Premium AND fulfil the ticket.
 					metadata.purpose = "ticket+premium"
 					metadata.userId = String(subscriberId)
-					// So /success can show the membership as its own line. It can't be derived
-					// there: `amount_total` is the combined first invoice, and subtracting the
-					// ticket total would silently absorb any proration or rounding.
+					// So /success and the receipt can show the membership as its own line. It
+					// can't be derived from `amount_total` — that's the combined figure, and
+					// subtracting the ticket total would silently absorb proration or rounding.
 					if (premiumPrice.unit_amount != null) {
 						metadata.premiumAmount = (premiumPrice.unit_amount / 100).toFixed(2)
 						metadata.premiumInterval = premiumPrice.recurring?.interval || "month"
+					}
+					metadata.premiumPriceId = premiumPrice.id
+
+					if (requiresApproval) {
+						// ---- Bundled AND held for approval ----
+						//
+						// A subscription-mode session cannot be held: `payment_intent_data` (and so
+						// `capture_method: "manual"`) is payment-mode only. So the membership is
+						// sold here as a ONE-TIME line item alongside the ticket, the whole lot is
+						// authorized but not captured, and `api/bookings/approve.ts` creates the
+						// real subscription once the host approves — with a trial covering the
+						// period this capture already paid for.
+						//
+						// A recurring price can't be a line item in payment mode either, hence the
+						// inline `price_data` rather than `premiumPrice.id`.
+						if (premiumPrice.unit_amount == null) {
+							console.error("[checkout/index] Premium price has no unit_amount; cannot hold it for approval")
+							return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+						}
+
+						subscriptionExtras = {
+							// Still payment mode — but with a Customer, because the card saved here
+							// is the one the subscription will charge at renewal.
+							customer: customerId,
+							line_items: [
+								...prices,
+								{
+									quantity: 1,
+									price_data: {
+										currency: premiumPrice.currency || "usd",
+										unit_amount: premiumPrice.unit_amount,
+										product_data: {
+											name: "Jetzy Premium membership — first month",
+											description: "Starts only if the host approves your request.",
+										},
+									},
+								},
+							],
+						}
+						metadata.premiumPendingApproval = "true"
+					} else {
+						subscriptionExtras = {
+							mode: "subscription",
+							// `customer` and `customer_email` are mutually exclusive; the subscription
+							// must attach to a real Customer, so that one wins.
+							customer: customerId,
+							line_items: [...prices, { price: premiumPrice.id, quantity: 1 }],
+							subscription_data: {
+								metadata: { userId: String(subscriberId), bookingRef, eventId: String(event._id) },
+							},
+						}
 					}
 				}
 			} catch (bundleSetupError: any) {
@@ -498,22 +539,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// must attach to a real Customer so the subscription is resolvable later.
 			...(bundleMode === "bundle" ? {} : { customer_email: user.email }),
 			discounts: discountConfig,
-			// Overrides mode/line_items/customer for a bundled order. Spread before the
-			// approval block below, which can never coexist with it.
+			// Overrides mode/line_items/customer. For a bundled order WITHOUT approval this
+			// switches the session to subscription mode; with approval it keeps payment mode
+			// and just adds the membership as a one-time line item plus the Customer.
 			...subscriptionExtras,
 			// Approval orders authorize the card without charging it. Everything below is
 			// spread in conditionally so the ordinary paid path is byte-identical to before.
 			//
-			// `bundleMode !== "bundle"` is a belt-and-braces guard: the combination is already
-			// rejected by the event forms and the create/update schemas, because
-			// `payment_intent_data` does not exist in subscription mode. If a legacy ticket
-			// somehow carries both, charge normally rather than send Stripe an invalid session.
-			...(requiresApproval && bundleMode !== "bundle"
+			// Skipped only for a bundled order in SUBSCRIPTION mode (no approval), where
+			// `payment_intent_data` doesn't exist. A bundled order that DOES require approval
+			// stays in payment mode precisely so it can be held — see the branch above.
+			...(requiresApproval && !(bundleMode === "bundle" && subscriptionExtras.mode === "subscription")
 				? {
 					submit_type: "book" as const,
 					payment_intent_data: {
 						capture_method: "manual" as const,
 						description: `Approval hold — ${event.name}`,
+						// Saves the card against the Customer so the subscription created at
+						// approval has something to charge at renewal. Without this the
+						// membership would bill once and then die at the first renewal.
+						// Harmless on a non-bundled approval order.
+						...(bundleMode === "bundle" ? { setup_future_usage: "off_session" as const } : {}),
 						// Duplicated from the session metadata on purpose: `payment_intent.*`
 						// webhook events carry the PaymentIntent's metadata, not the session's,
 						// and the expiry handler needs to find the booking from one of those.
@@ -526,7 +572,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					custom_text: {
 						submit: {
 							message:
-								"You won't be charged now. We'll place a temporary hold on your card and only charge you if the host approves your request. Holds are released automatically if your request is declined.",
+								bundleMode === "bundle"
+									? "You won't be charged now. We'll hold your ticket and first Jetzy Premium month on your card, and only charge you — and start your membership — if the host approves. The hold is released automatically if your request is declined."
+									: "You won't be charged now. We'll place a temporary hold on your card and only charge you if the host approves your request. Holds are released automatically if your request is declined.",
 						},
 					},
 				}
