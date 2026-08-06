@@ -465,6 +465,14 @@ through our checkout code — still reaches them.
 
 - outbound: `PATCH {base}/api/v1/subscription/select`, `GET .../select/status?email=`.
   `NEXT_PUBLIC_SELECT_MEMBER_URL`, optional `SELECT_MEMBER_API_KEY` sent as `x-api-key`.
+- **`heldMemberships(email, scope)` consults their GET for Concierge.** Concierge has been sold
+  on their site since before this integration, and those subscribers have no
+  `conciergeSubscription` record here — on our own data they look like non-members, so a
+  bundled ticket would charge them $59.50 for a plan they already pay for and leave them with
+  two live subscriptions. `scope` is what the ticket/event actually sells, so an event with no
+  Concierge ticket never reaches out (this runs behind the unauthenticated
+  `/api/premium/check-email` on a debounced keystroke). A failed lookup falls back to our own
+  record — never worse than not asking.
 - inbound: **`POST /api/webhooks/select-member`** `{ email, status: "cancelled" }` →
   `cancel_at_period_end` on the **concierge** subscription only. **Requires
   `SELECT_MEMBER_WEBHOOK_SECRET`** in an `x-webhook-secret` header, compared in constant time,

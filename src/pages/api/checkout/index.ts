@@ -12,6 +12,7 @@ import {
 	premiumOrderCapMessage,
 	PREMIUM_TICKET_MAX_PER_ORDER,
 	resolveBundlePlan,
+	selectionMemberships,
 	ticketMemberships,
 	type BundlePlan,
 } from "@/lib/premium-bundle"
@@ -218,9 +219,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const storedTicketFor = (id: string) => (event.tickets || []).find((et: any) => String(et._id) === String(id))
 
 		try {
+			const storedSelection = tickets.map((t) => storedTicketFor(t.id) as any).filter(Boolean)
+			// Scope the membership lookup to what this order actually sells, so an ordinary
+			// ticket never reaches out to SelectMember's API.
 			bundlePlan = resolveBundlePlan(
-				tickets.map((t) => storedTicketFor(t.id) as any).filter(Boolean),
-				await heldMemberships(user.email),
+				storedSelection,
+				await heldMemberships(user.email, selectionMemberships(storedSelection)),
 			)
 			console.log("[checkout/index] Bundle plan:", bundlePlan)
 

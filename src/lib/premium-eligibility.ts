@@ -50,7 +50,7 @@ const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$
  * found by an exact match against the lowercased address they type at checkout. This is the
  * same trap already documented for `Bookings.customerEmail`.
  */
-export async function heldMemberships(email: string): Promise<MembershipKey[]> {
+export async function heldMemberships(email: string, scope?: MembershipKey[]): Promise<MembershipKey[]> {
 	const trimmed = typeof email === "string" ? email.trim() : ""
 	if (!trimmed) return []
 
@@ -68,15 +68,40 @@ export async function heldMemberships(email: string): Promise<MembershipKey[]> {
 		EventUsers.findOne(emailMatch).select(projection).lean(),
 	])
 
-	return MEMBERSHIP_KEYS.filter((key) => {
+	const held = MEMBERSHIP_KEYS.filter((key) => {
 		const field = MEMBERSHIPS[key].userField
 		return !!(inUsers as any)?.[field]?.active || !!(inEventUsers as any)?.[field]?.active
 	})
+
+	// ---- Ask the membership's own system, when it has one ----
+	//
+	// Our records only know about memberships WE sold. Full Concierge has been sold on
+	// selectmember.jetzy.com since before this integration existed, and those subscribers have
+	// no `conciergeSubscription` here — so on our own data they look like non-members. Left
+	// alone, an existing Concierge member buying a bundled ticket would be charged $59.50 for a
+	// membership they already pay for, and end up with two live subscriptions.
+	//
+	// Only consulted for products in `scope`, so an event that doesn't sell Concierge never
+	// touches their API — this runs behind the unauthenticated `/api/premium/check-email` on a
+	// debounced keystroke, and there is no reason to point that at a third party's site.
+	//
+	// A failed lookup falls back to our own record: strictly the behaviour we'd have had
+	// anyway, never worse. Their outage must not block a purchase.
+	const remoteKeys = (scope || []).filter((key) => MEMBERSHIPS[key].selectMemberPlan && !held.includes(key))
+	if (remoteKeys.length > 0) {
+		const { getSelectMembershipStatus } = await import("@/lib/select-member")
+		const status = await getSelectMembershipStatus(trimmed)
+		if (String(status?.status || "").toLowerCase() === "active") {
+			remoteKeys.forEach((key) => held.push(key))
+		}
+	}
+
+	return MEMBERSHIP_KEYS.filter((key) => held.includes(key))
 }
 
 /** Is this address an active member of one specific product? */
 export async function hasMembership(email: string, key: MembershipKey): Promise<boolean> {
-	return (await heldMemberships(email)).includes(key)
+	return (await heldMemberships(email, [key])).includes(key)
 }
 
 /** @deprecated Premium-only shim. Use `hasMembership(email, "premium")`. */

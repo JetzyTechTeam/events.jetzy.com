@@ -6,7 +6,7 @@ import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { resolveBundlePlan } from "@/lib/premium-bundle"
+import { resolveBundlePlan, selectionMemberships } from "@/lib/premium-bundle"
 import { heldMemberships } from "@/lib/premium-eligibility"
 import { membershipLabelList } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
@@ -155,10 +155,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// already holds every membership on it has nothing left to charge, and a 100%-off
 		// referral code genuinely does make that order free. Rejecting those would strand them
 		// at a Stripe session for $0, which Stripe refuses outright.
-		const bundlePlan = resolveBundlePlan(
-			tickets.map((t) => (event.tickets || []).find((et: any) => String(et._id) === String(t.id)) as any).filter(Boolean),
-			await heldMemberships(user.email),
-		)
+		const freeSelection = tickets
+			.map((t) => (event.tickets || []).find((et: any) => String(et._id) === String(t.id)) as any)
+			.filter(Boolean)
+		const bundlePlan = resolveBundlePlan(freeSelection, await heldMemberships(user.email, selectionMemberships(freeSelection)))
 		if (bundlePlan.toCharge.length > 0) {
 			console.warn("[checkout/free-events] Rejected a ticket still owing a membership:", { eventId, owed: bundlePlan.toCharge })
 			return sendResponse(

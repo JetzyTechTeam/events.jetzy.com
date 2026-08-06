@@ -86,7 +86,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	let skipKeys: string[] = []
 	if (pendingMemberships.length > 0) {
 		try {
-			const alreadyHeld = await heldMemberships(booking.customerEmail)
+			const alreadyHeld = await heldMemberships(
+				booking.customerEmail,
+				pendingMemberships.map((row) => row.key),
+			)
 			skipKeys = pendingMemberships.filter((row) => alreadyHeld.includes(row.key)).map((row) => row.key)
 			if (skipKeys.length > 0) {
 				console.warn("[bookings/approve] Buyer already holds", skipKeys.join(", "), "— releasing that portion:", booking.bookingRef)

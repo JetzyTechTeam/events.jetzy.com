@@ -3,7 +3,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Types } from "mongoose"
 import { heldMemberships } from "@/lib/premium-eligibility"
-import { eventHasAnyPremiumTicket } from "@/lib/premium-bundle"
+import { eventHasAnyPremiumTicket, selectionMemberships } from "@/lib/premium-bundle"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
 import { MEMBERSHIP_KEYS } from "@/lib/memberships"
 
@@ -100,8 +100,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Membership status and remaining allowance are answered together: the modal needs
 		// both off the same debounced keystroke, and splitting them would mean two requests
 		// and two rate-limit buckets for one question.
+		// Scoped to what this event actually sells, so an event with no Concierge ticket never
+		// sends a request to SelectMember's API from this unauthenticated endpoint.
+		const eventKeys = selectionMemberships(((event as any).tickets || []).map((t: any) => ({ ...t, isSelected: true })))
 		const [held, allowances] = await Promise.all([
-			heldMemberships(String(email)),
+			heldMemberships(String(email), eventKeys),
 			getMembershipTicketAllowances(String(eventId), String(email)),
 		])
 
