@@ -88,8 +88,26 @@ export const usersSchema = new Schema(
 			type: Date,
 			required: false,
 		},
+		// The user's Stripe Customer — a BILLING IDENTITY, not a membership. One customer holds
+		// every subscription this person has, which is what lets the Stripe billing portal show
+		// them all with a single link. It used to live inside `premiumSubscription`; that copy
+		// is still read as a fallback (`getUserStripeCustomerId`) so no backfill is needed.
+		stripeCustomerId: { type: String, required: false, index: true },
 		// Jetzy Premium Events subscription (Stripe recurring payment)
 		premiumSubscription: {
+			active: { type: Boolean, default: false },
+			stripeCustomerId: { type: String, required: false },
+			stripeSubscriptionId: { type: String, required: false },
+			status: { type: String, required: false },
+			currentPeriodEnd: { type: Date, required: false },
+			cancelAtPeriodEnd: { type: Boolean, default: false },
+		},
+		// Full Concierge Membership — sold on selectmember.jetzy.com, billed through OUR Stripe
+		// when it rides along with a ticket, and mirrored back to their site by
+		// `src/lib/select-member.ts`. Structurally identical to `premiumSubscription` and kept
+		// strictly separate from it: the two are independent, and one ending must never end
+		// the other.
+		conciergeSubscription: {
 			active: { type: Boolean, default: false },
 			stripeCustomerId: { type: String, required: false },
 			stripeSubscriptionId: { type: String, required: false },

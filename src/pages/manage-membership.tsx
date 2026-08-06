@@ -9,7 +9,7 @@ import { useRouter } from "next/router"
 import React from "react"
 
 /**
- * The one place to cancel or change a Jetzy Premium membership.
+ * The one place to cancel or change a Jetzy membership — Premium, Full Concierge, or both.
  *
  * It exists because the billing portal alone is a dead end for anyone who isn't already
  * signed in: `/api/subscriptions/portal` answers 401 with "You need to be logged in", which
@@ -20,13 +20,18 @@ import React from "react"
  *
  * Three states, all handled:
  *   - not signed in      → bounce through /login and come straight back
- *   - member             → straight out to Stripe's portal
+ *   - member             → straight out to Stripe's portal, which lists EVERY subscription
+ *                          on their Stripe Customer with its own cancel button
  *   - signed in, no plan → say so plainly, and offer the way to subscribe
+ *
+ * Gated on `hasBillingAccount`, NOT on Jetzy Premium specifically. Gating on Premium told a
+ * Full Concierge member they had "nothing to manage" while their card was being charged every
+ * month, with no way out of it anywhere in the product.
  */
 export default function ManageMembershipPage() {
 	const router = useRouter()
 	const { status } = useSession()
-	const { isPremium, isLoading: premiumLoading } = usePremiumStatus()
+	const { hasBillingAccount, isLoading: premiumLoading } = usePremiumStatus()
 
 	const [error, setError] = React.useState<string | null>(null)
 	const [isOpening, setIsOpening] = React.useState(false)
@@ -44,7 +49,7 @@ export default function ManageMembershipPage() {
 	// Signed in and subscribed: hand straight over to Stripe. No intermediate click — the
 	// visitor already asked to manage their membership by coming here.
 	React.useEffect(() => {
-		if (status !== "authenticated" || premiumLoading || !isPremium || hasOpenedRef.current) return
+		if (status !== "authenticated" || premiumLoading || !hasBillingAccount || hasOpenedRef.current) return
 		hasOpenedRef.current = true
 		setIsOpening(true)
 
@@ -68,7 +73,7 @@ export default function ManageMembershipPage() {
 			}
 		}
 		run()
-	}, [status, isPremium, premiumLoading])
+	}, [status, hasBillingAccount, premiumLoading])
 
 	const isWorking = status === "loading" || status === "unauthenticated" || premiumLoading || isOpening
 
@@ -92,14 +97,14 @@ export default function ManageMembershipPage() {
 					</>
 				)}
 
-				{!isWorking && !error && status === "authenticated" && !isPremium && (
+				{!isWorking && !error && status === "authenticated" && !hasBillingAccount && (
 					<>
 						<p className="text-gray-300 text-sm mt-4">
-							This account doesn&apos;t have an active Jetzy Premium membership, so there&apos;s nothing to manage.
+							This account doesn&apos;t have an active membership, so there&apos;s nothing to manage.
 						</p>
 						<p className="text-gray-400 text-xs mt-3">
-							If you bought a ticket that included Premium, it may be attached to a different email — memberships
-							follow the address used at checkout. Sign in with that address to manage it.
+							If you bought a ticket that included a membership, it may be attached to a different email —
+							memberships follow the address used at checkout. Sign in with that address to manage it.
 						</p>
 						<Link
 							href={ROUTES.subscribe}

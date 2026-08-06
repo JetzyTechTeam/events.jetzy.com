@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
+import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -73,16 +73,21 @@ const schema = zod.object({
 			// `.optional()` and never `.default(false)` — undefined must stay undefined so the
 			// ticket inherits the event-level requireApproval.
 			requireApproval: zod.boolean().optional(),
-			// Sells a Jetzy Premium membership with the ticket.
+			// Which memberships this ticket sells — Jetzy Premium, Full Concierge, or both.
+			// Loosely typed then narrowed by `sanitizeMembershipKeys`, so an unknown key from an
+			// older client is dropped rather than rejecting the whole event.
+			memberships: zod.array(zod.string()).optional(),
+			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
 		}).superRefine((ticket, ctx) => {
-			// A bundled ticket MAY now require approval. It is sold as a `mode: "payment"`
-			// session holding ticket + the first membership period, and the subscription is
-			// created on approval — see `api/bookings/approve.ts`.
+			// A bundled ticket MAY require approval. It is sold as a `mode: "payment"` session
+			// holding ticket + the first membership period, and the subscriptions are created
+			// afterwards — see `api/bookings/approve.ts`.
 			//
 			// A subscription still needs a real charge to start against.
-			if (ticket.includesPremium && !(ticket.price > 0)) {
-				ctx.addIssue({ code: zod.ZodIssueCode.custom, message: BUNDLE_FREE_TICKET_MESSAGE, path: ["price"] })
+			const sells = ticketMemberships(ticket as any)
+			if (sells.length > 0 && !(ticket.price > 0)) {
+				ctx.addIssue({ code: zod.ZodIssueCode.custom, message: bundleFreeTicketMessage(sells), path: ["price"] })
 			}
 		}),
 	),
@@ -246,7 +251,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				stripeProductId: stripeProducts[index].id,
 				// Only persist an explicit override; leaving it unset means "inherit the event".
 				...((ticket as any).requireApproval !== undefined ? { requireApproval: (ticket as any).requireApproval } : {}),
-				includesPremium: !!(ticket as any).includesPremium,
+				// The array is the authority; `includesPremium` is written alongside it purely so
+				// the mobile app and any older reader still see a bundled Premium ticket.
+				memberships: ticketMemberships(ticket as any),
+				includesPremium: ticketMemberships(ticket as any).includes("premium"),
 			})),
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,

@@ -72,3 +72,17 @@ export const selectionRequiresApproval = (
 		return ticketRequiresApproval(event, idOf(s))
 	})
 }
+
+/**
+ * How long Stripe holds a manual-capture authorization before releasing it.
+ *
+ * Lives HERE rather than beside the code that stamps `authExpiresAt`, because the buyer- and
+ * host-facing copy quotes this number ("released within 7 days") and must not be able to drift
+ * from the deadline actually enforced. `checkout-fulfillment.ts` re-exports it; that module
+ * loads the Mongoose models, so a client component importing the constant from there would
+ * drag the whole data layer into the browser bundle.
+ *
+ * Optimistic: some issuers release sooner. The `payment_intent.canceled` webhook is the
+ * authoritative expiry signal.
+ */
+export const AUTH_HOLD_DAYS = 7

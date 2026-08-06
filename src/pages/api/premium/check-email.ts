@@ -2,9 +2,10 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Types } from "mongoose"
-import { isPremiumEmail } from "@/lib/premium-eligibility"
-import { eventHasAnyPremiumTicket } from "@/lib/premium-bundle"
-import { getPremiumTicketAllowance } from "@/lib/premium-ticket-limit"
+import { heldMemberships } from "@/lib/premium-eligibility"
+import { eventHasAnyPremiumTicket, selectionMemberships } from "@/lib/premium-bundle"
+import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
+import { MEMBERSHIP_KEYS } from "@/lib/memberships"
 
 /**
  * "Does this email already have Jetzy Premium?"
@@ -84,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const { Events } = await import("@/models/events")
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
-			.select("tickets.includesPremium")
+			.select("tickets.includesPremium tickets.memberships")
 			.lean()
 
 		if (!event) {
@@ -93,28 +94,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// No ticket here sells a membership — answer without looking the address up at all.
 		if (!eventHasAnyPremiumTicket(event as any)) {
-			return sendResponse(res, { isPremiumMember: false, sellsPremium: false }, "No membership sold on this event", true, ResCode.OK)
+			return sendResponse(res, { held: [], isPremiumMember: false, sellsPremium: false }, "No membership sold on this event", true, ResCode.OK)
 		}
 
 		// Membership status and remaining allowance are answered together: the modal needs
 		// both off the same debounced keystroke, and splitting them would mean two requests
 		// and two rate-limit buckets for one question.
-		const [isPremiumMember, allowance] = await Promise.all([
-			isPremiumEmail(String(email)),
-			getPremiumTicketAllowance(String(eventId), String(email)),
+		// Scoped to what this event actually sells, so an event with no Concierge ticket never
+		// sends a request to SelectMember's API from this unauthenticated endpoint.
+		const eventKeys = selectionMemberships(((event as any).tickets || []).map((t: any) => ({ ...t, isSelected: true })))
+		const [held, allowances] = await Promise.all([
+			heldMemberships(String(email), eventKeys),
+			getMembershipTicketAllowances(String(eventId), String(email)),
 		])
 
 		return sendResponse(
 			res,
 			{
-				isPremiumMember,
+				// Which memberships this address already has. The modal subtracts these from
+				// what the ticket sells to decide what it will actually be charged for.
+				held,
 				sellsPremium: true,
-				// How many Premium tickets this address may still buy FOR THIS EVENT.
-				premiumTicketLimit: allowance.limit,
-				premiumTicketsUsed: allowance.used,
-				premiumTicketsRemaining: allowance.remaining,
+				// How many tickets of each membership this address may still buy FOR THIS EVENT.
+				allowances: MEMBERSHIP_KEYS.reduce((acc, key) => {
+					acc[key] = allowances[key]
+					return acc
+				}, {} as Record<string, { limit: number; used: number; remaining: number }>),
+				// Pre-Concierge shape, kept so a stale client bundle still renders correctly.
+				isPremiumMember: held.includes("premium"),
+				premiumTicketLimit: allowances.premium.limit,
+				premiumTicketsUsed: allowances.premium.used,
+				premiumTicketsRemaining: allowances.premium.remaining,
 			},
-			isPremiumMember ? "Premium member" : "Not a premium member",
+			held.length > 0 ? `Member: ${held.join(", ")}` : "Not a member",
 			true,
 			ResCode.OK,
 		)

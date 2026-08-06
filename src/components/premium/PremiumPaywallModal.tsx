@@ -16,11 +16,18 @@ const RESUME_SESSION_KEY = "jetzy_premium_resume_handled"
 
 // What membership actually gets you — shown in every context the pitch appears in.
 // Callers can pass a trimmed list via the `benefits` prop.
-const PREMIUM_BENEFITS = [
-	"Exclusive events",
-	"Exclusive networking",
-	"Customized matching",
-	"Premium member pricing on ticketed events",
+/**
+ * What Jetzy Premium gets you.
+ *
+ * EXPORTED and shared with `/subscribe`, which used to keep its own hand-written copy of this
+ * list. The two had already drifted apart — two different promises for one product.
+ */
+export const PREMIUM_BENEFITS = [
+	"Access to invite-only events and experiences",
+	"Curated networking with fellow members",
+	"Personalized match recommendations",
+	"Member-only pricing and exclusive discounts",
+	"The ability to host Premium Events with other members",
 ]
 
 type PlanInfo = {

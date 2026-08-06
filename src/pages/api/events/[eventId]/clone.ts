@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import Stripe from "stripe"
+import { ticketMemberships } from "@/lib/premium-bundle"
 
 // create stripe instance
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
@@ -73,7 +74,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Carry per-ticket approval overrides; unset stays unset so the clone inherits.
 				...(ticket.requireApproval !== undefined ? { requireApproval: ticket.requireApproval } : {}),
 				// A bundled ticket stays bundled in the copy.
-				includesPremium: !!(ticket as any).includesPremium,
+				memberships: ticketMemberships(ticket as any),
+				includesPremium: ticketMemberships(ticket as any).includes("premium"),
 			})),
 			questions: source.questions,
 			benefits: source.benefits,

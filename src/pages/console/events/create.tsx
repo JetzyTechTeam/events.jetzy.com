@@ -71,7 +71,8 @@ import { Roboto } from "next/font/google";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import InterestsSelector from "@/components/events/InterestsSelector";
 import { useSession } from "next-auth/react";
-import { BUNDLE_APPROVAL_NOTICE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle";
+import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle";
+import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
@@ -236,9 +237,9 @@ const CreateEventPage = () => {
 
     // A bundled ticket may require approval — the card is held for ticket + first membership
     // period and the subscription starts on approval. It still needs a real price to hold.
-    const bundleFree = values.tickets?.find((t) => t.includesPremium && !(Number(t.price) > 0));
+    const bundleFree = values.tickets?.find((t) => ticketMemberships(t as any).length > 0 && !(Number(t.price) > 0));
     if (bundleFree) {
-      Error("Validation Error", `"${bundleFree.title}": ${BUNDLE_FREE_TICKET_MESSAGE}`);
+      Error("Validation Error", `"${bundleFree.title}": ${bundleFreeTicketMessage(ticketMemberships(bundleFree as any))}`);
       return;
     }
 
@@ -1062,34 +1063,21 @@ const CreateEventPage = () => {
                         </Flex>
                       </FormControl>
 
-                      {/* Sells a Jetzy Premium membership with this ticket. */}
-                      <FormControl mb={4}>
-                        <Flex align="center" justify="space-between" gap={4}>
-                          <Box>
-                            <FormLabel mb={0}>Includes Jetzy Premium</FormLabel>
-                            <Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
-                              {tempTicket.includesPremium
-                                ? "Buyers who aren't members pay this ticket price plus the Jetzy Premium subscription, which then renews monthly. Existing members pay the ticket price only."
-                                : "Sell a Jetzy Premium membership with this ticket."}
-                            </Text>
-                            {tempTicket.includesPremium && (tempTicket.requireApproval ?? values.requireApproval) && (
-                              <Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
-                                {BUNDLE_APPROVAL_NOTICE}
-                              </Text>
-                            )}
-                            {tempTicket.includesPremium && !(Number(tempTicket.price) > 0) && (
-                              <Text fontSize="12px" color="#FC8181" mt={2} maxW="320px" lineHeight="140%">
-                                {BUNDLE_FREE_TICKET_MESSAGE}
-                              </Text>
-                            )}
-                          </Box>
-                          <Switch
-                            colorScheme="yellow"
-                            isChecked={!!tempTicket.includesPremium}
-                            onChange={(e) => setTempTicket({ ...tempTicket, includesPremium: e.target.checked })}
-                          />
-                        </Flex>
-                      </FormControl>
+                      {/* Which memberships this ticket sells — either, both or neither. */}
+                      <TicketMembershipToggles
+                        value={ticketMemberships(tempTicket as any)}
+                        onChange={(memberships) =>
+                          setTempTicket({
+                            ...tempTicket,
+                            memberships,
+                            // Kept in step so the mobile app and any older reader still see a
+                            // bundled Premium ticket. The array is the authority.
+                            includesPremium: memberships.includes("premium"),
+                          } as any)
+                        }
+                        requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
+                        price={Number(tempTicket.price)}
+                      />
                     </ModalBody>
 
                     <ModalFooter>

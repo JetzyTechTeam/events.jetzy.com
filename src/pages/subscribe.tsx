@@ -3,6 +3,7 @@ import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
+import { PREMIUM_BENEFITS } from "@Jetzy/components/premium/PremiumPaywallModal"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
@@ -200,26 +201,17 @@ export default function SubscribePage() {
 						</p>
 					)}
 
+					{/* One list, shared with the paywall modal. This page used to hand-write its own
+					    copy, and the two had already drifted into different promises. */}
 					<ul className="space-y-3 text-sm text-gray-300 flex-1 mb-6">
 						<li className="flex gap-2">
 							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Everything in Basic
 						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Invite-only events and experiences
-						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Curated networking with fellow members
-						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Personalized match recommendations
-						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Member-only pricing and discounts
-						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Host Premium Events with member-only
-							pricing
-						</li>
+						{PREMIUM_BENEFITS.map((benefit) => (
+							<li key={benefit} className="flex gap-2">
+								<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> {benefit}
+							</li>
+						))}
 					</ul>
 
 					{isPremium ? (

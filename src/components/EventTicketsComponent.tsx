@@ -12,8 +12,9 @@ import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
 import { buildTicketPricing } from "@/lib/ticket-pricing";
-import { eventHasAnyPremiumTicket, premiumOrderCapMessage, premiumQuantityInSelection, PREMIUM_TICKET_MAX_PER_ORDER, selectionIncludesPremium } from "@/lib/premium-bundle";
-import { usePremiumPlan } from "@/hooks/usePremiumPlan";
+import { membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, ticketMemberships } from "@/lib/premium-bundle";
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships";
+import { useMembershipPlans } from "@/hooks/usePremiumPlan";
 import {
   Button,
   Modal,
@@ -30,7 +31,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import Linkify from "linkify-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { stripHtml } from "@/utils/text";
-import { StarIcon } from "@heroicons/react/24/solid";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 
@@ -44,11 +44,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const [showPremiumPromo, setShowPremiumPromo] = useState(false);
   usePremiumSubscriptionReturn();
 
-  // Does any ticket on this event sell a Jetzy Premium membership?
-  const eventSellsPremium = eventHasAnyPremiumTicket(event as any);
+  // Which memberships do this event's tickets sell? Drives the per-ticket price disclosure
+  // below — the event-level banner that also used this was removed.
+  const eventMembershipKeys = selectionMemberships(
+    (event.tickets || []).map((t: any) => ({ ...t, isSelected: true })) as any,
+  );
   // Only fetched when it's actually relevant — the endpoint is public, but there's no reason
-  // to hit Stripe's plan on every event page.
-  const { label: premiumPlanLabel, interval: premiumInterval, amount: premiumAmount } = usePremiumPlan(eventSellsPremium);
+  // to hit Stripe's plans on every event page.
+  const { plans: membershipPlans } = useMembershipPlans(eventMembershipKeys);
+  const planFor = (key: MembershipKey) => membershipPlans.find((plan) => plan.key === key);
 
   // format the event tickets
   const ticketsItems = (event.tickets && Array.isArray(event.tickets) ? event.tickets : [])
@@ -68,7 +72,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         requireApproval: ticketApprovalFlag(event as any, ticket as any),
         // Whether buying this ticket also starts a Jetzy Premium subscription. The server
         // re-reads it from the event record, so this is only for display and selection state.
-        includesPremium: !!(ticket as any).includesPremium,
+        memberships: ticketMemberships(ticket as any),
       };
     });
 
@@ -90,7 +94,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         // A Premium ticket also sells a membership, so it is capped. Everything else is
         // unbounded, as before. The `+` button is disabled at the cap too — this clamp is
         // the backstop for a rapid double-click landing two increments in one batch.
-        const maxQty = ticket.includesPremium ? PREMIUM_TICKET_MAX_PER_ORDER : Infinity;
+        const maxQty = ticket.memberships.length > 0 ? PREMIUM_TICKET_MAX_PER_ORDER : Infinity;
         const newQty = Math.min(maxQty, Math.max(0, ticket.quantity + delta));
         const ticketItem = ticketsItems[index];
 
@@ -141,9 +145,12 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
     // Backstop for the stepper cap — this is the single funnel into redux, so anything that
     // got past the disabled button (stale state, a devtools nudge) stops here.
-    if (premiumQuantityInSelection(tickets as any) > PREMIUM_TICKET_MAX_PER_ORDER) {
+    const overCapKey = selectionMemberships(tickets as any).find(
+      (key) => membershipQuantityInSelection(tickets as any, key) > PREMIUM_TICKET_MAX_PER_ORDER,
+    );
+    if (overCapKey) {
       setLoader(false);
-      Error("Too many tickets", premiumOrderCapMessage());
+      Error("Too many tickets", premiumOrderCapMessage(overCapKey));
       return;
     }
 
@@ -158,10 +165,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         priceId: ticket.priceId,
         eventId: ticket.eventId,
         requireApproval: ticket.requireApproval,
-        // Must survive into redux: the checkout modal decides whether to check the buyer's
-        // membership, show the recurring disclosure and ask for subscription consent from
-        // THIS flag. Dropping it here made every bundled ticket look ordinary in the modal.
-        includesPremium: ticket.includesPremium,
+        // Must survive into redux: the checkout modal decides which memberships to check
+        // the buyer against, and which recurring disclosures to show, from THIS list.
+        // Dropping it made every bundled ticket look ordinary in the modal.
+        memberships: ticket.memberships,
       }))
       .filter((ticket) => ticket.isSelected);
 
@@ -183,15 +190,18 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
     (acc, ticket) => (ticket.isSelected ? acc + ticket.price : acc),
     0
   );
-  // Does the CURRENT selection add a membership? Only for a non-member: an existing
-  // subscriber pays the ticket alone.
-  const selectionAddsPremium =
-    selectionIncludesPremium(tickets.filter((t) => t.isSelected) as any) && !isPremium;
+  // Which memberships does the CURRENT selection add? Jetzy Premium is dropped for a
+  // logged-in member — an existing subscriber pays the ticket alone. Concierge status isn't
+  // known here (no email field on this card), so it is always shown; checkout settles it.
+  const selectionAddedKeys = selectionMemberships(tickets.filter((t) => t.isSelected) as any).filter(
+    (key) => !(key === "premium" && isPremium),
+  );
   const selectionPricing = buildTicketPricing({
     subtotal: selectionSubtotal,
-    ...(selectionAddsPremium && premiumAmount != null
-      ? { recurring: { label: "Jetzy Premium membership", amount: premiumAmount, interval: premiumInterval } }
-      : {}),
+    recurring: selectionAddedKeys
+      .map(planFor)
+      .filter((plan): plan is NonNullable<typeof plan> => !!plan && plan.amount != null)
+      .map((plan) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: plan.amount as number, interval: plan.interval })),
   });
 
   const anyTicketNeedsApproval = eventHasAnyApprovalTicket(event as any);
@@ -228,27 +238,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </div>
           </div>
 
-          {/* Bundled-membership notice. A ticket can SELL Jetzy Premium: non-members pay the
-              ticket plus the subscription, existing members pay for the ticket alone. The
-              recurring amount and interval must be visible BEFORE purchase, not just on the
-              receipt — so this states them plainly rather than teasing a perk. */}
-          {eventSellsPremium && (
-            <div className="flex items-start gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-              <StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
-              <div>
-                <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>
-                  {isPremium ? "You're a Jetzy Premium member" : "Includes Jetzy Premium"}
-                </p>
-                <p className="text-gray-300 text-xs mt-1">
-                  {isPremium
-                    ? "You already have Jetzy Premium, so you'll only pay the ticket price."
-                    : premiumPlanLabel
-                      ? `Some tickets here include a Jetzy Premium membership at ${premiumPlanLabel}, charged with your ticket and renewing every ${premiumInterval} until you cancel.`
-                      : "Some tickets here include a Jetzy Premium membership, charged with your ticket and renewing until you cancel."}
-                </p>
-              </div>
-            </div>
-          )}
+          {/* The event-level "Includes Jetzy Premium" banner was removed — it duplicated the
+              per-ticket line below on an event where only some tickets sell a membership.
+              NOT a disclosure regression: each bundled ticket row still states the recurring
+              amount and interval, and the checkout modal and receipt state them again. */}
 
           {/* Approval-required notice. Shown whenever ANY ticket needs approval; the copy
               distinguishes "every ticket" from "some tickets" so buyers of an
@@ -271,7 +264,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             {tickets.map((ticket, index) => (
               <div
                 key={ticket.id}
-                className="flex items-center gap-4 cursor-pointer"
+                className="cursor-pointer"
                 onClick={() => {
                   handleTicketSelection(ticket.id)
                   sendGAEvent({
@@ -282,23 +275,24 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   });
                 }}
               >
-                {/* Checkbox — outside left */}
-                <div className="flex-shrink-0 self-center">
-                  <div className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors border-2 ${
-                    ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
-                  }`}>
-                    {ticket.isSelected && (
-                      <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                </div>
-
-                {/* Card */}
-                <div className={`flex-1 relative bg-[#2b2b2b] p-4 rounded-lg border-2 ${
+                {/* Card. The checkbox now sits INSIDE it, so the whole tile reads as one
+                    target — the click handler is on the wrapper either way, so selection
+                    behaviour is unchanged. */}
+                <div className={`relative bg-[#2b2b2b] p-4 rounded-lg border-2 flex items-center gap-4 ${
                   ticket.isSelected ? "border-jetzy" : "border-transparent"
                 }`}>
+                  <div className="flex-shrink-0 self-center">
+                    <div className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors border-2 ${
+                      ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
+                    }`}>
+                      {ticket.isSelected && (
+                        <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full">
                     <div className="text-left w-full sm:w-2/3">
                       <h3 className={`font-semibold text-lg ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
@@ -336,15 +330,18 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
                       {/* Per-ticket recurring disclosure. Only this ticket sells the
                           membership, so the notice belongs on the ticket, not the event. */}
-                      {ticket.includesPremium && (
-                        <p className="text-xs mt-1 text-right sm:text-right" style={{ color: "#F5C518" }}>
-                          {isPremium
-                            ? "Includes Jetzy Premium — you're already a member, so you pay the ticket price only."
-                            : premiumPlanLabel
-                              ? `+ Jetzy Premium ${premiumPlanLabel}, renews until cancelled`
-                              : "+ Jetzy Premium membership, renews until cancelled"}
-                        </p>
-                      )}
+                      {ticket.memberships.map((key) => {
+                        const plan = planFor(key);
+                        return (
+                          <p key={key} className="text-xs mt-1 text-right sm:text-right" style={{ color: "#F5C518" }}>
+                            {key === "premium" && isPremium
+                              ? "Includes Jetzy Premium — you're already a member, so you pay the ticket price only."
+                              : plan?.label
+                                ? `+ ${plan.name} ${plan.label}, renews until cancelled`
+                                : `+ ${plan?.name || key} membership, renews until cancelled`}
+                          </p>
+                        );
+                      })}
 
                       {event.isPaid && ticket.isSelected && (
                         <div
@@ -362,10 +359,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                           </p>
                           <button
                             onClick={() => handleQuantityChange(ticket.id, 1)}
-                            disabled={!!ticket.includesPremium && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER}
+                            disabled={ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER}
                             title={
-                              ticket.includesPremium && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER
-                                ? premiumOrderCapMessage()
+                              ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER
+                                ? premiumOrderCapMessage(ticket.memberships[0])
                                 : undefined
                             }
                             className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black"
@@ -375,9 +372,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                         </div>
                       )}
                       {/* Say why the stepper stopped, rather than leaving a dead button. */}
-                      {ticket.includesPremium && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER && (
+                      {ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER && (
                         <p className="text-xs mt-1.5 text-right" style={{ color: "#F5C518" }}>
-                          {premiumOrderCapMessage()}
+                          {premiumOrderCapMessage(ticket.memberships[0])}
                         </p>
                       )}
                     </div>
@@ -401,13 +398,16 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   total, so it's spelled out separately rather than silently folded in.
                   Session-based preview: the real check is against the email typed at
                   checkout, and a referral code can lower the ticket further there. */}
-              {selectionAddsPremium && (
-                <p className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
-                  {premiumPlanLabel
-                    ? `+ Jetzy Premium ${premiumPlanLabel} — confirmed at checkout`
-                    : "+ Jetzy Premium membership — confirmed at checkout"}
-                </p>
-              )}
+              {selectionAddedKeys.map((key) => {
+                const plan = planFor(key);
+                return (
+                  <p key={key} className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
+                    {plan?.label
+                      ? `+ ${plan.name} ${plan.label} — confirmed at checkout`
+                      : `+ ${plan?.name || key} membership — confirmed at checkout`}
+                  </p>
+                );
+              })}
             </div>
 
             <button

@@ -1,13 +1,17 @@
 import { Types } from "mongoose"
-import { PREMIUM_TICKET_LIMIT_PER_EVENT, ticketIncludesPremiumById } from "@/lib/premium-bundle"
+import { PREMIUM_TICKET_LIMIT_PER_EVENT, eventHasAnyPremiumTicket, ticketMembershipsById } from "@/lib/premium-bundle"
+import { MEMBERSHIP_KEYS, type MembershipKey } from "@/lib/memberships"
 import { BookingStatus } from "@/models/events/types"
 
 /**
- * "How many Jetzy Premium tickets has this address already bought for this event?"
+ * "How many membership tickets has this address already bought for this event?"
  *
  * The per-order cap alone is trivially bypassed by placing the order twice, so the real limit
  * has to be counted across every booking this person holds for the event. Keyed on the
- * CHECKOUT EMAIL, the same authority `isPremiumEmail` uses — see `premium-eligibility.ts`.
+ * CHECKOUT EMAIL, the same authority `heldMemberships` uses — see `premium-eligibility.ts`.
+ *
+ * Counted PER PRODUCT. A shared counter would mean two Jetzy Premium tickets exhaust the
+ * buyer's Full Concierge allowance for the same event, which is a limit nobody agreed to.
  *
  * SERVER ONLY: reads the Bookings and Events collections.
  */
@@ -33,24 +37,29 @@ export type PremiumAllowance = {
 	remaining: number
 }
 
-export async function getPremiumTicketAllowance(eventId: string, email: string): Promise<PremiumAllowance> {
-	const limit = PREMIUM_TICKET_LIMIT_PER_EVENT
+export type MembershipAllowances = Record<MembershipKey, PremiumAllowance>
+
+const emptyAllowances = (): MembershipAllowances =>
+	MEMBERSHIP_KEYS.reduce((acc, key) => {
+		acc[key] = { limit: PREMIUM_TICKET_LIMIT_PER_EVENT, used: 0, remaining: PREMIUM_TICKET_LIMIT_PER_EVENT }
+		return acc
+	}, {} as MembershipAllowances)
+
+export async function getMembershipTicketAllowances(eventId: string, email: string): Promise<MembershipAllowances> {
+	const allowances = emptyAllowances()
 	const trimmed = typeof email === "string" ? email.trim() : ""
 
-	if (!trimmed || !eventId || !Types.ObjectId.isValid(eventId)) {
-		return { limit, used: 0, remaining: limit }
-	}
+	if (!trimmed || !eventId || !Types.ObjectId.isValid(eventId)) return allowances
 
 	const { Events } = await import("@/models/events")
 	const { Bookings } = await import("@/models/events/bookings")
 
-	const event = await Events.findById(eventId).select("tickets._id tickets.includesPremium").lean()
-	if (!event) return { limit, used: 0, remaining: limit }
+	const event = await Events.findById(eventId).select("tickets._id tickets.includesPremium tickets.memberships").lean()
+	if (!event) return allowances
 
 	// Nothing on this event sells a membership — no allowance to consume, and no reason to
 	// touch the bookings collection.
-	const hasPremiumTicket = (event as any).tickets?.some((t: any) => t?.includesPremium)
-	if (!hasPremiumTicket) return { limit, used: 0, remaining: limit }
+	if (!eventHasAnyPremiumTicket(event as any)) return allowances
 
 	// Case-insensitive by necessity: `customerEmail` has no `lowercase: true`, so a booking
 	// made as `Fahad@Example.com` is invisible to an exact match on the lowercased address.
@@ -68,18 +77,27 @@ export async function getPremiumTicketAllowance(eventId: string, email: string):
 		.select("tickets")
 		.lean()
 
-	const used = bookings.reduce((total: number, booking: any) => {
-		const rows = booking?.tickets || []
-		return (
-			total +
-			rows.reduce((sum: number, row: any) => {
-				// `ticketId` points at a SUBDOCUMENT of `event.tickets`, not another collection,
-				// so there is nothing to populate — resolve it in memory.
-				if (!ticketIncludesPremiumById(event as any, String(row?.ticketId))) return sum
-				return sum + (Number(row?.quantity) || 0)
-			}, 0)
-		)
-	}, 0)
+	bookings.forEach((booking: any) => {
+		;(booking?.tickets || []).forEach((row: any) => {
+			// `ticketId` points at a SUBDOCUMENT of `event.tickets`, not another collection,
+			// so there is nothing to populate — resolve it in memory.
+			const keys = ticketMembershipsById(event as any, String(row?.ticketId))
+			const quantity = Number(row?.quantity) || 0
+			if (!quantity) return
+			keys.forEach((key) => {
+				allowances[key].used += quantity
+			})
+		})
+	})
 
-	return { limit, used, remaining: Math.max(0, limit - used) }
+	MEMBERSHIP_KEYS.forEach((key) => {
+		allowances[key].remaining = Math.max(0, allowances[key].limit - allowances[key].used)
+	})
+
+	return allowances
+}
+
+/** @deprecated Premium-only shim. Use `getMembershipTicketAllowances`. */
+export async function getPremiumTicketAllowance(eventId: string, email: string): Promise<PremiumAllowance> {
+	return (await getMembershipTicketAllowances(eventId, email)).premium
 }
