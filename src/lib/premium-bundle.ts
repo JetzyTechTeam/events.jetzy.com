@@ -25,6 +25,7 @@ import {
 	sanitizeMembershipKeys,
 	type MembershipKey,
 } from "@/lib/memberships"
+import { AUTH_HOLD_DAYS } from "@/lib/ticket-approval"
 
 export type BundleTicketLike = {
 	_id?: unknown
@@ -155,11 +156,21 @@ export const resolveBundleMode = (tickets: BundleTicketLike[] | null | undefined
  * The alternative (capture the ticket now, bill the membership separately afterwards) was
  * rejected: that second charge is off-session and can be declined or demand 3-D Secure with
  * nobody present, leaving an approved booking and a valid ticket with no membership.
+ *
+ * HOST-FACING copy — "you approve the guest". The buyer-facing equivalent lives in
+ * `EventCheckoutModel`. `AUTH_HOLD_DAYS` rather than a literal 7, because this sentence quotes
+ * the deadline that `authExpiresAt` actually enforces and the two must not drift.
  */
 export const bundleApprovalNotice = (keys: MembershipKey[]): string => {
-	const names = membershipLabelList(keys) || "your membership"
-	const plural = keys.length > 1
-	return `The card is held for the ticket plus the first membership period. Nothing is charged, and ${names} ${plural ? "don't" : "doesn't"} start, until you approve.`
+	// Premium alone is the only combination reachable while Concierge is withheld from the
+	// ticket form, so it gets the exact approved wording. Anything else has the membership
+	// named instead, so a Concierge ticket can't claim "the first month's premium".
+	const period =
+		keys.length === 1 && keys[0] === "premium"
+			? "the first month's premium"
+			: `the first period of ${membershipLabelList(keys) || "the membership"}`
+
+	return `Payment Hold: Cards are authorized for the ticket plus ${period} at checkout, but are only charged if you approve the guest within ${AUTH_HOLD_DAYS} days; after that, the membership renews monthly.`
 }
 
 /** @deprecated Premium-only wording. Use `bundleApprovalNotice`. */

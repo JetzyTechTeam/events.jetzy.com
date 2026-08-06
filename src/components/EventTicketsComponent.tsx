@@ -12,8 +12,8 @@ import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
 import { buildTicketPricing } from "@/lib/ticket-pricing";
-import { eventHasAnyPremiumTicket, membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, ticketMemberships } from "@/lib/premium-bundle";
-import { MEMBERSHIPS, membershipLabelList, type MembershipKey } from "@/lib/memberships";
+import { membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, ticketMemberships } from "@/lib/premium-bundle";
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships";
 import { useMembershipPlans } from "@/hooks/usePremiumPlan";
 import {
   Button,
@@ -31,7 +31,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import Linkify from "linkify-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { stripHtml } from "@/utils/text";
-import { StarIcon } from "@heroicons/react/24/solid";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 
@@ -45,8 +44,8 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const [showPremiumPromo, setShowPremiumPromo] = useState(false);
   usePremiumSubscriptionReturn();
 
-  // Does any ticket on this event sell a membership, and which ones?
-  const eventSellsPremium = eventHasAnyPremiumTicket(event as any);
+  // Which memberships do this event's tickets sell? Drives the per-ticket price disclosure
+  // below — the event-level banner that also used this was removed.
   const eventMembershipKeys = selectionMemberships(
     (event.tickets || []).map((t: any) => ({ ...t, isSelected: true })) as any,
   );
@@ -239,33 +238,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             </div>
           </div>
 
-          {/* Bundled-membership notice. A ticket can SELL Jetzy Premium: non-members pay the
-              ticket plus the subscription, existing members pay for the ticket alone. The
-              recurring amount and interval must be visible BEFORE purchase, not just on the
-              receipt — so this states them plainly rather than teasing a perk. */}
-          {eventSellsPremium && (
-            <div className="flex items-start gap-2 rounded-lg p-3 mb-6" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-              <StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
-              <div>
-                <p className="font-semibold text-sm" style={{ color: "#F5C518" }}>
-                  Includes {membershipLabelList(eventMembershipKeys)}
-                </p>
-                <p className="text-gray-300 text-xs mt-1">
-                  Some tickets here include{" "}
-                  {eventMembershipKeys
-                    .map((key) => {
-                      const plan = planFor(key);
-                      return plan?.label ? `a ${plan.name} at ${plan.label}` : `a ${plan?.name || key} membership`;
-                    })
-                    .join(" and ")}
-                  , charged with your ticket and renewing until you cancel.
-                  {isPremium && eventMembershipKeys.includes("premium")
-                    ? " You already have Jetzy Premium, so you won't be charged for that one again."
-                    : ""}
-                </p>
-              </div>
-            </div>
-          )}
+          {/* The event-level "Includes Jetzy Premium" banner was removed — it duplicated the
+              per-ticket line below on an event where only some tickets sell a membership.
+              NOT a disclosure regression: each bundled ticket row still states the recurring
+              amount and interval, and the checkout modal and receipt state them again. */}
 
           {/* Approval-required notice. Shown whenever ANY ticket needs approval; the copy
               distinguishes "every ticket" from "some tickets" so buyers of an
@@ -288,7 +264,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             {tickets.map((ticket, index) => (
               <div
                 key={ticket.id}
-                className="flex items-center gap-4 cursor-pointer"
+                className="cursor-pointer"
                 onClick={() => {
                   handleTicketSelection(ticket.id)
                   sendGAEvent({
@@ -299,23 +275,24 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   });
                 }}
               >
-                {/* Checkbox — outside left */}
-                <div className="flex-shrink-0 self-center">
-                  <div className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors border-2 ${
-                    ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
-                  }`}>
-                    {ticket.isSelected && (
-                      <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                </div>
-
-                {/* Card */}
-                <div className={`flex-1 relative bg-[#2b2b2b] p-4 rounded-lg border-2 ${
+                {/* Card. The checkbox now sits INSIDE it, so the whole tile reads as one
+                    target — the click handler is on the wrapper either way, so selection
+                    behaviour is unchanged. */}
+                <div className={`relative bg-[#2b2b2b] p-4 rounded-lg border-2 flex items-center gap-4 ${
                   ticket.isSelected ? "border-jetzy" : "border-transparent"
                 }`}>
+                  <div className="flex-shrink-0 self-center">
+                    <div className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors border-2 ${
+                      ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
+                    }`}>
+                      {ticket.isSelected && (
+                        <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full">
                     <div className="text-left w-full sm:w-2/3">
                       <h3 className={`font-semibold text-lg ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>

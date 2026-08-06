@@ -4,6 +4,7 @@ import { getStripeClient } from "@/lib/premium"
 import { MEMBERSHIPS, isMembershipKey, type MembershipKey } from "@/lib/memberships"
 import { startMembershipSubscription } from "@/lib/membership-subscriptions"
 import { buildTicketPricing, type RecurringCharge } from "@/lib/ticket-pricing"
+import { AUTH_HOLD_DAYS } from "@/lib/ticket-approval"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
@@ -28,8 +29,9 @@ import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
  * where reloading /success re-created the booking and re-incremented referral usage.
  */
 
-/** Stripe holds card authorizations for roughly this long. Some issuers are shorter. */
-export const AUTH_HOLD_DAYS = 7
+// Re-exported from `ticket-approval.ts`, which is isomorphic — the buyer-facing copy quotes
+// this number and can't import it from here without pulling the models into the browser.
+export { AUTH_HOLD_DAYS } from "@/lib/ticket-approval"
 
 export type FulfillResult = {
 	created: boolean

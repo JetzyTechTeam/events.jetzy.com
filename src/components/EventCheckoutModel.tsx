@@ -4,7 +4,7 @@ import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores"
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
-import { selectionRequiresApproval } from "@/lib/ticket-approval"
+import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { membershipQuantityInSelection, premiumAllowanceMessage, selectionMemberships } from "@/lib/premium-bundle"
 import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
@@ -632,12 +632,18 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											<div className="bg-[#F79432]/15 border border-[#F79432]/40 rounded-lg p-3">
 												<p className="text-[#F79432] font-semibold text-sm">Approval Required</p>
 												<p className="text-gray-300 text-xs mt-1">
-													{selectionTotal > 0
-														// Quote what Stripe actually holds: the DISCOUNTED ticket total, plus
-														// the first membership period when the ticket sells one. `dueToday`
-														// already carries that sum.
-														? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged.${chargedKeys.length > 0 ? ` That covers your ticket and the first period of ${membershipLabelList(chargedKeys)} — your membership starts only if the host approves.` : ""} You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
-														: "Your registration is subject to host approval."}
+													{/* Quote what Stripe actually holds: the DISCOUNTED ticket total, plus
+													    the first membership period when one is being charged. `dueToday`
+													    already carries that sum.
+
+													    Branches on `chargedKeys`, NOT on what the ticket sells — a buyer who
+													    already has the membership is only being held for the ticket, so the
+													    "covers your first month" wording would overstate the hold. */}
+													{selectionTotal <= 0
+														? "Your registration is subject to host approval."
+														: chargedKeys.length > 0
+															? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket and first month of ${membershipLabelList(chargedKeys)}. You are only charged and subscribed if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
+															: `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but only charged if the host approves. The hold is automatically released if declined or if the host doesn't respond within ${AUTH_HOLD_DAYS} days.`}
 												</p>
 											</div>
 										)}
@@ -732,60 +738,90 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											    is a price disclosure, not a nicety. */}
 											{selectionSellsPremium && !checkingPremiumEmail && (
 												<>
-													{/* Held already — named individually, because a buyer holding one of
-													    two still has to see that the other one is being charged. */}
+													{/* ---- Already a member on THIS address ----
+													    Named individually, because a buyer holding one of two still has to
+													    see that the other one is being charged.
+
+													    "Logged in as" only when the session email IS the typed address:
+													    membership follows the address typed here, so a logged-out guest
+													    entering a member's email must not be told they're logged in as
+													    someone else. */}
 													{heldSelectionKeys.length > 0 && (
-														<p className="text-sm text-green-500 mt-1.5 font-medium">
-															✓ You already have {membershipLabelList(heldSelectionKeys)} — you won&apos;t be charged for {heldSelectionKeys.length > 1 ? "those" : "that"} again.
-														</p>
+														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.4)" }}>
+															<p className="text-xs text-green-400">
+																🎟️ {membershipLabelList(heldSelectionKeys)} Active Member:{" "}
+																{sessionEmail && sessionEmail.trim().toLowerCase() === formData.email.trim().toLowerCase()
+																	? `Logged in as ${sessionEmail}.`
+																	: `${formData.email.trim()}.`}{" "}
+																Your existing membership applies to this ticket
+															</p>
+															<a
+																href={ROUTES.manageMembership}
+																target="_blank"
+																rel="noreferrer"
+																className="text-xs underline text-green-400 mt-1 inline-block"
+															>
+																Click here to cancel/manage subscription
+															</a>
+														</div>
 													)}
 
-													{/* Not held on this address: these memberships WILL be charged. One
-													    block each, so two products can't be collapsed into one price. */}
+													{/* ---- Not held on this address: these memberships WILL be charged ----
+													    One block each, so two products can't be collapsed into one price. */}
 													{chargedKeys.length > 0 && (
 														<div className="mt-1.5 rounded-lg p-2.5 space-y-2" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
 															{chargedKeys.map((key) => {
 																const plan = membershipPlans.find((p) => p.key === key)
 																const name = plan?.name || MEMBERSHIPS[key].label
+																const price = plan?.label ? ` (${plan.label})` : ""
 																return (
 																	<div key={key} className="flex items-start gap-2">
 																		<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
 																		{/* On an approval ticket nothing is charged yet — the membership is
 																		    held alongside the ticket and only starts if the host approves.
-																		    Saying "charged today" there would simply be untrue. */}
+																		    On an instant ticket the card IS charged now, so the two say
+																		    different things about when money moves. Using the approval
+																		    wording on an instant purchase would be a false statement about
+																		    a charge at the point of sale. */}
 																		<p className="text-xs" style={{ color: "#F5C518" }}>
+																			🎟️ {name}{price}:{" "}
 																			{selectionNeedsApproval
-																				? plan?.label
-																					? `This ticket includes a ${name} at ${plan.label}. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves. It then renews every ${plan.interval} until you cancel.`
-																					: `This ticket includes a ${name}. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves.`
-																				: plan?.label
-																					? `This ticket includes a ${name} at ${plan.label}. It's charged with your ticket today and renews every ${plan.interval} until you cancel.`
-																					: `This ticket includes a ${name}, charged with your ticket today and renewing until you cancel.`}
+																				? "Charged only if your registration is approved. Starts upon approval and renews monthly until canceled."
+																				: "Charged with your ticket today. Starts immediately and renews monthly until canceled."}
 																		</p>
 																	</div>
 																)
 															})}
 
+															<p className="text-xs" style={{ color: "#F5C518" }}>
+																⚠️ Already a member?{" "}
+																<a
+																	href={ROUTES.manageMembership}
+																	target="_blank"
+																	rel="noreferrer"
+																	className="underline"
+																	style={{ color: "#F79432" }}
+																>
+																	cancel/manage subscription
+																</a>
+															</p>
+
 															{/* The mismatch case: they ARE a member, but on a different address.
 															    Left as-is they'd be billed a SECOND subscription — so this is a
-															    warning about a duplicate charge, not an upsell. */}
+															    warning about a duplicate charge, not an upsell. Only rendered when
+															    there is actually another address to switch to. */}
 															{sessionIsPremium && sessionEmail && chargedKeys.includes("premium") && (
-																<div className="mt-2 pt-2" style={{ borderTop: "1px solid rgba(245,197,24,0.3)" }}>
-																	<p className="text-xs" style={{ color: "#F79432" }}>
-																		Your Jetzy Premium account is on a different email. Use it, or you&apos;ll be charged for a second membership.
-																	</p>
-																	<button
-																		type="button"
-																		onClick={() => {
-																			setFormData((prev) => ({ ...prev, email: sessionEmail }))
-																			setHeldByEmail(null)
-																		}}
-																		className="text-xs font-bold underline mt-1"
-																		style={{ color: "#F79432" }}
-																	>
-																		Use {sessionEmail}
-																	</button>
-																</div>
+																<button
+																	type="button"
+																	onClick={() => {
+																		setFormData((prev) => ({ ...prev, email: sessionEmail }))
+																		setHeldByEmail(null)
+																	}}
+																	className="text-xs underline text-left"
+																	style={{ color: "#F79432" }}
+																>
+																	Use {sessionEmail} here to use your membership and prevent duplicate billing
+																</button>
 															)}
 														</div>
 													)}
@@ -799,25 +835,6 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															. Enter your email — if you&apos;re already a member, you won&apos;t be charged for it again.
 														</p>
 													)}
-
-													{/* Sits under the email field because that's what it's about — the
-													    address decides whose membership this is, so the way to manage
-													    one belongs next to it rather than down beside the T&C.
-													    Opens in a NEW TAB: navigating away mid-checkout would discard
-													    everything typed above. The page handles logged-out visitors by
-													    routing through login and back. */}
-													<p className="text-xs text-gray-400 mt-1.5">
-														Already a Jetzy Premium member, or want to cancel later?{" "}
-														<a
-															href={ROUTES.manageMembership}
-															target="_blank"
-															rel="noreferrer"
-															className="text-[#F79432] underline"
-														>
-															Manage your subscription
-														</a>
-														.
-													</p>
 												</>
 											)}
 										</div>

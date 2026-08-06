@@ -41,11 +41,16 @@ const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApp
 	return (
 		<FormControl mb={4}>
 			<Box>
-				<FormLabel mb={0}>Includes a membership</FormLabel>
+				<FormLabel mb={0}>For premium members only</FormLabel>
 				<Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
-					Sell a membership with this ticket. Buyers who aren&apos;t already members pay the ticket price plus
-					the first period of each membership ticked, which then renews monthly. Existing members pay the
-					ticket price only.
+					Non-members pay this ticket price + Jetzy Premium subscription (renews monthly). Existing members
+					pay the ticket price only.
+				</Text>
+				{/* Persistent guidance, deliberately separate from the red validation error below:
+				    one tells the host the rule up front, the other fires when they've broken it. */}
+				<Text fontSize="12px" color="#868686" mt={2} maxW="320px" lineHeight="140%">
+					Note: Tickets including Jetzy Premium must have a price. Free tickets cannot initiate premium
+					subscriptions.
 				</Text>
 			</Box>
 
