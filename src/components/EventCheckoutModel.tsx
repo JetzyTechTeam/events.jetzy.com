@@ -752,6 +752,25 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																: "This ticket includes a Jetzy Premium membership. Enter your email — if you're already a member, you won't be charged for it again."}
 														</p>
 													)}
+
+													{/* Sits under the email field because that's what it's about — the
+													    address decides whose membership this is, so the way to manage
+													    one belongs next to it rather than down beside the T&C.
+													    Opens in a NEW TAB: navigating away mid-checkout would discard
+													    everything typed above. The page handles logged-out visitors by
+													    routing through login and back. */}
+													<p className="text-xs text-gray-400 mt-1.5">
+														Already a Jetzy Premium member, or want to cancel later?{" "}
+														<a
+															href={ROUTES.manageMembership}
+															target="_blank"
+															rel="noreferrer"
+															className="text-[#F79432] underline"
+														>
+															Manage your subscription
+														</a>
+														.
+													</p>
 												</>
 											)}
 										</div>
@@ -786,25 +805,6 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-[#F79432] underline">Terms &amp; Conditions</a>. By registering for this event, I agree to the creation of a Jetzy account.
 											</span>
 										</label>
-
-										{/* Where an existing member goes to cancel or change their card.
-										    Opens in a NEW TAB on purpose — navigating away mid-checkout
-										    would discard everything typed above. The page itself handles
-										    logged-out visitors by routing through login and back. */}
-										{selectionSellsPremium && (
-											<p className="text-xs text-gray-400">
-												Already a Jetzy Premium member, or want to cancel later?{" "}
-												<a
-													href={ROUTES.manageMembership}
-													target="_blank"
-													rel="noreferrer"
-													className="text-[#F79432] underline"
-												>
-													Manage your subscription
-												</a>
-												.
-											</p>
-										)}
 
 										{/* The separate "I want to become a Jetzy Premium member" checkbox was
 										    removed: the recurring terms now live in the Terms & Conditions the box
