@@ -293,34 +293,41 @@ The confirmation email showed per-ticket prices but **no discount and no total**
 - `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
 - **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
 
-### Jetzy Premium is SOLD PER TICKET (replaced the member discount)
+### Memberships are SOLD PER TICKET (replaced the member discount)
 
-The member discount was retired. Premium is no longer taken *off* a ticket — it is **sold with
-one**. `eventTicketsSchema.includesPremium` (Boolean, `default: false`) makes a ticket bundle a
-membership:
+The member discount was retired. A membership is no longer taken *off* a ticket — it is **sold
+with one**. `eventTicketsSchema.memberships` (array of `MembershipKey`) lists what a ticket
+sells: Jetzy Premium, Full Concierge, or both.
 
-- buyer is **already a member** → charged the ticket price only, ordinary `mode: "payment"`;
-- buyer is **not a member** → charged ticket **+** the monthly subscription in ONE
-  `mode: "subscription"` session, with the ticket as a one-time line item. Stripe bills
-  one-time items on the **first invoice only**; the subscription renews by itself.
+- buyer **already holds** a membership → not charged for that one;
+- buyer **doesn't** → charged the ticket **+** the first period of each, then the
+  subscriptions are created by us with a trial covering that period.
+
+`includesPremium` (Boolean) is **deprecated** and read only as the fallback when `memberships`
+is absent, so tickets saved before Full Concierge keep working with no migration. Resolve with
+**`ticketMemberships()`** from `premium-bundle.ts` — never read either field directly. Writers
+keep `includesPremium` in step with the array purely for the mobile app.
 
 `event.premium` and `event.premiumMemberDiscountPercentage` are **deprecated** — kept on the
 schema so the mobile app sharing the collection is undisturbed (same treatment as
 `privateAccessCode`), but nothing reads them. Gone with them: the "only members may host"
 gate, the Premium Event badge, and the private-premium force-approval rule.
 
-**Helpers.** `src/lib/premium-bundle.ts` is pure/isomorphic (React-safe) —
-`ticketIncludesPremium`, `eventHasAnyPremiumTicket`, `selectionIncludesPremium`,
-`resolveBundleMode`. `src/lib/premium-eligibility.ts` is **server only** (loads the user
-models) — `isPremiumEmail`. Membership still resolves from the **checkout email, not the
-session**; under this model that decides whether money is charged, not merely how much comes
-off, so getting it wrong either double-bills a subscriber or gives away a membership.
+**Helpers.** `src/lib/memberships.ts` is the product registry (see the Full Concierge section
+below). `src/lib/premium-bundle.ts` is pure/isomorphic (React-safe) — `ticketMemberships`,
+`eventHasAnyPremiumTicket`, `selectionMemberships`, `resolveBundlePlan`.
+`src/lib/premium-eligibility.ts` is **server only** (loads the user models) —
+`heldMemberships` / `hasMembership`. Membership still resolves from the **checkout email, not
+the session**; under this model that decides whether money is charged, not merely how much
+comes off, so getting it wrong either double-bills a subscriber or gives away a membership.
 
-**Approval and bundling are mutually exclusive.** `payment_intent_data` is documented as
-`payment`-mode only, so there is no manual capture in subscription mode and a bundled ticket
-cannot be authorized-now-captured-on-approval. Enforced in both event forms, in `create.ts`
-zod `superRefine`, and in `update.ts` against the *resolved* flags (incoming value else stored)
-so a stale form can't sneak the combination through. A bundled ticket must also cost > $0.
+**Approval and bundling are compatible.** A bundled ticket is sold as a `mode: "payment"`
+session either way, so `capture_method: "manual"` applies normally and the subscriptions are
+created at approval. (The old "mutually exclusive" rule existed only because the immediate
+flow used subscription mode, which has no manual capture.) A bundled ticket must still cost
+> $0 — enforced in both event forms, in `create.ts` zod `superRefine`, and in `update.ts`
+against the *resolved* memberships (incoming value else stored) so a stale form can't sneak a
+free bundled ticket through.
 
 **The typed email owns the membership — not the session.** `subscriberId` in
 `checkout/index.ts` is `userDoc?._id || buyerId`. It shipped as `buyerId || userDoc?._id`,
@@ -335,17 +342,21 @@ live subscriptions in one person's billing portal for tickets bought under other
 paid, and `booking-identity.ts` matches on `bookerUserId` OR `customerEmail`, so both parties
 still see the ticket. Only the membership follows the email.
 
-`hasActivePremiumSubscription(customerId)` in `premium.ts` is the second half of that guard —
-it asks **Stripe** for a live subscription on the Premium product before creating one, because
-`isPremiumEmail` reads `premiumSubscription.active`, which only exists once the webhook lands
-and so cannot catch two purchases in quick succession. It returns false on error rather than
-throwing: a duplicate subscription is recoverable, a refused checkout is not.
+`hasActiveMembershipSubscription(customerId, key)` in `premium.ts` is the second half of that
+guard — it asks **Stripe**, per product, for a live subscription before creating one, because
+`heldMemberships` reads the `active` flags, which only exist once the webhook lands and so
+cannot catch two purchases in quick succession. It returns false on error rather than throwing:
+a duplicate subscription is recoverable, a refused checkout is not.
 
 **Session details that bite:**
-- `customer`, never `customer_email` — Stripe rejects both together, and the subscription must
+- `customer`, never `customer_email` — Stripe rejects both together, and the subscriptions must
   attach to a real Customer. `resolveStripeCustomerForUser` (`src/lib/premium.ts`) persists
-  `premiumSubscription.stripeCustomerId`; without it every renewal/cancel webhook, which
-  resolves the user by that id, is unattributable.
+  `user.stripeCustomerId` (root level; `premiumSubscription.stripeCustomerId` is still read as
+  a fallback for pre-existing members). Without it every renewal/cancel webhook, which resolves
+  the user by that id, is unattributable.
+- `setup_future_usage: "off_session"` on EVERY bundled order. Stripe no longer creates the
+  subscriptions, so without a saved card each membership would bill once and die at its first
+  renewal.
 - The referral coupon is scoped with `applies_to.products`, or a session-level discount takes
   the host's percentage off Jetzy's subscription revenue too. `ticket.stripeProductId` holds a
   **price** id (`create.ts` calls `stripe.prices.create`), so the product id must be read back
@@ -354,7 +365,8 @@ throwing: a duplicate subscription is recoverable, a refused checkout is not.
   on a bundled session `amount_total` is the whole first invoice. Read by
   `checkout-fulfillment.ts` and `success.tsx`.
 - `client_reference_id` is single-valued and the ticket flow claims it, so bundled sessions
-  carry `metadata.userId` for the subscription side.
+  carry `metadata.membershipUserId` for the subscription side, plus `metadata.memberships`
+  (JSON `[{ key, amount, currency, priceId, interval }]`).
 
 **The webhook dispatches on metadata, not `mode`.** `webhooks/stripe.ts` used to read
 `if (mode === "subscription") … else if (mode === "payment")` — mutually exclusive, so a
@@ -397,6 +409,83 @@ the ticket cost".
 `buildTicketPricing`'s `premiumPercentage` survives as **historical only**, so
 `pricingFromBooking` can still itemise bookings made while the discount existed. Never pass it
 for a new order.
+
+### Second membership: Full Concierge (selectmember.jetzy.com)
+
+A ticket can sell **Jetzy Premium**, **Full Concierge Membership** ($59.50/mo), or **both**.
+Money is taken in *our* Stripe; SelectMember is told about it so the member sees it on their
+site.
+
+**`src/lib/memberships.ts` is the registry.** `MembershipKey = "premium" | "concierge"`, each
+with `label`, `productId` (env-backed: `NEXT_STRIPE_PREMIUM_PRODUCT_ID` /
+`NEXT_STRIPE_CONCIERGE_PRODUCT_ID`), `userField` (`premiumSubscription` /
+`conciergeSubscription`) and, for Concierge, `selectMemberPlan: "select_monthly"`. Nothing
+else may hardcode a product. `membershipKeyForProductId` returns **null** for anything
+unrecognised, and callers must treat that as "leave it alone".
+
+**The bug this exists to prevent.** `webhooks/stripe.ts` never checked *which* product a
+subscription was for — `if (session.subscription)` wrote `premiumSubscription`, and
+`customer.subscription.updated` / `.deleted` keyed purely on customer id. One Stripe Customer
+holds every subscription a user has, so adding a second product meant a Concierge purchase
+would overwrite the buyer's Premium record and **cancelling Concierge would revoke their
+Premium**. Every subscription branch now resolves `subscriptionMembershipKey(subscription)`
+first — `metadata.membershipKey` (stamped on everything we create), else the line-item product.
+
+**Both flows unify on "we create the subscriptions".** A Checkout Session creates at most ONE
+subscription, so a ticket selling two memberships can't use `mode: "subscription"` at all, and
+one subscription carrying both products would mean cancelling either cancels both. So the
+immediate flow moved to the shape the approval flow already used: `mode: "payment"` with each
+membership's first period as an inline one-time line item, then one subscription per product
+created afterwards with `trial_end` one interval out.
+
+- immediate → `checkout-fulfillment.ts`, right after the charge;
+- approval → `api/bookings/approve.ts`, right after the capture;
+- both via **`src/lib/membership-subscriptions.ts` → `startMembershipSubscription`**, which
+  owns the trial arithmetic, the Stripe-side duplicate guard, the user-record write and the
+  SelectMember mirror.
+
+**Trade-off, accepted:** the immediate flow loses Stripe's atomic charge-and-subscribe. A
+failure between the two leaves someone charged with no membership — recorded per product as
+`status: "failed"` on the booking, visible and retryable, money never rolled back. Also, the
+first period is a one-time charge rather than an invoice, so Stripe's subscription reporting
+and MRR start from month two for **every** membership.
+
+**Booking storage.** `payment.memberships: [{ key, status: pending|active|failed, amount,
+priceId, interval, subscriptionId, lastError }]`. The flat `premium*` fields are deprecated but
+still read — live PENDING approval bookings predate the array. Always go through
+**`src/lib/booking-memberships.ts` → `bookingMemberships(payment)`**, which normalises both.
+
+**Partial capture on approval** subtracts only the memberships the buyer has acquired since
+the hold, so holding one of two still pays for the other.
+
+**SelectMember sync** — `src/lib/select-member.ts`, best-effort, swallows its own failures
+(the card is already charged; their outage must not fail a booking). Driven from the **webhook**
+as well as at creation, so a cancel made in the Stripe billing portal — which never passes back
+through our checkout code — still reaches them.
+
+- outbound: `PATCH {base}/api/v1/subscription/select`, `GET .../select/status?email=`.
+  `NEXT_PUBLIC_SELECT_MEMBER_URL`, optional `SELECT_MEMBER_API_KEY` sent as `x-api-key`.
+- inbound: **`POST /api/webhooks/select-member`** `{ email, status: "cancelled" }` →
+  `cancel_at_period_end` on the **concierge** subscription only. **Requires
+  `SELECT_MEMBER_WEBHOOK_SECRET`** in an `x-webhook-secret` header, compared in constant time,
+  and refuses with 503 if the env var is missing. Theirs is deliberately open; ours can stop
+  someone's billing, so it isn't. Only `cancelled` is accepted — accepting `active` would let
+  their side hand out a membership nobody was billed for.
+
+**Other knock-ons:**
+- `user.stripeCustomerId` moved to the **root** (a billing identity, not a membership).
+  `getUserStripeCustomerId` reads root then either sub-doc, so no backfill.
+- `/api/subscriptions/portal` and `/manage-membership` gate on **`hasBillingAccount`**, not on
+  Premium. Gating on Premium told a Concierge-only member they had "nothing to manage" while
+  their card was being charged monthly.
+- `TicketPricing.recurring` is now an **array**. Showing one line while billing two is a price
+  disclosure failure — the receipt, `/success` and the checkout modal all loop.
+- react-query keys are parameterised: `["membership-plan", key]`, `["membership-status", key]`.
+  A bare key would have served Concierge's price from Premium's cache.
+- Per-event ticket allowance (2) is counted **per product** — two Premium tickets must not
+  exhaust the Concierge allowance.
+- Membership lifecycle emails take a `label` from the registry. A member of both can't tell
+  which one ended from an unlabelled message.
 
 ### Jetzy Premium member discount — resolved by EMAIL, not session (SUPERSEDED)
 

@@ -17,30 +17,53 @@ const customAnswerSchema = new Schema(
  * has money attached" is a single truthy check that free bookings trivially fail,
  * and so the whole block can be stripped from API projections in one shot.
  */
+/**
+ * One membership sold with a booking. An ARRAY, because a single ticket may sell both Jetzy
+ * Premium and Full Concierge, and each becomes its own independent Stripe subscription.
+ *
+ * `key` deliberately has no `enum`: an unrecognised value must be storable and then ignored
+ * by `ticketMemberships` / `membershipKeyForProductId`, not rejected at save time. A schema
+ * rejection here would fail a save AFTER the card was charged.
+ */
+const bookingMembershipSchema = new Schema(
+	{
+		key: { type: String, required: true },
+		status: { type: String, enum: ["pending", "active", "failed"], required: true },
+		/** Major units — the first period, this membership's share of `payment.amount`. */
+		amount: { type: Number, required: false },
+		priceId: { type: String, required: false },
+		interval: { type: String, required: false },
+		subscriptionId: { type: String, required: false },
+		lastError: { type: String, required: false },
+	},
+	{ _id: false },
+)
+
 const bookingPaymentSchema = new Schema(
 	{
 		provider: { type: String, default: "stripe" },
 		checkoutSessionId: { type: String, index: true },
 		paymentIntentId: { type: String, index: true },
-		// Set only when the ticket bundled a Jetzy Premium membership — the subscription that
-		// this purchase started. Lets a question about a later recurring charge be traced back
-		// to the booking that began it. The subscription outlives the booking; cancelling one
-		// never touches the other.
-		subscriptionId: { type: String, index: true },
-		// ---- Bundled ticket that ALSO requires approval ----
-		// The subscription for these is created at approval, not at checkout, so everything
-		// needed to create it has to live here: `api/bookings/approve.ts` works from the
-		// booking document and never sees the Stripe Checkout Session or its metadata.
+		// ---- Memberships this purchase sold ----
 		//
-		// `premiumPriceId` is stored rather than re-resolved at approval on purpose — a plan
-		// price change while the request sits pending must not silently move the buyer onto a
-		// rate they were never quoted.
+		// Every subscription is created AFTER the money moves — immediately for a straight
+		// purchase, at approval for a held one — so everything needed to create it lives here:
+		// `api/bookings/approve.ts` and the fulfilment path work from the booking document and
+		// never see the Stripe Checkout Session or its metadata.
+		//
+		// The subscriptions outlive the booking; cancelling one never touches the other.
+		memberships: {
+			type: [bookingMembershipSchema],
+			required: false,
+		},
+		// DEPRECATED — the single-product shape, superseded by `memberships`. Still declared so
+		// bookings taken before the second product remain readable; never written for new ones.
+		subscriptionId: { type: String, index: true },
 		premiumStatus: {
 			type: String,
 			enum: ["pending", "active", "failed"],
 			required: false,
 		},
-		/** Major units, the membership portion of `amount`. */
 		premiumAmount: { type: Number, required: false },
 		premiumPriceId: { type: String, required: false },
 		premiumInterval: { type: String, required: false },

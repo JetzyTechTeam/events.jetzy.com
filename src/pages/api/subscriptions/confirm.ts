@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { getStripeClient, setUserPremiumStatus } from "@/lib/premium"
+import { getStripeClient, setUserMembershipStatus, subscriptionMembershipKey } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -41,7 +41,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Could not resolve the subscribing user.", false, ResCode.BAD_REQUEST)
 		}
 
-		await setUserPremiumStatus(userId, {
+		// Identify the product rather than assuming Premium: this endpoint is reachable with any
+		// session id the caller holds, and writing the wrong record would overwrite a membership
+		// they actually pay for.
+		const key = subscriptionMembershipKey(subscription)
+		if (!key) {
+			return sendResponse(res, null, "This subscription isn't a Jetzy membership.", false, ResCode.BAD_REQUEST)
+		}
+
+		await setUserMembershipStatus(userId, key, {
 			active: subscription.status === "active" || subscription.status === "trialing",
 			stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id,
 			stripeSubscriptionId: subscription.id,

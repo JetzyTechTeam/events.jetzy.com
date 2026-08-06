@@ -2,6 +2,7 @@
 import { Error } from "@/lib/_toaster"
 import { eventPath } from "@/lib/event-slug"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import axios from "axios"
 import { useRouter } from "next/router"
 import React, { useMemo } from "react"
@@ -177,8 +178,30 @@ const CheckoutSuccessPage: React.FC = () => {
 		? metaTicketTotal
 		: (typeof sessionData?.amount_total === "number" ? sessionData.amount_total / 100 : subtotal)
 	const referralCode: string | undefined = sessionData?.metadata?.referralCode
-	// Present only when this purchase also started a membership (bundled ticket, non-member).
-	const metaPremiumAmount = parseFloat(sessionData?.metadata?.premiumAmount ?? "") || 0
+	// Present only when this purchase also started memberships (bundled ticket, non-member).
+	// One entry per product — a ticket can sell both Jetzy Premium and Full Concierge, and a
+	// buyer charged for two has to see two. `premiumAmount` is the pre-Concierge shape, still
+	// read so a session created just before the deploy renders correctly.
+	const metaMemberships: Array<{ label: string; amount: number; interval: string }> = (() => {
+		try {
+			const raw = JSON.parse(sessionData?.metadata?.memberships ?? "[]")
+			if (Array.isArray(raw)) {
+				return raw
+					.filter((row: any) => Number(row?.amount) > 0)
+					.map((row: any) => ({
+						label: MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || "Membership",
+						amount: Number(row.amount),
+						interval: String(row.interval || "month"),
+					}))
+			}
+		} catch {
+			// Fall through to the legacy shape below.
+		}
+		const legacy = parseFloat(sessionData?.metadata?.premiumAmount ?? "") || 0
+		return legacy > 0
+			? [{ label: "Jetzy Premium membership", amount: legacy, interval: sessionData?.metadata?.premiumInterval || "month" }]
+			: []
+	})()
 
 	// Split the discount into its Premium and referral parts. Checkout writes the two
 	// rates separately (`referralDiscountPercentage` / `premiumMemberDiscountPercentage`);
@@ -193,18 +216,10 @@ const CheckoutSuccessPage: React.FC = () => {
 		premiumPercentage: parseFloat(sessionData?.metadata?.premiumMemberDiscountPercentage ?? "0"),
 		total: finalTotal,
 		combinedDiscountAmount: Math.max(0, subtotal - finalTotal),
-		// A bundled ticket also started a Jetzy Premium membership. Stamped into metadata at
-		// checkout rather than derived here: `amount_total` is the combined first invoice, and
-		// subtracting the ticket total would silently absorb any proration or rounding.
-		...(metaPremiumAmount > 0
-			? {
-				recurring: {
-					label: "Jetzy Premium membership",
-					amount: metaPremiumAmount,
-					interval: sessionData?.metadata?.premiumInterval || "month",
-				},
-			}
-			: {}),
+		// A bundled ticket also started memberships. Stamped into metadata at checkout rather
+		// than derived here: `amount_total` is the combined charge, and subtracting the ticket
+		// total would silently absorb any proration or rounding.
+		...(metaMemberships.length > 0 ? { recurring: metaMemberships } : {}),
 	})
 
 	const displayEvent = eventData || parsedEvent
@@ -318,31 +333,36 @@ const CheckoutSuccessPage: React.FC = () => {
 							)}
 							<div className="flex justify-between border-t pt-3">
 								<span className="text-gray-800 font-bold">
-									{pendingApproval ? "Amount on hold" : pricing.recurring ? "Ticket total" : "Total"}
+									{pendingApproval ? "Amount on hold" : pricing.recurring?.length ? "Ticket total" : "Total"}
 								</span>
 								<span className={`font-bold ${pendingApproval ? "text-amber-600" : "text-gray-800"}`}>${finalTotal.toFixed(2)}</span>
 							</div>
 
-							{/* The membership is charged alongside the ticket but is not part of the
-							    ticket total, and unlike everything else here it repeats — so it gets
-							    its own row, its own "charged today", and the renewal terms. */}
-							{pricing.recurring && (
+							{/* Each membership is charged alongside the ticket but is not part of the
+							    ticket total, and unlike everything else here it repeats — so every one
+							    gets its own row and its own renewal terms, with a single "charged
+							    today" reconciling the lot. */}
+							{!!pricing.recurring?.length && (
 								<>
-									<div className="flex justify-between" style={{ color: "#B7860B" }}>
-										<span>{pricing.recurring.label}</span>
-										<span>${pricing.recurring.amount.toFixed(2)}/{pricing.recurring.interval}</span>
-									</div>
+									{pricing.recurring.map((membership) => (
+										<div key={membership.label} className="flex justify-between" style={{ color: "#B7860B" }}>
+											<span>{membership.label}</span>
+											<span>${membership.amount.toFixed(2)}/{membership.interval}</span>
+										</div>
+									))}
 									<div className="flex justify-between border-t pt-3">
 										<span className="text-gray-800 font-bold">Charged today</span>
 										<span className="font-bold text-gray-800">${(pricing.dueToday ?? finalTotal).toFixed(2)}</span>
 									</div>
-									<div className="mt-3 rounded-lg p-3" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-										<p className="text-sm font-semibold" style={{ color: "#8A6D0B" }}>Your Jetzy Premium membership is active</p>
-										<p className="text-xs text-gray-600 mt-1">
-											It renews at ${pricing.recurring.amount.toFixed(2)} every {pricing.recurring.interval} until you cancel.
-											You can cancel any time from <strong>Manage membership</strong> in your account menu.
-										</p>
-									</div>
+									{pricing.recurring.map((membership) => (
+										<div key={membership.label} className="mt-3 rounded-lg p-3" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+											<p className="text-sm font-semibold" style={{ color: "#8A6D0B" }}>Your {membership.label} is active</p>
+											<p className="text-xs text-gray-600 mt-1">
+												It renews at ${membership.amount.toFixed(2)} every {membership.interval} until you cancel.
+												You can cancel any time from <strong>Manage membership</strong> in your account menu.
+											</p>
+										</div>
+									))}
 								</>
 							)}
 

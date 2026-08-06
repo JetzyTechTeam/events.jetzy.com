@@ -6,9 +6,10 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { premiumAllowanceMessage, premiumQuantityInSelection, selectionIncludesPremium } from "@/lib/premium-bundle"
+import { membershipQuantityInSelection, premiumAllowanceMessage, selectionMemberships } from "@/lib/premium-bundle"
+import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
 import { ROUTES } from "@/configs/routes"
-import { usePremiumPlan } from "@/hooks/usePremiumPlan"
+import { useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
 import { StarIcon } from "@heroicons/react/24/solid"
@@ -63,32 +64,47 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const { data: session } = useSession()
 	const { isPremium: sessionIsPremium } = usePremiumStatus()
 	const sessionEmail = session?.user?.email || ""
-	// Does the CURRENT selection sell a membership?
-	const selectionSellsPremium = selectionIncludesPremium(tickets as any)
-	// null = not checked yet (or the address just changed) — distinct from a checked "no".
-	const [emailIsPremium, setEmailIsPremium] = useState<boolean | null>(null)
+	// Which memberships does the CURRENT selection sell? One ticket may sell both.
+	const selectionKeys = selectionMemberships(tickets as any)
+	const selectionSellsPremium = selectionKeys.length > 0
+	// null = not checked yet (or the address just changed) — distinct from a checked "none".
+	const [heldByEmail, setHeldByEmail] = useState<MembershipKey[] | null>(null)
 	const [checkingPremiumEmail, setCheckingPremiumEmail] = useState(false)
 	const premiumEmailTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 	// Monotonic id so a slow reply for a previous address can't overwrite a newer verdict.
 	const premiumCheckIdRef = useRef(0)
-	const { label: premiumPlanLabel, interval: premiumInterval, amount: premiumAmount } = usePremiumPlan(selectionSellsPremium)
-	// Charged only when the ticket bundles it AND this address isn't already a member.
-	const willBeChargedForPremium = selectionSellsPremium && emailIsPremium === false
-	// How many more Premium tickets this address may buy for THIS event. null = not checked.
-	const [premiumTicketsRemaining, setPremiumTicketsRemaining] = useState<number | null>(null)
-	const selectedPremiumQuantity = premiumQuantityInSelection(tickets as any)
+	const { plans: membershipPlans } = useMembershipPlans(selectionKeys)
+	// Charged only for the memberships this ticket sells that this address doesn't already
+	// hold — so a buyer with one of two still pays for the other.
+	const chargedKeys = heldByEmail === null ? [] : selectionKeys.filter((key) => !heldByEmail.includes(key))
+	const heldSelectionKeys = heldByEmail === null ? [] : selectionKeys.filter((key) => heldByEmail.includes(key))
+	// How many more membership tickets this address may buy for THIS event, per product.
+	// null = not checked.
+	const [allowanceRemaining, setAllowanceRemaining] = useState<Record<string, number> | null>(null)
+	// The tightest remaining allowance across the products this selection sells — what the
+	// error message quotes.
+	const bindingAllowance =
+		allowanceRemaining === null
+			? null
+			: selectionKeys.reduce<{ key: MembershipKey; remaining: number } | null>((tightest, key) => {
+				const remaining = allowanceRemaining[key]
+				if (typeof remaining !== "number") return tightest
+				return !tightest || remaining < tightest.remaining ? { key, remaining } : tightest
+			}, null)
 
 	// Live preview of what the buyer will actually pay. Built with the same helper the
 	// server, the confirmation email and the success page use, so all four agree — but the
 	// server recomputes independently and stays authoritative.
 	const appliedReferralPercentage = referralCodeValid === true ? (referralCodeDiscount ?? 0) : 0
+	const recurringPreview = chargedKeys
+		.map((key) => membershipPlans.find((plan) => plan.key === key))
+		.filter((plan): plan is NonNullable<typeof plan> => !!plan && plan.amount != null)
+		.map((plan) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: plan.amount as number, interval: plan.interval }))
 	const pricing = buildTicketPricing({
 		subtotal: selectionTotal,
 		referralCode: appliedReferralPercentage > 0 ? formData.referralCode?.trim().toUpperCase() : undefined,
 		referralPercentage: appliedReferralPercentage,
-		...(willBeChargedForPremium && premiumAmount != null
-			? { recurring: { label: "Jetzy Premium membership", amount: premiumAmount, interval: premiumInterval } }
-			: {}),
+		...(recurringPreview.length > 0 ? { recurring: recurringPreview } : {}),
 	})
 	const [validatingReferralCode, setValidatingReferralCode] = useState(false)
 	const referralCodeValidationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -116,8 +132,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		if (name === "email") {
 			// Drop the previous verdicts immediately so neither the total nor the allowance
 			// keeps describing a different address. The debounced effect re-checks both.
-			setEmailIsPremium(null)
-			setPremiumTicketsRemaining(null)
+			setHeldByEmail(null)
+			setAllowanceRemaining(null)
 			setAllowanceError(false)
 		}
 	}
@@ -181,11 +197,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				return
 			}
 
-			// The per-event Premium allowance, counted across every order this address has
-			// placed. The server re-checks; this just avoids a pointless trip to Stripe.
-			if (selectionSellsPremium && premiumTicketsRemaining !== null && selectedPremiumQuantity > premiumTicketsRemaining) {
+			// The per-event membership allowance, counted per product across every order this
+			// address has placed. The server re-checks; this just avoids a pointless trip to
+			// Stripe.
+			const exceeded = selectionKeys.find((key) => {
+				const remaining = allowanceRemaining?.[key]
+				return typeof remaining === "number" && membershipQuantityInSelection(tickets as any, key) > remaining
+			})
+			if (exceeded) {
 				setAllowanceError(true)
-				Error("Ticket limit reached", premiumAllowanceMessage(premiumTicketsRemaining))
+				Error("Ticket limit reached", premiumAllowanceMessage(allowanceRemaining?.[exceeded] ?? 0, exceeded))
 				return
 			}
 
@@ -236,11 +257,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		// Detect free ticket flow — skip Stripe and register directly. Paid approval orders
 		// still go through Stripe; they just authorize instead of charge.
 		//
-		// The decision is on the DISCOUNTED total, not the ticket prices. An order discounted
+		// The decision is on what is actually DUE, not on the ticket prices. An order discounted
 		// all the way to $0 has nothing for Stripe to do — and an approval order asking Stripe
 		// to authorize $0 with manual capture is rejected outright, which used to surface as
 		// an opaque failure at the very end of checkout.
-		if (pricing.total === 0) {
+		//
+		// `dueToday`, not `total`: a 100%-off referral code on a ticket that also sells a
+		// membership still owes that membership's first period. Reading `total` sent such an
+		// order down the free path, which issues a booking with no charge and no subscription —
+		// the buyer got the ticket and quietly lost the membership they were promised. The
+		// server enforces the same rule in `api/checkout/free-events`.
+		if ((pricing.dueToday ?? pricing.total) === 0) {
 			const eventId = (tickets[0] as any)?.eventId || eventData?._id
 			const customAnswersArray = Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 			try {
@@ -375,15 +402,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [showCheckout, sessionEmail])
 
-	// Is the address in the form attached to an active Premium subscription?
+	// Which memberships is the address in the form already attached to?
 	// Preview only — `api/checkout` resolves it again server-side before charging.
 	const checkPremiumEmail = useCallback(async (email: string, sellsPremium: boolean, eventId?: string) => {
 		const trimmed = email.trim()
 
 		// Nothing to gain by asking when no selected ticket sells a membership.
 		if (!sellsPremium || !eventId || !trimmed || !/^\S+@\S+\.\S+$/.test(trimmed)) {
-			setEmailIsPremium(null)
-			setPremiumTicketsRemaining(null)
+			setHeldByEmail(null)
+			setAllowanceRemaining(null)
 			return
 		}
 
@@ -401,22 +428,31 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			})
 			const result = await response.json()
 			if (requestId !== premiumCheckIdRef.current) return
-			setEmailIsPremium(result?.status ? !!result?.data?.isPremiumMember : false)
+			setHeldByEmail(result?.status ? sanitizeMembershipKeys(result?.data?.held) : [])
 			// Membership status and remaining allowance come back together — one request,
 			// one debounce, one rate-limit bucket.
-			const remaining = result?.data?.premiumTicketsRemaining
-			setPremiumTicketsRemaining(typeof remaining === "number" ? remaining : null)
+			const allowances = result?.data?.allowances
+			setAllowanceRemaining(
+				allowances && typeof allowances === "object"
+					? Object.keys(allowances).reduce((acc, key) => {
+						const remaining = allowances[key]?.remaining
+						if (typeof remaining === "number") acc[key] = remaining
+						return acc
+					}, {} as Record<string, number>)
+					: null,
+			)
 		} catch (error) {
-			console.error("Error checking Premium status for email:", error)
+			console.error("Error checking membership status for email:", error)
 			if (requestId !== premiumCheckIdRef.current) return
-			// Treat an unreachable check as "not a member": that shows the membership charge in
-			// the preview. Erring the other way would hide a recurring charge the server may
-			// still apply, which is the worse surprise. The server decides for real either way.
-			setEmailIsPremium(false)
+			// Treat an unreachable check as "not a member of anything": that shows every
+			// membership charge in the preview. Erring the other way would hide a recurring
+			// charge the server may still apply, which is the worse surprise. The server decides
+			// for real either way.
+			setHeldByEmail([])
 			// Leave the allowance unknown rather than guessing — the server enforces it, and
 			// blocking a legitimate buyer on a failed lookup would be worse than a rejected
 			// checkout with a clear message.
-			setPremiumTicketsRemaining(null)
+			setAllowanceRemaining(null)
 		} finally {
 			if (requestId === premiumCheckIdRef.current) setCheckingPremiumEmail(false)
 		}
@@ -445,7 +481,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			setAcceptedTerms(false)
 			setTermsError(false)
 			setAllowanceError(false)
-			setPremiumTicketsRemaining(null)
+			setAllowanceRemaining(null)
 			return
 		}
 		const eventId = (tickets[0] as any)?.eventId || eventData?._id
@@ -578,10 +614,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 									{/* The allowance is spent — there is no box to tick, so this explains
 									    rather than pointing anywhere. */}
-									{allowanceError && checkoutStep === "details" && premiumTicketsRemaining !== null && (
+									{allowanceError && checkoutStep === "details" && bindingAllowance !== null && (
 										<div className="mt-3 rounded-lg p-3 bg-red-500/15 border border-red-500/50">
 											<p className="text-red-400 text-sm font-semibold">Ticket limit reached</p>
-											<p className="text-gray-300 text-xs mt-0.5">{premiumAllowanceMessage(premiumTicketsRemaining)}</p>
+											<p className="text-gray-300 text-xs mt-0.5">{premiumAllowanceMessage(bindingAllowance.remaining, bindingAllowance.key)}</p>
 										</div>
 									)}
 								</div>
@@ -600,7 +636,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 														// Quote what Stripe actually holds: the DISCOUNTED ticket total, plus
 														// the first membership period when the ticket sells one. `dueToday`
 														// already carries that sum.
-														? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged.${pricing.recurring ? " That covers your ticket and your first Jetzy Premium month — your membership starts only if the host approves." : ""} You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
+														? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now but not charged.${chargedKeys.length > 0 ? ` That covers your ticket and the first period of ${membershipLabelList(chargedKeys)} — your membership starts only if the host approves.` : ""} You're only charged if the host approves. The hold is released automatically if your request is declined, or after 7 days if the host doesn't respond.`
 														: "Your registration is subject to host approval."}
 												</p>
 											</div>
@@ -696,35 +732,44 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											    is a price disclosure, not a nicety. */}
 											{selectionSellsPremium && !checkingPremiumEmail && (
 												<>
-													{emailIsPremium === true && (
+													{/* Held already — named individually, because a buyer holding one of
+													    two still has to see that the other one is being charged. */}
+													{heldSelectionKeys.length > 0 && (
 														<p className="text-sm text-green-500 mt-1.5 font-medium">
-															✓ You already have Jetzy Premium — you&apos;ll only pay for the ticket.
+															✓ You already have {membershipLabelList(heldSelectionKeys)} — you won&apos;t be charged for {heldSelectionKeys.length > 1 ? "those" : "that"} again.
 														</p>
 													)}
 
-													{/* Not a member on this address: the membership WILL be charged. */}
-													{emailIsPremium === false && (
-														<div className="mt-1.5 rounded-lg p-2.5" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
-															<div className="flex items-start gap-2">
-																<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
-																{/* On an approval ticket nothing is charged yet — the membership is
-																    held alongside the ticket and only starts if the host approves.
-																    Saying "charged today" there would simply be untrue. */}
-																<p className="text-xs" style={{ color: "#F5C518" }}>
-																	{selectionNeedsApproval
-																		? premiumPlanLabel
-																			? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves. It then renews every ${premiumInterval} until you cancel.`
-																			: "This ticket includes a Jetzy Premium membership. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves."
-																		: premiumPlanLabel
-																			? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. It's charged with your ticket today and renews every ${premiumInterval} until you cancel.`
-																			: "This ticket includes a Jetzy Premium membership, charged with your ticket today and renewing until you cancel."}
-																</p>
-															</div>
+													{/* Not held on this address: these memberships WILL be charged. One
+													    block each, so two products can't be collapsed into one price. */}
+													{chargedKeys.length > 0 && (
+														<div className="mt-1.5 rounded-lg p-2.5 space-y-2" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
+															{chargedKeys.map((key) => {
+																const plan = membershipPlans.find((p) => p.key === key)
+																const name = plan?.name || MEMBERSHIPS[key].label
+																return (
+																	<div key={key} className="flex items-start gap-2">
+																		<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
+																		{/* On an approval ticket nothing is charged yet — the membership is
+																		    held alongside the ticket and only starts if the host approves.
+																		    Saying "charged today" there would simply be untrue. */}
+																		<p className="text-xs" style={{ color: "#F5C518" }}>
+																			{selectionNeedsApproval
+																				? plan?.label
+																					? `This ticket includes a ${name} at ${plan.label}. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves. It then renews every ${plan.interval} until you cancel.`
+																					: `This ticket includes a ${name}. It's held with your ticket now — you're only charged, and your membership only starts, if the host approves.`
+																				: plan?.label
+																					? `This ticket includes a ${name} at ${plan.label}. It's charged with your ticket today and renews every ${plan.interval} until you cancel.`
+																					: `This ticket includes a ${name}, charged with your ticket today and renewing until you cancel.`}
+																		</p>
+																	</div>
+																)
+															})}
 
 															{/* The mismatch case: they ARE a member, but on a different address.
 															    Left as-is they'd be billed a SECOND subscription — so this is a
 															    warning about a duplicate charge, not an upsell. */}
-															{sessionIsPremium && sessionEmail && (
+															{sessionIsPremium && sessionEmail && chargedKeys.includes("premium") && (
 																<div className="mt-2 pt-2" style={{ borderTop: "1px solid rgba(245,197,24,0.3)" }}>
 																	<p className="text-xs" style={{ color: "#F79432" }}>
 																		Your Jetzy Premium account is on a different email. Use it, or you&apos;ll be charged for a second membership.
@@ -733,7 +778,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																		type="button"
 																		onClick={() => {
 																			setFormData((prev) => ({ ...prev, email: sessionEmail }))
-																			setEmailIsPremium(null)
+																			setHeldByEmail(null)
 																		}}
 																		className="text-xs font-bold underline mt-1"
 																		style={{ color: "#F79432" }}
@@ -745,11 +790,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 														</div>
 													)}
 
-													{emailIsPremium === null && (
+													{heldByEmail === null && (
 														<p className="text-xs text-gray-400 mt-1.5">
-															{premiumPlanLabel
-																? `This ticket includes a Jetzy Premium membership at ${premiumPlanLabel}. Enter your email — if you're already a member, you won't be charged for it again.`
-																: "This ticket includes a Jetzy Premium membership. Enter your email — if you're already a member, you won't be charged for it again."}
+															This ticket includes {membershipLabelList(selectionKeys)}
+															{membershipPlans.every((p) => p.label)
+																? ` at ${membershipPlans.map((p) => `${p.name} ${p.label}`).join(" and ")}`
+																: ""}
+															. Enter your email — if you&apos;re already a member, you won&apos;t be charged for it again.
 														</p>
 													)}
 
@@ -963,21 +1010,23 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
 												{/* Only qualify it as the TICKET total when a membership row follows —
 												    otherwise "Ticket total" reads as though something else is coming. */}
-												<span>{pricing.recurring ? "Ticket total" : "Total"}</span>
+												<span>{pricing.recurring?.length ? "Ticket total" : "Total"}</span>
 												<span>{pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
 											</div>
 
-											{/* The membership is an ADDITION, not a discount, and it recurs — so
-											    it gets its own row and its own "due today" line rather than being
-											    folded into the ticket total. */}
-											{pricing.recurring && (
+											{/* Each membership is an ADDITION, not a discount, and it recurs — so
+											    every one gets its own row, with a single "due today" line below,
+											    rather than being folded into the ticket total. */}
+											{!!pricing.recurring?.length && (
 												<>
-													<div className="flex justify-between mt-1" style={{ color: "#F5C518" }}>
-														<span>{pricing.recurring.label}</span>
-														<span>
-															{pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{pricing.recurring.interval}
-														</span>
-													</div>
+													{pricing.recurring.map((membership) => (
+														<div key={membership.label} className="flex justify-between mt-1" style={{ color: "#F5C518" }}>
+															<span>{membership.label}</span>
+															<span>
+																{membership.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{membership.interval}
+															</span>
+														</div>
+													))}
 													<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
 														{/* Nothing is taken on an approval order — it's a hold, not a charge. */}
 														<span>{selectionNeedsApproval ? "Held today" : "Due today"}</span>
@@ -985,8 +1034,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													</div>
 													<p className="text-xs text-gray-400 mt-2">
 														{selectionNeedsApproval
-															? `If the host approves, you're charged this amount and your membership begins, renewing at ${pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${pricing.recurring.interval} until you cancel. If they decline, nothing is charged.`
-															: `Your membership then renews at ${pricing.recurring.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${pricing.recurring.interval} until you cancel. You can cancel any time from your account.`}
+															? `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
+																.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
+																.join(" and ")} until you cancel. If they decline, nothing is charged.`
+															: `Your ${pricing.recurring.length > 1 ? "memberships then renew" : "membership then renews"} at ${pricing.recurring
+																.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
+																.join(" and ")} until you cancel. You can cancel any time from your account.`}
 													</p>
 												</>
 											)}

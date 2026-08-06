@@ -6,10 +6,18 @@ import { uniqueId } from "@Jetzy/lib/utils"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
-import { isPremiumEmail } from "@/lib/premium-eligibility"
-import { premiumAllowanceMessage, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionIncludesPremium, type BundleMode } from "@/lib/premium-bundle"
-import { getPremiumTicketAllowance } from "@/lib/premium-ticket-limit"
-import { getPremiumPrice, hasActivePremiumSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
+import { heldMemberships } from "@/lib/premium-eligibility"
+import {
+	premiumAllowanceMessage,
+	premiumOrderCapMessage,
+	PREMIUM_TICKET_MAX_PER_ORDER,
+	resolveBundlePlan,
+	ticketMemberships,
+	type BundlePlan,
+} from "@/lib/premium-bundle"
+import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
+import { getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
+import { MEMBERSHIPS, membershipLabelList, type MembershipKey } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
 
@@ -188,63 +196,70 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const buyerSession = await getServerSession(req, res, authOptions)
 		const buyerId = (buyerSession?.user as any)?._id || (buyerSession?.user as any)?.id
 
-		// Does this order sell a Jetzy Premium membership?
+		// Does this order sell memberships?
 		//
-		// Membership is no longer a discount — a ticket can BUNDLE it. Whether the buyer is
-		// already a member is resolved from the CHECKOUT EMAIL, not the session: the booking,
-		// the ticket and the account all attach to that address, so it's the only identity
-		// that can't disagree with itself. See `src/lib/premium-eligibility.ts`.
+		// Membership is no longer a discount — a ticket can BUNDLE Jetzy Premium, Full
+		// Concierge, or both. Which of them the buyer already holds is resolved from the
+		// CHECKOUT EMAIL, not the session: the booking, the ticket and the account all attach
+		// to that address, so it's the only identity that can't disagree with itself. See
+		// `src/lib/premium-eligibility.ts`.
 		//
-		//   "none"           → ordinary paid ticket, `mode: "payment"`.
-		//   "already-member" → bundled ticket bought by an existing subscriber. Charge the
-		//                      ticket alone; a second subscription would be a billing incident.
-		//   "bundle"         → `mode: "subscription"` with the ticket as a one-time line item.
-		let bundleMode: BundleMode = "none"
+		//   mode "none"           → ordinary paid ticket.
+		//   mode "already-member" → the ticket sells memberships but the buyer holds ALL of
+		//                           them already. Charge the ticket alone; a second
+		//                           subscription to the same plan is a billing incident.
+		//   mode "bundle"         → at least one membership still to sell. `plan.toCharge`
+		//                           names exactly which, so holding one of two still pays for
+		//                           the other.
+		let bundlePlan: BundlePlan = { selected: [], toCharge: [], alreadyHeld: [], mode: "none" }
+
+		// Resolve the flags from the EVENT record, not the request body — a crafted body could
+		// otherwise drop the membership and buy a bundled ticket at the plain ticket price.
+		const storedTicketFor = (id: string) => (event.tickets || []).find((et: any) => String(et._id) === String(id))
+
 		try {
-			const selectionBundles = selectionIncludesPremium(
-				// Resolve the flag from the EVENT record, not the request body — the client
-				// could otherwise turn the subscription line item off and buy a bundled ticket
-				// at the plain ticket price.
-				tickets.map((t) => (event.tickets || []).find((et: any) => String(et._id) === String(t.id)) as any).filter(Boolean),
+			bundlePlan = resolveBundlePlan(
+				tickets.map((t) => storedTicketFor(t.id) as any).filter(Boolean),
+				await heldMemberships(user.email),
 			)
-			if (selectionBundles) {
-				bundleMode = (await isPremiumEmail(user.email)) ? "already-member" : "bundle"
-			}
-			console.log("[checkout/index] Bundle mode:", bundleMode)
+			console.log("[checkout/index] Bundle plan:", bundlePlan)
 
-			// ---- Premium ticket caps. The client caps too, but the body is attacker-controlled. ----
-			if (selectionBundles) {
-				// Resolve the quantities against the EVENT record for the same reason as
-				// `selectionBundles` above: a crafted body could otherwise drop `includesPremium`
-				// and slip an uncapped quantity through.
-				const premiumQuantity = tickets.reduce((sum, t) => {
-					const stored = (event.tickets || []).find((et: any) => String(et._id) === String(t.id))
-					if (!stored?.includesPremium) return sum
-					return sum + (Number(t.quantity) || 0)
-				}, 0)
+			// ---- Membership ticket caps. The client caps too, but the body is attacker-controlled. ----
+			//
+			// Counted PER PRODUCT: two Premium tickets must not exhaust the buyer's Concierge
+			// allowance for the same event.
+			if (bundlePlan.selected.length > 0) {
+				const allowances = await getMembershipTicketAllowances(String(event._id), user.email)
 
-				if (premiumQuantity > PREMIUM_TICKET_MAX_PER_ORDER) {
-					console.warn("[checkout/index] Premium per-order cap exceeded:", { premiumQuantity, email: user.email })
-					return sendResponse(res, null, premiumOrderCapMessage(), false, ResCode.BAD_REQUEST)
-				}
+				for (const key of bundlePlan.selected) {
+					const quantity = tickets.reduce((sum, t) => {
+						if (!ticketMemberships(storedTicketFor(t.id) as any).includes(key)) return sum
+						return sum + (Number(t.quantity) || 0)
+					}, 0)
 
-				// And the cap across every order this address has placed for this event —
-				// without it, three orders of two quietly reach six.
-				const allowance = await getPremiumTicketAllowance(String(event._id), user.email)
-				if (premiumQuantity > allowance.remaining) {
-					console.warn("[checkout/index] Premium per-event allowance exceeded:", {
-						email: user.email,
-						requested: premiumQuantity,
-						...allowance,
-					})
-					return sendResponse(res, null, premiumAllowanceMessage(allowance.remaining), false, ResCode.BAD_REQUEST)
+					if (quantity > PREMIUM_TICKET_MAX_PER_ORDER) {
+						console.warn("[checkout/index] Membership per-order cap exceeded:", { key, quantity, email: user.email })
+						return sendResponse(res, null, premiumOrderCapMessage(key), false, ResCode.BAD_REQUEST)
+					}
+
+					// And the cap across every order this address has placed for this event —
+					// without it, three orders of two quietly reach six.
+					if (quantity > allowances[key].remaining) {
+						console.warn("[checkout/index] Membership per-event allowance exceeded:", {
+							key,
+							email: user.email,
+							requested: quantity,
+							...allowances[key],
+						})
+						return sendResponse(res, null, premiumAllowanceMessage(allowances[key].remaining, key), false, ResCode.BAD_REQUEST)
+					}
 				}
 			}
 		} catch (bundleError: any) {
 			// Never guess. Charging a member for a second subscription, or handing a
 			// non-member a membership they weren't billed for, are both worse than a retry.
-			console.error("[checkout/index] Error resolving Premium bundle mode:", bundleError)
-			return sendResponse(res, null, "We couldn't verify your Jetzy Premium status. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+			console.error("[checkout/index] Error resolving membership bundle plan:", bundleError)
+			return sendResponse(res, null, "We couldn't verify your membership status. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 		}
 
 		// Validate required custom questions
@@ -341,14 +356,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const couponName = `Referral: ${referralCodeData.code}`.slice(0, 40)
 
 				// On a bundled order the session-level discount would otherwise apply to the
-				// WHOLE first invoice — quietly taking the host's referral percentage off
-				// Jetzy's subscription revenue too. Restrict the coupon to the ticket products.
+				// WHOLE charge — quietly taking the host's referral percentage off Jetzy's
+				// membership revenue too. Restrict the coupon to the ticket products.
 				//
 				// `applies_to` takes PRODUCT ids, but `ticket.stripeProductId` actually holds a
 				// PRICE id (`api/events/create.ts` calls `stripe.prices.create`), so the product
 				// has to be read back off the price.
 				let appliesTo: Stripe.CouponCreateParams.AppliesTo | undefined = undefined
-				if (bundleMode === "bundle") {
+				if (bundlePlan.toCharge.length > 0) {
 					const productIds = await Promise.all(
 						tickets.map(async (t) => {
 							const price = await stripe.prices.retrieve(t.priceId)
@@ -411,18 +426,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			});
 		}
 
-		// ---- Bundled order: one session that buys the ticket AND starts the subscription ----
+		// ---- Bundled order: one payment that buys the ticket AND the first membership period ----
 		//
-		// Stripe allows a `mode: "subscription"` session to carry one-time line items next to
-		// the recurring one; the one-time items are billed on the FIRST INVOICE only and the
-		// subscription renews by itself afterwards.
-		let subscriptionExtras: Partial<Stripe.Checkout.SessionCreateParams> = {}
-		if (bundleMode === "bundle") {
+		// ALWAYS `mode: "payment"`, with or without approval, and the subscriptions are created
+		// by us afterwards — at fulfilment for an immediate purchase, at approval for a held one
+		// — each with a trial covering the period this charge already paid for.
+		//
+		// This used to be a `mode: "subscription"` session for the immediate case, letting
+		// Stripe create the subscription atomically with the charge. That cannot survive a
+		// ticket selling TWO memberships: a Checkout Session creates at most ONE subscription,
+		// and a single subscription carrying both products would mean cancelling either one
+		// cancels both. Selling them as one-time line items is the only shape that yields two
+		// independent subscriptions from one payment.
+		//
+		// The trade-off is deliberate: we lose atomic charge-and-subscribe, so a failure between
+		// the two leaves someone charged with no membership. That risk already existed on the
+		// approval path and is handled the same way — the booking stays valid, the gap is
+		// recorded per product as `status: "failed"`, and money is never rolled back to fix it.
+		type MembershipLine = { key: MembershipKey; amount: number; currency: string; priceId: string; interval: string }
+		let membershipLines: MembershipLine[] = []
+		let membershipExtras: Partial<Stripe.Checkout.SessionCreateParams> = {}
+
+		if (bundlePlan.toCharge.length > 0) {
 			try {
 				// The buyer needs a durable Jetzy account and a Stripe Customer: every renewal
-				// and cancellation webhook resolves them by `premiumSubscription.stripeCustomerId`.
-				// A guest is auto-created here from the email they typed — `createOrUpdateUser`
-				// ran above and matches case-insensitively, so an existing account is reused.
+				// and cancellation webhook resolves them by customer id. A guest is auto-created
+				// here from the email they typed — `createOrUpdateUser` ran above and matches
+				// case-insensitively, so an existing account is reused.
 				const { Users } = await import("@/models/userModal")
 				const userDoc = await Users.findOne({ email: { $regex: `^${user.email.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }).select("_id")
 
@@ -440,91 +470,88 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// there would otherwise be nobody to attach the subscription to.
 				const subscriberId = userDoc?._id || buyerId
 				if (!subscriberId) {
-					console.error("[checkout/index] Bundled checkout has no user to attach the subscription to:", user.email)
-					return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+					console.error("[checkout/index] Bundled checkout has no user to attach the membership to:", user.email)
+					return sendResponse(res, null, "We couldn't set up your membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 				}
 
-				const premiumPrice = await getPremiumPrice()
+				// ONE Stripe Customer per user, holding every subscription they have. That is
+				// what lets the billing portal show both memberships behind a single link — and
+				// exactly why every write keyed off it must name its product.
 				const customerId = await resolveStripeCustomerForUser(String(subscriberId), user.email)
 
-				// Ask STRIPE, not our own copy, whether they're already subscribed.
-				// `isPremiumEmail` above reads `premiumSubscription.active`, which is only set
-				// once the webhook lands — so two purchases in quick succession, or any webhook
-				// delay, would still double-subscribe. Stripe is the source of truth for billing
-				// state; Mongo is a cache that can lag.
-				if (await hasActivePremiumSubscription(customerId)) {
-					console.warn("[checkout/index] Customer already has an active subscription; charging for the ticket only:", customerId)
-					bundleMode = "already-member"
+				// Ask STRIPE, not our own copy, whether they're already subscribed — per product.
+				// `heldMemberships` above reads the `active` flags, which are only set once the
+				// webhook lands, so two purchases in quick succession or any webhook delay would
+				// still double-subscribe. Stripe is the source of truth for billing state; Mongo
+				// is a cache that can lag.
+				const stillOwed: MembershipKey[] = []
+				for (const key of bundlePlan.toCharge) {
+					if (await hasActiveMembershipSubscription(customerId, key)) {
+						console.warn(`[checkout/index] Customer already subscribed to ${key}; not charging for it:`, customerId)
+					} else {
+						stillOwed.push(key)
+					}
+				}
+				bundlePlan = {
+					...bundlePlan,
+					toCharge: stillOwed,
+					alreadyHeld: bundlePlan.selected.filter((key) => !stillOwed.includes(key)),
+					mode: stillOwed.length > 0 ? "bundle" : "already-member",
 				}
 
-				if (bundleMode === "bundle") {
-					// Read back by the webhook, which must activate Premium AND fulfil the ticket.
-					metadata.purpose = "ticket+premium"
-					metadata.userId = String(subscriberId)
-					// So /success and the receipt can show the membership as its own line. It
-					// can't be derived from `amount_total` — that's the combined figure, and
-					// subtracting the ticket total would silently absorb proration or rounding.
-					if (premiumPrice.unit_amount != null) {
-						metadata.premiumAmount = (premiumPrice.unit_amount / 100).toFixed(2)
-						metadata.premiumInterval = premiumPrice.recurring?.interval || "month"
+				for (const key of stillOwed) {
+					// A recurring price can't be a line item in payment mode, hence the inline
+					// `price_data` rather than the price id. The price id is still carried in
+					// metadata so the subscription created later uses the exact rate quoted here.
+					const price = await getMembershipPrice(key)
+					if (price.unit_amount == null) {
+						throw new Error(`${MEMBERSHIPS[key].label} price has no unit_amount and can't be charged`)
 					}
-					metadata.premiumPriceId = premiumPrice.id
+					membershipLines.push({
+						key,
+						amount: price.unit_amount / 100,
+						currency: price.currency || "usd",
+						priceId: price.id,
+						interval: price.recurring?.interval || "month",
+					})
+				}
 
-					if (requiresApproval) {
-						// ---- Bundled AND held for approval ----
-						//
-						// A subscription-mode session cannot be held: `payment_intent_data` (and so
-						// `capture_method: "manual"`) is payment-mode only. So the membership is
-						// sold here as a ONE-TIME line item alongside the ticket, the whole lot is
-						// authorized but not captured, and `api/bookings/approve.ts` creates the
-						// real subscription once the host approves — with a trial covering the
-						// period this capture already paid for.
-						//
-						// A recurring price can't be a line item in payment mode either, hence the
-						// inline `price_data` rather than `premiumPrice.id`.
-						if (premiumPrice.unit_amount == null) {
-							console.error("[checkout/index] Premium price has no unit_amount; cannot hold it for approval")
-							return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
-						}
-
-						subscriptionExtras = {
-							// Still payment mode — but with a Customer, because the card saved here
-							// is the one the subscription will charge at renewal.
-							customer: customerId,
-							line_items: [
-								...prices,
-								{
-									quantity: 1,
-									price_data: {
-										currency: premiumPrice.currency || "usd",
-										unit_amount: premiumPrice.unit_amount,
-										product_data: {
-											name: "Jetzy Premium membership — first month",
-											description: "Starts only if the host approves your request.",
-										},
+				if (membershipLines.length > 0) {
+					membershipExtras = {
+						// Payment mode with a Customer, because the card saved here is the one the
+						// subscriptions will charge at renewal.
+						customer: customerId,
+						line_items: [
+							...prices,
+							...membershipLines.map((line) => ({
+								quantity: 1,
+								price_data: {
+									currency: line.currency,
+									unit_amount: Math.round(line.amount * 100),
+									product_data: {
+										name: `${MEMBERSHIPS[line.key].label} — first ${line.interval}`,
+										description: requiresApproval
+											? "Starts only if the host approves your request."
+											: "Renews automatically. Cancel any time.",
 									},
 								},
-							],
-						}
-						metadata.premiumPendingApproval = "true"
-					} else {
-						subscriptionExtras = {
-							mode: "subscription",
-							// `customer` and `customer_email` are mutually exclusive; the subscription
-							// must attach to a real Customer, so that one wins.
-							customer: customerId,
-							line_items: [...prices, { price: premiumPrice.id, quantity: 1 }],
-							subscription_data: {
-								metadata: { userId: String(subscriberId), bookingRef, eventId: String(event._id) },
-							},
-						}
+							})),
+						],
 					}
+
+					// Read back at fulfilment and at approval. Stored as JSON so a second product
+					// needs no extra metadata keys — Stripe caps a session at 50 of them.
+					metadata.purpose = "ticket+membership"
+					metadata.membershipUserId = String(subscriberId)
+					metadata.memberships = JSON.stringify(membershipLines)
 				}
 			} catch (bundleSetupError: any) {
-				console.error("[checkout/index] Failed to set up bundled subscription:", bundleSetupError?.message || bundleSetupError)
-				return sendResponse(res, null, "We couldn't set up your Jetzy Premium membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
+				console.error("[checkout/index] Failed to set up the bundled membership:", bundleSetupError?.message || bundleSetupError)
+				return sendResponse(res, null, "We couldn't set up your membership. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)
 			}
 		}
+
+		const chargesMembership = membershipLines.length > 0
 
 		// create a checkout session
 		const session = await stripe.checkout.sessions.create({
@@ -536,47 +563,51 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			cancel_url: cancelUrl,
 			metadata: metadata,
 			// Stripe rejects `customer` and `customer_email` together, and a bundled order
-			// must attach to a real Customer so the subscription is resolvable later.
-			...(bundleMode === "bundle" ? {} : { customer_email: user.email }),
+			// must attach to a real Customer so the subscriptions are resolvable later.
+			...(chargesMembership ? {} : { customer_email: user.email }),
 			discounts: discountConfig,
-			// Overrides mode/line_items/customer. For a bundled order WITHOUT approval this
-			// switches the session to subscription mode; with approval it keeps payment mode
-			// and just adds the membership as a one-time line item plus the Customer.
-			...subscriptionExtras,
-			// Approval orders authorize the card without charging it. Everything below is
-			// spread in conditionally so the ordinary paid path is byte-identical to before.
-			//
-			// Skipped only for a bundled order in SUBSCRIPTION mode (no approval), where
-			// `payment_intent_data` doesn't exist. A bundled order that DOES require approval
-			// stays in payment mode precisely so it can be held — see the branch above.
-			...(requiresApproval && !(bundleMode === "bundle" && subscriptionExtras.mode === "subscription")
+			// Overrides line_items/customer, adding the membership lines and the Customer.
+			...membershipExtras,
+			// `payment_intent_data` is needed for two independent reasons — a hold, and a saved
+			// card — so it is built once from both. The ordinary paid ticket (neither approval
+			// nor membership) still gets no `payment_intent_data` at all, byte-identical to
+			// before.
+			...(requiresApproval || chargesMembership
 				? {
-					submit_type: "book" as const,
+					...(requiresApproval ? { submit_type: "book" as const } : {}),
 					payment_intent_data: {
-						capture_method: "manual" as const,
-						description: `Approval hold — ${event.name}`,
-						// Saves the card against the Customer so the subscription created at
-						// approval has something to charge at renewal. Without this the
-						// membership would bill once and then die at the first renewal.
-						// Harmless on a non-bundled approval order.
-						...(bundleMode === "bundle" ? { setup_future_usage: "off_session" as const } : {}),
+						// Approval orders authorize the card without charging it.
+						...(requiresApproval
+							? { capture_method: "manual" as const, description: `Approval hold — ${event.name}` }
+							: {}),
+						// Saves the card against the Customer so the subscriptions created after
+						// this charge have something to bill at renewal. Required on EVERY bundled
+						// order now, not just held ones — no subscription is created by Stripe any
+						// more, so without this every membership would bill once and then die at
+						// its first renewal.
+						...(chargesMembership ? { setup_future_usage: "off_session" as const } : {}),
 						// Duplicated from the session metadata on purpose: `payment_intent.*`
 						// webhook events carry the PaymentIntent's metadata, not the session's,
 						// and the expiry handler needs to find the booking from one of those.
 						metadata: {
 							bookingRef,
 							eventId: String(event._id),
-							requiresApproval: "true",
+							requiresApproval: requiresApproval ? "true" : "false",
 						},
 					},
-					custom_text: {
-						submit: {
-							message:
-								bundleMode === "bundle"
-									? "You won't be charged now. We'll hold your ticket and first Jetzy Premium month on your card, and only charge you — and start your membership — if the host approves. The hold is released automatically if your request is declined."
-									: "You won't be charged now. We'll place a temporary hold on your card and only charge you if the host approves your request. Holds are released automatically if your request is declined.",
-						},
-					},
+					...(requiresApproval
+						? {
+							custom_text: {
+								submit: {
+									message: chargesMembership
+										? `You won't be charged now. We'll hold your ticket and the first period of ${membershipLabelList(
+											membershipLines.map((l) => l.key),
+										)} on your card, and only charge you — and start your membership — if the host approves. The hold is released automatically if your request is declined.`
+										: "You won't be charged now. We'll place a temporary hold on your card and only charge you if the host approves your request. Holds are released automatically if your request is declined.",
+								},
+							},
+						}
+						: {}),
 				}
 				: {}),
 		}).catch((stripeError: any) => {

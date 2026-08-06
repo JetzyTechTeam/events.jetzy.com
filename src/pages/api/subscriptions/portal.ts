@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getStripeClient } from "@/lib/premium"
+import { findUserRecord, getStripeClient, getUserStripeCustomerId } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -41,11 +41,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "User not found.", false, ResCode.NOT_FOUND)
 		}
 
-		const customerId: string | undefined = record.doc?.premiumSubscription?.stripeCustomerId
+		// The BILLING IDENTITY, not one product's record. One Stripe Customer holds every
+		// subscription this person has, so the portal shows Jetzy Premium and Full Concierge
+		// together with a cancel button each — reading `premiumSubscription.stripeCustomerId`
+		// alone would have locked a Concierge-only member out of cancelling what they pay for.
+		const customerId = getUserStripeCustomerId(record.doc)
 		if (!customerId) {
 			// No Stripe customer means they have never subscribed — there is nothing to manage,
 			// and creating a customer here would just leave an empty portal.
-			return sendResponse(res, null, "You don't have a Jetzy Premium membership to manage.", false, ResCode.BAD_REQUEST)
+			return sendResponse(res, null, "You don't have a membership to manage.", false, ResCode.BAD_REQUEST)
 		}
 
 		const returnTo = typeof req.body?.returnTo === "string" && req.body.returnTo.startsWith("/") ? req.body.returnTo : "/"

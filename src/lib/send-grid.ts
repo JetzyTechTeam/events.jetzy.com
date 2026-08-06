@@ -365,10 +365,12 @@ type ApprovalEmailData = {
     amount: number
     expiresAt?: Date | string | null
     /**
-     * Present when the held ticket also sells a Jetzy Premium membership. The membership
-     * does NOT start until the host approves — the hold merely covers its first period.
+     * Present when the held ticket also sells memberships. They do NOT start until the host
+     * approves — the hold merely covers their first period. One entry per product: a ticket
+     * can sell both Jetzy Premium and Full Concierge, and a guest whose card is held for two
+     * has to be told about both.
      */
-    premium?: { amount: number; interval: string }
+    memberships?: Array<{ label: string; amount: number; interval: string }>
   }
 }
 
@@ -401,24 +403,27 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
               charge and your ticket is emailed to you. If your request is declined${holdDeadline ? ` — or the host doesn't respond by then —` : ""}
               the hold is released automatically.
             </p>
-            ${payment.premium
-      ? `<p style="color: #0d47a1; margin: 12px 0 0 0; line-height: 1.6;">
-              That hold includes <strong>${formatMoney(payment.premium.amount)}</strong> for your first
-              Jetzy Premium ${payment.premium.interval}. Your membership does <strong>not</strong> start
+            ${(payment.memberships || [])
+      .map(
+        (membership) => `<p style="color: #0d47a1; margin: 12px 0 0 0; line-height: 1.6;">
+              That hold includes <strong>${formatMoney(membership.amount)}</strong> for your first
+              ${membership.label} ${membership.interval}. Your membership does <strong>not</strong> start
               unless the host approves — and if it does, it renews at
-              ${formatMoney(payment.premium.amount)} per ${payment.premium.interval} until you cancel.
-            </p>`
-      : ""}
+              ${formatMoney(membership.amount)} per ${membership.interval} until you cancel.
+            </p>`,
+      )
+      .join("")}
             <p style="color: #666; margin: 12px 0 0 0; font-size: 13px;">
               Depending on your bank, a released hold can take 5&ndash;10 business days to disappear from your statement.
             </p>
           </div>`
     : ""
+  const heldMembershipNames = (payment?.memberships || []).map((m) => m.label).join(" and ")
   const nextSteps = payment
     ? `
               <li>The host will review your request.</li>
-              <li>If approved, your card is charged ${formatMoney(payment.amount)}${payment.premium ? " and your Jetzy Premium membership begins" : ""}, and you'll receive your ticket by email.</li>
-              <li>If declined, the hold is released${payment.premium ? " and no membership is created" : ""} — you are not charged.</li>
+              <li>If approved, your card is charged ${formatMoney(payment.amount)}${heldMembershipNames ? ` and your ${heldMembershipNames} membership begins` : ""}, and you'll receive your ticket by email.</li>
+              <li>If declined, the hold is released${heldMembershipNames ? " and no membership is created" : ""} — you are not charged.</li>
               <li>No further action is needed from you right now.</li>`
     : `
               <li>The host will review your request.</li>
@@ -1066,6 +1071,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
         combinedDiscountAmount: discountAmount,
       })
 
+    // One entry per membership sold with the ticket — a ticket can sell both Jetzy Premium
+    // and Full Concierge, and every recurring charge has to be named on the receipt.
+    const recurringLines = resolvedPricing.recurring || []
+
     console.log("Email details:", { timestamp, location, subtotal, finalTotal, resolvedPricing, tickets })
 
     // Process QR code image for attachment
@@ -1572,15 +1581,20 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                   )
                   .join("")}
                 <tr>
-                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">${resolvedPricing.recurring ? "Ticket total" : "Total"}</td>
+                  <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">${recurringLines.length > 0 ? "Ticket total" : "Total"}</td>
                   <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${resolvedPricing.total.toFixed(2)}</td>
                 </tr>
-                ${resolvedPricing.recurring
-                  ? `
+                ${recurringLines
+                  .map(
+                    (membership) => `
                 <tr>
-                  <td style="padding: 6px 15px; color: #333;">${resolvedPricing.recurring.label}</td>
-                  <td style="padding: 6px 15px; color: #333; text-align: right;">$${resolvedPricing.recurring.amount.toFixed(2)}/${resolvedPricing.recurring.interval}</td>
-                </tr>
+                  <td style="padding: 6px 15px; color: #333;">${membership.label}</td>
+                  <td style="padding: 6px 15px; color: #333; text-align: right;">$${membership.amount.toFixed(2)}/${membership.interval}</td>
+                </tr>`,
+                  )
+                  .join("")}
+                ${recurringLines.length > 0
+                  ? `
                 <tr>
                   <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333;">Charged today</td>
                   <td style="padding: 10px 15px 12px 15px; border-top: 1px solid #e5e7eb; font-weight: bold; color: #333; text-align: right;">$${(resolvedPricing.dueToday ?? resolvedPricing.total).toFixed(2)}</td>
@@ -1589,30 +1603,32 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
               </table>
             `}
 
-            ${resolvedPricing.recurring
-              ? `
+            ${recurringLines
+              .map(
+                (membership) => `
             <div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin-top: 15px;">
-              <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your Jetzy Premium membership</p>
+              <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your ${membership.label}</p>
               <p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
-                This ticket included a Jetzy Premium membership, and
-                <strong>your first ${resolvedPricing.recurring.interval} is already paid</strong> — it's part of the
+                This ticket included a ${membership.label}, and
+                <strong>your first ${membership.interval} is already paid</strong> — it's part of the
                 amount above. It then renews at
-                <strong>$${resolvedPricing.recurring.amount.toFixed(2)} every ${resolvedPricing.recurring.interval}</strong>${
-      resolvedPricing.recurring.firstRenewalAt
-        ? `, starting <strong>${dayjs(resolvedPricing.recurring.firstRenewalAt).format("MMMM D, YYYY")}</strong>`
-        : ""
-    },
+                <strong>$${membership.amount.toFixed(2)} every ${membership.interval}</strong>${
+                  membership.firstRenewalAt
+                    ? `, starting <strong>${dayjs(membership.firstRenewalAt).format("MMMM D, YYYY")}</strong>`
+                    : ""
+                },
                 until you cancel. You can cancel any time from
                 <strong>Manage membership</strong> in your Jetzy account menu.
               </p>
-              ${resolvedPricing.recurring.firstRenewalAt
-        ? `<p style="margin: 10px 0 0 0; color: #7a5c00; font-size: 13px; line-height: 1.5;">
+              ${membership.firstRenewalAt
+                ? `<p style="margin: 10px 0 0 0; color: #7a5c00; font-size: 13px; line-height: 1.5;">
                 If your billing page shows this period as a free trial, that's just how the paid first
-                ${resolvedPricing.recurring.interval} is recorded — you've already paid for it.
+                ${membership.interval} is recorded — you've already paid for it.
               </p>`
-        : ""}
-            </div>`
-              : ""}
+                : ""}
+            </div>`,
+              )
+              .join("")}
           </div>
 
           ${qrCodeValid ? `
@@ -2969,7 +2985,16 @@ type MembershipEmailData = {
 	interval: string
 	/** Start of the next period, for renewal/cancellation copy. */
 	nextBillingDate?: Date
+	/**
+	 * Which membership this is about — "Jetzy Premium" or "Full Concierge Membership".
+	 * Comes from `MEMBERSHIPS[key].label`. Defaulted rather than required so a caller that
+	 * can't identify the product still sends a message, but naming it matters: a member of
+	 * both who gets an unlabelled "your membership has ended" cannot tell which one.
+	 */
+	label?: string
 }
+
+const DEFAULT_MEMBERSHIP_LABEL = "Jetzy Premium"
 
 const membershipShell = (bodyHtml: string, accent: string) => wrapHtml(`
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
@@ -2986,8 +3011,9 @@ const membershipShell = (bodyHtml: string, accent: string) => wrapHtml(`
 const money = (n: number) => `$${n.toFixed(2)}`
 
 /** Sent on each RENEWAL — never on the first invoice, which the ticket receipt already covers. */
-export const sendMembershipRenewed = async ({ email, firstName, amount, interval, nextBillingDate }: MembershipEmailData) => {
+export const sendMembershipRenewed = async ({ email, firstName, amount, interval, nextBillingDate, label }: MembershipEmailData) => {
 	const name = firstName || email.split("@")[0]
+	const product = label || DEFAULT_MEMBERSHIP_LABEL
 	const nextLine = nextBillingDate
 		? `Your next payment is due on ${dayjs(nextBillingDate).format("MMMM D, YYYY")}.`
 		: ""
@@ -2996,15 +3022,15 @@ export const sendMembershipRenewed = async ({ email, firstName, amount, interval
 		await sgMail.send({
 			to: email,
 			from: { email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(), name: "Jetzy" },
-			subject: `Your Jetzy Premium membership renewed — ${money(amount)}`,
+			subject: `Your ${product} membership renewed — ${money(amount)}`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
-          Your Jetzy Premium membership has renewed. We've charged <strong>${money(amount)}</strong> for another ${interval}.
+          Your ${product} membership has renewed. We've charged <strong>${money(amount)}</strong> for another ${interval}.
         </p>
         ${nextLine ? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${nextLine}</p>` : ""}
       `, "#F5C518"),
-			text: `Hi ${name},\n\nYour Jetzy Premium membership has renewed. We've charged ${money(amount)} for another ${interval}.\n${nextLine}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
+			text: `Hi ${name},\n\nYour ${product} membership has renewed. We've charged ${money(amount)} for another ${interval}.\n${nextLine}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
 		})
 		console.log(`✅ Membership renewal email sent to: ${email}`)
 	} catch (error) {
@@ -3016,19 +3042,20 @@ export const sendMembershipRenewed = async ({ email, firstName, amount, interval
  * Sent when a renewal payment FAILS. The most important of the three: without it a
  * member's card expires, Stripe stops retrying, and they lose membership silently.
  */
-export const sendMembershipPaymentFailed = async ({ email, firstName, amount, interval }: MembershipEmailData) => {
+export const sendMembershipPaymentFailed = async ({ email, firstName, amount, interval, label }: MembershipEmailData) => {
 	const name = firstName || email.split("@")[0]
+	const product = label || DEFAULT_MEMBERSHIP_LABEL
 	const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
 
 	try {
 		await sgMail.send({
 			to: email,
 			from: { email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(), name: "Jetzy" },
-			subject: "Action needed: your Jetzy Premium payment didn't go through",
+			subject: `Action needed: your ${product} payment didn't go through`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
-          We couldn't take the <strong>${money(amount)}</strong> payment for your Jetzy Premium membership.
+          We couldn't take the <strong>${money(amount)}</strong> payment for your ${product} membership.
           This usually means the card on file has expired or was declined.
         </p>
         <div style="background-color:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;padding:15px;margin:20px 0;">
@@ -3046,7 +3073,7 @@ export const sendMembershipPaymentFailed = async ({ email, firstName, amount, in
           Sign in and choose <strong>Manage membership</strong> from your account menu to update your payment details.
         </p>
       `, "#DC2626"),
-			text: `Hi ${name},\n\nWe couldn't take the ${money(amount)} payment for your Jetzy Premium membership. The card on file may have expired or been declined.\n\nWe'll retry over the next few days. If the payment still doesn't go through, your membership will end.\n\nSign in at ${baseUrl} and choose "Manage membership" to update your card.\n\n— Team Jetzy`,
+			text: `Hi ${name},\n\nWe couldn't take the ${money(amount)} payment for your ${product} membership. The card on file may have expired or been declined.\n\nWe'll retry over the next few days. If the payment still doesn't go through, your membership will end.\n\nSign in at ${baseUrl} and choose "Manage membership" to update your card.\n\n— Team Jetzy`,
 		})
 		console.log(`✅ Membership payment-failed email sent to: ${email}`)
 	} catch (error) {
@@ -3064,20 +3091,24 @@ export const sendMembershipCancelled = async ({
 	firstName,
 	endsOn,
 	alreadyEnded,
+	label,
 }: {
 	email: string
 	firstName?: string
 	endsOn?: Date
 	alreadyEnded: boolean
+	/** Which membership ended. A member of both cannot tell from an unlabelled message. */
+	label?: string
 }) => {
 	const name = firstName || email.split("@")[0]
+	const product = label || DEFAULT_MEMBERSHIP_LABEL
 	const endsOnLabel = endsOn ? dayjs(endsOn).format("MMMM D, YYYY") : null
 
 	const headline = alreadyEnded
-		? "Your Jetzy Premium membership has ended."
+		? `Your ${product} membership has ended.`
 		: endsOnLabel
-			? `Your Jetzy Premium membership is set to end on <strong>${endsOnLabel}</strong>.`
-			: "Your Jetzy Premium membership is set to end at the close of your current billing period."
+			? `Your ${product} membership is set to end on <strong>${endsOnLabel}</strong>.`
+			: `Your ${product} membership is set to end at the close of your current billing period.`
 
 	const body = alreadyEnded
 		? "You won't be charged again. Any tickets you've already bought are unaffected and remain valid."
@@ -3087,7 +3118,7 @@ export const sendMembershipCancelled = async ({
 		await sgMail.send({
 			to: email,
 			from: { email: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(), name: "Jetzy" },
-			subject: alreadyEnded ? "Your Jetzy Premium membership has ended" : "Your Jetzy Premium membership is scheduled to end",
+			subject: alreadyEnded ? `Your ${product} membership has ended` : `Your ${product} membership is scheduled to end`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>

@@ -6,7 +6,9 @@ import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { selectionIncludesPremium } from "@/lib/premium-bundle"
+import { resolveBundlePlan } from "@/lib/premium-bundle"
+import { heldMemberships } from "@/lib/premium-eligibility"
+import { membershipLabelList } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import { incrementReferralUsage } from "@/lib/checkout-fulfillment"
 import { ensureDbConnected } from "@/configs/database"
@@ -143,15 +145,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 		const { rows: orderRows, subtotal } = order
 
-		// A ticket that sells a Jetzy Premium membership can never come through here: there is
-		// no charge to start a subscription against. Resolved from the EVENT record, not the
-		// request body, so the flag can't be dropped by a crafted POST to dodge the fee.
-		const selectionBundlesPremium = selectionIncludesPremium(
+		// A ticket that still owes a membership can never come through here: this endpoint hands
+		// out a booking with no payment step, so there would be no charge to start the
+		// subscription against and the buyer would get the ticket while quietly losing the
+		// membership they were promised. Resolved from the EVENT record, not the request body,
+		// so the flag can't be dropped by a crafted POST to dodge the fee.
+		//
+		// Deliberately keyed on what is still OWED, not on what the ticket sells: a buyer who
+		// already holds every membership on it has nothing left to charge, and a 100%-off
+		// referral code genuinely does make that order free. Rejecting those would strand them
+		// at a Stripe session for $0, which Stripe refuses outright.
+		const bundlePlan = resolveBundlePlan(
 			tickets.map((t) => (event.tickets || []).find((et: any) => String(et._id) === String(t.id)) as any).filter(Boolean),
+			await heldMemberships(user.email),
 		)
-		if (selectionBundlesPremium) {
-			console.warn("[checkout/free-events] Rejected bundled-premium ticket on the free path:", { eventId })
-			return sendResponse(res, null, "This ticket includes Jetzy Premium — please complete checkout.", false, 400)
+		if (bundlePlan.toCharge.length > 0) {
+			console.warn("[checkout/free-events] Rejected a ticket still owing a membership:", { eventId, owed: bundlePlan.toCharge })
+			return sendResponse(
+				res,
+				null,
+				`This ticket includes ${membershipLabelList(bundlePlan.toCharge)} — please complete checkout.`,
+				false,
+				400,
+			)
 		}
 
 		// A discount can legitimately bring a paid order to exactly $0 (e.g. a 100% referral

@@ -11,11 +11,13 @@ import { BookingStatus } from "@/models/events/types"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { sendTicketConfirmation, sendAdminApprovalNotice } from "@/lib/send-grid"
-import { pricingFromBooking } from "@/lib/ticket-pricing"
-import { getStripeClient, hasActivePremiumSubscription, setPremiumStatusByStripeCustomerId, setUserPremiumStatus } from "@/lib/premium"
-import { isPremiumEmail } from "@/lib/premium-eligibility"
+import { pricingFromBooking, type RecurringCharge } from "@/lib/ticket-pricing"
+import { getStripeClient } from "@/lib/premium"
+import { heldMemberships } from "@/lib/premium-eligibility"
+import { MEMBERSHIPS } from "@/lib/memberships"
+import { bookingMemberships } from "@/lib/booking-memberships"
+import { startMembershipSubscription } from "@/lib/membership-subscriptions"
 import Stripe from "stripe"
-import dayjs from "dayjs"
 import zod from "zod"
 
 const schema = zod.object({
@@ -68,30 +70,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	// Free bookings have no `payment` at all, so this whole block is skipped and their
 	// behaviour is unchanged.
 	let amountCharged: number | undefined
-	// When the membership created below will first actually be billed.
-	let firstRenewalAt: Date | undefined
+	// Memberships this approval actually started, for the receipt.
+	const startedMemberships: RecurringCharge[] = []
 	const needsCapture = !!booking.payment?.paymentIntentId && ["authorized", "capturing", "failed"].includes(booking.payment?.status as string)
 
 	// ---- A bundled ticket held for approval ----
-	// The hold covers ticket + the first membership period; the subscription itself does not
-	// exist yet. If the buyer has become a member in the meantime we capture the ticket ONLY
-	// and let Stripe release the rest — capturing less than authorized is free, and nobody
-	// should pay for a membership they already own.
-	const premiumPending = booking.payment?.premiumStatus === "pending"
-	const heldPremiumAmount = Number(booking.payment?.premiumAmount) || 0
-	let skipPremium = false
-	if (premiumPending && heldPremiumAmount > 0) {
+	// The hold covers the ticket plus the first period of every membership the ticket sells;
+	// none of the subscriptions exist yet. If the buyer has acquired one of them in the
+	// meantime we capture LESS and let Stripe release the difference — capturing under the
+	// authorized amount is free, and nobody should pay for a membership they already own.
+	//
+	// Read through `bookingMemberships` so bookings held under the old single-product shape
+	// (live PENDING rows exist from the week before Concierge shipped) resolve identically.
+	const pendingMemberships = bookingMemberships(booking.payment).filter((row) => row.status === "pending")
+	let skipKeys: string[] = []
+	if (pendingMemberships.length > 0) {
 		try {
-			skipPremium = await isPremiumEmail(booking.customerEmail)
-			if (skipPremium) {
-				console.warn("[bookings/approve] Buyer already a member; capturing the ticket only:", booking.bookingRef)
+			const alreadyHeld = await heldMemberships(booking.customerEmail)
+			skipKeys = pendingMemberships.filter((row) => alreadyHeld.includes(row.key)).map((row) => row.key)
+			if (skipKeys.length > 0) {
+				console.warn("[bookings/approve] Buyer already holds", skipKeys.join(", "), "— releasing that portion:", booking.bookingRef)
 			}
-		} catch (premiumLookupError) {
-			// Can't tell — go ahead with the full capture and the subscription. Charging for a
-			// membership we then create is recoverable; refusing the approval is not.
-			console.error("[bookings/approve] Premium lookup failed, proceeding with full capture:", premiumLookupError)
+		} catch (membershipLookupError) {
+			// Can't tell — go ahead with the full capture and create the subscriptions. Charging
+			// for a membership we then create is recoverable; refusing the approval is not.
+			console.error("[bookings/approve] Membership lookup failed, proceeding with full capture:", membershipLookupError)
 		}
 	}
+
+	// What the capture must NOT include: the first period of anything they already hold.
+	const releasedAmount =
+		Math.round(
+			(pendingMemberships
+				.filter((row) => skipKeys.includes(row.key))
+				.reduce((sum, row) => sum + (Number(row.amount) || 0), 0) +
+				Number.EPSILON) *
+				100,
+		) / 100
 
 	if (needsCapture) {
 		const piId = booking.payment!.paymentIntentId!
@@ -115,11 +130,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const stripe = getStripeClient()
 		let pi: Stripe.PaymentIntent
 		try {
-			// Partial capture when the membership portion is no longer owed. Stripe releases
-			// the uncaptured remainder at no cost.
-			pi = skipPremium
+			// Partial capture when part of the hold is no longer owed. Stripe releases the
+			// uncaptured remainder at no cost. Computed by subtracting only the memberships
+			// being skipped, so a buyer who holds one of two still pays for the other.
+			pi = releasedAmount > 0
 				? await stripe.paymentIntents.capture(piId, {
-					amount_to_capture: Math.round((Number(booking.total) || 0) * 100),
+					amount_to_capture: Math.max(0, Math.round(((Number(booking.payment!.amount) || 0) - releasedAmount) * 100)),
 				})
 				: await stripe.paymentIntents.capture(piId)
 		} catch (err: any) {
@@ -168,75 +184,84 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		booking.payment!.lastError = undefined
 
 		// `payment.amount` is what the CARD was charged; `booking.total` is what the TICKET
-		// cost. They differ only when a membership rode along, so subtracting the captured
+		// cost. They differ only when memberships rode along, so subtracting the captured
 		// membership portion leaves every non-bundled booking byte-identical to before.
-		const capturedPremium = premiumPending && !skipPremium ? heldPremiumAmount : 0
-		booking.total = Math.round((amountCharged - capturedPremium + Number.EPSILON) * 100) / 100
+		const capturedMemberships = pendingMemberships
+			.filter((row) => !skipKeys.includes(row.key))
+			.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+		booking.total = Math.round((amountCharged - capturedMemberships + Number.EPSILON) * 100) / 100
 
-		// ---- Start the membership the hold paid for ----
+		// ---- Start the memberships the hold paid for ----
 		// Deliberately AFTER the capture and never allowed to undo it: money that has been
 		// taken is never rolled back here (same rule as the capture-before-confirm ordering
-		// above). If this fails the ticket is still valid and paid; the gap is recorded on the
-		// booking as `premiumStatus: "failed"` so it stays visible and retryable.
-		if (premiumPending) {
-			if (skipPremium) {
-				booking.payment!.premiumStatus = "active" // they already have one
-				booking.payment!.premiumAmount = 0
-			} else {
-				try {
-					const customerId = typeof pi.customer === "string" ? pi.customer : pi.customer?.id
-					const paymentMethodId = typeof pi.payment_method === "string" ? pi.payment_method : pi.payment_method?.id
-					const priceId = booking.payment!.premiumPriceId
-					if (!customerId || !priceId) throw new Error("missing customer or price on the held booking")
+		// above). If one fails the ticket is still valid and paid; the gap is recorded against
+		// that product as `status: "failed"` so it stays visible and retryable.
+		//
+		// Each product is attempted independently — a failure on one must not deny the guest
+		// the other one they were just charged for.
+		const customerId = typeof pi.customer === "string" ? pi.customer : pi.customer?.id
+		const paymentMethodId = typeof pi.payment_method === "string" ? pi.payment_method : pi.payment_method?.id
+		// Normalise a legacy single-product booking onto the array before writing back, so
+		// everything downstream reads one shape.
+		if (pendingMemberships.length > 0 && !booking.payment!.memberships?.length) {
+			booking.payment!.memberships = pendingMemberships as any
+		}
 
-					// Belt and braces against a subscription started elsewhere between the hold
-					// and this click — Stripe is the authority, our copy can lag the webhook.
-					if (await hasActivePremiumSubscription(customerId)) {
-						booking.payment!.premiumStatus = "active"
-					} else {
-						const interval = booking.payment!.premiumInterval || "month"
-						const trialEnd = dayjs().add(1, interval as dayjs.ManipulateType).unix()
+		for (const pending of pendingMemberships) {
+			const row = booking.payment!.memberships?.find((m) => m.key === pending.key)
 
-						const subscription = await stripe.subscriptions.create({
-							customer: customerId,
-							items: [{ price: priceId }],
-							// The first period was just captured as a one-time charge, so the
-							// subscription must NOT bill again now. The trial covers exactly that
-							// period; the first real invoice lands one interval from approval.
-							trial_end: trialEnd,
-							...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
-							metadata: { bookingRef, eventId: String(booking.eventId), approvedAt: new Date().toISOString() },
-						})
+			if (skipKeys.includes(pending.key)) {
+				// They already have it and the hold for it was released above — nothing charged,
+				// nothing to create.
+				if (row) {
+					row.status = "active"
+					row.amount = 0
+				}
+				continue
+			}
 
-						booking.payment!.subscriptionId = subscription.id
-						booking.payment!.premiumStatus = "active"
+			try {
+				const result = await startMembershipSubscription({
+					key: pending.key,
+					priceId: pending.priceId || "",
+					interval: pending.interval,
+					customerId: customerId || "",
+					paymentMethodId,
+					email: booking.customerEmail,
+					subscriberId: (booking as any).bookerUserId ? String((booking as any).bookerUserId) : undefined,
+					metadata: { bookingRef, eventId: String(booking.eventId), approvedAt: new Date().toISOString() },
+				})
+
+				if (row) {
+					row.status = "active"
+					if (result.subscriptionId) row.subscriptionId = result.subscriptionId
+					row.lastError = undefined
+				}
+
+				// Only itemise a membership this approval actually started — not one the buyer
+				// already had, where nothing was charged and there is nothing new to renew.
+				if (result.created) {
+					startedMemberships.push({
+						label: MEMBERSHIPS[pending.key].receiptLabel,
+						amount: Number(pending.amount) || 0,
+						interval: pending.interval || "month",
 						// The trial end IS the first real charge date — surfaced in the receipt so
 						// "Free trial ends <date>" in Stripe's portal can't be read as a free month.
-						firstRenewalAt = new Date(trialEnd * 1000)
-
-						// Set membership state directly rather than waiting for the webhook, so the
-						// buyer is a member the moment the host clicks.
-						const subscriberId = (booking as any).bookerUserId
-						const activation = {
-							active: subscription.status === "active" || subscription.status === "trialing",
-							stripeCustomerId: customerId,
-							stripeSubscriptionId: subscription.id,
-							status: subscription.status,
-							currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-							cancelAtPeriodEnd: subscription.cancel_at_period_end,
-						}
-						// By customer id first: the membership belongs to the checkout email, and
-						// that is the account the Stripe customer was created for.
-						await setPremiumStatusByStripeCustomerId(customerId, activation)
-						if (subscriberId) await setUserPremiumStatus(String(subscriberId), activation).catch(() => {})
-					}
-				} catch (subscriptionError: any) {
-					// Money is already taken and the ticket is real — confirm the booking anyway
-					// and make the missing membership visible instead of silently swallowing it.
-					console.error("[bookings/approve] Captured but could not start the membership:", subscriptionError?.message || subscriptionError)
-					booking.payment!.premiumStatus = "failed"
-					booking.payment!.lastError = `Membership not started: ${subscriptionError?.message || subscriptionError}`
+						firstRenewalAt: result.firstRenewalAt,
+					})
 				}
+			} catch (subscriptionError: any) {
+				// Money is already taken and the ticket is real — confirm the booking anyway
+				// and make the missing membership visible instead of silently swallowing it.
+				console.error(
+					`[bookings/approve] Captured but could not start ${pending.key}:`,
+					subscriptionError?.message || subscriptionError,
+				)
+				if (row) {
+					row.status = "failed"
+					row.lastError = String(subscriptionError?.message || subscriptionError)
+				}
+				booking.payment!.lastError = `${MEMBERSHIPS[pending.key].label} not started: ${subscriptionError?.message || subscriptionError}`
 			}
 		}
 	}
@@ -262,12 +287,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	await resolveEventLocation(event)
-
-	// Only itemise the membership on the receipt when this approval actually started one —
-	// not when the buyer already had it (nothing was charged for it) and not when creating it
-	// failed (nothing to renew).
-	const startedMembershipAmount =
-		premiumPending && !skipPremium && booking.payment?.premiumStatus === "active" ? heldPremiumAmount : 0
 
 	// Build ticket details from the event's ticket subdocuments
 	const [firstName, ...rest] = (booking.customerName || "").split(" ")
@@ -318,8 +337,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// purchase.
 			//
 			// `booking.total` — NOT `amountCharged` — because on a bundled approval the
-			// capture also covered the first membership period. The membership is shown on
-			// its own recurring line instead, with `dueToday` reconciling the two.
+			// capture also covered the first period of each membership. Those are shown on
+			// their own recurring lines instead, with `dueToday` reconciling the two.
 			pricing: pricingFromBooking(
 				{
 					subTotal: booking.subTotal,
@@ -330,14 +349,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					premiumMemberDiscountPercentage: (booking as any).premiumMemberDiscountPercentage,
 				},
 				ticketDetails.reduce((sum, t) => sum + (t.price || 0) * (t.quantity || 0), 0),
-				startedMembershipAmount > 0
-					? {
-						label: "Jetzy Premium membership",
-						amount: startedMembershipAmount,
-						interval: booking.payment?.premiumInterval || "month",
-						firstRenewalAt,
-					}
-					: undefined,
+				startedMemberships.length > 0 ? startedMemberships : undefined,
 			),
 		})
 	} catch (emailError) {

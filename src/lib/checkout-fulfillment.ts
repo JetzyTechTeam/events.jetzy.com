@@ -1,6 +1,8 @@
 import Stripe from "stripe"
 import { ensureDbConnected } from "@/configs/database"
 import { getStripeClient } from "@/lib/premium"
+import { MEMBERSHIPS, isMembershipKey, type MembershipKey } from "@/lib/memberships"
+import { startMembershipSubscription } from "@/lib/membership-subscriptions"
 import { buildTicketPricing, type RecurringCharge } from "@/lib/ticket-pricing"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
@@ -53,10 +55,13 @@ type SessionMetadata = {
 	/** Ticket-only figures, stamped at session creation — see the totals block below. */
 	ticketSubtotal?: string
 	ticketTotal?: string
-	/** "ticket+premium" on a bundled order; the subscriber the membership attaches to. */
+	/** "ticket+membership" on a bundled order; the account the memberships attach to. */
 	purpose?: string
+	membershipUserId?: string
+	/** JSON `[{ key, amount, currency, priceId, interval }]` — what was charged for. */
+	memberships?: string
+	/** @deprecated Pre-Concierge single-product metadata; still read for in-flight sessions. */
 	userId?: string
-	/** Bundled AND held for approval — the subscription is created in `approve.ts`. */
 	premiumPendingApproval?: string
 	premiumAmount?: string
 	premiumInterval?: string
@@ -89,6 +94,55 @@ const parseCustomAnswers = (metadata: SessionMetadata) => {
 		}
 	})
 	return answers
+}
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
+type MembershipLine = { key: MembershipKey; amount: number; currency?: string; priceId: string; interval: string }
+
+/**
+ * What memberships did this session charge for?
+ *
+ * Reads the JSON `memberships` metadata written by `checkout/index.ts`, falling back to the
+ * flat `premium*` keys used before Full Concierge existed. That fallback is not decoration:
+ * sessions created minutes before a deploy are fulfilled by the new code, and a held one can
+ * sit pending for days.
+ *
+ * Rows without a usable key or price id are dropped rather than guessed at — a bad row would
+ * otherwise become a subscription for the wrong product.
+ */
+const parseMembershipLines = (metadata: SessionMetadata): MembershipLine[] => {
+	if (metadata.memberships) {
+		try {
+			const parsed = JSON.parse(metadata.memberships)
+			if (Array.isArray(parsed)) {
+				return parsed
+					.filter((row: any) => isMembershipKey(row?.key) && row?.priceId)
+					.map((row: any) => ({
+						key: row.key as MembershipKey,
+						amount: Number(row.amount) || 0,
+						currency: row.currency,
+						priceId: String(row.priceId),
+						interval: String(row.interval || "month"),
+					}))
+			}
+		} catch (error) {
+			console.error("[checkout-fulfillment] Couldn't parse membership metadata:", error)
+		}
+	}
+
+	if (metadata.premiumPendingApproval === "true" && metadata.premiumPriceId) {
+		return [
+			{
+				key: "premium",
+				amount: parseFloat(metadata.premiumAmount || "") || 0,
+				priceId: metadata.premiumPriceId,
+				interval: metadata.premiumInterval || "month",
+			},
+		]
+	}
+
+	return []
 }
 
 export const incrementReferralUsage = async (code?: string) => {
@@ -195,19 +249,33 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		? Math.round((subtotal * combinedDiscountFraction + Number.EPSILON) * 100) / 100
 		: 0
 
-	// The membership this purchase started, if any. Read back from the SUBSCRIPTION rather
-	// than from our own config so the receipt quotes the amount and interval Stripe will
-	// actually bill — a plan price changed between checkout and fulfilment would otherwise
-	// make the email wrong. Never fatal: a missing receipt line beats a lost booking.
-	let recurringCharge: RecurringCharge | undefined
+	// ---- Memberships sold with this ticket ----
+	//
+	// A bundled order is always `mode: "payment"`: the first period of each membership rides
+	// along as a one-time line item and the SUBSCRIPTIONS ARE CREATED AFTERWARDS — here for an
+	// immediate purchase, in `approve.ts` for a held one. So everything needed to create them
+	// has to be carried on the session and then written onto the booking, because approve.ts
+	// works from the booking document and never sees this session.
+	const membershipLines = parseMembershipLines(metadata)
+
+	// What the memberships add to today's charge. Distinct from `total`, which is the ticket
+	// alone — writing `total` into `payment.amount` would tell the host "$80 on hold" when
+	// $100 is actually held.
+	const membershipTotal = round2(membershipLines.reduce((sum, line) => sum + line.amount, 0))
+	const chargedAmount = round2(total + membershipTotal)
+
+	// A legacy in-flight session: created as `mode: "subscription"` before the bundled flow
+	// moved to payment mode, so Stripe already made the subscription. Read it back for the
+	// receipt rather than our own config, so the email quotes what Stripe will actually bill.
+	// Never fatal: a missing receipt line beats a lost booking.
+	let legacyRecurring: RecurringCharge | undefined
 	if (subscriptionId) {
 		try {
 			const subscription = await stripe.subscriptions.retrieve(subscriptionId)
-			const item = subscription.items?.data?.[0]
-			const price = item?.price
+			const price = subscription.items?.data?.[0]?.price
 			if (price?.unit_amount != null) {
-				recurringCharge = {
-					label: "Jetzy Premium membership",
+				legacyRecurring = {
+					label: MEMBERSHIPS.premium.receiptLabel,
 					amount: price.unit_amount / 100,
 					interval: price.recurring?.interval || "month",
 					// The first period was paid on this invoice, so the next real charge is the
@@ -222,17 +290,6 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			console.error("[checkout-fulfillment] Couldn't read subscription for receipt:", subscriptionError)
 		}
 	}
-
-	// A bundled ticket that ALSO requires approval is held in payment mode, with the first
-	// membership period as a one-time line item, and the subscription is created only when the
-	// host approves. Everything approve.ts needs must be stored on the booking — it works from
-	// the booking document and never sees this session or its metadata.
-	const premiumPendingApproval = metadata.premiumPendingApproval === "true"
-	const heldPremiumAmount = premiumPendingApproval ? parseFloat(metadata.premiumAmount || "") || 0 : 0
-
-	// What the CARD is held for or charged. Distinct from `total`, which is the ticket alone —
-	// writing `total` here would tell the host "$80 on hold" when $100 is actually held.
-	const chargedAmount = Math.round((total + heldPremiumAmount + Number.EPSILON) * 100) / 100
 
 	const now = new Date()
 	let booking: IBookings | null = null
@@ -263,18 +320,23 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				provider: "stripe",
 				checkoutSessionId: session.id,
 				paymentIntentId,
-				// Present only on a bundled order, so a support question about a recurring
-				// charge can be traced from the booking back to the subscription that started it.
+				// Only on a legacy subscription-mode session, so a support question about a
+				// recurring charge can be traced back to the subscription that started it.
 				...(subscriptionId ? { subscriptionId } : {}),
-				// Held for approval, not yet started. `approve.ts` reads these to create the
-				// real subscription; the price id is stored rather than re-resolved so a plan
-				// price change while the request waits can't move the buyer onto a new rate.
-				...(premiumPendingApproval
+				// Every membership starts as "pending": the money has moved (or is held) but no
+				// subscription exists yet. The immediate path promotes these to "active" a few
+				// lines below; a held order leaves them for `approve.ts`. Storing the price id
+				// rather than re-resolving it means a plan price change while a request waits
+				// can't move the buyer onto a rate they were never quoted.
+				...(membershipLines.length > 0
 					? {
-						premiumStatus: "pending" as const,
-						premiumAmount: heldPremiumAmount,
-						premiumPriceId: metadata.premiumPriceId,
-						premiumInterval: metadata.premiumInterval || "month",
+						memberships: membershipLines.map((line) => ({
+							key: line.key,
+							status: "pending" as const,
+							amount: line.amount,
+							priceId: line.priceId,
+							interval: line.interval,
+						})),
 					}
 					: {}),
 				captureMethod: isAuthorized ? "manual" : "automatic",
@@ -323,8 +385,14 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				payment: {
 					amount: chargedAmount,
 					expiresAt: booking.payment?.authExpiresAt,
-					...(heldPremiumAmount > 0
-						? { premium: { amount: heldPremiumAmount, interval: metadata.premiumInterval || "month" } }
+					...(membershipLines.length > 0
+						? {
+							memberships: membershipLines.map((line) => ({
+								label: MEMBERSHIPS[line.key].label,
+								amount: line.amount,
+								interval: line.interval,
+							})),
+						}
 						: {}),
 				},
 			})
@@ -351,9 +419,74 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		return { created: true, booking, event, requiresApproval: true, session }
 	}
 
-	// ---- Immediate-payment branch: unchanged from the original confirm.ts behaviour. ----
+	// ---- Immediate-payment branch ----
 	await booking.updateEventTracker()
 	await incrementReferralUsage(metadata.referralCode)
+
+	// ---- Start the memberships this charge paid for ----
+	//
+	// Deliberately AFTER the booking exists and never allowed to undo it. The money is already
+	// taken; if a subscription can't be created the ticket is still valid and paid for, and the
+	// gap is recorded per product as `status: "failed"` so it stays visible and retryable. This
+	// is the cost of the payment-mode session — see `premium-bundle.ts` for why a Checkout
+	// Session can no longer create these itself.
+	//
+	// Each product is attempted independently: a failure on one must not deny the buyer the
+	// other one they just paid for.
+	const recurringCharges: RecurringCharge[] = legacyRecurring ? [legacyRecurring] : []
+	if (membershipLines.length > 0) {
+		const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id
+		const paymentMethodId = typeof pi?.payment_method === "string" ? pi?.payment_method : pi?.payment_method?.id
+
+		for (const line of membershipLines) {
+			const row = booking.payment?.memberships?.find((m) => m.key === line.key)
+			try {
+				const result = await startMembershipSubscription({
+					key: line.key,
+					priceId: line.priceId,
+					interval: line.interval,
+					customerId: customerId || "",
+					paymentMethodId,
+					email: metadata.email,
+					subscriberId: metadata.membershipUserId,
+					metadata: { bookingRef, eventId: String(metadata.eventId) },
+				})
+
+				if (row) {
+					row.status = "active"
+					if (result.subscriptionId) row.subscriptionId = result.subscriptionId
+					row.lastError = undefined
+				}
+
+				// Only bill-forward a line the buyer will actually be charged for again. When
+				// they already had the subscription, `created` is false and there is nothing new
+				// to disclose on this receipt.
+				if (result.created) {
+					recurringCharges.push({
+						label: MEMBERSHIPS[line.key].receiptLabel,
+						amount: line.amount,
+						interval: line.interval,
+						firstRenewalAt: result.firstRenewalAt,
+					})
+				}
+			} catch (membershipError: any) {
+				console.error(
+					`[checkout-fulfillment] Charged but could not start ${line.key}:`,
+					membershipError?.message || membershipError,
+				)
+				if (row) {
+					row.status = "failed"
+					row.lastError = String(membershipError?.message || membershipError)
+				}
+			}
+		}
+
+		try {
+			await (booking as any).save()
+		} catch (saveError) {
+			console.error("[checkout-fulfillment] Couldn't record membership results on the booking:", saveError)
+		}
+	}
 
 	try {
 		let qrCodeImageUrl: string | undefined
@@ -374,16 +507,16 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			discountAmount: discountAmount > 0 ? discountAmount : undefined,
 			discountPercentage: effectiveDiscountPercentage > 0 ? effectiveDiscountPercentage : undefined,
 			// Itemised, with the Total being what the TICKET cost rather than a recomputed
-			// figure. A bundled order also carries the membership as a recurring line, so the
-			// receipt states the renewal amount and interval — required for a subscription
-			// the buyer acquired as part of a ticket purchase.
+			// figure. A bundled order also carries each membership as its own recurring line,
+			// so the receipt states every renewal amount and interval — required for
+			// subscriptions the buyer acquired as part of a ticket purchase.
 			pricing: buildTicketPricing({
 				subtotal,
 				referralCode: metadata.referralCode,
 				referralPercentage: referralPercent,
 				premiumPercentage: premiumPercent,
 				total,
-				...(recurringCharge ? { recurring: recurringCharge } : {}),
+				...(recurringCharges.length > 0 ? { recurring: recurringCharges } : {}),
 			}),
 			qrCodeImageUrl,
 		})

@@ -28,10 +28,15 @@ export const BELOW_MIN_PRICE_MESSAGE = "Ticket price must be $0 (free) or at lea
 export type PricingLine = { label: string; amount: number }
 
 /**
- * A charge that recurs after this order — today only the Jetzy Premium membership sold with
- * a bundled ticket. Deliberately NOT folded into `lines`, which are all deductions: the
- * membership is an addition, and it is not part of `total` because `total` means "what this
- * ticket order costs". The first month is billed with the ticket on Stripe's first invoice.
+ * A charge that recurs after this order — a membership sold with a bundled ticket.
+ * Deliberately NOT folded into `lines`, which are all deductions: the membership is an
+ * addition, and it is not part of `total` because `total` means "what this ticket order
+ * costs". The first period is billed with the ticket on the same charge.
+ *
+ * There can be MORE THAN ONE: a single ticket may sell both Jetzy Premium and Full Concierge,
+ * and each becomes its own independent subscription with its own renewal. Every one of them
+ * has to be named wherever this is rendered — showing one and silently billing two is a price
+ * disclosure failure, not a display bug.
  */
 export type RecurringCharge = {
 	label: string
@@ -54,16 +59,21 @@ export type TicketPricing = {
 	/** Discount lines, each a positive amount to be shown as a deduction. */
 	lines: PricingLine[]
 	total: number
-	/** Present only when the order also starts a subscription. */
-	recurring?: RecurringCharge
+	/** Present, and non-empty, only when the order also starts one or more subscriptions. */
+	recurring?: RecurringCharge[]
 	/**
-	 * What the card is actually charged today: `total` plus the first period of `recurring`.
-	 * Present only alongside `recurring`, so existing callers keep reading `total` unchanged.
+	 * What the card is actually charged today: `total` plus the first period of every
+	 * `recurring` entry. Present only alongside `recurring`, so existing callers keep reading
+	 * `total` unchanged.
 	 */
 	dueToday?: number
 }
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+
+/** Sum of the first periods — what the memberships add to today's charge. */
+export const recurringTotal = (recurring?: RecurringCharge[] | null): number =>
+	round2((recurring || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0))
 
 export type BuildPricingInput = {
 	/** Sum of price x quantity before any discount. */
@@ -83,10 +93,11 @@ export type BuildPricingInput = {
 	 */
 	combinedDiscountAmount?: number | null
 	/**
-	 * Set when the ticket bundles a Jetzy Premium membership and the buyer isn't already a
-	 * member. Adds a recurring line and `dueToday`; never affects `total`.
+	 * Set when the ticket bundles memberships the buyer doesn't already hold. Adds a recurring
+	 * line per membership plus `dueToday`; never affects `total`. A bare object is accepted for
+	 * the single-membership callers.
 	 */
-	recurring?: RecurringCharge | null
+	recurring?: RecurringCharge | RecurringCharge[] | null
 }
 
 export function buildTicketPricing({
@@ -145,15 +156,19 @@ export function buildTicketPricing({
 		}
 	}
 
-	if (recurring && recurring.amount > 0) {
+	const recurringLines = (Array.isArray(recurring) ? recurring : recurring ? [recurring] : []).filter(
+		(r) => r && Number(r.amount) > 0,
+	)
+
+	if (recurringLines.length > 0) {
 		return {
 			subtotal: base,
 			lines,
 			total: resolvedTotal,
-			recurring,
-			// Stripe puts the one-time ticket and the first subscription period on the same
-			// first invoice, so this is the figure the buyer's card sees today.
-			dueToday: round2(resolvedTotal + recurring.amount),
+			recurring: recurringLines,
+			// The one-time ticket and the first period of every membership are charged together,
+			// so this is the figure the buyer's card sees today.
+			dueToday: round2(resolvedTotal + recurringTotal(recurringLines)),
 		}
 	}
 
@@ -172,10 +187,10 @@ export function pricingFromBooking(
 	},
 	fallbackSubtotal?: number,
 	/**
-	 * Set when this booking also started a Jetzy Premium membership — e.g. an approval that
-	 * captured the first period. Never part of `total`, which is the ticket alone.
+	 * Set when this booking also started memberships — e.g. an approval that captured their
+	 * first periods. Never part of `total`, which is the ticket alone.
 	 */
-	recurring?: RecurringCharge | null,
+	recurring?: RecurringCharge | RecurringCharge[] | null,
 ): TicketPricing {
 	return buildTicketPricing({
 		subtotal: booking.subTotal ?? fallbackSubtotal ?? 0,

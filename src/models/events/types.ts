@@ -1,5 +1,6 @@
 import { Model, Types } from "mongoose"
 import { IBaseModelProps } from "../types"
+import type { MembershipKey } from "@/lib/memberships"
 
 export interface IEventTicket {
 	name: string
@@ -9,10 +10,12 @@ export interface IEventTicket {
 	/** Per-ticket override. `undefined` inherits the event-level `requireApproval`. */
 	requireApproval?: boolean
 	/**
-	 * Sells a Jetzy Premium membership with the ticket. Non-members pay ticket + monthly
-	 * subscription in one Stripe session; existing members pay for the ticket alone.
-	 * Mutually exclusive with `requireApproval` — no manual capture in subscription mode.
+	 * Memberships sold with this ticket. A buyer who doesn't already hold one pays the ticket
+	 * plus its first period; existing members pay for the ticket alone. Resolve with
+	 * `ticketMemberships()` from `@/lib/premium-bundle` — never read this field directly.
 	 */
+	memberships?: MembershipKey[]
+	/** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
 	includesPremium?: boolean
 	_id: Types.ObjectId
 	updatedAt: string
@@ -130,22 +133,51 @@ export type BookingPaymentStatus =
 	| "expired"     // authorization lapsed at Stripe, can never be captured
 	| "failed"      // capture attempt failed; booking stays PENDING so the host can retry
 
+export type BookingMembershipStatus =
+	| "pending"  // held / paid for, subscription not created yet
+	| "active"   // subscription exists (or the buyer already had one)
+	| "failed"   // money taken but the subscription could not be created — someone is owed one
+
+/**
+ * One membership sold with this booking.
+ *
+ * Every subscription this repo creates is created AFTER the money moves — immediately for a
+ * straight purchase, at approval for a held one — so everything needed to create it has to be
+ * recorded here. `approve.ts` and the fulfilment path both work from the booking document and
+ * never see the Stripe Checkout Session or its metadata.
+ *
+ * `priceId` is stored rather than re-resolved on purpose: a plan price change while a request
+ * sits pending must not silently move the buyer onto a rate they were never quoted.
+ */
+export interface IBookingMembership {
+	key: MembershipKey
+	status: BookingMembershipStatus
+	/** Major units — the first period, the membership's share of `payment.amount`. */
+	amount?: number
+	priceId?: string
+	interval?: string
+	subscriptionId?: string
+	lastError?: string
+}
+
 export interface IBookingPayment {
 	provider?: string
 	checkoutSessionId?: string
 	paymentIntentId?: string
-	/** Set only when the ticket bundled a Jetzy Premium membership. */
-	subscriptionId?: string
 	/**
-	 * Bundled ticket that also requires approval: the subscription is created at APPROVAL,
-	 * so everything needed to create it lives here — `approve.ts` never sees the Stripe
-	 * session. `pending` = held, not yet started; `failed` = money captured but the
-	 * subscription could not be created, and someone owes them a membership.
+	 * Memberships sold with this booking, one entry per product. The authority — read this,
+	 * not the `premium*` fields below.
 	 */
-	premiumStatus?: "pending" | "active" | "failed"
-	/** Major units, the membership portion of `amount`. */
+	memberships?: IBookingMembership[]
+	/** @deprecated First subscription created. Superseded by `memberships[].subscriptionId`. */
+	subscriptionId?: string
+	/** @deprecated Superseded by `memberships`; still read for bookings taken before it. */
+	premiumStatus?: BookingMembershipStatus
+	/** @deprecated Major units, the membership portion of `amount`. */
 	premiumAmount?: number
+	/** @deprecated */
 	premiumPriceId?: string
+	/** @deprecated */
 	premiumInterval?: string
 	captureMethod?: "automatic" | "manual"
 	status?: BookingPaymentStatus

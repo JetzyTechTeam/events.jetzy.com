@@ -3,12 +3,43 @@ import {
 	findEmailRecipientByStripeCustomerId,
 	findUserByStripeCustomerId,
 	getStripeClient,
-	setPremiumStatusByStripeCustomerId,
-	setUserPremiumStatus,
+	setMembershipStatusByStripeCustomerId,
+	setUserMembershipStatus,
+	subscriptionMembershipKey,
 } from "@/lib/premium"
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import { syncSelectMembership } from "@/lib/select-member"
 import { sendMembershipCancelled, sendMembershipPaymentFailed, sendMembershipRenewed } from "@/lib/send-grid"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+
+/**
+ * Mirror a membership state change to selectmember.jetzy.com, when the product is theirs.
+ *
+ * Driven from the webhook rather than only at purchase, so it also covers a cancellation made
+ * in the Stripe billing portal — which never passes back through our checkout code. Silently
+ * a no-op for Jetzy Premium: `selectMemberPlan` is what marks a product as theirs.
+ */
+const mirrorToSelectMember = async (
+	key: MembershipKey,
+	customerId: string,
+	status: "active" | "cancelled" | "past_due",
+	subscription?: Stripe.Subscription,
+) => {
+	if (!MEMBERSHIPS[key].selectMemberPlan) return
+	const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+	if (!recipient?.email) {
+		console.error("[webhooks/stripe] No email to mirror to SelectMember for customer:", customerId)
+		return
+	}
+	await syncSelectMembership({
+		email: recipient.email,
+		status,
+		externalSubscriptionId: subscription?.id,
+		...(subscription?.start_date ? { startedAt: new Date(subscription.start_date * 1000) } : {}),
+		...(subscription?.current_period_end ? { expiresAt: new Date(subscription.current_period_end * 1000) } : {}),
+	})
+}
 
 // Stripe needs the raw, unparsed request body to verify the webhook signature.
 export const config = {
@@ -59,32 +90,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				// Dispatch on what the session CONTAINS, not on its `mode`.
 				//
-				// A bundled ticket (see `IEventTicket.includesPremium`) is a `mode: "subscription"`
-				// session that also carries the ticket as a one-time line item — so it needs BOTH
-				// branches. These used to be `if (subscription) … else if (payment)`, which meant
-				// such a session activated Premium and never created the booking: no Bookings row,
-				// no capacity consumed, no QR, no ticket email, no referral increment, while the
-				// buyer was charged in full.
+				// A bundled ticket session is `mode: "payment"` and creates no subscription of its
+				// own any more — we create those afterwards — so in practice only a standalone
+				// `/subscribe` purchase reaches the subscription branch. It is kept for two
+				// reasons: sessions created before that change can still be in flight, and a
+				// session that somehow carries both must run BOTH branches. These used to be
+				// `if (subscription) … else if (payment)`, which meant a bundled session activated
+				// Premium and never created the booking: no Bookings row, no capacity consumed, no
+				// QR, no ticket email, no referral increment, while the buyer was charged in full.
 				const sessionMetadata = (checkoutSession.metadata || {}) as Record<string, string | undefined>
 
 				if (checkoutSession.subscription) {
-					const userId = sessionMetadata.userId || checkoutSession.client_reference_id
+					const userId = sessionMetadata.membershipUserId || sessionMetadata.userId || checkoutSession.client_reference_id
 					const subscription = await stripe.subscriptions.retrieve(
 						typeof checkoutSession.subscription === "string" ? checkoutSession.subscription : checkoutSession.subscription.id,
 					)
-					if (userId) {
-						await setUserPremiumStatus(userId, {
+					// WHICH product? Writing without asking is how a Concierge purchase would
+					// overwrite the buyer's Premium record. An unknown product is left alone.
+					const key = subscriptionMembershipKey(subscription)
+					const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+
+					if (!key) {
+						console.error("[webhooks/stripe] Subscription for an unrecognised product, ignoring:", subscription.id)
+					} else if (userId) {
+						await setUserMembershipStatus(userId, key, {
 							active: subscription.status === "active" || subscription.status === "trialing",
-							stripeCustomerId: typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id,
+							stripeCustomerId: customerId,
 							stripeSubscriptionId: subscription.id,
 							status: subscription.status,
 							currentPeriodEnd: new Date(subscription.current_period_end * 1000),
 							cancelAtPeriodEnd: subscription.cancel_at_period_end,
 						})
+						await mirrorToSelectMember(key, customerId, "active", subscription)
 					} else {
 						// A subscription nobody owns can still bill. Loud, because the only fix is
 						// manual. `client_reference_id` is single-valued and the ticket flow claims
-						// it, which is exactly why bundled sessions carry `metadata.userId`.
+						// it, which is why membership sessions carry `metadata.membershipUserId`.
 						console.error("[webhooks/stripe] Subscription with no resolvable user:", checkoutSession.id)
 					}
 				}
@@ -171,20 +212,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const subscription = event.data.object as Stripe.Subscription
 				const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
 
+				// WHICH product? One Stripe Customer holds every subscription a member has, so
+				// keying only on the customer id — as this used to — makes a Concierge change
+				// overwrite the Premium record and vice versa.
+				const key = subscriptionMembershipKey(subscription)
+				if (!key) {
+					console.error("[webhooks/stripe] subscription.updated for an unrecognised product, ignoring:", subscription.id)
+					break
+				}
+
 				// Read the stored flag BEFORE writing, so a cancellation can be detected as a
 				// transition. With the portal set to "cancel at end of billing period" this is
 				// the only signal that the member cancelled — `customer.subscription.deleted`
 				// doesn't arrive until the period actually ends, up to a month later.
 				const previous = await findUserByStripeCustomerId(customerId)
-				const wasCancelling = !!previous?.doc?.premiumSubscription?.cancelAtPeriodEnd
+				const wasCancelling = !!previous?.doc?.[MEMBERSHIPS[key].userField]?.cancelAtPeriodEnd
 
-				await setPremiumStatusByStripeCustomerId(customerId, {
+				await setMembershipStatusByStripeCustomerId(customerId, key, {
 					active: subscription.status === "active" || subscription.status === "trialing",
 					stripeSubscriptionId: subscription.id,
 					status: subscription.status,
 					currentPeriodEnd: new Date(subscription.current_period_end * 1000),
 					cancelAtPeriodEnd: subscription.cancel_at_period_end,
 				})
+
+				// Their site has to learn about a portal cancellation too — it never passes
+				// through our checkout code. Still "active" until the period actually ends.
+				await mirrorToSelectMember(
+					key,
+					customerId,
+					subscription.status === "active" || subscription.status === "trialing" ? "active" : "cancelled",
+					subscription,
+				)
 
 				if (!wasCancelling && subscription.cancel_at_period_end) {
 					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
@@ -193,6 +252,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							...recipient,
 							endsOn: new Date(subscription.current_period_end * 1000),
 							alreadyEnded: false,
+							label: MEMBERSHIPS[key].label,
 						})
 					}
 				}
@@ -203,18 +263,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const subscription = event.data.object as Stripe.Subscription
 				const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
 
+				// Same rule as above, and the one that mattered most: without it, ending a
+				// Concierge subscription revoked the member's Jetzy Premium.
+				const key = subscriptionMembershipKey(subscription)
+				if (!key) {
+					console.error("[webhooks/stripe] subscription.deleted for an unrecognised product, ignoring:", subscription.id)
+					break
+				}
+
 				// Resolve the recipient BEFORE the update — the write doesn't clear the customer
 				// id, but reading first keeps this independent of that.
 				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 
-				await setPremiumStatusByStripeCustomerId(customerId, {
+				await setMembershipStatusByStripeCustomerId(customerId, key, {
 					active: false,
 					status: subscription.status,
 					cancelAtPeriodEnd: false,
 				})
 
+				await mirrorToSelectMember(key, customerId, "cancelled", subscription)
+
 				if (recipient) {
-					await sendMembershipCancelled({ ...recipient, alreadyEnded: true })
+					await sendMembershipCancelled({ ...recipient, alreadyEnded: true, label: MEMBERSHIPS[key].label })
 				}
 				break
 			}
@@ -227,6 +297,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
 				if (!customerId || invoice.billing_reason !== "subscription_cycle") break
 
+				// Name the product. A member of both gets two renewal notices a month, and an
+				// unlabelled one tells them nothing about which card charge it explains.
+				const renewedSubscription = invoice.subscription
+					? await stripe.subscriptions.retrieve(
+						typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription.id,
+					)
+					: null
+				const key = renewedSubscription ? subscriptionMembershipKey(renewedSubscription) : null
+				if (renewedSubscription && !key) {
+					console.error("[webhooks/stripe] invoice.paid for an unrecognised product, ignoring:", renewedSubscription.id)
+					break
+				}
+
+				// Push the new period end outward so their site's expiry stays in step.
+				if (key && renewedSubscription) await mirrorToSelectMember(key, customerId, "active", renewedSubscription)
+
 				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 				if (!recipient) break
 
@@ -236,6 +322,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					amount: (invoice.amount_paid ?? 0) / 100,
 					interval: line?.price?.recurring?.interval || "month",
 					nextBillingDate: invoice.period_end ? new Date(invoice.period_end * 1000) : undefined,
+					...(key ? { label: MEMBERSHIPS[key].label } : {}),
 				})
 				break
 			}
@@ -247,6 +334,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
 				if (!customerId || !invoice.subscription) break
 
+				const failedSubscription = await stripe.subscriptions.retrieve(
+					typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription.id,
+				)
+				const key = subscriptionMembershipKey(failedSubscription)
+				if (!key) {
+					console.error("[webhooks/stripe] invoice.payment_failed for an unrecognised product, ignoring:", failedSubscription.id)
+					break
+				}
+
+				// Tell their site the member is behind, so benefits can be gated there while
+				// Stripe retries — rather than staying "active" right up to the day it dies.
+				await mirrorToSelectMember(key, customerId, "past_due", failedSubscription)
+
 				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 				if (!recipient) break
 
@@ -255,6 +355,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					...recipient,
 					amount: (invoice.amount_due ?? 0) / 100,
 					interval: line?.price?.recurring?.interval || "month",
+					label: MEMBERSHIPS[key].label,
 				})
 				break
 			}

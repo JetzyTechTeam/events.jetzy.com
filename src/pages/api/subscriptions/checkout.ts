@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getPremiumPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
+import { findUserRecord, getMembershipPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -36,7 +36,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const stripe = getStripeClient()
 
-		const price = await getPremiumPrice()
+		// Standalone Jetzy Premium signup — Full Concierge is sold only as part of a ticket,
+		// so this flow is deliberately hardcoded to the one product.
+		const price = await getMembershipPrice("premium")
 		const stripeCustomerId = await resolveStripeCustomerForUser(userId, email)
 
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
@@ -51,6 +53,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			success_url: successUrl,
 			cancel_url: cancelUrl,
 			metadata: { userId, purpose: "premium_subscription" },
+			// Stamped so every webhook branch can identify the product without matching price
+			// ids — the same marker `startMembershipSubscription` sets on the ones we create.
+			subscription_data: { metadata: { membershipKey: "premium", userId } },
 		})
 
 		return sendResponse(res, { url: checkoutSession.url }, "Subscription checkout created.", true, ResCode.OK)

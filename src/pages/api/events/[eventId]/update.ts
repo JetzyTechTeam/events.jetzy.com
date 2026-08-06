@@ -7,7 +7,8 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
+import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
+import { sanitizeMembershipKeys } from "@/lib/memberships"
 import { buildUniqueSlug, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -64,6 +65,10 @@ const schema = zod.object({
 			// `.optional()` and never `.default(false)` — see the preserve-on-omit logic below.
 			requireApproval: zod.boolean().optional(),
 			// Sells a Jetzy Premium membership with the ticket. Also preserve-on-omit.
+			// Which memberships this ticket sells. Omitted means "unchanged" — see the
+			// preserve-on-omit rule below.
+			memberships: zod.array(zod.string()).optional(),
+			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
 		}),
 	),
@@ -181,19 +186,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const existingTicketById = new Map<string, any>()
 		;(event.tickets || []).forEach((t: any) => existingTicketById.set(t._id?.toString(), t))
 
-		// Validate the bundle rules against the RESOLVED flags (incoming value, else stored),
-		// before anything is written or any Stripe price is minted. Enforced here as well as
-		// in the form: Stripe has no manual capture in subscription mode, so a bundled ticket
-		// can't be held for approval, and a subscription needs a real charge to start against.
+		// Preserve-on-omit: an older client (or an autosave built from a stale form) may not
+		// send `memberships` at all. Falling back to the stored value means such a save leaves
+		// the ticket selling what it already sold, instead of silently un-bundling it.
+		const resolveMemberships = (ticket: any, existing: any) => {
+			if (ticket.memberships !== undefined) return sanitizeMembershipKeys(ticket.memberships)
+			if (ticket.includesPremium !== undefined) return ticket.includesPremium ? (["premium"] as const).slice() : []
+			return ticketMemberships(existing)
+		}
+
+		// Validate the bundle rules against the RESOLVED memberships (incoming value, else
+		// stored), before anything is written or any Stripe price is minted. Enforced here as
+		// well as in the form: a subscription needs a real charge to start against.
 		for (const ticket of tickets) {
 			const existing = existingTicketById.get(ticket.id.toString())
-			const willBundle = ticket.includesPremium !== undefined ? ticket.includesPremium : !!existing?.includesPremium
-			if (!willBundle) continue
+			const willSell = resolveMemberships(ticket, existing)
+			if (willSell.length === 0) continue
 
-			// A bundled ticket MAY now require approval — it is held as a `mode: "payment"`
-			// authorization and the subscription is created at approval time.
+			// A bundled ticket MAY require approval — it is held as a `mode: "payment"`
+			// authorization and the subscriptions are created at approval time.
 			if (!(ticket.price > 0)) {
-				return sendResponse(res, null, BUNDLE_FREE_TICKET_MESSAGE, false, ResCode.BAD_REQUEST)
+				return sendResponse(res, null, bundleFreeTicketMessage(willSell as any), false, ResCode.BAD_REQUEST)
 			}
 		}
 
@@ -218,10 +231,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					: existing?.requireApproval !== undefined ? existing.requireApproval
 						: undefined
 
-			// Same preserve-on-omit rule as above, so a stale form or an older client can't
-			// silently un-bundle a ticket that was already selling membership.
-			const resolvedIncludesPremium =
-				ticket.includesPremium !== undefined ? ticket.includesPremium : !!existing?.includesPremium
+			const resolvedMemberships = resolveMemberships(ticket, existing)
 
 			return {
 				...(existing ? { _id: existing._id } : {}),
@@ -230,7 +240,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				price: ticket.price.toFixed(2),
 				stripeProductId,
 				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
-				includesPremium: resolvedIncludesPremium,
+				memberships: resolvedMemberships,
+				// Written alongside the array purely so the mobile app and any older reader still
+				// see a bundled Premium ticket. The array is the authority.
+				includesPremium: resolvedMemberships.includes("premium"),
 			}
 		}))
 

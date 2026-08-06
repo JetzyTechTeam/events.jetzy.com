@@ -1,3 +1,4 @@
+import type { MembershipKey } from "@/lib/memberships"
 import { uniqueId } from "@/lib/utils"
 import React, { useState } from "react"
 
@@ -9,11 +10,15 @@ export type TicketData = {
   /** Per-ticket approval override. `undefined` inherits the event-level setting. */
   requireApproval?: boolean
   /**
-   * Sells a Jetzy Premium membership with the ticket: a non-member pays the ticket price
-   * plus the monthly subscription; an existing member pays for the ticket alone.
-   * Mutually exclusive with `requireApproval` — Stripe has no manual capture in
-   * subscription mode, so a bundled ticket can't be held for approval.
+   * Memberships sold with this ticket. A buyer who doesn't already hold one pays the ticket
+   * price plus that membership's first period; an existing member pays for the ticket alone.
+   * Resolve with `ticketMemberships()` — never read either field directly.
+   *
+   * A bundled ticket MAY require approval: it is held as a `mode: "payment"` authorization
+   * and the subscriptions are created once the host approves.
    */
+  memberships?: MembershipKey[]
+  /** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
   includesPremium?: boolean
 }
 

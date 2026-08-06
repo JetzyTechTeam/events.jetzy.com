@@ -30,18 +30,28 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 			type: Boolean,
 			required: false,
 		},
-		// Sells a Jetzy Premium membership alongside the ticket. A buyer who is not already a
-		// member is charged the ticket price PLUS the monthly subscription, in one Stripe
-		// Checkout Session (`mode: "subscription"` with the ticket as a one-time line item);
-		// an existing member is charged for the ticket alone.
+		// Which memberships this ticket SELLS alongside the ticket itself — Jetzy Premium,
+		// Full Concierge, or both. A buyer who doesn't already hold one is charged the ticket
+		// price PLUS the first period of each; the subscriptions themselves are created after
+		// the charge (see `src/lib/premium-bundle.ts`).
 		//
-		// `default: false` is correct here, unlike `requireApproval` above — there is no
-		// inherit-from-event semantics to preserve, so pinning legacy tickets to "off" is
-		// exactly the intended meaning.
+		// No default and no `enum` here on purpose: `undefined` means "fall back to
+		// `includesPremium`", which is what lets every ticket saved before the second product
+		// existed keep working with no migration. Validation happens in `sanitizeMembershipKeys`
+		// on the way in, so an unknown key can never reach Stripe.
+		memberships: {
+			type: [String],
+			required: false,
+		},
+		// DEPRECATED — superseded by `memberships`. Read only as the fallback above; never
+		// written for new tickets. Kept so live documents and the mobile app are undisturbed,
+		// same treatment as `premium` / `privateAccessCode`.
 		//
-		// MUTUALLY EXCLUSIVE with `requireApproval`: Stripe has no manual capture in
-		// subscription mode, so a bundled ticket cannot be authorized-now-captured-on-approval.
-		// Enforced in the event forms and in the create/update zod schemas.
+		// Historical note: this was once documented as mutually exclusive with
+		// `requireApproval`, because there is no manual capture in Stripe subscription mode.
+		// That constraint is gone — a bundled ticket is now always sold as a `payment`-mode
+		// session and the subscription is created afterwards, so it can be held for approval
+		// like any other.
 		includesPremium: {
 			type: Boolean,
 			default: false,

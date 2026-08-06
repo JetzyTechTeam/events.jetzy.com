@@ -2,7 +2,8 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
-import { BUNDLE_APPROVAL_NOTICE, BUNDLE_FREE_TICKET_MESSAGE } from "@/lib/premium-bundle"
+import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
+import TicketMembershipToggles from "@/components/events/TicketMembershipToggles"
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
@@ -364,7 +365,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					// Must pass through as-is (never `?? false`): undefined means "inherit the
 					// event setting", and coercing it here would let autosave pin every ticket to OFF.
 					requireApproval: t.requireApproval,
-					includesPremium: !!t.includesPremium,
+					memberships: ticketMemberships(t as any),
+					includesPremium: ticketMemberships(t as any).includes("premium"),
 				})))
 			}
 			return
@@ -419,7 +421,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				price: Number(ticket.price),
 				description: stripHtml(ticket.desc),
 				requireApproval: ticket.requireApproval,
-				includesPremium: !!ticket.includesPremium,
+				memberships: ticketMemberships(ticket),
+				includesPremium: ticketMemberships(ticket).includes("premium"),
 			})),
 			privacy: event.privacy,
 			status: (event.status ?? "published") as "draft" | "published",
@@ -531,9 +534,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 
 		// A bundled ticket may require approval — the card is held for ticket + first membership
 		// period and the subscription starts on approval. It still needs a real price to hold.
-		const bundleFree = values.tickets?.find((t) => t.includesPremium && !(Number(t.price) > 0))
+		const bundleFree = values.tickets?.find((t) => ticketMemberships(t as any).length > 0 && !(Number(t.price) > 0))
 		if (bundleFree) {
-			Error("Validation Error", `"${bundleFree.title}": ${BUNDLE_FREE_TICKET_MESSAGE}`)
+			Error("Validation Error", `"${bundleFree.title}": ${bundleFreeTicketMessage(ticketMemberships(bundleFree as any))}`)
 			return
 		}
 
@@ -1685,34 +1688,21 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																</Flex>
 															</FormControl>
 
-															{/* Sells a Jetzy Premium membership with this ticket. */}
-															<FormControl mb={4}>
-																<Flex align="center" justify="space-between" gap={4}>
-																	<Box>
-																		<FormLabel mb={0}>Includes Jetzy Premium</FormLabel>
-																		<Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
-																			{tempTicket.includesPremium
-																				? "Buyers who aren't members pay this ticket price plus the Jetzy Premium subscription, which then renews monthly. Existing members pay the ticket price only."
-																				: "Sell a Jetzy Premium membership with this ticket."}
-																		</Text>
-																		{tempTicket.includesPremium && (tempTicket.requireApproval ?? values.requireApproval) && (
-																			<Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
-																				{BUNDLE_APPROVAL_NOTICE}
-																			</Text>
-																		)}
-																		{tempTicket.includesPremium && !(Number(tempTicket.price) > 0) && (
-																			<Text fontSize="12px" color="#FC8181" mt={2} maxW="320px" lineHeight="140%">
-																				{BUNDLE_FREE_TICKET_MESSAGE}
-																			</Text>
-																		)}
-																	</Box>
-																	<Switch
-																		colorScheme="yellow"
-																		isChecked={!!tempTicket.includesPremium}
-																		onChange={(e) => setTempTicket({ ...tempTicket, includesPremium: e.target.checked })}
-																	/>
-																</Flex>
-															</FormControl>
+															{/* Which memberships this ticket sells — either, both or neither. */}
+															<TicketMembershipToggles
+																value={ticketMemberships(tempTicket as any)}
+																onChange={(memberships) =>
+																	setTempTicket({
+																		...tempTicket,
+																		memberships,
+																		// Kept in step so the mobile app and any older reader still
+																		// see a bundled Premium ticket. The array is the authority.
+																		includesPremium: memberships.includes("premium"),
+																	} as any)
+																}
+																requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
+																price={Number(tempTicket.price)}
+															/>
 														</ModalBody>
 														<ModalFooter>
 															<Button bg="#F79432" color="black" mr={3} onClick={() => {
