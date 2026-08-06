@@ -1,7 +1,7 @@
 import Stripe from "stripe"
 import { ensureDbConnected } from "@/configs/database"
 import { getStripeClient } from "@/lib/premium"
-import { buildTicketPricing } from "@/lib/ticket-pricing"
+import { buildTicketPricing, type RecurringCharge } from "@/lib/ticket-pricing"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
@@ -199,7 +199,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	// than from our own config so the receipt quotes the amount and interval Stripe will
 	// actually bill — a plan price changed between checkout and fulfilment would otherwise
 	// make the email wrong. Never fatal: a missing receipt line beats a lost booking.
-	let recurringCharge: { label: string; amount: number; interval: string } | undefined
+	let recurringCharge: RecurringCharge | undefined
 	if (subscriptionId) {
 		try {
 			const subscription = await stripe.subscriptions.retrieve(subscriptionId)
@@ -210,6 +210,12 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					label: "Jetzy Premium membership",
 					amount: price.unit_amount / 100,
 					interval: price.recurring?.interval || "month",
+					// The first period was paid on this invoice, so the next real charge is the
+					// end of the current period. Naming it stops the receipt implying they're
+					// about to be billed again straight away.
+					firstRenewalAt: subscription.current_period_end
+						? new Date(subscription.current_period_end * 1000)
+						: undefined,
 				}
 			}
 		} catch (subscriptionError) {

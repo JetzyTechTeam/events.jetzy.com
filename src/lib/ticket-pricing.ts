@@ -38,6 +38,15 @@ export type RecurringCharge = {
 	amount: number
 	/** Billing period, e.g. "month". Straight from the Stripe price's `recurring.interval`. */
 	interval: string
+	/**
+	 * When the FIRST renewal is actually charged.
+	 *
+	 * Worth stating explicitly because the first period is always already paid — it rides in
+	 * with the ticket. On an approval order Stripe implements that as a trial, so its billing
+	 * portal shows "Free trial ends <date>", which a member can easily read as a free month
+	 * they'll lose. Naming the date, and saying the first period is paid, heads that off.
+	 */
+	firstRenewalAt?: Date | string
 }
 
 export type TicketPricing = {

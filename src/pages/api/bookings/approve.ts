@@ -68,6 +68,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	// Free bookings have no `payment` at all, so this whole block is skipped and their
 	// behaviour is unchanged.
 	let amountCharged: number | undefined
+	// When the membership created below will first actually be billed.
+	let firstRenewalAt: Date | undefined
 	const needsCapture = !!booking.payment?.paymentIntentId && ["authorized", "capturing", "failed"].includes(booking.payment?.status as string)
 
 	// ---- A bundled ticket held for approval ----
@@ -208,6 +210,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 						booking.payment!.subscriptionId = subscription.id
 						booking.payment!.premiumStatus = "active"
+						// The trial end IS the first real charge date — surfaced in the receipt so
+						// "Free trial ends <date>" in Stripe's portal can't be read as a free month.
+						firstRenewalAt = new Date(trialEnd * 1000)
 
 						// Set membership state directly rather than waiting for the webhook, so the
 						// buyer is a member the moment the host clicks.
@@ -330,6 +335,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						label: "Jetzy Premium membership",
 						amount: startedMembershipAmount,
 						interval: booking.payment?.premiumInterval || "month",
+						firstRenewalAt,
 					}
 					: undefined,
 			),

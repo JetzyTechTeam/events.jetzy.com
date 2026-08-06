@@ -1594,11 +1594,23 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             <div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin-top: 15px;">
               <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your Jetzy Premium membership</p>
               <p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
-                This ticket included a Jetzy Premium membership. It renews at
-                <strong>$${resolvedPricing.recurring.amount.toFixed(2)} every ${resolvedPricing.recurring.interval}</strong>
+                This ticket included a Jetzy Premium membership, and
+                <strong>your first ${resolvedPricing.recurring.interval} is already paid</strong> — it's part of the
+                amount above. It then renews at
+                <strong>$${resolvedPricing.recurring.amount.toFixed(2)} every ${resolvedPricing.recurring.interval}</strong>${
+      resolvedPricing.recurring.firstRenewalAt
+        ? `, starting <strong>${dayjs(resolvedPricing.recurring.firstRenewalAt).format("MMMM D, YYYY")}</strong>`
+        : ""
+    },
                 until you cancel. You can cancel any time from
                 <strong>Manage membership</strong> in your Jetzy account menu.
               </p>
+              ${resolvedPricing.recurring.firstRenewalAt
+        ? `<p style="margin: 10px 0 0 0; color: #7a5c00; font-size: 13px; line-height: 1.5;">
+                If your billing page shows this period as a free trial, that's just how the paid first
+                ${resolvedPricing.recurring.interval} is recorded — you've already paid for it.
+              </p>`
+        : ""}
             </div>`
               : ""}
           </div>
