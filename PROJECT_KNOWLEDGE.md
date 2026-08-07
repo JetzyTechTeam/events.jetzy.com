@@ -480,6 +480,16 @@ through our checkout code — still reaches them.
   someone's billing, so it isn't. Only `cancelled` is accepted — accepting `active` would let
   their side hand out a membership nobody was billed for.
 
+**Concierge is withheld from the ticket form** until the SelectMember integration has been
+watched working end to end. `HOST_SELECTABLE_MEMBERSHIP_KEYS` in `memberships.ts`;
+`NEXT_PUBLIC_ENABLE_CONCIERGE_TICKETS=true` releases it (a `NEXT_PUBLIC_` var, so it is baked
+in at build time and needs a redeploy). This is a **visibility gate, not a kill switch** — a
+ticket that already sells Concierge keeps selling it, checkout still charges for it, and every
+subscription already created keeps renewing. `TicketMembershipToggles` still renders a
+withheld key when a ticket already has it, so the host can see and remove it rather than
+carrying invisible state; `toggle()` rebuilds from the full `MEMBERSHIP_KEYS` so editing an
+existing ticket can't silently strip it.
+
 **Other knock-ons:**
 - `user.stripeCustomerId` moved to the **root** (a billing identity, not a membership).
   `getUserStripeCustomerId` reads root then either sub-doc, so no backfill.
