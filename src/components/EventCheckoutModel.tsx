@@ -502,12 +502,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	return (
 		<>
 			{showCheckout && (
-				<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+				<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
 					{/* Wide only for the two-column checkout form. The success, waiting-list and
 					    pending-approval panels are a few lines each — 4xl would strand them in
 					    the middle of a very empty box. */}
 					<div
-						className={`bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden ${
+						className={`bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden ${
 							pendingApproval || freeRegistrationSuccess || showWaitingList || selectionTotal <= 0 ? "max-w-lg" : "max-w-4xl"
 						}`}
 					>
@@ -603,7 +603,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 							/* Form */
 							<form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
 								{/* Pinned header */}
-								<div className="px-6 pt-6 pb-2 shrink-0">
+								<div className="px-4 sm:px-6 pt-6 pb-2 shrink-0">
 									<h2 className="text-2xl font-bold">Checkout</h2>
 									{/* Stays visible while the buyer scrolls back down to find the box. */}
 									{termsError && checkoutStep === "details" && (
@@ -639,7 +639,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								    would put the T&C box and the submit button out of reach and make checkout
 								    impossible. A scrollbar that rarely appears beats content nobody can get to. */}
 								<div
-									className={`flex-1 overflow-y-auto px-6 py-2 ${
+									className={`flex-1 overflow-y-auto px-4 sm:px-6 py-2 ${
 										selectionTotal > 0 ? "lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6 lg:items-start" : ""
 									}`}
 								>
@@ -1088,7 +1088,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								</div>
 
 								{/* Pinned action buttons */}
-								<div className="px-6 py-4 shrink-0 border-t border-[#2E2E2E]">
+								<div className="px-4 sm:px-6 py-4 shrink-0 border-t border-[#2E2E2E]">
 									{checkoutStep === "questions" ? (
 										<div className="flex gap-3">
 											<button type="button" onClick={() => setCheckoutStep("details")} className="w-1/3 border border-[#444] text-white font-bold px-6 py-3 rounded-xl transition-all hover:bg-[#222]">Back</button>
