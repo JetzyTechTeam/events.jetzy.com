@@ -436,6 +436,15 @@ are shown on the ticket card, in the checkout modal and on the receipt *before* 
 deliberately NOT part of `lines`, which are all deductions, nor of `total`, which means "what
 the ticket cost".
 
+The disclosure wording has three moving parts and none of them may be hardcoded: the product
+blurb comes from `MEMBERSHIPS[key].checkoutBlurb` (per product — a shared sentence would promise
+Jetzy events to someone buying a concierge service), the amount from `plan.label`, and the
+interval adverb from `renewalAdverb` in the checkout modal. **The approval and instant variants
+must keep saying different things** — "charged only if your registration is approved" on a ticket
+that charges immediately is a false statement about a charge at the point of sale. `plan.label`
+drops the cents on whole dollars ("$20/month") but keeps them otherwise, so $59.50 is never
+rounded away from what the card is actually billed.
+
 `buildTicketPricing`'s `premiumPercentage` survives as **historical only**, so
 `pricingFromBooking` can still itemise bookings made while the discount existed. Never pass it
 for a new order.
@@ -765,6 +774,12 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 - `event.desc` is **Quill rich-text HTML**. Never put it in a `<meta>` raw — Apple/iMessage renders `og:description` literally and the card shows `<p><br></p>…`. Always run it through `toMetaDescription()` (`src/utils/text.ts`), which inserts spaces at block boundaries, strips tags, decodes entities, collapses whitespace and truncates to 200 chars on a word boundary.
 - `og:image` is always emitted: `images[0]` normalized to absolute, falling back to `${NEXT_PUBLIC_URL}/imgs/logo.png` when the event has no images. `og:url` uses `slug || _id`. `og:type` is `website` (`event` is not a valid OG type).
 - Previews are cached per-URL by iMessage/Facebook — re-scrape via the Facebook Sharing Debugger or test with a `?v=2` suffix before assuming a fix did not land.
+
+### Host-authored descriptions — always render through `EventDescription`
+
+[src/components/events/EventDescription.tsx](src/components/events/EventDescription.tsx) is the single renderer for both `event.desc` and `ticket.desc`. It sanitizes (DOMPurify) **before** linkifying, and handles both stored shapes: Quill HTML from the rich-text editor, and the plain text with `\n` that everything written before it still holds.
+
+**Never render either field as bare text.** A Chakra `<Text>{ticket.description}</Text>` collapses the host's line breaks into one run-on paragraph and leaves URLs unclickable — which is exactly how the manage and create ticket lists drifted out of agreement with the public one, so the host's preview showed something different from what a guest saw. Call sites: [EventTicketsComponent.tsx](src/components/EventTicketsComponent.tsx) (public ticket list), [HostedEvents.tsx](src/components/HostedEvents.tsx) (event description), and the ticket lists in [manage.tsx](src/pages/console/events/[eventId]/manage.tsx) / [create.tsx](src/pages/console/events/create.tsx). Pass `className` to size it in context; in the console include `roboto.className` so it matches the surrounding type.
 
 ---
 

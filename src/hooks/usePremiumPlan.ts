@@ -53,7 +53,17 @@ const toPlan = (key: MembershipKey, data?: PremiumPlanInfo): MembershipPlan => {
 		name: data?.name || MEMBERSHIPS[key].label,
 		amount: dollars,
 		interval,
-		label: dollars != null ? `${dollars.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${interval}` : null,
+		// Whole dollars drop the cents — "$20/month" rather than "$20.00/month". Anything with
+		// a fractional part keeps both digits, so $59.50 is never rounded away from the figure
+		// the buyer is actually charged.
+		label:
+			dollars != null
+				? `${dollars.toLocaleString("en-US", {
+						style: "currency",
+						currency: "usd",
+						minimumFractionDigits: Number.isInteger(dollars) ? 0 : 2,
+				  })}/${interval}`
+				: null,
 	}
 }
 

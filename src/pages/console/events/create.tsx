@@ -69,6 +69,7 @@ import TimezoneSelect from "../../../components/timezone-select";
 import { z } from "zod";
 import { Roboto } from "next/font/google";
 import RichTextEditor from "@/components/misc/RichTextEditor";
+import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
 import { useSession } from "next-auth/react";
 import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle";
@@ -851,7 +852,11 @@ const CreateEventPage = () => {
                                 <Badge colorScheme="orange" fontSize="0.7em" px={2} py={0.5} borderRadius="6px">Approval</Badge>
                               )}
                             </Flex>
-                            <Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
+                            {/* Shared EventDescription, same as the public ticket list — a plain
+                                <Text> collapses the host's line breaks into one run-on paragraph. */}
+                            <Box my="1" pr="6">
+                              <EventDescription description={ticket.description} className={`${roboto.className} text-sm text-[#868686]`} />
+                            </Box>
                             <Text fontWeight="bold" fontSize="2xl" color="#F79432" mt="2">${ticket.price}</Text>
                             <Box position="absolute" top="4" right="4">
                               <Menu>

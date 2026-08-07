@@ -14,6 +14,14 @@ import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
 import { StarIcon } from "@heroicons/react/24/solid"
 
+/**
+ * "monthly" reads better than "every month" in the billing disclosure, but the interval
+ * comes from Stripe and isn't guaranteed to be one of these — anything unrecognised falls
+ * back to the literal phrasing rather than inventing an adverb for it.
+ */
+const RENEWAL_ADVERBS: Record<string, string> = { day: "daily", week: "weekly", month: "monthly", year: "yearly" }
+const renewalAdverb = (interval: string) => RENEWAL_ADVERBS[interval] || `every ${interval}`
+
 export default function EventCheckoutModel({ event, eventData }: { event: string; eventData?: any }) {
 	// const [acceptTerms, setAcceptTerms] = useState(false)
 	const { showCheckout, tickets, isLoading } = useAppSelector(getCheckoutStore)
@@ -812,8 +820,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																			<p className="text-xs mt-1">
 																				{MEMBERSHIPS[key].checkoutBlurb}{" "}
 																				{selectionNeedsApproval
-																					? `You'll only be charged if your registration is approved. Your membership starts after approval and automatically renews every ${interval} until canceled.`
-																					: `You'll be charged with your ticket today. Your membership starts immediately and automatically renews every ${interval} until canceled.`}
+																					? `Charged only if your registration is approved and renews ${renewalAdverb(interval)} until canceled.`
+																					: `Charged with your ticket today and renews ${renewalAdverb(interval)} until canceled.`}
 																			</p>
 																		</div>
 																	</div>
@@ -821,7 +829,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															})}
 
 															<p className="text-xs" style={{ color: "#F5C518" }}>
-																You can cancel anytime:{" "}
+																Cancel anytime:{" "}
 																<a
 																	href={ROUTES.manageMembership}
 																	target="_blank"
@@ -829,7 +837,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																	className="underline"
 																	style={{ color: "#F79432" }}
 																>
-																	Manage your subscription
+																	Manage subscription
 																</a>
 															</p>
 
