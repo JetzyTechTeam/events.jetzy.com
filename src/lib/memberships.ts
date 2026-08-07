@@ -58,7 +58,7 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		label: "Jetzy Premium",
 		receiptLabel: "Jetzy Premium membership",
 		shortLabel: "Premium",
-		checkoutBlurb: "Unlock exclusive Jetzy events, experiences, and member benefits.",
+		checkoutBlurb: "Unlock exclusive events & member benefits.",
 		productId: process.env.NEXT_STRIPE_PREMIUM_PRODUCT_ID || "prod_Uxn2R9FQd5F3sp",
 		userField: "premiumSubscription",
 	},

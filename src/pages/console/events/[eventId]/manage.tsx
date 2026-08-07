@@ -78,6 +78,7 @@ import { usePlacesWidget } from "react-google-autocomplete"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
 import RichTextEditor from "@/components/misc/RichTextEditor"
+import EventDescription from "@/components/events/EventDescription"
 import InterestsSelector from "@/components/events/InterestsSelector"
 import MediaUploadSection from "@/components/media-upload-section"
 import TimezoneSelect from "@/components/timezone-select"
@@ -1531,7 +1532,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																					<Badge colorScheme="orange" fontSize="0.7em" px={2} py={0.5} borderRadius="6px">Approval</Badge>
 																				)}
 																			</Flex>
-																			<Text className={roboto.className} fontSize="sm" my="1" color="#868686" pr="6">{ticket.description}</Text>
+																			{/* Through the shared EventDescription, same as the public ticket list.
+																			    A plain <Text> collapses the host's line breaks into one run-on
+																			    paragraph, so the preview here disagreed with what a guest sees. */}
+																			<Box my="1" pr="6">
+																				<EventDescription description={ticket.description} className={`${roboto.className} text-sm text-[#868686]`} />
+																			</Box>
 																			<Flex align="center" justify="space-between" mt="2" wrap="wrap" gap={2}>
 																				<Text fontWeight="bold" fontSize="2xl" color="#F79432">${ticket.price}</Text>
 																				<Flex gap={2} wrap="wrap">
