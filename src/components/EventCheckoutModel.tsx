@@ -873,7 +873,12 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										/>
 										{phoneError && <span className="text-red-500 text-sm">{phoneError}</span>}
 
-										{/* Terms & Conditions — required to register */}
+										{/* Terms & Conditions — required to register.
+										    The account-creation sentence that used to sit here now lives in
+										    the Terms themselves (§1.1: "By registering, you expressly agree to
+										    create a Jetzy Account…"), which is what this box consents to and
+										    what `acceptedTerms` records. The consent is unchanged; only where
+										    it is spelled out has moved. */}
 										<label
 											ref={termsRef}
 											className={`flex items-start gap-2 text-white cursor-pointer text-sm rounded-lg transition-colors ${termsError ? "bg-red-500/10 border border-red-500/50 p-2.5 -m-0.5" : ""}`}
@@ -888,7 +893,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												className="mt-0.5"
 											/>
 											<span>
-												I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-[#F79432] underline">Terms &amp; Conditions</a>. By registering for this event, I agree to the creation of a Jetzy account.
+												I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-[#F79432] underline">Terms &amp; Conditions</a>.
 											</span>
 										</label>
 
