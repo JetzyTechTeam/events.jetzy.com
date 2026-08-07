@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
 import EventAlbums from "@/components/events/EventAlbums"
 import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
-import { ROUTES } from "@/configs/routes"
+import { ROUTES, homeRouteForRole } from "@/configs/routes"
+import { goBackOrTo } from "@/lib/navigation"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -295,8 +296,12 @@ export default function HostedEvents({ event }: Props) {
 				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
 					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex items-center justify-between`}>
 						<div className="flex items-center gap-3">
+							{/* Most traffic to an event page arrives from OUTSIDE Jetzy — email, QR, blast,
+							    WhatsApp — into a tab whose history has one entry, where `router.back()`
+							    either did nothing or threw the visitor off the site. `goBackOrTo` falls back
+							    to their home when there is genuinely nowhere to go back to. */}
 							<button
-								onClick={() => router.back()}
+								onClick={() => goBackOrTo(router, homeRouteForRole((session?.user as any)?.role))}
 								className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white flex items-center gap-2"
 							>
 								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
