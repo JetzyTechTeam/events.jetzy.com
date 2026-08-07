@@ -73,6 +73,7 @@ import InterestsSelector from "@/components/events/InterestsSelector";
 import { useSession } from "next-auth/react";
 import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle";
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
+import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
@@ -831,10 +832,19 @@ const CreateEventPage = () => {
                     </Button>
                   </Flex>
                   <FieldArray name="tickets">
-                    {({ remove }) => (
+                    {({ remove, move }) => (
                       <>
+                        {/* Drag order IS the stored order — `event.tickets` is an array and every
+                            reader renders it unsorted, so what the host arranges here is what a
+                            guest sees on the event page. `move` is Formik's own helper, so a
+                            reorder is ordinary form state and autosave picks it up unchanged. */}
+                        <SortableTicketList
+                          items={values.tickets.map((t, i) => String(t.id || i))}
+                          onReorder={move}
+                        >
                         {values.tickets.map((ticket, index) => (
-                          <Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
+                          <SortableTicketItem key={ticket.id || index} id={String(ticket.id || index)}>
+                          <Box p="5" pl="10" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
                             <Flex align="center" gap={2} pr="6" wrap="wrap">
                               <Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
                               {ticketApprovalFlag(values as any, ticket as any) && (
@@ -853,7 +863,9 @@ const CreateEventPage = () => {
                               </Menu>
                             </Box>
                           </Box>
+                          </SortableTicketItem>
                         ))}
+                        </SortableTicketList>
                       </>
                     )}
                   </FieldArray>

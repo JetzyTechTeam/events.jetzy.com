@@ -4,6 +4,7 @@ import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
 import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles"
+import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList"
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
@@ -1508,12 +1509,22 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														</Button>
 													</Flex>
 													<FieldArray name="tickets">
-														{({ remove }) => (
+																{({ remove, move }) => (
 															<>
+																	{/* Drag order IS the stored order — `event.tickets` is an array and every
+																	    reader renders it unsorted, so what the host arranges here is what a
+																	    guest sees on the event page. `move` is Formik's own helper, so a
+																	    reorder is ordinary form state and autosave picks it up unchanged.
+																	    Ticket `_id`s are untouched, so bookings referencing them are safe. */}
+																	<SortableTicketList
+																		items={values.tickets.map((t, i) => String(t.id || i))}
+																		onReorder={move}
+																	>
 																{values.tickets.map((ticket, index) => {
 																	const stats = ticketSalesSummary.get(ticket.id.toString())
 																	return (
-																		<Box key={ticket.id || index} p="5" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
+																			<SortableTicketItem key={ticket.id || index} id={String(ticket.id || index)}>
+																			<Box p="5" pl="10" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
 																			<Flex align="center" gap={2} pr="6" wrap="wrap">
 																				<Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
 																				{ticketApprovalFlag(values as any, ticket as any) && (
@@ -1541,8 +1552,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																				</Menu>
 																			</Box>
 																		</Box>
+																		</SortableTicketItem>
 																	)
 																})}
+																</SortableTicketList>
 															</>
 														)}
 													</FieldArray>
