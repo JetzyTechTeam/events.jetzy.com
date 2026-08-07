@@ -107,6 +107,16 @@ const eventsSchema = new Schema<IEvent>(
 			unique: true,
 			index: true,
 		},
+		// Every slug this event has previously used. Renaming an event pushes the old
+		// value here so links already in the wild — RSVP emails, printed QR codes, links
+		// people pasted into chats — keep resolving via a redirect instead of 404ing.
+		// Deliberately NOT unique-indexed: uniqueness has to hold across `slug` AND
+		// `previousSlugs` together, which a multikey unique index can't express. That
+		// rule lives in `buildUniqueSlug` (src/lib/event-slug.ts) instead.
+		previousSlugs: {
+			type: [String],
+			default: [],
+		},
 		name: {
 			type: String,
 			required: true,
@@ -326,6 +336,10 @@ const eventsSchema = new Schema<IEvent>(
 		},
 	},
 )
+
+// Old-slug lookups run on every 404-bound request to `/[slug]`, so the alias array
+// needs its own (multikey, non-unique) index.
+eventsSchema.index({ previousSlugs: 1 })
 
 // Activity Sync Middleware
 eventsSchema.post("save", async function (doc) {

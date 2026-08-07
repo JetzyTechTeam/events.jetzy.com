@@ -9,7 +9,7 @@ import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
 import { sanitizeMembershipKeys } from "@/lib/memberships"
-import { buildUniqueSlug, validateEventSlug } from "@/lib/event-slug"
+import { buildUniqueSlug, nextSlugHistory, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
 import Stripe from "stripe"
@@ -170,10 +170,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// "leave unchanged", so an older client or a stale autosave can't blank the slug.
 		// `excludeEventId` keeps a no-op save from bumping the slug to "-2".
 		let resolvedSlug: string | undefined
+		let resolvedPreviousSlugs: string[] | undefined
 		if (requestedSlug !== undefined && requestedSlug.trim()) {
 			const check = validateEventSlug(requestedSlug)
 			if (!check.ok) return sendResponse(res, null, check.reason, false, ResCode.BAD_REQUEST)
 			resolvedSlug = await buildUniqueSlug(Events, check.slug, { excludeEventId: String(event._id) })
+
+			// Renaming retires the old url rather than deleting it — `/[slug].tsx` redirects
+			// former slugs to the current one, so RSVP emails and QR codes already in circulation
+			// keep working. `null` means the slug didn't actually change, and the field is then
+			// left out of the $set entirely.
+			//
+			// Drafts are excluded: nothing has been shared yet, so there is no link to keep
+			// alive — and autosave on a draft PUTs the whole form every ~2s, which would
+			// otherwise retire (and permanently reserve) every half-typed slug along the way.
+			// A published event's autosave writes `draftRevision` instead, never this path.
+			if (event.status !== "draft") {
+				resolvedPreviousSlugs = nextSlugHistory(event.slug, resolvedSlug, event.previousSlugs) ?? undefined
+			}
 		}
 
 		// The "Premium Event" hosting gate is gone with the member-discount model — membership
@@ -256,6 +270,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			$set: {
 				name,
 				...(resolvedSlug !== undefined ? { slug: resolvedSlug } : {}),
+				...(resolvedPreviousSlugs !== undefined ? { previousSlugs: resolvedPreviousSlugs } : {}),
 				location,
 				// Same preserve-on-omit rule as the coordinates below: an older client, or an
 				// autosave built from a stale form, may not send `venueName` at all. Writing

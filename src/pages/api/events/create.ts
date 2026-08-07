@@ -142,9 +142,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			resolvedSlug = await buildUniqueSlug(Events, check.slug)
 		} else {
 			const derived = slugifyFromName(name)
-			resolvedSlug = derived
-				? await buildUniqueSlug(Events, derived)
-				: (generateRandomId(10) as string)
+			// The random fallback goes through buildUniqueSlug too — it has to dodge retired
+			// slugs as well as live ones, and those are no longer visible from the id alone.
+			resolvedSlug = await buildUniqueSlug(Events, derived || (generateRandomId(10) as string))
 		}
 
 		// The "Premium Event" hosting gate is gone along with the member-discount model —

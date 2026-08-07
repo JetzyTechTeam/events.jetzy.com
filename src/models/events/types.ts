@@ -53,6 +53,8 @@ export interface IDatePoll {
 export interface IEvent extends IBaseModelProps {
 	name: string
 	slug: string
+	/** Slugs this event used before it was renamed — each one redirects to `slug`. */
+	previousSlugs?: string[]
 	location: string
 	venueName?: string
 	showParticipants: boolean

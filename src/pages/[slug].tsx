@@ -9,7 +9,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { useAnalytics } from "@/hooks/useAnalytics"
 import Head from "next/head"
 import { stripHTMLAndDecode } from "@/lib/utils"
-import { eventUrl } from "@/lib/event-slug"
+import { eventPath, eventUrl, findEventByPreviousSlug, withQuery } from "@/lib/event-slug"
 import { isPendingAdminApproval } from "@/lib/event-approval"
 import { toMetaDescription } from "@/utils/text"
 import { getServerSession } from "next-auth"
@@ -226,6 +226,27 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 				if (rawDoc) {
 					console.log(`[Slug Lookup v3] Direct collection lookup SUCCESS: ${rawDoc._id}`)
 					event = Events.hydrate(rawDoc)
+				}
+			}
+		}
+
+		// 3.5. Retired slug — the host renamed this event's url. Send the visitor on to the
+		// current one instead of 404ing, so links already in circulation (RSVP buttons in
+		// sent emails, printed QR codes, pasted links) survive a rename. Runs only after
+		// every current-slug lookup has missed, so a live slug always wins.
+		if (!event) {
+			console.log(`[Slug Lookup v3] Current-slug lookups FAILED. Checking retired slugs...`)
+			const aliased = await findEventByPreviousSlug(Events, slug as string)
+			if (aliased?.slug) {
+				console.log(`[Slug Lookup v3] Retired slug "${slug}" belongs to ${aliased._id} -> redirecting to "${aliased.slug}"`)
+				return {
+					redirect: {
+						// 307, not 308: browsers cache a permanent redirect indefinitely, and a
+						// later rename (or a revert) would be impossible to undo for anyone who
+						// had already followed the old link once.
+						destination: withQuery(eventPath(aliased.slug), context.query, ["slug"]),
+						permanent: false,
+					},
 				}
 			}
 		}

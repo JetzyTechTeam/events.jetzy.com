@@ -125,14 +125,24 @@ export function slugifyFromName(name: string | null | undefined): string {
 export const escapeForRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /**
- * Find a free slug, appending -2, -3 … on collision.
- *
- * Matching is CASE-INSENSITIVE because the page lookup falls back to a case-insensitive
- * regex — `MyEvent` and `myevent` would resolve to each other, so they must not coexist.
+ * Mongo filter matching an event that holds `value` as its CURRENT slug or as one of its
+ * former slugs. A former slug is just as spoken-for as a live one: it still has a redirect
+ * pointing at it, and handing it to a new event would silently kill that redirect.
  *
  * Deliberately does NOT filter `isDeleted`: the unique index has no partial filter, so a
  * soft-deleted event still occupies its slug. Ignoring that would report "available" and
  * then throw E11000 on insert.
+ */
+export const slugTakenFilter = (value: string) => {
+	const rx = new RegExp(`^${escapeForRegex(value)}$`, "i")
+	return { $or: [{ slug: rx }, { previousSlugs: rx }] }
+}
+
+/**
+ * Find a free slug, appending -2, -3 … on collision.
+ *
+ * Matching is CASE-INSENSITIVE because the page lookup falls back to a case-insensitive
+ * regex — `MyEvent` and `myevent` would resolve to each other, so they must not coexist.
  *
  * Server-side only — takes the model as an argument to avoid importing Mongoose into
  * anything the client bundles.
@@ -145,9 +155,9 @@ export async function buildUniqueSlug(
 	const { excludeEventId } = options
 
 	const isTaken = async (value: string) => {
-		const query: Record<string, any> = {
-			slug: { $regex: new RegExp(`^${escapeForRegex(value)}$`, "i") },
-		}
+		// `excludeEventId` still lets an event reclaim one of its OWN former slugs — the
+		// update handler drops it from the history when that happens.
+		const query: Record<string, any> = slugTakenFilter(value)
 		if (excludeEventId) query._id = { $ne: excludeEventId }
 		const existing = await EventsModel.findOne(query).select("_id").lean()
 		return !!existing
@@ -165,6 +175,77 @@ export async function buildUniqueSlug(
 
 	// Practically unreachable; keeps the return type honest.
 	throw new Error("Could not find an available URL for this event.")
+}
+
+/** How many former slugs an event keeps. Older ones fall off the front. */
+export const MAX_SLUG_HISTORY = 20
+
+/**
+ * Work out the new `previousSlugs` value for a rename, or `null` when the slug isn't
+ * actually changing (so the caller can leave the field untouched).
+ *
+ * Reverting to a former slug REMOVES it from the history rather than leaving it behind —
+ * otherwise the event would list its own live slug as an alias, and the redirect stage
+ * would be reachable for a url that already resolves.
+ */
+export function nextSlugHistory(
+	currentSlug: string | null | undefined,
+	newSlug: string,
+	history: string[] | null | undefined,
+): string[] | null {
+	if (!currentSlug || currentSlug.toLowerCase() === newSlug.toLowerCase()) return null
+
+	const seen = new Set<string>([newSlug.toLowerCase()])
+	const kept: string[] = []
+
+	for (const entry of [...(history || []), currentSlug]) {
+		if (!entry) continue
+		const key = entry.toLowerCase()
+		if (seen.has(key)) continue
+		seen.add(key)
+		kept.push(entry)
+	}
+
+	return kept.slice(-MAX_SLUG_HISTORY)
+}
+
+/**
+ * Find the event that used `slug` as a FORMER url.
+ *
+ * Callers must only reach for this AFTER a current-slug lookup has missed — a live slug
+ * always outranks another event's alias, because rows that predate `slugTakenFilter`
+ * may already collide.
+ *
+ * Server-side only, same model-as-argument convention as `buildUniqueSlug`.
+ */
+export async function findEventByPreviousSlug(EventsModel: any, slug: string): Promise<{ _id: any; slug: string } | null> {
+	if (!slug) return null
+	return EventsModel.findOne({
+		previousSlugs: { $regex: new RegExp(`^${escapeForRegex(slug)}$`, "i") },
+		isDeleted: false,
+	})
+		.select("_id slug")
+		.lean()
+}
+
+/**
+ * Re-attach the incoming query string to a redirect destination, dropping the dynamic
+ * route params (they're already baked into `path`). Old links carry things that matter —
+ * `?invite=true` deep links, `?ref=` referral codes — and losing them on the hop to the
+ * canonical url would quietly change what the visitor lands on.
+ */
+export const withQuery = (path: string, query: Record<string, any> | undefined, omit: string[] = []) => {
+	const skip = new Set(omit)
+	const params = new URLSearchParams()
+
+	Object.entries(query || {}).forEach(([key, value]) => {
+		if (skip.has(key) || value === undefined || value === null) return
+		if (Array.isArray(value)) value.forEach((entry) => params.append(key, String(entry)))
+		else params.append(key, String(value))
+	})
+
+	const qs = params.toString()
+	return qs ? `${path}?${qs}` : path
 }
 
 /** `/my%20event` — always use this instead of interpolating a slug into a path. */
