@@ -31,6 +31,12 @@ export type MembershipDefinition = {
 	/** Short form for tight UI (chips, table cells). */
 	shortLabel: string
 	/**
+	 * One line on what the membership gets you, shown at checkout above the billing terms.
+	 * Per-product because the two sell different things — a shared sentence would end up
+	 * promising Jetzy events to someone buying a concierge service.
+	 */
+	checkoutBlurb: string
+	/**
 	 * Stripe product id. Env-overridable so test and live environments differ without a
 	 * code change; the fallback is the PRODUCTION id, so a misconfigured non-production
 	 * environment fails loudly at `products.retrieve` rather than quietly selling the
@@ -52,6 +58,7 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		label: "Jetzy Premium",
 		receiptLabel: "Jetzy Premium membership",
 		shortLabel: "Premium",
+		checkoutBlurb: "Unlock exclusive Jetzy events, experiences, and member benefits.",
 		productId: process.env.NEXT_STRIPE_PREMIUM_PRODUCT_ID || "prod_Uxn2R9FQd5F3sp",
 		userField: "premiumSubscription",
 	},
@@ -60,6 +67,7 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 		label: "Full Concierge Membership",
 		receiptLabel: "Full Concierge Membership",
 		shortLabel: "Concierge",
+		checkoutBlurb: "Priority seating, VIP entrance, complimentary invites and member-only discounts.",
 		// Production `prod_UlQTOgXS73TAEV`; staging `prod_UjabUJ9OXWhLPJ` must be supplied
 		// through the env var.
 		productId: process.env.NEXT_STRIPE_CONCIERGE_PRODUCT_ID || "prod_UlQTOgXS73TAEV",
