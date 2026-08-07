@@ -3,7 +3,7 @@ import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
-import { PREMIUM_BENEFITS } from "@Jetzy/components/premium/PremiumPaywallModal"
+import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
@@ -157,83 +157,18 @@ export default function SubscribePage() {
 				<p className="text-gray-400">Upgrade anytime. Cancel anytime.</p>
 			</div>
 
-			<div className="max-w-3xl mx-auto grid gap-6 sm:grid-cols-2">
-				{/* Free tier — no Stripe object backs this, it's just "not subscribed" */}
-				<div className="bg-[#1E1E1E] border-2 border-[#2b2b2b] rounded-2xl p-6 flex flex-col">
-					<h2 className="text-xl font-bold mb-1">Jetzy Basic</h2>
-					<p className="text-sm text-gray-400 mb-4">Free, forever</p>
-					<p className="text-3xl font-bold mb-6">$0</p>
-					<ul className="space-y-3 text-sm text-gray-300 flex-1 mb-6">
-						{/* Connecting with people is the point of Jetzy, so it leads — the free tier
-						    previously opened on events, which reads as an events listing rather than
-						    the social product it is. */}
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 text-jetzy shrink-0" /> Connect with people wherever you are
-						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 text-jetzy shrink-0" /> Discover and RSVP to events
-						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 text-jetzy shrink-0" /> Chat with hosts and attendees
-						</li>
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 text-jetzy shrink-0" /> Standard ticket pricing
-						</li>
-					</ul>
-					<button
-						onClick={goToApp}
-						className="bg-[#2b2b2b] hover:bg-[#343434] text-white font-bold px-6 py-3 rounded-full transition-colors"
-					>
-						Continue with Free
-					</button>
-				</div>
-
-				{/* Premium tier — backed by the real Stripe subscription product */}
-				<div className="bg-[#1E1E1E] border-2 border-jetzy rounded-2xl p-6 flex flex-col relative">
-					<span className="absolute -top-3 right-6 bg-jetzy text-black text-xs font-bold px-3 py-1 rounded-full">
-						BEST DEAL
-					</span>
-					<h2 className="text-xl font-bold mb-1">{plan?.name || "Jetzy Premium"}</h2>
-					<p className="text-sm text-gray-400 mb-4">Billed {plan?.interval || "month"}ly</p>
-
-					{planLoading ? (
-						<div className="mb-6">
-							<Spinner />
-						</div>
-					) : (
-						<p className="text-3xl font-bold mb-6" style={{ color: "#F5C518" }}>
-							{formattedPrice || "—"}
-							<span className="text-sm text-gray-400 font-normal"> / {plan?.interval || "month"}</span>
-						</p>
-					)}
-
-					{/* One list, shared with the paywall modal. This page used to hand-write its own
-					    copy, and the two had already drifted into different promises. */}
-					<ul className="space-y-3 text-sm text-gray-300 flex-1 mb-6">
-						<li className="flex gap-2">
-							<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Everything in Basic
-						</li>
-						{PREMIUM_BENEFITS.map((benefit) => (
-							<li key={benefit} className="flex gap-2">
-								<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> {benefit}
-							</li>
-						))}
-					</ul>
-
-					{isPremium ? (
-						<button onClick={goToApp} className="bg-jetzy text-black font-bold px-6 py-3 rounded-full transition-colors">
-							You&apos;re subscribed — Continue
-						</button>
-					) : (
-						<button
-							disabled={subscribeMutation.isPending || premiumLoading}
-							onClick={() => subscribeMutation.mutate()}
-							className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:opacity-90 transition-colors disabled:opacity-50"
-						>
-							{subscribeMutation.isPending ? <Spinner /> : "Subscribe Now"}
-						</button>
-					)}
-				</div>
+			<div className="max-w-3xl mx-auto">
+				{/* Shared with the paywall modal, so a buyer sees the same comparison whichever
+				    door they came through. */}
+				<PlanComparison
+					plan={plan}
+					planLoading={planLoading}
+					isPremium={isPremium}
+					premiumDisabled={premiumLoading}
+					premiumPending={subscribeMutation.isPending}
+					onChooseFree={goToApp}
+					onChoosePremium={() => subscribeMutation.mutate()}
+				/>
 			</div>
 		</div>
 	)

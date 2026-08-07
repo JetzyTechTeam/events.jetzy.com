@@ -384,10 +384,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             ))}
           </div>
 
-          {/* Checkout Section */}
-          <div className="flex justify-between items-center my-4">
+          {/* Checkout Section.
+              Total and CTA sit together on the RIGHT, matching the per-ticket prices above.
+              They used to be pushed to opposite ends by `justify-between`, which left a wide
+              gap and read as two unrelated things rather than "this is what you pay, here's
+              the button". */}
+          <div className="flex flex-col sm:flex-row sm:justify-end sm:items-center gap-3 sm:gap-6 my-4">
             {/* Total Price to pay */}
-            <div className="text-center sm:text-right">
+            <div className="text-right">
               <h3 className="text-2xl font-semibold">
                 {selectionPricing.total.toLocaleString("en-US", {
                   style: "currency",
@@ -413,7 +417,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
             <button
               disabled={isLoading}
               onClick={handleCheckoutClick}
-              className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto shrink-0"
             >
               {isLoading ? <Spinner /> : selectionNeedsApproval ? "Request to Book" : "Checkout"}
             </button>

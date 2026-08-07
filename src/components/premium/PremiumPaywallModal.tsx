@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from "react"
+import React, { useEffect, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
+import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
-import { CheckIcon, StarIcon } from "@heroicons/react/24/solid"
-import Spinner from "@/components/misc/Spinner"
-import { Error as ErrorToast, Info as InfoToast } from "@/lib/_toaster"
-import { PREMIUM_STATUS_QUERY_KEY } from "@/hooks/usePremiumStatus"
+import { CheckIcon } from "@heroicons/react/24/solid"
+import { Error as ErrorToast } from "@/lib/_toaster"
+import { ROUTES } from "@/configs/routes"
+import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumStatus"
+import { membershipPlanQueryKey } from "@/hooks/usePremiumPlan"
+import PlanComparison, { type PlanInfo } from "@/components/premium/PlanComparison"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -14,63 +17,50 @@ import { PREMIUM_STATUS_QUERY_KEY } from "@/hooks/usePremiumStatus"
 const RESUME_PARAM = "premiumSubscribe"
 const RESUME_SESSION_KEY = "jetzy_premium_resume_handled"
 
-// What membership actually gets you — shown in every context the pitch appears in.
-// Callers can pass a trimmed list via the `benefits` prop.
-/**
- * What Jetzy Premium gets you.
- *
- * EXPORTED and shared with `/subscribe`, which used to keep its own hand-written copy of this
- * list. The two had already drifted apart — two different promises for one product.
- */
-export const PREMIUM_BENEFITS = [
-	"Access to invite-only events and experiences",
-	"Curated networking with fellow members",
-	"Personalized match recommendations",
-	"Member-only pricing and exclusive discounts",
-	"The ability to host Premium Events with other members",
-]
-
-type PlanInfo = {
-	name: string
-	unitAmount: number | null
-	currency: string
-	interval: string
-}
-
 type Props = {
 	isOpen: boolean
 	onClose: () => void
 	returnTo: string
-	title?: string
+	/** Optional context line — e.g. why the visitor hit this paywall. */
 	message?: string
-	benefits?: string[]
 }
 
-// Structurally mirrors EventCheckoutModel.tsx: one modal shell, multiple internal states
-// (here: "pitch" -> "plan"), same icon-circle/banner/message layout as its
-// Pending-Approval / Waiting-List states. Generic subscribe pitch — used both when a
-// non-member tries to host a Premium Event and when a non-member browsing a Premium
-// Event's ticket page wants to learn about member pricing.
-const PremiumPaywallModal: React.FC<Props> = ({
-	isOpen,
-	onClose,
-	returnTo,
-	title = "Unlock Jetzy Premium",
-	message,
-	benefits = PREMIUM_BENEFITS,
-}) => {
-	const [step, setStep] = useState<"pitch" | "plan">("pitch")
+/**
+ * The "Buy Jetzy Premium" dialog.
+ *
+ * Shows the SAME Basic-vs-Premium comparison as `/subscribe`, via the shared
+ * `PlanComparison`. It used to be a bullet list with no price and no free tier, which meant
+ * what a buyer saw — and whether they saw a price at all — depended on which door they came
+ * through. It also used to be two steps, pitch then a plan-confirmation screen; the cards
+ * already carry the price and the CTA, so the middle step was removed and Subscribe goes
+ * straight to Stripe, matching `/subscribe`.
+ */
+const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, message }) => {
 	const { status: sessionStatus } = useSession()
 	const router = useRouter()
 	const queryClient = useQueryClient()
+	const { isPremium } = usePremiumStatus()
 
+	// "You already have this" is a RESULT worth showing, not an error to swallow.
+	//
+	// It matters most on the login round-trip: a logged-out visitor clicks Subscribe, signs
+	// in, and we resume straight into Stripe — but by then the modal is closed, because
+	// `isOpen` is owned by the navbar and defaults to false on the fresh page load. Anything
+	// reported by a toast at that moment lands on a screen the visitor isn't looking at, so
+	// the click appeared to do nothing at all. This state lets the modal reopen itself and
+	// say so plainly.
+	const [alreadyMember, setAlreadyMember] = useState(false)
+
+	// Shares the key with `useMembershipPlan("premium")`, so opening this after the price has
+	// been fetched elsewhere on the page costs no extra request.
 	const { data: plan, isLoading: planLoading } = useQuery({
-		queryKey: ["premium-plan"],
+		queryKey: membershipPlanQueryKey("premium"),
 		queryFn: async () => {
-			const { data } = await axios.get("/api/subscriptions/plan")
+			const { data } = await axios.get("/api/subscriptions/plan?membership=premium")
 			return data?.data as PlanInfo
 		},
-		enabled: isOpen && step === "plan",
+		enabled: isOpen,
+		staleTime: 5 * 60_000,
 	})
 
 	const subscribeMutation = useMutation({
@@ -86,14 +76,11 @@ const PremiumPaywallModal: React.FC<Props> = ({
 			}
 		},
 		onError: (error: any) => {
-			// Logged-out visitor turned out to already have an active subscription once
-			// they signed in (see the resume effect below) — that's good news, not an
-			// error, so tell them plainly and close the modal instead of showing "failed".
+			// Logged-out visitor turned out to already have an active subscription once they
+			// signed in — good news, not a failure. Show it in the modal rather than closing.
 			if (error?.response?.data?.data?.alreadySubscribed) {
-				InfoToast("You're already a member", "You already have an active Jetzy Premium subscription.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
-				setStep("pitch")
-				onClose()
+				setAlreadyMember(true)
 				return
 			}
 			const message = error?.response?.data?.message || "Could not start checkout. Please try again."
@@ -121,10 +108,12 @@ const PremiumPaywallModal: React.FC<Props> = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.isReady, router.query[RESUME_PARAM], sessionStatus])
 
-	if (!isOpen) return null
+	// Stays mounted while `alreadyMember` is set even if the parent thinks it's closed —
+	// that is exactly the post-login case described above.
+	if (!isOpen && !alreadyMember) return null
 
 	const handleClose = () => {
-		setStep("pitch")
+		setAlreadyMember(false)
 		onClose()
 	}
 
@@ -137,16 +126,26 @@ const PremiumPaywallModal: React.FC<Props> = ({
 			router.push(`/login?_cb=${encodeURIComponent(url.pathname + url.search)}`)
 			return
 		}
+		// Caught client-side too, so a member who reaches this dialog is told immediately
+		// rather than after a round trip that can only fail.
+		if (isPremium) {
+			setAlreadyMember(true)
+			return
+		}
 		subscribeMutation.mutate()
 	}
 
-	const formattedPrice = plan?.unitAmount != null
-		? (plan.unitAmount / 100).toLocaleString("en-US", { style: "currency", currency: plan.currency || "usd" })
-		: null
+	// Someone who already subscribes has nothing to buy here — show that instead of the cards.
+	const showAlreadyMember = alreadyMember || (isOpen && isPremium)
 
 	return (
 		<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-			<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-lg relative max-h-[90vh] flex flex-col overflow-hidden">
+			{/* Wide enough for two cards side by side; they stack below `sm`. */}
+			<div
+				className={`bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden ${
+					showAlreadyMember ? "max-w-md" : "max-w-3xl"
+				}`}
+			>
 				<button
 					onClick={handleClose}
 					className="absolute top-2 right-2 bg-black text-white w-8 h-8 rounded-full flex items-center justify-center z-10"
@@ -154,89 +153,49 @@ const PremiumPaywallModal: React.FC<Props> = ({
 					&times;
 				</button>
 
-				{step === "pitch" ? (
-					<div className="p-6 space-y-6 overflow-y-auto">
-						<div className="text-center">
-							<div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "rgba(245,197,24,0.15)" }}>
-								<StarIcon className="w-8 h-8" style={{ color: "#F5C518" }} />
-							</div>
-							<div className="rounded-lg p-6 mb-6" style={{ background: "rgba(245,197,24,0.15)", border: "1px solid rgba(245,197,24,0.3)" }}>
-								<p className="text-2xl font-bold text-center" style={{ color: "#F5C518" }}>{title}</p>
-							</div>
-							{message && (
-								<p className="text-gray-400 text-sm mb-6">
-									{message}
-								</p>
-							)}
-							{benefits.length > 0 && (
-								<ul className="flex flex-col gap-3 text-left mb-6">
-									{benefits.map((benefit) => (
-										<li key={benefit} className="flex items-start gap-3">
-											<CheckIcon className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
-											<span className="text-sm text-gray-200">{benefit}</span>
-										</li>
-									))}
-								</ul>
-							)}
-							<div className="flex flex-col gap-3">
-								<button
-									onClick={() => setStep("plan")}
-									className="bg-jetzy text-black font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-colors"
-								>
-									Subscribe to Jetzy Premium
-								</button>
-								<button
-									onClick={handleClose}
-									className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-								>
-									Not now
-								</button>
-							</div>
+				{showAlreadyMember ? (
+					<div className="p-6 overflow-y-auto text-center">
+						<div
+							className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
+							style={{ background: "rgba(34,197,94,0.15)" }}
+						>
+							<CheckIcon className="w-8 h-8 text-green-500" />
+						</div>
+						<h2 className="text-2xl font-bold text-white mb-2">You&apos;re already a Jetzy Premium member</h2>
+						<p className="text-gray-400 text-sm mb-6">
+							Your subscription is active, so there&apos;s nothing to buy here. You can change or cancel it any
+							time from Manage membership.
+						</p>
+						<div className="flex flex-col gap-3">
+							<Link
+								href={ROUTES.manageMembership}
+								className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:opacity-90 transition-colors"
+							>
+								Manage membership
+							</Link>
+							<button
+								onClick={handleClose}
+								className="bg-[#2b2b2b] hover:bg-[#343434] text-white font-bold px-6 py-3 rounded-full transition-colors"
+							>
+								Close
+							</button>
 						</div>
 					</div>
 				) : (
-					<div className="p-6 space-y-6 overflow-y-auto">
+					<div className="p-6 overflow-y-auto">
 						<div className="text-center">
-							<h2 className="text-2xl font-bold text-white mb-4">Jetzy Premium Events</h2>
-
-							{planLoading ? (
-								<div className="flex justify-center py-6"><Spinner /></div>
-							) : plan ? (
-								<div className="rounded-xl p-6 mb-6 border" style={{ background: "rgba(245,197,24,0.08)", borderColor: "rgba(245,197,24,0.3)" }}>
-									<div className="flex items-center justify-center gap-2 mb-2">
-										<StarIcon className="w-5 h-5" style={{ color: "#F5C518" }} />
-										<p className="text-white font-semibold">{plan.name}</p>
-									</div>
-									<p className="text-3xl font-bold" style={{ color: "#F5C518" }}>
-										{formattedPrice}
-										<span className="text-sm text-gray-400 font-normal"> / {plan.interval}</span>
-									</p>
-								</div>
-							) : (
-								<p className="text-gray-400 mb-6">Could not load plan details.</p>
-							)}
-
-							<p className="text-gray-400 text-sm mb-6">
-								You&apos;ll be redirected to Stripe to complete your subscription securely.
-							</p>
-
-							<div className="flex gap-3">
-								<button
-									type="button"
-									onClick={() => setStep("pitch")}
-									className="w-1/3 border border-[#444] text-white font-bold px-6 py-3 rounded-xl transition-all hover:bg-[#222]"
-								>
-									Back
-								</button>
-								<button
-									disabled={subscribeMutation.isPending}
-									onClick={handleSubscribeClick}
-									className="w-2/3 bg-jetzy text-black font-bold px-6 py-3 rounded-xl transition-all transform hover:scale-105 shadow-lg disabled:opacity-50"
-								>
-									{subscribeMutation.isPending ? <Spinner /> : "Subscribe Now"}
-								</button>
-							</div>
+							<h2 className="text-2xl font-bold text-white mb-1">Choose your Jetzy plan</h2>
+							<p className="text-gray-400 text-sm mb-6">Upgrade anytime. Cancel anytime.</p>
+							{message && <p className="text-gray-400 text-sm mb-6">{message}</p>}
 						</div>
+
+						<PlanComparison
+							plan={plan}
+							planLoading={planLoading}
+							onChooseFree={handleClose}
+							onChoosePremium={handleSubscribeClick}
+							premiumPending={subscribeMutation.isPending}
+						/>
 					</div>
 				)}
 			</div>

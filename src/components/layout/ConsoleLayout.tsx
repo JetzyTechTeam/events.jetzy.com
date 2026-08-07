@@ -79,7 +79,10 @@ export default function ConsoleLayout({
         </div>
       </header>
       <main>
-        <div className="mx-auto max-w-7xl py-6 sm:px-6 lg:px-8 ">
+        {/* `px-4` at the base matters: without it there is NO horizontal padding below `sm`,
+            so every console page's content ran edge to edge on a phone. `sm:px-6` still wins
+            from 640px up, so desktop is unchanged. */}
+        <div className="mx-auto max-w-7xl py-6 px-4 sm:px-6 lg:px-8 ">
           {children}
         </div>
       </main>

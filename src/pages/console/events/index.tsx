@@ -94,14 +94,14 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 	}
 
 	return (
-		<ConsoleLayout maxW="max-w-[800px]" className="px-0">
+		<ConsoleLayout maxW="max-w-[800px]">
 			<div className="max-w-[800px] mx-auto mb-5">
 				<Heading as="h2" fontSize={28}>
 					{isAdmin ? "Events" : "My Events"} ({pagination.total})
 				</Heading>
 			</div>
 
-			<Flex className="max-w-[800px] mx-auto" gap={2} mb={4}>
+			<Flex className="max-w-[800px] mx-auto" flexDirection={{ base: "column", sm: "row" }} gap={2} mb={4}>
 				<InputGroup>
 					<InputLeftElement pointerEvents="none">
 						<SearchSVG />
@@ -130,7 +130,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 			</Flex>
 
 			{/* FILTER CHIPS */}
-			<div className="flex items-center gap-2 max-w-[800px] mx-auto mb-5">
+			<div className="flex flex-wrap items-center gap-2 max-w-[800px] mx-auto mb-5">
 				{FILTERS.map(({ key, label }) => {
 					const active = filter === key
 					return (
@@ -158,7 +158,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 			</div>
 
 			{pagination.totalPages > 1 && (
-				<div className="flex items-center justify-between max-w-[800px] mx-auto mt-8">
+				<div className="flex flex-col sm:flex-row items-center sm:justify-between gap-3 max-w-[800px] mx-auto mt-8">
 					<Button
 						onClick={() => goToPage(pagination.page - 1)}
 						isDisabled={pagination.page <= 1}
@@ -202,7 +202,10 @@ const SearchSVG = () => (
 // fontFamily comes from the loaded `roboto` next/font className on the element.
 const dayNumberStyle: React.CSSProperties = {
 	fontWeight: 700,
-	fontSize: "120px",
+	// clamp() rather than a Tailwind breakpoint because this is an inline style. 120px is the
+	// Figma value and stays the upper bound; on a 360px phone it would otherwise be wider than
+	// the card it sits in.
+	fontSize: "clamp(56px, 14vw, 120px)",
 	lineHeight: "100%",
 	letterSpacing: "-0.03em",
 }
@@ -210,7 +213,7 @@ const dayNumberStyle: React.CSSProperties = {
 // Figma weekday/month label spec: Roboto 400, 24px, line-height 100%, letter-spacing 2%, uppercase
 const labelStyle: React.CSSProperties = {
 	fontWeight: 400,
-	fontSize: "24px",
+	fontSize: "clamp(14px, 4vw, 24px)",
 	lineHeight: "100%",
 	letterSpacing: "0.02em",
 	textTransform: "uppercase",
@@ -221,16 +224,16 @@ const DateBlock = ({ startsOn, isEnded, timezone }: { startsOn?: any; isEnded?: 
 	const accent = isEnded ? "text-gray-500" : "text-white"
 	if (!startsOn) {
 		return (
-			<div className="w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
+			<div className="w-[96px] sm:w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
 				<span className={roboto.className} style={labelStyle}>--</span>
-				<span className={`my-1 ${roboto.className} ${accent}`} style={{ ...dayNumberStyle, fontSize: "64px" }}>TBD</span>
+				<span className={`my-1 ${roboto.className} ${accent}`} style={{ ...dayNumberStyle, fontSize: "clamp(32px, 8vw, 64px)" }}>TBD</span>
 				<span className={roboto.className} style={labelStyle}>--</span>
 			</div>
 		)
 	}
 	const { weekday, day, monthYear } = formatEventDateParts(startsOn, timezone)
 	return (
-		<div className="w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
+		<div className="w-[96px] sm:w-[135px] shrink-0 flex flex-col items-center justify-center text-center">
 			<span className={roboto.className} style={labelStyle}>{weekday}</span>
 			<span className={`my-1 ${roboto.className} ${accent}`} style={dayNumberStyle}>{day}</span>
 			<span className={roboto.className} style={labelStyle}>{monthYear}</span>
@@ -260,29 +263,35 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 	return (
 		<>
-			<div className={`flex items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
-				{/* DATE BLOCK */}
-				<DateBlock startsOn={event.startsOn} isEnded={props.isEnded} timezone={event.timezone} />
+			<div className={`flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
+				{/* Date and thumbnail share one row on mobile rather than stacking into a very
+				    tall card. `sm:contents` dissolves this wrapper from 640px up, so the desktop
+				    layout is exactly the three-column flex it has always been — no duplicated
+				    markup and no second code path to keep in step. */}
+				<div className="flex items-center gap-4 w-full sm:contents">
+					{/* DATE BLOCK */}
+					<DateBlock startsOn={event.startsOn} isEnded={props.isEnded} timezone={event.timezone} />
 
-				{/* THUMBNAIL */}
-				<div className="shrink-0">
-					{(() => {
-						const firstImage = event?.images?.[0]
-						// guard bad/seed data ("string", "", etc.); plain <img> so any host loads (mobile stores profile-pic URLs)
-						const isValidImage = typeof firstImage === "string" && (firstImage.startsWith("/") || firstImage.startsWith("http"))
-						return isValidImage ? (
-							<img
-								src={firstImage}
-								alt={stripHtml(event.name)}
-								className={`w-[150px] h-[120px] rounded-lg object-cover ${props.isEnded ? 'opacity-60' : ''}`}
-							/>
-						) : (
-							<div className={`w-[150px] h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
-								<span className="text-3xl">🖼️</span>
-								<span className="text-xs text-gray-500">No image</span>
-							</div>
-						)
-					})()}
+					{/* THUMBNAIL */}
+					<div className="shrink-0">
+						{(() => {
+							const firstImage = event?.images?.[0]
+							// guard bad/seed data ("string", "", etc.); plain <img> so any host loads (mobile stores profile-pic URLs)
+							const isValidImage = typeof firstImage === "string" && (firstImage.startsWith("/") || firstImage.startsWith("http"))
+							return isValidImage ? (
+								<img
+									src={firstImage}
+									alt={stripHtml(event.name)}
+									className={`w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg object-cover ${props.isEnded ? 'opacity-60' : ''}`}
+								/>
+							) : (
+								<div className={`w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
+									<span className="text-3xl">🖼️</span>
+									<span className="text-xs text-gray-500">No image</span>
+								</div>
+							)
+						})()}
+					</div>
 				</div>
 
 				{/* INFO */}
@@ -355,7 +364,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 				</div>
 
 				{/* ACTIONS */}
-				<div className="shrink-0 flex flex-col gap-2 w-[180px]">
+				<div className="shrink-0 flex flex-col gap-2 w-full sm:w-[180px]">
 					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>
