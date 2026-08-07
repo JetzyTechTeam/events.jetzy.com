@@ -1,6 +1,6 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
-import { ROUTES } from "@Jetzy/configs/routes"
+import { ROUTES, homeRouteForRole } from "@Jetzy/configs/routes"
 import { ServerErrors } from "@Jetzy/lib/_toaster"
 import { unauthorizedOnly } from "@Jetzy/lib/authSession"
 import { loginValidatorScheme } from "@Jetzy/lib/validator/authValidtor"
@@ -42,12 +42,8 @@ export default function LoginPage() {
 			const { eventId, magicToken } = navigation.query;
 			console.log('✅ Session established, checking redirect target...');
 
-			let target = _cb ? _cb.toString() : (
-				// @ts-ignore
-				(session?.user?.role === 'admin' || session?.user?.role === 'super admin')
-					? ROUTES.dashboard.events.index
-					: ROUTES.home
-			);
+			// @ts-ignore — `role` isn't on the NextAuth session type
+			let target = _cb ? _cb.toString() : homeRouteForRole(session?.user?.role);
 
 			// Mobile Flow: Forward user to specific event with context if eventId is present
 			if (eventId && magicToken) {

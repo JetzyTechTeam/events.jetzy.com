@@ -18,12 +18,17 @@ import ReactQueryProvider from "@/lib/react-query-provider";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import SessionSync from "@Jetzy/components/auth/SessionSync";
 import { AnalyticsProvider } from "@/contexts/AnalyticsContext";
+import { useInAppNavigationTracking } from "@/lib/navigation";
 
 export default function App({
   Component,
   pageProps: { session, ...pageProps },
 }: AppProps<{ session: Session }>) {
   const { store, props } = wrapper.useWrappedStore(pageProps);
+  // Counts client-side navigations so a Back button can tell "you came from somewhere on
+  // Jetzy" from "this tab opened straight onto this page". Has to live here: counting inside
+  // a page would miss every navigation that happened before that page mounted.
+  useInAppNavigationTracking();
   return (
     <ReactQueryProvider>
       <ReduxProvider store={store}>

@@ -164,6 +164,12 @@ export default function SubscribePage() {
 					<p className="text-sm text-gray-400 mb-4">Free, forever</p>
 					<p className="text-3xl font-bold mb-6">$0</p>
 					<ul className="space-y-3 text-sm text-gray-300 flex-1 mb-6">
+						{/* Connecting with people is the point of Jetzy, so it leads — the free tier
+						    previously opened on events, which reads as an events listing rather than
+						    the social product it is. */}
+						<li className="flex gap-2">
+							<CheckIcon className="w-5 h-5 text-jetzy shrink-0" /> Connect with people wherever you are
+						</li>
 						<li className="flex gap-2">
 							<CheckIcon className="w-5 h-5 text-jetzy shrink-0" /> Discover and RSVP to events
 						</li>
