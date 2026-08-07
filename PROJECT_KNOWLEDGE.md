@@ -293,6 +293,36 @@ The confirmation email showed per-ticket prices but **no discount and no total**
 - `approve.ts` builds its summary from the **booking**, not from the ticket rows: those are rebuilt from current event prices (bookings store no per-ticket price snapshot), whereas `subTotal` and the rates are what was recorded at purchase. Total is the captured amount.
 - **Out of scope:** five hardcoded per-event templates (`send-grid.ts` ~1052, 1131, 1210, 1291, 1372) return early and are unchanged.
 
+### Ticket display order is the ARRAY order
+
+A host drags tickets into order on the create/manage forms and the public event page matches.
+
+There is **no ordering field and no migration**, because there never needed to be:
+`event.tickets` is a Mongoose sub-document array, Mongo preserves its order,
+`api/events/[eventId]/update.ts` writes `tickets: resolvedTickets` in exactly the order the
+payload arrived, and nothing anywhere sorts tickets — the public `EventTicketsComponent` and
+`console/events/[eventId]/tickets.tsx` both render the array as-is. The only thing that was
+missing was a control.
+
+`src/components/events/SortableTicketList.tsx` (@dnd-kit) supplies the mechanism —
+`SortableTicketList` wraps `DndContext`/`SortableContext`, `SortableTicketItem` supplies the
+grip. Each form keeps its own card markup as children, because manage renders sales badges that
+create has no data for; sharing the card would mean one component branching on which page it is
+on. Reordering calls Formik `FieldArray`'s own `move`, so it is ordinary form state and autosave
+carries it like any other edit.
+
+**Reordering cannot affect bookings.** `update.ts` matches incoming tickets by `id` and carries
+`_id` through, and `booking.tickets[].ticketId` references that `_id` — moving a ticket within
+the array changes nothing a booking depends on.
+
+Sensor config is the part that matters: `PointerSensor` needs `distance: 8` or a click on the
+card's Edit/Delete menu is swallowed as a drag, and `TouchSensor` needs
+`delay: 250` or dragging fights page scroll on a phone and neither works.
+
+**Caveat:** the mobile app writes the same `events.tickets` array. If it rewrites the array in
+its own order, the host's ordering is lost. Belongs in the mobile handover notes alongside the
+preserve-`_id` and omit-don't-default rules.
+
 ### Memberships are SOLD PER TICKET (replaced the member discount)
 
 The member discount was retired. A membership is no longer taken *off* a ticket — it is **sold
