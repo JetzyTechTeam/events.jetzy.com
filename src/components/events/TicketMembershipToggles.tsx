@@ -1,6 +1,6 @@
 import React from "react"
 import { Box, Checkbox, Flex, FormControl, FormLabel, Text } from "@chakra-ui/react"
-import { HOST_SELECTABLE_MEMBERSHIP_KEYS, MEMBERSHIPS, MEMBERSHIP_KEYS, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, MEMBERSHIP_KEYS, type MembershipKey } from "@/lib/memberships"
 import { bundleApprovalNotice, bundleFreeTicketMessage } from "@/lib/premium-bundle"
 
 /**
@@ -26,17 +26,9 @@ type Props = {
 const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApproval, price }) => {
 	const selected = value || []
 	const toggle = (key: MembershipKey, checked: boolean) =>
-		// Rebuilt from MEMBERSHIP_KEYS — not from the visible list — so the stored order is
-		// canonical AND a membership that is currently withheld from new tickets is preserved
-		// rather than silently stripped the next time the host edits an existing one.
+		// Rebuilt from MEMBERSHIP_KEYS so the stored order is always canonical, whatever order
+		// the host ticked them in.
 		onChange(MEMBERSHIP_KEYS.filter((k) => (k === key ? checked : selected.includes(k))))
-
-	// Anything already on this ticket stays visible even while withheld, so its state is never
-	// hidden from the host — they can still see it and still turn it off.
-	const visibleKeys = MEMBERSHIP_KEYS.filter((key) => HOST_SELECTABLE_MEMBERSHIP_KEYS.includes(key) || selected.includes(key))
-
-	// Nothing to offer and nothing already set — render nothing rather than an empty control.
-	if (visibleKeys.length === 0) return null
 
 	return (
 		<FormControl mb={4}>
@@ -55,21 +47,14 @@ const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApp
 			</Box>
 
 			<Flex direction="column" gap={2} mt={3}>
-				{visibleKeys.map((key) => (
+				{MEMBERSHIP_KEYS.map((key) => (
 					<Checkbox
 						key={key}
 						colorScheme="yellow"
 						isChecked={selected.includes(key)}
 						onChange={(e) => toggle(key, e.target.checked)}
 					>
-						<Text fontSize="14px">
-							{MEMBERSHIPS[key].label}
-							{!HOST_SELECTABLE_MEMBERSHIP_KEYS.includes(key) && (
-								<Text as="span" fontSize="12px" color="#868686" ml={2}>
-									(already on this ticket — not yet available for new tickets)
-								</Text>
-							)}
-						</Text>
+						<Text fontSize="14px">{MEMBERSHIPS[key].label}</Text>
 					</Checkbox>
 				))}
 			</Flex>
