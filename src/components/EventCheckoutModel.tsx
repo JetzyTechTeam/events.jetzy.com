@@ -795,28 +795,33 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															{chargedKeys.map((key) => {
 																const plan = membershipPlans.find((p) => p.key === key)
 																const name = plan?.name || MEMBERSHIPS[key].label
-																const price = plan?.label ? ` (${plan.label})` : ""
+																const interval = plan?.interval || "month"
 																return (
 																	<div key={key} className="flex items-start gap-2">
 																		<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
-																		{/* On an approval ticket nothing is charged yet — the membership is
-																		    held alongside the ticket and only starts if the host approves.
-																		    On an instant ticket the card IS charged now, so the two say
-																		    different things about when money moves. Using the approval
-																		    wording on an instant purchase would be a false statement about
-																		    a charge at the point of sale. */}
-																		<p className="text-xs" style={{ color: "#F5C518" }}>
-																			🎟️ {name}{price}:{" "}
-																			{selectionNeedsApproval
-																				? "Charged only if your registration is approved. Starts upon approval and renews monthly until canceled."
-																				: "Charged with your ticket today. Starts immediately and renews monthly until canceled."}
-																		</p>
+																		<div style={{ color: "#F5C518" }}>
+																			<p className="text-xs font-semibold">
+																				🎟️ {name}{plan?.label ? ` — ${plan.label}` : ""}
+																			</p>
+																			{/* On an approval ticket nothing is charged yet — the membership
+																			    is held alongside the ticket and only starts if the host
+																			    approves. On an instant ticket the card IS charged now, so the
+																			    two must say different things about when money moves; the
+																			    approval wording on an instant purchase would be a false
+																			    statement about a charge at the point of sale. */}
+																			<p className="text-xs mt-1">
+																				{MEMBERSHIPS[key].checkoutBlurb}{" "}
+																				{selectionNeedsApproval
+																					? `You'll only be charged if your registration is approved. Your membership starts after approval and automatically renews every ${interval} until canceled.`
+																					: `You'll be charged with your ticket today. Your membership starts immediately and automatically renews every ${interval} until canceled.`}
+																			</p>
+																		</div>
 																	</div>
 																)
 															})}
 
 															<p className="text-xs" style={{ color: "#F5C518" }}>
-																⚠️ Already a member?{" "}
+																You can cancel anytime:{" "}
 																<a
 																	href={ROUTES.manageMembership}
 																	target="_blank"
@@ -824,7 +829,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																	className="underline"
 																	style={{ color: "#F79432" }}
 																>
-																	cancel/manage subscription
+																	Manage your subscription
 																</a>
 															</p>
 

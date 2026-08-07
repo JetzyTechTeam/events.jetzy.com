@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import Stripe from "stripe"
 import { ticketMemberships } from "@/lib/premium-bundle"
+import { buildUniqueSlug } from "@/lib/event-slug"
 
 // create stripe instance
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
@@ -47,9 +48,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			),
 		)
 
+		// Through buildUniqueSlug so the random id can't land on a slug that's already
+		// spoken for — including a retired one that still holds a live redirect.
+		const cloneSlug = await buildUniqueSlug(Events, generateRandomId(10) as string)
+
 		// Build the clone — copy content, reset anything booking/state related
 		const newEvent = await Events.create({
-			slug: generateRandomId(10),
+			slug: cloneSlug,
 			ownerId: userId,
 			name: `Copy of ${source.name}`,
 			location: source.location,

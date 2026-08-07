@@ -627,9 +627,9 @@ Stripe refuses any charge under **50¢ USD**, manual-capture approval holds incl
 
 ### Custom event slugs
 
-Hosts choose their own event URL. Uses the **existing** `slug` field (`String, required, unique, index`) — **no schema change**, so the mobile app reading the same collection is unaffected. This is also why there is no `previousSlugs` redirect array.
+Hosts choose their own event URL, stored on `slug` (`String, required, unique, index`). Renaming retires the old value into `previousSlugs` rather than discarding it — see **Retired slugs** below.
 
-**All slug logic lives in [src/lib/event-slug.ts](src/lib/event-slug.ts)** — `validateEventSlug`, `slugifyFromName`, `buildUniqueSlug`, `escapeForRegex`, and the URL builders `eventPath` / `eventUrl` / `eventAlbumPath` / `eventAlbumUrl`. Isomorphic, so the forms and the API validate identically.
+**All slug logic lives in [src/lib/event-slug.ts](src/lib/event-slug.ts)** — `validateEventSlug`, `slugifyFromName`, `buildUniqueSlug`, `slugTakenFilter`, `nextSlugHistory`, `findEventByPreviousSlug`, `escapeForRegex`, `withQuery`, and the URL builders `eventPath` / `eventUrl` / `eventAlbumPath` / `eventAlbumUrl`. Isomorphic apart from the three that take the Mongoose model as an argument, so the forms and the API validate identically.
 
 **Permissive by design.** Spaces, accents, `&`, `.`, `_`, emoji are all allowed. Only characters that cannot survive a URL path are rejected, each with a message naming the character: `/` (Next matches one path segment), `?` and `#` (terminate the path), `%` (breaks percent-decoding), `\`, and control characters. Also rejected: `RESERVED_SLUGS` (route names that would shadow `/[slug]` — `login`, `console`, `api`, `profile`, …) and **any 24-hex string**, which would be ambiguous with the ObjectId fallback at [[slug].tsx:259](src/pages/[slug].tsx#L259).
 
@@ -637,13 +637,26 @@ Hosts choose their own event URL. Uses the **existing** `slug` field (`String, r
 
 **Uniqueness is CASE-INSENSITIVE.** The page lookup falls back to a case-insensitive regex, so `MyEvent` and `myevent` would resolve to each other and must not coexist. `buildUniqueSlug` appends `-2`, `-3`… and deliberately **does not filter `isDeleted`** — the unique index has no partial filter, so a soft-deleted event still holds its slug; filtering would report "available" then throw E11000.
 
-- **create.ts** — `slug` optional in zod; supplied → validate + uniquify, blank → derive from name.
-- **update.ts** — `slug` optional; **omit means unchanged** (a stale client or autosave can never blank it); uniquify with `excludeEventId` so a no-op save doesn't bump the slug to `-2`.
-- Both catch `E11000` → friendly message instead of leaking Mongo's text through the 500 handler.
-- **`/api/events/slug-available`** (GET, session required) backs the form's debounced availability check.
-- `clone.ts` still uses `generateRandomId(10)` — a clone shouldn't guess a URL.
+**A retired slug counts as taken.** `slugTakenFilter(value)` is the single source of that rule — `{ $or: [{ slug: rx }, { previousSlugs: rx }] }` — shared by `buildUniqueSlug` and `/api/events/slug-available`. Letting a new event claim a retired slug would silently kill the redirect pointing at it.
 
-**UI** — shared [EventSlugField.tsx](src/components/events/EventSlugField.tsx) on both create and manage, rendering an `events.jetzy.com/` prefix, live validation and availability. Manage passes `warnOnChange` so editing shows a warning that shared links, printed QR codes and already-sent emails will break (the `/{eventId}` fallback still resolves them).
+- **create.ts** — `slug` optional in zod; supplied → validate + uniquify, blank → derive from name. The `generateRandomId(10)` last resort now goes through `buildUniqueSlug` too, because it can no longer see what's taken from the id alone.
+- **update.ts** — `slug` optional; **omit means unchanged** (a stale client or autosave can never blank it); uniquify with `excludeEventId` so a no-op save doesn't bump the slug to `-2`. On a real change it also writes `previousSlugs`.
+- Both catch `E11000` → friendly message instead of leaking Mongo's text through the 500 handler.
+- **`/api/events/slug-available`** (GET, session required) backs the form's debounced availability check, with a distinct message when the clash is with a retired slug.
+- `clone.ts` still uses `generateRandomId(10)` — a clone shouldn't guess a URL — but now via `buildUniqueSlug`.
+
+**UI** — shared [EventSlugField.tsx](src/components/events/EventSlugField.tsx) on both create and manage, rendering an `events.jetzy.com/` prefix, live validation and availability.
+
+### Retired slugs (old links keep working)
+
+Renaming an event used to **hard-404 every link already in circulation**: RSVP buttons in emails already sent, printed QR codes, links pasted into chats. It happened in production — marketing mailed `/f3Bs01E5nk`, the host later changed the URL to `/ExclusiveJetzyPicnic`, and the mailed link died. Only the raw `/{objectId}` deep link survived a rename.
+
+- **Schema:** `previousSlugs: [String]` on [src/models/events/index.ts](src/models/events/index.ts), with `eventsSchema.index({ previousSlugs: 1 })`. Additive and optional, so the mobile app sharing this collection is unaffected. Deliberately **not** unique-indexed — uniqueness has to hold across `slug` *and* `previousSlugs` together, which a multikey unique index can't express; that rule lives in `slugTakenFilter` instead.
+- **Recording:** `nextSlugHistory(currentSlug, newSlug, history)` returns the new array, or `null` when the slug isn't really changing so `update.ts` can leave the field out of the `$set` (preserve-on-omit is unchanged). **Reverting to a former slug removes it from the history** — otherwise the event would list its own live slug as an alias. Capped at `MAX_SLUG_HISTORY` (20), oldest dropped.
+- **Serving:** `findEventByPreviousSlug` runs in [[slug].tsx](src/pages/[slug].tsx) as stage 3.5 — **only after every current-slug lookup has missed**, because a live slug must always outrank another event's alias (legacy rows predate the uniqueness rule). Same stage in [[slug]/album/[albumId].tsx](src/pages/[slug]/album/[albumId].tsx). Both sit before the ObjectId fallback, which is safe since `validateEventSlug` rejects 24-hex strings.
+- **307, not 308.** Browsers cache a permanent redirect indefinitely; a later rename — or a revert — would be unfixable for anyone who had followed the old link once.
+- **Query strings survive the hop** via `withQuery(path, context.query, [dynamic params])`. Old links carry `?invite=true` deep links and `?ref=` referral codes; dropping them would quietly change what the visitor lands on.
+- **Backfill for links that broke before this shipped:** `npx tsx scripts/backfill-event-slug-alias.ts --slug <current> --alias <old> [--dry-run]`. It **refuses** rather than guesses — aborts if the alias is another event's live slug (that link works today and must not be hijacked), if another event already retired it, or if it isn't a valid slug. Also runs `createIndex` explicitly, since the connection sets `autoIndex: false`; never `syncIndexes()`, which would drop indexes created by the mobile app or admin portal.
 
 **Every slug URL is now encoded.** ~20 sites previously interpolated the slug raw, safe only because slugs were `[A-Za-z0-9]{10}`. Always use `eventPath`/`eventUrl` — never `` `${base}/${slug}` ``. Note `send-grid.ts` imports them **aliased** (`buildEventUrl`) because several functions declare a local `eventUrl`.
 

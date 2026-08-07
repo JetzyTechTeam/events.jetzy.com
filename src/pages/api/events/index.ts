@@ -6,7 +6,7 @@ import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
-import { sortEvents } from "@/utils/eventSort"
+import { getEventStatus, sortEvents } from "@/utils/eventSort"
 import { escapeRegExp } from "@/utils/text"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -73,12 +73,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Canonical order: live -> future -> tbd -> past (see src/utils/eventSort.ts)
 		const sortedEvents = sortEvents(events)
 
+		// Status filter for the public chips (All / Live / Upcoming / Ended / TBD).
+		//
+		// Applied HERE, before `total` and the slice, rather than on the client. Status is
+		// derived from the start date and the event's timezone, not stored, so it can't be a
+		// Mongo query — but this endpoint already sorts and paginates in memory, so filtering
+		// the sorted array costs nothing and keeps `total` and `totalPages` describing the
+		// filtered set. Filtering on the client instead would narrow the visible page while the
+		// count and the pager went on describing every event.
+		const requestedStatus = (req.query.status as string)?.trim()
+		const statusFiltered = ["live", "future", "past", "tbd"].includes(requestedStatus)
+			? sortedEvents.filter((event: any) => getEventStatus(event) === requestedStatus)
+			: sortedEvents
+
 		const LIMIT = 20
 		const page = Math.max(1, parseInt(req.query.page as string) || 1)
-		const total = sortedEvents.length
+		const total = statusFiltered.length
 		const totalPages = Math.ceil(total / LIMIT)
 		const skip = (page - 1) * LIMIT
-		const paginated = sortedEvents.slice(skip, skip + LIMIT)
+		const paginated = statusFiltered.slice(skip, skip + LIMIT)
 
 		return res.status(200).json({
 			data: paginated,

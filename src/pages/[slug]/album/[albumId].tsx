@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { eventAlbumPath, eventAlbumUrl, eventPath } from "@/lib/event-slug"
+import { eventAlbumPath, eventAlbumUrl, eventPath, findEventByPreviousSlug, withQuery } from "@/lib/event-slug"
 import Head from "next/head"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
@@ -484,6 +484,20 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		let event: any =
 			(await Events.findOne({ slug, isDeleted: false }).select("_id name slug ownerId").lean()) ||
 			(await Events.findOne({ slug: { $regex: new RegExp(`^${escaped}$`, "i") }, isDeleted: false }).select("_id name slug ownerId").lean())
+
+		// Retired slug — the event url changed after this album link was shared. Redirect to
+		// the current one rather than 404ing; same rule as the event page.
+		if (!event) {
+			const aliased = await findEventByPreviousSlug(Events, slug)
+			if (aliased?.slug) {
+				return {
+					redirect: {
+						destination: withQuery(eventAlbumPath(aliased.slug, albumId), context.query, ["slug", "albumId"]),
+						permanent: false,
+					},
+				}
+			}
+		}
 
 		if (!event && /^[0-9a-f]{24}$/i.test(slug)) {
 			event = await Events.findOne({ _id: slug, isDeleted: false }).select("_id name slug ownerId").lean()

@@ -28,9 +28,9 @@ import {
   useToast,
 } from "@chakra-ui/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import Linkify from "linkify-react";
 import { sendGAEvent } from "@next/third-parties/google";
 import { stripHtml } from "@/utils/text";
+import EventDescription from "@/components/events/EventDescription";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 
@@ -309,14 +309,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                         Select to proceed to checkout
                       </p>
                       {ticket.description && (
-                        <p className="text-xs text-gray-300 my-2">
-                          <Linkify options={{
-                            target: '_blank',
-                            className: 'text-[#F79432] underline hover:text-orange-400',
-                          }}>
-                            {stripHtml(ticket.description)}
-                          </Linkify>
-                        </p>
+                        <EventDescription description={ticket.description} className="text-sm text-gray-400" />
                       )}
                     </div>
 

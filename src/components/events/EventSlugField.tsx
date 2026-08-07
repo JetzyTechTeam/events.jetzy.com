@@ -10,7 +10,7 @@ type Props = {
 	eventName?: string
 	/** Present when editing — excludes this event from the availability check. */
 	eventId?: string
-	/** Show the "existing links will break" warning (Manage page only). */
+	/** Show the "the old URL will redirect here" notice (Manage page only). */
 	warnOnChange?: boolean
 	/** The slug currently saved, so the warning only appears once it actually differs. */
 	originalSlug?: string
@@ -107,10 +107,11 @@ export default function EventSlugField({ value, onChange, eventName, eventId, wa
 
 			{warnOnChange && changed && (
 				<Box mt={2} p={2} borderRadius="6px" bg="rgba(247,148,50,0.12)" border="1px solid rgba(247,148,50,0.4)">
-					<Text fontSize="12px" color="#F79432" fontWeight={700}>Changing the URL breaks existing links</Text>
+					<Text fontSize="12px" color="#F79432" fontWeight={700}>The old URL will redirect here</Text>
 					<Text fontSize="12px" color="#D6D6D6" mt={1} lineHeight="140%">
-						Links you&apos;ve already shared, printed QR codes and links in emails already sent will stop working.
-						The event will still open at its ID-based link.
+						Links you&apos;ve already shared, printed QR codes and links in emails already sent will keep working —
+						they&apos;ll send people to the new URL automatically. The old address stays reserved, so no other
+						event can take it.
 					</Text>
 				</Box>
 			)}

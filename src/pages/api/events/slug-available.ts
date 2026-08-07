@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
-import { escapeForRegex, validateEventSlug } from "@/lib/event-slug"
+import { slugTakenFilter, validateEventSlug } from "@/lib/event-slug"
 
 /**
  * Live "is this event URL free?" check for the create/manage forms.
@@ -37,19 +37,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		await ensureDbConnected()
 
-		// Case-insensitive, and deliberately NOT filtered by isDeleted: the unique index
-		// has no partial filter, so a soft-deleted event still holds its slug.
-		const query: Record<string, any> = {
-			slug: { $regex: new RegExp(`^${escapeForRegex(check.slug)}$`, "i") },
-		}
+		// Must use the exact same filter as `buildUniqueSlug`, or this reports "available"
+		// and the save then silently uniquifies to "-2". That means matching former slugs
+		// too: they still have live redirects pointing at them.
+		const query: Record<string, any> = slugTakenFilter(check.slug)
 		if (eventId && typeof eventId === "string") query._id = { $ne: eventId }
 
-		const existing = await Events.findOne(query).select("_id").lean()
+		const existing = await Events.findOne(query).select("_id slug").lean()
+
+		// Distinguish the two so the host isn't told a url is taken by an event they can
+		// see nothing of at that address.
+		const takenByAlias = !!existing && existing.slug?.toLowerCase() !== check.slug.toLowerCase()
 
 		return sendResponse(
 			res,
 			existing
-				? { available: false, reason: "That event URL is already taken." }
+				? {
+						available: false,
+						reason: takenByAlias
+							? "That URL previously belonged to another event and still redirects to it."
+							: "That event URL is already taken.",
+				  }
 				: { available: true },
 			"ok",
 			true,

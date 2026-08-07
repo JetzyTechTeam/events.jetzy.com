@@ -1671,7 +1671,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 															</FormControl>
 															<FormControl mb={4}>
 																<FormLabel>Description</FormLabel>
-																<Textarea placeholder="Enter description" bg="#090C10" border="1px solid #444" value={tempTicket.description} onChange={(e) => setTempTicket({ ...tempTicket, description: e.target.value })} />
+																{/* Same editor as the event description — stores HTML, rendered publicly through
+																	    the shared EventDescription, which still handles older plain-text values. */}
+																<RichTextEditor value={tempTicket.description} onChange={(val) => setTempTicket({ ...tempTicket, description: val })} placeholder="Enter description" />
 															</FormControl>
 															<FormControl mb={4}>
 																<FormLabel>Price</FormLabel>

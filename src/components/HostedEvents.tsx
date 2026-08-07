@@ -3,6 +3,7 @@ import DiscussionBoard from "@/components/events/DiscussionBoard"
 import EventAlbums from "@/components/events/EventAlbums"
 import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import { ROUTES, homeRouteForRole } from "@/configs/routes"
+import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
@@ -30,8 +31,6 @@ import { useAppDispatch } from "@Jetzy/redux/stores"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useBillingPortal } from "@/hooks/useBillingPortal"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
-import Linkify from "linkify-react"
-import linkifyHtml from "linkify-html"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
@@ -42,7 +41,6 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
-import DOMPurify from "dompurify";
 import { FiShare2, FiChevronDown, FiChevronUp } from "react-icons/fi"
 
 const settings = {
@@ -294,7 +292,7 @@ export default function HostedEvents({ event }: Props) {
 		return (
 			<>
 				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
-					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex items-center justify-between`}>
+					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex flex-wrap items-center justify-between gap-3`}>
 						<div className="flex items-center gap-3">
 							{/* Most traffic to an event page arrives from OUTSIDE Jetzy — email, QR, blast,
 							    WhatsApp — into a tab whose history has one entry, where `router.back()`
@@ -302,7 +300,7 @@ export default function HostedEvents({ event }: Props) {
 							    to their home when there is genuinely nowhere to go back to. */}
 							<button
 								onClick={() => goBackOrTo(router, homeRouteForRole((session?.user as any)?.role))}
-								className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-white flex items-center gap-2"
+								className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white text-white flex items-center gap-2"
 							>
 								<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -310,9 +308,12 @@ export default function HostedEvents({ event }: Props) {
 								Back
 							</button>
 						</div>
-						<div className="flex items-center gap-2">
+						{/* Up to four buttons here — Back, Manage Event, Manage membership, Logout —
+						    which cannot fit 360px in one row. Wrapping lets them fall onto a second
+						    line instead of overflowing; nothing wraps at desktop width. */}
+						<div className="flex flex-wrap items-center justify-end gap-2">
 							{canManage && (
-								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white">
+								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white">
 									Manage Event
 								</Link>
 							)}
@@ -323,7 +324,7 @@ export default function HostedEvents({ event }: Props) {
 									type="button"
 									onClick={openPortal}
 									disabled={isOpeningPortal}
-									className="border py-2 px-4 rounded-lg disabled:opacity-50"
+									className="border py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg disabled:opacity-50"
 									style={{ borderColor: "#F5C518", color: "#F5C518" }}
 								>
 									{portalLabel}
@@ -333,14 +334,14 @@ export default function HostedEvents({ event }: Props) {
 								<button
 									data-analytics-ignore=""
 									onClick={handleLogout}
-									className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white text-red-400"
+									className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white text-red-400"
 								>
 									Logout
 								</button>
 							) : (
 								<Link
 									href={`/login?_cb=${encodeURIComponent(router.asPath)}`}
-									className="border border-[#434343] py-2 px-4 rounded-lg hover:border-white"
+									className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white"
 								>
 									Login
 								</Link>
@@ -1218,12 +1219,6 @@ function EventBookings({ eventId }: { eventId: string }) {
 	)
 }
 
-const linkifyOptions = {
-	target: "_blank",
-	rel: "noopener noreferrer",
-	className: "text-orange-600 underline hover:text-orange-800",
-}
-
 function EventWaitingList({ eventId, eventName }: { eventId: string; eventName: string }) {
 	const [page, setPage] = React.useState(1)
 	const [openId, setOpenId] = React.useState<string | null>(null)
@@ -1652,33 +1647,4 @@ function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () =
 	)
 }
 
-function EventDescription({ description }: { description: string }) {
-	if (!description) return null
-	const isHtml = /<[a-z][\s\S]*>/i.test(description)
-	if (isHtml) {
-		const clean =
-			typeof window !== "undefined"
-				? linkifyHtml(DOMPurify.sanitize(description), {
-						target: "_blank",
-						rel: "noopener noreferrer",
-						className: "text-orange-600 underline hover:text-orange-800",
-				  })
-				: stripHtml(description)
-		return (
-			<div
-				className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere rich-content"
-				dangerouslySetInnerHTML={{ __html: clean }}
-			/>
-		)
-	}
-	const lines = description.split("\n")
-	return (
-		<div className="text-sm sm:text-base text-[#bbbbbb] break-words overflow-wrap-anywhere">
-			{lines.map((line, i) => (
-				<p key={i} className="leading-[24px] mb-2 break-words overflow-wrap-anywhere">
-					<Linkify options={linkifyOptions}>{stripHtml(line)}</Linkify>
-				</p>
-			))}
-		</div>
-	)
-}
+
