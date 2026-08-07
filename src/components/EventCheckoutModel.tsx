@@ -503,7 +503,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		<>
 			{showCheckout && (
 				<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-					<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full max-w-lg relative max-h-[90vh] flex flex-col overflow-hidden">
+					{/* Wide only for the two-column checkout form. The success, waiting-list and
+					    pending-approval panels are a few lines each — 4xl would strand them in
+					    the middle of a very empty box. */}
+					<div
+						className={`bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden ${
+							pendingApproval || freeRegistrationSuccess || showWaitingList || selectionTotal <= 0 ? "max-w-lg" : "max-w-4xl"
+						}`}
+					>
 						{/* Close Button */}
 						<button
 							onClick={() => {
@@ -623,7 +630,20 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 								</div>
 
 								{/* Scrollable content */}
-								<div className="flex-1 overflow-y-auto px-6 py-2 space-y-4">
+								{/* Body. Two columns from `lg` up — the form on the left, the money on the
+								    right — and one column below that. Halving the height is what keeps the
+								    whole dialog on screen without scrolling on a normal laptop.
+								
+								    `overflow-y-auto` stays as a FALLBACK, not as the design. On a short window,
+								    or with several membership blocks and an error banner showing, dropping it
+								    would put the T&C box and the submit button out of reach and make checkout
+								    impossible. A scrollbar that rarely appears beats content nobody can get to. */}
+								<div
+									className={`flex-1 overflow-y-auto px-6 py-2 ${
+										selectionTotal > 0 ? "lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6 lg:items-start" : ""
+									}`}
+								>
+									<div className="space-y-4">
 									{checkoutStep === "details" && (
 									<div className="space-y-4">
 										{/* Approval notice for the CURRENT selection. Paid selections spell out that
@@ -696,24 +716,26 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											)}
 											{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
 										</div>
-										<input
-											type="text"
-											name="firstName"
-											placeholder="First Name"
-											value={formData.firstName}
-											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-											required
-										/>
-										<input
-											type="text"
-											name="lastName"
-											placeholder="Last Name"
-											value={formData.lastName}
-											onChange={handleInputChange}
-											className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-											required
-										/>
+										<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+											<input
+												type="text"
+												name="firstName"
+												placeholder="First Name"
+												value={formData.firstName}
+												onChange={handleInputChange}
+												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+												required
+											/>
+											<input
+												type="text"
+												name="lastName"
+												placeholder="Last Name"
+												value={formData.lastName}
+												onChange={handleInputChange}
+												className="w-full p-3 bg-[#090C10] border border-[#444444] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+												required
+											/>
+										</div>
 										<div>
 											<div className="relative">
 												<input
@@ -1007,62 +1029,63 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											))}
 										</div>
 									)}
-								</div>
-
-								{/* Order summary. Only for paid selections — a free RSVP has nothing to
-								    break down and the rows would just be noise. */}
-								{selectionTotal > 0 && (
-									<div className="px-6 pt-4 shrink-0">
-										<div className="rounded-lg bg-[#1A1A1A] border border-[#2E2E2E] p-3 text-sm">
-											<div className="flex justify-between text-gray-300">
-												<span>Subtotal</span>
-												<span>{pricing.subtotal.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
-											</div>
-											{pricing.lines.map((line) => (
-												<div key={line.label} className="flex justify-between text-green-400 mt-1">
-													<span>{line.label}</span>
-													<span>-{line.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
-												</div>
-											))}
-											<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
-												{/* Only qualify it as the TICKET total when a membership row follows —
-												    otherwise "Ticket total" reads as though something else is coming. */}
-												<span>{pricing.recurring?.length ? "Ticket total" : "Total"}</span>
-												<span>{pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
-											</div>
-
-											{/* Each membership is an ADDITION, not a discount, and it recurs — so
-											    every one gets its own row, with a single "due today" line below,
-											    rather than being folded into the ticket total. */}
-											{!!pricing.recurring?.length && (
-												<>
-													{pricing.recurring.map((membership) => (
-														<div key={membership.label} className="flex justify-between mt-1" style={{ color: "#F5C518" }}>
-															<span>{membership.label}</span>
-															<span>
-																{membership.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{membership.interval}
-															</span>
-														</div>
-													))}
-													<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
-														{/* Nothing is taken on an approval order — it's a hold, not a charge. */}
-														<span>{selectionNeedsApproval ? "Held today" : "Due today"}</span>
-														<span>{(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
-													</div>
-													<p className="text-xs text-gray-400 mt-2">
-														{selectionNeedsApproval
-															? `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
-																.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
-																.join(" and ")} until you cancel. If they decline, nothing is charged.`
-															: `Your ${pricing.recurring.length > 1 ? "memberships then renew" : "membership then renews"} at ${pricing.recurring
-																.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
-																.join(" and ")} until you cancel. You can cancel any time from your account.`}
-													</p>
-												</>
-											)}
-										</div>
 									</div>
-								)}
+
+									{/* Order summary. Only for paid selections — a free RSVP has nothing to
+									    break down and the rows would just be noise. */}
+									{selectionTotal > 0 && (
+										<div className="pt-4 lg:pt-0">
+											<div className="rounded-lg bg-[#1A1A1A] border border-[#2E2E2E] p-3 text-sm">
+												<div className="flex justify-between text-gray-300">
+													<span>Subtotal</span>
+													<span>{pricing.subtotal.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+												</div>
+												{pricing.lines.map((line) => (
+													<div key={line.label} className="flex justify-between text-green-400 mt-1">
+														<span>{line.label}</span>
+														<span>-{line.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+													</div>
+												))}
+												<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
+													{/* Only qualify it as the TICKET total when a membership row follows —
+													    otherwise "Ticket total" reads as though something else is coming. */}
+													<span>{pricing.recurring?.length ? "Ticket total" : "Total"}</span>
+													<span>{pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+												</div>
+
+												{/* Each membership is an ADDITION, not a discount, and it recurs — so
+												    every one gets its own row, with a single "due today" line below,
+												    rather than being folded into the ticket total. */}
+												{!!pricing.recurring?.length && (
+													<>
+														{pricing.recurring.map((membership) => (
+															<div key={membership.label} className="flex justify-between mt-1" style={{ color: "#F5C518" }}>
+																<span>{membership.label}</span>
+																<span>
+																	{membership.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{membership.interval}
+																</span>
+															</div>
+														))}
+														<div className="flex justify-between font-bold text-white mt-2 pt-2 border-t border-[#2E2E2E]">
+															{/* Nothing is taken on an approval order — it's a hold, not a charge. */}
+															<span>{selectionNeedsApproval ? "Held today" : "Due today"}</span>
+															<span>{(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
+														</div>
+														<p className="text-xs text-gray-400 mt-2">
+															{selectionNeedsApproval
+																? `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
+																	.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
+																	.join(" and ")} until you cancel. If they decline, nothing is charged.`
+																: `Your ${pricing.recurring.length > 1 ? "memberships then renew" : "membership then renews"} at ${pricing.recurring
+																	.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
+																	.join(" and ")} until you cancel. You can cancel any time from your account.`}
+														</p>
+													</>
+												)}
+											</div>
+										</div>
+									)}
+								</div>
 
 								{/* Pinned action buttons */}
 								<div className="px-6 py-4 shrink-0 border-t border-[#2E2E2E]">
