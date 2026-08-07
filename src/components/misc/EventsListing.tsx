@@ -307,8 +307,24 @@ type EventListProps = {
   onPageChange?: (page: number) => void;
   search?: string;
   onSearch?: (q: string) => void;
+  /** "" = All. Server-side, so the total and pager describe the filtered set. */
+  status?: EventStatus | "";
+  onStatusChange?: (status: EventStatus | "") => void;
 };
-const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, search, onSearch }) => {
+
+// Chips for the public list. Deliberately different from the console, where "Upcoming" means
+// live-or-future: here LIVE is its own chip, so the four statuses are mutually exclusive and
+// every event falls under exactly one. Labels come from STATUS_LABEL so they can never drift
+// from the badges rendered on the cards themselves.
+const STATUS_FILTERS: { key: EventStatus | ""; label: string }[] = [
+  { key: "", label: "All" },
+  { key: "live", label: STATUS_LABEL.live },
+  { key: "future", label: STATUS_LABEL.future },
+  { key: "past", label: STATUS_LABEL.past },
+  { key: "tbd", label: STATUS_LABEL.tbd },
+];
+
+const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, search, onSearch, status = "", onStatusChange }) => {
   const router = useRouter();
 
   const [inputValue, setInputValue] = React.useState(search ?? "");
@@ -488,11 +504,37 @@ const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, 
           </Button>
         </Flex>
       </Box>
+
+      {/* `flex-wrap` so the chips stack on a phone instead of pushing the row wide. */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        {STATUS_FILTERS.map(({ key, label }) => {
+          const active = status === key;
+          return (
+            <button
+              key={key || "all"}
+              type="button"
+              onClick={() => onStatusChange?.(key)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                active
+                  ? "bg-white text-black"
+                  : "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
       <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>
         {sortedItems.length === 0 && (
           <Box>
             <Text fontSize="xl" color="gray.500">
-              {search ? `No events found for "${search}"` : "No events found"}
+              {search
+                ? `No events found for "${search}"`
+                : status
+                  ? `No ${STATUS_LABEL[status].toLowerCase()} events`
+                  : "No events found"}
             </Text>
           </Box>
         )}

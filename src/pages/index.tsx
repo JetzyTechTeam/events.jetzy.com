@@ -1,4 +1,5 @@
 import EventListing from "@/components/misc/EventsListing";
+import type { EventStatus } from "@/utils/eventSort";
 import { IEvent } from "@/models/events/types";
 import { GetServerSideProps } from "next";
 import dynamic from "next/dynamic";
@@ -26,19 +27,28 @@ type Props = {
 export default function Home(props: Props) {
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
+  // "" = All. Filtering is server-side (see api/events/index.ts) because the list is
+  // server-paginated — narrowing on the client would leave the total and the pager
+  // describing every event while showing a subset.
+  const [status, setStatus] = React.useState<EventStatus | "">("");
+
+  // The SSR payload is unfiltered and unsearched, so it may only stand in for the
+  // unfiltered, unsearched first page. Using it under an active chip would paint every
+  // event for a moment before the real query resolved.
+  const isDefaultView = !search && !status;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["events", page, search],
+    queryKey: ["events", page, search, status],
     queryFn: async () => {
-      const url = `/api/events?page=${page}${search ? `&search=${encodeURIComponent(search)}` : ""}`;
+      const url = `/api/events?page=${page}${search ? `&search=${encodeURIComponent(search)}` : ""}${status ? `&status=${status}` : ""}`;
       const response = await axios.get(url);
       return response.data;
     },
-    initialData: props.events && !search ? {
+    initialData: props.events && isDefaultView ? {
       data: JSON.parse(props.events) as IEvent[],
       pagination: props.pagination
     } : undefined,
-    enabled: !props.events || !!search,
+    enabled: !props.events || !isDefaultView,
   });
 
   if (isLoading) return <Center h="100vh"><Spinner /></Center>;
@@ -61,6 +71,8 @@ export default function Home(props: Props) {
       onPageChange={setPage}
       search={search}
       onSearch={(q) => { setSearch(q); setPage(1); }}
+      status={status}
+      onStatusChange={(next) => { setStatus(next); setPage(1); }}
     />
   );
 }

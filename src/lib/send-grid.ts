@@ -370,7 +370,18 @@ type ApprovalEmailData = {
      * can sell both Jetzy Premium and Full Concierge, and a guest whose card is held for two
      * has to be told about both.
      */
-    memberships?: Array<{ label: string; amount: number; interval: string }>
+    memberships?: Array<{
+      /** Product name on its own, e.g. "Jetzy Premium". */
+      label: string
+      /**
+       * The name as it reads where the word "membership" follows, e.g. "Jetzy Premium
+       * membership" / "Full Concierge Membership". Stored separately in the registry because
+       * `${label} membership` yields "Full Concierge Membership membership".
+       */
+      receiptLabel: string
+      amount: number
+      interval: string
+    }>
   }
 }
 
@@ -407,7 +418,7 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
       .map(
         (membership) => `<p style="color: #0d47a1; margin: 12px 0 0 0; line-height: 1.6;">
               That hold includes <strong>${formatMoney(membership.amount)}</strong> for your first
-              ${membership.label} ${membership.interval}. Your membership does <strong>not</strong> start
+              ${membership.receiptLabel}. Your membership does <strong>not</strong> start
               unless the host approves — and if it does, it renews at
               ${formatMoney(membership.amount)} per ${membership.interval} until you cancel.
             </p>`,
@@ -1157,7 +1168,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
               </div>
             `,
           )
@@ -1236,7 +1247,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
               </div>
             `,
           )
@@ -1317,7 +1328,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
               </div>
             `,
           )
@@ -1398,7 +1409,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
               </div>
             `,
           )
@@ -1479,7 +1490,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
               </div>
             `,
           )
@@ -1560,7 +1571,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticket.desc}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
               </div>
             `,
           )

@@ -391,6 +391,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 						? {
 							memberships: membershipLines.map((line) => ({
 								label: MEMBERSHIPS[line.key].label,
+								receiptLabel: MEMBERSHIPS[line.key].receiptLabel,
 								amount: line.amount,
 								interval: line.interval,
 							})),
