@@ -321,20 +321,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                         })}
                       </p>
 
-                      {/* Per-ticket recurring disclosure. Only this ticket sells the
-                          membership, so the notice belongs on the ticket, not the event. */}
-                      {ticket.memberships.map((key) => {
-                        const plan = planFor(key);
-                        return (
-                          <p key={key} className="text-xs mt-1 text-right sm:text-right" style={{ color: "#F5C518" }}>
-                            {key === "premium" && isPremium
-                              ? "Includes Jetzy Premium — you're already a member, so you pay the ticket price only."
-                              : plan?.label
-                                ? `+ ${plan.name} ${plan.label}, renews until cancelled`
-                                : `+ ${plan?.name || key} membership, renews until cancelled`}
-                          </p>
-                        );
-                      })}
+                      {/* The membership notice that used to sit here — "+ Jetzy Premium
+                          $20/month, renews until cancelled" — was removed by decision: it is
+                          not wanted on the browse view of the ticket.
+
+                          The recurring terms are STILL disclosed before purchase, in the
+                          checkout modal and the order summary. That is the point of sale and
+                          where the card-network requirement actually applies, so do not treat
+                          this removal as licence to drop them there too. */}
 
                       {event.isPaid && ticket.isSelected && (
                         <div

@@ -431,8 +431,13 @@ cancel a subscription anywhere: `cancel_at_period_end` was only ever read back. 
 membership as a side effect of a ticket made that untenable, so `POST /api/subscriptions/portal`
 (Stripe Billing Portal) plus "Manage membership" in the navbar now exist. **The portal must be
 configured once per Stripe environment** or the call fails. The recurring amount and interval
-are shown on the ticket card, in the checkout modal and on the receipt *before* purchase —
-`usePremiumPlan` supplies the figure, `TicketPricing.recurring` / `dueToday` carry it. It is
+are shown *before* purchase — `usePremiumPlan` supplies the figure, `TicketPricing.recurring` /
+`dueToday` carry it. **Where** they appear was narrowed by decision: the per-ticket notice on the
+browse view ("+ Jetzy Premium $20/month, renews until cancelled", under the ticket price in
+[EventTicketsComponent.tsx](src/components/EventTicketsComponent.tsx)) was removed. What remains
+is the line beside the order total, which appears only once the guest has actively selected the
+ticket, plus the checkout modal and the receipt. Those are the point of sale and are **not** to
+be trimmed further — the browse view was cosmetic, the purchase flow is the obligation. It is
 deliberately NOT part of `lines`, which are all deductions, nor of `total`, which means "what
 the ticket cost".
 
