@@ -26,6 +26,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { DateTime } from "luxon"
 import { isPendingBooking, isCancelledBooking, isHoldExpired, isCaptureFailed, holdTimeRemaining } from "@/lib/booking-status"
 import { HoldExpiry, PaymentBadge } from "@/components/bookings/PaymentBadge"
+import { describeDiscount } from "@/lib/booking-revenue"
+import { bookingMemberships } from "@/lib/booking-memberships"
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 
 /**
  * Approval requests for an event, split into two views:
@@ -468,6 +471,8 @@ export function ApprovalRequests({
 							const thisQty = ticketCount(approveTarget)
 							const lines = ticketBreakdown(approveTarget)
 							const held = approveTarget?.payment?.amount
+							const approveDiscount = describeDiscount(approveTarget)
+							const approveMemberships = bookingMemberships(approveTarget?.payment)
 							// The row's button reads "Retry charge" after a failed capture; the dialog
 							// has to agree, or it looks like a different action from the one clicked.
 							const retrying = isCaptureFailed(approveTarget)
@@ -497,13 +502,52 @@ export function ApprovalRequests({
 											</Box>
 										)}
 
-										{/* Free bookings have no `payment` at all — say nothing rather than
-										    implying a charge that will never happen. */}
-										{held !== undefined && (
-											<Text fontSize="sm" mt={3}>
-												Their card will be charged <b>{money(held)}</b>.
-											</Text>
-										)}
+										{/* What the money actually does, itemised. A bare "will be charged $20"
+										    hid the fact that a code was involved at all — a $95 ticket
+										    discounted to $20 looked the same as one that cost $20. The host is
+										    about to take this money; they should see how it was arrived at. */}
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="8px" p={3} mt={3}>
+											{Number(approveTarget.subTotal ?? 0) > 0 && (
+												<Flex justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
+													<Text>Ticket subtotal</Text>
+													<Text>{money(approveTarget.subTotal)}</Text>
+												</Flex>
+											)}
+											{approveDiscount.discounted && (
+												<Flex justify="space-between" gap={3} fontSize="xs" py={0.5} color="#F5C518">
+													<Text>Discount{approveDiscount.code ? ` (${approveDiscount.code})` : ""}</Text>
+													<Text>−{money(approveDiscount.amount)}</Text>
+												</Flex>
+											)}
+											{/* A code that took nothing off still gets named — the host may be
+											    approving on the strength of who referred them. */}
+											{!approveDiscount.discounted && approveDiscount.code && (
+												<Flex justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
+													<Text>Referral code</Text>
+													<Text>{approveDiscount.code}</Text>
+												</Flex>
+											)}
+											{/* Memberships sold with the ticket. Without these the arithmetic is
+											    visibly wrong on a bundled order: a ticket comped to $0 by a 100%
+											    code still holds the membership's first period, so the dialog would
+											    read "subtotal $100, discount −$100, charged $20" and look broken.
+											    `booking.total` is the TICKET; `payment.amount` is ticket +
+											    membership. */}
+											{approveMemberships.map((row) => (
+												<Flex key={row.key} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
+													<Text>{MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || row.key} (first {row.interval || "month"})</Text>
+													<Text>{money(Number(row.amount) || 0)}</Text>
+												</Flex>
+											))}
+											<Flex justify="space-between" gap={3} fontSize="sm" fontWeight={700} pt={2} mt={1} borderTop="1px solid #343536">
+												{/* Free bookings have no `payment` at all — never imply a charge
+												    that will not happen. */}
+												<Text>{held !== undefined ? (retrying ? "Charge now" : "Card will be charged") : "Guest pays"}</Text>
+												<Text color={held !== undefined ? "#F79432" : "#9C9C9C"}>
+													{money(held !== undefined ? held : Number(approveTarget.total ?? 0))}
+												</Text>
+											</Flex>
+										</Box>
 
 										{prior.length > 0 && (
 											<Box bg="rgba(247,148,50,0.12)" border="1px solid rgba(247,148,50,0.4)" borderRadius="8px" p={3} mt={4}>

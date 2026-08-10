@@ -22,6 +22,7 @@ import {
 	Input,
 	Text,
 	Textarea,
+	Tooltip,
 	useToast,
 	Box,
 	UnorderedList,
@@ -85,6 +86,7 @@ import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
+import { apportionRevenue, describeDiscount, describePriceChange, isOnHold } from "@/lib/booking-revenue"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import EventSlugField from "@/components/events/EventSlugField"
@@ -253,33 +255,58 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	})
 
 	// Per-ticket-type sold count + revenue, keyed by ticket _id (matches the `id` field on form values).
+	//
+	// Revenue comes from what the booking actually cost, NOT quantity × the ticket's current
+	// list price. The old sum ignored discounts — three $95 tickets comped to $0 by a 100%-off
+	// referral code reported "$285.00 COLLECTED" — and read prices as they are now, so raising
+	// a ticket's price retroactively inflated what past buyers appeared to have paid.
+	// `comped` counts tickets issued for nothing, which is otherwise invisible: a card that
+	// shows "3 sold, $0.00 collected" reads like a bug rather than three comps.
 	const ticketSalesSummary = React.useMemo(() => {
 		const priceById = new Map<string, number>()
 		;(event.tickets || []).forEach((t: any) => priceById.set(t._id?.toString(), Number(t.price)))
+		const priceOf = (id: string) => priceById.get(id) ?? 0
 
-		const byTicketId = new Map<string, { sold: number; revenue: number; onHold: number }>()
+		const byTicketId = new Map<string, { sold: number; revenue: number; onHold: number; comped: number }>()
 		;(eventBookings as any[]).forEach((booking: any) => {
 			if (isCancelledBooking(booking)) return
 			// A pending paid request has an authorized card hold, not money in the bank.
 			// Counting it as revenue would put cash on screen that may never be captured.
-			const onHold = booking?.payment?.status === "authorized" || booking?.payment?.status === "capturing" || booking?.payment?.status === "failed"
-			;(booking.tickets || []).forEach((t: any) => {
-				const key = t.ticketId?.toString()
-				if (!key) return
-				const price = priceById.get(key) ?? 0
-				const entry = byTicketId.get(key) || { sold: 0, revenue: 0, onHold: 0 }
-				const amount = (t.quantity || 0) * price
+			const onHold = isOnHold(booking)
+			const discount = describeDiscount(booking)
+
+			apportionRevenue(booking, priceOf).forEach((row) => {
+				const entry = byTicketId.get(row.ticketId) || { sold: 0, revenue: 0, onHold: 0, comped: 0 }
 				if (onHold) {
-					entry.onHold += amount
+					entry.onHold += row.revenue
 				} else {
-					entry.sold += t.quantity || 0
-					entry.revenue += amount
+					entry.sold += row.quantity
+					entry.revenue += row.revenue
+					if (discount.comped) entry.comped += row.quantity
 				}
-				byTicketId.set(key, entry)
+				byTicketId.set(row.ticketId, entry)
 			})
 		})
 		return byTicketId
 	}, [eventBookings, event.tickets])
+
+	// Sales against ticket types that no longer exist on the event. These have no card to
+	// render on, so without this their money is simply absent from the page — the Jetzy Picnic
+	// had $22 of real, captured revenue invisible this way. Deleting a ticket type doesn't
+	// delete the bookings that referenced it.
+	const removedTicketSales = React.useMemo(() => {
+		const live = new Set((event.tickets || []).map((t: any) => t._id?.toString()))
+		let sold = 0
+		let revenue = 0
+		let onHold = 0
+		ticketSalesSummary.forEach((stats, ticketId) => {
+			if (live.has(ticketId)) return
+			sold += stats.sold
+			revenue += stats.revenue
+			onHold += stats.onHold
+		})
+		return { sold, revenue, onHold }
+	}, [ticketSalesSummary, event.tickets])
 
 	const onUpdateFeedbackLink = async () => {
 		try {
@@ -1545,6 +1572,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																				<Flex gap={2} wrap="wrap">
 																					<Badge colorScheme="purple" fontSize="0.75em" px={2} py={1} borderRadius="6px">{stats?.sold ?? 0} sold</Badge>
 																					<Badge colorScheme="green" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.revenue ?? 0).toFixed(2)} collected</Badge>
+																					{/* Without this, a fully comped ticket type reads "3 sold, $0.00
+																					    collected" and looks like a broken number rather than three
+																					    tickets deliberately given away. */}
+																					{(stats?.comped ?? 0) > 0 && (
+																						<Badge colorScheme="blue" fontSize="0.75em" px={2} py={1} borderRadius="6px">{stats?.comped} comped</Badge>
+																					)}
 																					{(stats?.onHold ?? 0) > 0 && (
 																						<Badge colorScheme="yellow" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.onHold ?? 0).toFixed(2)} on hold</Badge>
 																					)}
@@ -1564,6 +1597,26 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																	)
 																})}
 																</SortableTicketList>
+
+																{/* Money taken against ticket types that have since been deleted.
+																    There is no card for those, so without this row their revenue is
+																    missing from the page entirely and the totals silently don't add up.
+																    Read-only — the ticket is gone and can't be edited back. */}
+																{(removedTicketSales.sold > 0 || removedTicketSales.revenue > 0) && (
+																	<Box p="5" bg="#15181C" borderRadius="10px" border="1px dashed #343536" mt={4}>
+																		<Text className={roboto.className} fontWeight="bold" fontSize="md" color="#9C9C9C">Removed ticket types</Text>
+																		<Text className={roboto.className} fontSize="xs" color="#868686" mt={1}>
+																			Sales against ticket types that no longer exist on this event. Shown so the totals still add up.
+																		</Text>
+																		<Flex gap={2} wrap="wrap" mt={3}>
+																			<Badge colorScheme="purple" fontSize="0.75em" px={2} py={1} borderRadius="6px">{removedTicketSales.sold} sold</Badge>
+																			<Badge colorScheme="green" fontSize="0.75em" px={2} py={1} borderRadius="6px">${removedTicketSales.revenue.toFixed(2)} collected</Badge>
+																			{removedTicketSales.onHold > 0 && (
+																				<Badge colorScheme="yellow" fontSize="0.75em" px={2} py={1} borderRadius="6px">${removedTicketSales.onHold.toFixed(2)} on hold</Badge>
+																			)}
+																		</Flex>
+																	</Box>
+																)}
 															</>
 														)}
 													</FieldArray>
@@ -2790,17 +2843,25 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	})
 
 	// Sold count + revenue per ticket type, so this shows up right here without switching to Overview.
+	// Same rule as the Overview cards: revenue is what the booking actually cost, not
+	// quantity × list price, or a comped ticket inflates the figure by its full face value.
+	const priceOfTicket = (id: string) => Number((eventTickets.find((et: any) => et._id?.toString() === id) || {}).price) || 0
+	// Same lookup, but `null` when the ticket type is gone rather than 0. Feeding a fabricated
+	// 0 into `describePriceChange` invents a price drop for every deleted ticket.
+	const currentPriceOfTicket = (id: string): number | null => {
+		const ticket: any = eventTickets.find((et: any) => et._id?.toString() === id)
+		if (!ticket) return null
+		const price = Number(ticket.price)
+		return Number.isFinite(price) ? price : null
+	}
 	const ticketStatsById: Record<string, { sold: number; revenue: number }> = {}
 	;(bookings as any[]).forEach((b: any) => {
 		if (isCancelledBooking(b)) return
-		;(b.tickets || []).forEach((t: any) => {
-			const key = t.ticketId?.toString()
-			if (!key) return
-			const price = Number((eventTickets.find((et: any) => et._id?.toString() === key) || {}).price) || 0
-			const entry = ticketStatsById[key] || { sold: 0, revenue: 0 }
-			entry.sold += t.quantity || 0
-			entry.revenue += (t.quantity || 0) * price
-			ticketStatsById[key] = entry
+		apportionRevenue(b, priceOfTicket).forEach((row) => {
+			const entry = ticketStatsById[row.ticketId] || { sold: 0, revenue: 0 }
+			entry.sold += row.quantity
+			entry.revenue += row.revenue
+			ticketStatsById[row.ticketId] = entry
 		})
 	})
 
@@ -3031,7 +3092,40 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												: (guest?.status || (booking ? 'Purchased' : '—'))}
 										</Td>
 										<Td color="white">{formatBookingTickets(booking)}</Td>
-										<Td color="white">{booking ? `$${Number(booking.total ?? 0).toFixed(2)}` : "—"}</Td>
+										{/* The amount alone can't distinguish a free ticket from a $95 one
+										    comped by a code. Naming the code is the point: it's the only place
+										    a host can see that a guest came in on a 100%-off comp. */}
+										<Td color="white">
+											{booking ? `$${Number(booking.total ?? 0).toFixed(2)}` : "—"}
+											{(() => {
+												if (!booking) return null
+												const d = describeDiscount(booking)
+												// The ticket may have been repriced since this guest bought. Nothing
+												// records what they paid, but `subTotal` is pre-discount, so
+												// subTotal/quantity recovers it — and a discount can't be mistaken
+												// for a price change.
+												const rows = booking.tickets || []
+												const currentPrice = rows.length === 1 ? currentPriceOfTicket(String(rows[0]?.ticketId)) : null
+												const priceChange = describePriceChange(booking, currentPrice)
+												if (!d.discounted && !priceChange) return null
+												return (
+													<>
+														{d.discounted && (
+															<Badge ml={2} colorScheme={d.comped ? "blue" : "yellow"} fontSize="0.65em" borderRadius="4px" px={1.5}>
+																{d.comped ? (d.code || "Comped") : `−$${d.amount.toFixed(2)}${d.code ? ` ${d.code}` : ""}`}
+															</Badge>
+														)}
+														{priceChange && (
+															<Tooltip label={`This ticket now lists at $${priceChange.current.toFixed(2)}. This guest bought it at $${priceChange.paid.toFixed(2)}.`} hasArrow>
+																<Badge ml={2} colorScheme="purple" fontSize="0.65em" borderRadius="4px" px={1.5}>
+																	{priceChange.label}
+																</Badge>
+															</Tooltip>
+														)}
+													</>
+												)
+											})()}
+										</Td>
 										<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										<Td>
 											{cancelled

@@ -780,6 +780,18 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 - `og:image` is always emitted: `images[0]` normalized to absolute, falling back to `${NEXT_PUBLIC_URL}/imgs/logo.png` when the event has no images. `og:url` uses `slug || _id`. `og:type` is `website` (`event` is not a valid OG type).
 - Previews are cached per-URL by iMessage/Facebook — re-scrape via the Facebook Sharing Debugger or test with a `?v=2` suffix before assuming a fix did not land.
 
+### Ticket revenue — never `quantity × list price`
+
+[src/lib/booking-revenue.ts](src/lib/booking-revenue.ts) is the single answer to "what was this booking worth". Use `apportionRevenue` for per-ticket-type totals and `describeDiscount` for why a total is lower than its subtotal.
+
+**`booking.total` is the authority, not the ticket's price.** The manage Overview cards and the Guests tab each computed revenue as `quantity × the ticket's CURRENT list price`. Measured against the live Jetzy Picnic that was wrong in both directions at once: three $95 tickets comped to $0 by a 100%-off referral code reported **"$285.00 collected"**, while a booking whose ticket type had since been deleted resolved to a $0 price and dropped its real **$20** from the totals entirely. Reading the price as it is *now* also means raising a ticket's price retroactively inflates what past buyers appear to have paid.
+
+**Not `payment.amount` either** — on a bundled order that covers the first period of any membership sold with the ticket, so it would book subscription revenue against the ticket. See the `booking.total ≠ payment.amount` rule above.
+
+**A $0 total has two causes and they must not look alike.** A genuinely free ticket is "Free"; a paid ticket comped to nothing by a code is "Free · CODE" — the host approving it needs to know a code did that. `describeDiscount().comped` is true only when a discount is what made it free (`subTotal > 0 && total === 0`), never for a ticket that was free to begin with.
+
+**A priced booking with no `payment` sub-doc is "Not recorded", never "Free".** ~238 legacy rows predate payment tracking; their money state is genuinely unknown. `PaymentBadge` used to render `—` for all three of these cases, which reads as missing data — and did: a host looked at a comped request and assumed the amount had failed to load.
+
 ### Host-authored descriptions — always render through `EventDescription`
 
 [src/components/events/EventDescription.tsx](src/components/events/EventDescription.tsx) is the single renderer for both `event.desc` and `ticket.desc`. It sanitizes (DOMPurify) **before** linkifying, and handles both stored shapes: Quill HTML from the rich-text editor, and the plain text with `\n` that everything written before it still holds.
