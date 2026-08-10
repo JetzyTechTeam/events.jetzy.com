@@ -85,6 +85,7 @@ import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
+import { apportionRevenue, describeDiscount, isOnHold } from "@/lib/booking-revenue"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import EventSlugField from "@/components/events/EventSlugField"
@@ -253,29 +254,36 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	})
 
 	// Per-ticket-type sold count + revenue, keyed by ticket _id (matches the `id` field on form values).
+	//
+	// Revenue comes from what the booking actually cost, NOT quantity × the ticket's current
+	// list price. The old sum ignored discounts — three $95 tickets comped to $0 by a 100%-off
+	// referral code reported "$285.00 COLLECTED" — and read prices as they are now, so raising
+	// a ticket's price retroactively inflated what past buyers appeared to have paid.
+	// `comped` counts tickets issued for nothing, which is otherwise invisible: a card that
+	// shows "3 sold, $0.00 collected" reads like a bug rather than three comps.
 	const ticketSalesSummary = React.useMemo(() => {
 		const priceById = new Map<string, number>()
 		;(event.tickets || []).forEach((t: any) => priceById.set(t._id?.toString(), Number(t.price)))
+		const priceOf = (id: string) => priceById.get(id) ?? 0
 
-		const byTicketId = new Map<string, { sold: number; revenue: number; onHold: number }>()
+		const byTicketId = new Map<string, { sold: number; revenue: number; onHold: number; comped: number }>()
 		;(eventBookings as any[]).forEach((booking: any) => {
 			if (isCancelledBooking(booking)) return
 			// A pending paid request has an authorized card hold, not money in the bank.
 			// Counting it as revenue would put cash on screen that may never be captured.
-			const onHold = booking?.payment?.status === "authorized" || booking?.payment?.status === "capturing" || booking?.payment?.status === "failed"
-			;(booking.tickets || []).forEach((t: any) => {
-				const key = t.ticketId?.toString()
-				if (!key) return
-				const price = priceById.get(key) ?? 0
-				const entry = byTicketId.get(key) || { sold: 0, revenue: 0, onHold: 0 }
-				const amount = (t.quantity || 0) * price
+			const onHold = isOnHold(booking)
+			const discount = describeDiscount(booking)
+
+			apportionRevenue(booking, priceOf).forEach((row) => {
+				const entry = byTicketId.get(row.ticketId) || { sold: 0, revenue: 0, onHold: 0, comped: 0 }
 				if (onHold) {
-					entry.onHold += amount
+					entry.onHold += row.revenue
 				} else {
-					entry.sold += t.quantity || 0
-					entry.revenue += amount
+					entry.sold += row.quantity
+					entry.revenue += row.revenue
+					if (discount.comped) entry.comped += row.quantity
 				}
-				byTicketId.set(key, entry)
+				byTicketId.set(row.ticketId, entry)
 			})
 		})
 		return byTicketId
@@ -1545,6 +1553,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																				<Flex gap={2} wrap="wrap">
 																					<Badge colorScheme="purple" fontSize="0.75em" px={2} py={1} borderRadius="6px">{stats?.sold ?? 0} sold</Badge>
 																					<Badge colorScheme="green" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.revenue ?? 0).toFixed(2)} collected</Badge>
+																					{/* Without this, a fully comped ticket type reads "3 sold, $0.00
+																					    collected" and looks like a broken number rather than three
+																					    tickets deliberately given away. */}
+																					{(stats?.comped ?? 0) > 0 && (
+																						<Badge colorScheme="blue" fontSize="0.75em" px={2} py={1} borderRadius="6px">{stats?.comped} comped</Badge>
+																					)}
 																					{(stats?.onHold ?? 0) > 0 && (
 																						<Badge colorScheme="yellow" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.onHold ?? 0).toFixed(2)} on hold</Badge>
 																					)}
@@ -2790,17 +2804,17 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	})
 
 	// Sold count + revenue per ticket type, so this shows up right here without switching to Overview.
+	// Same rule as the Overview cards: revenue is what the booking actually cost, not
+	// quantity × list price, or a comped ticket inflates the figure by its full face value.
+	const priceOfTicket = (id: string) => Number((eventTickets.find((et: any) => et._id?.toString() === id) || {}).price) || 0
 	const ticketStatsById: Record<string, { sold: number; revenue: number }> = {}
 	;(bookings as any[]).forEach((b: any) => {
 		if (isCancelledBooking(b)) return
-		;(b.tickets || []).forEach((t: any) => {
-			const key = t.ticketId?.toString()
-			if (!key) return
-			const price = Number((eventTickets.find((et: any) => et._id?.toString() === key) || {}).price) || 0
-			const entry = ticketStatsById[key] || { sold: 0, revenue: 0 }
-			entry.sold += t.quantity || 0
-			entry.revenue += (t.quantity || 0) * price
-			ticketStatsById[key] = entry
+		apportionRevenue(b, priceOfTicket).forEach((row) => {
+			const entry = ticketStatsById[row.ticketId] || { sold: 0, revenue: 0 }
+			entry.sold += row.quantity
+			entry.revenue += row.revenue
+			ticketStatsById[row.ticketId] = entry
 		})
 	})
 
@@ -3031,7 +3045,22 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												: (guest?.status || (booking ? 'Purchased' : '—'))}
 										</Td>
 										<Td color="white">{formatBookingTickets(booking)}</Td>
-										<Td color="white">{booking ? `$${Number(booking.total ?? 0).toFixed(2)}` : "—"}</Td>
+										{/* The amount alone can't distinguish a free ticket from a $95 one
+										    comped by a code. Naming the code is the point: it's the only place
+										    a host can see that a guest came in on a 100%-off comp. */}
+										<Td color="white">
+											{booking ? `$${Number(booking.total ?? 0).toFixed(2)}` : "—"}
+											{(() => {
+												if (!booking) return null
+												const d = describeDiscount(booking)
+												if (!d.discounted) return null
+												return (
+													<Badge ml={2} colorScheme={d.comped ? "blue" : "yellow"} fontSize="0.65em" borderRadius="4px" px={1.5}>
+														{d.comped ? (d.code || "Comped") : `−$${d.amount.toFixed(2)}${d.code ? ` ${d.code}` : ""}`}
+													</Badge>
+												)
+											})()}
+										</Td>
 										<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										<Td>
 											{cancelled
