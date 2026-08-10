@@ -24,7 +24,7 @@ import {
 import axios from "axios"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { DateTime } from "luxon"
-import { isPendingBooking, isHoldExpired, isCaptureFailed, holdTimeRemaining } from "@/lib/booking-status"
+import { isPendingBooking, isCancelledBooking, isHoldExpired, isCaptureFailed, holdTimeRemaining } from "@/lib/booking-status"
 import { HoldExpiry, PaymentBadge } from "@/components/bookings/PaymentBadge"
 
 /**
@@ -45,11 +45,29 @@ const money = (n?: number) => `$${Number(n || 0).toFixed(2)}`
 
 const HOUR = 60 * 60 * 1000
 
+const ticketCount = (b: any) => (b?.tickets || []).reduce((sum: number, t: any) => sum + (t.quantity || 0), 0)
+
+/**
+ * Key a guest by email for the "already has tickets" check.
+ *
+ * MUST be case-insensitive: `Bookings.customerEmail` has no `lowercase: true`, so the same
+ * person booking twice can be stored as `Ali@x.com` and `ali@x.com`. An exact comparison
+ * silently reports "no existing tickets" for anyone who capitalised differently.
+ *
+ * Returns "" for a missing address, which callers treat as "can't identify" — otherwise every
+ * booking without an email would group together and be reported as the same guest.
+ */
+const guestKey = (email?: string | null) => (email || "").trim().toLowerCase()
+
 export function ApprovalRequests({ eventId, event }: { eventId: string; event?: any }) {
 	const toast = useToast({ position: "top" })
 	const queryClient = useQueryClient()
 	const [processingRef, setProcessingRef] = useState<string | null>(null)
 	const [rejectTarget, setRejectTarget] = useState<any | null>(null)
+	// Only set when the guest already holds tickets for this event — an ordinary first-time
+	// approval stays one click, so the dialog reads as a genuine warning rather than a
+	// speed bump the host learns to dismiss without reading.
+	const [approveTarget, setApproveTarget] = useState<any | null>(null)
 	const [showProcessed, setShowProcessed] = useState(false)
 	const cancelRef = useRef<HTMLButtonElement>(null)
 
@@ -79,6 +97,33 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 		const remaining = holdTimeRemaining(b)
 		return remaining !== null && remaining > 0 && remaining < 48 * HOUR
 	})
+
+	// Tickets this guest ALREADY holds for this event, so the host isn't approving a second
+	// booking blind. Built from the same single query the lists come from — every booking for
+	// the event is already in the browser, so this needs no extra request.
+	//
+	// "Confirmed" is decided BY EXCLUSION, never by allowlisting BookingStatus.CONFIRMED:
+	// `status` is not a closed set. `checked_in` is written by the mobile app against the
+	// shared collection, and an allowlist would silently hide every guest already through
+	// the door — exactly the ones a host most needs to know about.
+	const confirmedByGuest = new Map<string, any[]>()
+	for (const b of bookings as any[]) {
+		// `/api/get-bookings` does not filter `isDeleted` (unlike bookings/mine and
+		// bookings/preview), so exclude them here — a host must not be warned about, or make
+		// a decision on, a booking that has been removed.
+		if (b?.isDeleted) continue
+		if (isPendingBooking(b) || isCancelledBooking(b)) continue
+		const key = guestKey(b.customerEmail)
+		if (!key) continue
+		confirmedByGuest.set(key, [...(confirmedByGuest.get(key) || []), b])
+	}
+
+	/** Confirmed bookings held by the same guest, excluding the request being reviewed. */
+	const priorConfirmedFor = (b: any): any[] => {
+		const key = guestKey(b?.customerEmail)
+		if (!key) return []
+		return (confirmedByGuest.get(key) || []).filter((other) => other.bookingRef !== b.bookingRef)
+	}
 
 	const eventQuestions: any[] = event?.questions || []
 
@@ -140,6 +185,19 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 		await act(ref, "reject")
 	}
 
+	/** Warn first when this guest already has tickets; otherwise approve straight away. */
+	const requestApprove = (b: any) => {
+		if (priorConfirmedFor(b).length > 0) setApproveTarget(b)
+		else act(b.bookingRef, "approve")
+	}
+
+	const confirmApprove = async () => {
+		if (!approveTarget) return
+		const ref = approveTarget.bookingRef
+		setApproveTarget(null)
+		await act(ref, "approve")
+	}
+
 	if (isLoading) return <Text color="white">Loading requests...</Text>
 	if (isError) return <Text color="red.400">Failed to load requests.</Text>
 
@@ -179,16 +237,28 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 						</Thead>
 						<Tbody>
 							{pending.map((b: any) => {
-								const qty = (b.tickets || []).reduce((s: number, t: any) => s + (t.quantity || 0), 0)
+								const qty = ticketCount(b)
 								const busy = processingRef === b.bookingRef
 								const expired = isHoldExpired(b)
 								const captureFailed = isCaptureFailed(b)
 								const colSpan = 8 + eventQuestions.length
+								const prior = priorConfirmedFor(b)
+								const priorQty = prior.reduce((sum, p) => sum + ticketCount(p), 0)
 
 								return (
 									<React.Fragment key={b.bookingRef}>
 										<Tr>
-											<Td color="white">{b.customerName || "—"}</Td>
+											<Td color="white">
+												{b.customerName || "—"}
+												{/* Visible in the list itself, not only in the dialog — the host asked
+												    to see this BEFORE deciding, and scanning the table is how they
+												    decide. The dialog then repeats it at the point of no return. */}
+												{prior.length > 0 && (
+													<Badge ml={2} colorScheme="yellow" fontSize="0.65em" borderRadius="4px" px={1.5}>
+														Has {priorQty} ticket{priorQty === 1 ? "" : "s"}
+													</Badge>
+												)}
+											</Td>
 											<Td color="white">{b.customerEmail || "—"}</Td>
 											<Td color="white">{qty}</Td>
 											<Td><PaymentBadge booking={b} /></Td>
@@ -210,7 +280,7 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 																colorScheme={captureFailed ? "orange" : "green"}
 																isLoading={busy}
 																isDisabled={expired}
-																onClick={() => act(b.bookingRef, "approve")}
+																onClick={() => requestApprove(b)}
 															>
 																{captureFailed ? "Retry charge" : "Approve"}
 															</Button>
@@ -300,6 +370,65 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 					)}
 				</Box>
 			)}
+
+			{/* Duplicate-booking warning. Informational, never a block: hosts have legitimate
+			    reasons to approve a second booking (a guest bringing more people, a group
+			    split across orders), so this surfaces the facts and lets them decide. */}
+			<AlertDialog isOpen={!!approveTarget} leastDestructiveRef={cancelRef} onClose={() => setApproveTarget(null)} isCentered>
+				<AlertDialogOverlay>
+					<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
+						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
+							This guest already has tickets
+						</AlertDialogHeader>
+						<AlertDialogBody color="white">
+							{(() => {
+								if (!approveTarget) return null
+								const prior = priorConfirmedFor(approveTarget)
+								const priorQty = prior.reduce((sum, p) => sum + ticketCount(p), 0)
+								const thisQty = ticketCount(approveTarget)
+
+								return (
+									<>
+										<Text fontSize="sm">
+											<b>{approveTarget.customerName || "This guest"}</b> ({approveTarget.customerEmail}) already has{" "}
+											<b>{priorQty} confirmed ticket{priorQty === 1 ? "" : "s"}</b> for this event across{" "}
+											{prior.length} booking{prior.length === 1 ? "" : "s"}.
+										</Text>
+
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="8px" p={3} mt={3}>
+											{prior.map((p) => (
+												<Flex key={p.bookingRef} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={1}>
+													<Text>
+														{ticketCount(p)} ticket{ticketCount(p) === 1 ? "" : "s"} · {p.bookingRef}
+													</Text>
+													<Text color="#9C9C9C">
+														{p.createdAt ? DateTime.fromISO(p.createdAt).toLocaleString(DateTime.DATE_MED) : "—"}
+													</Text>
+												</Flex>
+											))}
+										</Box>
+
+										<Text fontSize="sm" mt={3}>
+											Approving this request adds <b>{thisQty} more</b>, bringing them to{" "}
+											<b>{priorQty + thisQty} ticket{priorQty + thisQty === 1 ? "" : "s"}</b> in total.
+										</Text>
+
+										{approveTarget?.payment?.amount !== undefined && (
+											<Text fontSize="xs" color="#9C9C9C" mt={2}>
+												Their card will be charged {money(approveTarget.payment.amount)}.
+											</Text>
+										)}
+									</>
+								)
+							})()}
+						</AlertDialogBody>
+						<AlertDialogFooter>
+							<Button ref={cancelRef} onClick={() => setApproveTarget(null)}>Cancel</Button>
+							<Button colorScheme="green" onClick={confirmApprove} ml={3}>Approve anyway</Button>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialogOverlay>
+			</AlertDialog>
 
 			<AlertDialog isOpen={!!rejectTarget} leastDestructiveRef={cancelRef} onClose={() => setRejectTarget(null)} isCentered>
 				<AlertDialogOverlay>
