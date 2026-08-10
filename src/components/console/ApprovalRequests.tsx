@@ -59,7 +59,25 @@ const ticketCount = (b: any) => (b?.tickets || []).reduce((sum: number, t: any) 
  */
 const guestKey = (email?: string | null) => (email || "").trim().toLowerCase()
 
-export function ApprovalRequests({ eventId, event }: { eventId: string; event?: any }) {
+/**
+ * Width of the frozen Actions column. Fixed rather than auto, because the Guest column's
+ * `left` offset has to equal it exactly or the two frozen columns overlap.
+ */
+const ACTIONS_W = "170px"
+
+export function ApprovalRequests({
+	eventId,
+	event,
+	// Frozen columns must be opaque or the scrolling columns show through them. This is the
+	// colour of the panel the table sits on, and it differs by mount point — the console tab
+	// is a solid #181818, the event page is a translucent grey over the page background — so
+	// it's supplied by the caller rather than guessed at here.
+	surfaceBg = "#181818",
+}: {
+	eventId: string
+	event?: any
+	surfaceBg?: string
+}) {
 	const toast = useToast({ position: "top" })
 	const queryClient = useQueryClient()
 	const [processingRef, setProcessingRef] = useState<string | null>(null)
@@ -234,10 +252,39 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 			) : (
 				<TableContainer>
 					<Table variant="simple" size="sm">
+						{/* Actions first and frozen, Guest second and frozen.
+						    Previously Actions sat last: with custom-question columns the table
+						    overflows, and the host had to scroll right to reach Approve — at which
+						    point the name had scrolled out of view. They were clicking a green
+						    button on a row they could no longer identify, which for an action that
+						    takes money is not a cosmetic problem.
+
+						    Frozen only from `md` up. On a phone these two columns are the whole
+						    viewport, so freezing them would leave nothing to scroll. */}
 						<Thead>
 							<Tr>
-								<Th color="#9C9C9C">Name</Th>
-								<Th color="#9C9C9C">Email</Th>
+								<Th
+									color="#9C9C9C"
+									position={{ base: "static", md: "sticky" }}
+									left={0}
+									zIndex={1}
+									bg={surfaceBg}
+									w={ACTIONS_W}
+									minW={ACTIONS_W}
+								>
+									Actions
+								</Th>
+								<Th
+									color="#9C9C9C"
+									position={{ base: "static", md: "sticky" }}
+									left={{ base: 0, md: ACTIONS_W }}
+									zIndex={1}
+									bg={surfaceBg}
+									minW="200px"
+									borderRight="1px solid #2A2D31"
+								>
+									Guest
+								</Th>
 								<Th color="#9C9C9C">Tickets</Th>
 								<Th color="#9C9C9C">Payment</Th>
 								<Th color="#9C9C9C">Expires</Th>
@@ -245,7 +292,6 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 									<Th color="#9C9C9C" key={q.id}>{q.title}</Th>
 								))}
 								<Th color="#9C9C9C">Requested</Th>
-								<Th color="#9C9C9C" textAlign="right">Actions</Th>
 							</Tr>
 						</Thead>
 						<Tbody>
@@ -254,34 +300,23 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 								const busy = processingRef === b.bookingRef
 								const expired = isHoldExpired(b)
 								const captureFailed = isCaptureFailed(b)
-								const colSpan = 8 + eventQuestions.length
+								// Actions, Guest, Tickets, Payment, Expires, …questions…, Requested.
+								const colSpan = 6 + eventQuestions.length
 								const prior = priorConfirmedFor(b)
 								const priorQty = prior.reduce((sum, p) => sum + ticketCount(p), 0)
 
 								return (
 									<React.Fragment key={b.bookingRef}>
 										<Tr>
-											<Td color="white">
-												{b.customerName || "—"}
-												{/* Visible in the list itself, not only in the dialog — the host asked
-												    to see this BEFORE deciding, and scanning the table is how they
-												    decide. The dialog then repeats it at the point of no return. */}
-												{prior.length > 0 && (
-													<Badge ml={2} colorScheme="yellow" fontSize="0.65em" borderRadius="4px" px={1.5}>
-														Has {priorQty} ticket{priorQty === 1 ? "" : "s"}
-													</Badge>
-												)}
-											</Td>
-											<Td color="white">{b.customerEmail || "—"}</Td>
-											<Td color="white">{qty}</Td>
-											<Td><PaymentBadge booking={b} /></Td>
-											<Td><HoldExpiry booking={b} /></Td>
-											{eventQuestions.map((q) => (
-												<Td color="white" key={q.id}>{formatAnswer(q.id, b)}</Td>
-											))}
-											<Td color="white">{b.createdAt ? DateTime.fromISO(b.createdAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
-											<Td textAlign="right">
-												<Flex gap={2} justify="flex-end">
+											<Td
+												position={{ base: "static", md: "sticky" }}
+												left={0}
+												zIndex={1}
+												bg={surfaceBg}
+												w={ACTIONS_W}
+												minW={ACTIONS_W}
+											>
+												<Flex gap={2}>
 													<Tooltip
 														label={expired ? "The card authorization has expired and can no longer be charged. Ask the guest to book again." : ""}
 														isDisabled={!expired}
@@ -302,6 +337,37 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 													<Button size="sm" variant="outline" colorScheme="red" isDisabled={busy} onClick={() => setRejectTarget(b)}>Reject</Button>
 												</Flex>
 											</Td>
+											{/* Name and email in one cell. Email was its own column and was the
+											    widest thing in the table; stacked here it stays visible while the
+											    row scrolls, and the approve dialog repeats it anyway. */}
+											<Td
+												position={{ base: "static", md: "sticky" }}
+												left={{ base: 0, md: ACTIONS_W }}
+												zIndex={1}
+												bg={surfaceBg}
+												minW="200px"
+												borderRight="1px solid #2A2D31"
+											>
+												<Flex align="center" gap={2} wrap="wrap">
+													<Text color="white">{b.customerName || "—"}</Text>
+													{/* Visible in the list itself, not only in the dialog — the host asked
+													    to see this BEFORE deciding, and scanning the table is how they
+													    decide. The dialog then repeats it at the point of no return. */}
+													{prior.length > 0 && (
+														<Badge colorScheme="yellow" fontSize="0.65em" borderRadius="4px" px={1.5}>
+															Has {priorQty} ticket{priorQty === 1 ? "" : "s"}
+														</Badge>
+													)}
+												</Flex>
+												<Text color="#9C9C9C" fontSize="xs">{b.customerEmail || "—"}</Text>
+											</Td>
+											<Td color="white">{qty}</Td>
+											<Td><PaymentBadge booking={b} /></Td>
+											<Td><HoldExpiry booking={b} /></Td>
+											{eventQuestions.map((q) => (
+												<Td color="white" key={q.id}>{formatAnswer(q.id, b)}</Td>
+											))}
+											<Td color="white">{b.createdAt ? DateTime.fromISO(b.createdAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										</Tr>
 										{captureFailed && (
 											<Tr>
