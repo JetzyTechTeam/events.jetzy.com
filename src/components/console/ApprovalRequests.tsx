@@ -127,6 +127,18 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 
 	const eventQuestions: any[] = event?.questions || []
 
+	/**
+	 * "3 × General Admission" per line, so the host sees WHAT was requested and not just a
+	 * total. Bookings store only `ticketId`, so the name is resolved against the event's
+	 * ticket sub-documents; a ticket deleted since the request was made falls back to a
+	 * neutral label rather than rendering "undefined".
+	 */
+	const ticketBreakdown = (b: any): Array<{ name: string; quantity: number }> =>
+		(b?.tickets || []).map((row: any) => {
+			const ticket = (event?.tickets || []).find((t: any) => t?._id?.toString() === row?.ticketId?.toString())
+			return { name: ticket?.name || "Ticket", quantity: row?.quantity || 0 }
+		})
+
 	const formatAnswer = (qId: string, booking: any): string => {
 		if (!booking?.customAnswers) return "—"
 		const ans = booking.customAnswers.find((a: any) => a.questionId === qId)
@@ -185,11 +197,12 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 		await act(ref, "reject")
 	}
 
-	/** Warn first when this guest already has tickets; otherwise approve straight away. */
-	const requestApprove = (b: any) => {
-		if (priorConfirmedFor(b).length > 0) setApproveTarget(b)
-		else act(b.bookingRef, "approve")
-	}
+	/**
+	 * Always confirm. Approving takes money and consumes capacity, and the host needs to see
+	 * WHAT they're approving — a first request can be for five tickets just as easily as one,
+	 * and the row only shows a bare total.
+	 */
+	const requestApprove = (b: any) => setApproveTarget(b)
 
 	const confirmApprove = async () => {
 		if (!approveTarget) return
@@ -371,61 +384,95 @@ export function ApprovalRequests({ eventId, event }: { eventId: string; event?: 
 				</Box>
 			)}
 
-			{/* Duplicate-booking warning. Informational, never a block: hosts have legitimate
-			    reasons to approve a second booking (a guest bringing more people, a group
-			    split across orders), so this surfaces the facts and lets them decide. */}
+			{/* Shown on EVERY approval, not just repeat guests. A first request can be for five
+			    tickets as easily as one, and the row shows only a bare total — the host needs
+			    to see what they're committing to before money moves and capacity is consumed.
+
+			    The prior-bookings section is additive: when the guest already holds tickets it
+			    appears as a warning on top. Informational, never a block — hosts have good
+			    reasons to approve a second booking (a guest bringing more people, a group split
+			    across orders). */}
 			<AlertDialog isOpen={!!approveTarget} leastDestructiveRef={cancelRef} onClose={() => setApproveTarget(null)} isCentered>
 				<AlertDialogOverlay>
 					<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
-						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
-							This guest already has tickets
-						</AlertDialogHeader>
-						<AlertDialogBody color="white">
-							{(() => {
-								if (!approveTarget) return null
-								const prior = priorConfirmedFor(approveTarget)
-								const priorQty = prior.reduce((sum, p) => sum + ticketCount(p), 0)
-								const thisQty = ticketCount(approveTarget)
+						{(() => {
+							if (!approveTarget) return null
+							const prior = priorConfirmedFor(approveTarget)
+							const priorQty = prior.reduce((sum, p) => sum + ticketCount(p), 0)
+							const thisQty = ticketCount(approveTarget)
+							const lines = ticketBreakdown(approveTarget)
+							const held = approveTarget?.payment?.amount
+							// The row's button reads "Retry charge" after a failed capture; the dialog
+							// has to agree, or it looks like a different action from the one clicked.
+							const retrying = isCaptureFailed(approveTarget)
 
-								return (
-									<>
+							return (
+								<>
+									<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
+										{retrying ? "Retry charge" : prior.length > 0 ? "This guest already has tickets" : "Approve request"}
+									</AlertDialogHeader>
+
+									<AlertDialogBody color="white">
 										<Text fontSize="sm">
-											<b>{approveTarget.customerName || "This guest"}</b> ({approveTarget.customerEmail}) already has{" "}
-											<b>{priorQty} confirmed ticket{priorQty === 1 ? "" : "s"}</b> for this event across{" "}
-											{prior.length} booking{prior.length === 1 ? "" : "s"}.
+											Approve <b>{approveTarget.customerName || "this guest"}</b>
+											{approveTarget.customerEmail ? ` (${approveTarget.customerEmail})` : ""} for{" "}
+											<b>{thisQty} ticket{thisQty === 1 ? "" : "s"}</b>?
 										</Text>
 
-										<Box bg="#15181C" border="1px solid #343536" borderRadius="8px" p={3} mt={3}>
-											{prior.map((p) => (
-												<Flex key={p.bookingRef} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={1}>
-													<Text>
-														{ticketCount(p)} ticket{ticketCount(p) === 1 ? "" : "s"} · {p.bookingRef}
-													</Text>
-													<Text color="#9C9C9C">
-														{p.createdAt ? DateTime.fromISO(p.createdAt).toLocaleString(DateTime.DATE_MED) : "—"}
-													</Text>
-												</Flex>
-											))}
-										</Box>
+										{/* What was actually requested, by ticket type. */}
+										{lines.length > 0 && (
+											<Box bg="#15181C" border="1px solid #343536" borderRadius="8px" p={3} mt={3}>
+												{lines.map((line, i) => (
+													<Flex key={i} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
+														<Text>{line.name}</Text>
+														<Text color="white" fontWeight={600}>× {line.quantity}</Text>
+													</Flex>
+												))}
+											</Box>
+										)}
 
-										<Text fontSize="sm" mt={3}>
-											Approving this request adds <b>{thisQty} more</b>, bringing them to{" "}
-											<b>{priorQty + thisQty} ticket{priorQty + thisQty === 1 ? "" : "s"}</b> in total.
-										</Text>
-
-										{approveTarget?.payment?.amount !== undefined && (
-											<Text fontSize="xs" color="#9C9C9C" mt={2}>
-												Their card will be charged {money(approveTarget.payment.amount)}.
+										{/* Free bookings have no `payment` at all — say nothing rather than
+										    implying a charge that will never happen. */}
+										{held !== undefined && (
+											<Text fontSize="sm" mt={3}>
+												Their card will be charged <b>{money(held)}</b>.
 											</Text>
 										)}
-									</>
-								)
-							})()}
-						</AlertDialogBody>
-						<AlertDialogFooter>
-							<Button ref={cancelRef} onClick={() => setApproveTarget(null)}>Cancel</Button>
-							<Button colorScheme="green" onClick={confirmApprove} ml={3}>Approve anyway</Button>
-						</AlertDialogFooter>
+
+										{prior.length > 0 && (
+											<Box bg="rgba(247,148,50,0.12)" border="1px solid rgba(247,148,50,0.4)" borderRadius="8px" p={3} mt={4}>
+												<Text fontSize="sm" color="#F79432" fontWeight={700}>
+													Already has {priorQty} confirmed ticket{priorQty === 1 ? "" : "s"} for this event
+												</Text>
+												<Box mt={2}>
+													{prior.map((p) => (
+														<Flex key={p.bookingRef} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
+															<Text>
+																{ticketCount(p)} ticket{ticketCount(p) === 1 ? "" : "s"} · {p.bookingRef}
+															</Text>
+															<Text color="#9C9C9C">
+																{p.createdAt ? DateTime.fromISO(p.createdAt).toLocaleString(DateTime.DATE_MED) : "—"}
+															</Text>
+														</Flex>
+													))}
+												</Box>
+												<Text fontSize="xs" color="#D6D6D6" mt={2}>
+													Approving this brings them to{" "}
+													<b>{priorQty + thisQty} ticket{priorQty + thisQty === 1 ? "" : "s"}</b> in total.
+												</Text>
+											</Box>
+										)}
+									</AlertDialogBody>
+
+									<AlertDialogFooter>
+										<Button ref={cancelRef} onClick={() => setApproveTarget(null)}>Cancel</Button>
+										<Button colorScheme={retrying ? "orange" : "green"} onClick={confirmApprove} ml={3}>
+											{retrying ? "Retry charge" : prior.length > 0 ? "Approve anyway" : "Approve"}
+										</Button>
+									</AlertDialogFooter>
+								</>
+							)
+						})()}
 					</AlertDialogContent>
 				</AlertDialogOverlay>
 			</AlertDialog>
