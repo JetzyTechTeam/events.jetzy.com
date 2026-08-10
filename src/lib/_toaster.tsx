@@ -1,5 +1,6 @@
 import { toast } from "react-toastify"
 import { uniqueId } from "./utils"
+import { describeIssue } from "./form-errors"
 
 export const Success = (title?: string, message?: string) => {
   toast(
@@ -34,12 +35,12 @@ export const ServerErrors = (title?: string, error?: any) => {
     // generic top-level message ("Your request could not be complete…") and the actual
     // reason only in `data[]`. Preferring `message` hid every field error.
     if (Array.isArray(err?.data) && err.data.length > 0) {
-      return err.data.map((e: any) => e?.message || JSON.stringify(e)).join(", ")
+      return err.data.map((e: any) => describeIssue(e)).join(", ")
     }
     // Server response shape: { status, message, data }
     if (err?.message && err.message !== "Rejected") return err.message
     if (Array.isArray(err) && err.length > 0) {
-      return err.map((e: any) => e?.message || JSON.stringify(e)).join(", ")
+      return err.map((e: any) => describeIssue(e)).join(", ")
     }
     return "Something went wrong. Please try again."
   }
@@ -55,7 +56,7 @@ export const ServerErrors = (title?: string, error?: any) => {
           <ul className="text-gray-600 p-2 list-disc pl-4">
             {error.data.map((e: any, i: number) => (
               <li key={i} className="text-rose-500 text-sm">
-                {e?.message || JSON.stringify(e)}
+                {describeIssue(e)}
               </li>
             ))}
           </ul>

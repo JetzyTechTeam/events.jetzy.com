@@ -1465,7 +1465,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Maximum number of attendees</Text>
 															</Box>
 														</Flex>
-														<Field as={Input} type="number" min={0} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
+														{/* `min={0}` alone doesn't stop the host typing -5 — it only constrains
+													    the spinner and native form validation. Blocking the key does. */}
+													<Field as={Input} type="number" min={0} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
 													</Flex>
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1684,8 +1686,15 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 															<FormControl mb={4}>
 																<FormLabel>Price</FormLabel>
 																{/* NaN would break the controlled value, so an empty field stays
-																    empty and is treated as free ($0) on save. */}
-																<Input type="number" placeholder="Enter price (0 for free)" bg="#090C10" border="1px solid #444" value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""} onChange={(e) => setTempTicket({ ...tempTicket, price: parseFloat(e.target.value) })} />
+																    empty and is treated as free ($0) on save.
+
+																    `Math.max(0, …)` is the real guard, not `min={0}` — the HTML
+																    attribute only styles the spinner and fails on native form
+																    submit, which this modal never does, so -5 typed or pasted here
+																    reached the server and came back as a validation error the host
+																    couldn't act on. Math.max passes NaN through unchanged, so the
+																    empty-field behaviour above is untouched. */}
+																<Input type="number" min={0} step="0.01" placeholder="Enter price (0 for free)" bg="#090C10" border="1px solid #444" value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""} onChange={(e) => setTempTicket({ ...tempTicket, price: Math.max(0, parseFloat(e.target.value)) })} />
 															</FormControl>
 															<FormControl mb={4}>
 																<Flex align="center" justify="space-between" gap={4}>

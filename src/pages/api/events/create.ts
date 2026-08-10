@@ -35,7 +35,7 @@ const schema = zod.object({
 	startTime: zod.string().optional(),
 	endDate: zod.string().optional(),
 	endTime: zod.string().optional(),
-	name: zod.string().nonempty(),
+	name: zod.string().nonempty("Give your event a name."),
 	// Host-chosen event URL. Blank/omitted derives one from the event name.
 	slug: zod.string().optional(),
 	location: zod.string().optional(),
@@ -48,7 +48,9 @@ const schema = zod.object({
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
-	capacity: zod.number().nonnegative(),
+	// Real sentences, not zod's defaults — these surface straight to the host in a toast.
+	// Kept identical to update.ts so the same mistake reads the same on both forms.
+	capacity: zod.number().nonnegative("Capacity can't be negative. Use 0 for unlimited."),
 	requireApproval: zod.boolean(),
 	images: zod.array(
 		zod.object({
@@ -65,10 +67,13 @@ const schema = zod.object({
 	tickets: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
-			title: zod.string().nonempty(),
+			title: zod.string().nonempty("Give this ticket a name."),
 			// Free ($0) is fine; anything between a cent and 49c is not, because Stripe
 			// refuses the charge and the host would only find out at a buyer's checkout.
-			price: zod.number().nonnegative().refine((p) => !isBelowStripeMinimum(p), BELOW_MIN_PRICE_MESSAGE),
+			price: zod
+				.number({ invalid_type_error: "Enter a price, or 0 to make this ticket free." })
+				.nonnegative("Price can't be negative. Use 0 to make this ticket free.")
+				.refine((p) => !isBelowStripeMinimum(p), BELOW_MIN_PRICE_MESSAGE),
 			description: zod.string().optional(),
 			// `.optional()` and never `.default(false)` — undefined must stay undefined so the
 			// ticket inherits the event-level requireApproval.

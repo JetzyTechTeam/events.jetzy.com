@@ -798,7 +798,9 @@ const CreateEventPage = () => {
                         <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Maximum number of attendees</Text>
                       </Box>
                     </Flex>
-                    <Field as={Input} type="number" min={0} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #343536" w="90px" h="36px" />
+                    {/* `min={0}` alone doesn't stop the host typing -5 — it only constrains the
+                        spinner and native form validation. Blocking the key does. */}
+                    <Field as={Input} type="number" min={0} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #343536" w="90px" h="36px" />
                   </Flex>
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1039,16 +1041,22 @@ const CreateEventPage = () => {
                           id="ticketPrice"
                           name="ticketPrice"
                           type="number"
+                          min={0}
+                          step="0.01"
                           placeholder="Enter price (0 for free)"
                           bg="#090C10"
                           border="1px solid #444"
                           // NaN would render as a broken controlled value, so an empty
                           // field shows empty and is treated as free ($0) on save.
                           value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""}
+                          // `Math.max(0, …)` is the real guard, not `min={0}` — the attribute
+                          // only fails on native form submit, which this modal never does, so
+                          // a typed or pasted -5 reached the server. NaN passes through
+                          // unchanged, preserving the empty-field behaviour above.
                           onChange={(e) =>
                             setTempTicket({
                               ...tempTicket,
-                              price: parseFloat(e.target.value),
+                              price: Math.max(0, parseFloat(e.target.value)),
                             })
                           }
                         />
