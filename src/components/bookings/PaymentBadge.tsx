@@ -1,5 +1,5 @@
 import React from "react"
-import { Badge, Text, Tooltip } from "@chakra-ui/react"
+import { Badge, Box, Text, Tooltip } from "@chakra-ui/react"
 import { DateTime } from "luxon"
 import { holdTimeRemaining, isHoldExpired } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
@@ -64,21 +64,45 @@ export function PaymentBadge({ booking }: { booking: any }) {
 			: <Text color="#9C9C9C">Free</Text>
 	}
 
-	switch (payment.status) {
-		case "authorized":
-		case "capturing":
-			return isHoldExpired(booking)
-				? <Badge colorScheme="red">Hold expired</Badge>
-				: <Badge colorScheme="orange">{money(payment.amount)} on hold</Badge>
-		case "captured":
-			return <Badge colorScheme="green">{money(payment.amount)} charged</Badge>
-		case "failed":
-			return <Badge colorScheme="red">Charge failed</Badge>
-		case "expired":
-			return <Badge colorScheme="red">Hold expired</Badge>
-		case "canceled":
-			return <Badge colorScheme="gray">{money(payment.amount)} released</Badge>
-		default:
-			return <Text color="#9C9C9C">—</Text>
-	}
+	const moneyBadge = (() => {
+		switch (payment.status) {
+			case "authorized":
+			case "capturing":
+				return isHoldExpired(booking)
+					? <Badge colorScheme="red">Hold expired</Badge>
+					: <Badge colorScheme="orange">{money(payment.amount)} on hold</Badge>
+			case "captured":
+				return <Badge colorScheme="green">{money(payment.amount)} charged</Badge>
+			case "failed":
+				return <Badge colorScheme="red">Charge failed</Badge>
+			case "expired":
+				return <Badge colorScheme="red">Hold expired</Badge>
+			case "canceled":
+				return <Badge colorScheme="gray">{money(payment.amount)} released</Badge>
+			default:
+				return <Text color="#9C9C9C">—</Text>
+		}
+	})()
+
+	// A code that only took part of the price off still needs naming. Previously the code was
+	// visible only when it comped the whole amount, so a $95 ticket discounted to $20 looked
+	// identical to one that simply cost $20 — the host had no way to see a code was involved.
+	const discount = describeDiscount(booking)
+	if (!discount.label) return moneyBadge
+
+	// "Free" alongside an amount on hold reads as a contradiction, and on a bundled order it
+	// isn't one: the TICKET was comped, and the held amount is the membership's first period.
+	// Saying "Ticket free" makes the two numbers agree.
+	const label = discount.comped ? `Ticket free${discount.code ? ` · ${discount.code}` : ""}` : discount.label
+
+	return (
+		<Box>
+			{moneyBadge}
+			<Box mt={1}>
+				<Badge colorScheme={discount.comped ? "blue" : "yellow"} fontSize="0.65em" borderRadius="4px" px={1.5}>
+					{label}
+				</Badge>
+			</Box>
+		</Box>
+	)
 }

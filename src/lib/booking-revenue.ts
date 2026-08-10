@@ -126,7 +126,10 @@ export type DiscountInfo = {
 	comped: boolean
 	amount: number
 	code?: string
-	/** "Free · SHAMAP100", "−$20.00 · EARLYBIRD", or undefined when nothing was discounted. */
+	/**
+	 * "Free · SHAMAP100", "−$20.00 · EARLYBIRD", or just "EARLYBIRD" when a code was used but
+	 * took nothing off. Undefined only when no code and no discount were involved at all.
+	 */
 	label?: string
 }
 
@@ -143,7 +146,10 @@ export const describeDiscount = (booking: BookingLike): DiscountInfo => {
 	const subTotal = Number(booking?.subTotal ?? 0) || 0
 	const total = bookingTicketRevenue(booking)
 
-	if (amount <= 0) return { discounted: false, comped: false, amount: 0, code }
+	// A code that took nothing off still gets a label. The host needs to see that a guest came
+	// in on a code at all — `discounted` stays false so the receipt breakdown doesn't render a
+	// "−$0.00" line, but the badge is worth showing.
+	if (amount <= 0) return { discounted: false, comped: false, amount: 0, code, label: code }
 
 	// Comped means the discount is what made it free — not merely that it ended up at zero,
 	// which a $0 ticket does on its own with no discount involved.
