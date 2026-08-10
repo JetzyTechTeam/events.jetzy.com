@@ -570,7 +570,11 @@ export default function HostedEvents({ event }: Props) {
 										<div className="p-6">
 											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
-											{activeTab === "approvals" && eventHasAnyApprovalTicket(clonedEvent as any) && <ApprovalRequests eventId={clonedEvent._id.toString()} event={clonedEvent} />}
+											{/* `surfaceBg` is what the frozen Actions/Guest columns paint themselves
+											    with so the scrolling columns don't show through. This panel is a
+											    translucent grey over the dark page rather than a flat colour, so this
+											    is the composite it resolves to. */}
+											{activeTab === "approvals" && eventHasAnyApprovalTicket(clonedEvent as any) && <ApprovalRequests eventId={clonedEvent._id.toString()} event={clonedEvent} surfaceBg="#1A1A1A" />}
 										</div>
 									</>
 								)}

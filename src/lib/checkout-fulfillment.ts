@@ -161,6 +161,29 @@ export const incrementReferralUsage = async (code?: string) => {
 	}
 }
 
+/**
+ * When the card hold actually lapses.
+ *
+ * `AUTH_HOLD_DAYS` is an assumption — 7 days is the common default, but the real window is
+ * set per payment by the card network, and Stripe publishes it as `capture_before` on the
+ * charge. Their docs explicitly say to rely on that field "because these rules can change
+ * without prior notice". The estimate was optimistic in both directions: some issuers
+ * release sooner, and an extended authorization would run far longer.
+ *
+ * This is what the host sees counted down in Approvals and what the guest is told in the
+ * pending email, so a wrong value here means promising a deadline that isn't real.
+ *
+ * Falls back to the estimate when Stripe doesn't supply one — the field is absent on
+ * non-card payments and on anything not using manual capture.
+ */
+const resolveAuthExpiry = (pi: Stripe.PaymentIntent | null, from: Date): Date => {
+	const charge = pi && typeof pi.latest_charge !== "string" ? (pi.latest_charge as Stripe.Charge | null) : null
+	const captureBefore = charge?.payment_method_details?.card?.capture_before
+	// Stripe timestamps are Unix seconds.
+	if (captureBefore) return new Date(captureBefore * 1000)
+	return new Date(from.getTime() + AUTH_HOLD_DAYS * 24 * 60 * 60 * 1000)
+}
+
 export async function fulfillCheckoutSessionById(sessionId: string): Promise<FulfillResult> {
 	await ensureDbConnected()
 	const stripe = getStripeClient()
@@ -170,8 +193,11 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	// There `session.payment_intent` is null and the real PaymentIntent hangs off the first
 	// invoice. Without this expansion `payment.paymentIntentId` is written `undefined`, which
 	// orphans every capture/cancel path that looks a booking up by it.
+	//
+	// `latest_charge` is expanded so the hold deadline can be read from the charge rather than
+	// assumed — see `resolveAuthExpiry`.
 	const session = await stripe.checkout.sessions.retrieve(sessionId, {
-		expand: ["payment_intent", "invoice.payment_intent"],
+		expand: ["payment_intent", "payment_intent.latest_charge", "invoice.payment_intent", "invoice.payment_intent.latest_charge"],
 	})
 	if (!session) return { created: false, booking: null, event: null, requiresApproval: false, session: null, reason: "no-session" }
 
@@ -346,7 +372,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				amount: chargedAmount,
 				currency: session.currency || "usd",
 				...(isAuthorized
-					? { authorizedAt: now, authExpiresAt: new Date(now.getTime() + AUTH_HOLD_DAYS * 24 * 60 * 60 * 1000) }
+					? { authorizedAt: now, authExpiresAt: resolveAuthExpiry(pi, now) }
 					: { capturedAt: now }),
 			},
 		})
