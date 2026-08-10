@@ -16,6 +16,8 @@ import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { eventHasAnyApprovalTicket } from "@/lib/ticket-approval"
 import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
+import { bookingMemberships } from "@/lib/booking-memberships"
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
@@ -1114,6 +1116,10 @@ function EventBookings({ eventId }: { eventId: string }) {
 					// Authorized funds are not collected funds — never render them as plain revenue.
 					const onHold = booking.payment?.status === "authorized" || booking.payment?.status === "capturing" || booking.payment?.status === "failed"
 					const bookingDiscount = describeDiscount(booking as any)
+					// Memberships sold with the ticket. `booking.total` is the TICKET; the card was
+					// charged ticket + the first period of each of these, so without them the panel
+					// shows a $90 total above a $110 charge and never says where the $20 came from.
+					const bookingMembershipRows = bookingMemberships(booking.payment as any)
 					return (
 						<div key={booking._id} className={`border-b border-[#434343] last:border-b-0 ${cancelled ? "opacity-60" : ""}`}>
 							<button
@@ -1224,6 +1230,29 @@ function EventBookings({ eventId }: { eventId: string }) {
 												<p className="text-[#bbbbbb]">
 													Hold of ${Number(booking.payment.amount || 0).toFixed(2)} released. The guest was not charged.
 												</p>
+											)}
+
+											{/* Why the card amount differs from the ticket total. A bundled order
+											    charges the ticket PLUS the first period of each membership sold
+											    with it, so this panel otherwise showed "Total: $90" above
+											    "Charged $110.00" with nothing to account for the $20. */}
+											{bookingMembershipRows.length > 0 && (
+												<div className="mt-2 pt-2 border-t border-white/15 text-xs text-[#bbbbbb]">
+													<p className="font-semibold text-white/80 mb-1">What this covers</p>
+													<div className="flex justify-between gap-3">
+														<span>Ticket</span>
+														<span>${Number(booking.total || 0).toFixed(2)}</span>
+													</div>
+													{bookingMembershipRows.map((row: any) => (
+														<div key={row.key} className="flex justify-between gap-3">
+															<span>
+																{MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || row.key} (first {row.interval || "month"})
+																{row.status === "failed" ? " — not started" : ""}
+															</span>
+															<span>${(Number(row.amount) || 0).toFixed(2)}</span>
+														</div>
+													))}
+												</div>
 											)}
 										</div>
 									)}
