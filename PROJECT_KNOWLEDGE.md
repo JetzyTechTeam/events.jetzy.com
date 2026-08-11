@@ -454,6 +454,26 @@ rounded away from what the card is actually billed.
 `pricingFromBooking` can still itemise bookings made while the discount existed. Never pass it
 for a new order.
 
+### Stripe product and price ids
+
+Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** — `findActiveSubscriptionForProduct` matches `item.price.product`, and `subscriptionMembershipKey` walks the same field. Every plan of a membership therefore has to be a **price on the same product**; a separate product is invisible to eligibility, to the webhook's product routing, and to the pre-create dedupe, and the member gets billed a second time on their next bundled ticket.
+
+| | Test | Live |
+|---|---|---|
+| Premium product | `prod_Uxn2R9FQd5F3sp` | `prod_UzMR33CL777c3R` |
+| Premium $20/mo — product default | `price_1U16eYB7XccR5GE0AdABnPwO` | *(the $20/mo price)* |
+| Premium $200/yr | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | *(created; id not yet recorded)* |
+| Concierge product | `prod_UjabUJ9OXWhLPJ` | `prod_UlQTOgXS73TAEV` |
+| Concierge $59.50/mo | `price_1Tk7QPB7XccR5GE0ZxMClLxs` | — |
+
+- Test and live product ids share no resemblance. Never derive one from the other.
+- **`default_price` must stay on the monthly price.** [api/subscriptions/plan.ts](src/pages/api/subscriptions/plan.ts) returns only `default_price`, and that figure is the recurring disclosure on every bundled ticket. Repointing it to annual would quote $200/yr on a $60 ticket.
+- Adding the annual **price** needed no code change here: product-scoped detection picked it up, and `startMembershipSubscription` already derives the trial as `dayjs().add(1, interval)`, so an annual subscription gets a one-year trial rather than a month. Offering annual in our own UI does need work — the plan endpoint must list prices instead of reading `default_price`.
+- The `productId` fallback in [memberships.ts](src/lib/memberships.ts) is a **test** id despite the comment claiming production. Inert only because production sets the env var.
+- Premium carries a legacy `$10/mo` price predating the $20 one — 16 subscriptions in test, **zero in live**. Nothing selects it; detection is by product so those members still read as Premium.
+
+**Known gap — SelectMember's Concierge Annual is a separate product** (`prod_Ujacr6ekzXDpo1`), and its price is misconfigured to bill $595 *monthly*. We never reference it, so it can't be sold through ticketing — but annual Concierge subscribers cannot be found by product lookup. The only signal is their `/status` API, and `heldMemberships` currently accepts any `status: "active"` **without checking `plan`**, which would also read a $4.95 hotels-only member as holding Full Concierge and hand it to them free. Blocked on their response contract; do not enable Concierge on ticket types until resolved.
+
 ### Second membership: Full Concierge (selectmember.jetzy.com)
 
 A ticket can sell **Jetzy Premium**, **Full Concierge Membership** ($59.50/mo), or **both**.
