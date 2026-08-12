@@ -5,6 +5,7 @@ import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import { ROUTES, homeRouteForRole } from "@/configs/routes"
 import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
+import { eventMedia, type EventMedia } from "@/lib/event-media"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -124,15 +125,23 @@ export default function HostedEvents({ event }: Props) {
 	// Validate event data early and safely
 	const isValidEvent = event && event._id && event.name
 
-	const clonedEvent = useMemo(() => {
+	const clonedEvent = useMemo<IEvent | null>(() => {
 		if (!isValidEvent) {
 			return null
 		}
 		try {
-			return structuredClone(event)
+			// `event` arrives as JSON.parse'd page props, so the cheap clone is exact.
+			// structuredClone is iOS 15.4+; on anything older it throws and the whole
+			// page used to fall through to "Event Not Found".
+			if (typeof structuredClone === "function") return structuredClone(event)
+			return JSON.parse(JSON.stringify(event))
 		} catch (error) {
 			console.error("Error cloning event:", error)
-			return null
+			try {
+				return JSON.parse(JSON.stringify(event))
+			} catch {
+				return null
+			}
 		}
 	}, [event, isValidEvent])
 
@@ -153,6 +162,26 @@ export default function HostedEvents({ event }: Props) {
 		enabled: !!session && !!clonedEvent?._id,
 	})
 	const myBooking = myBookingResp?.data ?? null
+
+	// A media url that 404s and an event with no media at all used to look identical
+	// on screen ("No image available"), which made bug reports unfalsifiable — the
+	// same screenshot could mean stripped props or a dead S3 object.
+	const [failedMedia, setFailedMedia] = useState<Record<string, true>>({})
+	const markMediaFailed = (url: string) => setFailedMedia((prev) => (prev[url] ? prev : { ...prev, [url]: true }))
+	const renderMedia = (media: EventMedia, key?: React.Key) => (
+		<div key={key} className="relative w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
+			{failedMedia[media.url] ? (
+				<div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+					<p className="text-gray-400">{media.type === "video" ? "Video couldn't load" : "Image couldn't load"}</p>
+				</div>
+			) : media.type === "video" ? (
+				<video src={media.url} controls className="absolute inset-0 w-full h-full object-contain" onError={() => markMediaFailed(media.url)} />
+			) : (
+				<img src={media.url} alt="Event Banner" className="absolute inset-0 w-full h-full object-contain" onError={() => markMediaFailed(media.url)} />
+			)}
+		</div>
+	)
+
 	const [isCancelling, setIsCancelling] = useState(false)
 	const [showCancelDialog, setShowCancelDialog] = useState(false)
 
@@ -356,34 +385,15 @@ export default function HostedEvents({ event }: Props) {
 						{/* Banner Media (images + videos combined) */}
 						<div className="relative p-3">
 							{(() => {
-								const allMedia = [
-									...(clonedEvent?.images || []).map((url: string) => ({ url, type: 'image' as const })),
-									...(clonedEvent?.videos || []).map((url: string) => ({ url, type: 'video' as const })),
-								]
+								const allMedia = eventMedia(clonedEvent)
 								if (allMedia.length > 1) {
 									return (
 										<Slider {...settings}>
-											{allMedia.map((media, idx) => (
-												<div key={idx} className="relative w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
-													{media.type === 'video' ? (
-														<video src={media.url} controls className="absolute inset-0 w-full h-full object-contain" />
-													) : (
-														<img src={media.url} alt="Event Banner" className="absolute inset-0 w-full h-full object-contain" />
-													)}
-												</div>
-											))}
+											{allMedia.map((media, idx) => renderMedia(media, idx))}
 										</Slider>
 									)
 								} else if (allMedia.length === 1) {
-									return (
-										<div className="relative w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
-											{allMedia[0].type === 'video' ? (
-												<video src={allMedia[0].url} controls className="absolute inset-0 w-full h-full object-contain" />
-											) : (
-												<img src={allMedia[0].url} alt="Event Banner" className="absolute inset-0 w-full h-full object-contain" />
-											)}
-										</div>
-									)
+									return renderMedia(allMedia[0])
 								} else {
 									return (
 										<div className="w-full h-52 md:h-[335px] bg-gray-800 flex items-center justify-center rounded-xl">

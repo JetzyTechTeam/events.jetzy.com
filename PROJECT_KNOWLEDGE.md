@@ -824,6 +824,18 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 - `og:image` is always emitted: `images[0]` normalized to absolute, falling back to `${NEXT_PUBLIC_URL}/imgs/logo.png` when the event has no images. `og:url` uses `slug || _id`. `og:type` is `website` (`event` is not a valid OG type).
 - Previews are cached per-URL by iMessage/Facebook — re-scrape via the Facebook Sharing Debugger or test with a `?v=2` suffix before assuming a fix did not land.
 
+### Event banner media
+
+[src/lib/event-media.ts](src/lib/event-media.ts) is the single answer to "what does this event's banner show". `eventMedia(event)` returns `{url, type}[]` — images first, then videos. `normalizeEventMediaFields(source)` returns the cleaned arrays for normalising a payload before it becomes page props. **Never rebuild either inline**, or the slide count and the "No image available" placeholder will disagree.
+
+The banner renders from three sources and only one of them is schema-checked: the Mongo document, the **external v2 API** (`?external=true&token=` in [src/pages/[slug].tsx](src/pages/[slug].tsx), which used to hand `externalData.data` to the page raw), and the mobile app's own writes to the shared collection. A bare string, a `null` entry or `""` all reached the banner and rendered as `<img src="">` or made a populated event look empty. `normalizeExternalEvent` in `[slug].tsx` now guarantees `images`/`videos` exist as string arrays, filling from the app's alternate keys (`image`, `photos`, `imageUrls`, `media`) before giving up.
+
+**"No image available" and "Image couldn't load" are different faults and must stay worded differently.** The first means the event data carried no media; the second is a per-item `onError` in [HostedEvents.tsx](src/components/HostedEvents.tsx) meaning the url was there but the fetch failed. They used to be indistinguishable, so a screenshot could not tell stripped props from a dead S3 object — which cost a full production investigation (CEO report, 2026-08-12: event `Picnic` showed the placeholder on iOS Chrome while the DB, the server props and both S3 objects were all verified fine).
+
+`[slug].tsx` logs the media count on every successful render, so the next such report resolves from server logs without needing the visitor's entry URL.
+
+`clonedEvent` uses `structuredClone` with a `JSON.parse(JSON.stringify(...))` fallback. `structuredClone` is iOS 15.4+; without the fallback an older device threw into the `catch`, got `null`, and rendered **"Event Not Found"** for a perfectly valid event. The props are already JSON-derived, so the cheap clone is exact.
+
 ### Ticket revenue — never `quantity × list price`
 
 [src/lib/booking-revenue.ts](src/lib/booking-revenue.ts) is the single answer to "what was this booking worth". Use `apportionRevenue` for per-ticket-type totals and `describeDiscount` for why a total is lower than its subtotal.

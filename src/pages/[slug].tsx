@@ -12,6 +12,7 @@ import { stripHTMLAndDecode } from "@/lib/utils"
 import { eventPath, eventUrl, findEventByPreviousSlug, withQuery } from "@/lib/event-slug"
 import { isPendingAdminApproval } from "@/lib/event-approval"
 import { toMetaDescription } from "@/utils/text"
+import { normalizeEventMediaFields } from "@/lib/event-media"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 
@@ -183,6 +184,19 @@ export default function EventDetailPage({ event, pendingApproval }: Props) {
 	)
 }
 
+/**
+ * Guarantee `images` / `videos` exist as clean string arrays on a payload that
+ * never went through the Mongoose schema. Fills from the alternate keys the
+ * mobile/v2 API is known to use before falling back to an empty list — an empty
+ * banner is a worse failure than an extra lookup.
+ */
+const normalizeExternalEvent = (raw: any) => {
+	const media = normalizeEventMediaFields(raw)
+	const images = media.images.length ? media.images : normalizeEventMediaFields({ images: raw?.image ?? raw?.photos ?? raw?.imageUrls ?? raw?.media }).images
+	const videos = media.videos.length ? media.videos : normalizeEventMediaFields({ videos: raw?.video ?? raw?.videoUrls }).videos
+	return { ...raw, images, videos }
+}
+
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
 	try {
 		await ensureDbConnected()
@@ -281,10 +295,15 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 					if (res.ok) {
 						const externalData = await res.json();
 						if (externalData?.status && externalData?.data) {
-							console.log(`[Slug Lookup v3] External fetch SUCCESS: ${slug}`);
+							// The v2 payload is the mobile app's shape, not IEvent — it is not
+							// schema-checked and has reached the page with `images` absent or as a
+							// bare string, which renders as "No image available" on an event that
+							// plainly has a photo. Normalise the media fields before they become props.
+							const normalized = normalizeExternalEvent(externalData.data)
+							console.log(`[Slug Lookup v3] External fetch SUCCESS: ${slug} (${normalized.images.length} img, ${normalized.videos.length} vid)`);
 							return {
 								props: {
-									event: JSON.stringify(externalData.data)
+									event: JSON.stringify(normalized)
 								}
 							};
 						}
@@ -300,7 +319,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 
 
-		console.log(`[Slug Lookup v3] Success! Rendering event: ${event.name} (${event._id})`)
+		// Media count is logged so a "no image available" report can be resolved from
+		// the server logs alone, without having to guess at the visitor's entry url.
+		console.log(`[Slug Lookup v3] Success! Rendering event: ${event.name} (${event._id}) — ${event.images?.length ?? 0} img, ${event.videos?.length ?? 0} vid`)
 
 		// Public events pending admin approval are hidden from everyone except their
 		// owner/admin — anyone else opening a shared link sees a friendly "not yet
