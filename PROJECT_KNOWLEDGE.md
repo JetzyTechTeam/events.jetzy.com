@@ -461,8 +461,8 @@ Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** �
 | | Test | Live |
 |---|---|---|
 | Premium product | `prod_Uxn2R9FQd5F3sp` | `prod_UzMR33CL777c3R` |
-| Premium $20/mo — product default | `price_1U16eYB7XccR5GE0AdABnPwO` | *(the $20/mo price)* |
-| Premium $200/yr | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | *(created; id not yet recorded)* |
+| Premium $20/mo — product default | `price_1U16eYB7XccR5GE0AdABnPwO` | `price_1U16VVB7XccR5GE08PIyF8i7` |
+| Premium $200/yr | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | `price_1U3KGWB7XccR5GE0h8qqEOtm` |
 | Concierge product | `prod_UjabUJ9OXWhLPJ` | `prod_UlQTOgXS73TAEV` |
 | Concierge $59.50/mo | `price_1Tk7QPB7XccR5GE0ZxMClLxs` | — |
 
