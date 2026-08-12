@@ -61,6 +61,9 @@ type SessionMetadata = {
 	/** "ticket+membership" on a bundled order; the account the memberships attach to. */
 	purpose?: string
 	membershipUserId?: string
+	bookerUserId?: string
+	/** The Users account behind the checkout email — set whether or not the buyer was logged in. */
+	checkoutUserId?: string
 	/** JSON `[{ key, amount, currency, priceId, interval }]` — what was charged for. */
 	memberships?: string
 	/** @deprecated Pre-Concierge single-product metadata; still read for in-flight sessions. */
@@ -330,6 +333,8 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			// Present only when the buyer was logged in at checkout. Bookings made before this
 			// was carried through the metadata have none and resolve by email instead.
 			...(metadata.bookerUserId ? { bookerUserId: metadata.bookerUserId } : {}),
+			// The checkout email's account, logged in or not — see `checkoutUserId` on IBookings.
+			...(metadata.checkoutUserId ? { checkoutUserId: metadata.checkoutUserId } : {}),
 			customerName: `${metadata.firstName || ""} ${metadata.lastName || ""}`.trim(),
 			customerEmail: metadata.email,
 			customerPhone: metadata.phone,
@@ -453,11 +458,12 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	await booking.updateEventTracker()
 	await incrementReferralUsage(metadata.referralCode)
 
-	// Logged-in buyers are added to the event's joined members. Guest checkouts have no
-	// account to attach membership to, so `bookerUserId` is the gate.
-	if (booking.bookerUserId) {
+	// Add the buyer as an event member — `checkoutUserId` covers guests too (their Users
+	// account is created at checkout), `bookerUserId` is the fallback for older sessions.
+	const memberUserId = booking.checkoutUserId || booking.bookerUserId
+	if (memberUserId) {
 		try {
-			await addEventMember(booking.eventId, booking.bookerUserId)
+			await addEventMember(booking.eventId, memberUserId)
 		} catch (error) {
 			console.error("[checkout-fulfillment] Failed to add event participant:", error)
 		}

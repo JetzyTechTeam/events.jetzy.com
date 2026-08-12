@@ -275,11 +275,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	await booking.save()
 	await booking.updateEventTracker()
 
-	// Logged-in buyers are added to the event's joined members. Guest checkouts have no
-	// account to attach membership to, so `bookerUserId` is the gate.
-	if (booking.bookerUserId) {
+	// Add the buyer as an event member — `checkoutUserId` covers guests too (their Users
+	// account is created at checkout), `bookerUserId` is the fallback for older sessions.
+	const memberUserId = booking.checkoutUserId || booking.bookerUserId
+	if (memberUserId) {
 		try {
-			await addEventMember(booking.eventId, booking.bookerUserId)
+			await addEventMember(booking.eventId, memberUserId)
 		} catch (error) {
 			console.error("[bookings/approve] Failed to add event participant:", error)
 		}

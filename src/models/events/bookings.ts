@@ -101,6 +101,11 @@ const bookingSchema = new Schema<IBookings>(
 			required: false,
 			index: true,
 		},
+		checkoutUserId: {
+			type: Schema.Types.ObjectId,
+			required: false,
+			index: true,
+		},
 		tickets: [
 			{
 				ticketId: {

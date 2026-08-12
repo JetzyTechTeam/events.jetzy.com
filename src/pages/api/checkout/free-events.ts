@@ -99,9 +99,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const acceptedTermsAt = new Date()
 
-		// Create or update user profile
+		// Create or update user profile. Resolves (or creates) the Users account behind the
+		// checkout email regardless of login state, so a guest checkout still has an account
+		// to add as an event member below — `bookerUserId` further down only ever carries the
+		// logged-in session's own id, which is unset for guests.
+		let checkoutUserId: string | undefined
 		try {
-			await createOrUpdateUser({
+			const createdUser = await createOrUpdateUser({
 				firstName: user.firstName,
 				lastName: user.lastName,
 				email: user.email,
@@ -110,6 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				acceptedTerms: true,
 				acceptedTermsAt,
 			})
+			if (createdUser?.userId) checkoutUserId = String(createdUser.userId)
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
 			console.error("Error creating user:", errorMessage)
@@ -218,6 +223,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			eventId,
 			bookingRef,
 			...(bookerUserId ? { bookerUserId } : {}),
+			...(checkoutUserId ? { checkoutUserId } : {}),
 			customerName: `${user.firstName} ${user.lastName}`,
 			customerEmail: user.email,
 			customerPhone: user.phone,
@@ -287,11 +293,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// a use against $0 tickets, where it discounted nothing.
 		if (discountsDidWork) await incrementReferralUsage(referralCodeData?.code)
 
-		// Logged-in buyers are added to the event's joined members. Guest checkouts have no
-		// account to attach membership to, so `bookerUserId` is the gate.
-		if (bookerUserId) {
+		// Add the attendee as an event member — `checkoutUserId` covers guests too (their
+		// Users account is created above), `bookerUserId` is the fallback for older sessions.
+		const memberUserId = checkoutUserId || bookerUserId
+		if (memberUserId) {
 			try {
-				await addEventMember(booking.eventId, bookerUserId)
+				await addEventMember(booking.eventId, memberUserId)
 			} catch (error) {
 				console.error("[checkout/free-events] Failed to add event participant:", error)
 			}

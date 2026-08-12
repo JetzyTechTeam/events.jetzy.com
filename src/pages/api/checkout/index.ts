@@ -130,8 +130,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const acceptedTermsAt = new Date()
 
 		// create jetzy user
+		// Resolves (or creates) the Users account behind the CHECKOUT EMAIL, independent of
+		// whether anyone is logged in. Carried into Stripe metadata as `checkoutUserId` so a
+		// guest checkout still ends up as an event member — `bookerUserId` below only ever
+		// carries the logged-in session's own id, which is unset for guests.
+		let checkoutUserId: string | undefined
 		try {
-			await createOrUpdateUser({
+			const createdUser = await createOrUpdateUser({
 				firstName: user.firstName,
 				lastName: user.lastName,
 				email: user.email,
@@ -140,6 +145,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				acceptedTerms: true,
 				acceptedTermsAt,
 			})
+			if (createdUser?.userId) checkoutUserId = String(createdUser.userId)
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
 			console.error("[checkout/index] Error creating user profile:", errorMessage)
@@ -418,6 +424,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			bookingRef,
 			requiresApproval: requiresApproval ? "true" : "false",
 			...(buyerId ? { bookerUserId: String(buyerId) } : {}),
+			...(checkoutUserId ? { checkoutUserId } : {}),
 		}
 
 		if (referralCodeData) {
