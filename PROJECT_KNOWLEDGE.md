@@ -454,6 +454,50 @@ rounded away from what the card is actually billed.
 `pricingFromBooking` can still itemise bookings made while the discount existed. Never pass it
 for a new order.
 
+### Stripe product and price ids
+
+Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** — `findActiveSubscriptionForProduct` matches `item.price.product`, and `subscriptionMembershipKey` walks the same field. Every plan of a membership therefore has to be a **price on the same product**; a separate product is invisible to eligibility, to the webhook's product routing, and to the pre-create dedupe, and the member gets billed a second time on their next bundled ticket.
+
+| | Test | Live |
+|---|---|---|
+| Premium product | `prod_Uxn2R9FQd5F3sp` | `prod_UzMR33CL777c3R` |
+| Premium $20/mo — product default | `price_1U16eYB7XccR5GE0AdABnPwO` | *(the $20/mo price)* |
+| Premium $200/yr | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | *(created; id not yet recorded)* |
+| Concierge product | `prod_UjabUJ9OXWhLPJ` | `prod_UlQTOgXS73TAEV` |
+| Concierge $59.50/mo | `price_1Tk7QPB7XccR5GE0ZxMClLxs` | — |
+
+- Test and live product ids share no resemblance. Never derive one from the other.
+- **`default_price` must stay on the monthly price.** [api/subscriptions/plan.ts](src/pages/api/subscriptions/plan.ts) returns only `default_price`, and that figure is the recurring disclosure on every bundled ticket. Repointing it to annual would quote $200/yr on a $60 ticket.
+- Adding the annual **price** needed no code change here: product-scoped detection picked it up, and `startMembershipSubscription` already derives the trial as `dayjs().add(1, interval)`, so an annual subscription gets a one-year trial rather than a month. Offering annual in our own UI does need work — the plan endpoint must list prices instead of reading `default_price`.
+- The `productId` fallback in [memberships.ts](src/lib/memberships.ts) is a **test** id despite the comment claiming production. Inert only because production sets the env var.
+- Premium carries a legacy `$10/mo` price predating the $20 one — 16 subscriptions in test, **zero in live**. Nothing selects it; detection is by product so those members still read as Premium.
+
+**Known gap — SelectMember's Concierge Annual is a separate product** (`prod_Ujacr6ekzXDpo1`), and its price is misconfigured to bill $595 *monthly*. We never reference it, so it can't be sold through ticketing — but annual Concierge subscribers cannot be found by product lookup. The only signal is their `/status` API, and `heldMemberships` currently accepts any `status: "active"` **without checking `plan`**, which would also read a $4.95 hotels-only member as holding Full Concierge and hand it to them free. Blocked on their response contract; do not enable Concierge on ticket types until resolved.
+
+### Plan switching is the Stripe Billing Portal's job — there is deliberately no code for it
+
+Premium sells monthly ($20) and annual ($200). **Neither this app nor selectmember.jetzy.com implements switching between them.** Both sell the two plans to *new* subscribers and send existing members to the portal (`/manage-membership` → `POST /api/subscriptions/portal`). Two systems writing their own proration logic against one shared Stripe account would produce different answers to the same request, and the errors land in money that this system cannot refund.
+
+Portal configuration, per environment (test config `bpc_1LsNj0B7XccR5GE0wle5UYCH`):
+
+- `subscription_update.enabled: true`, `default_allowed_updates: ["price"]` — price only, never quantity
+- `proration_behavior: "always_invoice"` — an upgrade bills the difference **today**. `create_prorations` would merely record it and wait for the next invoice, which on an annual plan is a year away.
+- `schedule_at_period_end.conditions: [decreasing_item_amount, shortening_interval]` — both downgrade shapes wait for period end. Annual→monthly trips both.
+- Switchable prices are scoped to `$20/mo` + `$200/yr` only. The legacy `$10/mo` price is deliberately excluded, or any member could downgrade themselves onto it.
+- `subscription_cancel.mode: "at_period_end"`
+
+**Verified end-to-end in test (2026-08-12), both directions, with no code changes here:**
+
+- **Upgrade** monthly→annual: the subscription **id was unchanged** — the portal updates in place, so there is exactly one subscription and no double billing. $200 less the unused month = $182.63 invoiced immediately, anniversary moved a year out. `customer.subscription.updated` fired, `subscriptionMembershipKey` resolved it off the product id, and `premiumSubscription` updated itself.
+- **Downgrade** annual→monthly: Stripe attached a subscription schedule (phase 0 annual → phase 1 monthly at period end). Nothing charged or credited. Critically **`cancel_at_period_end` stayed `false`** on both sides — the webhook detects cancellation as a transition of that flag, so a scheduled downgrade could have wrongly emailed "membership cancelled". It doesn't.
+
+**Two known gaps for when the Monthly/Annual UI is built here:**
+
+1. The webhook records status, `active`, `cancelAtPeriodEnd`, period end and ids — **not the interval or price id**. Mongo alone cannot say whether a member is monthly or annual; that needs storing at write time or fetching from Stripe.
+2. Nothing records a *pending* scheduled downgrade, so between the request and the period end our record shows the old plan with no hint a change is queued.
+
+Also note Stripe Adaptive Pricing converts for non-USD customers — the test member was charged PKR against a USD price. Our disclosure quotes the USD figure, which is what the price is denominated in; Stripe adds its own "charges can vary based on exchange rates" line.
+
 ### Second membership: Full Concierge (selectmember.jetzy.com)
 
 A ticket can sell **Jetzy Premium**, **Full Concierge Membership** ($59.50/mo), or **both**.
@@ -779,6 +823,18 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 - `event.desc` is **Quill rich-text HTML**. Never put it in a `<meta>` raw — Apple/iMessage renders `og:description` literally and the card shows `<p><br></p>…`. Always run it through `toMetaDescription()` (`src/utils/text.ts`), which inserts spaces at block boundaries, strips tags, decodes entities, collapses whitespace and truncates to 200 chars on a word boundary.
 - `og:image` is always emitted: `images[0]` normalized to absolute, falling back to `${NEXT_PUBLIC_URL}/imgs/logo.png` when the event has no images. `og:url` uses `slug || _id`. `og:type` is `website` (`event` is not a valid OG type).
 - Previews are cached per-URL by iMessage/Facebook — re-scrape via the Facebook Sharing Debugger or test with a `?v=2` suffix before assuming a fix did not land.
+
+### Event banner media
+
+[src/lib/event-media.ts](src/lib/event-media.ts) is the single answer to "what does this event's banner show". `eventMedia(event)` returns `{url, type}[]` — images first, then videos. `normalizeEventMediaFields(source)` returns the cleaned arrays for normalising a payload before it becomes page props. **Never rebuild either inline**, or the slide count and the "No image available" placeholder will disagree.
+
+The banner renders from three sources and only one of them is schema-checked: the Mongo document, the **external v2 API** (`?external=true&token=` in [src/pages/[slug].tsx](src/pages/[slug].tsx), which used to hand `externalData.data` to the page raw), and the mobile app's own writes to the shared collection. A bare string, a `null` entry or `""` all reached the banner and rendered as `<img src="">` or made a populated event look empty. `normalizeExternalEvent` in `[slug].tsx` now guarantees `images`/`videos` exist as string arrays, filling from the app's alternate keys (`image`, `photos`, `imageUrls`, `media`) before giving up.
+
+**"No image available" and "Image couldn't load" are different faults and must stay worded differently.** The first means the event data carried no media; the second is a per-item `onError` in [HostedEvents.tsx](src/components/HostedEvents.tsx) meaning the url was there but the fetch failed. They used to be indistinguishable, so a screenshot could not tell stripped props from a dead S3 object — which cost a full production investigation (CEO report, 2026-08-12: event `Picnic` showed the placeholder on iOS Chrome while the DB, the server props and both S3 objects were all verified fine).
+
+`[slug].tsx` logs the media count on every successful render, so the next such report resolves from server logs without needing the visitor's entry URL.
+
+`clonedEvent` uses `structuredClone` with a `JSON.parse(JSON.stringify(...))` fallback. `structuredClone` is iOS 15.4+; without the fallback an older device threw into the `catch`, got `null`, and rendered **"Event Not Found"** for a perfectly valid event. The props are already JSON-derived, so the cheap clone is exact.
 
 ### Ticket revenue — never `quantity × list price`
 
