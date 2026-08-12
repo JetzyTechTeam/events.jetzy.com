@@ -11,6 +11,7 @@ import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } 
 import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
+import { addEventMember } from "@/utils/eventMembership"
 
 /**
  * Turns a completed Stripe Checkout Session into a Booking.
@@ -451,6 +452,16 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	// ---- Immediate-payment branch ----
 	await booking.updateEventTracker()
 	await incrementReferralUsage(metadata.referralCode)
+
+	// Logged-in buyers are added to the event's joined members. Guest checkouts have no
+	// account to attach membership to, so `bookerUserId` is the gate.
+	if (booking.bookerUserId) {
+		try {
+			await addEventMember(booking.eventId, booking.bookerUserId)
+		} catch (error) {
+			console.error("[checkout-fulfillment] Failed to add event participant:", error)
+		}
+	}
 
 	// ---- Start the memberships this charge paid for ----
 	//

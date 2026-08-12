@@ -18,6 +18,7 @@ import { Events } from "@/models/events"
 import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
+import { addEventMember } from "@/utils/eventMembership"
 
 type BodyParams = {
 	tickets: Array<{
@@ -285,6 +286,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// latch belongs to `bookings/approve.ts`, same as the Stripe path. Nor may a code burn
 		// a use against $0 tickets, where it discounted nothing.
 		if (discountsDidWork) await incrementReferralUsage(referralCodeData?.code)
+
+		// Logged-in buyers are added to the event's joined members. Guest checkouts have no
+		// account to attach membership to, so `bookerUserId` is the gate.
+		if (bookerUserId) {
+			try {
+				await addEventMember(booking.eventId, bookerUserId)
+			} catch (error) {
+				console.error("[checkout/free-events] Failed to add event participant:", error)
+			}
+		}
 
 		// Send confirmation email
 		try {

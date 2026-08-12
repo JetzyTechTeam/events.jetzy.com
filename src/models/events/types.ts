@@ -238,6 +238,11 @@ export interface IEventTracker extends IBaseModelProps {
 	eventCapacity: number
 }
 
+export interface IEventParticipants extends IBaseModelProps {
+	event: Types.ObjectId
+	participants: Types.ObjectId[]
+}
+
 export interface IReferralCode extends IBaseModelProps {
 	eventId: Types.ObjectId
 	code: string

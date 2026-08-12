@@ -17,6 +17,7 @@ import { heldMemberships } from "@/lib/premium-eligibility"
 import { MEMBERSHIPS } from "@/lib/memberships"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { startMembershipSubscription } from "@/lib/membership-subscriptions"
+import { addEventMember } from "@/utils/eventMembership"
 import Stripe from "stripe"
 import zod from "zod"
 
@@ -273,6 +274,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	booking.status = BookingStatus.CONFIRMED
 	await booking.save()
 	await booking.updateEventTracker()
+
+	// Logged-in buyers are added to the event's joined members. Guest checkouts have no
+	// account to attach membership to, so `bookerUserId` is the gate.
+	if (booking.bookerUserId) {
+		try {
+			await addEventMember(booking.eventId, booking.bookerUserId)
+		} catch (error) {
+			console.error("[bookings/approve] Failed to add event participant:", error)
+		}
+	}
 
 	// Referral usage was deliberately deferred from checkout so declined requests don't
 	// burn a limited-use code. Now that the booking is real, count it.
