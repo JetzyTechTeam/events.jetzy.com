@@ -64,6 +64,87 @@ export const getUserStripeCustomerId = (doc: any): string | undefined =>
 	doc?.conciergeSubscription?.stripeCustomerId ||
 	undefined
 
+/** Escape a user-supplied string for safe use inside a RegExp — same reason as booking-identity.ts. */
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/**
+ * Last resort when a Stripe Customer isn't linked to anyone yet: ask Stripe for the
+ * customer's email and match it against our accounts.
+ *
+ * This is the NORMAL case for a subscription created outside this app — selectmember.jetzy.com
+ * sells Jetzy Premium against the same Stripe account, and the customer it creates has never
+ * paid us, so no document carries that id. Without this the webhook fires, finds nobody, and
+ * the member is charged while their membership never activates.
+ *
+ * It PERSISTS the link on success, which is the point. `customer.subscription.updated` writes
+ * only the membership sub-document — not the customer id — so nothing else would ever record
+ * it: the lookup would fall back to Stripe on every future event, and `getUserStripeCustomerId`
+ * would still return nothing, leaving the member unable to open the billing portal.
+ *
+ * Email matching is inherently weaker than an id: whoever creates the Stripe Customer must put
+ * the address the person signed up with. A mismatch attaches the subscription to the wrong
+ * account rather than to none, so both outcomes are logged loudly.
+ */
+async function linkStripeCustomerByEmail(customerId: string): Promise<{ model: any; doc: any } | null> {
+	if (!customerId) return null
+
+	let email: string | undefined
+	try {
+		const customer = await getStripeClient().customers.retrieve(customerId)
+		// A deleted customer has no email and nothing worth linking.
+		if ((customer as Stripe.DeletedCustomer).deleted) return null
+		email = (customer as Stripe.Customer).email?.trim() || undefined
+	} catch (error: any) {
+		// Never throw from here — this runs inside webhook handlers, and a Stripe blip must not
+		// turn into a failed delivery that Stripe then retries.
+		console.error("[membership] Could not retrieve Stripe customer for email fallback:", customerId, error?.message || error)
+		return null
+	}
+
+	if (!email) {
+		console.warn("[membership] Stripe customer has no email, cannot link:", customerId)
+		return null
+	}
+
+	const { Users } = await import("@/models/userModal")
+	const { EventUsers } = await import("@/models/eventUsersModal")
+
+	// Case-insensitive by necessity: neither collection declares `lowercase: true` on `email`,
+	// so someone who signed up as `Fahad@Example.com` is invisible to an exact match. Both
+	// collections, because an account created through this app's own auth flow lives in
+	// `EventUsers` and is just as billing-capable.
+	const match = { email: { $regex: `^${escapeRegex(email)}$`, $options: "i" } }
+	let model: any = Users
+	let doc = await Users.findOne(match)
+	if (!doc) {
+		model = EventUsers
+		doc = await EventUsers.findOne(match)
+	}
+
+	if (!doc) {
+		console.warn("[membership] No Jetzy account matches Stripe customer email — membership cannot activate:", { customerId, email })
+		return null
+	}
+
+	const existing = doc.stripeCustomerId
+	if (!existing) {
+		await model.findByIdAndUpdate(doc._id, { $set: { stripeCustomerId: customerId } })
+		doc.stripeCustomerId = customerId
+		console.log("[membership] Linked Stripe customer to account by email:", { customerId, email })
+	} else if (existing !== customerId) {
+		// Two Stripe Customers for one person. Deliberately NOT overwritten — the stored id
+		// belongs to their other subscription, and replacing it would orphan that one's future
+		// events. Surfaced so the duplicate can be merged in Stripe.
+		console.warn("[membership] Account already has a different Stripe customer; not overwriting:", {
+			email,
+			stored: existing,
+			incoming: customerId,
+		})
+	}
+
+	return { model, doc }
+}
+
 export async function findUserByStripeCustomerId(customerId: string): Promise<{ model: any; doc: any } | null> {
 	const { Users } = await import("@/models/userModal")
 	const { EventUsers } = await import("@/models/eventUsersModal")
@@ -84,7 +165,9 @@ export async function findUserByStripeCustomerId(customerId: string): Promise<{ 
 	doc = await EventUsers.findOne(query)
 	if (doc) return { model: EventUsers, doc }
 
-	return null
+	// Nothing carries this id. Either it is a customer we created and never linked, or one
+	// created by another Jetzy surface against the shared Stripe account.
+	return linkStripeCustomerByEmail(customerId)
 }
 
 /**

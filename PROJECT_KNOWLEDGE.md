@@ -474,6 +474,20 @@ Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** �
 
 **Known gap — SelectMember's Concierge Annual is a separate product** (`prod_Ujacr6ekzXDpo1`), and its price is misconfigured to bill $595 *monthly*. We never reference it, so it can't be sold through ticketing — but annual Concierge subscribers cannot be found by product lookup. The only signal is their `/status` API, and `heldMemberships` currently accepts any `status: "active"` **without checking `plan`**, which would also read a $4.95 hotels-only member as holding Full Concierge and hand it to them free. Blocked on their response contract; do not enable Concierge on ticket types until resolved.
 
+### Linking a Stripe Customer to an account — id first, email as the fallback
+
+`findUserByStripeCustomerId` ([src/lib/premium.ts](src/lib/premium.ts)) resolves by `stripeCustomerId` across both collections and both the root and nested paths, and **falls back to matching the Stripe Customer's email** when no document carries that id.
+
+The fallback is not an edge case — it is the normal path for any subscription created outside this app. selectmember.jetzy.com sells Jetzy Premium against the same Stripe account, and the Customer it creates has never paid us, so nothing here knows the id. Without the fallback the webhook fires, finds nobody, and the member is charged while their membership never activates.
+
+**It persists the link, and that is the point.** `customer.subscription.updated` writes only the membership sub-document — `active`, `status`, `currentPeriodEnd`, `cancelAtPeriodEnd` — and **not** the customer id. Nothing else would ever record it, so the lookup would hit Stripe on every future event and `getUserStripeCustomerId` would still return nothing, leaving the member unable to open the billing portal.
+
+- **Both collections.** 42 accounts in staging exist only in `EventUsers`; a `Users`-only resolver never links them. `EventUsers` carries the same billing fields as `Users` (root `stripeCustomerId`, `premiumSubscription`, `conciergeSubscription`).
+- **Case-insensitive.** Neither collection declares `lowercase: true` on `email` — the same trap as `Bookings.customerEmail`.
+- **A different stored id is never overwritten.** Two Stripe Customers for one person means the stored id belongs to their other subscription; replacing it would orphan that one's future events. Logged instead, so the duplicate can be merged in Stripe.
+- **Never throws.** It runs inside webhook handlers, where an exception becomes a failed delivery that Stripe retries.
+- Email matching is weaker than an id: whoever creates the Customer must use the address the person signed up with, or the subscription attaches to the wrong account rather than to none. Both outcomes log loudly.
+
 ### Plan switching is the Stripe Billing Portal's job — there is deliberately no code for it
 
 Premium sells monthly ($20) and annual ($200). **Neither this app nor selectmember.jetzy.com implements switching between them.** Both sell the two plans to *new* subscribers and send existing members to the portal (`/manage-membership` → `POST /api/subscriptions/portal`). Two systems writing their own proration logic against one shared Stripe account would produce different answers to the same request, and the errors land in money that this system cannot refund.
