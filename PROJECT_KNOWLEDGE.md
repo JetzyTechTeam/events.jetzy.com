@@ -1055,6 +1055,50 @@ Admin OR owner access on all check-in APIs
 
 ---
 
+## Feature: Return to the mobile app after checkout
+
+The Flutter app sends buyers here to pay. It opens the **system browser**
+(`LaunchMode.externalApplication` in `event_native_details_screen.dart`), not an in-app webview,
+so once the browser is up the app has left the foreground: there is no webview to dismiss on
+success and no way for the app to observe the outcome. The only route back is a link the OS
+routes to the app.
+
+**Deep link:** `https://jetzy.com/jetzy_event?eventId=<id>&bookingRef=<ref>&status=<status>`
+— registered on jetzy.com as a universal link / app link, and verified opening the app from a
+WhatsApp tap. Held in `NEXT_PUBLIC_APP_RETURN_URL`; mobile owns the value, web sets the variable
+(Vercel, per environment). `NEXT_PUBLIC_` is baked at build time, so **changing it needs a
+redeploy**. Unset = every buyer keeps the old "Back to Event" / "Try Again" behaviour, so the
+feature is inert until it is configured.
+
+- **Use `src/lib/app-return.ts`** — `queryMarksAppOrigin`, `rememberAppOrigin`, `cameFromApp`,
+  `buildAppReturnUrl`, `useAppOriginTracking`. Never re-derive inline.
+- **Arrival markers:** `src=app`, `external=true` (already appended by `/login` when it forwards
+  a magic-token arrival, so logged-in app buyers work with no mobile release), `app=1` (our own,
+  coming back off Stripe). Tracked in `_app.tsx` because the marker is on the visit's FIRST url
+  and is long gone by the time a checkout modal mounts.
+- **The flag rides the Stripe redirect URL, not just sessionStorage.** `api/checkout` stamps
+  `&app=1` onto `success_url` and `?app=1&eventId=` onto `cancel_url` when the client sends
+  `fromApp`. `/cancel` never sees a Stripe session, so it cannot recover the event id any other
+  way.
+- **`ReturnToAppButton` is an anchor the visitor TAPS, never an auto-redirect.** iOS will not
+  open a universal link from a JS-initiated navigation without a user gesture — it follows the
+  https URL instead, and `jetzy.com/jetzy_event` answers **404 with a marketing page**. An
+  auto-redirect would put a 404 in front of someone who just paid.
+- **`buildAppReturnUrl` returns null without an event id** — a deep link lacking one drops the
+  buyer on the app's generic feed with no sign of what they bought. Rendering the web fallback
+  is better.
+- The free path never leaves the origin, so it keeps `bookingRef` in component state and
+  **skips its 2.5s `window.location.reload()`** for app buyers — the reload would destroy the
+  return link before it could be tapped.
+- Ids on `/success` come from **Stripe session metadata** (`eventId`, `bookingRef`), the only
+  copy that survives the redirect intact.
+- **Known gap (mobile side):** the logged-out branch opens a bare `/{eventId}` with no marker,
+  indistinguishable from a Google result. Mobile should append `?src=app` to both branches.
+- The app is not known to read `bookingRef` / `status` yet — they are additive, ignored until
+  mobile ships support.
+
+---
+
 ## Key Patterns
 
 ### getServerSideProps auth
@@ -1088,6 +1132,8 @@ const events = await Events.find({ isDeleted: false, ...ownerFilter })
 
 ## Environment
 - `NEXT_PUBLIC_EXTERNAL_API_BASE_URL` — external Jetzy API for JIT user sync
+- `NEXT_PUBLIC_APP_RETURN_URL` — deep link back into the Jetzy mobile app after checkout
+  (`https://jetzy.com/jetzy_event`). Unset = feature off. See "Return to the mobile app".
 - Firebase client + admin config in `src/configs/firebase.ts` + `firebase-admin.ts`
 - Stripe keys in env
 - SendGrid API key in env

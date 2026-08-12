@@ -317,12 +317,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
 		const cleanBaseUrl = baseUrl.replace(/\/$/, '')
+		// Did this buyer arrive from the mobile app? Stripe takes the browser off-origin and
+		// back, so the answer has to travel on the redirect URL itself — sessionStorage is a
+		// best-effort second copy, not something to bet the receipt on. See `lib/app-return.ts`.
+		const fromApp = req.body?.fromApp === true || req.body?.fromApp === "true"
+		const appMarker = fromApp ? "&app=1" : ""
 		// The `approval` marker lets /success render the pending-approval variant before it
 		// has the session back from Stripe.
 		const successUrl = requiresApproval
-			? `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}&approval=1`
-			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`
-		const cancelUrl = `${cleanBaseUrl}/cancel`
+			? `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}&approval=1${appMarker}`
+			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}${appMarker}`
+		// `/cancel` never sees a Stripe session, so unlike `/success` it cannot recover the event
+		// id from metadata — it has to be handed one here or the return link has nowhere to go.
+		const cancelUrl = fromApp
+			? `${cleanBaseUrl}/cancel?app=1&eventId=${encodeURIComponent(tickets[0]?.eventId || "")}`
+			: `${cleanBaseUrl}/cancel`
 
 		// Stripe refuses any charge under $0.50 — a manual-capture hold included — and the
 		// rejection surfaces as an opaque 500 at the buyer's checkout. Catch it here with

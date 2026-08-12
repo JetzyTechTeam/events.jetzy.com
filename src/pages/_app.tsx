@@ -19,6 +19,7 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import SessionSync from "@Jetzy/components/auth/SessionSync";
 import { AnalyticsProvider } from "@/contexts/AnalyticsContext";
 import { useInAppNavigationTracking } from "@/lib/navigation";
+import { useAppOriginTracking } from "@/lib/app-return";
 
 export default function App({
   Component,
@@ -29,6 +30,10 @@ export default function App({
   // Jetzy" from "this tab opened straight onto this page". Has to live here: counting inside
   // a page would miss every navigation that happened before that page mounted.
   useInAppNavigationTracking();
+  // Remembers a mobile-app arrival for the rest of the visit, so the receipt can offer a way
+  // back into the app. Same reason as above for living here: the marker is on the visit's first
+  // URL, which is long gone by the time a checkout modal mounts.
+  useAppOriginTracking();
   return (
     <ReactQueryProvider>
       <ReduxProvider store={store}>

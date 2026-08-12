@@ -13,6 +13,8 @@ import { useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
 import { StarIcon } from "@heroicons/react/24/solid"
+import ReturnToAppButton from "./misc/ReturnToAppButton"
+import { cameFromApp } from "@/lib/app-return"
 
 /**
  * "monthly" reads better than "every month" in the billing disclosure, but the interval
@@ -37,6 +39,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const [checkoutStep, setCheckoutStep] = useState<"details" | "questions">("details")
 	const [freeRegistrationSuccess, setFreeRegistrationSuccess] = useState(false)
 	const [pendingApproval, setPendingApproval] = useState(false)
+	// The free path never leaves the origin, so unlike a Stripe purchase there is no /success
+	// page to read the reference off — it has to be kept here to name it on the way back to the app.
+	const [freeBookingRef, setFreeBookingRef] = useState<string | undefined>(undefined)
 	const [acceptedTerms, setAcceptedTerms] = useState(false)
 	// The T&C checkbox sits at the bottom of a long scrolling form, so a buyer who misses it
 	// has no idea why nothing happens. Surfaced in the PINNED header, which never scrolls away.
@@ -294,11 +299,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				})
 				const result = await response.json()
 				if (result.status) {
+					setFreeBookingRef(result.data?.bookingRef)
 					if (result.data?.pendingApproval) {
 						setPendingApproval(true)
 					} else {
 						setFreeRegistrationSuccess(true)
-						setTimeout(() => window.location.reload(), 2500)
+						// The reload refreshes remaining capacity for a buyer who is staying on the
+						// page. For one who came from the app it would destroy the return link
+						// before they could tap it, and they are not staying anyway.
+						if (!cameFromApp()) setTimeout(() => window.location.reload(), 2500)
 					}
 				} else {
 					Error("Registration Failed", result.message || "Something went wrong. Please try again.")
@@ -320,6 +329,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					customAnswers: JSON.stringify(
 						Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
 					),
+					// Stripe is about to take the browser off-origin. Sent so the server can stamp
+					// the marker onto the success/cancel URLs it comes back to — see lib/app-return.
+					fromApp: cameFromApp(),
 				} as any,
 			}),
 		).then((res: any) => {
@@ -548,12 +560,20 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										Your request to attend <strong>&quot;{event}&quot;</strong> has been submitted for approval.
 									</p>
 									<p className="text-gray-400 text-sm mb-6">The host will review your request. If approved, a confirmation email will be sent to {formData.email}.</p>
-									<button
-										onClick={() => dispatch(toggleCheckoutForm(false))}
-										className="bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
-									>
-										Close
-									</button>
+									<ReturnToAppButton
+										eventId={checkoutEventId}
+										bookingRef={freeBookingRef}
+										status="pending_approval"
+										className="inline-block bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
+										fallback={
+											<button
+												onClick={() => dispatch(toggleCheckoutForm(false))}
+												className="bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
+											>
+												Close
+											</button>
+										}
+									/>
 								</div>
 							</div>
 						) : /* Free Registration Success UI */
@@ -572,12 +592,20 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 										You have successfully registered for <strong>&quot;{event}&quot;</strong>.
 									</p>
 									<p className="text-gray-400 text-sm mb-6">A confirmation email has been sent to {formData.email}.</p>
-									<button
-										onClick={() => dispatch(toggleCheckoutForm(false))}
-										className="bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
-									>
-										Close
-									</button>
+									<ReturnToAppButton
+										eventId={checkoutEventId}
+										bookingRef={freeBookingRef}
+										status="confirmed"
+										className="inline-block bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
+										fallback={
+											<button
+												onClick={() => dispatch(toggleCheckoutForm(false))}
+												className="bg-jetzy text-black font-bold px-6 py-2 rounded-lg hover:opacity-90 transition-colors"
+											>
+												Close
+											</button>
+										}
+									/>
 								</div>
 							</div>
 						) : /* Waiting List UI */

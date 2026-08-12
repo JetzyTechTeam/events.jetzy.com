@@ -3,6 +3,7 @@ import { Error } from "@/lib/_toaster"
 import { eventPath } from "@/lib/event-slug"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import ReturnToAppButton from "@Jetzy/components/misc/ReturnToAppButton"
 import axios from "axios"
 import { useRouter } from "next/router"
 import React, { useMemo } from "react"
@@ -372,12 +373,22 @@ const CheckoutSuccessPage: React.FC = () => {
 						</div>
 					</div>
 
-					<button
-						onClick={() => router.replace(displayEvent?.slug ? eventPath(displayEvent.slug) : "/")}
-						className="mt-6 bg-[#F79432] text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
-					>
-						Back to Event
-					</button>
+					{/* Buyers who came from the mobile app are sent back into it; everyone else keeps
+					    the web event page. Both ids come from the Stripe session metadata, which is
+					    the only copy that survives the redirect intact. */}
+					<ReturnToAppButton
+						eventId={sessionData?.metadata?.eventId}
+						bookingRef={sessionData?.metadata?.bookingRef}
+						status={pendingApproval ? "pending_approval" : "confirmed"}
+						fallback={
+							<button
+								onClick={() => router.replace(displayEvent?.slug ? eventPath(displayEvent.slug) : "/")}
+								className="mt-6 bg-[#F79432] text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
+							>
+								Back to Event
+							</button>
+						}
+					/>
 				</div>
 			</div>
 		</div>
