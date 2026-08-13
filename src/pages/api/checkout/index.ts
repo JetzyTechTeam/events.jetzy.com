@@ -410,13 +410,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
+		// Only the fields fulfilment actually reads, rebuilt from the parsed rows rather than
+		// echoing back whatever the client posted.
+		//
+		// Stripe caps every metadata VALUE at 500 characters and rejects the whole session
+		// otherwise. The client's ticket rows carry the full ticket `description` — a paragraph
+		// with links on some events — plus `isSelected`, `requireApproval` and `memberships`,
+		// none of which are read here. One 598-character value took checkout down completely:
+		// the buyer saw "Sorry, something went wrong on our end" with no way through.
+		//
+		// Dropping `description` costs nothing: the client sends it under that key while
+		// `TicketMeta` declares `desc`, so it has always arrived as `undefined` and never
+		// reached the confirmation email. Fulfilment resolves it from the event document
+		// instead, exactly as `bookings/approve.ts` already does.
+		const ticketMetadata = (tickets || []).map((t: any) => ({
+			id: t.id,
+			name: t.name,
+			price: t.price,
+			quantity: t.quantity,
+		}))
+
 		// Prepare metadata
 		const metadata: Stripe.MetadataParam = {
 			firstName: user.firstName,
 			lastName: user.lastName,
 			email: user.email,
 			phone: user.phone,
-			tickets: typeof req.body.tickets === 'string' ? req.body.tickets : JSON.stringify(tickets),
+			tickets: JSON.stringify(ticketMetadata),
 			eventId: tickets[0]?.eventId || "",
 			eventDetails: JSON.stringify(eventDetails),
 			acceptedTerms: "true",
@@ -445,6 +465,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				metadata[`ans_${ans.questionId}`] = val.slice(0, 500);
 			});
 		}
+
+		// Stripe rejects the ENTIRE session if any single value exceeds 500 characters, and the
+		// buyer just sees a generic failure. Deliberately not truncated here: the structured
+		// values are JSON, and a truncated blob would parse-fail at fulfilment and produce a
+		// booking with no tickets — worse than the checkout error. Logged so an oversized field
+		// is diagnosable from the server rather than only from the buyer's screenshot.
+		Object.entries(metadata).forEach(([key, value]) => {
+			if (typeof value === "string" && value.length > 500) {
+				console.error(`[checkout/index] metadata.${key} is ${value.length} chars — Stripe allows 500 and will reject this session`)
+			}
+		})
 
 		// ---- Bundled order: one payment that buys the ticket AND the first membership period ----
 		//
