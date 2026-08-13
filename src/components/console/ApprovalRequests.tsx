@@ -27,6 +27,7 @@ import { DateTime } from "luxon"
 import { isPendingBooking, isCancelledBooking, isHoldExpired, isCaptureFailed, holdTimeRemaining } from "@/lib/booking-status"
 import { HoldExpiry, PaymentBadge } from "@/components/bookings/PaymentBadge"
 import { describeDiscount } from "@/lib/booking-revenue"
+import AnswerText from "@/components/events/AnswerText"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 
@@ -171,6 +172,12 @@ export function ApprovalRequests({
 			if (ans.answer.jobTitle) parts.push(ans.answer.jobTitle)
 			if (ans.answer.agreed !== undefined) parts.push(ans.answer.agreed ? "Agreed" : "Not agreed")
 			if (ans.answer.signature) parts.push(`Signed: ${ans.answer.signature}`)
+			// `url` and `note` come from a social-profile answer (and its opt-out note). Both
+			// were missing here while the Responses table and the guest modal showed them, so a
+			// host reviewing a request saw "—" for a question the guest had actually answered —
+			// and the profile link is often the whole basis for approving them.
+			if (ans.answer.url) parts.push(ans.answer.url)
+			if (ans.answer.note) parts.push(ans.answer.note)
 			return parts.join(" · ") || "—"
 		}
 		return String(ans.answer) || "—"
@@ -368,7 +375,7 @@ export function ApprovalRequests({
 											<Td><PaymentBadge booking={b} /></Td>
 											<Td><HoldExpiry booking={b} /></Td>
 											{eventQuestions.map((q) => (
-												<Td color="white" key={q.id}>{formatAnswer(q.id, b)}</Td>
+												<Td color="white" key={q.id} whiteSpace="normal" maxW="240px"><AnswerText value={formatAnswer(q.id, b)} /></Td>
 											))}
 											<Td color="white">{b.createdAt ? DateTime.fromISO(b.createdAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										</Tr>
