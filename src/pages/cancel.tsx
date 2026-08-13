@@ -1,8 +1,12 @@
 import { useRouter } from "next/router"
 import React from "react"
+import ReturnToAppButton from "@Jetzy/components/misc/ReturnToAppButton"
 
 const CheckoutCancelPage: React.FC = () => {
 	const router = useRouter()
+	// Stamped onto the cancel URL by `api/checkout` for mobile-app buyers only — this page has
+	// no Stripe session to recover it from.
+	const eventId = typeof router.query.eventId === "string" ? router.query.eventId : undefined
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 py-8 px-4 sm:px-6 lg:px-8">
 			{/* Main Container */}
@@ -20,13 +24,21 @@ const CheckoutCancelPage: React.FC = () => {
 					<h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-4">Payment Canceled</h1>
 					<p className="text-gray-600 mb-6">Your payment was not completed. Please try again or contact support if you need assistance.</p>
 
-					{/* Try Again Button */}
-					<button
-						onClick={() => router.push("/")}
-						className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
-					>
-						Try Again
-					</button>
+					{/* Try Again Button — or a way back into the app for buyers who arrived from it,
+					    who otherwise have no route home but the browser's back stack. */}
+					<ReturnToAppButton
+						eventId={eventId}
+						status="cancelled"
+						className="mt-6 inline-block bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
+						fallback={
+							<button
+								onClick={() => router.push("/")}
+								className="mt-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-full hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg"
+							>
+								Try Again
+							</button>
+						}
+					/>
 				</div>
 			</div>
 		</div>

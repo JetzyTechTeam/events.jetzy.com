@@ -203,6 +203,13 @@ export interface IBookings extends IBaseModelProps {
 	eventId: Types.ObjectId
 	event: IEvent
 	bookerUserId?: Types.ObjectId
+	/**
+	 * The Users account behind the CHECKOUT EMAIL, whether or not the buyer was logged in.
+	 * `createOrUpdateUser` runs on every checkout and always resolves (or creates) this
+	 * account, so unlike `bookerUserId` — which is only ever the logged-in session's own id —
+	 * this is present for guest checkouts too. Used to add the attendee as an event member.
+	 */
+	checkoutUserId?: Types.ObjectId
 	tickets: Array<{
 		ticketId: Types.ObjectId
 		quantity: number
@@ -236,6 +243,11 @@ export interface IEventTracker extends IBaseModelProps {
 	eventId: Types.ObjectId
 	bookedTickets: number
 	eventCapacity: number
+}
+
+export interface IEventParticipants extends IBaseModelProps {
+	event: Types.ObjectId
+	participants: Types.ObjectId[]
 }
 
 export interface IReferralCode extends IBaseModelProps {

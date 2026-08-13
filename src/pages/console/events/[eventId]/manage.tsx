@@ -80,6 +80,7 @@ import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
 import RichTextEditor from "@/components/misc/RichTextEditor"
 import EventDescription from "@/components/events/EventDescription"
+import AnswerText from "@/components/events/AnswerText"
 import InterestsSelector from "@/components/events/InterestsSelector"
 import MediaUploadSection from "@/components/media-upload-section"
 import TimezoneSelect from "@/components/timezone-select"
@@ -3256,7 +3257,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 											{eventQuestions.map((q: any) => (
 												<Box key={q.id} bg="#2A2A2A" rounded="lg" px={4} py={3}>
 													<Text fontSize="sm" color="#F79432" fontWeight="semibold" mb={1}>{q.title}{q.isRequired ? ' *' : ''}</Text>
-													<Text fontSize="sm" color="white">{formatAnswer(q.id, selectedGuest.booking)}</Text>
+													<Text fontSize="sm" color="white"><AnswerText value={formatAnswer(q.id, selectedGuest.booking)} /></Text>
 												</Box>
 											))}
 										</Flex>
@@ -3333,7 +3334,7 @@ function ResponsesList({ eventId, event }: { eventId: string; event?: any }) {
 								<Td color="white" whiteSpace="nowrap">{booking.customerName || '—'}</Td>
 								<Td color="white" whiteSpace="nowrap">{booking.customerEmail || '—'}</Td>
 								{questions.map((q: any) => (
-									<Td key={q.id} color="white" whiteSpace="normal" maxW="260px">{formatAnswer(q.id, booking)}</Td>
+									<Td key={q.id} color="white" whiteSpace="normal" maxW="260px"><AnswerText value={formatAnswer(q.id, booking)} /></Td>
 								))}
 							</Tr>
 						))}

@@ -461,8 +461,8 @@ Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** �
 | | Test | Live |
 |---|---|---|
 | Premium product | `prod_Uxn2R9FQd5F3sp` | `prod_UzMR33CL777c3R` |
-| Premium $20/mo — product default | `price_1U16eYB7XccR5GE0AdABnPwO` | *(the $20/mo price)* |
-| Premium $200/yr | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | *(created; id not yet recorded)* |
+| Premium $20/mo — product default | `price_1U16eYB7XccR5GE0AdABnPwO` | `price_1U16VVB7XccR5GE08PIyF8i7` |
+| Premium $200/yr | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | `price_1U3KGWB7XccR5GE0h8qqEOtm` |
 | Concierge product | `prod_UjabUJ9OXWhLPJ` | `prod_UlQTOgXS73TAEV` |
 | Concierge $59.50/mo | `price_1Tk7QPB7XccR5GE0ZxMClLxs` | — |
 
@@ -473,6 +473,20 @@ Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** �
 - Premium carries a legacy `$10/mo` price predating the $20 one — 16 subscriptions in test, **zero in live**. Nothing selects it; detection is by product so those members still read as Premium.
 
 **Known gap — SelectMember's Concierge Annual is a separate product** (`prod_Ujacr6ekzXDpo1`), and its price is misconfigured to bill $595 *monthly*. We never reference it, so it can't be sold through ticketing — but annual Concierge subscribers cannot be found by product lookup. The only signal is their `/status` API, and `heldMemberships` currently accepts any `status: "active"` **without checking `plan`**, which would also read a $4.95 hotels-only member as holding Full Concierge and hand it to them free. Blocked on their response contract; do not enable Concierge on ticket types until resolved.
+
+### Linking a Stripe Customer to an account — id first, email as the fallback
+
+`findUserByStripeCustomerId` ([src/lib/premium.ts](src/lib/premium.ts)) resolves by `stripeCustomerId` across both collections and both the root and nested paths, and **falls back to matching the Stripe Customer's email** when no document carries that id.
+
+The fallback is not an edge case — it is the normal path for any subscription created outside this app. selectmember.jetzy.com sells Jetzy Premium against the same Stripe account, and the Customer it creates has never paid us, so nothing here knows the id. Without the fallback the webhook fires, finds nobody, and the member is charged while their membership never activates.
+
+**It persists the link, and that is the point.** `customer.subscription.updated` writes only the membership sub-document — `active`, `status`, `currentPeriodEnd`, `cancelAtPeriodEnd` — and **not** the customer id. Nothing else would ever record it, so the lookup would hit Stripe on every future event and `getUserStripeCustomerId` would still return nothing, leaving the member unable to open the billing portal.
+
+- **Both collections.** 42 accounts in staging exist only in `EventUsers`; a `Users`-only resolver never links them. `EventUsers` carries the same billing fields as `Users` (root `stripeCustomerId`, `premiumSubscription`, `conciergeSubscription`).
+- **Case-insensitive.** Neither collection declares `lowercase: true` on `email` — the same trap as `Bookings.customerEmail`.
+- **A different stored id is never overwritten.** Two Stripe Customers for one person means the stored id belongs to their other subscription; replacing it would orphan that one's future events. Logged instead, so the duplicate can be merged in Stripe.
+- **Never throws.** It runs inside webhook handlers, where an exception becomes a failed delivery that Stripe retries.
+- Email matching is weaker than an id: whoever creates the Customer must use the address the person signed up with, or the subscription attaches to the wrong account rather than to none. Both outcomes log loudly.
 
 ### Plan switching is the Stripe Billing Portal's job — there is deliberately no code for it
 
@@ -1055,6 +1069,50 @@ Admin OR owner access on all check-in APIs
 
 ---
 
+## Feature: Return to the mobile app after checkout
+
+The Flutter app sends buyers here to pay. It opens the **system browser**
+(`LaunchMode.externalApplication` in `event_native_details_screen.dart`), not an in-app webview,
+so once the browser is up the app has left the foreground: there is no webview to dismiss on
+success and no way for the app to observe the outcome. The only route back is a link the OS
+routes to the app.
+
+**Deep link:** `https://jetzy.com/jetzy_event?eventId=<id>&bookingRef=<ref>&status=<status>`
+— registered on jetzy.com as a universal link / app link, and verified opening the app from a
+WhatsApp tap. Held in `NEXT_PUBLIC_APP_RETURN_URL`; mobile owns the value, web sets the variable
+(Vercel, per environment). `NEXT_PUBLIC_` is baked at build time, so **changing it needs a
+redeploy**. Unset = every buyer keeps the old "Back to Event" / "Try Again" behaviour, so the
+feature is inert until it is configured.
+
+- **Use `src/lib/app-return.ts`** — `queryMarksAppOrigin`, `rememberAppOrigin`, `cameFromApp`,
+  `buildAppReturnUrl`, `useAppOriginTracking`. Never re-derive inline.
+- **Arrival markers:** `src=app`, `external=true` (already appended by `/login` when it forwards
+  a magic-token arrival, so logged-in app buyers work with no mobile release), `app=1` (our own,
+  coming back off Stripe). Tracked in `_app.tsx` because the marker is on the visit's FIRST url
+  and is long gone by the time a checkout modal mounts.
+- **The flag rides the Stripe redirect URL, not just sessionStorage.** `api/checkout` stamps
+  `&app=1` onto `success_url` and `?app=1&eventId=` onto `cancel_url` when the client sends
+  `fromApp`. `/cancel` never sees a Stripe session, so it cannot recover the event id any other
+  way.
+- **`ReturnToAppButton` is an anchor the visitor TAPS, never an auto-redirect.** iOS will not
+  open a universal link from a JS-initiated navigation without a user gesture — it follows the
+  https URL instead, and `jetzy.com/jetzy_event` answers **404 with a marketing page**. An
+  auto-redirect would put a 404 in front of someone who just paid.
+- **`buildAppReturnUrl` returns null without an event id** — a deep link lacking one drops the
+  buyer on the app's generic feed with no sign of what they bought. Rendering the web fallback
+  is better.
+- The free path never leaves the origin, so it keeps `bookingRef` in component state and
+  **skips its 2.5s `window.location.reload()`** for app buyers — the reload would destroy the
+  return link before it could be tapped.
+- Ids on `/success` come from **Stripe session metadata** (`eventId`, `bookingRef`), the only
+  copy that survives the redirect intact.
+- **Known gap (mobile side):** the logged-out branch opens a bare `/{eventId}` with no marker,
+  indistinguishable from a Google result. Mobile should append `?src=app` to both branches.
+- The app is not known to read `bookingRef` / `status` yet — they are additive, ignored until
+  mobile ships support.
+
+---
+
 ## Key Patterns
 
 ### getServerSideProps auth
@@ -1088,6 +1146,8 @@ const events = await Events.find({ isDeleted: false, ...ownerFilter })
 
 ## Environment
 - `NEXT_PUBLIC_EXTERNAL_API_BASE_URL` — external Jetzy API for JIT user sync
+- `NEXT_PUBLIC_APP_RETURN_URL` — deep link back into the Jetzy mobile app after checkout
+  (`https://jetzy.com/jetzy_event`). Unset = feature off. See "Return to the mobile app".
 - Firebase client + admin config in `src/configs/firebase.ts` + `firebase-admin.ts`
 - Stripe keys in env
 - SendGrid API key in env
