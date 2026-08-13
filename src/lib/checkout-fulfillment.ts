@@ -547,7 +547,21 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			lastName: metadata.lastName || "",
 			email: metadata.email || "",
 			phone: metadata.phone || "",
-			tickets: tickets.map((t) => ({ name: t.name, price: t.price, quantity: t.quantity, desc: t.desc as string })),
+			// The ticket description comes from the EVENT, not the session metadata. It used to be
+			// read off `t.desc`, which the client never sends under that name (it posts
+			// `description`), so the receipt has always shown an empty description. Carrying it
+			// through metadata is also what pushed that value past Stripe's 500-character limit
+			// and broke checkout outright, so it is no longer sent at all. Same resolution
+			// `bookings/approve.ts` uses.
+			tickets: tickets.map((t) => {
+				const eventTicket = (event as any)?.tickets?.find((row: any) => row?._id?.toString() === String(t.id))
+				return {
+					name: t.name,
+					price: t.price,
+					quantity: t.quantity,
+					desc: eventTicket?.desc || (t as any).description || t.desc || "",
+				}
+			}),
 			orderNumber: bookingRef,
 			referralCode: metadata.referralCode,
 			discountAmount: discountAmount > 0 ? discountAmount : undefined,
