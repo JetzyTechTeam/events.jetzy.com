@@ -1913,7 +1913,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
                 <p style="margin: 8px 0;"><strong>Quantity:</strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket:</strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal:</strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description:</strong> ${ticket.desc}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
               </div>
             `,
           )
