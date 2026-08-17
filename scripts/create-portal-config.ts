@@ -71,14 +71,14 @@ async function main() {
 		return
 	}
 
+	// Matches the account default's headline exactly. The ONLY difference a member should
+	// notice between the old portal and this one is the missing "Update subscription" button;
+	// a different headline would read as a different company's billing page.
+	const business_profile = { headline: "Travel the world with us." }
+
 	const config = updateId
-		? await stripe.billingPortal.configurations.update(updateId, { features })
-		: await stripe.billingPortal.configurations.create({
-				features,
-				business_profile: {
-					headline: "Jetzy partners with Stripe for simplified billing.",
-				},
-		  })
+		? await stripe.billingPortal.configurations.update(updateId, { features, business_profile })
+		: await stripe.billingPortal.configurations.create({ features, business_profile })
 
 	console.log(`${updateId ? "updated" : "created"}: ${config.id}`)
 	console.log(`  is_default              = ${config.is_default}   (must be false — we never touch the account default)`)
