@@ -167,7 +167,62 @@ export async function findUserByStripeCustomerId(customerId: string): Promise<{ 
 
 	// Nothing carries this id. Either it is a customer we created and never linked, or one
 	// created by another Jetzy surface against the shared Stripe account.
-	return linkStripeCustomerByEmail(customerId)
+	return (await linkStripeCustomerByMetadata(customerId)) || linkStripeCustomerByEmail(customerId)
+}
+
+/**
+ * The Jetzy user id stamped on the Stripe Customer itself.
+ *
+ * We have always written `metadata.userId` when creating a Customer (`resolveStripeCustomerForUser`)
+ * but never read it back. selectmember.jetzy.com now stamps the same field — on the customer and
+ * on the subscription — including a backfill for customers that predate it.
+ *
+ * Preferred over the email fallback below because it is an ID match: two accounts sharing an
+ * address, or a Stripe Customer whose email differs from the Jetzy account's, both attach a
+ * subscription to the wrong person under email matching and cannot under this.
+ *
+ * Like the email path, it persists the link so it only runs once per member, and never throws —
+ * this is reached from webhook handlers, where an exception becomes a failed delivery that
+ * Stripe then retries.
+ */
+async function linkStripeCustomerByMetadata(customerId: string): Promise<{ model: any; doc: any } | null> {
+	if (!customerId) return null
+
+	let userId: string | undefined
+	try {
+		const customer = await getStripeClient().customers.retrieve(customerId)
+		if ((customer as Stripe.DeletedCustomer).deleted) return null
+		userId = (customer as Stripe.Customer).metadata?.userId?.trim() || undefined
+	} catch (error: any) {
+		console.error("[membership] Could not retrieve Stripe customer for metadata lookup:", customerId, error?.message || error)
+		return null
+	}
+
+	if (!userId) return null
+
+	// `findUserRecord` searches both collections by _id, so an EventUsers account resolves too.
+	const record = await findUserRecord(userId).catch(() => null)
+	if (!record) {
+		console.warn("[membership] Stripe customer metadata.userId matches no account:", { customerId, userId })
+		return null
+	}
+
+	const existing = record.doc.stripeCustomerId
+	if (!existing) {
+		await record.model.findByIdAndUpdate(record.doc._id, { $set: { stripeCustomerId: customerId } })
+		record.doc.stripeCustomerId = customerId
+		console.log("[membership] Linked Stripe customer to account by metadata.userId:", { customerId, userId })
+	} else if (existing !== customerId) {
+		// Two Stripe Customers for one person. Not overwritten — the stored id belongs to their
+		// other subscription and replacing it would orphan that one's future events.
+		console.warn("[membership] Account already has a different Stripe customer; not overwriting:", {
+			userId,
+			stored: existing,
+			incoming: customerId,
+		})
+	}
+
+	return record
 }
 
 /**
