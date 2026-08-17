@@ -174,7 +174,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
           <Link
             href={`/console/events/${event._id}/update`}
             onClick={(e) => e.stopPropagation()}
-            style={{ position: "absolute", top: "16px", right: "16px", zIndex: 3 }}
+            style={{ position: "absolute", top: "16px", left: "16px", zIndex: 3 }}
           >
             <Box
               bg="#3E3E3E"
