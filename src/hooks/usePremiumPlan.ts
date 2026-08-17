@@ -91,6 +91,23 @@ const priceLabel = (dollars: number | null, interval: string): string | null =>
 		  })}/${interval}`
 		: null
 
+/**
+ * The plan's price at a given interval, for disclosing a bundled ticket sold annually.
+ *
+ * Falls back to the product default when that interval isn't on sale — Full Concierge is
+ * monthly only, and this MUST match `api/checkout`, which resolves the same way
+ * (`findMembershipPriceForInterval(...) || getMembershipPrice(...)`). A UI that quoted an
+ * annual figure the server then charged monthly would be a disclosure failure.
+ */
+export const planPriceForInterval = (
+	plan: Pick<MembershipPlan, "amount" | "interval" | "label" | "prices">,
+	interval?: string | null,
+): { amount: number | null; interval: string; label: string | null } => {
+	const match = interval ? (plan.prices || []).find((p) => p.interval === interval) : undefined
+	if (match) return { amount: match.amount, interval: match.interval, label: match.label }
+	return { amount: plan.amount, interval: plan.interval, label: plan.label }
+}
+
 const toPlan = (key: MembershipKey, data?: PremiumPlanInfo): MembershipPlan => {
 	const dollars = data?.unitAmount != null ? data.unitAmount / 100 : null
 	const interval = data?.interval || "month"

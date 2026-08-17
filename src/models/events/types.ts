@@ -15,6 +15,11 @@ export interface IEventTicket {
 	 * `ticketMemberships()` from `@/lib/premium-bundle` — never read this field directly.
 	 */
 	memberships?: MembershipKey[]
+	/**
+	 * Billing interval the bundled membership is sold at — "month" or "year". Undefined means
+	 * monthly. Resolve with `ticketMembershipInterval()`, never directly.
+	 */
+	membershipInterval?: string
 	/** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
 	includesPremium?: boolean
 	_id: Types.ObjectId

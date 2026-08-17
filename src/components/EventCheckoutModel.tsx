@@ -6,10 +6,10 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { membershipQuantityInSelection, premiumAllowanceMessage, selectionMemberships } from "@/lib/premium-bundle"
+import { membershipQuantityInSelection, premiumAllowanceMessage, selectionMemberships, selectionMembershipInterval } from "@/lib/premium-bundle"
 import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
 import { ROUTES } from "@/configs/routes"
-import { useMembershipPlans } from "@/hooks/usePremiumPlan"
+import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
 import { StarIcon } from "@heroicons/react/24/solid"
@@ -109,10 +109,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// server, the confirmation email and the success page use, so all four agree — but the
 	// server recomputes independently and stays authoritative.
 	const appliedReferralPercentage = referralCodeValid === true ? (referralCodeDiscount ?? 0) : 0
+	// The interval the SELECTED TICKET sells at, not the product default — an annual ticket
+	// must disclose $200/year here, because that is what `api/checkout` will charge.
+	const bundleInterval = selectionMembershipInterval(tickets as any)
 	const recurringPreview = chargedKeys
 		.map((key) => membershipPlans.find((plan) => plan.key === key))
-		.filter((plan): plan is NonNullable<typeof plan> => !!plan && plan.amount != null)
-		.map((plan) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: plan.amount as number, interval: plan.interval }))
+		.filter((plan): plan is NonNullable<typeof plan> => !!plan)
+		.map((plan) => ({ plan, price: planPriceForInterval(plan, bundleInterval) }))
+		.filter(({ price }) => price.amount != null)
+		.map(({ plan, price }) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: price.amount as number, interval: price.interval }))
 	const pricing = buildTicketPricing({
 		subtotal: selectionTotal,
 		referralCode: appliedReferralPercentage > 0 ? formData.referralCode?.trim().toUpperCase() : undefined,
@@ -694,11 +699,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 													    Branches on `chargedKeys`, NOT on what the ticket sells — a buyer who
 													    already has the membership is only being held for the ticket, so the
-													    "covers your first month" wording would overstate the hold. */}
+													    "covers your first month" wording would overstate the hold.
+
+													    The period follows the TICKET's interval — an annual bundle holds a
+													    full year, which is a materially larger authorization to disclose. */}
 													{selectionTotal <= 0
 														? "Your registration is subject to host approval."
 														: chargedKeys.length > 0
-															? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket and first month of ${membershipLabelList(chargedKeys)}. You are only charged and subscribed if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
+															? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket and first ${bundleInterval === "year" ? "year" : "month"} of ${membershipLabelList(chargedKeys)}. You are only charged and subscribed if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
 															: `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but only charged if the host approves. The hold is automatically released if declined or if the host doesn't respond within ${AUTH_HOLD_DAYS} days.`}
 												</p>
 											</div>

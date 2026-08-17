@@ -13,11 +13,13 @@ import {
 	PREMIUM_TICKET_MAX_PER_ORDER,
 	resolveBundlePlan,
 	selectionMemberships,
+	ticketIncludesMembership,
 	ticketMemberships,
+	ticketMembershipInterval,
 	type BundlePlan,
 } from "@/lib/premium-bundle"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
-import { getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
+import { findMembershipPriceForInterval, getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
 import { MEMBERSHIPS, membershipLabelList, type MembershipKey } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
@@ -550,11 +552,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					mode: stillOwed.length > 0 ? "bundle" : "already-member",
 				}
 
+				// The interval the HOST set on the ticket, read from the EVENT record rather than
+				// the request body — same rule as the membership flags themselves, or a crafted
+				// body could buy an annual membership at the monthly rate. Undefined means
+				// monthly, which is what every ticket saved before annual existed means.
+				const bundledTicket = tickets
+					.map((t: any) => storedTicketFor(t.id))
+					.find((t: any) => t && ticketIncludesMembership(t))
+				const bundleInterval = ticketMembershipInterval(bundledTicket as any)
+
 				for (const key of stillOwed) {
 					// A recurring price can't be a line item in payment mode, hence the inline
 					// `price_data` rather than the price id. The price id is still carried in
 					// metadata so the subscription created later uses the exact rate quoted here.
-					const price = await getMembershipPrice(key)
+					//
+					// Falls back to the product default when this membership isn't sold at the
+					// ticket's interval — Full Concierge has no annual price, and a host who set a
+					// ticket to annual meant Premium. Unlike direct checkout, where a missing
+					// interval is an error because the BUYER chose it, here the host did, and the
+					// line carries whatever price was actually resolved so the recurring
+					// disclosure and the eventual subscription both stay truthful.
+					const price =
+						(bundleInterval !== "month" ? await findMembershipPriceForInterval(key, bundleInterval) : null) ||
+						(await getMembershipPrice(key))
 					if (price.unit_amount == null) {
 						throw new Error(`${MEMBERSHIPS[key].label} price has no unit_amount and can't be charged`)
 					}

@@ -72,7 +72,7 @@ import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
 import { useSession } from "next-auth/react";
-import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle";
+import { bundleFreeTicketMessage, ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle";
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
@@ -1097,6 +1097,8 @@ const CreateEventPage = () => {
                         }
                         requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
                         price={Number(tempTicket.price)}
+                        interval={ticketMembershipInterval(tempTicket as any)}
+                        onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
                       />
                     </ModalBody>
 

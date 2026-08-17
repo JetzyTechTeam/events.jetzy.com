@@ -37,6 +37,8 @@ export type BundleTicketLike = {
 	 */
 	includesPremium?: boolean
 	memberships?: MembershipKey[] | null
+	/** Billing interval the bundled membership is sold at. Undefined means monthly. */
+	membershipInterval?: string | null
 	requireApproval?: boolean
 	price?: number | string
 	isSelected?: boolean
@@ -66,6 +68,28 @@ export const ticketMemberships = (ticket?: BundleTicketLike | null): MembershipK
 
 /** Does this specific ticket bundle any membership at all? */
 export const ticketIncludesMembership = (ticket?: BundleTicketLike | null): boolean => ticketMemberships(ticket).length > 0
+
+/**
+ * Which billing interval does this ticket sell its membership at? THE resolver — never read
+ * `membershipInterval` directly.
+ *
+ * `undefined` on the ticket means MONTHLY, which is what every ticket saved before annual
+ * existed means, so no migration is needed and no default belongs on the schema.
+ *
+ * ONE interval per ticket rather than one per membership: only Jetzy Premium is sold annually,
+ * so a per-membership map would be structure with nothing to say. A ticket set to annual that
+ * also sells Full Concierge resolves Concierge at its own default — see
+ * `findMembershipPriceForInterval`, which returns null rather than substituting, leaving that
+ * decision to the caller.
+ */
+export const ticketMembershipInterval = (ticket?: BundleTicketLike | null): string =>
+	ticket?.membershipInterval === "year" ? "year" : "month"
+
+/** Resolve by ticket id, for callers holding only an id. */
+export const ticketMembershipIntervalById = (event?: BundleEventLike | null, ticketId?: string | null): string => {
+	if (!ticketId) return "month"
+	return ticketMembershipInterval((event?.tickets || []).find((t) => idOf(t) === String(ticketId)))
+}
 
 /** @deprecated Use `ticketIncludesMembership`. */
 export const ticketIncludesPremium = ticketIncludesMembership
@@ -103,6 +127,19 @@ export const selectionMemberships = (tickets?: BundleTicketLike[] | null): Membe
 
 export const selectionIncludesPremium = (tickets?: BundleTicketLike[] | null): boolean =>
 	selectionMemberships(tickets).length > 0
+
+/**
+ * Which interval does the CURRENT selection sell its memberships at?
+ *
+ * The FIRST selected ticket that sells a membership wins — deliberately the same rule
+ * `api/checkout` uses to resolve the price, so the disclosure the buyer reads and the price
+ * their card is charged can never come from different tickets. Selection is single-select
+ * today, so the two only diverge in a hypothetical mixed cart, and even then they agree.
+ *
+ * Monthly when nothing bundled is selected.
+ */
+export const selectionMembershipInterval = (tickets?: BundleTicketLike[] | null): string =>
+	ticketMembershipInterval((tickets || []).find((t) => isLive(t) && ticketIncludesMembership(t)))
 
 /**
  * What does this order have to charge for?
@@ -161,16 +198,17 @@ export const resolveBundleMode = (tickets: BundleTicketLike[] | null | undefined
  * `EventCheckoutModel`. `AUTH_HOLD_DAYS` rather than a literal 7, because this sentence quotes
  * the deadline that `authExpiresAt` actually enforces and the two must not drift.
  */
-export const bundleApprovalNotice = (keys: MembershipKey[]): string => {
+export const bundleApprovalNotice = (keys: MembershipKey[], interval?: string | null): string => {
+	const annual = interval === "year"
 	// Premium alone is the only combination reachable while Concierge is withheld from the
 	// ticket form, so it gets the exact approved wording. Anything else has the membership
 	// named instead, so a Concierge ticket can't claim "the first month's premium".
 	const period =
 		keys.length === 1 && keys[0] === "premium"
-			? "the first month's premium"
+			? annual ? "the first year's premium" : "the first month's premium"
 			: `the first period of ${membershipLabelList(keys) || "the membership"}`
 
-	return `Payment Hold: Cards are authorized for the ticket plus ${period} at checkout, but are only charged if you approve the guest within ${AUTH_HOLD_DAYS} days; after that, the membership renews monthly.`
+	return `Payment Hold: Cards are authorized for the ticket plus ${period} at checkout, but are only charged if you approve the guest within ${AUTH_HOLD_DAYS} days; after that, the membership renews ${annual ? "yearly" : "monthly"}.`
 }
 
 /** @deprecated Premium-only wording. Use `bundleApprovalNotice`. */
