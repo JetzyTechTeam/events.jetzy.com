@@ -38,6 +38,42 @@ type Props = {
   event: IEvent;
 };
 
+/**
+ * Ticket blurb, collapsed to a few lines with a Show more toggle.
+ *
+ * Hosts paste multi-paragraph instructions (share the flyer, tag three friends, email a
+ * screenshot…) into this field. Rendered in full on a phone, one ticket filled the screen and
+ * the tickets under it were invisible without scrolling past it.
+ *
+ * The toggle stops propagation — the whole card is the selection target, so without it
+ * "Show more" would also buy the ticket.
+ */
+const TicketDescription: React.FC<{ description: string }> = ({ description }) => {
+  const [expanded, setExpanded] = useState(false);
+  // Short blurbs are shown whole — a "Show more" under two lines is noise.
+  const isLong = stripHtml(description || "").length > 140;
+
+  return (
+    <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+      <div className={!isLong || expanded ? "" : "line-clamp-3"}>
+        <EventDescription
+          description={description}
+          className="text-sm text-gray-400 [&_a]:break-all"
+        />
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-xs font-semibold text-jetzy underline underline-offset-2"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
+};
+
 const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const dispatcher = useAppDispatch();
   const { isPremium } = usePremiumStatus();
@@ -227,10 +263,10 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         id="event-tickets"
       >
         {/* Content Section */}
-        <div className="p-6 sm:p-8">
+        <div className="p-4 sm:p-8">
           {/* Header Section */}
-          <div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
-            <div className="text-center sm:text-left">
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-4 sm:mb-6 space-y-4 sm:space-y-0">
+            <div className="text-left w-full sm:w-auto">
               <h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
               <p className="text-[#bbbbbb] text-sm sm:text-base">
                 Select your tickets and proceed to checkout.
@@ -260,7 +296,7 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
           )}
 
           {/* Ticket Section */}
-          <div className="space-y-6">
+          <div className="space-y-3 sm:space-y-4">
             {tickets.map((ticket, index) => (
               <div
                 key={ticket.id}
@@ -275,14 +311,20 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   });
                 }}
               >
-                {/* Card. The checkbox now sits INSIDE it, so the whole tile reads as one
-                    target — the click handler is on the wrapper either way, so selection
-                    behaviour is unchanged. */}
-                <div className={`relative bg-[#2b2b2b] p-4 rounded-lg border-2 flex items-center gap-4 ${
-                  ticket.isSelected ? "border-jetzy" : "border-transparent"
+                {/* Card. The checkbox sits INSIDE it, so the whole tile reads as one target —
+                    the click handler is on the wrapper either way, so selection behaviour is
+                    unchanged.
+
+                    MOBILE LAYOUT: name and price share the top line (price never wraps under a
+                    long name), everything else stacks beneath in one column. The old two-column
+                    split put the price in a right-hand block that collapsed to a full-width row
+                    on a phone, so a card read title → blurb → price → stepper, with the number
+                    the buyer is looking for stranded in the middle. */}
+                <div className={`relative bg-[#2b2b2b] p-3.5 sm:p-4 rounded-xl border-2 flex items-start gap-3 sm:gap-4 transition-colors ${
+                  ticket.isSelected ? "border-jetzy bg-[#332b1f]" : "border-transparent"
                 }`}>
-                  <div className="flex-shrink-0 self-center">
-                    <div className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors border-2 ${
+                  <div className="flex-shrink-0 mt-0.5">
+                    <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-colors border-2 ${
                       ticket.isSelected ? 'bg-jetzy border-jetzy' : 'border-gray-500 bg-transparent'
                     }`}>
                       {ticket.isSelected && (
@@ -293,58 +335,66 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                     </div>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center w-full">
-                    <div className="text-left w-full sm:w-2/3">
-                      <h3 className={`font-semibold text-lg ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className={`font-semibold text-base sm:text-lg leading-snug min-w-0 break-words ${ticket.isSelected ? 'text-white' : 'text-gray-200'}`}>
                         {ticket.name}
                       </h3>
-                      {ticket.requireApproval && (
-                        <span className="inline-block mt-1 text-[10px] font-semibold uppercase tracking-wide text-[#F79432] bg-[#F79432]/15 border border-[#F79432]/40 rounded px-2 py-0.5">
-                          {Number(staticTickets[index].price) > 0
-                            ? "Approval required · card authorized, charged on approval"
-                            : "Approval required"}
-                        </span>
-                      )}
-                      <p className="text-xs text-gray-400 my-1">
-                        Select to proceed to checkout
-                      </p>
-                      {ticket.description && (
-                        <EventDescription description={ticket.description} className="text-sm text-gray-400" />
-                      )}
-                    </div>
-
-                    <div className="flex flex-col items-start sm:items-end w-full sm:w-1/3 mt-4 sm:mt-0 pt-3 sm:pt-0">
-                      <p className={`font-bold text-2xl ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
+                      <p className={`font-bold text-xl sm:text-2xl whitespace-nowrap leading-snug ${ticket.isSelected ? 'text-jetzy' : 'text-white'}`}>
                         {staticTickets[index].price.toLocaleString("en-US", {
                           style: "currency",
                           currency: "usd",
                         })}
                       </p>
+                    </div>
 
-                      {/* The membership notice that used to sit here — "+ Jetzy Premium
-                          $20/month, renews until cancelled" — was removed by decision: it is
-                          not wanted on the browse view of the ticket.
+                    {/* The long form of this pill ("card authorized, charged on approval") is
+                        three wrapped lines on a 360px screen. The short form carries the same
+                        warning; the full sentence is in the notice above the list. */}
+                    {ticket.requireApproval && (
+                      <span className="inline-block mt-2 text-[10px] font-semibold uppercase tracking-wide text-[#F79432] bg-[#F79432]/15 border border-[#F79432]/40 rounded px-2 py-0.5">
+                        Approval required
+                        {Number(staticTickets[index].price) > 0 && (
+                          <span className="hidden sm:inline"> · card authorized, charged on approval</span>
+                        )}
+                      </span>
+                    )}
 
-                          The recurring terms are STILL disclosed before purchase, in the
-                          checkout modal and the order summary. That is the point of sale and
-                          where the card-network requirement actually applies, so do not treat
-                          this removal as licence to drop them there too. */}
+                    {/* Descriptions are host-authored and often carry a raw URL, which used to
+                        push the card wider than the viewport — `break-all` on anchors only, so
+                        ordinary prose still wraps on word boundaries. Collapsed by default so a
+                        long blurb can't bury the tickets below it. */}
+                    {ticket.description && (
+                      <TicketDescription description={ticket.description} />
+                    )}
 
-                      {event.isPaid && ticket.isSelected && (
+                    {/* The membership notice that used to sit here — "+ Jetzy Premium
+                        $20/month, renews until cancelled" — was removed by decision: it is
+                        not wanted on the browse view of the ticket.
+
+                        The recurring terms are STILL disclosed before purchase, in the
+                        checkout modal and the order summary. That is the point of sale and
+                        where the card-network requirement actually applies, so do not treat
+                        this removal as licence to drop them there too. */}
+
+                    {event.isPaid && ticket.isSelected && (
+                      <div className="mt-3 flex items-center gap-3 flex-wrap">
                         <div
-                          className="flex items-center space-x-4 mt-3 text-slate-800 bg-[#1e1e1e] p-1.5 rounded-full"
+                          className="flex items-center gap-2 bg-[#1e1e1e] p-1.5 rounded-full"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <button
+                            aria-label="Decrease quantity"
                             onClick={() => handleQuantityChange(ticket.id, -1)}
-                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
+                            className="bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors"
                           >
                             -
                           </button>
-                          <p className="text-white text-lg font-semibold min-w-[20px] text-center">
+                          <p className="text-white text-lg font-semibold min-w-[28px] text-center">
                             {ticket.quantity}
                           </p>
                           <button
+                            aria-label="Increase quantity"
                             onClick={() => handleQuantityChange(ticket.id, 1)}
                             disabled={ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER}
                             title={
@@ -352,19 +402,19 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                                 ? premiumOrderCapMessage(ticket.memberships[0])
                                 : undefined
                             }
-                            className="bg-black text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black"
+                            className="bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black"
                           >
                             +
                           </button>
                         </div>
-                      )}
-                      {/* Say why the stepper stopped, rather than leaving a dead button. */}
-                      {ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER && (
-                        <p className="text-xs mt-1.5 text-right" style={{ color: "#F5C518" }}>
-                          {premiumOrderCapMessage(ticket.memberships[0])}
-                        </p>
-                      )}
-                    </div>
+                        {/* Say why the stepper stopped, rather than leaving a dead button. */}
+                        {ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER && (
+                          <p className="text-xs flex-1 min-w-[140px]" style={{ color: "#F5C518" }}>
+                            {premiumOrderCapMessage(ticket.memberships[0])}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -376,15 +426,20 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
               They used to be pushed to opposite ends by `justify-between`, which left a wide
               gap and read as two unrelated things rather than "this is what you pay, here's
               the button". */}
-          <div className="flex flex-col sm:flex-row sm:justify-end sm:items-center gap-3 sm:gap-6 my-4">
-            {/* Total Price to pay */}
-            <div className="text-right">
-              <h3 className="text-2xl font-semibold">
-                {selectionPricing.total.toLocaleString("en-US", {
-                  style: "currency",
-                  currency: "usd",
-                })}
-              </h3>
+          <div className="flex flex-col sm:flex-row sm:justify-end sm:items-center gap-3 sm:gap-6 mt-5 sm:my-4 pt-4 sm:pt-0 border-t border-[#434343] sm:border-0">
+            {/* Total Price to pay. On mobile it is labelled and sits on its own line above a
+                full-width CTA — an unlabelled number floating right of nothing read as a
+                leftover from the ticket rows. */}
+            <div className="sm:text-right">
+              <div className="flex items-baseline justify-between gap-3 sm:block">
+                <span className="text-sm text-[#bbbbbb] sm:hidden">Total</span>
+                <h3 className="text-2xl font-semibold">
+                  {selectionPricing.total.toLocaleString("en-US", {
+                    style: "currency",
+                    currency: "usd",
+                  })}
+                </h3>
+              </div>
               {/* The membership is charged with the ticket but is NOT part of the ticket
                   total, so it's spelled out separately rather than silently folded in.
                   Session-based preview: the real check is against the email typed at
