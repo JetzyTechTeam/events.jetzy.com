@@ -607,6 +607,88 @@ existing ticket can't silently strip it.
 - Membership lifecycle emails take a `label` from the registry. A member of both can't tell
   which one ended from an unlabelled message.
 
+### Annual Jetzy Premium ($200/yr) — direct and bundled
+
+Premium is sold at two intervals. Detection never changed: `subscriptionMembershipKey` and
+`findActiveSubscriptionForProduct` resolve by **product id**, so an annual subscriber is
+recognised everywhere with no code aware of the interval. Only price *selection* changed.
+
+**Reuse the existing prices — never create new ones.** SelectMember's live portal
+configuration pins these exact ids in `subscription_update.products`; a second annual price
+would leave their switch flow offering the wrong one. The product default stays **monthly**,
+because every bundled disclosure that doesn't specify an interval reads it.
+
+| | product | monthly (default) | annual |
+|---|---|---|---|
+| live | `prod_UzMR33CL777c3R` | `price_1U16VVB7XccR5GE08PIyF8i7` | `price_1U3KGWB7XccR5GE0h8qqEOtm` |
+| test | `prod_Uxn2R9FQd5F3sp` | `price_1U16eYB7XccR5GE0AdABnPwO` | `price_1U3KA0B7XccR5GE0ZRwK6yKH` |
+
+**Direct (`/subscribe`).** `/api/subscriptions/plan` returns `prices[]` alongside the
+unchanged top-level `unitAmount`/`interval`/`name`. **One price per interval, product default
+wins** — Premium still has a legacy active $10/month price, and without the dedupe the
+selector showed two "Monthly" options. `PlanComparison` renders the selector only when
+`prices.length > 1`. `/api/subscriptions/checkout` takes `interval: "month" | "year"` and
+resolves the id server-side; it **never accepts a price id from the client**, which would let
+anyone subscribe at any price on the account, and it errors rather than substituting.
+
+**Bundled tickets.** `eventTicketsSchema.membershipInterval` — no default, no enum. `undefined`
+means monthly, so every pre-existing ticket is unchanged and there is no backfill. One interval
+per *ticket*, not per membership: only Premium has an annual price, so a per-membership map
+would be structure with nothing to say. Read it with `ticketMembershipInterval` /
+`ticketMembershipIntervalById` / `selectionMembershipInterval` — never the raw field.
+
+- `api/checkout` resolves the bundled price with
+  `findMembershipPriceForInterval(key, interval) || getMembershipPrice(key)`, reading the
+  interval from the **event record**, never the request body — a crafted body could otherwise
+  buy an annual membership at the monthly rate. The fallback is what lets a ticket set to
+  annual still sell Full Concierge, which has no annual price.
+- The line's stored `interval` comes from the **resolved price**, not the request, so
+  `booking.payment.memberships[]`, `approve.ts` and the receipt describe what was actually
+  charged.
+- **Preserve-on-omit on update**, the same rule as `requireApproval` and `memberships`. A stale
+  autosave must not move an annual ticket back to monthly.
+- Nothing downstream needed changing: `startMembershipSubscription` computes `trial_end` as
+  `dayjs().add(1, interval)`, and `renewalAdverb` already rendered "yearly".
+
+**Disclosures follow the ticket, not the product default.** `planPriceForInterval` (in
+`usePremiumPlan.ts`) picks the price for the ticket's interval and falls back to the default
+*exactly as the server does*, so the two can't disagree. It feeds both previews
+(`EventTicketsComponent`, `EventCheckoutModel`); `bundleApprovalNotice(keys, interval)` and the
+host-side copy in `TicketMembershipToggles` take the interval too. A modal quoting $20/month
+against a $200 charge is a disclosure failure, not a cosmetic one.
+
+`membershipInterval` must survive every hop or the UI lies while the charge is right: the two
+ticket mappers in `manage.tsx`, the ticket list and the redux payload in
+`EventTicketsComponent`.
+
+**The one thing to be deliberate about:** a bundled **approval** ticket holds the first period
+on the card. On annual that is a **$200 authorization** — up to **$400** at
+`PREMIUM_TICKET_MAX_PER_ORDER = 2` — on a hold that expires in ~7 days, on top of the ticket.
+Legitimate, but large on a $60 ticket, so the host is warned where they choose it and the buyer
+is told the annual figure before purchase.
+
+### Billing portal is scoped — no plan switching (`STRIPE_PORTAL_CONFIG_ID`)
+
+`/api/subscriptions/portal` used to create sessions with no `configuration`, falling through to
+the Stripe **account default**, which has `subscription_update` enabled. That offered an Update
+button on the **Full Concierge** row as well as Premium — letting a member change a Select plan
+through our surface, bypassing SelectMember's upgrade-only rules, proration preview and upgrade
+email, and (because apis-service's webhooks are disabled) never reaching Mongo.
+
+Our own configuration per environment: `subscription_update.enabled: false`,
+`subscription_cancel.mode: "at_period_end"`, created by
+`npx tsx scripts/create-portal-config.ts` so both environments are reproducible rather than
+hand-clicked. `STRIPE_PORTAL_CONFIG_ID` is passed when set and **falls back to current
+behaviour when absent**, so a missing var degrades rather than breaks.
+
+**Do not touch the Stripe account default** — SelectMember depends on it existing. Cancel stays
+enabled on both products: cancellation is the member's right, and a Concierge cancellation from
+our portal already mirrors back via `mirrorToSelectMember`.
+
+*If a switch flow is wanted later*, the pattern is a second configuration scoped to Premium's
+two prices, opened with `flow_data` pinned to the member's Premium subscription — `flow_data` is
+what makes Concierge unreachable by construction.
+
 ### Jetzy Premium member discount — resolved by EMAIL, not session (SUPERSEDED)
 
 > Retained for context on pre-existing bookings. The discount described below no longer runs —
