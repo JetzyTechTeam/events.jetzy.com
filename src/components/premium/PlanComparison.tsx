@@ -36,9 +36,32 @@ export type PlanInfo = {
 	interval?: string
 }
 
+/** One billing interval the membership is sold at. */
+export type PlanPriceOption = {
+	id: string
+	interval: string
+	/** Formatted, e.g. "$200/year". Null while unknown — never a placeholder. */
+	label: string | null
+	amount: number | null
+}
+
+/** "Monthly" / "Annual" for the toggle; anything unrecognised falls back to the raw interval. */
+const INTERVAL_LABELS: Record<string, string> = { month: "Monthly", year: "Annual", week: "Weekly", day: "Daily" }
+
+/** "$200" out of "$200/year" — the toggle shows the period on its own line. */
+const amountOnly = (label: string | null) => (label ? label.split("/")[0] : null)
+
 type Props = {
 	plan?: PlanInfo | null
 	planLoading?: boolean
+	/**
+	 * Every interval on sale. With two or more the card shows a Monthly/Annual selector in place
+	 * of the single price. Omitted or single — the card renders exactly as it always has, which
+	 * is what keeps the paywall modal unchanged.
+	 */
+	prices?: PlanPriceOption[]
+	selectedInterval?: string
+	onIntervalChange?: (interval: string) => void
 	/** True when the viewer already subscribes — the Premium card becomes a confirmation. */
 	isPremium?: boolean
 	/** Disables the Premium CTA (in-flight mutation, or status still loading). */
@@ -64,6 +87,9 @@ const BASIC_BENEFITS = [
 const PlanComparison: React.FC<Props> = ({
 	plan,
 	planLoading = false,
+	prices,
+	selectedInterval,
+	onIntervalChange,
 	isPremium = false,
 	premiumDisabled = false,
 	premiumPending = false,
@@ -73,9 +99,16 @@ const PlanComparison: React.FC<Props> = ({
 	premiumCtaLabel = "Subscribe Now",
 	subscribedCtaLabel = "You're subscribed — Continue",
 }) => {
-	const interval = plan?.interval || "month"
-	const formattedPrice =
-		plan?.unitAmount != null
+	// A choice only exists with two or more intervals. One price behaves exactly as before.
+	const options = prices && prices.length > 1 ? prices : []
+	const chosen = options.find((p) => p.interval === selectedInterval) || options[0]
+
+	// The selected interval wins when there's a choice; otherwise the plan's own (the product
+	// default), which is what the paywall modal and every pre-annual caller relies on.
+	const interval = chosen?.interval || plan?.interval || "month"
+	const formattedPrice = chosen
+		? amountOnly(chosen.label)
+		: plan?.unitAmount != null
 			? (plan.unitAmount / 100).toLocaleString("en-US", { style: "currency", currency: plan.currency || "usd" })
 			: null
 
@@ -108,6 +141,33 @@ const PlanComparison: React.FC<Props> = ({
 				</span>
 				<h2 className="text-xl font-bold mb-1">{plan?.name || "Jetzy Premium"}</h2>
 				<p className="text-sm text-gray-400 mb-4">Billed {interval}ly</p>
+
+				{/* Interval selector, only when there is genuinely a choice. Each option carries its
+				    own price: the buyer is choosing between two amounts, so showing one and making
+				    them tap to discover the other would hide half the decision. */}
+				{options.length > 0 && !planLoading && (
+					<div className="grid grid-cols-2 gap-2 mb-5" role="group" aria-label="Billing interval">
+						{options.map((option) => {
+							const active = option.interval === interval
+							return (
+								<button
+									key={option.id}
+									type="button"
+									onClick={() => onIntervalChange?.(option.interval)}
+									aria-pressed={active}
+									className={`rounded-xl border-2 px-3 py-2 text-center transition-colors ${
+										active ? "border-jetzy bg-jetzy/10" : "border-[#2b2b2b] hover:border-[#3a3a3a]"
+									}`}
+								>
+									<span className="block text-sm font-semibold text-white">
+										{INTERVAL_LABELS[option.interval] || option.interval}
+									</span>
+									<span className="block text-xs text-gray-400">{option.label || "—"}</span>
+								</button>
+							)
+						})}
+					</div>
+				)}
 
 				{/* Never a placeholder figure — the price is a disclosure, so it's a spinner until
 				    the real number is known. */}

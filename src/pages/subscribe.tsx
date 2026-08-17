@@ -23,11 +23,35 @@ const APP_DEEP_LINK_BASE = "https://jetzy.com/jetzy_event"
 // server-side (see /api/subscriptions/checkout.ts), so it has to be stashed here.
 const EVENT_ID_STORAGE_KEY = "subscribe_event_id"
 
+type PlanPrice = {
+	id: string
+	unitAmount: number | null
+	currency: string
+	interval: string
+}
+
 type PlanInfo = {
 	name: string
 	unitAmount: number | null
 	currency: string
 	interval: string
+	/** Every interval on sale. Absent from responses served before annual existed. */
+	prices?: PlanPrice[]
+}
+
+/**
+ * "$20/month", "$200/year". Whole dollars drop the cents; a fractional amount keeps both digits
+ * so $59.50 is never rounded away from what the card is charged. Mirrors `priceLabel` in
+ * `usePremiumPlan` — this page fetches the endpoint directly rather than through that hook.
+ */
+const formatPrice = (unitAmount: number | null, currency: string, interval: string): string | null => {
+	if (unitAmount == null) return null
+	const dollars = unitAmount / 100
+	return `${dollars.toLocaleString("en-US", {
+		style: "currency",
+		currency: currency || "usd",
+		minimumFractionDigits: Number.isInteger(dollars) ? 0 : 2,
+	})}/${interval}`
 }
 
 export default function SubscribePage() {
@@ -112,9 +136,22 @@ export default function SubscribePage() {
 		enabled: status === "authenticated",
 	})
 
+	// Which billing interval the buyer has picked. Left unset until the plan loads, then
+	// defaulted to the product's default price (monthly) rather than guessing a string — the
+	// selector only appears once there is genuinely more than one interval on sale.
+	const [selectedInterval, setSelectedInterval] = React.useState<string | undefined>(undefined)
+	React.useEffect(() => {
+		if (!selectedInterval && plan?.interval) setSelectedInterval(plan.interval)
+	}, [plan?.interval, selectedInterval])
+
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
-			const { data } = await axios.post("/api/subscriptions/checkout", { returnTo: "/subscribe" })
+			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
+			// request can't subscribe anyone at an arbitrary price on the account.
+			const { data } = await axios.post("/api/subscriptions/checkout", {
+				returnTo: "/subscribe",
+				...(selectedInterval ? { interval: selectedInterval } : {}),
+			})
 			return data?.data as { url: string }
 		},
 		onSuccess: (data) => {
@@ -163,6 +200,16 @@ export default function SubscribePage() {
 				<PlanComparison
 					plan={plan}
 					planLoading={planLoading}
+					// Monthly/Annual. The selector renders only when the product genuinely has more
+					// than one interval on sale, so this is inert until annual exists in Stripe.
+					prices={(plan?.prices || []).map((price) => ({
+						id: price.id,
+						interval: price.interval,
+						amount: price.unitAmount != null ? price.unitAmount / 100 : null,
+						label: formatPrice(price.unitAmount, price.currency, price.interval),
+					}))}
+					selectedInterval={selectedInterval}
+					onIntervalChange={setSelectedInterval}
 					isPremium={isPremium}
 					premiumDisabled={premiumLoading}
 					premiumPending={subscribeMutation.isPending}

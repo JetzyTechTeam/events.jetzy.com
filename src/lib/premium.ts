@@ -395,6 +395,46 @@ export async function getMembershipPrice(key: MembershipKey): Promise<Stripe.Pri
 }
 
 /**
+ * The price a membership is sold at for ONE specific billing interval.
+ *
+ * Jetzy Premium is sold monthly ($20) and annually ($200) as two prices on the SAME product —
+ * never two products, because every eligibility check here and on selectmember.jetzy.com
+ * resolves by product id, and a separate product is invisible to all of them.
+ *
+ * Returns null when the product isn't sold at that interval, rather than quietly substituting
+ * the default. The two callers need opposite things from that case and only they can decide:
+ *
+ *   - direct checkout — a buyer who chose Annual must NOT be silently charged monthly, so a
+ *     null is an error the buyer sees.
+ *   - a bundled ticket — a host who set the ticket to annual meant Premium; Full Concierge has
+ *     no annual price, so falling back to its default is right. The line carries whatever price
+ *     was actually resolved, so the recurring disclosure stays truthful either way.
+ */
+export async function findMembershipPriceForInterval(key: MembershipKey, interval: string): Promise<Stripe.Price | null> {
+	const definition = MEMBERSHIPS[key]
+	if (!definition || !interval) return null
+
+	try {
+		const stripe = getStripeClient()
+		const product = await stripe.products.retrieve(definition.productId, { expand: ["default_price"] })
+		const defaultPriceId = (product.default_price as Stripe.Price | null)?.id
+
+		const prices = await stripe.prices.list({ product: definition.productId, active: true, limit: 100 })
+		const matches = prices.data.filter((price) => price.recurring?.interval === interval && price.unit_amount != null)
+		if (matches.length === 0) return null
+
+		// The product's DEFAULT wins its own interval. Premium still has a legacy $10/month price
+		// active alongside the current $20 one, so "the first monthly price" is not a safe answer
+		// to "what does monthly cost" — it could charge half. Stripe lists newest first, so among
+		// non-defaults the first is the most recent, which is the right guess for the current rate.
+		return matches.find((price) => price.id === defaultPriceId) || matches[0]
+	} catch (error: any) {
+		console.error(`[membership] Could not resolve the ${interval} price for ${key}:`, error?.message || error)
+		return null
+	}
+}
+
+/**
  * Get (or create) the Stripe Customer for a Jetzy user, persisting the id.
  *
  * Persisting matters beyond convenience: `customer.subscription.updated` / `.deleted` and

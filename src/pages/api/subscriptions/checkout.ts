@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getMembershipPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
+import { findMembershipPriceForInterval, findUserRecord, getMembershipPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -38,7 +38,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Standalone Jetzy Premium signup — Full Concierge is sold only as part of a ticket,
 		// so this flow is deliberately hardcoded to the one product.
-		const price = await getMembershipPrice("premium")
+		//
+		// The buyer picks the INTERVAL, never a price id. Accepting `price` from the body would
+		// let anyone subscribe at any price on the account — including one meant for a different
+		// product. We take "month" | "year" and resolve the id ourselves.
+		const requestedInterval = req.body?.interval
+		const interval = requestedInterval === "year" || requestedInterval === "month" ? requestedInterval : undefined
+
+		let price: Stripe.Price
+		if (interval) {
+			const match = await findMembershipPriceForInterval("premium", interval)
+			if (!match) {
+				// Never silently fall back to the default here: they chose annual, and charging
+				// them monthly instead is a different deal from the one disclosed.
+				console.error(`[subscriptions/checkout] Premium has no active ${interval} price`)
+				return sendResponse(res, null, "That plan isn't available right now. Please try the other billing option.", false, ResCode.BAD_REQUEST)
+			}
+			price = match
+		} else {
+			// No interval sent — an older client. The product default, exactly as before.
+			price = await getMembershipPrice("premium")
+		}
 		const stripeCustomerId = await resolveStripeCustomerForUser(userId, email)
 
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
