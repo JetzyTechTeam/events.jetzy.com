@@ -166,8 +166,13 @@ export default function EventDetailPage({ event, pendingApproval }: Props) {
 				<meta property="og:title" content={metaTitle} />
 				<meta property="og:description" content={metaDescription} />
 				<meta property="og:image" content={metaImage} />
-				<meta property="og:image:width" content="1200" />
-				<meta property="og:image:height" content="630" />
+				{/* No `og:image:width` / `og:image:height`.
+				    They were hardcoded to 1200x630 while the actual image is whatever the host
+				    uploaded — the Michigan Alumni Picnic's is 1024x1536 portrait. Declaring
+				    dimensions an image doesn't have is worse than declaring none: clients that
+				    trust the hint lay out a 1200x630 box and then distort, crop or drop the
+				    image outright, which is how a link preview ends up with a broken image.
+				    Omitted so every client measures the real file instead. */}
 				<meta property="og:image:alt" content={metaTitle} />
 				<meta property="og:url" content={pageUrl} />
 				<meta property="og:site_name" content="Jetzy Events" />
