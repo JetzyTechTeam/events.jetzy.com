@@ -101,7 +101,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const sessionMetadata = (checkoutSession.metadata || {}) as Record<string, string | undefined>
 
 				if (checkoutSession.subscription) {
-					const userId = sessionMetadata.membershipUserId || sessionMetadata.userId || checkoutSession.client_reference_id
 					const subscription = await stripe.subscriptions.retrieve(
 						typeof checkoutSession.subscription === "string" ? checkoutSession.subscription : checkoutSession.subscription.id,
 					)
@@ -109,6 +108,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					// overwrite the buyer's Premium record. An unknown product is left alone.
 					const key = subscriptionMembershipKey(subscription)
 					const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+
+					// WHO does this belong to? Our own session metadata first, then the ids
+					// stamped on the Stripe objects themselves.
+					//
+					// The metadata-only version of this missed every membership sold by ANOTHER
+					// Jetzy surface against the shared Stripe account. selectmember.jetzy.com now
+					// sells Jetzy Premium; its Checkout Session carries no metadata of ours, so a
+					// real purchase logged "no resolvable user" and this portal went on showing
+					// "Buy Jetzy Premium" to a paying member. The subscription is one Stripe
+					// object away from an id in both cases — read it rather than requiring the
+					// other surface to speak our metadata dialect.
+					const subscriptionUserId = (subscription.metadata || {}).userId
+					const userId =
+						sessionMetadata.membershipUserId ||
+						sessionMetadata.userId ||
+						checkoutSession.client_reference_id ||
+						subscriptionUserId ||
+						// Last: customer metadata, then the customer's email. Both live inside
+						// `findUserByStripeCustomerId`, which also links the id for next time.
+						(await findUserByStripeCustomerId(customerId))?.doc?._id?.toString()
 
 					if (!key) {
 						console.error("[webhooks/stripe] Subscription for an unrecognised product, ignoring:", subscription.id)
