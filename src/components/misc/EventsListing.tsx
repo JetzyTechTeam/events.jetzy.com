@@ -128,7 +128,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
     >
       <Box p="2" position="relative">
         {/* Status badge (live / upcoming / tbd / ended) + Premium badge */}
-        <Flex position="absolute" top="4" left="4" zIndex="3" gap="1.5" align="center">
+        <Flex position="absolute" top="4" right="4" zIndex="3" gap="1.5" align="center">
           <Box
             bg={badge.bg}
             color={badge.color}
