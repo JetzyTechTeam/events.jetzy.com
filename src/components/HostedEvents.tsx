@@ -23,7 +23,7 @@ import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
-import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
+import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
 import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
 import Pagination from "@/components/misc/Pagination"
@@ -45,7 +45,7 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
-import { FiShare2, FiChevronDown, FiChevronUp } from "react-icons/fi"
+import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
 
 const settings = {
 	infinite: true,
@@ -341,9 +341,10 @@ export default function HostedEvents({ event }: Props) {
 							</button>
 						</div>
 						{/* Up to four buttons here — Back, Manage Event, Manage membership, Logout —
-						    which cannot fit 360px in one row. Wrapping lets them fall onto a second
-						    line instead of overflowing; nothing wraps at desktop width. */}
-						<div className="flex flex-wrap items-center justify-end gap-2">
+						    which cannot fit 360px in one row. They used to wrap, which stair-stepped
+						    three right-aligned buttons down the page above the banner. On mobile they
+						    collapse into one menu instead; the desktop row is unchanged. */}
+						<div className="hidden sm:flex flex-wrap items-center justify-end gap-2">
 							{canManage && (
 								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white">
 									Manage Event
@@ -374,6 +375,49 @@ export default function HostedEvents({ event }: Props) {
 								<Link
 									href={`/login?_cb=${encodeURIComponent(router.asPath)}`}
 									className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white"
+								>
+									Login
+								</Link>
+							)}
+						</div>
+
+						{/* Mobile: one entry point. Logged out there is only ever one action, so it
+						    stays a plain button rather than a menu holding a single item. */}
+						<div className="sm:hidden">
+							{session ? (
+								<Menu placement="bottom-end">
+									<MenuButton
+										as={IconButton}
+										aria-label="Account menu"
+										icon={<Icon as={FiMoreHorizontal} boxSize={5} />}
+										variant="outline"
+										borderColor="#434343"
+										color="white"
+										borderRadius="lg"
+										_hover={{ borderColor: "white", bg: "transparent" }}
+										_active={{ bg: "transparent" }}
+									/>
+									<MenuList bg="#1E1E1E" borderColor="#434343" minW="200px" py={1}>
+										{canManage && (
+											<MenuItem as={Link} href={`/console/events/${clonedEvent._id}/manage`} bg="#1E1E1E" color="white" _hover={{ bg: "#2B2B2B" }} _focus={{ bg: "#2B2B2B" }}>
+												Manage Event
+											</MenuItem>
+										)}
+										{isPremiumMember && (
+											<MenuItem onClick={openPortal} isDisabled={isOpeningPortal} bg="#1E1E1E" color="#F5C518" _hover={{ bg: "#2B2B2B" }} _focus={{ bg: "#2B2B2B" }}>
+												{portalLabel}
+											</MenuItem>
+										)}
+										{/* LOGOUT-SAFETY RULE (CLAUDE.md): the click tracker must not see this. */}
+										<MenuItem data-analytics-ignore="" onClick={handleLogout} bg="#1E1E1E" color="red.300" _hover={{ bg: "#2B2B2B" }} _focus={{ bg: "#2B2B2B" }}>
+											Logout
+										</MenuItem>
+									</MenuList>
+								</Menu>
+							) : (
+								<Link
+									href={`/login?_cb=${encodeURIComponent(router.asPath)}`}
+									className="border border-[#434343] py-2 px-4 text-sm rounded-lg hover:border-white"
 								>
 									Login
 								</Link>
@@ -436,27 +480,33 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 
 						{/* Content Section */}
-						<div className="p-6 sm:p-8">
-							{/* Title + Actions row */}
+						<div className="p-4 sm:p-8">
+							{/* Title + Actions row.
+							    Left-aligned on mobile: the title was centred while the date and
+							    location lines under it are icon-led and wrap, so a long venue
+							    produced ragged centred text under a centred heading. */}
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
-								<div className="text-center sm:text-left">
-									<h2 className="text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(clonedEvent.name)}</h2>
-									<p className="text-sm sm:text-base mt-5 flex gap-x-2 text-[#bbbbbb] break-words">
-										<DateTimeSVG />
+								<div className="text-left w-full sm:w-auto min-w-0">
+									<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(clonedEvent.name)}</h2>
+									{/* `items-start` + a non-shrinking icon: a wrapping date or venue used to
+									    squash the icon to a sliver and vertically centre it against two
+									    lines of text. */}
+									<p className="text-sm sm:text-base mt-4 sm:mt-5 flex items-start gap-x-2 text-[#bbbbbb] break-words">
+										<span className="flex-shrink-0 mt-0.5"><DateTimeSVG /></span>
 										{!clonedEvent?.startsOn && !clonedEvent?.endsOn && clonedEvent?.datePoll?.isActive
 											? "Date to be decided (Polling)"
 											: clonedEvent?.startsOn
 											? `${formattedDate}${formattedTime ? `, ${formattedTime}` : ""} ${normalizeTimezone(clonedEvent?.timezone)}`
 											: "Date to be decided"}
 									</p>
-									<p className="text-sm sm:text-base flex gap-x-2 text-[#bbbbbb] break-words">
+									<p className="text-sm sm:text-base mt-1 flex items-start gap-x-2 text-[#bbbbbb] break-words">
 										{clonedEvent.locationDisclosedAfterBooking ? (
 											<span className="break-words overflow-wrap-anywhere">
 												📍 Location will be disclosed after registration
 											</span>
 										) : (
 											<>
-												<LocationSVG />
+												<span className="flex-shrink-0 mt-0.5"><LocationSVG /></span>
 												<span className="break-words overflow-wrap-anywhere">
 													{clonedEvent.location}
 												</span>
@@ -465,26 +515,29 @@ export default function HostedEvents({ event }: Props) {
 									</p>
 								</div>
 
-								<div className="flex gap-x-3 sm:items-end flex-shrink-0 flex-wrap">
+								{/* Icon buttons stay in a row; the CTAs take the remaining width on a
+								    phone so the primary action is a full-size tap target instead of a
+								    pill squeezed between icons. */}
+								<div className="w-full sm:w-auto flex items-center gap-2 sm:gap-x-3 sm:items-end flex-shrink-0 flex-wrap">
 									{canManage && (
 										<button
 											onClick={onQRModalOpen}
-											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
+											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2.5 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
 											title="Show Event QR Code"
 										>
-											<QrCodeIconOutline className="w-6 h-6 text-white inline-block" />
+											<QrCodeIconOutline className="w-5 h-5 sm:w-6 sm:h-6 text-white inline-block" />
 										</button>
 									)}
-									<button onClick={() => sharer.share()} className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full">
-										<ShareIcon className="w-6 h-6 text-white inline-block" />
+									<button onClick={() => sharer.share()} aria-label="Share event" className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2.5 whitespace-nowrap rounded-full transition-all hover:bg-[#444]">
+										<ShareIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white inline-block" />
 									</button>
 									{session && (
 										<button
 											onClick={onInviteModalOpen}
-											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
+											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2.5 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
 											title="Invite Friends"
 										>
-											<UserPlusIcon className="w-6 h-6 text-white inline-block" />
+											<UserPlusIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white inline-block" />
 										</button>
 									)}
 
@@ -493,7 +546,7 @@ export default function HostedEvents({ event }: Props) {
 										<a
 											role="button"
 											href="#event-tickets"
-											className="bg-[#F79432] text-black font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm"
+											className="flex-1 min-w-[130px] text-center sm:flex-none bg-[#F79432] text-black font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm"
 										>
 											Get Tickets
 										</a>
@@ -504,7 +557,7 @@ export default function HostedEvents({ event }: Props) {
 										<button
 											onClick={requestCancelBooking}
 											disabled={isCancelling}
-											className="bg-[#7C1D1D] text-white font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+											className="w-full sm:w-auto bg-[#7C1D1D] text-white font-bold px-6 py-3 whitespace-nowrap rounded-full transition-all transform hover:scale-105 shadow-lg text-sm disabled:opacity-60 disabled:cursor-not-allowed"
 										>
 											{isCancelling ? "Cancelling..." : "Cancel Booking"}
 										</button>
