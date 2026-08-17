@@ -55,9 +55,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const returnTo = typeof req.body?.returnTo === "string" && req.body.returnTo.startsWith("/") ? req.body.returnTo : "/"
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
 
+		// Our own configuration, not the account default.
+		//
+		// The default has plan switching enabled, and one Stripe Customer holds every
+		// membership a person has — so a member with Premium AND Full Concierge was offered
+		// "Update subscription" on the Concierge one. Changing a Select plan from here bypasses
+		// selectmember.jetzy.com's upgrade rules, proration preview and upgrade email, and since
+		// apis-service's Stripe webhooks are disabled it never reaches Mongo either.
+		//
+		// Ours has `subscription_update` off entirely. Created by
+		// `scripts/create-portal-config.ts`; the account default is deliberately untouched,
+		// because SelectMember relies on it.
+		//
+		// Falls back to the default when the env var is absent so a missed deploy degrades to
+		// today's behaviour rather than failing to open the portal at all.
+		const configuration = process.env.STRIPE_PORTAL_CONFIG_ID
+
 		const portalSession = await getStripeClient().billingPortal.sessions.create({
 			customer: customerId,
 			return_url: `${baseUrl}${returnTo}`,
+			...(configuration ? { configuration } : {}),
 		})
 
 		return sendResponse(res, { url: portalSession.url }, "Billing portal session created.", true, ResCode.OK)
