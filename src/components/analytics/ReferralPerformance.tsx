@@ -75,6 +75,7 @@ const day = (iso: string | null) =>
 
 export default function ReferralPerformance({
 	eventId,
+	code,
 	dateFrom,
 	dateTo,
 	title = "Who came in on which code",
@@ -82,6 +83,14 @@ export default function ReferralPerformance({
 }: {
 	/** Scope to one event. Omitted on the platform-wide report. */
 	eventId?: string
+	/**
+	 * Scope to ONE code, for the per-row view a host opens from the codes table.
+	 *
+	 * Filtered from the same summary rather than fetched separately: passing `code` to the
+	 * endpoint returns the individual bookings, not the aggregate, and re-deriving the totals
+	 * from those rows would risk them disagreeing with the platform report over the same code.
+	 */
+	code?: string
 	dateFrom?: Date | null
 	dateTo?: Date | null
 	title?: string
@@ -149,14 +158,30 @@ export default function ReferralPerformance({
 		window.location.href = `/api/analytics/referrals?${p.toString()}`
 	}
 
+	// One code's numbers, or the whole scope's. The cards must always agree with the table
+	// beneath them, so both read from the same filtered set.
+	const visibleRows = code ? rows.filter((r) => r.code.toUpperCase() === code.toUpperCase()) : rows
+	const visibleTotals = code
+		? visibleRows.reduce(
+			(acc, r) => ({
+				buyers: acc.buyers + r.buyers,
+				bookings: acc.bookings + r.bookings,
+				tickets: acc.tickets + r.tickets,
+				revenue: Math.round((acc.revenue + r.revenue + Number.EPSILON) * 100) / 100,
+				discountGiven: Math.round((acc.discountGiven + r.discountGiven + Number.EPSILON) * 100) / 100,
+			}),
+			{ buyers: 0, bookings: 0, tickets: 0, revenue: 0, discountGiven: 0 },
+		)
+		: totals
+
 	return (
 		<>
-			<SimpleGrid columns={{ base: 1, sm: 2, lg: 5 }} spacing={4} mb={6}>
-				<MetricsCard dark title="Codes used" value={rows.length.toLocaleString()} icon={FiTag} iconColor="#F79432" />
-				<MetricsCard dark title="Buyers" value={(totals?.buyers ?? 0).toLocaleString()} icon={FiUsers} iconColor="#F79432" subtitle="Unique email addresses" />
-				<MetricsCard dark title="Bookings" value={(totals?.bookings ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#F79432" />
-				<MetricsCard dark title="Tickets" value={(totals?.tickets ?? 0).toLocaleString()} icon={FiTag} iconColor="#F79432" />
-				<MetricsCard dark title="Collected" value={money(totals?.revenue)} icon={FiCreditCard} iconColor="#F79432" subtitle={`${money(totals?.discountGiven)} discounted`} />
+			<SimpleGrid columns={{ base: 1, sm: 2, lg: code ? 4 : 5 }} spacing={4} mb={6}>
+				{!code && <MetricsCard dark title="Codes used" value={rows.length.toLocaleString()} icon={FiTag} iconColor="#F79432" />}
+				<MetricsCard dark title="Buyers" value={(visibleTotals?.buyers ?? 0).toLocaleString()} icon={FiUsers} iconColor="#F79432" subtitle="Unique email addresses" />
+				<MetricsCard dark title="Bookings" value={(visibleTotals?.bookings ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#F79432" />
+				<MetricsCard dark title="Tickets" value={(visibleTotals?.tickets ?? 0).toLocaleString()} icon={FiTag} iconColor="#F79432" />
+				<MetricsCard dark title="Collected" value={money(visibleTotals?.revenue)} icon={FiCreditCard} iconColor="#F79432" subtitle={`${money(visibleTotals?.discountGiven)} discounted`} />
 			</SimpleGrid>
 
 			<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
@@ -170,12 +195,12 @@ export default function ReferralPerformance({
 							borderColor="#F79432"
 							color="#F79432"
 							_hover={{ bg: "rgba(247,148,50,0.1)" }}
-							onClick={() => openDetail("")}
-							isDisabled={rows.length === 0}
+							onClick={() => openDetail(code || "")}
+							isDisabled={visibleRows.length === 0}
 						>
 							All buyers
 						</Button>
-						<Button size="sm" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={() => exportCsv()}>
+						<Button size="sm" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={() => exportCsv(code)}>
 							Export CSV
 						</Button>
 					</Flex>
@@ -185,9 +210,11 @@ export default function ReferralPerformance({
 					<Center py={10}>
 						<Spinner color="#F79432" />
 					</Center>
-				) : rows.length === 0 ? (
+				) : visibleRows.length === 0 ? (
 					<Text color="#9C9C9C" py={6}>
-						No bookings carry a referral code yet. Numbers appear here as soon as someone books with one.
+						{code
+							? "Nobody has booked with this code yet. Numbers appear here as soon as someone does."
+							: "No bookings carry a referral code yet. Numbers appear here as soon as someone books with one."}
 					</Text>
 				) : (
 					<TableContainer>
@@ -207,7 +234,7 @@ export default function ReferralPerformance({
 								</Tr>
 							</Thead>
 							<Tbody>
-								{rows.map((r) => (
+								{visibleRows.map((r) => (
 									<Tr key={`${r.code}-${r.eventId}`}>
 										<Td color="white" fontFamily="mono">
 											{r.code}{" "}

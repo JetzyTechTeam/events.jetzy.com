@@ -1,8 +1,9 @@
 "use client"
 import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch } from "@chakra-ui/react"
-import { FiPlus, FiEdit2, FiTrash2, FiCopy } from "react-icons/fi"
+import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2 } from "react-icons/fi"
 import { useState, useEffect } from "react"
 import axios from "axios"
+import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 
 interface ReferralCode {
 	_id: string
@@ -44,6 +45,10 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 	// Stats Modal State
 	const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure()
 	const [selectedStatsCode, setSelectedStatsCode] = useState<ReferralCode | null>(null)
+	// Performance for ONE code — who came in on it, what they paid. Behind a button rather than
+	// under the table: this tab's job is managing codes, and a permanent report below them
+	// pushed that work off the screen.
+	const [analyticsCode, setAnalyticsCode] = useState<ReferralCode | null>(null)
 	const [statsData, setStatsData] = useState<{ totalSales: number; verifiedUsageCount: number; code: string; commissionPercentage: number } | null>(null)
 	const [statsLoading, setStatsLoading] = useState(false)
 	const [commissionRate, setCommissionRate] = useState<string>("10")
@@ -385,6 +390,16 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 												variant="ghost"
 												color="#F79432"
 												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												leftIcon={<FiBarChart2 />}
+												onClick={() => setAnalyticsCode(code)}
+											>
+												Analytics
+											</Button>
+											<Button
+												size="sm"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
 												onClick={() => handleOpenStats(code)}
 											>
 												Stats
@@ -546,6 +561,27 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 							{editingCode ? "Save changes" : "Create"}
 						</Button>
 					</ModalFooter>
+				</ModalContent>
+			</Modal>
+
+			{/* Performance for one code — the buyers, the money, and the CSV to hand over. */}
+			<Modal isOpen={!!analyticsCode} onClose={() => setAnalyticsCode(null)} size="5xl" isCentered scrollBehavior="inside">
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+					<ModalHeader>
+						Performance: <span style={{ fontFamily: "monospace" }}>{analyticsCode?.code}</span>
+					</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						{analyticsCode && (
+							<ReferralPerformance
+								eventId={eventId}
+								code={analyticsCode.code}
+								showEventColumn={false}
+								title="Bookings made with this code"
+							/>
+						)}
+					</ModalBody>
 				</ModalContent>
 			</Modal>
 

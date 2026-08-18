@@ -1585,8 +1585,13 @@ The referral report is now a shared component, `src/components/analytics/Referra
 rendered in two places:
 
 - `/console/analytics/growth` — every event (admin);
-- the event manage page, **Referral Codes** tab, directly under `ReferralCodesManager` — that
-  event only, for the host who owns it.
+- the event manage page, **Referral Codes** tab, behind the **Analytics** action on each row —
+  that one code, for the host who owns the event.
+
+The per-event report is deliberately NOT rendered under the codes table. That tab exists to manage
+codes; a permanent report below them pushed the create/edit/delete work off the screen. The `code`
+prop filters the same summary the platform page reads rather than re-deriving totals from the
+bookings, so the two views can't disagree about one code.
 
 One component on purpose. A host looking at their event and an admin looking at everything are
 asking the same question, and two implementations would eventually disagree about it. Scope comes
