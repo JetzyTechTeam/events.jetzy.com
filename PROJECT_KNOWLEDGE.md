@@ -1501,3 +1501,25 @@ portal), so there is nothing local to compare against. Stripe includes `items` i
 replaced doesn't fire it. The previous price is retrieved so the message can name both rates —
 stating only the new one reads like a price rise nobody announced.
 
+## Deleting a referral code now frees its string (2026-08-18)
+
+Delete a code, create it again, and the form said **"Referral code already exists"** with an empty
+table behind it. `code` carries a plain `unique: true` index with no partial filter while delete is
+a soft delete (`isDeleted: true`), so the removed row still owned the string and the insert hit a
+duplicate-key error that was being reported as a duplicate code.
+
+`POST /api/events/[eventId]/referral-codes` now revives the soft-deleted row instead of inserting
+beside it — reassigning `eventId` (the string is unique across events, so the host asking for it
+now is the one who gets it) and restarting `usageCount` at 0, since this is a new offer with its
+own `maxUses`. Past redemptions are unaffected: the stats endpoint counts them from bookings,
+which store the code string.
+
+A partial index would be the other fix and is deliberately not taken — the mobile app and admin
+portal share this collection, and `syncIndexes` on it is already forbidden elsewhere in this
+codebase for the same reason.
+
+**Editing.** `ReferralCodesManager` now opens the same modal prefilled, saving through the
+existing PATCH: discount, free Premium months, max uses, active. The **code text itself is
+read-only** — bookings record the string rather than the id, so renaming one would orphan every
+redemption already attributed to it.
+

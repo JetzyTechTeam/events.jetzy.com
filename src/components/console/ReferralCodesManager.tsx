@@ -201,6 +201,31 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		setEditingCode(null)
 	}
 
+	// The CODE ITSELF is never editable — bookings store the string, not the id, so renaming one
+	// would orphan every redemption already recorded against it. Everything else is fair game.
+	const handleOpenEdit = (code: ReferralCode) => {
+		setEditingCode(code)
+		setFormData({
+			code: code.code,
+			discountPercentage: code.discountPercentage,
+			freeMembershipMonths: code.freeMembershipMonths || 0,
+			maxUses: code.maxUses ?? null,
+			isActive: code.isActive,
+		})
+		onOpen()
+	}
+
+	const handleSaveEdit = async () => {
+		if (!editingCode) return
+		await handleUpdate(editingCode._id, {
+			discountPercentage: formData.discountPercentage,
+			freeMembershipMonths: formData.freeMembershipMonths || 0,
+			maxUses: formData.maxUses || null,
+		})
+		onClose()
+		resetForm()
+	}
+
 	const handleOpenStats = async (code: ReferralCode) => {
 		setSelectedStatsCode(code)
 		setStatsData(null)
@@ -365,6 +390,16 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 												Stats
 											</Button>
 											<IconButton
+												aria-label="Edit code"
+												icon={<FiEdit2 />}
+												size="sm"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												onClick={() => handleOpenEdit(code)}
+												isDisabled={updating === code._id}
+											/>
+											<IconButton
 												aria-label="Delete code"
 												icon={<FiTrash2 />}
 												size="sm"
@@ -386,7 +421,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			<Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
 				<ModalOverlay />
 				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
-					<ModalHeader>Create Referral Code</ModalHeader>
+					<ModalHeader>{editingCode ? "Edit Referral Code" : "Create Referral Code"}</ModalHeader>
 					<ModalCloseButton />
 					<ModalBody>
 						<Box>
@@ -403,9 +438,13 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 									bg="#101010"
 									border="1px solid #434343"
 									_focus={{ borderColor: "#F79432" }}
+									isReadOnly={!!editingCode}
+									opacity={editingCode ? 0.6 : 1}
 								/>
 								<Text fontSize="xs" color="gray.400" mt={1}>
-									Letters, numbers, and special characters allowed (no spaces). Codes are matched case-insensitively.
+									{editingCode
+										? "The code itself can't be changed — bookings are recorded against the text of it. Delete it and create a new one to rename."
+										: "Letters, numbers, and special characters allowed (no spaces). Codes are matched case-insensitively."}
 								</Text>
 							</FormControl>
 
@@ -478,11 +517,33 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 					</ModalBody>
 
 					<ModalFooter>
-						<Button variant="ghost" mr={3} onClick={onClose} color="white" _hover={{ bg: "#333" }}>
+						<Button
+							variant="ghost"
+							mr={3}
+							onClick={() => {
+								onClose()
+								resetForm()
+							}}
+							color="white"
+							_hover={{ bg: "#333" }}
+						>
 							Cancel
 						</Button>
-						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={handleCreate} isLoading={creating} isDisabled={!formData.code || formData.discountPercentage < 0 || formData.discountPercentage > 100 || formData.freeMembershipMonths < 0 || formData.freeMembershipMonths > 12}>
-							Create
+						<Button
+							bg="#F79432"
+							color="black"
+							_hover={{ bg: "#E68422" }}
+							onClick={editingCode ? handleSaveEdit : handleCreate}
+							isLoading={editingCode ? updating === editingCode._id : creating}
+							isDisabled={
+								!formData.code ||
+								formData.discountPercentage < 0 ||
+								formData.discountPercentage > 100 ||
+								formData.freeMembershipMonths < 0 ||
+								formData.freeMembershipMonths > 12
+							}
+						>
+							{editingCode ? "Save changes" : "Create"}
 						</Button>
 					</ModalFooter>
 				</ModalContent>
