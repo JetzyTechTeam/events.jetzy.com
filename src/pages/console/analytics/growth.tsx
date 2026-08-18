@@ -28,16 +28,11 @@ import {
 	TabPanels,
 	Tab,
 	TabPanel,
-	Modal,
-	ModalOverlay,
-	ModalContent,
-	ModalHeader,
-	ModalCloseButton,
-	ModalBody,
 	useToast,
 } from "@chakra-ui/react"
 import { FiUsers, FiTag, FiGift, FiCreditCard, FiTrendingUp } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
+import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
 
 /**
@@ -55,37 +50,6 @@ import DateRangeSelector from "@/components/analytics/DateRangeSelector"
  *
  * Admin only — both tabs list customers by email.
  */
-
-type ReferralRow = {
-	code: string
-	eventId: string
-	event: string
-	buyers: number
-	bookings: number
-	tickets: number
-	gross: number
-	revenue: number
-	discountGiven: number
-	discountPercentage: number | null
-	freeMembershipMonths: number
-	maxUses: number | null
-	state: "active" | "inactive" | "deleted"
-	firstUsed: string | null
-	lastUsed: string | null
-}
-
-type ReferralBooking = {
-	bookingRef: string
-	name: string
-	email: string
-	event: string
-	status: string
-	tickets: number
-	subTotal: number
-	total: number
-	discount: number
-	bookedAt: string | null
-}
 
 type MembershipRow = {
 	_id: string
@@ -126,14 +90,6 @@ export default function GrowthAnalytics() {
 	const [dateFrom, setDateFrom] = React.useState<Date | null>(null)
 	const [dateTo, setDateTo] = React.useState<Date | null>(null)
 
-	// ---- referral tab ----
-	const [refLoading, setRefLoading] = React.useState(true)
-	const [refRows, setRefRows] = React.useState<ReferralRow[]>([])
-	const [refTotals, setRefTotals] = React.useState<{ buyers: number; bookings: number; tickets: number; revenue: number; discountGiven: number } | null>(null)
-	const [detailCode, setDetailCode] = React.useState<string | null>(null)
-	const [detailRows, setDetailRows] = React.useState<ReferralBooking[]>([])
-	const [detailLoading, setDetailLoading] = React.useState(false)
-
 	// ---- membership tab ----
 	const [memLoading, setMemLoading] = React.useState(true)
 	const [memRows, setMemRows] = React.useState<MembershipRow[]>([])
@@ -164,23 +120,6 @@ export default function GrowthAnalytics() {
 
 	React.useEffect(() => {
 		let cancelled = false
-		setRefLoading(true)
-		fetch(`/api/analytics/referrals?${dateParams().toString()}`)
-			.then((r) => r.json())
-			.then((data) => {
-				if (cancelled) return
-				setRefRows(data?.data?.rows || [])
-				setRefTotals(data?.data?.totals || null)
-			})
-			.catch(() => toast({ title: "Couldn't load the referral report", status: "error", duration: 3000 }))
-			.finally(() => !cancelled && setRefLoading(false))
-		return () => {
-			cancelled = true
-		}
-	}, [dateParams, toast])
-
-	React.useEffect(() => {
-		let cancelled = false
 		setMemLoading(true)
 		const p = memParams()
 		p.set("page", String(page))
@@ -200,22 +139,6 @@ export default function GrowthAnalytics() {
 			cancelled = true
 		}
 	}, [memParams, page, toast])
-
-	const openDetail = async (code: string) => {
-		setDetailCode(code)
-		setDetailLoading(true)
-		try {
-			const p = dateParams()
-			p.set("code", code)
-			const res = await fetch(`/api/analytics/referrals?${p.toString()}`)
-			const data = await res.json()
-			setDetailRows(data?.data?.rows || [])
-		} catch {
-			toast({ title: "Couldn't load the bookings for that code", status: "error", duration: 3000 })
-		} finally {
-			setDetailLoading(false)
-		}
-	}
 
 	const totalMembers = Object.values(bySource).reduce((sum, n) => sum + n, 0)
 	const inviteRedemptions = inviteCodes.reduce((sum, c) => sum + c.redemptions, 0)
@@ -243,85 +166,10 @@ export default function GrowthAnalytics() {
 						<TabPanels>
 							{/* ------------------------------- Referral codes ------------------------------- */}
 							<TabPanel px={0}>
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 5 }} spacing={4} mb={6}>
-									<MetricsCard dark title="Codes used" value={refRows.length.toLocaleString()} icon={FiTag} iconColor="#F79432" />
-									<MetricsCard dark title="Buyers" value={(refTotals?.buyers ?? 0).toLocaleString()} icon={FiUsers} iconColor="#F79432" subtitle="Unique email addresses" />
-									<MetricsCard dark title="Bookings" value={(refTotals?.bookings ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#F79432" />
-									<MetricsCard dark title="Tickets" value={(refTotals?.tickets ?? 0).toLocaleString()} icon={FiTag} iconColor="#F79432" />
-									<MetricsCard dark title="Collected" value={money(refTotals?.revenue)} icon={FiCreditCard} iconColor="#F79432" subtitle={`${money(refTotals?.discountGiven)} discounted`} />
-								</SimpleGrid>
-
-								<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
-									<Flex justify="space-between" align="center" mb={3} gap={3} wrap="wrap">
-										<Text color="white" fontWeight={700}>Who came in on which code</Text>
-										<Button
-											size="sm"
-											bg="#F79432"
-											color="black"
-											_hover={{ bg: "#E68422" }}
-											onClick={() => {
-												const p = dateParams()
-												p.set("format", "csv")
-												window.location.href = `/api/analytics/referrals?${p.toString()}`
-											}}
-										>
-											Export CSV
-										</Button>
-									</Flex>
-
-									{refLoading ? (
-										<Center py={10}><Spinner color="#F79432" /></Center>
-									) : refRows.length === 0 ? (
-										<Text color="#9C9C9C" py={6}>No bookings carry a referral code in this period.</Text>
-									) : (
-										<TableContainer>
-											<Table size="sm" variant="simple">
-												<Thead>
-													<Tr>
-														<Th color="#9C9C9C">Code</Th>
-														<Th color="#9C9C9C">Event</Th>
-														<Th color="#9C9C9C" isNumeric>Buyers</Th>
-														<Th color="#9C9C9C" isNumeric>Bookings</Th>
-														<Th color="#9C9C9C" isNumeric>Tickets</Th>
-														<Th color="#9C9C9C" isNumeric>Collected</Th>
-														<Th color="#9C9C9C" isNumeric>Discounted</Th>
-														<Th color="#9C9C9C">Terms</Th>
-														<Th color="#9C9C9C">Last used</Th>
-														<Th color="#9C9C9C" />
-													</Tr>
-												</Thead>
-												<Tbody>
-													{refRows.map((r) => (
-														<Tr key={`${r.code}-${r.eventId}`}>
-															<Td color="white" fontFamily="mono">
-																{r.code}{" "}
-																{r.state !== "active" && (
-																	<Badge ml={1} colorScheme={r.state === "deleted" ? "red" : "gray"}>{r.state}</Badge>
-																)}
-															</Td>
-															<Td color="#D6D6D6">{r.event || "—"}</Td>
-															<Td color="white" isNumeric fontWeight={700}>{r.buyers}</Td>
-															<Td color="#D6D6D6" isNumeric>{r.bookings}</Td>
-															<Td color="#D6D6D6" isNumeric>{r.tickets}</Td>
-															<Td color="#D6D6D6" isNumeric>{money(r.revenue)}</Td>
-															<Td color="#F5C518" isNumeric>{money(r.discountGiven)}</Td>
-															<Td color="#9C9C9C" fontSize="xs">
-																{r.discountPercentage != null ? `${r.discountPercentage}% off` : "—"}
-																{r.freeMembershipMonths > 0 ? ` · ${r.freeMembershipMonths} mo Premium` : ""}
-															</Td>
-															<Td color="#9C9C9C" fontSize="xs">{day(r.lastUsed)}</Td>
-															<Td>
-																<Button size="xs" variant="ghost" color="#F79432" _hover={{ bg: "rgba(247,148,50,0.1)" }} onClick={() => openDetail(r.code)}>
-																	Buyers
-																</Button>
-															</Td>
-														</Tr>
-													))}
-												</Tbody>
-											</Table>
-										</TableContainer>
-									)}
-								</Box>
+								{/* The same component the event's own Referrals tab renders. One report, two
+								    scopes — a host looking at their event and an admin looking at everything
+								    must never be shown different arithmetic. */}
+								<ReferralPerformance dateFrom={dateFrom} dateTo={dateTo} />
 							</TabPanel>
 
 							{/* -------------------------------- Memberships -------------------------------- */}
@@ -457,64 +305,6 @@ export default function GrowthAnalytics() {
 					</Tabs>
 				</Box>
 
-				{/* The people behind one code — the list to hand over when someone asks who a
-				    campaign actually brought in. */}
-				<Modal isOpen={!!detailCode} onClose={() => setDetailCode(null)} size="4xl" isCentered scrollBehavior="inside">
-					<ModalOverlay />
-					<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
-						<ModalHeader fontFamily="mono">{detailCode}</ModalHeader>
-						<ModalCloseButton />
-						<ModalBody pb={6}>
-							<Flex justify="space-between" align="center" mb={3}>
-								<Text fontSize="sm" color="#9C9C9C">{detailRows.length} booking{detailRows.length === 1 ? "" : "s"}</Text>
-								<Button
-									size="sm"
-									bg="#F79432"
-									color="black"
-									_hover={{ bg: "#E68422" }}
-									onClick={() => {
-										const p = dateParams()
-										p.set("code", detailCode || "")
-										p.set("format", "csv")
-										window.location.href = `/api/analytics/referrals?${p.toString()}`
-									}}
-								>
-									Export CSV
-								</Button>
-							</Flex>
-							{detailLoading ? (
-								<Center py={10}><Spinner color="#F79432" /></Center>
-							) : (
-								<TableContainer>
-									<Table size="sm" variant="simple">
-										<Thead>
-											<Tr>
-												<Th color="#9C9C9C">Booked</Th>
-												<Th color="#9C9C9C">Name</Th>
-												<Th color="#9C9C9C">Email</Th>
-												<Th color="#9C9C9C">Event</Th>
-												<Th color="#9C9C9C" isNumeric>Tickets</Th>
-												<Th color="#9C9C9C" isNumeric>Paid</Th>
-											</Tr>
-										</Thead>
-										<Tbody>
-											{detailRows.map((r) => (
-												<Tr key={r.bookingRef}>
-													<Td color="#9C9C9C" fontSize="xs">{day(r.bookedAt)}</Td>
-													<Td color="white">{r.name || "—"}</Td>
-													<Td color="#D6D6D6" fontSize="xs">{r.email}</Td>
-													<Td color="#9C9C9C" fontSize="xs">{r.event}</Td>
-													<Td color="#D6D6D6" isNumeric>{r.tickets}</Td>
-													<Td color="#D6D6D6" isNumeric>{money(r.total)}</Td>
-												</Tr>
-											))}
-										</Tbody>
-									</Table>
-								</TableContainer>
-							)}
-						</ModalBody>
-					</ModalContent>
-				</Modal>
 			</ConsoleLayout>
 		</>
 	)

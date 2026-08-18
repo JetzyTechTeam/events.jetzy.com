@@ -2,6 +2,7 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
+import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 import { bundleFreeTicketMessage, ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle"
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles"
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList"
@@ -1885,8 +1886,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							</div>
 						</TabPanel>
 						<TabPanel>
-							<div className="bg-[#181818] rounded-xl p-3">
+							<div className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-4">
 								<ReferralCodesManager eventId={event._id} />
+								{/* What the codes actually did, for THIS event. Built from bookings, so it
+								    keeps reporting on a code after it has been switched off or deleted —
+								    which the code's own usage counter does not. */}
+								<div className="px-1">
+									<ReferralPerformance eventId={event._id} showEventColumn={false} title="Referral performance" />
+								</div>
 							</div>
 						</TabPanel>
 						<TabPanel>

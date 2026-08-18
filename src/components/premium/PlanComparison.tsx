@@ -318,6 +318,40 @@ const PlanComparison: React.FC<Props> = ({
 					</>
 				)}
 
+				{/* Invite code — ABOVE the benefits, and visibly its own thing.
+
+				    It sat under the benefit list in the same grey as the rest of the form, where a
+				    buyer holding a code scrolled past it and paid full price. A code changes what is
+				    charged today AND when the first payment lands, so it has to be seen before the
+				    decision rather than found after it. The tint is the same yellow every other
+				    membership disclosure on this site uses. */}
+				{!isPremium && onInviteCodeChange && (
+					<div
+						className="mb-6 text-left rounded-xl p-3"
+						style={{ background: "rgba(245,197,24,0.10)", border: "1px solid rgba(245,197,24,0.45)" }}
+					>
+						<label htmlFor="premium-invite-code" className="block text-xs font-semibold mb-1.5" style={{ color: "#F5C518" }}>
+							Have an invite code? <span className="font-normal text-gray-400">(optional)</span>
+						</label>
+						<input
+							id="premium-invite-code"
+							type="text"
+							value={inviteCode || ""}
+							onChange={(e) => onInviteCodeChange(e.target.value)}
+							placeholder="Enter your invite code"
+							autoComplete="off"
+							className="w-full rounded-lg bg-[#141414] border-2 border-[#3a3320] px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-jetzy focus:outline-none"
+						/>
+						{inviteChecking && <p className="text-xs text-gray-400 mt-1.5">Checking…</p>}
+						{!inviteChecking && inviteError && <p className="text-xs text-red-400 mt-1.5">{inviteError}</p>}
+						{!inviteChecking && !inviteError && inviteAccepted && (
+							<p className="text-xs mt-1.5 font-semibold" style={{ color: "#22C55E" }}>
+								{inviteAccepted}
+							</p>
+						)}
+					</div>
+				)}
+
 				<ul className="space-y-3 text-sm text-gray-300 flex-1 mb-6 text-left">
 					<li className="flex gap-2">
 						<CheckIcon className="w-5 h-5 shrink-0" style={{ color: "#F5C518" }} /> Everything in Basic
@@ -328,33 +362,6 @@ const PlanComparison: React.FC<Props> = ({
 						</li>
 					))}
 				</ul>
-
-				{/* Invite code. Above the CTA on purpose: the trial changes what the buyer is
-				    charged today AND when the first real charge lands, so it belongs next to the
-				    button rather than buried above the benefits list. */}
-				{!isPremium && onInviteCodeChange && (
-					<div className="mb-4 text-left">
-						<label htmlFor="premium-invite-code" className="block text-xs text-gray-400 mb-1">
-							Invite code <span className="text-gray-500">(optional)</span>
-						</label>
-						<input
-							id="premium-invite-code"
-							type="text"
-							value={inviteCode || ""}
-							onChange={(e) => onInviteCodeChange(e.target.value)}
-							placeholder="Enter your invite code"
-							autoComplete="off"
-							className="w-full rounded-xl bg-[#141414] border-2 border-[#2b2b2b] px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-jetzy focus:outline-none"
-						/>
-						{inviteChecking && <p className="text-xs text-gray-400 mt-1">Checking…</p>}
-						{!inviteChecking && inviteError && <p className="text-xs text-red-400 mt-1">{inviteError}</p>}
-						{!inviteChecking && !inviteError && inviteAccepted && (
-							<p className="text-xs mt-1" style={{ color: "#22C55E" }}>
-								{inviteAccepted}
-							</p>
-						)}
-					</div>
-				)}
 
 				{isPremium ? (
 					<div className="flex flex-col gap-3">

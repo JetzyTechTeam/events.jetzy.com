@@ -76,8 +76,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const match = { $and: and }
 
-		// ---- Detail: the bookings behind one code ----
-		if (code?.trim()) {
+		// ---- Detail: the people, either behind ONE code or across every code in scope ----
+		//
+		// `detail=bookings` without a code is the "who came in through referrals at all" list —
+		// asked at least as often as the per-code one, and the same query minus a filter.
+		if (code?.trim() || (req.query.detail as string) === "bookings") {
 			const rows = await Bookings.find(match)
 				.select("bookingRef customerName customerEmail eventId status subTotal total discountAmount referralCode referralDiscountPercentage tickets createdAt")
 				.sort({ createdAt: -1 })
@@ -91,6 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 			const shaped = rows.map((r: any) => ({
 				bookingRef: r.bookingRef,
+				referralCode: (r.referralCode || "").toUpperCase(),
 				name: r.customerName || "",
 				email: r.customerEmail || "",
 				event: eventName.get(String(r.eventId)) || "",
@@ -105,21 +109,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}))
 
 			if (format === "csv") {
-				const headers = ["Booked", "Booking Ref", "Name", "Email", "Event", "Status", "Tickets", "Subtotal", "Discount", "Paid"]
+				const headers = ["Booked", "Code", "Booking Ref", "Name", "Email", "Event", "Status", "Tickets", "Subtotal", "Discount", "Paid"]
 				const lines = [
 					headers.join(","),
 					...shaped.map((r) =>
-						[r.bookedAt || "", r.bookingRef, r.name, r.email, r.event, r.status, r.tickets, r.subTotal, r.discount, r.total]
+						[r.bookedAt || "", r.referralCode, r.bookingRef, r.name, r.email, r.event, r.status, r.tickets, r.subTotal, r.discount, r.total]
 							.map(escapeCsv)
 							.join(","),
 					),
 				]
+				const slug = code?.trim() ? code.trim().toUpperCase() : "all"
 				res.setHeader("Content-Type", "text/csv;charset=utf-8;")
-				res.setHeader("Content-Disposition", `attachment; filename="referral-${code.trim().toUpperCase()}-${new Date().toISOString().slice(0, 10)}.csv"`)
+				res.setHeader("Content-Disposition", `attachment; filename="referral-${slug}-${new Date().toISOString().slice(0, 10)}.csv"`)
 				return res.status(200).send(lines.join("\n"))
 			}
 
-			return sendResponse(res, { code: code.trim().toUpperCase(), rows: shaped, total: shaped.length }, "Referral bookings retrieved", true, ResCode.OK)
+			return sendResponse(
+				res,
+				{ code: code?.trim() ? code.trim().toUpperCase() : null, rows: shaped, total: shaped.length },
+				"Referral bookings retrieved",
+				true,
+				ResCode.OK,
+			)
 		}
 
 		// ---- Summary: one row per code, per event ----

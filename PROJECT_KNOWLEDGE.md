@@ -1579,3 +1579,31 @@ addresses. Filters: membership, source, has/hasn't an invite code, free-text, da
 **No backfill.** Sales predating the collection are absent, and the empty state says why: Stripe
 holds no record of our events or codes, so anything reconstructed would be invented.
 
+## Referral report, per event (2026-08-19)
+
+The referral report is now a shared component, `src/components/analytics/ReferralPerformance.tsx`,
+rendered in two places:
+
+- `/console/analytics/growth` — every event (admin);
+- the event manage page, **Referral Codes** tab, directly under `ReferralCodesManager` — that
+  event only, for the host who owns it.
+
+One component on purpose. A host looking at their event and an admin looking at everything are
+asking the same question, and two implementations would eventually disagree about it. Scope comes
+from the `eventId` prop; `/api/analytics/referrals` independently constrains a non-admin to their
+own `ownerId` events, so the embed cannot be widened by passing someone else's id.
+
+**"All buyers"** (`detail=bookings`, no `code`) lists everyone across every code in scope with a
+Code column — a host wants that before they want any single code's list. The per-code **Buyers**
+button is unchanged. Both export CSV over the full filtered set.
+
+## The invite-code field moved up the Premium card (2026-08-19)
+
+It was below the benefit list, in the same grey as the rest of the form, so buyers holding a code
+scrolled past it and paid full price. It now sits directly under the price — above the benefits —
+in a yellow-tinted box (`rgba(245,197,24,0.10)` on a `0.45` border), the same accent every other
+membership disclosure on the site uses.
+
+Both surfaces that render `PlanComparison` — `/subscribe` and `PremiumPaywallModal` — pick this up,
+which is the point of them sharing the card.
+
