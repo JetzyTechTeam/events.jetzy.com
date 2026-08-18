@@ -73,6 +73,10 @@ const schema = zod.object({
 			// Which memberships this ticket sells. Omitted means "unchanged" — see the
 			// preserve-on-omit rule below.
 			memberships: zod.array(zod.string()).optional(),
+			// Billing interval the bundled membership is sold at. Optional, and omitting it means
+			// UNCHANGED on update — same preserve-on-omit rule as `requireApproval` and
+			// `memberships`, so a stale autosave can't silently move an annual ticket to monthly.
+			membershipInterval: zod.enum(["month", "year"]).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
 		}),
@@ -252,6 +256,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 			const resolvedMemberships = resolveMemberships(ticket, existing)
 
+			// Same preserve-on-omit rule: undefined means "leave it alone", so an older client or
+			// a stale autosave can't move an annual ticket back to monthly — which would quietly
+			// change what the next buyer's card is charged.
+			const resolvedMembershipInterval =
+				ticket.membershipInterval !== undefined ? ticket.membershipInterval
+					: existing?.membershipInterval !== undefined ? existing.membershipInterval
+						: undefined
+
 			return {
 				...(existing ? { _id: existing._id } : {}),
 				name: ticket.title,
@@ -260,6 +272,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				stripeProductId,
 				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
 				memberships: resolvedMemberships,
+				...(resolvedMembershipInterval !== undefined ? { membershipInterval: resolvedMembershipInterval } : {}),
 				// Written alongside the array purely so the mobile app and any older reader still
 				// see a bundled Premium ticket. The array is the authority.
 				includesPremium: resolvedMemberships.includes("premium"),

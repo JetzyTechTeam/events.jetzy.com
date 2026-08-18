@@ -21,9 +21,17 @@ type Props = {
 	requiresApproval: boolean
 	/** The ticket's price. A membership can't be started off a free registration. */
 	price: number
+	/** Billing interval sold with this ticket. Undefined means monthly. */
+	interval?: string
+	onIntervalChange?: (next: string) => void
 }
 
-const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApproval, price }) => {
+const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApproval, price, interval, onIntervalChange }) => {
+	const chosenInterval = interval === "year" ? "year" : "month"
+	// Only Jetzy Premium has an annual price; Full Concierge is monthly only, and a ticket set
+	// to annual resolves it at its own default. So the choice is only meaningful — and only
+	// offered — when Premium is on the ticket.
+	const showInterval = !!onIntervalChange && (value || []).includes("premium")
 	const selected = value || []
 	const toggle = (key: MembershipKey, checked: boolean) =>
 		// Rebuilt from MEMBERSHIP_KEYS — not from the visible list — so the stored order is
@@ -74,9 +82,46 @@ const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApp
 				))}
 			</Flex>
 
+			{showInterval && (
+				<Box mt={3}>
+					<FormLabel mb={1} fontSize="13px">Billed</FormLabel>
+					<Flex gap={2}>
+						{(["month", "year"] as const).map((option) => (
+							<Box
+								key={option}
+								as="button"
+								type="button"
+								onClick={() => onIntervalChange?.(option)}
+								px={3}
+								py={1.5}
+								borderRadius="8px"
+								border="2px solid"
+								borderColor={chosenInterval === option ? "#F5C518" : "#343536"}
+								bg={chosenInterval === option ? "rgba(245,197,24,0.12)" : "transparent"}
+								color="white"
+								fontSize="13px"
+								fontWeight={600}
+							>
+								{option === "month" ? "Monthly" : "Annual"}
+							</Box>
+						))}
+					</Flex>
+					{/* An annual bundle is a much larger authorization than a monthly one, and on an
+					    approval ticket it is HELD on the card for up to 7 days before anyone decides.
+					    The host is choosing that, so say it here rather than letting them discover it
+					    from a buyer's complaint. */}
+					{chosenInterval === "year" && (
+						<Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
+							The buyer pays this ticket plus a full year of Jetzy Premium up front
+							{requiresApproval ? ", authorized on their card while the request is pending" : ""}.
+						</Text>
+					)}
+				</Box>
+			)}
+
 			{selected.length > 0 && requiresApproval && (
 				<Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
-					{bundleApprovalNotice(selected)}
+					{bundleApprovalNotice(selected, chosenInterval)}
 				</Text>
 			)}
 

@@ -104,7 +104,17 @@ const parseCustomAnswers = (metadata: SessionMetadata) => {
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
-type MembershipLine = { key: MembershipKey; amount: number; currency?: string; priceId: string; interval: string }
+type MembershipLine = {
+	key: MembershipKey
+	amount: number
+	currency?: string
+	priceId: string
+	interval: string
+	/** Free months from a referral code. Present means nothing was charged for this line. */
+	trialMonths?: number
+	/** What it renews at after those months — `amount` is 0 while they run. */
+	renewalAmount?: number
+}
 
 /**
  * What memberships did this session charge for?
@@ -130,6 +140,9 @@ const parseMembershipLines = (metadata: SessionMetadata): MembershipLine[] => {
 						currency: row.currency,
 						priceId: String(row.priceId),
 						interval: String(row.interval || "month"),
+						...(Number(row.trialMonths) > 0
+							? { trialMonths: Number(row.trialMonths), renewalAmount: Number(row.renewalAmount) || 0 }
+							: {}),
 					}))
 			}
 		} catch (error) {
@@ -370,6 +383,10 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 							amount: line.amount,
 							priceId: line.priceId,
 							interval: line.interval,
+							// Carried onto the booking so `approve.ts`, which never sees the Stripe
+							// session, grants the same free months that were quoted — and states the
+							// price that follows them without re-reading Stripe.
+							...(line.trialMonths ? { trialMonths: line.trialMonths, renewalAmount: line.renewalAmount } : {}),
 						})),
 					}
 					: {}),
@@ -491,6 +508,8 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					key: line.key,
 					priceId: line.priceId,
 					interval: line.interval,
+					// Free months beat the usual "one interval already paid" trial.
+					trialMonths: line.trialMonths,
 					customerId: customerId || "",
 					paymentMethodId,
 					email: metadata.email,
@@ -510,8 +529,12 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				if (result.created) {
 					recurringCharges.push({
 						label: MEMBERSHIPS[line.key].receiptLabel,
-						amount: line.amount,
+						// On a gifted membership `amount` is 0 — money that moved — so the RENEWAL
+						// price is what the receipt must state. Quoting $0/month for something that
+						// will bill $20 is the disclosure failure this whole path exists to avoid.
+						amount: line.trialMonths ? Number(line.renewalAmount) || 0 : line.amount,
 						interval: line.interval,
+						...(line.trialMonths ? { trialMonths: line.trialMonths } : {}),
 						firstRenewalAt: result.firstRenewalAt,
 					})
 				}

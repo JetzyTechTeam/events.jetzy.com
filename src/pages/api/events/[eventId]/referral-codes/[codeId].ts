@@ -13,6 +13,7 @@ import zod from "zod"
 const updateReferralCodeSchema = zod.object({
 	isActive: zod.boolean().optional(),
 	discountPercentage: zod.number().min(0).max(100).optional(),
+	freeMembershipMonths: zod.number().int().min(0).max(12).optional(),
 	commissionPercentage: zod.number().min(0).max(100).optional(),
 	maxUses: zod.number().positive().optional().nullable(),
 })
@@ -79,6 +80,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 			if (validation.data.discountPercentage !== undefined) {
 				updateData.discountPercentage = validation.data.discountPercentage
+			}
+			if (validation.data.freeMembershipMonths !== undefined) {
+				updateData.freeMembershipMonths = validation.data.freeMembershipMonths
 			}
 			if (validation.data.maxUses !== undefined) {
 				updateData.maxUses = validation.data.maxUses

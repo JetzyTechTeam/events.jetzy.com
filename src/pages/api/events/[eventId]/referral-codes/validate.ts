@@ -45,6 +45,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			{
 				code: referralCode.code,
 				discountPercentage: referralCode.discountPercentage,
+				// So the checkout modal can say what the code is worth BEFORE the buyer commits.
+				// A code that gives free membership months but no percentage would otherwise
+				// preview as "0% off" — which reads as a code that does nothing.
+				freeMembershipMonths: referralCode.freeMembershipMonths || 0,
 				isValid: true,
 			},
 			"Referral code is valid",

@@ -20,8 +20,7 @@ import { getUserSlug } from "@/lib/utils";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 import PremiumBadge from "@/components/premium/PremiumBadge";
-import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
-import { useBillingPortal } from "@/hooks/useBillingPortal";
+import { useMembershipDialog } from "@/hooks/useMembershipDialog";
 
 type NavbarProps = {
   hideEventNav?: boolean;
@@ -38,13 +37,15 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
   const isAdmin = userRole === "admin" || userRole === "super admin";
   const isUser = userRole === "user";
   const { isPremium } = usePremiumStatus();
-  const [showPremiumPaywall, setShowPremiumPaywall] = React.useState(false);
-  const { openPortal, isOpening: isOpeningPortal, label: portalLabel } = useBillingPortal();
+  // One dialog for both jobs: buying Premium, and managing it once bought. A member used to be
+  // sent straight to Stripe from the menu below, which is the cancel-only portal — so there was
+  // nowhere in the product to move from monthly to annual.
+  const { open: openMembershipDialog, dialog: membershipDialog, label: membershipLabel } = useMembershipDialog();
   usePremiumSubscriptionReturn();
 
   return (
     <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={2}>
-      <Flex align="center" gap={4}>
+      <Flex align="center" gap={4} minW={0}>
         <Heading
           size="md"
           cursor="pointer"
@@ -58,7 +59,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
         <Spacer />
 
         {authenticated ? (
-          <Flex align="center" gap={3}>
+          <Flex align="center" gap={3} minW={0}>
             {/* Inline nav links for public user */}
             {isUser && !hideEventNav && (
               <Flex gap={1} display={{ base: "none", md: "flex" }}>
@@ -128,7 +129,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                 bg="#F5C518"
                 color="black"
                 _hover={{ bg: "#E0B317" }}
-                onClick={() => setShowPremiumPaywall(true)}
+                onClick={openMembershipDialog}
                 leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
                 display={{ base: "none", sm: "flex" }}
               >
@@ -138,9 +139,12 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
 
             {/* User avatar menu */}
             <Menu>
-              <MenuButton>
-                <Flex align="center" gap={2}>
-                  <Box position="relative">
+              {/* `minW={0}` + `flexShrink={0}` on the avatar: the label is the only part allowed
+                  to give way, so a long name (or an email, when no name is set) truncates
+                  instead of pushing the whole menu past the right edge of the bar. */}
+              <MenuButton minW={0} maxW={{ base: "44px", md: "260px" }}>
+                <Flex align="center" gap={2} minW={0}>
+                  <Box position="relative" flexShrink={0}>
                     {user?.image ? (
                       <img
                         className="h-8 w-8 rounded-full object-cover border border-gray-700"
@@ -158,7 +162,19 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                     )}
                     {isPremium && <PremiumBadge variant="dot" />}
                   </Box>
-                  <Text fontSize="sm" fontWeight="medium" color="gray.300" display={{ base: "none", md: "block" }}>
+                  <Text
+                    fontSize="sm"
+                    fontWeight="medium"
+                    color="gray.300"
+                    display={{ base: "none", md: "block" }}
+                    // One line, ellipsised. An email is the fallback when no name is set and is
+                    // both longer and unbreakable, so it needs this more than a name does.
+                    noOfLines={1}
+                    wordBreak="break-all"
+                    textAlign="left"
+                    minW={0}
+                    title={user?.name || user?.email || ""}
+                  >
                     {user?.name || user?.email}
                   </Text>
                 </Flex>
@@ -206,8 +222,8 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                     start one as a side effect of a purchase, so this must always be reachable
                     for a member — see api/subscriptions/portal.ts. */}
                 {isPremium && (
-                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} isDisabled={isOpeningPortal} onClick={openPortal}>
-                    {portalLabel}
+                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} onClick={openMembershipDialog}>
+                    {membershipLabel}
                   </MenuItem>
                 )}
                 <MenuItem
@@ -236,7 +252,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
               bg="#F5C518"
               color="black"
               _hover={{ bg: "#E0B317" }}
-              onClick={() => setShowPremiumPaywall(true)}
+              onClick={openMembershipDialog}
               leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
               display={{ base: "none", sm: "flex" }}
             >
@@ -256,11 +272,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
         )}
       </Flex>
 
-      <PremiumPaywallModal
-        isOpen={showPremiumPaywall}
-        onClose={() => setShowPremiumPaywall(false)}
-        returnTo={router.asPath}
-      />
+      {membershipDialog}
     </Box>
   );
 };

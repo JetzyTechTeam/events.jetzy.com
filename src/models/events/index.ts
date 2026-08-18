@@ -43,6 +43,20 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 			type: [String],
 			required: false,
 		},
+		// Which billing interval the bundled membership is sold at — "month" or "year".
+		//
+		// No default and no enum, same reasoning as `memberships` above: `undefined` means
+		// monthly, which is what every ticket saved before Jetzy Premium had an annual price
+		// means. Adding `default: "month"` would write the field on the next save of every
+		// legacy ticket for no gain.
+		//
+		// One interval for the whole ticket rather than one per membership — only Premium is
+		// sold annually. Resolve with `ticketMembershipInterval()` from
+		// `src/lib/premium-bundle.ts`; never read this field directly.
+		membershipInterval: {
+			type: String,
+			required: false,
+		},
 		// DEPRECATED — superseded by `memberships`. Read only as the fallback above; never
 		// written for new tickets. Kept so live documents and the mobile app are undisturbed,
 		// same treatment as `premium` / `privateAccessCode`.

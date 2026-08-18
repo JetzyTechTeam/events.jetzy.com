@@ -33,6 +33,14 @@ const bookingMembershipSchema = new Schema(
 		amount: { type: Number, required: false },
 		priceId: { type: String, required: false },
 		interval: { type: String, required: false },
+		/**
+		 * Free months granted by a referral code. Stored, not re-resolved: `approve.ts` never
+		 * sees the Stripe session, and a code edited while a request sits pending must not
+		 * change the deal the buyer was quoted.
+		 */
+		trialMonths: { type: Number, required: false },
+		/** What it renews at after the free months. `amount` is 0 on those, being money moved. */
+		renewalAmount: { type: Number, required: false },
 		subscriptionId: { type: String, required: false },
 		lastError: { type: String, required: false },
 	},

@@ -1,7 +1,15 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getMembershipPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
+import {
+	findMembershipPriceForInterval,
+	findMembershipRecord,
+	getMembershipPrice,
+	getStripeClient,
+	hasEverHadMembership,
+	resolveStripeCustomerForUser,
+} from "@/lib/premium"
+import { resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -24,7 +32,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const email = (session.user as any)?.email
 		const returnTo = typeof req.body?.returnTo === "string" && req.body.returnTo.startsWith("/") ? req.body.returnTo : "/"
 
-		const record = await findUserRecord(userId)
+		// Identity, not document id — otherwise an existing member who signed in through the
+		// other collection is sold a SECOND subscription on the same Stripe customer.
+		const record = await findMembershipRecord(userId, email)
 		if (!record) {
 			return sendResponse(res, null, "User not found.", false, ResCode.NOT_FOUND)
 		}
@@ -38,8 +48,63 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Standalone Jetzy Premium signup — Full Concierge is sold only as part of a ticket,
 		// so this flow is deliberately hardcoded to the one product.
-		const price = await getMembershipPrice("premium")
+		//
+		// The buyer picks the INTERVAL, never a price id. Accepting `price` from the body would
+		// let anyone subscribe at any price on the account — including one meant for a different
+		// product. We take "month" | "year" and resolve the id ourselves.
+		const requestedInterval = req.body?.interval
+		const interval = requestedInterval === "year" || requestedInterval === "month" ? requestedInterval : undefined
+
+		let price: Stripe.Price
+		if (interval) {
+			const match = await findMembershipPriceForInterval("premium", interval)
+			if (!match) {
+				// Never silently fall back to the default here: they chose annual, and charging
+				// them monthly instead is a different deal from the one disclosed.
+				console.error(`[subscriptions/checkout] Premium has no active ${interval} price`)
+				return sendResponse(res, null, "That plan isn't available right now. Please try the other billing option.", false, ResCode.BAD_REQUEST)
+			}
+			price = match
+		} else {
+			// No interval sent — an older client. The product default, exactly as before.
+			price = await getMembershipPrice("premium")
+		}
 		const stripeCustomerId = await resolveStripeCustomerForUser(userId, email)
+
+		// ---- Invite code → free trial ----
+		//
+		// Resolved against the shared table in `lib/invite-trial.ts`, never trusted from the
+		// body beyond the string itself, and checked against the interval actually being bought:
+		// a monthly-only code must not silently grant two free months of a $200 plan.
+		//
+		// FIRST-TIMERS ONLY, on history rather than current state. Someone who subscribed,
+		// cancelled and came back is not new, and Stripe will not stop them redeeming again.
+		// Refused loudly here rather than at the door of Stripe, so the buyer can clear the field
+		// and continue instead of meeting a failure they can't act on.
+		const rawInviteCode = typeof req.body?.inviteCode === "string" ? req.body.inviteCode : ""
+		let trialEnd: number | undefined
+		/** The NORMALISED code, set only once it has been accepted. Reported on, never displayed. */
+		let trialCodeApplied: string | undefined
+		if (rawInviteCode.trim()) {
+			const resolved = resolveTrialCode(rawInviteCode, price.recurring?.interval)
+			if (!resolved.ok) {
+				return sendResponse(res, { inviteCode: true }, resolved.message, false, ResCode.BAD_REQUEST)
+			}
+			if (await hasEverHadMembership(stripeCustomerId, "premium")) {
+				return sendResponse(
+					res,
+					{ inviteCode: true },
+					"This code is for new members, and this account has had Jetzy Premium before. Remove the code to continue.",
+					false,
+					ResCode.BAD_REQUEST,
+				)
+			}
+			// Calendar months, not 60 days — "2 months free" bought on the 31st should end on a
+			// date a person recognises.
+			trialEnd = Math.floor(trialEndsOn(resolved.offer).getTime() / 1000)
+			trialCodeApplied = resolved.code
+			console.log(`[subscriptions/checkout] trial code ${resolved.code} applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`)
+		}
 
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
 		const successUrl = `${baseUrl}${returnTo}?premium_session_id={CHECKOUT_SESSION_ID}`
@@ -52,10 +117,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			line_items: [{ price: price.id, quantity: 1 }],
 			success_url: successUrl,
 			cancel_url: cancelUrl,
-			metadata: { userId, purpose: "premium_subscription" },
+			// `inviteCode` rides along so the webhook can record WHICH code was redeemed. It was
+			// previously applied to `trial_end` and then forgotten, leaving no way to answer how a
+			// campaign performed.
+			metadata: { userId, purpose: "premium_subscription", ...(trialCodeApplied ? { inviteCode: trialCodeApplied } : {}) },
 			// Stamped so every webhook branch can identify the product without matching price
 			// ids — the same marker `startMembershipSubscription` sets on the ones we create.
-			subscription_data: { metadata: { membershipKey: "premium", userId } },
+			// A card IS collected during a trial (Checkout's default), so the membership converts
+			// on its own at `trial_end` instead of dying there — and the recurring terms are
+			// disclosed before purchase, which the card networks require either way.
+			subscription_data: {
+				metadata: { membershipKey: "premium", userId },
+				...(trialEnd ? { trial_end: trialEnd } : {}),
+			},
 		})
 
 		return sendResponse(res, { url: checkoutSession.url }, "Subscription checkout created.", true, ResCode.OK)

@@ -7,17 +7,20 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { heldMemberships } from "@/lib/premium-eligibility"
+import { eventUrl as buildEventUrl } from "@/lib/event-slug"
 import {
 	premiumAllowanceMessage,
 	premiumOrderCapMessage,
 	PREMIUM_TICKET_MAX_PER_ORDER,
 	resolveBundlePlan,
 	selectionMemberships,
+	ticketIncludesMembership,
 	ticketMemberships,
+	ticketMembershipInterval,
 	type BundlePlan,
 } from "@/lib/premium-bundle"
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
-import { getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
+import { findMembershipPriceForInterval, getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
 import { MEMBERSHIPS, membershipLabelList, type MembershipKey } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import Stripe from "stripe"
@@ -154,7 +157,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Validate and get referral code if provided. The modal's green tick is only a
 		// preview — the code can be deactivated or exhausted before submit, so re-check.
-		let referralCodeData: { code: string; discountPercentage: number } | null = null
+		let referralCodeData: { code: string; discountPercentage: number; freeMembershipMonths: number } | null = null
 		try {
 			const referralResult = await validateReferralCodeForEvent(tickets[0]?.eventId, referralCode)
 			if (!referralResult.ok) {
@@ -335,9 +338,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}${appMarker}`
 		// `/cancel` never sees a Stripe session, so unlike `/success` it cannot recover the event
 		// id from metadata — it has to be handed one here or the return link has nowhere to go.
+		// Where Stripe's own back arrow lands (the one that appears when you hover the logo).
+		//
+		// Web buyers go straight back to the EVENT they were buying, not to a standalone
+		// "Payment Canceled" page: backing out of checkout means "I changed my mind", and the
+		// useful next screen is the ticket list, not an apology with a Try Again button that
+		// only goes home. It also removes a whole class of dead redirect — the event page is
+		// served by the same deployment as the checkout that built this URL.
+		//
+		// App buyers still get `/cancel`, because that page carries the deep link back into the
+		// app and there is nothing else on the web that can return them.
+		const cancelEventSlug = eventDetails?.slug || tickets[0]?.eventId || ""
 		const cancelUrl = fromApp
 			? `${cleanBaseUrl}/cancel?app=1&eventId=${encodeURIComponent(tickets[0]?.eventId || "")}`
-			: `${cleanBaseUrl}/cancel`
+			: cancelEventSlug
+				? buildEventUrl(cleanBaseUrl, String(cancelEventSlug))
+				: `${cleanBaseUrl}/cancel`
 
 		// Stripe refuses any charge under $0.50 — a manual-capture hold included — and the
 		// rejection surfaces as an opaque 500 at the buyer's checkout. Catch it here with
@@ -494,7 +510,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// the two leaves someone charged with no membership. That risk already existed on the
 		// approval path and is handled the same way — the booking stays valid, the gap is
 		// recorded per product as `status: "failed"`, and money is never rolled back to fix it.
-		type MembershipLine = { key: MembershipKey; amount: number; currency: string; priceId: string; interval: string }
+		type MembershipLine = {
+			key: MembershipKey
+			amount: number
+			currency: string
+			priceId: string
+			interval: string
+			/** Free months granted by a referral code. Present means this line was NOT charged. */
+			trialMonths?: number
+			/** What it renews at once the free months run out — `amount` is 0 on those. */
+			renewalAmount?: number
+		}
 		let membershipLines: MembershipLine[] = []
 		let membershipExtras: Partial<Stripe.Checkout.SessionCreateParams> = {}
 
@@ -550,20 +576,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					mode: stillOwed.length > 0 ? "bundle" : "already-member",
 				}
 
+				// The interval the HOST set on the ticket, read from the EVENT record rather than
+				// the request body — same rule as the membership flags themselves, or a crafted
+				// body could buy an annual membership at the monthly rate. Undefined means
+				// monthly, which is what every ticket saved before annual existed means.
+				const bundledTicket = tickets
+					.map((t: any) => storedTicketFor(t.id))
+					.find((t: any) => t && ticketIncludesMembership(t))
+				const bundleInterval = ticketMembershipInterval(bundledTicket as any)
+
 				for (const key of stillOwed) {
 					// A recurring price can't be a line item in payment mode, hence the inline
 					// `price_data` rather than the price id. The price id is still carried in
 					// metadata so the subscription created later uses the exact rate quoted here.
-					const price = await getMembershipPrice(key)
+					//
+					// Falls back to the product default when this membership isn't sold at the
+					// ticket's interval — Full Concierge has no annual price, and a host who set a
+					// ticket to annual meant Premium. Unlike direct checkout, where a missing
+					// interval is an error because the BUYER chose it, here the host did, and the
+					// line carries whatever price was actually resolved so the recurring
+					// disclosure and the eventual subscription both stay truthful.
+					const price =
+						(bundleInterval !== "month" ? await findMembershipPriceForInterval(key, bundleInterval) : null) ||
+						(await getMembershipPrice(key))
 					if (price.unit_amount == null) {
 						throw new Error(`${MEMBERSHIPS[key].label} price has no unit_amount and can't be charged`)
 					}
+					// A referral code can hand out free months of Jetzy Premium. The line then costs
+					// NOTHING today — it is left out of `line_items` below — but still carries the
+					// real `priceId` and `interval`, because that is what the subscription is
+					// created at when the trial ends, and what has to be disclosed now.
+					//
+					// Premium only, by decision: Full Concierge is sold on someone else's terms.
+					const freeMonths = key === "premium" ? referralCodeData?.freeMembershipMonths || 0 : 0
+
 					membershipLines.push({
 						key,
-						amount: price.unit_amount / 100,
+						amount: freeMonths > 0 ? 0 : price.unit_amount / 100,
 						currency: price.currency || "usd",
 						priceId: price.id,
 						interval: price.recurring?.interval || "month",
+						...(freeMonths > 0 ? { trialMonths: freeMonths, renewalAmount: price.unit_amount / 100 } : {}),
 					})
 				}
 
@@ -574,7 +627,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						customer: customerId,
 						line_items: [
 							...prices,
-							...membershipLines.map((line) => ({
+							// A trial line is charged nothing today, so it must not appear as a line
+							// item at all — a $0 line item is rejected by Stripe, and charging it
+							// would defeat the offer.
+							...membershipLines.filter((line) => !line.trialMonths).map((line) => ({
 								quantity: 1,
 								price_data: {
 									currency: line.currency,

@@ -10,6 +10,7 @@ import { HiLocationMarker } from "react-icons/hi"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { usePlacesWidget } from "react-google-autocomplete"
 import { VerifyReferralCodeApi } from "@Jetzy/services/auth/authapis"
+import { isSignupTrialCode, signupTrialOffer } from "@/lib/invite-trial"
 import { useAnalytics } from "@/contexts/AnalyticsContext"
 
 // Image Assets
@@ -113,7 +114,9 @@ export default function JetzyQRSignup() {
         }
 
         // Optional invite code — validate live only when provided
-        if (inviteCode.trim()) {
+        // A membership invite code isn't a referral code — the backend has never heard of it,
+        // so verifying it there would reject a valid code and stop the signup.
+        if (inviteCode.trim() && !isSignupTrialCode(inviteCode)) {
             setIsVerifyingCode(true)
             const ok = await VerifyReferralCodeApi(inviteCode.trim())
             setIsVerifyingCode(false)
@@ -250,6 +253,13 @@ export default function JetzyQRSignup() {
                                         className="w-full h-[64px] rounded-full border border-gray-200 bg-white px-6 text-[15px] focus:border-orange-300 focus:ring-4 focus:ring-orange-50/50 outline-none transition-all text-center placeholder:text-gray-400 shadow-sm"
                                         autoComplete="off"
                                     />
+                                    {/* A membership code is worth something concrete — say so before
+                                        they submit, from the same table the server grants from. */}
+                                    {signupTrialOffer(inviteCode) && (
+                                        <p className="mt-2 text-center text-sm font-semibold text-green-600">
+                                            ✓ {signupTrialOffer(inviteCode)?.label} of Jetzy Premium, added to your new account. No card needed.
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="w-full max-w-[559px]">

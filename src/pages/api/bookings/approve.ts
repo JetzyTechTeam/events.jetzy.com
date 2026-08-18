@@ -74,6 +74,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	// Memberships this approval actually started, for the receipt.
 	const startedMemberships: RecurringCharge[] = []
 	const needsCapture = !!booking.payment?.paymentIntentId && ["authorized", "capturing", "failed"].includes(booking.payment?.status as string)
+	// The captured PaymentIntent, read after the branch for the Customer and saved card it
+	// carries. Undefined on a free approval, which has no hold to capture.
+	let capturedPi: Stripe.PaymentIntent | undefined
 
 	// ---- A bundled ticket held for approval ----
 	// The hold covers the ticket plus the first period of every membership the ticket sells;
@@ -181,6 +184,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
+		capturedPi = pi
 		amountCharged = (pi.amount_received ?? pi.amount ?? 0) / 100
 		booking.payment!.status = "captured"
 		booking.payment!.capturedAt = new Date()
@@ -194,8 +198,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			.filter((row) => !skipKeys.includes(row.key))
 			.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
 		booking.total = Math.round((amountCharged - capturedMemberships + Number.EPSILON) * 100) / 100
+	}
 
-		// ---- Start the memberships the hold paid for ----
+	if (pendingMemberships.length > 0) {
+		// ---- Start the memberships this approval owes ----
 		// Deliberately AFTER the capture and never allowed to undo it: money that has been
 		// taken is never rolled back here (same rule as the capture-before-confirm ordering
 		// above). If one fails the ticket is still valid and paid; the gap is recorded against
@@ -203,8 +209,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		//
 		// Each product is attempted independently — a failure on one must not deny the guest
 		// the other one they were just charged for.
-		const customerId = typeof pi.customer === "string" ? pi.customer : pi.customer?.id
-		const paymentMethodId = typeof pi.payment_method === "string" ? pi.payment_method : pi.payment_method?.id
+		//
+		// Runs OUTSIDE the capture branch, because a hold is no longer the only way a booking can
+		// owe a membership: a referral code granting free months does it on a $0 ticket, and that
+		// booking has no PaymentIntent at all. It used to sit inside `if (needsCapture)`, which
+		// approved those requests while silently dropping the gift they were promised.
+		let customerId = typeof capturedPi?.customer === "string" ? capturedPi.customer : capturedPi?.customer?.id
+		const paymentMethodId =
+			typeof capturedPi?.payment_method === "string" ? capturedPi.payment_method : capturedPi?.payment_method?.id
+		// No hold, so Stripe never handed us a Customer — resolve the one the membership belongs
+		// to. There is no card either: `startMembershipSubscription` then tells Stripe to cancel at
+		// trial end rather than raise an invoice nobody can pay.
+		if (!customerId) {
+			try {
+				const { resolveStripeCustomerForUser } = await import("@/lib/premium")
+				const subscriberId = (booking as any).checkoutUserId || (booking as any).bookerUserId
+				if (subscriberId) customerId = await resolveStripeCustomerForUser(String(subscriberId), booking.customerEmail)
+			} catch (customerError: any) {
+				console.error("[bookings/approve] Couldn't resolve a Stripe customer for the membership:", customerError?.message || customerError)
+			}
+		}
 		// Normalise a legacy single-product booking onto the array before writing back, so
 		// everything downstream reads one shape.
 		if (pendingMemberships.length > 0 && !booking.payment!.memberships?.length) {
@@ -229,6 +253,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					key: pending.key,
 					priceId: pending.priceId || "",
 					interval: pending.interval,
+					// STORED, not re-resolved — the referral code that granted these months may
+					// have been edited or deleted while the request sat pending.
+					trialMonths: pending.trialMonths,
 					customerId: customerId || "",
 					paymentMethodId,
 					email: booking.customerEmail,
@@ -247,8 +274,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				if (result.created) {
 					startedMemberships.push({
 						label: MEMBERSHIPS[pending.key].receiptLabel,
-						amount: Number(pending.amount) || 0,
+						// A gifted membership captured nothing, so `amount` is 0 and the renewal
+						// price is the only truthful figure to print.
+						amount: pending.trialMonths ? Number(pending.renewalAmount) || 0 : Number(pending.amount) || 0,
 						interval: pending.interval || "month",
+						...(pending.trialMonths ? { trialMonths: pending.trialMonths } : {}),
 						// The trial end IS the first real charge date — surfaced in the receipt so
 						// "Free trial ends <date>" in Stripe's portal can't be read as a free month.
 						firstRenewalAt: result.firstRenewalAt,
@@ -288,7 +318,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	// Referral usage was deliberately deferred from checkout so declined requests don't
 	// burn a limited-use code. Now that the booking is real, count it.
-	if (needsCapture && booking.referralCode) {
+	// `needsCapture` is no longer the only way a code did something: one granting free
+	// membership months is spent on approval even though the ticket was $0 and nothing was
+	// discounted. Without this `maxUses` would never limit the gifts on a free event.
+	if ((needsCapture || pendingMemberships.length > 0) && booking.referralCode) {
 		try {
 			const { ReferralCodes } = await import("@/models/events/referral-codes")
 			const referralCode = await ReferralCodes.findOne({ code: booking.referralCode.trim().toUpperCase(), isDeleted: false })

@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getUserStripeCustomerId } from "@/lib/premium"
+import { findMembershipRecord, getUserStripeCustomerId } from "@/lib/premium"
 import { MEMBERSHIPS, MEMBERSHIP_KEYS } from "@/lib/memberships"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
@@ -21,7 +21,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	try {
 		const userId = (session.user as any)?._id || (session.user as any)?.id
-		const record = await findUserRecord(userId)
+		// By IDENTITY, not by document id — the same person can hold an account in both
+		// collections, and the membership lives on whichever one bought it. See
+		// `findMembershipRecord`.
+		const record = await findMembershipRecord(userId, (session.user as any)?.email)
 
 		const premiumSubscription = record?.doc?.premiumSubscription || { active: false }
 

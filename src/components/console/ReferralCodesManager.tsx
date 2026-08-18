@@ -1,13 +1,16 @@
 "use client"
 import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch } from "@chakra-ui/react"
-import { FiPlus, FiEdit2, FiTrash2, FiCopy } from "react-icons/fi"
+import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2 } from "react-icons/fi"
 import { useState, useEffect } from "react"
 import axios from "axios"
+import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 
 interface ReferralCode {
 	_id: string
 	code: string
 	discountPercentage: number
+	/** Free months of Jetzy Premium this code grants on a ticket that already sells it. */
+	freeMembershipMonths?: number
 	isActive: boolean
 	usageCount: number
 	maxUses?: number | null
@@ -32,6 +35,9 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 	const [formData, setFormData] = useState({
 		code: "",
 		discountPercentage: 10,
+		// One number, not a tickbox plus a count — two fields can disagree and then the code
+		// no longer says what the buyer gets. 0 means the code grants no membership months.
+		freeMembershipMonths: 0,
 		maxUses: null as number | null,
 		isActive: true,
 	})
@@ -39,6 +45,10 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 	// Stats Modal State
 	const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure()
 	const [selectedStatsCode, setSelectedStatsCode] = useState<ReferralCode | null>(null)
+	// Performance for ONE code — who came in on it, what they paid. Behind a button rather than
+	// under the table: this tab's job is managing codes, and a permanent report below them
+	// pushed that work off the screen.
+	const [analyticsCode, setAnalyticsCode] = useState<ReferralCode | null>(null)
 	const [statsData, setStatsData] = useState<{ totalSales: number; verifiedUsageCount: number; code: string; commissionPercentage: number } | null>(null)
 	const [statsLoading, setStatsLoading] = useState(false)
 	const [commissionRate, setCommissionRate] = useState<string>("10")
@@ -83,6 +93,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			const response = await axios.post(`/api/events/${eventId}/referral-codes`, {
 				code: formData.code,
 				discountPercentage: formData.discountPercentage,
+				freeMembershipMonths: formData.freeMembershipMonths || 0,
 				maxUses: formData.maxUses || null,
 			})
 
@@ -112,7 +123,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		}
 	}
 
-	const handleUpdate = async (codeId: string, updates: { isActive?: boolean; discountPercentage?: number; maxUses?: number | null }) => {
+	const handleUpdate = async (codeId: string, updates: { isActive?: boolean; discountPercentage?: number; freeMembershipMonths?: number; maxUses?: number | null }) => {
 		try {
 			setUpdating(codeId)
 			const response = await axios.patch(`/api/events/${eventId}/referral-codes/${codeId}`, updates)
@@ -188,10 +199,36 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		setFormData({
 			code: "",
 			discountPercentage: 10,
+			freeMembershipMonths: 0,
 			maxUses: null,
 			isActive: true,
 		})
 		setEditingCode(null)
+	}
+
+	// The CODE ITSELF is never editable — bookings store the string, not the id, so renaming one
+	// would orphan every redemption already recorded against it. Everything else is fair game.
+	const handleOpenEdit = (code: ReferralCode) => {
+		setEditingCode(code)
+		setFormData({
+			code: code.code,
+			discountPercentage: code.discountPercentage,
+			freeMembershipMonths: code.freeMembershipMonths || 0,
+			maxUses: code.maxUses ?? null,
+			isActive: code.isActive,
+		})
+		onOpen()
+	}
+
+	const handleSaveEdit = async () => {
+		if (!editingCode) return
+		await handleUpdate(editingCode._id, {
+			discountPercentage: formData.discountPercentage,
+			freeMembershipMonths: formData.freeMembershipMonths || 0,
+			maxUses: formData.maxUses || null,
+		})
+		onClose()
+		resetForm()
 	}
 
 	const handleOpenStats = async (code: ReferralCode) => {
@@ -312,6 +349,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 							<Tr>
 								<Th>Code</Th>
 								<Th>Discount</Th>
+								<Th>Free Premium</Th>
 								<Th>Status</Th>
 								<Th>Usage</Th>
 								<Th>Max Uses</Th>
@@ -334,6 +372,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 										</Flex>
 									</Td>
 									<Td>{code.discountPercentage}%</Td>
+									<Td>{code.freeMembershipMonths ? `${code.freeMembershipMonths} ${code.freeMembershipMonths === 1 ? "month" : "months"}` : "—"}</Td>
 									<Td>
 										<Switch
 											isChecked={code.isActive}
@@ -351,10 +390,30 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 												variant="ghost"
 												color="#F79432"
 												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												leftIcon={<FiBarChart2 />}
+												onClick={() => setAnalyticsCode(code)}
+											>
+												Analytics
+											</Button>
+											<Button
+												size="sm"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
 												onClick={() => handleOpenStats(code)}
 											>
 												Stats
 											</Button>
+											<IconButton
+												aria-label="Edit code"
+												icon={<FiEdit2 />}
+												size="sm"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												onClick={() => handleOpenEdit(code)}
+												isDisabled={updating === code._id}
+											/>
 											<IconButton
 												aria-label="Delete code"
 												icon={<FiTrash2 />}
@@ -377,7 +436,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			<Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
 				<ModalOverlay />
 				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
-					<ModalHeader>Create Referral Code</ModalHeader>
+					<ModalHeader>{editingCode ? "Edit Referral Code" : "Create Referral Code"}</ModalHeader>
 					<ModalCloseButton />
 					<ModalBody>
 						<Box>
@@ -394,9 +453,13 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 									bg="#101010"
 									border="1px solid #434343"
 									_focus={{ borderColor: "#F79432" }}
+									isReadOnly={!!editingCode}
+									opacity={editingCode ? 0.6 : 1}
 								/>
 								<Text fontSize="xs" color="gray.400" mt={1}>
-									Letters, numbers, and special characters allowed (no spaces). Codes are matched case-insensitively.
+									{editingCode
+										? "The code itself can't be changed — bookings are recorded against the text of it. Delete it and create a new one to rename."
+										: "Letters, numbers, and special characters allowed (no spaces). Codes are matched case-insensitively."}
 								</Text>
 							</FormControl>
 
@@ -419,6 +482,29 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 								</NumberInput>
 								<Text fontSize="xs" color="gray.400" mt={1}>
 									Discount percentage (0-100%)
+								</Text>
+							</FormControl>
+
+							<FormControl mb={4}>
+								<FormLabel>Free Months of Jetzy Premium</FormLabel>
+								<NumberInput
+									value={formData.freeMembershipMonths}
+									onChange={(_, value) => setFormData({ ...formData, freeMembershipMonths: isNaN(value) ? 0 : value })}
+									min={0}
+									max={12}
+									bg="#101010"
+									color="white"
+									borderColor="#434343"
+								>
+									<NumberInputField border="1px solid #434343" _focus={{ borderColor: "#F79432" }} />
+									<NumberInputStepper>
+										<NumberIncrementStepper color="white" />
+										<NumberDecrementStepper color="white" />
+									</NumberInputStepper>
+								</NumberInput>
+								<Text fontSize="xs" color="gray.400" mt={1}>
+									0 for none. Only applies to tickets that already include Jetzy Premium — the buyer gets those months free, then the
+									membership renews at the normal rate until they cancel. It never applies to Full Concierge.
 								</Text>
 							</FormControl>
 
@@ -446,13 +532,56 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 					</ModalBody>
 
 					<ModalFooter>
-						<Button variant="ghost" mr={3} onClick={onClose} color="white" _hover={{ bg: "#333" }}>
+						<Button
+							variant="ghost"
+							mr={3}
+							onClick={() => {
+								onClose()
+								resetForm()
+							}}
+							color="white"
+							_hover={{ bg: "#333" }}
+						>
 							Cancel
 						</Button>
-						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={handleCreate} isLoading={creating} isDisabled={!formData.code || formData.discountPercentage < 0 || formData.discountPercentage > 100}>
-							Create
+						<Button
+							bg="#F79432"
+							color="black"
+							_hover={{ bg: "#E68422" }}
+							onClick={editingCode ? handleSaveEdit : handleCreate}
+							isLoading={editingCode ? updating === editingCode._id : creating}
+							isDisabled={
+								!formData.code ||
+								formData.discountPercentage < 0 ||
+								formData.discountPercentage > 100 ||
+								formData.freeMembershipMonths < 0 ||
+								formData.freeMembershipMonths > 12
+							}
+						>
+							{editingCode ? "Save changes" : "Create"}
 						</Button>
 					</ModalFooter>
+				</ModalContent>
+			</Modal>
+
+			{/* Performance for one code — the buyers, the money, and the CSV to hand over. */}
+			<Modal isOpen={!!analyticsCode} onClose={() => setAnalyticsCode(null)} size="5xl" isCentered scrollBehavior="inside">
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+					<ModalHeader>
+						Performance: <span style={{ fontFamily: "monospace" }}>{analyticsCode?.code}</span>
+					</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						{analyticsCode && (
+							<ReferralPerformance
+								eventId={eventId}
+								code={analyticsCode.code}
+								showEventColumn={false}
+								title="Bookings made with this code"
+							/>
+						)}
+					</ModalBody>
 				</ModalContent>
 			</Modal>
 

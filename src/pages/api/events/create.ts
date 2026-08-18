@@ -82,6 +82,9 @@ const schema = zod.object({
 			// Loosely typed then narrowed by `sanitizeMembershipKeys`, so an unknown key from an
 			// older client is dropped rather than rejecting the whole event.
 			memberships: zod.array(zod.string()).optional(),
+			// Billing interval the bundled membership is sold at. Omitted means monthly, which is
+			// what every ticket saved before annual existed resolves to.
+			membershipInterval: zod.enum(["month", "year"]).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
 		}).superRefine((ticket, ctx) => {
@@ -259,6 +262,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// The array is the authority; `includesPremium` is written alongside it purely so
 				// the mobile app and any older reader still see a bundled Premium ticket.
 				memberships: ticketMemberships(ticket as any),
+				// Only persisted when the host picked one — unset resolves to monthly.
+				...((ticket as any).membershipInterval ? { membershipInterval: (ticket as any).membershipInterval } : {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
 			})),
 			benefits,

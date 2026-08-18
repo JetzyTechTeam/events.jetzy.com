@@ -6,15 +6,16 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { membershipQuantityInSelection, premiumAllowanceMessage, selectionMemberships } from "@/lib/premium-bundle"
+import { membershipQuantityInSelection, premiumAllowanceMessage, selectionMemberships, selectionMembershipInterval } from "@/lib/premium-bundle"
 import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
 import { ROUTES } from "@/configs/routes"
-import { useMembershipPlans } from "@/hooks/usePremiumPlan"
+import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
 import { StarIcon } from "@heroicons/react/24/solid"
 import ReturnToAppButton from "./misc/ReturnToAppButton"
 import { cameFromApp } from "@/lib/app-return"
+import { trialEndsOn } from "@/lib/invite-trial"
 
 /**
  * "monthly" reads better than "every month" in the billing disclosure, but the interval
@@ -65,6 +66,10 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 	const [referralCodeValid, setReferralCodeValid] = useState<boolean | null>(null)
 	const [referralCodeDiscount, setReferralCodeDiscount] = useState<number | null>(null)
+	// Free months of Jetzy Premium the code grants. Separate from the percentage: a code may do
+	// either, both, or neither, and one that gives only free months would otherwise preview as
+	// "0% off" — a code that appears to do nothing.
+	const [referralFreeMonths, setReferralFreeMonths] = useState<number>(0)
 
 	// Jetzy Premium membership sold with the ticket.
 	//
@@ -109,10 +114,35 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// server, the confirmation email and the success page use, so all four agree — but the
 	// server recomputes independently and stays authoritative.
 	const appliedReferralPercentage = referralCodeValid === true ? (referralCodeDiscount ?? 0) : 0
+	// The interval the SELECTED TICKET sells at, not the product default — an annual ticket
+	// must disclose $200/year here, because that is what `api/checkout` will charge.
+	const bundleInterval = selectionMembershipInterval(tickets as any)
+	// Free months apply to Jetzy Premium only — Full Concierge is sold on someone else's terms —
+	// and only when this order is actually buying Premium. A code carrying months is otherwise
+	// worth nothing here: the selected ticket may not sell membership at all, or the buyer may
+	// already hold it, and promising free months in either case describes a gift nobody gets.
+	const appliedFreeMonths = referralCodeValid === true && chargedKeys.includes("premium") ? referralFreeMonths : 0
+	// Memberships still being PAID for today. A gifted one is charged nothing now, so it is
+	// neither part of the hold nor part of "due today" — saying otherwise overstates both.
+	const paidChargedKeys = chargedKeys.filter((key) => !(key === "premium" && appliedFreeMonths > 0))
 	const recurringPreview = chargedKeys
 		.map((key) => membershipPlans.find((plan) => plan.key === key))
-		.filter((plan): plan is NonNullable<typeof plan> => !!plan && plan.amount != null)
-		.map((plan) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: plan.amount as number, interval: plan.interval }))
+		.filter((plan): plan is NonNullable<typeof plan> => !!plan)
+		.map((plan) => ({ plan, price: planPriceForInterval(plan, bundleInterval) }))
+		.filter(({ price }) => price.amount != null)
+		.map(({ plan, price }) => ({
+			label: MEMBERSHIPS[plan.key].receiptLabel,
+			amount: price.amount as number,
+			interval: price.interval,
+			// `amount` stays the real recurring price so it can be disclosed; `trialMonths` is
+			// what keeps it out of `dueToday`.
+			...(appliedFreeMonths > 0 && plan.key === "premium" ? { trialMonths: appliedFreeMonths } : {}),
+		}))
+	// "$20/month", or "$20/month after 2 free months" when a referral code gave them away.
+	const renewalPhrase = (m: { amount: number; interval: string; trialMonths?: number }) => {
+		const rate = `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`
+		return m.trialMonths ? `${rate} after ${m.trialMonths} free ${m.trialMonths === 1 ? "month" : "months"}` : rate
+	}
 	const pricing = buildTicketPricing({
 		subtotal: selectionTotal,
 		referralCode: appliedReferralPercentage > 0 ? formData.referralCode?.trim().toUpperCase() : undefined,
@@ -182,9 +212,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			if (result.status && result.data) {
 				setReferralCodeValid(true)
 				setReferralCodeDiscount(result.data.discountPercentage)
+				setReferralFreeMonths(Number(result.data.freeMembershipMonths) || 0)
 			} else {
 				setReferralCodeValid(false)
 				setReferralCodeDiscount(null)
+				setReferralFreeMonths(0)
 			}
 		} catch (error) {
 			console.error("Error validating referral code:", error)
@@ -694,12 +726,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 
 													    Branches on `chargedKeys`, NOT on what the ticket sells — a buyer who
 													    already has the membership is only being held for the ticket, so the
-													    "covers your first month" wording would overstate the hold. */}
+													    "covers your first month" wording would overstate the hold.
+
+													    The period follows the TICKET's interval — an annual bundle holds a
+													    full year, which is a materially larger authorization to disclose. */}
 													{selectionTotal <= 0
 														? "Your registration is subject to host approval."
-														: chargedKeys.length > 0
-															? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket and first month of ${membershipLabelList(chargedKeys)}. You are only charged and subscribed if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
-															: `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but only charged if the host approves. The hold is automatically released if declined or if the host doesn't respond within ${AUTH_HOLD_DAYS} days.`}
+														: paidChargedKeys.length > 0
+															? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket and first ${bundleInterval === "year" ? "year" : "month"} of ${membershipLabelList(paidChargedKeys)}. You are only charged and subscribed if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
+															: chargedKeys.length > 0
+																? `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket only — your ${membershipLabelList(chargedKeys)} is free for ${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} and starts if the host approves. You are only charged if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
+																: `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but only charged if the host approves. The hold is automatically released if declined or if the host doesn't respond within ${AUTH_HOLD_DAYS} days.`}
 												</p>
 											</div>
 										)}
@@ -747,7 +784,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 											</div>
 											{referralCodeValid === true && referralCodeDiscount !== null && (
 												<p className="text-sm text-green-500 mt-1.5 font-medium">
-													{referralCodeDiscount > 0 ? `✓ Valid! You'll get ${referralCodeDiscount}% off your order` : "✓ Referral code is valid"}
+													{`✓ ${
+														[
+															referralCodeDiscount > 0 ? `You'll get ${referralCodeDiscount}% off your order` : "",
+															// `appliedFreeMonths`, not the raw code value — see above.
+															appliedFreeMonths > 0
+																? `${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} of Jetzy Premium free`
+																: "",
+														]
+															.filter(Boolean)
+															.join(" + ") || "Referral code is valid"
+													}`}
 												</p>
 											)}
 											{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
@@ -831,13 +878,28 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															{chargedKeys.map((key) => {
 																const plan = membershipPlans.find((p) => p.key === key)
 																const name = plan?.name || MEMBERSHIPS[key].label
-																const interval = plan?.interval || "month"
+																// Priced at the TICKET's interval, matching the order summary beside it
+																// and what `api/checkout` will charge. Reading the product default here
+																// disclosed "$20/month, renews monthly" against a $200/year charge.
+																const price = plan ? planPriceForInterval(plan, bundleInterval) : null
+																const interval = price?.interval || plan?.interval || "month"
+																// Premium only — the code never touches Full Concierge.
+																const freeMonths = key === "premium" ? appliedFreeMonths : 0
+																const trialChargesFrom = trialEndsOn({ months: freeMonths, intervals: [], label: "" }).toLocaleDateString(
+																	"en-US",
+																	{ month: "short", day: "numeric", year: "numeric" },
+																)
 																return (
 																	<div key={key} className="flex items-start gap-2">
 																		<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
 																		<div style={{ color: "#F5C518" }}>
 																			<p className="text-xs font-semibold">
-																				🎟️ {name}{plan?.label ? ` — ${plan.label}` : ""}
+																				🎟️ {name}
+																				{freeMonths > 0
+																					? ` — ${freeMonths} ${freeMonths === 1 ? "month" : "months"} free`
+																					: price?.label
+																						? ` — ${price.label}`
+																						: ""}
 																			</p>
 																			{/* On an approval ticket nothing is charged yet — the membership
 																			    is held alongside the ticket and only starts if the host
@@ -847,9 +909,19 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																			    statement about a charge at the point of sale. */}
 																			<p className="text-xs mt-1">
 																				{MEMBERSHIPS[key].checkoutBlurb}{" "}
-																				{selectionNeedsApproval
-																					? `Charged only if your registration is approved and renews ${renewalAdverb(interval)} until canceled.`
-																					: `Charged with your ticket today and renews ${renewalAdverb(interval)} until canceled.`}
+																				{/* Three different statements about when money moves, and each has to be
+																				    true of the order in front of the buyer: a trial charges nothing now
+																				    but WILL charge later, an approval order charges only if approved, and
+																				    an instant order charges today. Saying "charged today" over a free
+																				    trial, or hiding the price that follows one, are both misstatements at
+																				    the point of sale. */}
+																				{freeMonths > 0
+																					? `Free for ${freeMonths} ${freeMonths === 1 ? "month" : "months"}${
+																							price?.label ? `, then ${price.label}` : ""
+																					  } from ${trialChargesFrom}. Cancel any time before then and you won't be charged.`
+																					: selectionNeedsApproval
+																						? `Charged only if your registration is approved and renews ${renewalAdverb(interval)} until canceled.`
+																						: `Charged with your ticket today and renews ${renewalAdverb(interval)} until canceled.`}
 																			</p>
 																		</div>
 																	</div>
@@ -1108,7 +1180,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															<div key={membership.label} className="flex justify-between mt-1" style={{ color: "#F5C518" }}>
 																<span>{membership.label}</span>
 																<span>
-																	{membership.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/{membership.interval}
+																	{membership.trialMonths
+																		? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then ${membership.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${membership.interval}`
+																		: `${membership.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${membership.interval}`}
 																</span>
 															</div>
 														))}
@@ -1118,12 +1192,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															<span>{(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })}</span>
 														</div>
 														<p className="text-xs text-gray-400 mt-2">
+															{/* One phrase per membership, because a single order can mix a gifted
+															    one with a paid one and a single rate would misdescribe both. The
+															    free months are named here as well as above: this is the sentence
+															    that says what happens AFTER them. */}
 															{selectionNeedsApproval
 																? `If the host approves, you're charged this amount and your ${pricing.recurring.length > 1 ? "memberships begin" : "membership begins"}, renewing at ${pricing.recurring
-																	.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
+																	.map((m) => renewalPhrase(m))
 																	.join(" and ")} until you cancel. If they decline, nothing is charged.`
 																: `Your ${pricing.recurring.length > 1 ? "memberships then renew" : "membership then renews"} at ${pricing.recurring
-																	.map((m) => `${m.amount.toLocaleString("en-US", { style: "currency", currency: "usd" })}/${m.interval}`)
+																	.map((m) => renewalPhrase(m))
 																	.join(" and ")} until you cancel. You can cancel any time from your account.`}
 														</p>
 													</>

@@ -1,11 +1,13 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
+import { trialDisclosure } from "@/lib/invite-trial"
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
+import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { CheckIcon } from "@heroicons/react/24/solid"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
 import { signIn, useSession } from "next-auth/react"
@@ -22,13 +24,6 @@ const APP_DEEP_LINK_BASE = "https://jetzy.com/jetzy_event"
 // survive that round trip since Stripe's success_url is a fixed string built
 // server-side (see /api/subscriptions/checkout.ts), so it has to be stashed here.
 const EVENT_ID_STORAGE_KEY = "subscribe_event_id"
-
-type PlanInfo = {
-	name: string
-	unitAmount: number | null
-	currency: string
-	interval: string
-}
 
 export default function SubscribePage() {
 	const router = useRouter()
@@ -103,18 +98,105 @@ export default function SubscribePage() {
 
 	const { isPremium, isLoading: premiumLoading } = usePremiumStatus()
 
-	const { data: plan, isLoading: planLoading } = useQuery({
-		queryKey: ["premium-plan"],
-		queryFn: async () => {
-			const { data } = await axios.get("/api/subscriptions/plan")
-			return data?.data as PlanInfo
+	// The shared hook rather than a private `["premium-plan"]` query: one cache entry and one
+	// price formatter between this page and the paywall modal, which is what keeps the two from
+	// quoting the same membership differently.
+	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium", status === "authenticated")
+
+	// Which billing interval the buyer has picked. Left unset until the plan loads, then
+	// defaulted to the product's default price (monthly) rather than guessing a string — the
+	// selector only appears once there is genuinely more than one interval on sale.
+	const [selectedInterval, setSelectedInterval] = React.useState<string | undefined>(undefined)
+	React.useEffect(() => {
+		if (!selectedInterval && plan?.interval) setSelectedInterval(plan.interval)
+	}, [plan?.interval, selectedInterval])
+
+	// What they are on now — only asked once we know they are a member.
+	const { currentPlan } = useCurrentMembershipPlan(isPremium)
+
+	// Cancel, change card, or switch to annual. `flow: "switch"` opens the Premium-scoped
+	// update flow in Stripe; without it, the ordinary portal.
+	const portalMutation = useMutation({
+		mutationFn: async (flow?: "switch") => {
+			const { data } = await axios.post("/api/subscriptions/portal", {
+				returnTo: "/subscribe",
+				...(flow ? { flow } : {}),
+			})
+			return data?.data as { url: string }
 		},
-		enabled: status === "authenticated",
+		onSuccess: (data) => {
+			if (data?.url) {
+				window.location.href = data.url
+			} else {
+				ErrorToast("Error", "Could not open the billing portal. Please try again.")
+			}
+		},
+		onError: (error: any) => {
+			ErrorToast("Error", error?.response?.data?.message || "Could not open the billing portal. Please try again.")
+		},
 	})
+
+	// Invite code (a free-trial code). Checked against the server before submit so a wrong code,
+	// or one that doesn't apply to the plan they picked, is reported while they can still fix it.
+	const [inviteCode, setInviteCode] = React.useState("")
+	const [inviteAccepted, setInviteAccepted] = React.useState<string | null>(null)
+	const [inviteError, setInviteError] = React.useState<string | null>(null)
+	const [inviteChecking, setInviteChecking] = React.useState(false)
+	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
+
+	React.useEffect(() => {
+		if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		const code = inviteCode.trim()
+		if (!code) {
+			setInviteAccepted(null)
+			setInviteError(null)
+			setInviteChecking(false)
+			return
+		}
+		setInviteChecking(true)
+		inviteTimer.current = setTimeout(async () => {
+			try {
+				const { data } = await axios.post("/api/subscriptions/invite-code", { code, interval: selectedInterval })
+				// Name the amount and the date it starts, not just "2 months free".
+				//
+				// The code now applies to ANNUAL as well as monthly, and the same two free months
+				// precede a $200 charge there instead of a $20 one. A trial's whole point is that
+				// the buyer knows what happens when it ends, so the disclosure is built from the
+				// price of the interval they actually have selected — and it is rebuilt whenever
+				// they change it, because the answer changes with it.
+				const selectedPrice = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
+				setInviteAccepted(
+					data?.data?.label
+						? trialDisclosure(
+							{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
+							selectedPrice?.label || null,
+							data?.data?.chargesFrom ? new Date(data.data.chargesFrom) : new Date(),
+						)
+						: "Invite code applied.",
+				)
+				setInviteError(null)
+			} catch (error: any) {
+				setInviteAccepted(null)
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+			} finally {
+				setInviteChecking(false)
+			}
+		}, 600)
+		return () => {
+			if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		}
+		// Re-checked when the interval changes: a monthly-only code stops applying on annual.
+	}, [inviteCode, selectedInterval])
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
-			const { data } = await axios.post("/api/subscriptions/checkout", { returnTo: "/subscribe" })
+			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
+			// request can't subscribe anyone at an arbitrary price on the account.
+			const { data } = await axios.post("/api/subscriptions/checkout", {
+				returnTo: "/subscribe",
+				...(selectedInterval ? { interval: selectedInterval } : {}),
+				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
+			})
 			return data?.data as { url: string }
 		},
 		onSuccess: (data) => {
@@ -125,6 +207,13 @@ export default function SubscribePage() {
 			}
 		},
 		onError: (error: any) => {
+			// The code was refused at the door (edited after we checked it, or the account turned
+			// out to have had Premium before) — surface it on the field, not in a toast that
+			// leaves the buyer looking at an unchanged form.
+			if (error?.response?.data?.data?.inviteCode) {
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				return
+			}
 			if (error?.response?.data?.data?.alreadySubscribed) {
 				InfoToast("You're already a member", "You already have an active Jetzy Premium subscription.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
@@ -133,11 +222,6 @@ export default function SubscribePage() {
 			ErrorToast("Error", error?.response?.data?.message || "Could not start checkout. Please try again.")
 		},
 	})
-
-	const formattedPrice =
-		plan?.unitAmount != null
-			? (plan.unitAmount / 100).toLocaleString("en-US", { style: "currency", currency: plan.currency || "usd" })
-			: null
 
 	if (isAutoLoggingIn || status === "loading") {
 		return (
@@ -163,11 +247,28 @@ export default function SubscribePage() {
 				<PlanComparison
 					plan={plan}
 					planLoading={planLoading}
+					// Monthly/Annual. The selector renders only when the product genuinely has more
+					// than one interval on sale, so this is inert until annual exists in Stripe.
+					prices={prices}
+					selectedInterval={selectedInterval}
+					onIntervalChange={setSelectedInterval}
 					isPremium={isPremium}
+					// Member state: their live plan, the switch, and the portal. `goToApp` stays on
+					// the third button so the mobile deep-link return is untouched.
+					currentPlan={currentPlan}
+					onSwitchInterval={() => portalMutation.mutate("switch")}
+					onManageBilling={() => portalMutation.mutate(undefined)}
+					billingPending={portalMutation.isPending}
+					inviteCode={inviteCode}
+					onInviteCodeChange={setInviteCode}
+					inviteAccepted={inviteAccepted}
+					inviteError={inviteError}
+					inviteChecking={inviteChecking}
 					premiumDisabled={premiumLoading}
 					premiumPending={subscribeMutation.isPending}
 					onChooseFree={goToApp}
 					onChoosePremium={() => subscribeMutation.mutate()}
+					subscribedCtaLabel="Continue"
 				/>
 			</div>
 		</div>

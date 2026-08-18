@@ -12,9 +12,9 @@ import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
 import { buildTicketPricing } from "@/lib/ticket-pricing";
-import { membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, ticketMemberships } from "@/lib/premium-bundle";
+import { membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle";
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships";
-import { useMembershipPlans } from "@/hooks/usePremiumPlan";
+import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan";
 import {
   Button,
   Modal,
@@ -109,6 +109,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         // Whether buying this ticket also starts a Jetzy Premium subscription. The server
         // re-reads it from the event record, so this is only for display and selection state.
         memberships: ticketMemberships(ticket as any),
+        // Monthly or annual. Display and selection state only — `api/checkout` re-reads it
+        // from the event record before deciding what the card is charged.
+        membershipInterval: ticket.membershipInterval,
       };
     });
 
@@ -205,6 +208,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
         // the buyer against, and which recurring disclosures to show, from THIS list.
         // Dropping it made every bundled ticket look ordinary in the modal.
         memberships: ticket.memberships,
+        // Must survive into redux too, or the checkout modal quotes the monthly figure on a
+        // ticket the server will charge annually.
+        membershipInterval: ticket.membershipInterval,
       }))
       .filter((ticket) => ticket.isSelected);
 
@@ -232,12 +238,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   const selectionAddedKeys = selectionMemberships(tickets.filter((t) => t.isSelected) as any).filter(
     (key) => !(key === "premium" && isPremium),
   );
+  // Priced at the SELECTED TICKET's interval, not the product default, so an annual bundle
+  // reads "$200/year" beside the order total rather than the monthly figure.
+  const selectionInterval = selectionMembershipInterval(tickets as any);
   const selectionPricing = buildTicketPricing({
     subtotal: selectionSubtotal,
     recurring: selectionAddedKeys
       .map(planFor)
-      .filter((plan): plan is NonNullable<typeof plan> => !!plan && plan.amount != null)
-      .map((plan) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: plan.amount as number, interval: plan.interval })),
+      .filter((plan): plan is NonNullable<typeof plan> => !!plan)
+      .map((plan) => ({ plan, price: planPriceForInterval(plan, selectionInterval) }))
+      .filter(({ price }) => price.amount != null)
+      .map(({ plan, price }) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: price.amount as number, interval: price.interval })),
   });
 
   const anyTicketNeedsApproval = eventHasAnyApprovalTicket(event as any);
@@ -446,10 +457,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   checkout, and a referral code can lower the ticket further there. */}
               {selectionAddedKeys.map((key) => {
                 const plan = planFor(key);
+                // The SELECTED TICKET's interval, not the product default. This line read
+                // "$20/month" beside an annual ticket that charges $200/year — the figure at the
+                // point of sale has to be the one the card is charged.
+                const price = plan ? planPriceForInterval(plan, selectionInterval) : null;
                 return (
                   <p key={key} className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
-                    {plan?.label
-                      ? `+ ${plan.name} ${plan.label} — confirmed at checkout`
+                    {price?.label
+                      ? `+ ${plan?.name} ${price.label} — confirmed at checkout`
                       : `+ ${plan?.name || key} membership — confirmed at checkout`}
                   </p>
                 );

@@ -19,6 +19,12 @@ export type TicketData = {
    * and the subscriptions are created once the host approves.
    */
   memberships?: MembershipKey[]
+  /**
+   * Billing interval the bundled membership is sold at — `"month" | "year"`. Undefined means
+   * monthly, so every ticket saved before annual existed keeps its behaviour. Read it with
+   * `ticketMembershipInterval()`.
+   */
+  membershipInterval?: string
   /** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
   includesPremium?: boolean
 }

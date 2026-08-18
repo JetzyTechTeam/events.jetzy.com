@@ -1,5 +1,7 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 import { sendResponse } from "@Jetzy/lib/helpers"
+import { grantSignupTrial } from "@/lib/signup-trial"
+import { isSignupTrialCode } from "@/lib/invite-trial"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { Users } from "@Jetzy/models/userModal"
 import { Roles } from "@Jetzy/types"
@@ -61,7 +63,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 		// credited. Best-effort — a backend failure must not break local signup.
 		// Only runs when a code is present (no-code signups keep the deferred
 		// JIT-sync path that happens on first login).
-		if (refCode) {
+		// An invite code granting free Jetzy Premium is NOT a backend referral code — it lives in
+		// `TRIAL_CODES`, credits nobody, and would just be rejected there. Granted at creation on
+		// this path because the generated password only reaches the person by email: an address
+		// they don't control gets them an account they can't sign into.
+		if (refCode && isSignupTrialCode(refCode)) {
+			await grantSignupTrial({
+				email,
+				firstName,
+				userId: String((user as any)?._id),
+				code: refCode,
+			})
+		} else if (refCode) {
 			try {
 				const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://test.jetzy.com"
 				const controller = new AbortController()

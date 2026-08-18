@@ -2,7 +2,7 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
-import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
+import { bundleFreeTicketMessage, ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle"
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles"
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList"
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place"
@@ -397,6 +397,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					// event setting", and coercing it here would let autosave pin every ticket to OFF.
 					requireApproval: t.requireApproval,
 					memberships: ticketMemberships(t as any),
+					// Carried through so the Monthly/Annual control shows what the ticket actually
+					// sells. Dropping it left the toggle reading "Monthly" on an annual ticket.
+					membershipInterval: t.membershipInterval,
 					includesPremium: ticketMemberships(t as any).includes("premium"),
 				})))
 			}
@@ -453,6 +456,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				description: stripHtml(ticket.desc),
 				requireApproval: ticket.requireApproval,
 				memberships: ticketMemberships(ticket),
+				membershipInterval: ticket.membershipInterval,
 				includesPremium: ticketMemberships(ticket).includes("premium"),
 			})),
 			privacy: event.privacy,
@@ -1787,6 +1791,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																}
 																requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
 																price={Number(tempTicket.price)}
+																interval={ticketMembershipInterval(tempTicket as any)}
+																onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
 															/>
 														</ModalBody>
 														<ModalFooter>
@@ -1880,6 +1886,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						</TabPanel>
 						<TabPanel>
 							<div className="bg-[#181818] rounded-xl p-3">
+								{/* Performance lives behind the row's Analytics button, not under the table:
+								    the tab's job is managing codes, and a permanent report below it pushed
+								    that work off the screen. */}
 								<ReferralCodesManager eventId={event._id} />
 							</div>
 						</TabPanel>

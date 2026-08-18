@@ -1,15 +1,14 @@
-import React, { useEffect, useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import React, { useEffect, useRef, useState } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
-import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { Error as ErrorToast } from "@/lib/_toaster"
-import { ROUTES } from "@/configs/routes"
+import { trialDisclosure } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumStatus"
-import { membershipPlanQueryKey } from "@/hooks/usePremiumPlan"
-import PlanComparison, { type PlanInfo } from "@/components/premium/PlanComparison"
+import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumPlan"
+import PlanComparison from "@/components/premium/PlanComparison"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -51,21 +50,83 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	// say so plainly.
 	const [alreadyMember, setAlreadyMember] = useState(false)
 
-	// Shares the key with `useMembershipPlan("premium")`, so opening this after the price has
-	// been fetched elsewhere on the page costs no extra request.
-	const { data: plan, isLoading: planLoading } = useQuery({
-		queryKey: membershipPlanQueryKey("premium"),
-		queryFn: async () => {
-			const { data } = await axios.get("/api/subscriptions/plan?membership=premium")
-			return data?.data as PlanInfo
-		},
-		enabled: isOpen,
-		staleTime: 5 * 60_000,
-	})
+	// The shared hook, not a private query: it already formats every interval's label and shares
+	// its cache key, so opening this after the price has been fetched elsewhere on the page
+	// costs no extra request — and the modal can't drift from `/subscribe` on how a price reads.
+	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium", isOpen)
+
+	// Which interval the buyer has picked. Left unset until the plan loads, then defaulted to the
+	// product default (monthly) rather than a guessed string.
+	const [selectedInterval, setSelectedInterval] = useState<string | undefined>(undefined)
+	useEffect(() => {
+		if (!selectedInterval && plan?.interval) setSelectedInterval(plan.interval)
+	}, [plan?.interval, selectedInterval])
+
+	// What they are on now — asked only when the dialog is actually open AND they are a member.
+	// This modal is mounted by every navbar, so an ungated fetch would put a Stripe round-trip
+	// behind every page view for every member.
+	const { currentPlan } = useCurrentMembershipPlan(isOpen && isPremium)
+
+	// Invite code (a free-trial code) — same behaviour as /subscribe, since both render the
+	// same card and a buyer must not get a different answer depending on which door they used.
+	const [inviteCode, setInviteCode] = useState("")
+	const [inviteAccepted, setInviteAccepted] = useState<string | null>(null)
+	const [inviteError, setInviteError] = useState<string | null>(null)
+	const [inviteChecking, setInviteChecking] = useState(false)
+	const inviteTimer = useRef<NodeJS.Timeout | null>(null)
+
+	useEffect(() => {
+		if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		const code = inviteCode.trim()
+		if (!code) {
+			setInviteAccepted(null)
+			setInviteError(null)
+			setInviteChecking(false)
+			return
+		}
+		setInviteChecking(true)
+		inviteTimer.current = setTimeout(async () => {
+			try {
+				const { data } = await axios.post("/api/subscriptions/invite-code", { code, interval: selectedInterval })
+				// Name the amount and the date it starts, not just "2 months free".
+				//
+				// The code now applies to ANNUAL as well as monthly, and the same two free months
+				// precede a $200 charge there instead of a $20 one. A trial's whole point is that
+				// the buyer knows what happens when it ends, so the disclosure is built from the
+				// price of the interval they actually have selected — and it is rebuilt whenever
+				// they change it, because the answer changes with it.
+				const selectedPrice = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
+				setInviteAccepted(
+					data?.data?.label
+						? trialDisclosure(
+							{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
+							selectedPrice?.label || null,
+							data?.data?.chargesFrom ? new Date(data.data.chargesFrom) : new Date(),
+						)
+						: "Invite code applied.",
+				)
+				setInviteError(null)
+			} catch (error: any) {
+				setInviteAccepted(null)
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+			} finally {
+				setInviteChecking(false)
+			}
+		}, 600)
+		return () => {
+			if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		}
+	}, [inviteCode, selectedInterval])
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
-			const { data } = await axios.post("/api/subscriptions/checkout", { returnTo })
+			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
+			// request can't subscribe anyone at an arbitrary price on the account.
+			const { data } = await axios.post("/api/subscriptions/checkout", {
+				returnTo,
+				...(selectedInterval ? { interval: selectedInterval } : {}),
+				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
+			})
 			return data?.data as { url: string }
 		},
 		onSuccess: (data) => {
@@ -76,6 +137,12 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			}
 		},
 		onError: (error: any) => {
+			// Refused at the door — say so on the field rather than in a toast over an
+			// unchanged form.
+			if (error?.response?.data?.data?.inviteCode) {
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				return
+			}
 			// Logged-out visitor turned out to already have an active subscription once they
 			// signed in — good news, not a failure. Show it in the modal rather than closing.
 			if (error?.response?.data?.data?.alreadySubscribed) {
@@ -85,6 +152,29 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			}
 			const message = error?.response?.data?.message || "Could not start checkout. Please try again."
 			ErrorToast("Error", message)
+		},
+	})
+
+	// Cancel / change card / switch to annual — all of it lives in Stripe's portal, which is
+	// also the only surface where a plan change is priced, confirmed and invoiced correctly.
+	// `flow: "switch"` opens the Premium-scoped update flow; without it, the ordinary portal.
+	const portalMutation = useMutation({
+		mutationFn: async (flow?: "switch") => {
+			const { data } = await axios.post("/api/subscriptions/portal", {
+				returnTo: typeof window !== "undefined" ? window.location.pathname : "/",
+				...(flow ? { flow } : {}),
+			})
+			return data?.data as { url: string }
+		},
+		onSuccess: (data) => {
+			if (data?.url) {
+				window.location.href = data.url
+			} else {
+				ErrorToast("Error", "Could not open the billing portal. Please try again.")
+			}
+		},
+		onError: (error: any) => {
+			ErrorToast("Error", error?.response?.data?.message || "Could not open the billing portal. Please try again.")
 		},
 	})
 
@@ -135,17 +225,14 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		subscribeMutation.mutate()
 	}
 
-	// Someone who already subscribes has nothing to buy here — show that instead of the cards.
-	const showAlreadyMember = alreadyMember || (isOpen && isPremium)
+	// A member has nothing to buy here, but they DO have something to change — the card shows
+	// their plan, the switch and the portal instead of a dead end pointing at another page.
+	const showMemberCard = alreadyMember || (isOpen && isPremium)
 
 	return (
 		<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
 			{/* Wide enough for two cards side by side; they stack below `sm`. */}
-			<div
-				className={`bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden ${
-					showAlreadyMember ? "max-w-md" : "max-w-3xl"
-				}`}
-			>
+			<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden max-w-3xl">
 				<button
 					onClick={handleClose}
 					className="absolute top-2 right-2 bg-black text-white w-8 h-8 rounded-full flex items-center justify-center z-10"
@@ -153,51 +240,50 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 					&times;
 				</button>
 
-				{showAlreadyMember ? (
-					<div className="p-6 overflow-y-auto text-center">
-						<div
-							className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
-							style={{ background: "rgba(34,197,94,0.15)" }}
-						>
-							<CheckIcon className="w-8 h-8 text-green-500" />
-						</div>
-						<h2 className="text-2xl font-bold text-white mb-2">You&apos;re already a Jetzy Premium member</h2>
+				<div className="p-6 overflow-y-auto">
+					<div className="text-center">
+						<h2 className="text-2xl font-bold text-white mb-1">
+							{showMemberCard ? "Your Jetzy Premium membership" : "Choose your Jetzy plan"}
+						</h2>
 						<p className="text-gray-400 text-sm mb-6">
-							Your subscription is active, so there&apos;s nothing to buy here. You can change or cancel it any
-							time from Manage membership.
+							{showMemberCard
+								? "Change your plan or cancel any time."
+								: "Upgrade anytime. Cancel anytime."}
 						</p>
-						<div className="flex flex-col gap-3">
-							<Link
-								href={ROUTES.manageMembership}
-								className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:opacity-90 transition-colors"
-							>
-								Manage membership
-							</Link>
-							<button
-								onClick={handleClose}
-								className="bg-[#2b2b2b] hover:bg-[#343434] text-white font-bold px-6 py-3 rounded-full transition-colors"
-							>
-								Close
-							</button>
-						</div>
+						{/* The post-login resume case: they clicked Subscribe, signed in, and turned out
+						    to already be a member. Saying so is the whole point — otherwise the click
+						    appears to have done nothing. */}
+						{alreadyMember && !isOpen && (
+							<p className="text-sm mb-6 flex items-center justify-center gap-2 text-green-500">
+								<CheckIcon className="w-5 h-5" /> You&apos;re already a Jetzy Premium member.
+							</p>
+						)}
+						{!showMemberCard && message && <p className="text-gray-400 text-sm mb-6">{message}</p>}
 					</div>
-				) : (
-					<div className="p-6 overflow-y-auto">
-						<div className="text-center">
-							<h2 className="text-2xl font-bold text-white mb-1">Choose your Jetzy plan</h2>
-							<p className="text-gray-400 text-sm mb-6">Upgrade anytime. Cancel anytime.</p>
-							{message && <p className="text-gray-400 text-sm mb-6">{message}</p>}
-						</div>
 
-						<PlanComparison
-							plan={plan}
-							planLoading={planLoading}
-							onChooseFree={handleClose}
-							onChoosePremium={handleSubscribeClick}
-							premiumPending={subscribeMutation.isPending}
-						/>
-					</div>
-				)}
+					<PlanComparison
+						plan={plan}
+						planLoading={planLoading}
+						prices={prices}
+						selectedInterval={selectedInterval}
+						onIntervalChange={setSelectedInterval}
+						isPremium={showMemberCard}
+						currentPlan={currentPlan}
+						onSwitchInterval={() => portalMutation.mutate("switch")}
+						onManageBilling={() => portalMutation.mutate(undefined)}
+						billingPending={portalMutation.isPending}
+						inviteCode={inviteCode}
+						onInviteCodeChange={setInviteCode}
+						inviteAccepted={inviteAccepted}
+						inviteError={inviteError}
+						inviteChecking={inviteChecking}
+						premiumPending={subscribeMutation.isPending}
+						onChooseFree={handleClose}
+						onChoosePremium={handleSubscribeClick}
+						freeCtaLabel={showMemberCard ? "Close" : "Continue with Free"}
+						subscribedCtaLabel="Close"
+					/>
+				</div>
 			</div>
 		</div>
 	)

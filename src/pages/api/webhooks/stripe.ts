@@ -9,7 +9,13 @@ import {
 } from "@/lib/premium"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import { syncSelectMembership } from "@/lib/select-member"
-import { sendMembershipCancelled, sendMembershipPaymentFailed, sendMembershipRenewed } from "@/lib/send-grid"
+import {
+	sendMembershipCancelled,
+	sendMembershipPaymentFailed,
+	sendMembershipPlanChanged,
+	sendMembershipRenewed,
+	sendMembershipStarted,
+} from "@/lib/send-grid"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
 
@@ -101,7 +107,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const sessionMetadata = (checkoutSession.metadata || {}) as Record<string, string | undefined>
 
 				if (checkoutSession.subscription) {
-					const userId = sessionMetadata.membershipUserId || sessionMetadata.userId || checkoutSession.client_reference_id
 					const subscription = await stripe.subscriptions.retrieve(
 						typeof checkoutSession.subscription === "string" ? checkoutSession.subscription : checkoutSession.subscription.id,
 					)
@@ -109,6 +114,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					// overwrite the buyer's Premium record. An unknown product is left alone.
 					const key = subscriptionMembershipKey(subscription)
 					const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+
+					// WHO does this belong to? Our own session metadata first, then the ids
+					// stamped on the Stripe objects themselves.
+					//
+					// The metadata-only version of this missed every membership sold by ANOTHER
+					// Jetzy surface against the shared Stripe account. selectmember.jetzy.com now
+					// sells Jetzy Premium; its Checkout Session carries no metadata of ours, so a
+					// real purchase logged "no resolvable user" and this portal went on showing
+					// "Buy Jetzy Premium" to a paying member. The subscription is one Stripe
+					// object away from an id in both cases — read it rather than requiring the
+					// other surface to speak our metadata dialect.
+					const subscriptionUserId = (subscription.metadata || {}).userId
+					const userId =
+						sessionMetadata.membershipUserId ||
+						sessionMetadata.userId ||
+						checkoutSession.client_reference_id ||
+						subscriptionUserId ||
+						// Last: customer metadata, then the customer's email. Both live inside
+						// `findUserByStripeCustomerId`, which also links the id for next time.
+						(await findUserByStripeCustomerId(customerId))?.doc?._id?.toString()
 
 					if (!key) {
 						console.error("[webhooks/stripe] Subscription for an unrecognised product, ignoring:", subscription.id)
@@ -122,6 +147,68 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							cancelAtPeriodEnd: subscription.cancel_at_period_end,
 						})
 						await mirrorToSelectMember(key, customerId, "active", subscription)
+
+						// Welcome the buyer — but only for a signup WE sold.
+						//
+						// `purpose` is stamped by `/api/subscriptions/checkout`. A subscription
+						// Checkout Session reaching this branch from anywhere else is
+						// selectmember.jetzy.com selling on the shared Stripe account, and they
+						// send their own confirmation: a second one from us would be two receipts
+						// for one purchase, worded to their customer as if we had sold it.
+						//
+						// A membership bought WITH A TICKET never reaches here at all — those are
+						// `mode: "payment"` sessions and the subscription is created afterwards by
+						// `startMembershipSubscription`, with the ticket confirmation carrying the
+						// recurring terms.
+						// The sale, for reporting. Recorded for EVERY subscription session, ours or not:
+						// "how many members did we gain" is a different question from "did we sell
+						// it", and a SelectMember sale is still a Jetzy Premium member. `source`
+						// keeps the two apart. Upserted on the subscription id, so a replayed
+						// webhook doesn't inflate the count.
+						{
+							const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+							const soldPrice = subscription.items.data[0]?.price
+							const { recordMembershipPurchase } = await import("@/models/events/membership-purchases")
+							await recordMembershipPurchase({
+								key,
+								source: sessionMetadata.purpose === "premium_subscription" ? "subscribe" : "external",
+								email: recipient?.email || checkoutSession.customer_details?.email || undefined,
+								name: recipient?.firstName,
+								userId,
+								stripeCustomerId: customerId,
+								stripeSubscriptionId: subscription.id,
+								priceId: soldPrice?.id,
+								interval: soldPrice?.recurring?.interval,
+								...(soldPrice?.unit_amount != null ? { amount: soldPrice.unit_amount / 100 } : {}),
+								...(soldPrice?.currency ? { currency: soldPrice.currency } : {}),
+								// The whole reason the code is stamped into session metadata.
+								...(sessionMetadata.inviteCode ? { inviteCode: sessionMetadata.inviteCode } : {}),
+								...(subscription.trial_end
+									? { trialEndsAt: new Date(subscription.trial_end * 1000) }
+									: {}),
+							})
+						}
+
+						if (sessionMetadata.purpose === "premium_subscription") {
+							const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+							const price = subscription.items.data[0]?.price
+							if (recipient?.email && price?.unit_amount != null) {
+								await sendMembershipStarted({
+									...recipient,
+									amount: price.unit_amount / 100,
+									interval: price.recurring?.interval || "month",
+									label: MEMBERSHIPS[key].label,
+									// An invite code means NOTHING has been charged yet and the first
+									// payment lands on a named date. The copy branches on this.
+									...(subscription.trial_end ? { trialEndsOn: new Date(subscription.trial_end * 1000) } : {}),
+									nextBillingDate: new Date(subscription.current_period_end * 1000),
+								})
+							} else {
+								console.error("[webhooks/stripe] Could not send the membership welcome email:", checkoutSession.id)
+							}
+						} else {
+							console.log("[webhooks/stripe] Subscription not sold by this app — no welcome email:", checkoutSession.id)
+						}
 					} else {
 						// A subscription nobody owns can still bill. Loud, because the only fix is
 						// manual. `client_reference_id` is single-valued and the ticket flow claims
@@ -244,6 +331,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					subscription.status === "active" || subscription.status === "trialing" ? "active" : "cancelled",
 					subscription,
 				)
+
+				// A PLAN CHANGE — monthly to annual, in practice.
+				//
+				// Detected from `previous_attributes`, which is the only signal available: the
+				// interval is deliberately not stored (a copy goes stale the moment someone
+				// switches in the portal), so there is nothing local to compare against. Stripe
+				// sends `items` in `previous_attributes` only when the items actually changed, so
+				// a trial converting or a card being updated doesn't reach this.
+				//
+				// The switch happens entirely inside Stripe's portal, so without this the member
+				// has only their card statement to tell them what they now pay.
+				const previousItems = (event.data as any)?.previous_attributes?.items?.data
+				const previousPriceId = previousItems?.[0]?.price?.id
+				const newPrice = subscription.items.data[0]?.price
+				if (previousPriceId && newPrice?.id && previousPriceId !== newPrice.id && newPrice.unit_amount != null) {
+					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+					if (recipient?.email) {
+						// The old rate is fetched rather than guessed: "you now pay $200/year" on
+						// its own reads like a price rise nobody announced.
+						let previousAmount: number | undefined
+						let previousInterval: string | undefined
+						try {
+							const previous = await stripe.prices.retrieve(previousPriceId)
+							if (previous.unit_amount != null) previousAmount = previous.unit_amount / 100
+							previousInterval = previous.recurring?.interval
+						} catch (priceError: any) {
+							// Not worth withholding the message over — it just says less.
+							console.error("[webhooks/stripe] Couldn't read the previous price for the plan-change email:", priceError?.message || priceError)
+						}
+
+						await sendMembershipPlanChanged({
+							...recipient,
+							amount: newPrice.unit_amount / 100,
+							interval: newPrice.recurring?.interval || "month",
+							...(previousAmount != null ? { previousAmount } : {}),
+							...(previousInterval ? { previousInterval } : {}),
+							nextBillingDate: new Date(subscription.current_period_end * 1000),
+							label: MEMBERSHIPS[key].label,
+						})
+					}
+				}
 
 				if (!wasCancelling && subscription.cancel_at_period_end) {
 					const recipient = await findEmailRecipientByStripeCustomerId(customerId)

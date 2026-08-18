@@ -15,6 +15,11 @@ export interface IEventTicket {
 	 * `ticketMemberships()` from `@/lib/premium-bundle` — never read this field directly.
 	 */
 	memberships?: MembershipKey[]
+	/**
+	 * Billing interval the bundled membership is sold at — "month" or "year". Undefined means
+	 * monthly. Resolve with `ticketMembershipInterval()`, never directly.
+	 */
+	membershipInterval?: string
 	/** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
 	includesPremium?: boolean
 	_id: Types.ObjectId
@@ -158,6 +163,17 @@ export interface IBookingMembership {
 	amount?: number
 	priceId?: string
 	interval?: string
+	/** Free months granted by a referral code. Present means the first period was NOT charged. */
+	trialMonths?: number
+	/**
+	 * What this membership renews at once the free months run out.
+	 *
+	 * Separate from `amount`, which is money that actually moved and is therefore 0 on a
+	 * gifted membership. The receipt has to state the real recurring price, so it can't be
+	 * derived from `amount` — and re-reading Stripe later would quote a price the buyer was
+	 * never shown.
+	 */
+	renewalAmount?: number
 	subscriptionId?: string
 	lastError?: string
 }
@@ -254,6 +270,8 @@ export interface IReferralCode extends IBaseModelProps {
 	eventId: Types.ObjectId
 	code: string
 	discountPercentage: number
+	/** Free months of Jetzy Premium on a ticket that already bundles it. 0 = none. */
+	freeMembershipMonths?: number
 	commissionPercentage: number
 	isActive: boolean
 	usageCount: number

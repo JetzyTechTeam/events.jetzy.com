@@ -12,6 +12,7 @@ import { FcGoogle } from "react-icons/fc"
 import { AiFillApple } from "react-icons/ai"
 import { unauthorizedOnly } from "@Jetzy/lib/authSession"
 import { VerifyReferralCodeApi } from "@Jetzy/services/auth/authapis"
+import { isSignupTrialCode, signupTrialOffer } from "@/lib/invite-trial"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 
@@ -39,8 +40,11 @@ export default function SignupPage() {
 
 		// Optional field: an empty code must never block a signup. A NON-empty one is verified
 		// first, matching /jetzyqrsignup — an unchecked code looks accepted and credits nobody.
+		// A MEMBERSHIP invite code is a different thing from a referral code: it lives in
+		// `TRIAL_CODES`, credits no referrer, and the backend has never heard of it — so checking
+		// it there would reject a code that is perfectly valid and block the signup outright.
 		const code = values.refCode?.trim()
-		if (code) {
+		if (code && !isSignupTrialCode(code)) {
 			const ok = await VerifyReferralCodeApi(code)
 			if (!ok) {
 				setSubmitting(false)
@@ -52,7 +56,9 @@ export default function SignupPage() {
 		const res = await handleStartSignup(values, _cb ? _cb.toString() : undefined)
 
 		if (res.ok) {
-			router.push("/post-signup")
+			// The months ride on the URL rather than in state: this is a full navigation, and a
+			// refresh of the confirmation screen must not silently drop the thing we just promised.
+			router.push(res.trialMonths ? `/post-signup?trial=${res.trialMonths}` : "/post-signup")
 			return
 		}
 		setSubmitting(false)
@@ -139,6 +145,14 @@ export default function SignupPage() {
 												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
 											/>
 											{inviteCodeError && <span className="text-red-500 block mt-1 text-sm">{inviteCodeError}</span>}
+											{/* A membership code is worth something concrete — say so here rather than
+											    letting it look like any other referral code. Resolved from the same table
+											    the server grants from, so the two can't promise different things. */}
+											{!inviteCodeError && signupTrialOffer(values?.refCode) && (
+												<span className="block mt-1 text-sm" style={{ color: "#22C55E" }}>
+													✓ {signupTrialOffer(values?.refCode)?.label} of Jetzy Premium — added once you confirm your email. No card needed.
+												</span>
+											)}
 										</div>
 									</div>
 

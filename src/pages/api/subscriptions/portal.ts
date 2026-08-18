@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getStripeClient, getUserStripeCustomerId } from "@/lib/premium"
+import { findMembershipPriceForInterval, findMembershipRecord, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -36,7 +36,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	try {
 		const userId = (session.user as any)?._id || (session.user as any)?.id
-		const record = await findUserRecord(userId)
+		// Identity, not document id: a member who signed back in through the other collection
+		// would otherwise be told they have nothing to manage while their card is being charged.
+		const record = await findMembershipRecord(userId, (session.user as any)?.email)
 		if (!record) {
 			return sendResponse(res, null, "User not found.", false, ResCode.NOT_FOUND)
 		}
@@ -55,9 +57,117 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const returnTo = typeof req.body?.returnTo === "string" && req.body.returnTo.startsWith("/") ? req.body.returnTo : "/"
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
 
+		// Our own configuration, not the account default.
+		//
+		// The default has plan switching enabled, and one Stripe Customer holds every
+		// membership a person has — so a member with Premium AND Full Concierge was offered
+		// "Update subscription" on the Concierge one. Changing a Select plan from here bypasses
+		// selectmember.jetzy.com's upgrade rules, proration preview and upgrade email, and since
+		// apis-service's Stripe webhooks are disabled it never reaches Mongo either.
+		//
+		// Ours has `subscription_update` off entirely. Created by
+		// `scripts/create-portal-config.ts`; the account default is deliberately untouched,
+		// because SelectMember relies on it.
+		//
+		// Falls back to the default when the env var is absent so a missed deploy degrades to
+		// today's behaviour rather than failing to open the portal at all.
+		const configuration = process.env.STRIPE_PORTAL_CONFIG_ID
+		if (!configuration) {
+			// LOUD, because the fallback is invisible and wrong in exactly the way this config
+			// exists to prevent: Stripe uses the ACCOUNT DEFAULT, which has plan switching on, so
+			// every member sees "Update subscription" — on annual Premium, where we don't sell the
+			// downgrade, and on Full Concierge, where changing a plan bypasses SelectMember's
+			// rules entirely. Create one with `scripts/create-portal-config.ts` and set the id.
+			console.error("[subscriptions/portal] STRIPE_PORTAL_CONFIG_ID is not set — falling back to the Stripe account default, which allows plan switching")
+		}
+		const returnUrl = `${baseUrl}${returnTo}`
+
+		// "Switch me to annual" — a second configuration, opened as a pinned update flow.
+		//
+		// Switching is off in the configuration above ON PURPOSE, so it can't be re-enabled
+		// there: one Stripe Customer holds every membership, and an unscoped update button
+		// appears on the Full Concierge row too. This flow is scoped twice over — the
+		// configuration lists only Premium's product and prices, and `flow_data` pins the exact
+		// subscription — and the subscription id comes from OUR record, never the request body.
+		const wantsSwitch = req.body?.flow === "switch"
+		const switchConfiguration = process.env.STRIPE_PORTAL_SWITCH_CONFIG_ID
+		let flowExtras: Record<string, any> = {}
+
+		if (wantsSwitch && !switchConfiguration) {
+			// Loud, because the symptom is silent: the member lands on the ordinary portal and
+			// simply doesn't find the plan they were promised. Every environment needs its own
+			// configuration id, and a Vercel env var only reaches a deployment built after it
+			// was added — so "I set the variable" and "the running build has it" differ.
+			console.error(
+				"[subscriptions/portal] flow=switch requested but STRIPE_PORTAL_SWITCH_CONFIG_ID is not set — opening the ordinary portal instead",
+			)
+		}
+
+		if (wantsSwitch && switchConfiguration) {
+			const subscriptionId = record.doc?.premiumSubscription?.stripeSubscriptionId
+			if (!subscriptionId) {
+				console.error("[subscriptions/portal] flow=switch but no premiumSubscription.stripeSubscriptionId on user", userId)
+			}
+			if (subscriptionId) {
+				const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId)
+				// Confirm it really is Premium before pinning a plan-switching flow to it. The id
+				// is ours, but a mis-stored Concierge id would otherwise open the one flow this
+				// whole configuration split exists to keep away from Select's products.
+				const key = subscriptionMembershipKey(subscription)
+				if (key !== "premium") {
+					console.error(`[subscriptions/portal] flow=switch but ${subscriptionId} is not Jetzy Premium (key=${key})`)
+				}
+				// The price we are switching them TO. Resolved server-side from the Premium product,
+				// never taken from the request.
+				//
+				// ONE DIRECTION: monthly to annual. An annual member moving down mid-term leaves an
+				// unused credit on their Stripe customer and nothing here pays that back in cash,
+				// which is why the card doesn't offer it — but the card is not the enforcement.
+				// Without this check a hand-made `flow: "switch"` request builds the downgrade flow
+				// and Stripe performs it.
+				const currentPrice = subscription.items.data[0]?.price
+				const currentInterval = currentPrice?.recurring?.interval
+				const canSwitchUp = currentInterval === "month"
+				if (key === "premium" && !canSwitchUp) {
+					console.warn(`[subscriptions/portal] flow=switch refused: ${subscriptionId} is already ${currentInterval}ly — opening the ordinary portal`)
+				}
+				const targetPrice = key === "premium" && canSwitchUp ? await findMembershipPriceForInterval("premium", "year") : null
+
+				if (key === "premium" && canSwitchUp && targetPrice && subscription.items.data[0]?.id) {
+					// `subscription_update_confirm`, not `subscription_update`.
+					//
+					// The picker version drops the member on the configuration's portal HOME once
+					// they are done — and that configuration has updates enabled, so an annual
+					// member was then looking at an "Update subscription" button offering the
+					// downgrade we deliberately don't sell. Confirm goes straight to the priced
+					// confirmation page for the one target, and `after_completion` returns them
+					// here, so the portal home is never a destination.
+					flowExtras = {
+						configuration: switchConfiguration,
+						flow_data: {
+							type: "subscription_update_confirm",
+							subscription_update_confirm: {
+								subscription: subscriptionId,
+								items: [{ id: subscription.items.data[0].id, price: targetPrice.id, quantity: 1 }],
+							},
+							after_completion: { type: "redirect", redirect: { return_url: returnUrl } },
+						},
+					}
+				} else if (key === "premium" && canSwitchUp && !targetPrice) {
+					console.error("[subscriptions/portal] no annual price on the Premium product — cannot build a switch flow")
+				}
+			}
+		}
+
+		// Anything unresolved above — no switch config deployed, no subscription id, not Premium —
+		// falls through to the ordinary portal rather than failing. Opening an update flow against
+		// a configuration with `subscription_update: false` is a hard Stripe error, so a missed
+		// env var would turn the button into a dead end instead of merely a plainer page.
 		const portalSession = await getStripeClient().billingPortal.sessions.create({
 			customer: customerId,
-			return_url: `${baseUrl}${returnTo}`,
+			return_url: returnUrl,
+			...(configuration ? { configuration } : {}),
+			...flowExtras,
 		})
 
 		return sendResponse(res, { url: portalSession.url }, "Billing portal session created.", true, ResCode.OK)

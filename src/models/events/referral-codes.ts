@@ -23,6 +23,22 @@ const referralCodeSchema = new Schema<IReferralCode>(
 			min: 0,
 			max: 100,
 		},
+		// Free months of Jetzy Premium this code grants on a ticket that ALREADY sells it.
+		//
+		// ONE number rather than a tickbox plus a count: two fields can disagree — ticked with
+		// zero months, or three months with the box unticked — and then the record no longer
+		// says what the buyer gets. 0 or absent means no trial; the host UI renders its tickbox
+		// from `> 0`.
+		//
+		// Orthogonal to `discountPercentage`: a code may discount the ticket, grant free
+		// membership months, or both.
+		freeMembershipMonths: {
+			type: Number,
+			required: false,
+			default: 0,
+			min: 0,
+			max: 12,
+		},
 		commissionPercentage: {
 			type: Number,
 			default: 10,
