@@ -163,6 +163,17 @@ export default function HostedEvents({ event }: Props) {
 	})
 	const myBooking = myBookingResp?.data ?? null
 
+	// "Location disclosed after registration" means registering EARNS you the address — so a
+	// guest holding a live booking, and the host who typed it, must see the real thing.
+	//
+	// The endpoint already excludes cancelled / rejected / expired bookings, so the only extra
+	// exclusion is PENDING: someone still awaiting the host's approval hasn't been approved yet.
+	// `myBooking.eventLocation` comes back from the same call, which is what lets the address
+	// appear straight after a booking made on this page rather than only on the next load.
+	const hasLiveBooking = !!myBooking && !isPendingBooking(myBooking)
+	const canSeeLocation = !clonedEvent?.locationDisclosedAfterBooking || hasLiveBooking || canManage
+	const disclosedLocation = (hasLiveBooking && myBooking?.eventLocation) || clonedEvent?.location
+
 	// A media url that 404s and an event with no media at all used to look identical
 	// on screen ("No image available"), which made bug reports unfalsifiable — the
 	// same screenshot could mean stripped props or a dead S3 object.
@@ -500,7 +511,7 @@ export default function HostedEvents({ event }: Props) {
 											: "Date to be decided"}
 									</p>
 									<p className="text-sm sm:text-base mt-1 flex items-start gap-x-2 text-[#bbbbbb] break-words">
-										{clonedEvent.locationDisclosedAfterBooking ? (
+										{!canSeeLocation ? (
 											<span className="break-words overflow-wrap-anywhere">
 												📍 Location will be disclosed after registration
 											</span>
@@ -508,7 +519,7 @@ export default function HostedEvents({ event }: Props) {
 											<>
 												<span className="flex-shrink-0 mt-0.5"><LocationSVG /></span>
 												<span className="break-words overflow-wrap-anywhere">
-													{clonedEvent.location}
+													{disclosedLocation}
 												</span>
 											</>
 										)}

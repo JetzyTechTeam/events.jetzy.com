@@ -13,7 +13,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
-		const { name, email, acceptedTerms, cb } = req.body || {}
+		const { name, email, acceptedTerms, cb, refCode } = req.body || {}
+		// Optional. Stored now; the Jetzy backend is told once the account has a password,
+		// because /v1/accounts/create needs one — see complete-signup.ts.
+		const cleanRefCode = typeof refCode === "string" && refCode.trim() ? refCode.trim() : undefined
 		const cleanCb = typeof cb === "string" && cb.trim() ? cb.trim() : undefined
 
 		const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : ""
@@ -52,6 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			emailVerified: false,
 			verifyToken: token,
 			signupSource: "signup",
+			...(cleanRefCode && { refCode: cleanRefCode }),
 		})
 
 		try {

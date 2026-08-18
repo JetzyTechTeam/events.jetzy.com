@@ -11,6 +11,7 @@ import React from "react"
 import { FcGoogle } from "react-icons/fc"
 import { AiFillApple } from "react-icons/ai"
 import { unauthorizedOnly } from "@Jetzy/lib/authSession"
+import { VerifyReferralCodeApi } from "@Jetzy/services/auth/authapis"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 
@@ -20,16 +21,34 @@ export default function SignupPage() {
 
 	const [submitting, setSubmitting] = React.useState(false)
 	const [emailExists, setEmailExists] = React.useState(false)
+	// Checked against the Jetzy backend before we let the form through, so a mistyped code is
+	// caught here rather than silently losing the referrer their credit.
+	const [inviteCodeError, setInviteCodeError] = React.useState<string | null>(null)
 
 	const formData: StartSignupFormData = {
 		name: "",
 		email: "",
 		acceptedTerms: false,
+		refCode: "",
 	}
 
 	const handleSubmit = async (values: StartSignupFormData) => {
 		setEmailExists(false)
+		setInviteCodeError(null)
 		setSubmitting(true)
+
+		// Optional field: an empty code must never block a signup. A NON-empty one is verified
+		// first, matching /jetzyqrsignup — an unchecked code looks accepted and credits nobody.
+		const code = values.refCode?.trim()
+		if (code) {
+			const ok = await VerifyReferralCodeApi(code)
+			if (!ok) {
+				setSubmitting(false)
+				setInviteCodeError("Invalid invite code. Please check and try again, or leave it blank.")
+				return
+			}
+		}
+
 		const res = await handleStartSignup(values, _cb ? _cb.toString() : undefined)
 
 		if (res.ok) {
@@ -98,6 +117,28 @@ export default function SignupPage() {
 													Email already registered. Please use login link below with this email.
 												</span>
 											)}
+										</div>
+									</div>
+
+									<div>
+										<label htmlFor="refCode" className="block text-sm font-medium leading-6">
+											Invite code <span className="text-gray-400 font-normal">(optional)</span>
+										</label>
+										<div className="mt-2">
+											<Field
+												id="refCode"
+												name="refCode"
+												value={values?.refCode}
+												onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+													setInviteCodeError(null)
+													handleChange(e)
+												}}
+												type="text"
+												autoComplete="off"
+												placeholder="Enter your invite code (optional)"
+												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											/>
+											{inviteCodeError && <span className="text-red-500 block mt-1 text-sm">{inviteCodeError}</span>}
 										</div>
 									</div>
 

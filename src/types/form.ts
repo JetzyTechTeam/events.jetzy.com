@@ -23,6 +23,8 @@ export type StartSignupFormData = {
 	name: string
 	email: string
 	acceptedTerms: boolean
+	/** Optional invite code, same field /jetzyqrsignup collects. Blank means "no referrer". */
+	refCode?: string
 }
 
 export type SignInFormData = {
