@@ -47,6 +47,13 @@ export type StartMembershipArgs = {
 	email?: string
 	/** Jetzy user id, when known, so the record is written even if the customer lookup misses. */
 	subscriberId?: string
+	/**
+	 * Free months granted by a referral code, instead of the usual "one interval already paid".
+	 *
+	 * The first period was NOT charged in this case — the membership line was $0 — so the trial
+	 * is the offer itself rather than an accounting device for a period already bought.
+	 */
+	trialMonths?: number
 	metadata?: Record<string, string>
 }
 
@@ -80,16 +87,31 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 		return { created: false }
 	}
 
-	// The first period was just charged as a one-time line item, so the subscription must NOT
-	// bill again now. The trial covers exactly that period; the first real invoice lands one
-	// interval from today.
-	const trialEnd = dayjs().add(1, interval as dayjs.ManipulateType).unix()
+	// Two reasons a subscription starts in a trial here, and they mean different things:
+	//
+	//   - normal bundled ticket — the first period was just charged as a one-time line item, so
+	//     the subscription must NOT bill again now. The trial covers exactly that period.
+	//   - a referral code granting free months — nothing was charged for the membership at all,
+	//     and the trial IS the offer.
+	//
+	// Either way `trial_end` is the date the first real invoice lands, which is what the receipt
+	// and the billing portal show.
+	const trialEnd =
+		args.trialMonths && args.trialMonths > 0
+			? dayjs().add(args.trialMonths, "month").unix()
+			: dayjs().add(1, interval as dayjs.ManipulateType).unix()
 
 	const subscription = await stripe.subscriptions.create({
 		customer: customerId,
 		items: [{ price: priceId }],
 		trial_end: trialEnd,
 		...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
+		// No card — a free RSVP collects none, so there is nothing to charge when the trial ends.
+		// Without this Stripe raises an invoice nobody can pay and the subscription sits
+		// `past_due` indefinitely; cancelling is the honest end to a gift.
+		...(paymentMethodId
+			? {}
+			: { trial_settings: { end_behavior: { missing_payment_method: "cancel" as const } } }),
 		// `membershipKey` is what lets every webhook branch know which product this is without
 		// having to match product ids. It is the reason a Concierge cancellation can no longer
 		// revoke someone's Premium.

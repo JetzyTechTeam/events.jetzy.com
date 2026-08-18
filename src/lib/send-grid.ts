@@ -1612,7 +1612,11 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                     (membership) => `
                 <tr>
                   <td style="padding: 6px 15px; color: #333;">${membership.label}</td>
-                  <td style="padding: 6px 15px; color: #333; text-align: right;">$${membership.amount.toFixed(2)}/${membership.interval}</td>
+                  <td style="padding: 6px 15px; color: #333; text-align: right;">${
+                    membership.trialMonths
+                      ? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then $${membership.amount.toFixed(2)}/${membership.interval}`
+                      : `$${membership.amount.toFixed(2)}/${membership.interval}`
+                  }</td>
                 </tr>`,
                   )
                   .join("")}
@@ -1631,7 +1635,20 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 (membership) => `
             <div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin-top: 15px;">
               <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold;">Your ${membership.label}</p>
-              <p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
+              ${membership.trialMonths
+                ? `<p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
+                Your referral code included
+                <strong>${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"} free</strong> — you have
+                not been charged for it. It then renews at
+                <strong>$${membership.amount.toFixed(2)} every ${membership.interval}</strong>${
+                  membership.firstRenewalAt
+                    ? `, starting <strong>${dayjs(membership.firstRenewalAt).format("MMMM D, YYYY")}</strong>`
+                    : ""
+                },
+                until you cancel. Cancel any time before then and you won't be charged — use
+                <strong>Manage membership</strong> in your Jetzy account menu.
+              </p>`
+                : `<p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.5;">
                 This ticket included a ${membership.label}, and
                 <strong>your first ${membership.interval} is already paid</strong> — it's part of the
                 amount above. It then renews at
@@ -1648,7 +1665,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 If your billing page shows this period as a free trial, that's just how the paid first
                 ${membership.interval} is recorded — you've already paid for it.
               </p>`
-                : ""}
+                : ""}`}
             </div>`,
               )
               .join("")}

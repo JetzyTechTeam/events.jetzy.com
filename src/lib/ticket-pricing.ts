@@ -52,6 +52,15 @@ export type RecurringCharge = {
 	 * they'll lose. Naming the date, and saying the first period is paid, heads that off.
 	 */
 	firstRenewalAt?: Date | string
+	/**
+	 * Free months granted by a referral code.
+	 *
+	 * Present means this membership costs NOTHING today — so it must not be added to
+	 * `dueToday` — while `amount` still holds the real recurring price, because that is the
+	 * figure that has to be disclosed before purchase. "2 months free" without the price that
+	 * follows hides the charge rather than explaining it.
+	 */
+	trialMonths?: number
 }
 
 export type TicketPricing = {
@@ -71,9 +80,14 @@ export type TicketPricing = {
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
-/** Sum of the first periods — what the memberships add to today's charge. */
+/**
+ * Sum of the first periods — what the memberships add to today's charge.
+ *
+ * A line on a free trial adds NOTHING: its first period is the gift. Counting it would inflate
+ * `dueToday` past what Stripe actually charges, which is the one number a buyer checks.
+ */
 export const recurringTotal = (recurring?: RecurringCharge[] | null): number =>
-	round2((recurring || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0))
+	round2((recurring || []).reduce((sum, r) => sum + (r.trialMonths ? 0 : Number(r.amount) || 0), 0))
 
 export type BuildPricingInput = {
 	/** Sum of price x quantity before any discount. */

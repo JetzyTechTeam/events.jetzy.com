@@ -183,16 +183,21 @@ const CheckoutSuccessPage: React.FC = () => {
 	// One entry per product — a ticket can sell both Jetzy Premium and Full Concierge, and a
 	// buyer charged for two has to see two. `premiumAmount` is the pre-Concierge shape, still
 	// read so a session created just before the deploy renders correctly.
-	const metaMemberships: Array<{ label: string; amount: number; interval: string }> = (() => {
+	const metaMemberships: Array<{ label: string; amount: number; interval: string; trialMonths?: number }> = (() => {
 		try {
 			const raw = JSON.parse(sessionData?.metadata?.memberships ?? "[]")
 			if (Array.isArray(raw)) {
 				return raw
-					.filter((row: any) => Number(row?.amount) > 0)
+					// A gifted membership was charged NOTHING today, so `amount` is 0 — it still has
+					// to appear, because it is a recurring charge the buyer has agreed to. Filtering
+					// on `amount` alone silently dropped the only disclosure of it on this page.
+					.filter((row: any) => Number(row?.amount) > 0 || Number(row?.trialMonths) > 0)
 					.map((row: any) => ({
 						label: MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || "Membership",
-						amount: Number(row.amount),
+						// The renewal price on a trial line; what was charged on every other one.
+						amount: Number(row?.trialMonths) > 0 ? Number(row.renewalAmount) || 0 : Number(row.amount),
 						interval: String(row.interval || "month"),
+						...(Number(row?.trialMonths) > 0 ? { trialMonths: Number(row.trialMonths) } : {}),
 					}))
 			}
 		} catch {
@@ -348,7 +353,11 @@ const CheckoutSuccessPage: React.FC = () => {
 									{pricing.recurring.map((membership) => (
 										<div key={membership.label} className="flex justify-between" style={{ color: "#B7860B" }}>
 											<span>{membership.label}</span>
-											<span>${membership.amount.toFixed(2)}/{membership.interval}</span>
+											<span>
+												{membership.trialMonths
+													? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"}, then $${membership.amount.toFixed(2)}/${membership.interval}`
+													: `$${membership.amount.toFixed(2)}/${membership.interval}`}
+											</span>
 										</div>
 									))}
 									<div className="flex justify-between border-t pt-3">
@@ -359,7 +368,9 @@ const CheckoutSuccessPage: React.FC = () => {
 										<div key={membership.label} className="mt-3 rounded-lg p-3" style={{ background: "rgba(245,197,24,0.12)", border: "1px solid rgba(245,197,24,0.4)" }}>
 											<p className="text-sm font-semibold" style={{ color: "#8A6D0B" }}>Your {membership.label} is active</p>
 											<p className="text-xs text-gray-600 mt-1">
-												It renews at ${membership.amount.toFixed(2)} every {membership.interval} until you cancel.
+												{membership.trialMonths
+													? `Free for ${membership.trialMonths} ${membership.trialMonths === 1 ? "month" : "months"} — you weren't charged for it. It then renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel. `
+													: `It renews at $${membership.amount.toFixed(2)} every ${membership.interval} until you cancel. `}
 												You can cancel any time from <strong>Manage membership</strong> in your account menu.
 											</p>
 										</div>

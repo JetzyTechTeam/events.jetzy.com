@@ -12,7 +12,7 @@ import { Types } from "mongoose"
  */
 
 export type ReferralValidationResult =
-	| { ok: true; data: { code: string; discountPercentage: number } | null }
+	| { ok: true; data: { code: string; discountPercentage: number; freeMembershipMonths: number } | null }
 	| { ok: false; message: string }
 
 export async function validateReferralCodeForEvent(
@@ -51,6 +51,8 @@ export async function validateReferralCodeForEvent(
 		data: {
 			code: codeRecord.code,
 			discountPercentage: codeRecord.discountPercentage,
+			// Absent on every code created before this existed, which is the same as none.
+			freeMembershipMonths: codeRecord.freeMembershipMonths || 0,
 		},
 	}
 }

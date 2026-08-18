@@ -12,6 +12,9 @@ import zod from "zod"
 const createReferralCodeSchema = zod.object({
 	code: zod.string().min(3).max(50).regex(/^\S+$/, "Code cannot contain spaces"),
 	discountPercentage: zod.number().min(0).max(100),
+	// Free months of Jetzy Premium on a ticket that already sells it. Whole months only —
+	// Stripe's trial is a date, and half a month has no meaning on a receipt.
+	freeMembershipMonths: zod.number().int().min(0).max(12).optional(),
 	maxUses: zod.number().positive().optional().nullable(),
 })
 
@@ -61,7 +64,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				return sendResponse(res, validation.error.errors, "Invalid referral code data", false, ResCode.BAD_REQUEST)
 			}
 
-			const { code, discountPercentage, maxUses } = validation.data
+			const { code, discountPercentage, freeMembershipMonths, maxUses } = validation.data
 
 			// Check if code already exists (case-insensitive check will be handled by unique index)
 			const existingCode = await ReferralCodes.findOne({
@@ -78,6 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				eventId: new Types.ObjectId(eventId),
 				code: code.toUpperCase(),
 				discountPercentage,
+				freeMembershipMonths: freeMembershipMonths || 0,
 				maxUses: maxUses || null,
 				isActive: true,
 				usageCount: 0,

@@ -8,6 +8,8 @@ interface ReferralCode {
 	_id: string
 	code: string
 	discountPercentage: number
+	/** Free months of Jetzy Premium this code grants on a ticket that already sells it. */
+	freeMembershipMonths?: number
 	isActive: boolean
 	usageCount: number
 	maxUses?: number | null
@@ -32,6 +34,9 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 	const [formData, setFormData] = useState({
 		code: "",
 		discountPercentage: 10,
+		// One number, not a tickbox plus a count — two fields can disagree and then the code
+		// no longer says what the buyer gets. 0 means the code grants no membership months.
+		freeMembershipMonths: 0,
 		maxUses: null as number | null,
 		isActive: true,
 	})
@@ -83,6 +88,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			const response = await axios.post(`/api/events/${eventId}/referral-codes`, {
 				code: formData.code,
 				discountPercentage: formData.discountPercentage,
+				freeMembershipMonths: formData.freeMembershipMonths || 0,
 				maxUses: formData.maxUses || null,
 			})
 
@@ -112,7 +118,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		}
 	}
 
-	const handleUpdate = async (codeId: string, updates: { isActive?: boolean; discountPercentage?: number; maxUses?: number | null }) => {
+	const handleUpdate = async (codeId: string, updates: { isActive?: boolean; discountPercentage?: number; freeMembershipMonths?: number; maxUses?: number | null }) => {
 		try {
 			setUpdating(codeId)
 			const response = await axios.patch(`/api/events/${eventId}/referral-codes/${codeId}`, updates)
@@ -188,6 +194,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		setFormData({
 			code: "",
 			discountPercentage: 10,
+			freeMembershipMonths: 0,
 			maxUses: null,
 			isActive: true,
 		})
@@ -312,6 +319,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 							<Tr>
 								<Th>Code</Th>
 								<Th>Discount</Th>
+								<Th>Free Premium</Th>
 								<Th>Status</Th>
 								<Th>Usage</Th>
 								<Th>Max Uses</Th>
@@ -334,6 +342,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 										</Flex>
 									</Td>
 									<Td>{code.discountPercentage}%</Td>
+									<Td>{code.freeMembershipMonths ? `${code.freeMembershipMonths} ${code.freeMembershipMonths === 1 ? "month" : "months"}` : "—"}</Td>
 									<Td>
 										<Switch
 											isChecked={code.isActive}
@@ -423,6 +432,29 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 							</FormControl>
 
 							<FormControl mb={4}>
+								<FormLabel>Free Months of Jetzy Premium</FormLabel>
+								<NumberInput
+									value={formData.freeMembershipMonths}
+									onChange={(_, value) => setFormData({ ...formData, freeMembershipMonths: isNaN(value) ? 0 : value })}
+									min={0}
+									max={12}
+									bg="#101010"
+									color="white"
+									borderColor="#434343"
+								>
+									<NumberInputField border="1px solid #434343" _focus={{ borderColor: "#F79432" }} />
+									<NumberInputStepper>
+										<NumberIncrementStepper color="white" />
+										<NumberDecrementStepper color="white" />
+									</NumberInputStepper>
+								</NumberInput>
+								<Text fontSize="xs" color="gray.400" mt={1}>
+									0 for none. Only applies to tickets that already include Jetzy Premium — the buyer gets those months free, then the
+									membership renews at the normal rate until they cancel. It never applies to Full Concierge.
+								</Text>
+							</FormControl>
+
+							<FormControl mb={4}>
 								<FormLabel>Maximum Uses (Optional)</FormLabel>
 								<NumberInput
 									value={formData.maxUses || ""}
@@ -449,7 +481,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 						<Button variant="ghost" mr={3} onClick={onClose} color="white" _hover={{ bg: "#333" }}>
 							Cancel
 						</Button>
-						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={handleCreate} isLoading={creating} isDisabled={!formData.code || formData.discountPercentage < 0 || formData.discountPercentage > 100}>
+						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={handleCreate} isLoading={creating} isDisabled={!formData.code || formData.discountPercentage < 0 || formData.discountPercentage > 100 || formData.freeMembershipMonths < 0 || formData.freeMembershipMonths > 12}>
 							Create
 						</Button>
 					</ModalFooter>

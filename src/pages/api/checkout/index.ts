@@ -157,7 +157,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Validate and get referral code if provided. The modal's green tick is only a
 		// preview — the code can be deactivated or exhausted before submit, so re-check.
-		let referralCodeData: { code: string; discountPercentage: number } | null = null
+		let referralCodeData: { code: string; discountPercentage: number; freeMembershipMonths: number } | null = null
 		try {
 			const referralResult = await validateReferralCodeForEvent(tickets[0]?.eventId, referralCode)
 			if (!referralResult.ok) {
@@ -510,7 +510,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// the two leaves someone charged with no membership. That risk already existed on the
 		// approval path and is handled the same way — the booking stays valid, the gap is
 		// recorded per product as `status: "failed"`, and money is never rolled back to fix it.
-		type MembershipLine = { key: MembershipKey; amount: number; currency: string; priceId: string; interval: string }
+		type MembershipLine = {
+			key: MembershipKey
+			amount: number
+			currency: string
+			priceId: string
+			interval: string
+			/** Free months granted by a referral code. Present means this line was NOT charged. */
+			trialMonths?: number
+			/** What it renews at once the free months run out — `amount` is 0 on those. */
+			renewalAmount?: number
+		}
 		let membershipLines: MembershipLine[] = []
 		let membershipExtras: Partial<Stripe.Checkout.SessionCreateParams> = {}
 
@@ -592,12 +602,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					if (price.unit_amount == null) {
 						throw new Error(`${MEMBERSHIPS[key].label} price has no unit_amount and can't be charged`)
 					}
+					// A referral code can hand out free months of Jetzy Premium. The line then costs
+					// NOTHING today — it is left out of `line_items` below — but still carries the
+					// real `priceId` and `interval`, because that is what the subscription is
+					// created at when the trial ends, and what has to be disclosed now.
+					//
+					// Premium only, by decision: Full Concierge is sold on someone else's terms.
+					const freeMonths = key === "premium" ? referralCodeData?.freeMembershipMonths || 0 : 0
+
 					membershipLines.push({
 						key,
-						amount: price.unit_amount / 100,
+						amount: freeMonths > 0 ? 0 : price.unit_amount / 100,
 						currency: price.currency || "usd",
 						priceId: price.id,
 						interval: price.recurring?.interval || "month",
+						...(freeMonths > 0 ? { trialMonths: freeMonths, renewalAmount: price.unit_amount / 100 } : {}),
 					})
 				}
 
@@ -608,7 +627,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						customer: customerId,
 						line_items: [
 							...prices,
-							...membershipLines.map((line) => ({
+							// A trial line is charged nothing today, so it must not appear as a line
+							// item at all — a $0 line item is rejected by Stripe, and charging it
+							// would defeat the offer.
+							...membershipLines.filter((line) => !line.trialMonths).map((line) => ({
 								quantity: 1,
 								price_data: {
 									currency: line.currency,

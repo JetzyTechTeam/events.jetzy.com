@@ -242,7 +242,10 @@ export function ApprovalRequests({
 	if (isLoading) return <Text color="white">Loading requests...</Text>
 	if (isError) return <Text color="red.400">Failed to load requests.</Text>
 
-	const rejectHoldAmount = rejectTarget?.payment?.amount
+	// Gated on `payment.status`, not on the sub-doc existing: a free booking can now carry a
+	// `payment` for the membership a referral code gave away, and its `amount` defaults to 0.
+	// Reading that as a hold would offer to release money that was never taken.
+	const rejectHoldAmount = rejectTarget?.payment?.status ? rejectTarget?.payment?.amount : undefined
 
 	return (
 		<Box overflowX="auto">
@@ -477,7 +480,8 @@ export function ApprovalRequests({
 							const priorQty = prior.reduce((sum, p) => sum + ticketCount(p), 0)
 							const thisQty = ticketCount(approveTarget)
 							const lines = ticketBreakdown(approveTarget)
-							const held = approveTarget?.payment?.amount
+							// See `rejectHoldAmount` — `payment.amount` alone no longer means money exists.
+							const held = approveTarget?.payment?.status ? approveTarget?.payment?.amount : undefined
 							const approveDiscount = describeDiscount(approveTarget)
 							const approveMemberships = bookingMemberships(approveTarget?.payment)
 							// The row's button reads "Retry charge" after a failed capture; the dialog
@@ -542,8 +546,20 @@ export function ApprovalRequests({
 											    membership. */}
 											{approveMemberships.map((row) => (
 												<Flex key={row.key} justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
-													<Text>{MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || row.key} (first {row.interval || "month"})</Text>
-													<Text>{money(Number(row.amount) || 0)}</Text>
+													{/* A membership a referral code gave away costs the guest nothing on
+													    approval, so "(first month) $0.00" would read as a broken sum. Say
+													    what it is instead, and what it renews at afterwards. */}
+													<Text>
+														{MEMBERSHIPS[row.key as MembershipKey]?.receiptLabel || row.key}{" "}
+														{(row as any).trialMonths
+															? `(${(row as any).trialMonths} ${(row as any).trialMonths === 1 ? "month" : "months"} free)`
+															: `(first ${row.interval || "month"})`}
+													</Text>
+													<Text>
+														{(row as any).trialMonths
+															? `then ${money(Number((row as any).renewalAmount) || 0)}/${row.interval || "month"}`
+															: money(Number(row.amount) || 0)}
+													</Text>
 												</Flex>
 											))}
 											<Flex justify="space-between" gap={3} fontSize="sm" fontWeight={700} pt={2} mt={1} borderTop="1px solid #343536">
