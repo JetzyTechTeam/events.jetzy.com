@@ -83,14 +83,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const switchConfiguration = process.env.STRIPE_PORTAL_SWITCH_CONFIG_ID
 		let flowExtras: Record<string, any> = {}
 
+		if (wantsSwitch && !switchConfiguration) {
+			// Loud, because the symptom is silent: the member lands on the ordinary portal and
+			// simply doesn't find the plan they were promised. Every environment needs its own
+			// configuration id, and a Vercel env var only reaches a deployment built after it
+			// was added — so "I set the variable" and "the running build has it" differ.
+			console.error(
+				"[subscriptions/portal] flow=switch requested but STRIPE_PORTAL_SWITCH_CONFIG_ID is not set — opening the ordinary portal instead",
+			)
+		}
+
 		if (wantsSwitch && switchConfiguration) {
 			const subscriptionId = record.doc?.premiumSubscription?.stripeSubscriptionId
+			if (!subscriptionId) {
+				console.error("[subscriptions/portal] flow=switch but no premiumSubscription.stripeSubscriptionId on user", userId)
+			}
 			if (subscriptionId) {
 				const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId)
 				// Confirm it really is Premium before pinning a plan-switching flow to it. The id
 				// is ours, but a mis-stored Concierge id would otherwise open the one flow this
 				// whole configuration split exists to keep away from Select's products.
-				if (subscriptionMembershipKey(subscription) === "premium") {
+				const key = subscriptionMembershipKey(subscription)
+				if (key !== "premium") {
+					console.error(`[subscriptions/portal] flow=switch but ${subscriptionId} is not Jetzy Premium (key=${key})`)
+				}
+				if (key === "premium") {
 					flowExtras = {
 						configuration: switchConfiguration,
 						flow_data: {
