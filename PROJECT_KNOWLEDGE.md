@@ -667,6 +667,45 @@ on the card. On annual that is a **$200 authorization** — up to **$400** at
 Legitimate, but large on a $60 ticket, so the host is warned where they choose it and the buyer
 is told the annual figure before purchase.
 
+### The plan card, and switching monthly → annual
+
+**Two configurations, not one.** `STRIPE_PORTAL_CONFIG_ID` has switching OFF (see below).
+`STRIPE_PORTAL_SWITCH_CONFIG_ID` has it ON but **scoped to Premium's product and its two
+prices**, and `/api/subscriptions/portal` opens it with `flow_data.subscription_update.subscription`
+pinned to the member's own subscription. Both locks are kept deliberately: one Stripe Customer
+holds every membership, so an unscoped update button reappears on the Full Concierge row and
+bypasses SelectMember's rules.
+
+- Create it with `npx tsx scripts/create-portal-config.ts --switch`, once per environment.
+  Prices are read from Stripe at run time (one per interval, product default wins) so the
+  legacy $10/month price can never become a switch target.
+- **The pinned API version (2024-04-10) does not echo `subscription_update.products` in the
+  response.** It IS applied — Stripe 400s on an unknown product and on a price belonging to a
+  different product. Don't "fix" an apparently missing scope by widening it.
+- **`flow: "switch"` verifies the subscription is Premium** (`subscriptionMembershipKey`) before
+  pinning the flow, even though the id comes from our own record.
+- **Env var unset → the ordinary portal opens.** An update flow against a switching-disabled
+  configuration is a hard Stripe error, so a missed deploy must degrade, not break.
+- **Only monthly members are offered the switch** (`canSwitch`, decided server-side). Moving off
+  annual mid-term leaves an unused credit on the customer and nothing here refunds cash.
+
+**`GET /api/subscriptions/current-plan`** answers "which plan", live from Stripe. The interval is
+deliberately **not stored** — a copy goes stale the moment someone switches in the portal. It is
+its own route rather than a field on `/api/subscriptions/me`, because `/me` is polled by the
+navbar on every page through `usePremiumStatus` and a Stripe round-trip does not belong behind a
+page view. Best-effort: a Stripe failure returns the stored renewal date with no interval, and
+the card then shows status + "Manage in Stripe" without offering a switch.
+
+**`PlanComparison` renders both surfaces** — `/subscribe` and `PremiumPaywallModal` — in both
+states. The modal previously passed no `prices` at all, so annual was unreachable from the door
+most people use; it now shares `useMembershipPlan("premium")` with the page, which means one
+cache entry and one formatter.
+
+**The struck-through "$400" is marketing copy, not a price.** `COMPARE_AT_MULTIPLIER = 2` in
+`PlanComparison.tsx`; nothing in Stripe backs it and no member was ever billed at that rate. It
+matches selectmember.jetzy.com by decision (CEO, 2026-08-18) and is kept in one named constant
+so it can be changed or removed in a single edit.
+
 ### Billing portal is scoped — no plan switching (`STRIPE_PORTAL_CONFIG_ID`)
 
 `/api/subscriptions/portal` used to create sessions with no `configuration`, falling through to
