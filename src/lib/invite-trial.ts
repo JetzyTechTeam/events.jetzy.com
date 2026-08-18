@@ -1,0 +1,82 @@
+/**
+ * Invite codes that grant a free trial of Jetzy Premium.
+ *
+ * A trial, not a coupon. Stripe's `trial_end` bills nothing until the date it names and then
+ * charges the normal price, which is exactly "two months free, then $20/month" — a 100%-off
+ * coupon would instead raise a $0 invoice every cycle and needs product scoping so it can't
+ * discount Full Concierge as well.
+ *
+ * `trialing` already counts as an active membership everywhere in this codebase (see
+ * `hasActiveMembershipSubscription` and the webhook), so a trial member gets member benefits,
+ * is skipped from being charged the membership on a bundled ticket, and reads as a member on
+ * selectmember.jetzy.com, which shares this Stripe account and this database.
+ *
+ * Pure and isomorphic — the checkout UI previews the offer from the same table the server
+ * enforces it from, so the two can't disagree about what a code is worth.
+ *
+ * NOT the same thing as either of the other "codes" in this product:
+ *   - `refCode` on signup credits a REFERRER through the Jetzy backend;
+ *   - a referral code at event checkout discounts a TICKET.
+ * Nothing here touches either.
+ */
+
+export type TrialOffer = {
+	/** Free months before the first real invoice. */
+	months: number
+	/**
+	 * Which billing intervals the code is good for.
+	 *
+	 * Monthly only, deliberately: two free months followed by an unannounced $200 annual charge
+	 * is a much larger surprise than $20, and a trial's whole point is that the buyer knows what
+	 * happens when it ends. Widen this only as a product decision.
+	 */
+	intervals: string[]
+	/** Shown to the buyer once the code is accepted. */
+	label: string
+}
+
+export const TRIAL_CODES: Record<string, TrialOffer> = {
+	"jetzy-me": { months: 2, intervals: ["month"], label: "2 months free" },
+}
+
+/** Codes are matched case- and whitespace-insensitively: people type them from a screenshot. */
+export const normalizeTrialCode = (code?: string | null): string => (code || "").trim().toLowerCase()
+
+export type TrialResolution =
+	| { ok: true; code: string; offer: TrialOffer }
+	| { ok: false; reason: "unknown" | "interval"; message: string }
+
+/**
+ * Is this code good for this billing interval?
+ *
+ * Returns a REASON rather than a bare null, because "we've never heard of that code" and "that
+ * code is monthly only" need different words in front of a buyer who is about to pay.
+ */
+export const resolveTrialCode = (rawCode?: string | null, interval?: string | null): TrialResolution => {
+	const code = normalizeTrialCode(rawCode)
+	const offer = TRIAL_CODES[code]
+
+	if (!offer) {
+		return { ok: false, reason: "unknown", message: "That invite code isn't valid. Check it, or leave it blank." }
+	}
+
+	if (interval && !offer.intervals.includes(interval)) {
+		const allowed = offer.intervals.includes("month") ? "monthly" : offer.intervals.join(" or ")
+		return { ok: false, reason: "interval", message: `This code applies to the ${allowed} plan. Switch to it to use the code.` }
+	}
+
+	return { ok: true, code, offer }
+}
+
+/** "2 months free, then $20/month from 18 Oct 2026" — the recurring terms, before purchase. */
+export const trialDisclosure = (offer: TrialOffer, priceLabel: string | null, startsCharging: Date): string => {
+	const date = startsCharging.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+	return priceLabel ? `${offer.label}, then ${priceLabel} from ${date}. Cancel any time.` : `${offer.label}. Cancel any time.`
+}
+
+/** When the first real invoice lands. */
+export const trialEndsOn = (offer: TrialOffer, from: Date = new Date()): Date => {
+	const end = new Date(from)
+	end.setMonth(end.getMonth() + offer.months)
+	return end
+}

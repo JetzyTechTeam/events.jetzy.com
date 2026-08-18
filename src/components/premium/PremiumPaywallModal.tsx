@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { useSession } from "next-auth/react"
@@ -66,6 +66,41 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	// behind every page view for every member.
 	const { currentPlan } = useCurrentMembershipPlan(isOpen && isPremium)
 
+	// Invite code (a free-trial code) — same behaviour as /subscribe, since both render the
+	// same card and a buyer must not get a different answer depending on which door they used.
+	const [inviteCode, setInviteCode] = useState("")
+	const [inviteAccepted, setInviteAccepted] = useState<string | null>(null)
+	const [inviteError, setInviteError] = useState<string | null>(null)
+	const [inviteChecking, setInviteChecking] = useState(false)
+	const inviteTimer = useRef<NodeJS.Timeout | null>(null)
+
+	useEffect(() => {
+		if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		const code = inviteCode.trim()
+		if (!code) {
+			setInviteAccepted(null)
+			setInviteError(null)
+			setInviteChecking(false)
+			return
+		}
+		setInviteChecking(true)
+		inviteTimer.current = setTimeout(async () => {
+			try {
+				const { data } = await axios.post("/api/subscriptions/invite-code", { code, interval: selectedInterval })
+				setInviteAccepted(data?.data?.label ? `${data.data.label} applied.` : "Invite code applied.")
+				setInviteError(null)
+			} catch (error: any) {
+				setInviteAccepted(null)
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+			} finally {
+				setInviteChecking(false)
+			}
+		}, 600)
+		return () => {
+			if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		}
+	}, [inviteCode, selectedInterval])
+
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
 			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
@@ -73,6 +108,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo,
 				...(selectedInterval ? { interval: selectedInterval } : {}),
+				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
 			})
 			return data?.data as { url: string }
 		},
@@ -84,6 +120,12 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			}
 		},
 		onError: (error: any) => {
+			// Refused at the door — say so on the field rather than in a toast over an
+			// unchanged form.
+			if (error?.response?.data?.data?.inviteCode) {
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				return
+			}
 			// Logged-out visitor turned out to already have an active subscription once they
 			// signed in — good news, not a failure. Show it in the modal rather than closing.
 			if (error?.response?.data?.data?.alreadySubscribed) {
@@ -213,6 +255,11 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 						onSwitchInterval={() => portalMutation.mutate("switch")}
 						onManageBilling={() => portalMutation.mutate(undefined)}
 						billingPending={portalMutation.isPending}
+						inviteCode={inviteCode}
+						onInviteCodeChange={setInviteCode}
+						inviteAccepted={inviteAccepted}
+						inviteError={inviteError}
+						inviteChecking={inviteChecking}
 						premiumPending={subscribeMutation.isPending}
 						onChooseFree={handleClose}
 						onChoosePremium={handleSubscribeClick}

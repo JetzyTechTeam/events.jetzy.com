@@ -288,6 +288,37 @@ export async function hasActiveMembershipSubscription(customerId: string, key: M
 }
 
 /**
+ * Has this customer EVER held this membership — including subscriptions long since cancelled?
+ *
+ * `hasActiveMembershipSubscription` answers "are they a member right now", which is the wrong
+ * question for a first-timer offer: someone who subscribed, cancelled, and came back is not new,
+ * and Stripe enforces nothing of the sort on its own. A trial code has to be refused on
+ * HISTORY, not on current state.
+ *
+ * Fails OPEN on a Stripe error (returns false, i.e. "no history"). The alternative is refusing
+ * a legitimate buyer their offer because a third-party call timed out; the downside is a
+ * duplicate trial in that window, which is a marketing cost, not a billing incident.
+ */
+export async function hasEverHadMembership(customerId: string, key: MembershipKey): Promise<boolean> {
+	if (!customerId) return false
+	const productId = MEMBERSHIPS[key]?.productId
+	if (!productId) return false
+	try {
+		const stripe = getStripeClient()
+		const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 })
+		return subscriptions.data.some((subscription) =>
+			subscription.items.data.some((item) => {
+				const product = item.price?.product
+				return (typeof product === "string" ? product : product?.id) === productId
+			}),
+		)
+	} catch (error) {
+		console.error(`[membership] hasEverHadMembership(${key}) failed:`, error)
+		return false
+	}
+}
+
+/**
  * The live subscription id for a product on this customer, if any.
  *
  * Used by the inbound SelectMember cancel webhook, which must cancel the CONCIERGE

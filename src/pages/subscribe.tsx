@@ -135,6 +135,42 @@ export default function SubscribePage() {
 		},
 	})
 
+	// Invite code (a free-trial code). Checked against the server before submit so a wrong code,
+	// or one that doesn't apply to the plan they picked, is reported while they can still fix it.
+	const [inviteCode, setInviteCode] = React.useState("")
+	const [inviteAccepted, setInviteAccepted] = React.useState<string | null>(null)
+	const [inviteError, setInviteError] = React.useState<string | null>(null)
+	const [inviteChecking, setInviteChecking] = React.useState(false)
+	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
+
+	React.useEffect(() => {
+		if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		const code = inviteCode.trim()
+		if (!code) {
+			setInviteAccepted(null)
+			setInviteError(null)
+			setInviteChecking(false)
+			return
+		}
+		setInviteChecking(true)
+		inviteTimer.current = setTimeout(async () => {
+			try {
+				const { data } = await axios.post("/api/subscriptions/invite-code", { code, interval: selectedInterval })
+				setInviteAccepted(data?.data?.label ? `${data.data.label} applied.` : "Invite code applied.")
+				setInviteError(null)
+			} catch (error: any) {
+				setInviteAccepted(null)
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+			} finally {
+				setInviteChecking(false)
+			}
+		}, 600)
+		return () => {
+			if (inviteTimer.current) clearTimeout(inviteTimer.current)
+		}
+		// Re-checked when the interval changes: a monthly-only code stops applying on annual.
+	}, [inviteCode, selectedInterval])
+
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
 			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
@@ -142,6 +178,7 @@ export default function SubscribePage() {
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo: "/subscribe",
 				...(selectedInterval ? { interval: selectedInterval } : {}),
+				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
 			})
 			return data?.data as { url: string }
 		},
@@ -153,6 +190,13 @@ export default function SubscribePage() {
 			}
 		},
 		onError: (error: any) => {
+			// The code was refused at the door (edited after we checked it, or the account turned
+			// out to have had Premium before) — surface it on the field, not in a toast that
+			// leaves the buyer looking at an unchanged form.
+			if (error?.response?.data?.data?.inviteCode) {
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				return
+			}
 			if (error?.response?.data?.data?.alreadySubscribed) {
 				InfoToast("You're already a member", "You already have an active Jetzy Premium subscription.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
@@ -198,6 +242,11 @@ export default function SubscribePage() {
 					onSwitchInterval={() => portalMutation.mutate("switch")}
 					onManageBilling={() => portalMutation.mutate(undefined)}
 					billingPending={portalMutation.isPending}
+					inviteCode={inviteCode}
+					onInviteCodeChange={setInviteCode}
+					inviteAccepted={inviteAccepted}
+					inviteError={inviteError}
+					inviteChecking={inviteChecking}
 					premiumDisabled={premiumLoading}
 					premiumPending={subscribeMutation.isPending}
 					onChooseFree={goToApp}

@@ -115,6 +115,17 @@ type Props = {
 	onManageBilling?: () => void
 	/** A portal session is being created; disables both member buttons. */
 	billingPending?: boolean
+	/**
+	 * Invite code (a free-trial code, e.g. `jetzy-me`). Optional in every sense: omit these
+	 * props and no field renders, which is how the card looked before trials existed.
+	 */
+	inviteCode?: string
+	onInviteCodeChange?: (code: string) => void
+	/** Set once the server has accepted it — e.g. "2 months free, then $20/month from Oct 18". */
+	inviteAccepted?: string | null
+	/** Why it was refused. Shown under the field. */
+	inviteError?: string | null
+	inviteChecking?: boolean
 	/** Disables the Premium CTA (in-flight mutation, or status still loading). */
 	premiumDisabled?: boolean
 	/** Shows a spinner in place of the Premium CTA label. */
@@ -145,6 +156,11 @@ const PlanComparison: React.FC<Props> = ({
 	currentPlan,
 	onSwitchInterval,
 	onManageBilling,
+	inviteCode,
+	onInviteCodeChange,
+	inviteAccepted,
+	inviteError,
+	inviteChecking = false,
 	billingPending = false,
 	premiumDisabled = false,
 	premiumPending = false,
@@ -312,6 +328,33 @@ const PlanComparison: React.FC<Props> = ({
 						</li>
 					))}
 				</ul>
+
+				{/* Invite code. Above the CTA on purpose: the trial changes what the buyer is
+				    charged today AND when the first real charge lands, so it belongs next to the
+				    button rather than buried above the benefits list. */}
+				{!isPremium && onInviteCodeChange && (
+					<div className="mb-4 text-left">
+						<label htmlFor="premium-invite-code" className="block text-xs text-gray-400 mb-1">
+							Invite code <span className="text-gray-500">(optional)</span>
+						</label>
+						<input
+							id="premium-invite-code"
+							type="text"
+							value={inviteCode || ""}
+							onChange={(e) => onInviteCodeChange(e.target.value)}
+							placeholder="Enter your invite code"
+							autoComplete="off"
+							className="w-full rounded-xl bg-[#141414] border-2 border-[#2b2b2b] px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-jetzy focus:outline-none"
+						/>
+						{inviteChecking && <p className="text-xs text-gray-400 mt-1">Checking…</p>}
+						{!inviteChecking && inviteError && <p className="text-xs text-red-400 mt-1">{inviteError}</p>}
+						{!inviteChecking && !inviteError && inviteAccepted && (
+							<p className="text-xs mt-1" style={{ color: "#22C55E" }}>
+								{inviteAccepted}
+							</p>
+						)}
+					</div>
+				)}
 
 				{isPremium ? (
 					<div className="flex flex-col gap-3">

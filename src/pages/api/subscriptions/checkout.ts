@@ -1,7 +1,15 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findMembershipPriceForInterval, findUserRecord, getMembershipPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
+import {
+	findMembershipPriceForInterval,
+	findUserRecord,
+	getMembershipPrice,
+	getStripeClient,
+	hasEverHadMembership,
+	resolveStripeCustomerForUser,
+} from "@/lib/premium"
+import { resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -61,6 +69,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 		const stripeCustomerId = await resolveStripeCustomerForUser(userId, email)
 
+		// ---- Invite code → free trial ----
+		//
+		// Resolved against the shared table in `lib/invite-trial.ts`, never trusted from the
+		// body beyond the string itself, and checked against the interval actually being bought:
+		// a monthly-only code must not silently grant two free months of a $200 plan.
+		//
+		// FIRST-TIMERS ONLY, on history rather than current state. Someone who subscribed,
+		// cancelled and came back is not new, and Stripe will not stop them redeeming again.
+		// Refused loudly here rather than at the door of Stripe, so the buyer can clear the field
+		// and continue instead of meeting a failure they can't act on.
+		const rawInviteCode = typeof req.body?.inviteCode === "string" ? req.body.inviteCode : ""
+		let trialEnd: number | undefined
+		if (rawInviteCode.trim()) {
+			const resolved = resolveTrialCode(rawInviteCode, price.recurring?.interval)
+			if (!resolved.ok) {
+				return sendResponse(res, { inviteCode: true }, resolved.message, false, ResCode.BAD_REQUEST)
+			}
+			if (await hasEverHadMembership(stripeCustomerId, "premium")) {
+				return sendResponse(
+					res,
+					{ inviteCode: true },
+					"This code is for new members, and this account has had Jetzy Premium before. Remove the code to continue.",
+					false,
+					ResCode.BAD_REQUEST,
+				)
+			}
+			// Calendar months, not 60 days — "2 months free" bought on the 31st should end on a
+			// date a person recognises.
+			trialEnd = Math.floor(trialEndsOn(resolved.offer).getTime() / 1000)
+			console.log(`[subscriptions/checkout] trial code ${resolved.code} applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`)
+		}
+
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
 		const successUrl = `${baseUrl}${returnTo}?premium_session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${baseUrl}${returnTo}?premium_cancelled=1`
@@ -75,7 +115,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata: { userId, purpose: "premium_subscription" },
 			// Stamped so every webhook branch can identify the product without matching price
 			// ids — the same marker `startMembershipSubscription` sets on the ones we create.
-			subscription_data: { metadata: { membershipKey: "premium", userId } },
+			// A card IS collected during a trial (Checkout's default), so the membership converts
+			// on its own at `trial_end` instead of dying there — and the recurring terms are
+			// disclosed before purchase, which the card networks require either way.
+			subscription_data: {
+				metadata: { membershipKey: "premium", userId },
+				...(trialEnd ? { trial_end: trialEnd } : {}),
+			},
 		})
 
 		return sendResponse(res, { url: checkoutSession.url }, "Subscription checkout created.", true, ResCode.OK)
