@@ -66,36 +66,65 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 			const { code, discountPercentage, freeMembershipMonths, maxUses } = validation.data
 
-			// Check if code already exists (case-insensitive check will be handled by unique index)
-			const existingCode = await ReferralCodes.findOne({
-				code: code.toUpperCase(),
-				isDeleted: false,
-			})
+			// ONE lookup, in whatever state the row is in.
+			//
+			// Two separate traps live here, and both produced the same useless "Referral code
+			// already exists" against an empty table:
+			//
+			//   - `code` is unique ACROSS EVENTS, so a live code on someone else's event blocks
+			//     this one while being invisible from here. The host needs to be told that, not
+			//     left staring at a table with nothing in it.
+			//   - rows written by the mobile app or the admin portal against this shared
+			//     collection can carry no `isDeleted` field at all, so a query for
+			//     `isDeleted: false` missed them and so did the revive below — the insert then
+			//     hit the unique index and reported a duplicate the host could not see.
+			//
+			// So: fetch the row by code alone, and decide from what comes back. Anything not
+			// explicitly deleted counts as live.
+			const upperCode = code.toUpperCase()
+			const existingCode = await ReferralCodes.findOne({ code: upperCode })
 
-			if (existingCode) {
-				return sendResponse(res, null, "Referral code already exists", false, ResCode.BAD_REQUEST)
+			if (existingCode && existingCode.isDeleted !== true) {
+				const sameEvent = String(existingCode.eventId) === String(eventId)
+				// Name the event when it is somebody else's, so "it already exists" is actionable
+				// rather than a dead end.
+				let ownerName = ""
+				if (!sameEvent) {
+					const owner = await Events.findById(existingCode.eventId).select("name").lean()
+					ownerName = (owner as any)?.name || ""
+				}
+				console.warn("[referral-codes/index] Duplicate code rejected:", {
+					code: upperCode,
+					requestedFor: eventId,
+					heldBy: String(existingCode.eventId),
+				})
+				return sendResponse(
+					res,
+					null,
+					sameEvent
+						? "That code already exists on this event."
+						: ownerName
+							? `That code is already in use on "${ownerName}". Referral codes are unique across Jetzy — try another.`
+							: "That code is already in use on another event. Referral codes are unique across Jetzy — try another.",
+					false,
+					ResCode.BAD_REQUEST,
+				)
 			}
 
 			// A code the host DELETED still owns the string.
 			//
-			// `code` is a plain unique index with no partial filter, and delete is a soft delete —
-			// so recreating a code you just removed failed with "Referral code already exists"
-			// while nothing on the page showed it existing. Revive the row instead of inserting a
-			// second one: the index makes the string globally unique, so this is the only way to
-			// hand it back.
+			// Delete is a soft delete and the unique index has no partial filter, so recreating a
+			// code you just removed failed while nothing on the page showed it existing. Revive
+			// the row rather than inserting beside it — the index makes that the only way to hand
+			// the string back.
 			//
-			// `usageCount` restarts at 0 — this is a new offer with its own `maxUses`, and
-			// carrying the old count would exhaust it immediately. Past redemptions are unaffected:
-			// the stats endpoint counts them from bookings, which store the code string.
-			const deletedCode = await ReferralCodes.findOne({
-				code: code.toUpperCase(),
-				isDeleted: true,
-			})
-
-			if (deletedCode) {
-				deletedCode.set({
-					// Reassigned, because the string is unique across events and the host asking for
-					// it now is the one who gets it.
+			// `usageCount` restarts at 0: this is a new offer with its own `maxUses`, and carrying
+			// the old count would exhaust it immediately. Past redemptions are unaffected — the
+			// stats endpoint counts them from bookings, which store the code string.
+			if (existingCode) {
+				existingCode.set({
+					// Reassigned, because the string is unique across events and the host asking
+					// for it now is the one who gets it.
 					eventId: new Types.ObjectId(eventId),
 					discountPercentage,
 					freeMembershipMonths: freeMembershipMonths || 0,
@@ -105,9 +134,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					usageCount: 0,
 					createdBy: (session.user as any)?._id || undefined,
 				})
-				await deletedCode.save()
-				console.log("[referral-codes/index] Revived a deleted code:", { code: code.toUpperCase(), eventId })
-				return sendResponse(res, deletedCode, "Referral code created successfully", true, ResCode.OK)
+				await existingCode.save()
+				console.log("[referral-codes/index] Revived a deleted code:", { code: upperCode, eventId })
+				return sendResponse(res, existingCode, "Referral code created successfully", true, ResCode.OK)
 			}
 
 			// Create referral code
@@ -139,10 +168,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	} catch (error: any) {
 		console.error("[referral-codes/index] Error:", error)
 		
-		// Handle duplicate key error (code already exists). Reachable only as a race now — a
-		// deleted code is revived above rather than colliding here.
+		// Duplicate key. Reachable only as a race now — every other path is resolved above.
 		if (error.code === 11000) {
-			return sendResponse(res, null, "That code is already in use. Try another.", false, ResCode.BAD_REQUEST)
+			return sendResponse(res, null, "That code is already in use across Jetzy. Try another.", false, ResCode.BAD_REQUEST)
 		}
 
 		return sendResponse(res, null, error.message || "An error occurred", false, ResCode.INTERNAL_SERVER_ERROR)

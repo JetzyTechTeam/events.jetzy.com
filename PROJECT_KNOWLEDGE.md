@@ -1684,3 +1684,23 @@ backend referral codes, which credit a referrer and grant nothing.
 rather than reported as dead leads — that route emails the generated password, so an address the
 person doesn't control gets them nothing anyway.
 
+## "Referral code already exists" against an empty table (2026-08-19)
+
+Two distinct causes, one useless message, and the second only showed up on production data.
+
+1. **Codes are unique across events.** `code` carries a plain `unique: true` index, so a live
+   `JETZY-ME` on another event blocks creation here — and that code is invisible from this
+   event's table, which is why the screen looked empty. The message now names the event holding
+   it, or says "on this event" when it really is a local duplicate.
+2. **Rows with no `isDeleted` field at all.** The mobile app and the admin portal write to this
+   shared collection without it, so `findOne({ code, isDeleted: false })` missed them, the revive
+   query (`isDeleted: true`) missed them too, and the insert fell through to a duplicate-key
+   error reported as a duplicate code.
+
+The create route now does ONE lookup by code alone and decides from the row: anything not
+explicitly `isDeleted: true` is live (rejected, with the owning event named), a deleted row is
+revived, nothing found means create.
+
+> Making codes unique per event instead would mean dropping `code_1` and building a compound
+> unique index on a collection the mobile app and admin portal share. Not taken — deliberately.
+
