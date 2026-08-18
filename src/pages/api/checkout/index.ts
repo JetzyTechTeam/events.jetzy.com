@@ -7,6 +7,7 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { heldMemberships } from "@/lib/premium-eligibility"
+import { eventUrl as buildEventUrl } from "@/lib/event-slug"
 import {
 	premiumAllowanceMessage,
 	premiumOrderCapMessage,
@@ -337,9 +338,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			: `${cleanBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}${appMarker}`
 		// `/cancel` never sees a Stripe session, so unlike `/success` it cannot recover the event
 		// id from metadata — it has to be handed one here or the return link has nowhere to go.
+		// Where Stripe's own back arrow lands (the one that appears when you hover the logo).
+		//
+		// Web buyers go straight back to the EVENT they were buying, not to a standalone
+		// "Payment Canceled" page: backing out of checkout means "I changed my mind", and the
+		// useful next screen is the ticket list, not an apology with a Try Again button that
+		// only goes home. It also removes a whole class of dead redirect — the event page is
+		// served by the same deployment as the checkout that built this URL.
+		//
+		// App buyers still get `/cancel`, because that page carries the deep link back into the
+		// app and there is nothing else on the web that can return them.
+		const cancelEventSlug = eventDetails?.slug || tickets[0]?.eventId || ""
 		const cancelUrl = fromApp
 			? `${cleanBaseUrl}/cancel?app=1&eventId=${encodeURIComponent(tickets[0]?.eventId || "")}`
-			: `${cleanBaseUrl}/cancel`
+			: cancelEventSlug
+				? buildEventUrl(cleanBaseUrl, String(cancelEventSlug))
+				: `${cleanBaseUrl}/cancel`
 
 		// Stripe refuses any charge under $0.50 — a manual-capture hold included — and the
 		// rejection surfaces as an opaque 500 at the buyer's checkout. Catch it here with

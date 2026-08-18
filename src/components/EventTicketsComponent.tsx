@@ -457,10 +457,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                   checkout, and a referral code can lower the ticket further there. */}
               {selectionAddedKeys.map((key) => {
                 const plan = planFor(key);
+                // The SELECTED TICKET's interval, not the product default. This line read
+                // "$20/month" beside an annual ticket that charges $200/year — the figure at the
+                // point of sale has to be the one the card is charged.
+                const price = plan ? planPriceForInterval(plan, selectionInterval) : null;
                 return (
                   <p key={key} className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
-                    {plan?.label
-                      ? `+ ${plan.name} ${plan.label} — confirmed at checkout`
+                    {price?.label
+                      ? `+ ${plan?.name} ${price.label} — confirmed at checkout`
                       : `+ ${plan?.name || key} membership — confirmed at checkout`}
                   </p>
                 );

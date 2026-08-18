@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
+import { findMembershipPriceForInterval, findUserRecord, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -107,15 +107,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				if (key !== "premium") {
 					console.error(`[subscriptions/portal] flow=switch but ${subscriptionId} is not Jetzy Premium (key=${key})`)
 				}
-				if (key === "premium") {
+				// The price we are switching them TO — the one interval they are not already on.
+				// Resolved server-side from the Premium product, never taken from the request.
+				const currentPrice = subscription.items.data[0]?.price
+				const targetInterval = currentPrice?.recurring?.interval === "month" ? "year" : "month"
+				const targetPrice = key === "premium" ? await findMembershipPriceForInterval("premium", targetInterval) : null
+
+				if (key === "premium" && targetPrice && subscription.items.data[0]?.id) {
+					// `subscription_update_confirm`, not `subscription_update`.
+					//
+					// The picker version drops the member on the configuration's portal HOME once
+					// they are done — and that configuration has updates enabled, so an annual
+					// member was then looking at an "Update subscription" button offering the
+					// downgrade we deliberately don't sell. Confirm goes straight to the priced
+					// confirmation page for the one target, and `after_completion` returns them
+					// here, so the portal home is never a destination.
 					flowExtras = {
 						configuration: switchConfiguration,
 						flow_data: {
-							type: "subscription_update",
-							subscription_update: { subscription: subscriptionId },
+							type: "subscription_update_confirm",
+							subscription_update_confirm: {
+								subscription: subscriptionId,
+								items: [{ id: subscription.items.data[0].id, price: targetPrice.id, quantity: 1 }],
+							},
 							after_completion: { type: "redirect", redirect: { return_url: returnUrl } },
 						},
 					}
+				} else if (key === "premium" && !targetPrice) {
+					console.error(`[subscriptions/portal] no ${targetInterval} price on the Premium product — cannot build a switch flow`)
 				}
 			}
 		}

@@ -839,13 +839,17 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 															{chargedKeys.map((key) => {
 																const plan = membershipPlans.find((p) => p.key === key)
 																const name = plan?.name || MEMBERSHIPS[key].label
-																const interval = plan?.interval || "month"
+																// Priced at the TICKET's interval, matching the order summary beside it
+																// and what `api/checkout` will charge. Reading the product default here
+																// disclosed "$20/month, renews monthly" against a $200/year charge.
+																const price = plan ? planPriceForInterval(plan, bundleInterval) : null
+																const interval = price?.interval || plan?.interval || "month"
 																return (
 																	<div key={key} className="flex items-start gap-2">
 																		<StarIcon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#F5C518" }} />
 																		<div style={{ color: "#F5C518" }}>
 																			<p className="text-xs font-semibold">
-																				🎟️ {name}{plan?.label ? ` — ${plan.label}` : ""}
+																				🎟️ {name}{price?.label ? ` — ${price.label}` : ""}
 																			</p>
 																			{/* On an approval ticket nothing is charged yet — the membership
 																			    is held alongside the ticket and only starts if the host
