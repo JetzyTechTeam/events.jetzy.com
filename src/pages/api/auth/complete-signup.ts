@@ -3,6 +3,8 @@ import bcrypt from "bcrypt"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { EventUsers } from "@/models/eventUsersModal"
+import { grantSignupTrial } from "@/lib/signup-trial"
+import { isSignupTrialCode } from "@/lib/invite-trial"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -42,7 +44,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Best-effort in every direction — a backend outage, a timeout, or an account that
 		// already exists there must never stop someone finishing their own signup. A no-code
 		// signup keeps the existing deferred JIT sync on first login.
-		if (user.refCode) {
+		// An invite code that grants free Jetzy Premium is NOT a backend referral code — it lives
+		// in `TRIAL_CODES` and credits nobody. Granted here rather than at `start-signup` because
+		// this is the moment the address is proven: they followed the link and set a password.
+		//
+		// Best-effort, and deliberately before the referral call below so a backend outage can't
+		// swallow it.
+		if (user.refCode && isSignupTrialCode(user.refCode)) {
+			await grantSignupTrial({
+				email: user.email,
+				firstName: user.firstName,
+				userId: String(user._id),
+				code: user.refCode,
+			})
+		} else if (user.refCode) {
 			try {
 				const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://test.jetzy.com"
 				const controller = new AbortController()

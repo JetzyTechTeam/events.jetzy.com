@@ -141,7 +141,14 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                 }),
             })
             const json = await res.json().catch(() => ({}))
-            return { ok: res.ok, status: res.status, code: json?.code, message: json?.message }
+            return {
+                ok: res.ok,
+                status: res.status,
+                code: json?.code,
+                message: json?.message,
+                // Free months waiting behind the verification link, when an invite code was used.
+                trialMonths: json?.data?.trialMonths as number | undefined,
+            }
         } catch (err: any) {
             return { ok: false, status: 0, code: "NETWORK_ERROR", message: err?.message || "Network error" }
         }

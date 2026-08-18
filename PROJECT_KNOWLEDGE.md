@@ -1612,3 +1612,47 @@ membership disclosure on the site uses.
 Both surfaces that render `PlanComparison` — `/subscribe` and `PremiumPaywallModal` — pick this up,
 which is the point of them sharing the card.
 
+## Free Premium from an invite code at signup (2026-08-19)
+
+`jetzy-me` typed into the invite field on `/signup` or `/jetzyqrsignup` now grants **2 months of
+Jetzy Premium**, with **no card collected** — a CEO decision, built on the same trial mechanism as
+the referral-code gift on tickets.
+
+`grantSignupTrial` (`src/lib/signup-trial.ts`) creates the subscription with no payment method, so
+`trial_settings.end_behavior.missing_payment_method: "cancel"` ends it when the months run out.
+A gift that expires, not a subscription that quietly starts billing someone who never entered a
+card. That is also why nothing here discloses a recurring charge: there isn't one until they
+choose to add a card.
+
+**Where it is granted, and why there:**
+
+| Route | Granted at | Why |
+|---|---|---|
+| `/signup` | `api/auth/complete-signup` | The link has been followed and a password set — the address is proven |
+| `/jetzyqrsignup` | `api/create.ts` | The generated password only ever reaches them by email |
+
+**One per address, ever.** Checked against `membership_purchases` for that email AND against
+Stripe's own history for the customer (`hasEverHadMembership`) — our collection only covers sales
+made since it existed. No global cap, by decision; the code can be withdrawn from `TRIAL_CODES`.
+
+**A trial code is not a referral code.** Both forms previously verified every code against
+`VerifyReferralCodeApi` and *blocked the signup* when it failed, which would have rejected
+`jetzy-me` outright — it credits no referrer and the backend has never heard of it. The forms now
+skip that check for trial codes, and the servers skip the `/v1/accounts/create` referral call.
+
+**Keep the pure/server split.** `isSignupTrialCode` and `signupTrialOffer` live in
+`invite-trial.ts`; `signup-trial.ts` reaches SendGrid, Stripe and Mongo through dynamic imports,
+and webpack follows those into the client bundle — importing it from a page fails the build with
+`Can't resolve 'fs'`.
+
+**The offer is stated three times, always as waiting rather than granted:** a green line under the
+code field, the `/post-signup` panel (carried as `?trial=N` so a refresh doesn't drop it), and the
+verification email (its subject and a gold box). The membership doesn't exist until the link is
+followed, so anything else would be untrue for as long as the email sits unopened.
+
+The welcome email that follows uses `sendMembershipStarted({ endsWithoutCard: true })` — "free
+until 19 October, then it ends unless you add a card", never "renews until you cancel".
+
+Reported as `source: "signup"` in `membership_purchases`, shown on `/console/analytics/growth` as
+**Invite code at signup**, separated from ticket gifts in the "Given free months" card.
+

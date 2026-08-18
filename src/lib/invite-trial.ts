@@ -85,3 +85,20 @@ export const trialEndsOn = (offer: TrialOffer, from: Date = new Date()): Date =>
 	end.setMonth(end.getMonth() + offer.months)
 	return end
 }
+
+/**
+ * Is this string one of our trial codes?
+ *
+ * Lives HERE, not in `signup-trial.ts`, because both signup forms call it: that module reaches
+ * SendGrid and the models through dynamic imports, and webpack follows those into the client
+ * bundle, where `fs` doesn't exist. Keeping the pure half separate is what makes the forms able
+ * to resolve a code without shipping the server with them.
+ */
+export const isSignupTrialCode = (code?: string | null): boolean => resolveTrialCode(code, "month").ok
+
+/** The offer behind a typed code, so a form can say what it is worth before submitting. */
+export const signupTrialOffer = (code?: string | null): TrialOffer | null => {
+	const resolved = resolveTrialCode(code, "month")
+	return resolved.ok ? resolved.offer : null
+}
+

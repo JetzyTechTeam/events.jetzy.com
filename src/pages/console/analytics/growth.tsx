@@ -75,6 +75,7 @@ const SOURCE_LABELS: Record<string, string> = {
 	subscribe: "Bought directly",
 	ticket: "With a ticket",
 	gift: "Free months from a code",
+	signup: "Invite code at signup",
 	external: "Sold elsewhere",
 }
 
@@ -82,6 +83,7 @@ const SOURCE_COLORS: Record<string, string> = {
 	subscribe: "green",
 	ticket: "blue",
 	gift: "yellow",
+	signup: "purple",
 	external: "gray",
 }
 
@@ -178,7 +180,14 @@ export default function GrowthAnalytics() {
 									<MetricsCard dark title="Memberships sold" value={totalMembers.toLocaleString()} icon={FiUsers} iconColor="#F5C518" />
 									<MetricsCard dark title="Bought directly" value={(bySource.subscribe || 0).toLocaleString()} icon={FiCreditCard} iconColor="#F5C518" subtitle="/subscribe or the paywall" />
 									<MetricsCard dark title="With a ticket" value={(bySource.ticket || 0).toLocaleString()} icon={FiTag} iconColor="#F5C518" />
-									<MetricsCard dark title="Given free months" value={(bySource.gift || 0).toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle="Referral code on a bundled ticket" />
+									<MetricsCard
+										dark
+										title="Given free months"
+										value={((bySource.gift || 0) + (bySource.signup || 0)).toLocaleString()}
+										icon={FiGift}
+										iconColor="#F5C518"
+										subtitle={`${bySource.signup || 0} at signup · ${bySource.gift || 0} with a ticket`}
+									/>
 									<MetricsCard dark title="Invite codes redeemed" value={inviteRedemptions.toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle={`${inviteCodes.length} code${inviteCodes.length === 1 ? "" : "s"}`} />
 								</SimpleGrid>
 
@@ -204,6 +213,7 @@ export default function GrowthAnalytics() {
 												<option value="subscribe">Bought directly</option>
 												<option value="ticket">With a ticket</option>
 												<option value="gift">Free months from a code</option>
+											<option value="signup">Invite code at signup</option>
 												<option value="external">Sold elsewhere</option>
 											</Select>
 											<Select size="sm" bg="#101010" color="white" borderColor="#2a2a2a" w="190px" value={hasInviteCode} onChange={(e) => { setHasInviteCode(e.target.value); setPage(1) }}>

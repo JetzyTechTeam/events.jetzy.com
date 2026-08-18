@@ -2582,11 +2582,20 @@ export const sendVerificationEmail = async ({
   firstName,
   token,
   cb,
+  trialMonths,
 }: {
   email: string
   firstName?: string
   token: string
   cb?: string
+  /**
+   * Free months of Jetzy Premium waiting behind the link, from an invite code typed at signup.
+   *
+   * Named in this email because it is the strongest reason the person has to click it, and the
+   * membership does NOT exist until they do — the grant happens at `complete-signup`, once the
+   * address is proven. Phrased as waiting rather than granted, for exactly that reason.
+   */
+  trialMonths?: number
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
   const verifyUrl = `${baseUrl}/auth/verify-signup?token=${encodeURIComponent(token)}${cb ? `&_cb=${encodeURIComponent(cb)}` : ""}`
@@ -2605,6 +2614,18 @@ export const sendVerificationEmail = async ({
       <p style="font-size: 16px; color: #555; line-height: 1.6;">
         Tap the button below to verify your email and finish creating your Jetzy account. You'll choose a password on the next screen.
       </p>
+
+      ${trialMonths && trialMonths > 0
+        ? `<div style="background-color: #fff8e1; border: 1px solid #f0d78c; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0 0 6px 0; color: #7a5c00; font-weight: bold; font-size: 16px;">
+          🎁 ${trialMonths} month${trialMonths === 1 ? "" : "s"} of Jetzy Premium are waiting
+        </p>
+        <p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.6;">
+          Your invite code adds them to your account as soon as you verify this email. No card needed, and
+          nothing is charged — it simply ends after ${trialMonths === 1 ? "the month" : `the ${trialMonths} months`} unless you choose to continue.
+        </p>
+      </div>`
+        : ""}
 
       <div style="text-align: center; margin: 35px 0;">
         <a href="${verifyUrl}" style="background-color: #F79432; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 16px;">
@@ -2633,9 +2654,15 @@ export const sendVerificationEmail = async ({
     await sgMail.send({
       to: email,
       from: mailFrom(process.env.SENDGRID_FROM_WELCOME),
-      subject: "Verify your email — Jetzy Life",
+      subject: trialMonths && trialMonths > 0
+        ? `Verify your email — ${trialMonths} month${trialMonths === 1 ? "" : "s"} of Jetzy Premium inside`
+        : "Verify your email — Jetzy Life",
       html: wrapHtml(html),
-      text: `Hi ${firstName || "there"},\n\nVerify your email and finish creating your Jetzy account:\n${verifyUrl}\n\nIf you didn't request this, ignore this email.`,
+      text: `Hi ${firstName || "there"},\n\nVerify your email and finish creating your Jetzy account:\n${verifyUrl}\n${
+        trialMonths && trialMonths > 0
+          ? `\n${trialMonths} month${trialMonths === 1 ? "" : "s"} of Jetzy Premium are added to your account as soon as you verify. No card needed.\n`
+          : ""
+      }\nIf you didn't request this, ignore this email.`,
     })
     console.log(`✅ Verification email sent to: ${email}`)
   } catch (error) {
@@ -3072,9 +3099,16 @@ export const sendMembershipStarted = async ({
 	label,
 	trialEndsOn,
 	nextBillingDate,
+	endsWithoutCard,
 }: MembershipEmailData & {
 	/** Set when the membership started on a free trial — the date the first real charge lands. */
 	trialEndsOn?: Date
+	/**
+	 * No card was collected, so the membership ENDS at the trial rather than renewing — a gift
+	 * granted at signup. "Renews until you cancel" would be plainly untrue here, and would leave
+	 * someone waiting for a charge that never comes while their membership quietly lapses.
+	 */
+	endsWithoutCard?: boolean
 }) => {
 	const name = firstName || email.split("@")[0]
 	const product = label || DEFAULT_MEMBERSHIP_LABEL
@@ -3084,9 +3118,11 @@ export const sendMembershipStarted = async ({
 
 	// The one sentence that has to be exactly right: what has been taken, what will be taken,
 	// and when.
-	const terms = chargesOn
-		? `Your membership is <strong>free until ${chargesOn}</strong>. After that it renews at <strong>${money(amount)} every ${interval}</strong> until you cancel — cancel any time before then and you won't be charged.`
-		: `You've been charged <strong>${money(amount)}</strong>, and your membership renews at that amount every ${interval} until you cancel${renewsOn ? `, starting <strong>${renewsOn}</strong>` : ""}.`
+	const terms = chargesOn && endsWithoutCard
+		? `Your membership is <strong>free until ${chargesOn}</strong>. There's no card on file, so nothing will be charged — it simply ends on that date unless you add one. Keeping it costs ${money(amount)} every ${interval}.`
+		: chargesOn
+			? `Your membership is <strong>free until ${chargesOn}</strong>. After that it renews at <strong>${money(amount)} every ${interval}</strong> until you cancel — cancel any time before then and you won't be charged.`
+			: `You've been charged <strong>${money(amount)}</strong>, and your membership renews at that amount every ${interval} until you cancel${renewsOn ? `, starting <strong>${renewsOn}</strong>` : ""}.`
 
 	try {
 		await sgMail.send({

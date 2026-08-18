@@ -54,6 +54,14 @@ export type StartMembershipArgs = {
 	 * is the offer itself rather than an accounting device for a period already bought.
 	 */
 	trialMonths?: number
+	/**
+	 * How this membership was sold, for reporting. Defaults to what a bundled ticket implies —
+	 * `gift` when months were given away, `ticket` otherwise — which is what every existing
+	 * caller means. Signup grants pass `signup` because no ticket was involved at all.
+	 */
+	source?: "ticket" | "gift" | "signup"
+	/** The invite code redeemed, when one was. Recorded, never used to price anything. */
+	inviteCode?: string
 	metadata?: Record<string, string>
 }
 
@@ -161,7 +169,7 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 		const soldPrice = subscription.items.data[0]?.price
 		await recordMembershipPurchase({
 			key,
-			source: args.trialMonths && args.trialMonths > 0 ? "gift" : "ticket",
+			source: args.source || (args.trialMonths && args.trialMonths > 0 ? "gift" : "ticket"),
 			email,
 			userId: subscriberId ? String(subscriberId) : undefined,
 			stripeCustomerId: customerId,
@@ -171,6 +179,7 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 			...(soldPrice?.unit_amount != null ? { amount: soldPrice.unit_amount / 100 } : {}),
 			...(soldPrice?.currency ? { currency: soldPrice.currency } : {}),
 			...(metadata?.referralCode ? { referralCode: metadata.referralCode } : {}),
+			...(args.inviteCode ? { inviteCode: args.inviteCode } : {}),
 			...(args.trialMonths ? { trialMonths: args.trialMonths } : {}),
 			trialEndsAt: firstRenewalAt,
 			...(metadata?.eventId ? { eventId: metadata.eventId } : {}),
