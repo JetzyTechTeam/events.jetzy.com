@@ -150,5 +150,35 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 		})
 	}
 
+	// The sale, for reporting. Best-effort and deliberately last: the subscription exists and
+	// the buyer is a member whether or not this row is written.
+	//
+	// `source` distinguishes a membership somebody PAID for with their ticket from one a
+	// referral code gave away — the same subscription object in Stripe, and a question the CEO
+	// asks about every campaign.
+	try {
+		const { recordMembershipPurchase } = await import("@/models/events/membership-purchases")
+		const soldPrice = subscription.items.data[0]?.price
+		await recordMembershipPurchase({
+			key,
+			source: args.trialMonths && args.trialMonths > 0 ? "gift" : "ticket",
+			email,
+			userId: subscriberId ? String(subscriberId) : undefined,
+			stripeCustomerId: customerId,
+			stripeSubscriptionId: subscription.id,
+			priceId,
+			interval: soldPrice?.recurring?.interval || interval,
+			...(soldPrice?.unit_amount != null ? { amount: soldPrice.unit_amount / 100 } : {}),
+			...(soldPrice?.currency ? { currency: soldPrice.currency } : {}),
+			...(metadata?.referralCode ? { referralCode: metadata.referralCode } : {}),
+			...(args.trialMonths ? { trialMonths: args.trialMonths } : {}),
+			trialEndsAt: firstRenewalAt,
+			...(metadata?.eventId ? { eventId: metadata.eventId } : {}),
+			...(metadata?.bookingRef ? { bookingRef: metadata.bookingRef } : {}),
+		})
+	} catch (recordError: any) {
+		console.error("[membership] Could not record the membership sale:", recordError?.message || recordError)
+	}
+
 	return { created: true, subscriptionId: subscription.id, firstRenewalAt }
 }

@@ -1523,3 +1523,59 @@ existing PATCH: discount, free Premium months, max uses, active. The **code text
 read-only** — bookings record the string rather than the id, so renaming one would orphan every
 redemption already attributed to it.
 
+## Referral and membership reporting (2026-08-18)
+
+Two questions that had no answer: *how many people came in on which referral code*, and *who
+bought Jetzy Premium — and which of them used an invite code*.
+
+### `/console/analytics/growth` (admin)
+
+One page, two tabs, linked from the analytics header. Both tabs export CSV across the whole
+filtered set rather than the page being displayed, matching the QR signup export.
+
+### Referral codes — read from bookings
+
+`GET /api/analytics/referrals`. Every booking stores the code string it was bought with, which is
+why the report reads bookings rather than `usageCount` on the code: that counter restarts when a
+host deletes and recreates a code, and it says nothing about who, when, or for how much.
+
+- Grouped by **code + eventId**. A code string is globally unique but can be reassigned to another
+  event when it is revived, and folding those together credits one event with another's sales.
+- Buyers are counted as **unique lowercased emails**, not bookings — one person booking twice is
+  one person.
+- Cancelled / rejected / failed / expired are excluded by default (`includeCancelled=true` keeps
+  them). Classified by exclusion, since `status` is not a closed set.
+- `code=ABC` returns the individual bookings behind one code — the list to hand over when someone
+  asks who a campaign actually brought in.
+- Admin sees every event; an owner's queries are constrained to their own `ownerId` events before
+  anything else runs.
+
+### Membership sales — a new collection
+
+`membership_purchases` (`src/models/events/membership-purchases.ts`), one row per sale, written at
+the moment the subscription is created and never updated. Current state stays on the user
+document; this is the sale as it happened.
+
+`source` is the field the whole report turns on:
+
+| | |
+|---|---|
+| `subscribe` | bought deliberately at `/subscribe` or the paywall |
+| `ticket` | came with an event ticket, first period paid |
+| `gift` | came with a ticket, first months given away by a referral code |
+| `external` | a subscription on this Stripe account this app didn't sell (selectmember.jetzy.com) |
+
+Writes **upsert on `stripeSubscriptionId`**, so a redelivered webhook updates one row instead of
+inflating the count, and use `$setOnInsert` for the codes and source — the first write is the one
+that saw the checkout, and a later replay carrying less context must not blank it.
+
+**The invite code is finally recorded.** It was previously applied to Stripe's `trial_end` and
+then forgotten, so "how did that campaign do" was unanswerable. `subscriptions/checkout.ts` now
+stamps the resolved code into the Checkout Session metadata and the webhook reads it back.
+
+`GET /api/analytics/memberships` is **admin only** — a list of paying customers with their email
+addresses. Filters: membership, source, has/hasn't an invite code, free-text, date range.
+
+**No backfill.** Sales predating the collection are absent, and the empty state says why: Stripe
+holds no record of our events or codes, so anything reconstructed would be invented.
+

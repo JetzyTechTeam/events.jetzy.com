@@ -160,6 +160,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						// `mode: "payment"` sessions and the subscription is created afterwards by
 						// `startMembershipSubscription`, with the ticket confirmation carrying the
 						// recurring terms.
+						// The sale, for reporting. Recorded for EVERY subscription session, ours or not:
+						// "how many members did we gain" is a different question from "did we sell
+						// it", and a SelectMember sale is still a Jetzy Premium member. `source`
+						// keeps the two apart. Upserted on the subscription id, so a replayed
+						// webhook doesn't inflate the count.
+						{
+							const recipient = await findEmailRecipientByStripeCustomerId(customerId)
+							const soldPrice = subscription.items.data[0]?.price
+							const { recordMembershipPurchase } = await import("@/models/events/membership-purchases")
+							await recordMembershipPurchase({
+								key,
+								source: sessionMetadata.purpose === "premium_subscription" ? "subscribe" : "external",
+								email: recipient?.email || checkoutSession.customer_details?.email || undefined,
+								name: recipient?.firstName,
+								userId,
+								stripeCustomerId: customerId,
+								stripeSubscriptionId: subscription.id,
+								priceId: soldPrice?.id,
+								interval: soldPrice?.recurring?.interval,
+								...(soldPrice?.unit_amount != null ? { amount: soldPrice.unit_amount / 100 } : {}),
+								...(soldPrice?.currency ? { currency: soldPrice.currency } : {}),
+								// The whole reason the code is stamped into session metadata.
+								...(sessionMetadata.inviteCode ? { inviteCode: sessionMetadata.inviteCode } : {}),
+								...(subscription.trial_end
+									? { trialEndsAt: new Date(subscription.trial_end * 1000) }
+									: {}),
+							})
+						}
+
 						if (sessionMetadata.purpose === "premium_subscription") {
 							const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 							const price = subscription.items.data[0]?.price

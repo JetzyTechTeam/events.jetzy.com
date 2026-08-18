@@ -83,6 +83,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// and continue instead of meeting a failure they can't act on.
 		const rawInviteCode = typeof req.body?.inviteCode === "string" ? req.body.inviteCode : ""
 		let trialEnd: number | undefined
+		/** The NORMALISED code, set only once it has been accepted. Reported on, never displayed. */
+		let trialCodeApplied: string | undefined
 		if (rawInviteCode.trim()) {
 			const resolved = resolveTrialCode(rawInviteCode, price.recurring?.interval)
 			if (!resolved.ok) {
@@ -100,6 +102,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Calendar months, not 60 days — "2 months free" bought on the 31st should end on a
 			// date a person recognises.
 			trialEnd = Math.floor(trialEndsOn(resolved.offer).getTime() / 1000)
+			trialCodeApplied = resolved.code
 			console.log(`[subscriptions/checkout] trial code ${resolved.code} applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`)
 		}
 
@@ -114,7 +117,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			line_items: [{ price: price.id, quantity: 1 }],
 			success_url: successUrl,
 			cancel_url: cancelUrl,
-			metadata: { userId, purpose: "premium_subscription" },
+			// `inviteCode` rides along so the webhook can record WHICH code was redeemed. It was
+			// previously applied to `trial_end` and then forgotten, leaving no way to answer how a
+			// campaign performed.
+			metadata: { userId, purpose: "premium_subscription", ...(trialCodeApplied ? { inviteCode: trialCodeApplied } : {}) },
 			// Stamped so every webhook branch can identify the product without matching price
 			// ids — the same marker `startMembershipSubscription` sets on the ones we create.
 			// A card IS collected during a trial (Checkout's default), so the membership converts
