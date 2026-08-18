@@ -72,6 +72,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Falls back to the default when the env var is absent so a missed deploy degrades to
 		// today's behaviour rather than failing to open the portal at all.
 		const configuration = process.env.STRIPE_PORTAL_CONFIG_ID
+		if (!configuration) {
+			// LOUD, because the fallback is invisible and wrong in exactly the way this config
+			// exists to prevent: Stripe uses the ACCOUNT DEFAULT, which has plan switching on, so
+			// every member sees "Update subscription" — on annual Premium, where we don't sell the
+			// downgrade, and on Full Concierge, where changing a plan bypasses SelectMember's
+			// rules entirely. Create one with `scripts/create-portal-config.ts` and set the id.
+			console.error("[subscriptions/portal] STRIPE_PORTAL_CONFIG_ID is not set — falling back to the Stripe account default, which allows plan switching")
+		}
 		const returnUrl = `${baseUrl}${returnTo}`
 
 		// "Switch me to annual" — a second configuration, opened as a pinned update flow.
@@ -109,13 +117,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				if (key !== "premium") {
 					console.error(`[subscriptions/portal] flow=switch but ${subscriptionId} is not Jetzy Premium (key=${key})`)
 				}
-				// The price we are switching them TO — the one interval they are not already on.
-				// Resolved server-side from the Premium product, never taken from the request.
+				// The price we are switching them TO. Resolved server-side from the Premium product,
+				// never taken from the request.
+				//
+				// ONE DIRECTION: monthly to annual. An annual member moving down mid-term leaves an
+				// unused credit on their Stripe customer and nothing here pays that back in cash,
+				// which is why the card doesn't offer it — but the card is not the enforcement.
+				// Without this check a hand-made `flow: "switch"` request builds the downgrade flow
+				// and Stripe performs it.
 				const currentPrice = subscription.items.data[0]?.price
-				const targetInterval = currentPrice?.recurring?.interval === "month" ? "year" : "month"
-				const targetPrice = key === "premium" ? await findMembershipPriceForInterval("premium", targetInterval) : null
+				const currentInterval = currentPrice?.recurring?.interval
+				const canSwitchUp = currentInterval === "month"
+				if (key === "premium" && !canSwitchUp) {
+					console.warn(`[subscriptions/portal] flow=switch refused: ${subscriptionId} is already ${currentInterval}ly — opening the ordinary portal`)
+				}
+				const targetPrice = key === "premium" && canSwitchUp ? await findMembershipPriceForInterval("premium", "year") : null
 
-				if (key === "premium" && targetPrice && subscription.items.data[0]?.id) {
+				if (key === "premium" && canSwitchUp && targetPrice && subscription.items.data[0]?.id) {
 					// `subscription_update_confirm`, not `subscription_update`.
 					//
 					// The picker version drops the member on the configuration's portal HOME once
@@ -135,8 +153,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							after_completion: { type: "redirect", redirect: { return_url: returnUrl } },
 						},
 					}
-				} else if (key === "premium" && !targetPrice) {
-					console.error(`[subscriptions/portal] no ${targetInterval} price on the Premium product — cannot build a switch flow`)
+				} else if (key === "premium" && canSwitchUp && !targetPrice) {
+					console.error("[subscriptions/portal] no annual price on the Premium product — cannot build a switch flow")
 				}
 			}
 		}

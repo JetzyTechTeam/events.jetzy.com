@@ -1456,3 +1456,22 @@ it.
 Nothing else changed: `subscriptions/checkout` was already passing the price's real interval to
 `resolveTrialCode`, so an annual purchase with the code now resolves instead of being refused.
 
+## The portal config env var IS the switching lock (2026-08-18)
+
+An annual member on a trial was shown **"Update subscription"** in the billing portal. Nothing in
+the code had changed — `STRIPE_PORTAL_CONFIG_ID` was simply never set in that environment, and
+`billingPortal.sessions.create` without a `configuration` uses the **account default**, which has
+`subscription_update` enabled. Every guard in `portal.ts` about scoping the switch to Premium is
+downstream of that one variable being present.
+
+- `portal.ts` now logs an error when it is missing, rather than degrading invisibly.
+- The switch flow is **monthly → annual only**, checked server-side. `canSwitch` in
+  `current-plan.ts` kept the button off an annual member's card, but a hand-made
+  `flow: "switch"` request still built a year→month flow and Stripe would carry it out. Mid-term
+  downgrades leave an unused credit that nothing here refunds.
+
+Test-mode configurations: default `bpc_1U5WCiB7XccR5GE08VxzpoXf`, switch
+`bpc_1U5j0eB7XccR5GE06Iv5s7as`. Live mode needs its own pair —
+`npx tsx scripts/create-portal-config.ts [--switch]`, then set the variable and redeploy (a
+server env var only reaches a build made after it was added).
+
