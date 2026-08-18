@@ -68,6 +68,20 @@ type MembershipRow = {
 	boughtAt: string | null
 }
 
+type SignupTrialRow = {
+	_id: string
+	email: string
+	name: string
+	code: string
+	signupSource: string
+	signedUpAt: string | null
+	verified: boolean
+	granted: boolean
+	grantedAt: string | null
+	trialMonths: number
+	trialEndsAt: string | null
+}
+
 const money = (n: number | null | undefined) => `$${Number(n || 0).toFixed(2)}`
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—")
 
@@ -142,9 +156,48 @@ export default function GrowthAnalytics() {
 		}
 	}, [memParams, page, toast])
 
+	// ---- signup invite codes tab ----
+	const [sgLoading, setSgLoading] = React.useState(true)
+	const [sgRows, setSgRows] = React.useState<SignupTrialRow[]>([])
+	const [sgTotal, setSgTotal] = React.useState(0)
+	const [sgSummary, setSgSummary] = React.useState<{ typed: number; verified: number; granted: number; pending: number } | null>(null)
+	const [sgStatus, setSgStatus] = React.useState("")
+	const [sgSearch, setSgSearch] = React.useState("")
+	const [sgSearchInput, setSgSearchInput] = React.useState("")
+	const [sgPage, setSgPage] = React.useState(1)
+
+	const sgParams = React.useCallback(() => {
+		const p = dateParams()
+		if (sgStatus) p.set("status", sgStatus)
+		if (sgSearch.trim()) p.set("search", sgSearch.trim())
+		return p
+	}, [dateParams, sgStatus, sgSearch])
+
+	React.useEffect(() => {
+		let cancelled = false
+		setSgLoading(true)
+		const p = sgParams()
+		p.set("page", String(sgPage))
+		p.set("limit", String(limit))
+		fetch(`/api/analytics/signup-trials?${p.toString()}`)
+			.then((r) => r.json())
+			.then((data) => {
+				if (cancelled) return
+				setSgRows(data?.data?.rows || [])
+				setSgTotal(data?.data?.total || 0)
+				setSgSummary(data?.data?.summary || null)
+			})
+			.catch(() => toast({ title: "Couldn't load the signup invite report", status: "error", duration: 3000 }))
+			.finally(() => !cancelled && setSgLoading(false))
+		return () => {
+			cancelled = true
+		}
+	}, [sgParams, sgPage, toast])
+
 	const totalMembers = Object.values(bySource).reduce((sum, n) => sum + n, 0)
 	const inviteRedemptions = inviteCodes.reduce((sum, c) => sum + c.redemptions, 0)
 	const totalPages = Math.max(1, Math.ceil(memTotal / limit))
+	const sgTotalPages = Math.max(1, Math.ceil(sgTotal / limit))
 
 	return (
 		<>
@@ -163,6 +216,7 @@ export default function GrowthAnalytics() {
 						<TabList mb={4}>
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Referral codes</Tab>
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Jetzy Premium</Tab>
+							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Signup invite codes</Tab>
 						</TabList>
 
 						<TabPanels>
@@ -311,6 +365,117 @@ export default function GrowthAnalytics() {
 									)}
 								</Box>
 							</TabPanel>
+							{/* ---------------------------- Signup invite codes ---------------------------- */}
+							<TabPanel px={0}>
+								{/* Read from the SIGNUP side, not from the sales record: someone who typed the
+								    code and never opened their verification email has no membership, and they
+								    are exactly who a campaign report has to show. The gap between "typed" and
+								    "granted" is the number worth acting on. */}
+								<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
+									<MetricsCard dark title="Typed a code" value={(sgSummary?.typed ?? 0).toLocaleString()} icon={FiGift} iconColor="#A78BFA" />
+									<MetricsCard dark title="Verified their email" value={(sgSummary?.verified ?? 0).toLocaleString()} icon={FiUsers} iconColor="#A78BFA" />
+									<MetricsCard dark title="Membership granted" value={(sgSummary?.granted ?? 0).toLocaleString()} icon={FiCreditCard} iconColor="#A78BFA" subtitle="Free months actually created" />
+									<MetricsCard dark title="Not redeemed" value={(sgSummary?.pending ?? 0).toLocaleString()} icon={FiTrendingUp} iconColor="#A78BFA" subtitle="Typed it, never finished" />
+								</SimpleGrid>
+
+								<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
+									<Flex justify="space-between" align="center" mb={3} gap={3} wrap="wrap">
+										<HStack spacing={2} wrap="wrap">
+											<Select size="sm" bg="#101010" color="white" borderColor="#2a2a2a" w="200px" value={sgStatus} onChange={(e) => { setSgStatus(e.target.value); setSgPage(1) }}>
+												<option value="">Everyone</option>
+												<option value="verified">Verified their email</option>
+												<option value="unverified">Not verified yet</option>
+											</Select>
+											<Input
+												size="sm"
+												bg="#101010"
+												color="white"
+												borderColor="#2a2a2a"
+												w="240px"
+												placeholder="Name or email"
+												value={sgSearchInput}
+												onChange={(e) => setSgSearchInput(e.target.value)}
+												onKeyDown={(e) => {
+													if (e.key === "Enter") {
+														setSgSearch(sgSearchInput)
+														setSgPage(1)
+													}
+												}}
+											/>
+										</HStack>
+										<Button
+											size="sm"
+											bg="#F79432"
+											color="black"
+											_hover={{ bg: "#E68422" }}
+											onClick={() => {
+												const p = sgParams()
+												p.set("format", "csv")
+												window.location.href = `/api/analytics/signup-trials?${p.toString()}`
+											}}
+										>
+											Export CSV
+										</Button>
+									</Flex>
+
+									{sgLoading ? (
+										<Center py={10}><Spinner color="#F79432" /></Center>
+									) : sgRows.length === 0 ? (
+										<Text color="#9C9C9C" py={6}>Nobody has signed up with a membership invite code in this period.</Text>
+									) : (
+										<>
+											<TableContainer>
+												<Table size="sm" variant="simple">
+													<Thead>
+														<Tr>
+															<Th color="#9C9C9C">Signed up</Th>
+															<Th color="#9C9C9C">Person</Th>
+															<Th color="#9C9C9C">Code</Th>
+															<Th color="#9C9C9C">Route</Th>
+															<Th color="#9C9C9C">Verified</Th>
+															<Th color="#9C9C9C">Membership</Th>
+															<Th color="#9C9C9C">Free until</Th>
+														</Tr>
+													</Thead>
+													<Tbody>
+														{sgRows.map((r) => (
+															<Tr key={r._id}>
+																<Td color="#9C9C9C" fontSize="xs">{day(r.signedUpAt)}</Td>
+																<Td color="white">
+																	{r.name || "—"}
+																	<Text color="#9C9C9C" fontSize="xs">{r.email}</Text>
+																</Td>
+																<Td color="#F5C518" fontFamily="mono" fontSize="xs">{r.code}</Td>
+																<Td color="#9C9C9C" fontSize="xs">{r.signupSource === "jetzyqrsignup" ? "QR signup" : "/signup"}</Td>
+																<Td>
+																	<Badge colorScheme={r.verified ? "green" : "gray"}>{r.verified ? "yes" : "not yet"}</Badge>
+																</Td>
+																<Td>
+																	{/* Granted, or still sitting behind an unopened email. */}
+																	<Badge colorScheme={r.granted ? "purple" : "orange"}>
+																		{r.granted ? `${r.trialMonths || 0} mo granted` : "not redeemed"}
+																	</Badge>
+																</Td>
+																<Td color="#9C9C9C" fontSize="xs">{r.granted ? day(r.trialEndsAt) : "—"}</Td>
+															</Tr>
+														))}
+													</Tbody>
+												</Table>
+											</TableContainer>
+
+											<Flex justify="space-between" align="center" mt={4}>
+												<Text fontSize="sm" color="#9C9C9C">{sgTotal.toLocaleString()} signup{sgTotal === 1 ? "" : "s"}</Text>
+												<HStack>
+													<Button size="sm" bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }} isDisabled={sgPage <= 1} onClick={() => setSgPage((p) => p - 1)}>Prev</Button>
+													<Text fontSize="sm" color="#9C9C9C">{sgPage} / {sgTotalPages}</Text>
+													<Button size="sm" bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }} isDisabled={sgPage >= sgTotalPages} onClick={() => setSgPage((p) => p + 1)}>Next</Button>
+												</HStack>
+											</Flex>
+										</>
+									)}
+								</Box>
+							</TabPanel>
+
 						</TabPanels>
 					</Tabs>
 				</Box>

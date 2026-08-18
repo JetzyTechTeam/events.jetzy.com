@@ -1656,3 +1656,31 @@ until 19 October, then it ends unless you add a card", never "renews until you c
 Reported as `source: "signup"` in `membership_purchases`, shown on `/console/analytics/growth` as
 **Invite code at signup**, separated from ticket gifts in the "Given free months" card.
 
+## Who signed up with an invite code (2026-08-19)
+
+`GET /api/analytics/signup-trials`, plus a **Signup invite codes** tab on
+`/console/analytics/growth`. Admin only — it lists people by email.
+
+It reads `EventUsers.refCode`, the signup side, and joins the membership onto it. Reading
+`membership_purchases` alone would have been wrong: that collection records the moment a
+membership is *created*, which for a signup code is after the verification link is followed.
+Someone who typed the code and never opened their email has no row there at all — and they are
+precisely who a campaign report has to surface. The join is by **email**, because a person can
+hold an account document in either collection.
+
+Four numbers, all computed across the whole filtered set rather than the visible page:
+
+| | |
+|---|---|
+| Typed a code | signups carrying a `TRIAL_CODES` code |
+| Verified their email | followed the link (or came via QR, which creates a usable account outright) |
+| Membership granted | free months actually created |
+| Not redeemed | typed it, never finished — the list worth chasing |
+
+Only codes present in `TRIAL_CODES` are matched. The same `refCode` field also holds ordinary
+backend referral codes, which credit a referrer and grant nothing.
+
+`emailVerified` is written only by the link flow, so `/jetzyqrsignup` rows are treated as verified
+rather than reported as dead leads — that route emails the generated password, so an address the
+person doesn't control gets them nothing anyway.
+
