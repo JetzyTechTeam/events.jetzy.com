@@ -5,6 +5,13 @@ import { Error as ErrorToast } from "@/lib/_toaster"
 /**
  * Opens the Stripe Billing Portal — the only way to cancel a Jetzy Premium membership.
  *
+ * @deprecated for the MEMBER path — use `useMembershipDialog`, whose card carries both
+ * "Switch to $200/year" and "Manage in Stripe". Sending a member straight here left a monthly
+ * subscriber with no way anywhere in the product to move to annual, because this portal has
+ * plan switching disabled on purpose (an unscoped update button also appears on Full Concierge).
+ * Kept because it is still the right primitive for opening the portal directly, and the file is
+ * referenced by other branches.
+ *
  * A hook rather than a component because the four avatar menus in this app (misc/Navbar,
  * ConsoleNavbar, HostedEvents, EventsListing) each render their items differently. The
  * entry point has to appear in ALL of them: a membership can be acquired as a side effect

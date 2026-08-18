@@ -61,8 +61,10 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		if (!selectedInterval && plan?.interval) setSelectedInterval(plan.interval)
 	}, [plan?.interval, selectedInterval])
 
-	// What they are on now — only asked once we know they are a member.
-	const { currentPlan } = useCurrentMembershipPlan(isPremium)
+	// What they are on now — asked only when the dialog is actually open AND they are a member.
+	// This modal is mounted by every navbar, so an ungated fetch would put a Stripe round-trip
+	// behind every page view for every member.
+	const { currentPlan } = useCurrentMembershipPlan(isOpen && isPremium)
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {

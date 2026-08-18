@@ -20,8 +20,7 @@ import { getUserSlug } from "@/lib/utils";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
 import PremiumBadge from "@/components/premium/PremiumBadge";
-import PremiumPaywallModal from "@/components/premium/PremiumPaywallModal";
-import { useBillingPortal } from "@/hooks/useBillingPortal";
+import { useMembershipDialog } from "@/hooks/useMembershipDialog";
 
 type NavbarProps = {
   hideEventNav?: boolean;
@@ -38,8 +37,10 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
   const isAdmin = userRole === "admin" || userRole === "super admin";
   const isUser = userRole === "user";
   const { isPremium } = usePremiumStatus();
-  const [showPremiumPaywall, setShowPremiumPaywall] = React.useState(false);
-  const { openPortal, isOpening: isOpeningPortal, label: portalLabel } = useBillingPortal();
+  // One dialog for both jobs: buying Premium, and managing it once bought. A member used to be
+  // sent straight to Stripe from the menu below, which is the cancel-only portal — so there was
+  // nowhere in the product to move from monthly to annual.
+  const { open: openMembershipDialog, dialog: membershipDialog, label: membershipLabel } = useMembershipDialog();
   usePremiumSubscriptionReturn();
 
   return (
@@ -128,7 +129,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                 bg="#F5C518"
                 color="black"
                 _hover={{ bg: "#E0B317" }}
-                onClick={() => setShowPremiumPaywall(true)}
+                onClick={openMembershipDialog}
                 leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
                 display={{ base: "none", sm: "flex" }}
               >
@@ -206,8 +207,8 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
                     start one as a side effect of a purchase, so this must always be reachable
                     for a member — see api/subscriptions/portal.ts. */}
                 {isPremium && (
-                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} isDisabled={isOpeningPortal} onClick={openPortal}>
-                    {portalLabel}
+                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} onClick={openMembershipDialog}>
+                    {membershipLabel}
                   </MenuItem>
                 )}
                 <MenuItem
@@ -236,7 +237,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
               bg="#F5C518"
               color="black"
               _hover={{ bg: "#E0B317" }}
-              onClick={() => setShowPremiumPaywall(true)}
+              onClick={openMembershipDialog}
               leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
               display={{ base: "none", sm: "flex" }}
             >
@@ -256,11 +257,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
         )}
       </Flex>
 
-      <PremiumPaywallModal
-        isOpen={showPremiumPaywall}
-        onClose={() => setShowPremiumPaywall(false)}
-        returnTo={router.asPath}
-      />
+      {membershipDialog}
     </Box>
   );
 };

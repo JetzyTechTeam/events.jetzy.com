@@ -14,7 +14,7 @@ import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import { getUserSlug } from "@Jetzy/lib/utils"
 import QRCodeModal from "@Jetzy/components/events/QRCodeModal"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
-import { useBillingPortal } from "@/hooks/useBillingPortal"
+import { useMembershipDialog } from "@/hooks/useMembershipDialog"
 
 const navigation = [
 	{ name: Pages.Dasshboard, href: ROUTES.dashboard.index },
@@ -29,7 +29,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	const { data: session } = useSession()
 	const dispatch = useAppDispatch()
 	const { isPremium: isPremiumMember } = usePremiumStatus()
-	const { openPortal, label: portalLabel } = useBillingPortal()
+	// The dialog, not the portal: the portal has plan switching off by design, so sending a
+	// member straight there left them no way to move from monthly to annual. Cancellation is
+	// still one click in, under "Manage in Stripe".
+	const { open: openMembershipDialog, dialog: membershipDialog, label: membershipLabel } = useMembershipDialog()
 
 	const logout = () => {
 		// Clear Redux session storage first
@@ -188,10 +191,10 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 													<Menu.Item>
 														{({ active }) => (
 															<a
-																onClick={openPortal}
+																onClick={openMembershipDialog}
 																className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}
 															>
-																{portalLabel}
+																{membershipLabel}
 															</a>
 														)}
 													</Menu.Item>
@@ -303,6 +306,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 			url={signupQRUrl}
 			title="Jetzy User Signup"
 		/>
+		{membershipDialog}
 		</>
 	)
 }

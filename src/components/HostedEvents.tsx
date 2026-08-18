@@ -33,7 +33,7 @@ import Link from "next/link"
 import { signOut, useSession } from "next-auth/react"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
-import { useBillingPortal } from "@/hooks/useBillingPortal"
+import { useMembershipDialog } from "@/hooks/useMembershipDialog"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
@@ -108,7 +108,9 @@ export default function HostedEvents({ event }: Props) {
 	const dispatch = useAppDispatch()
 
 	const { isPremium: isPremiumMember } = usePremiumStatus()
-	const { openPortal, isOpening: isOpeningPortal, label: portalLabel } = useBillingPortal()
+	// See the note in useMembershipDialog: the member path opens the plan card, which carries
+	// both "Switch to $200/year" and "Manage in Stripe".
+	const { open: openMembershipDialog, dialog: membershipDialog, label: membershipLabel } = useMembershipDialog()
 
 	// Canonical logout — mirrors src/components/misc/Navbar.tsx (LOGOUT-SAFETY RULE in CLAUDE.md):
 	// targeted removeItem only (never localStorage.clear()), then destroySession, then signOut.
@@ -366,12 +368,11 @@ export default function HostedEvents({ event }: Props) {
 							{session && isPremiumMember && (
 								<button
 									type="button"
-									onClick={openPortal}
-									disabled={isOpeningPortal}
+									onClick={openMembershipDialog}
 									className="border py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg disabled:opacity-50"
 									style={{ borderColor: "#F5C518", color: "#F5C518" }}
 								>
-									{portalLabel}
+									{membershipLabel}
 								</button>
 							)}
 							{session ? (
@@ -415,8 +416,8 @@ export default function HostedEvents({ event }: Props) {
 											</MenuItem>
 										)}
 										{isPremiumMember && (
-											<MenuItem onClick={openPortal} isDisabled={isOpeningPortal} bg="#1E1E1E" color="#F5C518" _hover={{ bg: "#2B2B2B" }} _focus={{ bg: "#2B2B2B" }}>
-												{portalLabel}
+											<MenuItem onClick={openMembershipDialog} bg="#1E1E1E" color="#F5C518" _hover={{ bg: "#2B2B2B" }} _focus={{ bg: "#2B2B2B" }}>
+												{membershipLabel}
 											</MenuItem>
 										)}
 										{/* LOGOUT-SAFETY RULE (CLAUDE.md): the click tracker must not see this. */}
@@ -775,6 +776,10 @@ export default function HostedEvents({ event }: Props) {
 					</div>
 				</div>
 				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
+
+			{/* Buy Premium, or manage what you already have — one dialog, opened from the
+			    membership entry in both menus on this page. */}
+			{membershipDialog}
 
 			{/* Cancelling is irreversible and, for a paid booking, costs the guest their
 			    money — so it goes through the shared warning dialog, never window.confirm. */}
