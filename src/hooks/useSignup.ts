@@ -134,6 +134,9 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                     name: values.name?.trim(),
                     email: values.email?.trim(),
                     acceptedTerms: values.acceptedTerms,
+                    // Optional. Recorded now and sent on to the Jetzy backend once the account
+                    // has a password — see api/auth/complete-signup.ts.
+                    refCode: values.refCode?.trim() || undefined,
                     cb: cb || undefined,
                 }),
             })
