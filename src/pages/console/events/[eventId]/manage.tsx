@@ -78,6 +78,7 @@ import { Formik, Form, Field, FormikProps, FieldArray } from "formik"
 import { usePlacesWidget } from "react-google-autocomplete"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
+import { blurOnWheel } from "@/lib/number-input"
 import RichTextEditor from "@/components/misc/RichTextEditor"
 import EventDescription from "@/components/events/EventDescription"
 import AnswerText from "@/components/events/AnswerText"
@@ -1495,7 +1496,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														</Flex>
 														{/* `min={0}` alone doesn't stop the host typing -5 — it only constrains
 													    the spinner and native form validation. Blocking the key does. */}
-													<Field as={Input} type="number" min={0} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
+													<Field as={Input} type="number" min={0} onWheel={blurOnWheel} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
 													</Flex>
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1748,7 +1749,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 																    reached the server and came back as a validation error the host
 																    couldn't act on. Math.max passes NaN through unchanged, so the
 																    empty-field behaviour above is untouched. */}
-																<Input type="number" min={0} step="0.01" placeholder="Enter price (0 for free)" bg="#090C10" border="1px solid #444" value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""} onChange={(e) => setTempTicket({ ...tempTicket, price: Math.max(0, parseFloat(e.target.value)) })} />
+																<Input type="number" onWheel={blurOnWheel} min={0} step="0.01" placeholder="Enter price (0 for free)" bg="#090C10" border="1px solid #444" value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""} onChange={(e) => setTempTicket({ ...tempTicket, price: Math.max(0, parseFloat(e.target.value)) })} />
 															</FormControl>
 															<FormControl mb={4}>
 																<Flex align="center" justify="space-between" gap={4}>

@@ -76,6 +76,7 @@ import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
+import { blurOnWheel } from "@/lib/number-input"
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
 
@@ -800,7 +801,7 @@ const CreateEventPage = () => {
                     </Flex>
                     {/* `min={0}` alone doesn't stop the host typing -5 — it only constrains the
                         spinner and native form validation. Blocking the key does. */}
-                    <Field as={Input} type="number" min={0} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #343536" w="90px" h="36px" />
+                    <Field as={Input} type="number" min={0} onWheel={blurOnWheel} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #343536" w="90px" h="36px" />
                   </Flex>
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
@@ -1041,6 +1042,8 @@ const CreateEventPage = () => {
                           id="ticketPrice"
                           name="ticketPrice"
                           type="number"
+                          // A scroll over this field used to change the price — see blurOnWheel.
+                          onWheel={blurOnWheel}
                           min={0}
                           step="0.01"
                           placeholder="Enter price (0 for free)"
