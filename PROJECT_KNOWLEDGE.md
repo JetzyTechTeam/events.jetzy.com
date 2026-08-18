@@ -1283,3 +1283,41 @@ const events = await Events.find({ isDeleted: false, ...ownerFilter })
 - `f23c2b0` — share feed/discussion link, QR code, jetzyqrsignup in console navbar
 - `f520137` — vote bug for mobile event, strip id bug
 - `606a968` — optional dates, locationDisclosedAfterBooking, datePoll, CORS fix
+
+---
+
+## Location disclosure, one sender name, signup invite code (2026-08-18)
+
+**A booked guest sees the address.** `locationDisclosedAfterBooking` used to show
+"Location will be disclosed after registration" to everyone permanently — including a guest who
+had booked and was signed in with the same email, and including the host who typed it in.
+`HostedEvents` now gates on the booking it *already* fetches for the Cancel button
+(`/api/bookings/my-for-event`): a live booking or `canManage`. That endpoint already excludes
+cancelled / rejected / expired bookings, so the only extra exclusion is **pending** — awaiting
+approval is not being approved. Use `isPendingBooking` from `src/lib/booking-status.ts`.
+
+The address also comes back on that response as `eventLocation` (withheld while pending), which
+is what lets it appear straight after a booking made on the page rather than on the next load.
+
+> **Still leaked, deliberately.** The real address is serialised into the page props for every
+> visitor and only hidden in the UI. Closing that means masking in `[slug].tsx`
+> `getServerSideProps`, which changes what other consumers receive — explicitly deferred, not
+> forgotten. Don't tell a host it is hidden.
+
+**One sender: `mailFrom()`.** `from:` was a bare address string in ~20 sends, so mail clients
+displayed the mailbox name — every Jetzy email arrived from **contact**. `mailFrom()` in
+`send-grid.ts` supplies name and address together, with a single `SENDER_NAME = "Jetzy"`, and is
+now the only way `from` is set. The address is unchanged, so SendGrid sender verification and
+domain reputation are untouched. The two **admin-inbox** alerts keep "Jetzy Security" /
+"Jetzy Compliance" on purpose: those are triage labels in a shared internal mailbox.
+
+**The ticket confirmation links back to the event** — `buildEventUrl(baseUrl, slug)`, never
+interpolation.
+
+**`/signup` accepts an optional invite code**, mirroring `/jetzyqrsignup`: `VerifyReferralCodeApi`
+runs only when the field is non-empty (a blank code must never block a signup), `start-signup.ts`
+stores `refCode` on the `EventUsers` record, and **`complete-signup.ts`** forwards it to
+`/v1/accounts/create`. That call waits for the password step because the backend requires a
+password and a verification-link signup has none until the link is followed. Best-effort with an
+8s abort, 409 treated as success, failures logged and swallowed — a referral outage must never
+stop someone finishing their own signup.
