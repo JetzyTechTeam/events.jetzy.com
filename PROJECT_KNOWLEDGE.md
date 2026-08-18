@@ -1475,3 +1475,29 @@ Test-mode configurations: default `bpc_1U5WCiB7XccR5GE08VxzpoXf`, switch
 `npx tsx scripts/create-portal-config.ts [--switch]`, then set the variable and redeploy (a
 server env var only reaches a build made after it was added).
 
+## Membership emails: welcome and plan change (2026-08-18)
+
+Two gaps in the lifecycle: buying Jetzy Premium from **"Buy Jetzy Premium"** sent nothing at all
+(the first invoice is deliberately skipped in `invoice.paid`, which only emails on
+`subscription_cycle`), and a **monthly → annual switch** sent nothing either — that happens inside
+Stripe's portal, so the member had only their card statement to tell them what they now pay.
+
+`sendMembershipStarted` and `sendMembershipPlanChanged` in `send-grid.ts`, both fired from
+`webhooks/stripe.ts`, both best-effort.
+
+**Welcome — `checkout.session.completed`, gated on `metadata.purpose === "premium_subscription"`.**
+That marker is stamped by `/api/subscriptions/checkout`. Any other subscription Checkout Session
+on this Stripe account belongs to selectmember.jetzy.com, which sends its own confirmation. A
+membership sold WITH A TICKET never reaches this branch — `mode: "payment"`, subscription created
+afterwards by `startMembershipSubscription`, recurring terms already on the ticket receipt.
+
+Trial-aware: with an invite code the copy reads "free until 18 October 2026, then $200/year",
+because nothing has been charged yet and the date the first payment lands is the whole point.
+
+**Plan change — `customer.subscription.updated`, detected from `previous_attributes.items`.** The
+interval is deliberately not stored (a stored copy goes stale the moment someone switches in the
+portal), so there is nothing local to compare against. Stripe includes `items` in
+`previous_attributes` only when the items actually changed, so a trial converting or a card being
+replaced doesn't fire it. The previous price is retrieved so the message can name both rates —
+stating only the new one reads like a price rise nobody announced.
+

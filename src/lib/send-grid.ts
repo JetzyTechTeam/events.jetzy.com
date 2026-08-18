@@ -2983,11 +2983,11 @@ export const sendChatMessageNotification = async ({
  *
  * A membership can now be acquired as a side effect of buying a ticket
  * (`IEventTicket.includesPremium`), so the buyer may not think of themselves as
- * having "subscribed to" anything. That makes these three messages more important
- * than they would be for a deliberate signup: every recurring charge, every failure
- * and every ending has to be announced, and each one says how to cancel.
+ * having "subscribed to" anything. That makes these messages more important than they
+ * would be for a deliberate signup: every recurring charge, every failure, every plan
+ * change and every ending has to be announced, and each one says how to cancel.
  *
- * All three are best-effort — a failed send must never break webhook processing.
+ * All of them are best-effort — a failed send must never break webhook processing.
  * ------------------------------------------------------------------------- */
 
 type MembershipEmailData = {
@@ -3048,6 +3048,126 @@ export const sendMembershipRenewed = async ({ email, firstName, amount, interval
 		console.log(`✅ Membership renewal email sent to: ${email}`)
 	} catch (error) {
 		console.error("❌ Failed to send membership renewal email:", error)
+	}
+}
+
+/**
+ * Sent when a membership STARTS from a deliberate signup — `/subscribe` or the paywall.
+ *
+ * Not sent for a membership bought as part of a ticket: those are created by
+ * `startMembershipSubscription` after the payment, never by a subscription Checkout Session, and
+ * the ticket confirmation already states the amount, the interval and the renewal date. Two
+ * receipts for one transaction is worse than one.
+ *
+ * Trial-aware, because the two cases are materially different at the point of purchase: an
+ * invite code means nothing has been charged yet and the first payment lands on a named date.
+ * Saying "we've charged you" over a free trial, or hiding the charge that follows one, are both
+ * misstatements — the same rule the checkout disclosure follows.
+ */
+export const sendMembershipStarted = async ({
+	email,
+	firstName,
+	amount,
+	interval,
+	label,
+	trialEndsOn,
+	nextBillingDate,
+}: MembershipEmailData & {
+	/** Set when the membership started on a free trial — the date the first real charge lands. */
+	trialEndsOn?: Date
+}) => {
+	const name = firstName || email.split("@")[0]
+	const product = label || DEFAULT_MEMBERSHIP_LABEL
+	const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
+	const chargesOn = trialEndsOn ? dayjs(trialEndsOn).format("MMMM D, YYYY") : null
+	const renewsOn = nextBillingDate ? dayjs(nextBillingDate).format("MMMM D, YYYY") : null
+
+	// The one sentence that has to be exactly right: what has been taken, what will be taken,
+	// and when.
+	const terms = chargesOn
+		? `Your membership is <strong>free until ${chargesOn}</strong>. After that it renews at <strong>${money(amount)} every ${interval}</strong> until you cancel — cancel any time before then and you won't be charged.`
+		: `You've been charged <strong>${money(amount)}</strong>, and your membership renews at that amount every ${interval} until you cancel${renewsOn ? `, starting <strong>${renewsOn}</strong>` : ""}.`
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: chargesOn ? `Your ${product} membership is active — free until ${chargesOn}` : `Welcome to ${product}`,
+			html: membershipShell(`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
+          Your ${product} membership is active. Welcome aboard.
+        </p>
+        <div style="background-color:#FFFBEB;border:1px solid #F0D78C;border-radius:8px;padding:15px;margin:20px 0;">
+          <p style="color:#7A5C00;font-size:15px;line-height:1.6;margin:0;">${terms}</p>
+        </div>
+        <div style="text-align:center;margin:25px 0;">
+          <a href="${baseUrl}" style="background-color:#F5C518;color:#000;padding:14px 30px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;">
+            Browse events
+          </a>
+        </div>
+      `, "#F5C518"),
+			text: `Hi ${name},\n\nYour ${product} membership is active. Welcome aboard.\n\n${stripHtml(terms)}\n\nBrowse events at ${baseUrl}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
+		})
+		console.log(`✅ Membership welcome email sent to: ${email}`)
+	} catch (error) {
+		console.error("❌ Failed to send membership welcome email:", error)
+	}
+}
+
+/**
+ * Sent when a member CHANGES PLAN — monthly to annual, in practice.
+ *
+ * A plan switch happens inside Stripe's billing portal, so nothing on this site ever confirms
+ * it: the member clicks through a Stripe screen, lands back here, and has only their card
+ * statement to tell them what they now pay. Naming both the old and new rate is the point — the
+ * amount changed, and a message that states only the new one reads like a price rise nobody
+ * announced.
+ */
+export const sendMembershipPlanChanged = async ({
+	email,
+	firstName,
+	amount,
+	interval,
+	previousAmount,
+	previousInterval,
+	nextBillingDate,
+	label,
+}: MembershipEmailData & {
+	/** What they were paying before, so the change is legible rather than just a new number. */
+	previousAmount?: number
+	previousInterval?: string
+}) => {
+	const name = firstName || email.split("@")[0]
+	const product = label || DEFAULT_MEMBERSHIP_LABEL
+	const renewsOn = nextBillingDate ? dayjs(nextBillingDate).format("MMMM D, YYYY") : null
+	const from =
+		previousAmount != null && previousInterval
+			? `You were on <strong>${money(previousAmount)}/${previousInterval}</strong>.`
+			: ""
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: `Your ${product} plan is now ${money(amount)}/${interval}`,
+			html: membershipShell(`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
+          Your ${product} membership has moved to <strong>${money(amount)} every ${interval}</strong>.
+          ${from}
+        </p>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">
+          ${renewsOn ? `Your next payment is due on <strong>${renewsOn}</strong>. ` : ""}Stripe has applied any
+          credit or charge for the part of your old plan you had already paid for — see your billing page for the
+          exact figures.
+        </p>
+      `, "#F5C518"),
+			text: `Hi ${name},\n\nYour ${product} membership has moved to ${money(amount)} every ${interval}. ${stripHtml(from)}\n\n${renewsOn ? `Your next payment is due on ${renewsOn}. ` : ""}Stripe has applied any credit or charge for the part of your old plan you had already paid for.\n\n— Team Jetzy`,
+		})
+		console.log(`✅ Membership plan-change email sent to: ${email}`)
+	} catch (error) {
+		console.error("❌ Failed to send membership plan-change email:", error)
 	}
 }
 
