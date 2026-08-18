@@ -357,7 +357,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// a use against $0 tickets, where it discounted nothing.
 		// A code that gave away membership months has been used, even against a $0 ticket where
 		// it discounted nothing — otherwise `maxUses` would never limit the gifts.
-		if (discountsDidWork || trialLines.length > 0) await incrementReferralUsage(referralCodeData?.code)
+		if (discountsDidWork || trialLines.length > 0) await incrementReferralUsage(referralCodeData?.code, String(eventId))
 
 		// A referral code granting free membership months, on an order that reached $0.
 		//

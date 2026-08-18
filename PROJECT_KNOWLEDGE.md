@@ -1704,3 +1704,31 @@ revived, nothing found means create.
 > Making codes unique per event instead would mean dropping `code_1` and building a compound
 > unique index on a collection the mobile app and admin portal share. Not taken — deliberately.
 
+## Referral codes are unique per EVENT (2026-08-19)
+
+`code` carried a plain `unique: true`, so one event holding `JETZY-ME` blocked every other event
+from using the string — invisibly, since a host only sees their own event's codes. A code has
+never meant anything without the event it discounts (`validateReferralCodeForEvent` has always
+resolved the pair), so uniqueness moved to the pair and one campaign string can now run across
+many events, each with its own terms, counter and limit.
+
+**`scripts/migrate-referral-code-index.ts` — run once per database.** Reports any duplicate
+`(eventId, code)` and refuses rather than half-migrating, creates `{ eventId: 1, code: 1 }` unique,
+*then* drops `code_1`. That order is deliberate: the collection is never left without a uniqueness
+guarantee. `--dry-run` first. Already run on `test-v2`; **live still needs it**, and until it runs
+there creation keeps failing with a duplicate-key error.
+
+**Every lookup by code string alone became a bug the moment duplicates were possible.** Fixed:
+`incrementReferralUsage(code, eventId)` in `checkout-fulfillment.ts` and the counter in
+`approve.ts` — an unscoped lookup burns another host's `maxUses` and misreports their campaign.
+The one-off scripts in `src/scripts/` still match by code alone; scope them before reuse.
+
+> **Unverified:** whether the mobile app or the admin portal resolves a referral code without an
+> `eventId`. Both write to this collection. If either does, it will now pick an arbitrary event's
+> row — worth confirming with those teams.
+
+The env loader shared by the older `src/scripts/*` files is broken on Windows: it splits on `
+`
+and its `^([^=]+)=(.*)$` never matches a CRLF line, so every variable reads as unset. New scripts
+use `dotenv`.
+

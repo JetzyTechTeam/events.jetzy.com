@@ -324,7 +324,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if ((needsCapture || pendingMemberships.length > 0) && booking.referralCode) {
 		try {
 			const { ReferralCodes } = await import("@/models/events/referral-codes")
-			const referralCode = await ReferralCodes.findOne({ code: booking.referralCode.trim().toUpperCase(), isDeleted: false })
+			// Scoped to the booking's event: the same code string can live on several events, and
+			// an unscoped lookup would burn another host's `maxUses`.
+			const referralCode = await ReferralCodes.findOne({
+				code: booking.referralCode.trim().toUpperCase(),
+				eventId: booking.eventId,
+				isDeleted: false,
+			})
 			if (referralCode) {
 				referralCode.usageCount += 1
 				await referralCode.save()

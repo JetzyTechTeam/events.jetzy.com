@@ -82,33 +82,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// So: fetch the row by code alone, and decide from what comes back. Anything not
 			// explicitly deleted counts as live.
 			const upperCode = code.toUpperCase()
-			const existingCode = await ReferralCodes.findOne({ code: upperCode })
+			// Scoped to THIS event. The same string may run as a campaign across several events,
+			// each with its own terms, counter and limit — only a duplicate within one event is a
+			// conflict.
+			const existingCode = await ReferralCodes.findOne({ code: upperCode, eventId: new Types.ObjectId(eventId) })
 
 			if (existingCode && existingCode.isDeleted !== true) {
-				const sameEvent = String(existingCode.eventId) === String(eventId)
-				// Name the event when it is somebody else's, so "it already exists" is actionable
-				// rather than a dead end.
-				let ownerName = ""
-				if (!sameEvent) {
-					const owner = await Events.findById(existingCode.eventId).select("name").lean()
-					ownerName = (owner as any)?.name || ""
-				}
-				console.warn("[referral-codes/index] Duplicate code rejected:", {
-					code: upperCode,
-					requestedFor: eventId,
-					heldBy: String(existingCode.eventId),
-				})
-				return sendResponse(
-					res,
-					null,
-					sameEvent
-						? "That code already exists on this event."
-						: ownerName
-							? `That code is already in use on "${ownerName}". Referral codes are unique across Jetzy — try another.`
-							: "That code is already in use on another event. Referral codes are unique across Jetzy — try another.",
-					false,
-					ResCode.BAD_REQUEST,
-				)
+				return sendResponse(res, null, "That code already exists on this event.", false, ResCode.BAD_REQUEST)
 			}
 
 			// A code the host DELETED still owns the string.
@@ -123,9 +103,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// stats endpoint counts them from bookings, which store the code string.
 			if (existingCode) {
 				existingCode.set({
-					// Reassigned, because the string is unique across events and the host asking
-					// for it now is the one who gets it.
-					eventId: new Types.ObjectId(eventId),
 					discountPercentage,
 					freeMembershipMonths: freeMembershipMonths || 0,
 					maxUses: maxUses || null,
@@ -168,9 +145,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	} catch (error: any) {
 		console.error("[referral-codes/index] Error:", error)
 		
-		// Duplicate key. Reachable only as a race now — every other path is resolved above.
+		// Duplicate key. Either a race, or the per-event index hasn't been built in this
+		// environment yet — `scripts/migrate-referral-code-index.ts` has to run once per database.
 		if (error.code === 11000) {
-			return sendResponse(res, null, "That code is already in use across Jetzy. Try another.", false, ResCode.BAD_REQUEST)
+			console.error("[referral-codes/index] Duplicate key — has migrate-referral-code-index.ts run on this database?", error?.keyValue)
+			return sendResponse(res, null, "That code is already in use. Try another.", false, ResCode.BAD_REQUEST)
 		}
 
 		return sendResponse(res, null, error.message || "An error occurred", false, ResCode.INTERNAL_SERVER_ERROR)
