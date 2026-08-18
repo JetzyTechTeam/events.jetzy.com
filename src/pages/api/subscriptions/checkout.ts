@@ -3,7 +3,7 @@ import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import {
 	findMembershipPriceForInterval,
-	findUserRecord,
+	findMembershipRecord,
 	getMembershipPrice,
 	getStripeClient,
 	hasEverHadMembership,
@@ -32,7 +32,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const email = (session.user as any)?.email
 		const returnTo = typeof req.body?.returnTo === "string" && req.body.returnTo.startsWith("/") ? req.body.returnTo : "/"
 
-		const record = await findUserRecord(userId)
+		// Identity, not document id — otherwise an existing member who signed in through the
+		// other collection is sold a SECOND subscription on the same Stripe customer.
+		const record = await findMembershipRecord(userId, email)
 		if (!record) {
 			return sendResponse(res, null, "User not found.", false, ResCode.NOT_FOUND)
 		}

@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getUserStripeCustomerId, hasEverHadMembership } from "@/lib/premium"
+import { findMembershipRecord, getUserStripeCustomerId, hasEverHadMembership } from "@/lib/premium"
 import { resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
@@ -43,7 +43,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const userId = (session.user as any)?._id || (session.user as any)?.id
-		const record = await findUserRecord(userId)
+		// The first-timer rule is about the PERSON's billing history, so resolve the account
+		// that holds it rather than whichever document this session is bound to.
+		const record = await findMembershipRecord(userId, (session.user as any)?.email)
 		const customerId = getUserStripeCustomerId(record?.doc)
 
 		// No Stripe customer yet means no billing history at all — which is exactly who this

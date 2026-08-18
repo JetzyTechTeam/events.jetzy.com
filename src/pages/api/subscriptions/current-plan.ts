@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getStripeClient, subscriptionMembershipKey } from "@/lib/premium"
+import { findMembershipRecord, getStripeClient, subscriptionMembershipKey } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	try {
 		const userId = (session.user as any)?._id || (session.user as any)?.id
-		const record = await findUserRecord(userId)
+		const record = await findMembershipRecord(userId, (session.user as any)?.email)
 		const stored = record?.doc?.premiumSubscription
 
 		// Not a member, or a legacy record with no subscription id — the honest answer is that we

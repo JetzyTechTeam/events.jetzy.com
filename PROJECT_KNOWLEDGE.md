@@ -1321,3 +1321,138 @@ stores `refCode` on the `EventUsers` record, and **`complete-signup.ts`** forwar
 password and a verification-link signup has none until the link is followed. Best-effort with an
 8s abort, 409 treated as success, failures logged and swallowed — a referral outage must never
 stop someone finishing their own signup.
+
+---
+
+## Free months of Jetzy Premium from a code (2026-08-18)
+
+Two different codes can now hand out free membership months. They share the mechanism — a Stripe
+**trial**, never a coupon — and nothing else.
+
+| | Where it is typed | Where the offer lives | Applies to |
+|---|---|---|---|
+| Invite code | `/subscribe`, `PremiumPaywallModal` | `TRIAL_CODES` in `src/lib/invite-trial.ts` (hardcoded) | A direct Premium subscription |
+| Referral code | Event checkout | `referralCodes.freeMembershipMonths` (per code, host-set) | A **ticket that already sells Premium** |
+
+**A trial, not a 100%-off coupon.** `trial_end` bills nothing until the date it names and then
+charges the normal price — which is exactly "2 months free, then $20/month". A 100% coupon would
+raise a $0 invoice every cycle forever, and would need product scoping to avoid discounting Full
+Concierge as well.
+
+**`trialing` already counts as an active membership everywhere** — `findActiveSubscriptionForProduct`,
+`hasActiveMembershipSubscription`, the webhook, and `startMembershipSubscription`'s own activation
+write all treat it as active. So a trial member gets member benefits, is skipped from being charged
+the membership on their next bundled ticket, and reads as a member on selectmember.jetzy.com.
+
+### The referral-code half
+
+- **One number, `freeMembershipMonths` (0–12), not a tickbox plus a count.** Two fields can
+  disagree — ticked with zero months, three months with the box unticked — and then the record no
+  longer says what the buyer gets. Absent (every pre-existing code) means none. Host sets it when
+  creating the code; the table shows it.
+- **Premium only, by decision.** Full Concierge is sold on selectmember.jetzy.com's terms; we don't
+  give their product away. Enforced server-side in both checkout endpoints, and the checkout modal
+  only previews the offer when the selection is actually buying Premium (`chargedKeys`) — a code
+  carrying months is worth nothing on a ticket that sells no membership, or to a buyer who already
+  has one, and saying "2 months free" there describes a gift nobody receives.
+- **`amount` is money that moved; `renewalAmount` is what it renews at.** A gifted line is charged
+  $0 today, so `amount: 0` — which keeps `payment.amount`, `bookingMembershipTotal` and the
+  `booking.total` reconciliation in `approve.ts` correct — while `renewalAmount` carries the price
+  the receipt must state. Every receipt path (success page, ticket email, approval email) prints
+  the renewal price plus "free for N months", never `$0.00/month`.
+- **`recurringTotal` skips trial lines**, so `dueToday` matches what Stripe actually charges. The
+  line still renders: it is a recurring charge the buyer has agreed to, and hiding it is the
+  disclosure failure this whole path exists to avoid.
+- **A trial line is never a Stripe line item.** `api/checkout` filters it out of `line_items` — a
+  $0 line item is rejected outright — but the order stays `chargesMembership`, so it still gets a
+  `customer` and `setup_future_usage: "off_session"`. Without the saved card the membership would
+  have nothing to bill when the trial ends.
+- **The offer is STORED on the booking, never re-resolved.** `trialMonths`, `priceId`, `interval`
+  and `renewalAmount` ride on `booking.payment.memberships[]`, because `bookings/approve.ts` never
+  sees the Stripe session and a code edited (or a plan price changed) while a request sits pending
+  must not move the buyer onto terms they were never quoted.
+- **Free path (`checkout/free-events`)**: a bundled ticket that would otherwise be rejected as
+  "still owing a membership" is now allowed through when the code settles it. There is no card on
+  this path, so the subscription is created without a payment method and
+  `startMembershipSubscription` sets `trial_settings.end_behavior.missing_payment_method: "cancel"`
+  — otherwise Stripe raises an invoice nobody can pay and the subscription sits `past_due` forever.
+  A gift that expires is the honest shape of it.
+- **`approve.ts` starts memberships OUTSIDE the capture branch.** It used to sit inside
+  `if (needsCapture)`, which was fine while a hold was the only way a booking could owe a
+  membership. A free ticket + a gifting code has no PaymentIntent at all, so those approvals would
+  confirm the booking and silently drop the gift. With no hold there is also no Customer from
+  Stripe, so one is resolved via `resolveStripeCustomerForUser`.
+- **A gift counts as a use of the code.** Both the free path and `approve.ts` increment
+  `usageCount` when membership months were granted, even against a $0 ticket where nothing was
+  discounted — otherwise `maxUses` would never limit the gifts.
+
+### Files
+
+`src/lib/invite-trial.ts` (invite codes), `src/models/events/referral-codes.ts`
+(`freeMembershipMonths`), `src/lib/referral-validation.ts`, `src/lib/membership-subscriptions.ts`
+(`trialMonths`, cardless `end_behavior`), `src/lib/ticket-pricing.ts` (`RecurringCharge.trialMonths`),
+`src/lib/checkout-fulfillment.ts`, `src/pages/api/checkout/index.ts`,
+`src/pages/api/checkout/free-events.ts`, `src/pages/api/bookings/approve.ts`,
+`src/pages/api/events/[eventId]/referral-codes/{index,[codeId],validate}.ts`,
+`src/components/console/ReferralCodesManager.tsx`, `src/components/EventCheckoutModel.tsx`,
+`src/pages/success.tsx`, `src/lib/send-grid.ts`.
+
+---
+
+## Membership follows the PERSON, not the document (2026-08-18)
+
+**The bug:** buy Premium while signed in and the badge plus "Manage membership" appear; log out,
+log back in, and they are gone. Nothing was cancelled — the membership was being read off the
+wrong document.
+
+One person can hold **two** account documents in the same database:
+
+- `users` — created by every checkout (`createOrUpdateUser`) and by the mobile app;
+- `eventusers` — created by this portal's own signup and social login.
+
+`[...nextauth].ts` binds a session to whichever collection it finds them in first (the order
+depends on the `isJetzyMember` flag on the login request, with a fallback to the other), while a
+purchase attaches the membership to the account behind the **checkout email** — `subscriberId` in
+`api/checkout`, which is deliberately the typed address and not the session. When those two
+resolve to different documents, `/api/subscriptions/me` — which looked the user up by session id
+alone — reported no membership for someone who is being billed monthly.
+
+**Fix: `findMembershipRecord(userId, email)` in `src/lib/premium.ts`**, used by every membership
+read (`subscriptions/me`, `current-plan`, `portal`, `checkout`, `invite-code`) in place of
+`findUserRecord`. It resolves by identity:
+
+1. an **active membership** on the signed-in document settles it, with no second lookup;
+2. otherwise the same email, case-insensitively, in both collections (one projected `findOne`
+   each — email is unique per collection);
+3. a live membership is preferred over a bare billing record. A Stripe customer id alone is
+   enough to open the portal (cancelled, `past_due`) but it is **not** a membership and must
+   never shadow the document that holds one.
+
+It also links the Stripe customer id onto the signed-in document when that document has none —
+which is what stops the next `resolveStripeCustomerForUser` opening a **second** Stripe customer
+for someone who already has one. A *different* stored id is never overwritten: it belongs to
+their other subscription (same rule as `linkStripeCustomerByEmail`).
+
+> `session.user.isPremiumSubscriber`, stamped at login in `[...nextauth].ts`, still reads only the
+> login document. Nothing in the UI consumes it (the navbar and paywall use `usePremiumStatus` →
+> `/api/subscriptions/me`), so it was left alone rather than given a query at every sign-in.
+
+**The real cure is one account per person.** This resolves the symptom for reads; it does not
+merge the duplicates.
+
+## Invite-code trial now covers ANNUAL (2026-08-18)
+
+`TRIAL_CODES["jetzy-me"]` was `intervals: ["month"]`. It is now `["month", "year"]` — a product
+decision, since the earlier restriction was about disclosure, not mechanics: the same two free
+months precede a **$200** charge on annual instead of $20.
+
+So the acceptance message no longer says a bare "2 months free applied." Both doors (`/subscribe`
+and `PremiumPaywallModal`) now render `trialDisclosure` from `src/lib/invite-trial.ts` against the
+price of the interval **currently selected** — "2 months free, then $200/year from Oct 18, 2026.
+Cancel any time." — and it is re-checked whenever the buyer flips the interval, because the answer
+changes with it. `chargesFrom` comes from `/api/subscriptions/invite-code`, which already returned
+it.
+
+Nothing else changed: `subscriptions/checkout` was already passing the price's real interval to
+`resolveTrialCode`, so an annual purchase with the code now resolves instead of being refused.
+

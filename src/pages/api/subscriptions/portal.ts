@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findMembershipPriceForInterval, findUserRecord, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
+import { findMembershipPriceForInterval, findMembershipRecord, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -36,7 +36,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	try {
 		const userId = (session.user as any)?._id || (session.user as any)?.id
-		const record = await findUserRecord(userId)
+		// Identity, not document id: a member who signed back in through the other collection
+		// would otherwise be told they have nothing to manage while their card is being charged.
+		const record = await findMembershipRecord(userId, (session.user as any)?.email)
 		if (!record) {
 			return sendResponse(res, null, "User not found.", false, ResCode.NOT_FOUND)
 		}

@@ -1,6 +1,7 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
+import { trialDisclosure } from "@/lib/invite-trial"
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
@@ -156,7 +157,23 @@ export default function SubscribePage() {
 		inviteTimer.current = setTimeout(async () => {
 			try {
 				const { data } = await axios.post("/api/subscriptions/invite-code", { code, interval: selectedInterval })
-				setInviteAccepted(data?.data?.label ? `${data.data.label} applied.` : "Invite code applied.")
+				// Name the amount and the date it starts, not just "2 months free".
+				//
+				// The code now applies to ANNUAL as well as monthly, and the same two free months
+				// precede a $200 charge there instead of a $20 one. A trial's whole point is that
+				// the buyer knows what happens when it ends, so the disclosure is built from the
+				// price of the interval they actually have selected — and it is rebuilt whenever
+				// they change it, because the answer changes with it.
+				const selectedPrice = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
+				setInviteAccepted(
+					data?.data?.label
+						? trialDisclosure(
+							{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
+							selectedPrice?.label || null,
+							data?.data?.chargesFrom ? new Date(data.data.chargesFrom) : new Date(),
+						)
+						: "Invite code applied.",
+				)
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)

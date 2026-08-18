@@ -26,9 +26,11 @@ export type TrialOffer = {
 	/**
 	 * Which billing intervals the code is good for.
 	 *
-	 * Monthly only, deliberately: two free months followed by an unannounced $200 annual charge
-	 * is a much larger surprise than $20, and a trial's whole point is that the buyer knows what
-	 * happens when it ends. Widen this only as a product decision.
+	 * A code that lists an interval it isn't meant for is a pricing decision, not a detail: the
+	 * months are free either way, but what lands afterwards is $20 or $200. Whatever is listed
+	 * here MUST be disclosed with the price and date it converts at — `trialDisclosure` and the
+	 * plan card do that from the interval the buyer has actually selected, and the field is
+	 * re-checked when they change it.
 	 */
 	intervals: string[]
 	/** Shown to the buyer once the code is accepted. */
@@ -36,7 +38,10 @@ export type TrialOffer = {
 }
 
 export const TRIAL_CODES: Record<string, TrialOffer> = {
-	"jetzy-me": { months: 2, intervals: ["month"], label: "2 months free" },
+	// Monthly AND annual (product decision, 2026-08-18). On annual the same two months precede a
+	// $200 charge rather than a $20 one, which is why the card states the amount and the date the
+	// trial converts on rather than the bare "2 months free".
+	"jetzy-me": { months: 2, intervals: ["month", "year"], label: "2 months free" },
 }
 
 /** Codes are matched case- and whitespace-insensitively: people type them from a screenshot. */

@@ -50,6 +50,88 @@ export async function findUserRecord(userId: string): Promise<{ model: any; doc:
 	return null
 }
 
+/** Is any membership on this document currently active? */
+const hasActiveMembership = (doc: any): boolean =>
+	!!doc && MEMBERSHIP_KEYS.some((key) => !!doc?.[MEMBERSHIPS[key].userField]?.active)
+
+/**
+ * Does this document carry any billing state at all?
+ *
+ * A Stripe customer id counts on its own: someone mid-cancellation, or `past_due`, has no
+ * `active` flag but is unmistakably the account that pays.
+ */
+const hasBillingState = (doc: any): boolean => !!doc && (!!getUserStripeCustomerId(doc) || hasActiveMembership(doc))
+
+/**
+ * The document that actually holds this person's membership.
+ *
+ * **One person can exist twice.** `users` is created by every checkout (and by the mobile app);
+ * `eventusers` is created by this portal's own signup and social login. Which one a session is
+ * bound to depends on how they signed in — `[...nextauth].ts` tries one collection, then the
+ * other — while a purchase always attaches the membership to the account behind the CHECKOUT
+ * EMAIL. Reading membership from the session's document alone therefore made a real member look
+ * like a non-member as soon as they logged out and back in through the other door: no badge, no
+ * "Manage membership", and `/subscribe` offering them a subscription they already pay for.
+ *
+ * Resolution is by IDENTITY, not by document id, and prefers an ACTIVE membership over a bare
+ * billing record — a customer id alone is enough to open the portal but is not a membership, so
+ * it must never shadow the document that holds one.
+ *
+ * The only write is linking the Stripe customer id onto the signed-in document when it has none.
+ * That is what stops the next `resolveStripeCustomerForUser` creating a SECOND customer for
+ * someone who already has one. A different id is never overwritten: it belongs to their other
+ * subscription (same rule as `linkStripeCustomerByEmail`).
+ */
+export async function findMembershipRecord(userId: string, email?: string | null): Promise<{ model: any; doc: any } | null> {
+	const own = await findUserRecord(userId)
+	// An active membership on the signed-in document settles it — no second lookup.
+	if (hasActiveMembership(own?.doc)) return own
+
+	const address = (email || own?.doc?.email || "").trim()
+	if (!address) return own
+
+	const { Users } = await import("@/models/userModal")
+	const { EventUsers } = await import("@/models/eventUsersModal")
+
+	// Case-insensitive: neither collection declares `lowercase: true` on `email`.
+	const match = { email: { $regex: `^${escapeRegex(address)}$`, $options: "i" } }
+
+	// Projected and lean: this also runs for every NON-member (nothing on their document either),
+	// and the navbar polls the status endpoint. Email is unique within a collection, so one
+	// `findOne` each is the whole search.
+	const projection = ["email", "stripeCustomerId", ...MEMBERSHIP_KEYS.map((key) => MEMBERSHIPS[key].userField)].join(" ")
+
+	const others: Array<{ model: any; doc: any }> = []
+	for (const model of [Users, EventUsers]) {
+		const doc: any = await model.findOne(match).select(projection).lean()
+		if (!doc || String(doc._id) === String(own?.doc?._id)) continue
+		if (hasBillingState(doc)) others.push({ model, doc })
+	}
+
+	// A live membership first; failing that, any document that at least has a Stripe customer —
+	// a cancelled or past-due member still needs the billing portal.
+	const resolved = others.find((row) => hasActiveMembership(row.doc)) || (hasBillingState(own?.doc) ? null : others[0])
+	if (!resolved) return own
+
+	const customerId = getUserStripeCustomerId(resolved.doc)
+	if (own?.doc && customerId && !own.doc.stripeCustomerId) {
+		try {
+			await own.model.findByIdAndUpdate(own.doc._id, { $set: { stripeCustomerId: customerId } })
+			own.doc.stripeCustomerId = customerId
+			console.log("[membership] Linked the signed-in account to an existing Stripe customer:", { userId, customerId })
+		} catch (linkError: any) {
+			// Never fatal - the answer below is correct with or without the link.
+			console.error("[membership] Couldn't link the Stripe customer to the signed-in account:", linkError?.message || linkError)
+		}
+	}
+
+	console.log("[membership] Membership resolved from this person's other account document:", {
+		userId,
+		matched: String(resolved.doc._id),
+	})
+	return resolved
+}
+
 /**
  * The user's Stripe Customer id, wherever it happens to be stored.
  *
