@@ -164,11 +164,25 @@ const parseMembershipLines = (metadata: SessionMetadata): MembershipLine[] => {
 	return []
 }
 
-export const incrementReferralUsage = async (code?: string) => {
+/**
+ * Count one redemption against the code THIS EVENT owns.
+ *
+ * `eventId` is not optional in spirit: codes are unique per event now, so the same string can
+ * exist on several at once and a lookup by string alone would credit whichever row Mongo
+ * returned first — burning another host's `maxUses` and misreporting their campaign. It stays
+ * optional in the signature only so a legacy caller degrades to the old behaviour instead of
+ * silently counting nothing.
+ */
+export const incrementReferralUsage = async (code?: string, eventId?: string) => {
 	if (!code) return
 	try {
 		const { ReferralCodes } = await import("@/models/events/referral-codes")
-		const referralCode = await ReferralCodes.findOne({ code: code.trim().toUpperCase(), isDeleted: false })
+		const { Types } = await import("mongoose")
+		const referralCode = await ReferralCodes.findOne({
+			code: code.trim().toUpperCase(),
+			isDeleted: false,
+			...(eventId && Types.ObjectId.isValid(eventId) ? { eventId: new Types.ObjectId(eventId) } : {}),
+		})
 		if (!referralCode) return
 		referralCode.usageCount += 1
 		await referralCode.save()
@@ -473,7 +487,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 
 	// ---- Immediate-payment branch ----
 	await booking.updateEventTracker()
-	await incrementReferralUsage(metadata.referralCode)
+	await incrementReferralUsage(metadata.referralCode, metadata.eventId ? String(metadata.eventId) : undefined)
 
 	// Add the buyer as an event member — `checkoutUserId` covers guests too (their Users
 	// account is created at checkout), `bookerUserId` is the fallback for older sessions.
