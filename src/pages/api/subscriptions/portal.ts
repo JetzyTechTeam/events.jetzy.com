@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findUserRecord, getStripeClient, getUserStripeCustomerId } from "@/lib/premium"
+import { findUserRecord, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -70,11 +70,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Falls back to the default when the env var is absent so a missed deploy degrades to
 		// today's behaviour rather than failing to open the portal at all.
 		const configuration = process.env.STRIPE_PORTAL_CONFIG_ID
+		const returnUrl = `${baseUrl}${returnTo}`
 
+		// "Switch me to annual" — a second configuration, opened as a pinned update flow.
+		//
+		// Switching is off in the configuration above ON PURPOSE, so it can't be re-enabled
+		// there: one Stripe Customer holds every membership, and an unscoped update button
+		// appears on the Full Concierge row too. This flow is scoped twice over — the
+		// configuration lists only Premium's product and prices, and `flow_data` pins the exact
+		// subscription — and the subscription id comes from OUR record, never the request body.
+		const wantsSwitch = req.body?.flow === "switch"
+		const switchConfiguration = process.env.STRIPE_PORTAL_SWITCH_CONFIG_ID
+		let flowExtras: Record<string, any> = {}
+
+		if (wantsSwitch && switchConfiguration) {
+			const subscriptionId = record.doc?.premiumSubscription?.stripeSubscriptionId
+			if (subscriptionId) {
+				const subscription = await getStripeClient().subscriptions.retrieve(subscriptionId)
+				// Confirm it really is Premium before pinning a plan-switching flow to it. The id
+				// is ours, but a mis-stored Concierge id would otherwise open the one flow this
+				// whole configuration split exists to keep away from Select's products.
+				if (subscriptionMembershipKey(subscription) === "premium") {
+					flowExtras = {
+						configuration: switchConfiguration,
+						flow_data: {
+							type: "subscription_update",
+							subscription_update: { subscription: subscriptionId },
+							after_completion: { type: "redirect", redirect: { return_url: returnUrl } },
+						},
+					}
+				}
+			}
+		}
+
+		// Anything unresolved above — no switch config deployed, no subscription id, not Premium —
+		// falls through to the ordinary portal rather than failing. Opening an update flow against
+		// a configuration with `subscription_update: false` is a hard Stripe error, so a missed
+		// env var would turn the button into a dead end instead of merely a plainer page.
 		const portalSession = await getStripeClient().billingPortal.sessions.create({
 			customer: customerId,
-			return_url: `${baseUrl}${returnTo}`,
+			return_url: returnUrl,
 			...(configuration ? { configuration } : {}),
+			...flowExtras,
 		})
 
 		return sendResponse(res, { url: portalSession.url }, "Billing portal session created.", true, ResCode.OK)

@@ -166,3 +166,66 @@ export function useMembershipPlans(keys: MembershipKey[]) {
 export function usePremiumPlan(enabled = true) {
 	return useMembershipPlan("premium", enabled)
 }
+
+/** What the member is on right now, straight from their Stripe subscription. */
+export type CurrentMembershipPlan = {
+	active: boolean
+	/** "month" | "year", or null when Stripe couldn't be reached / the record predates a sub id. */
+	interval: string | null
+	/** Dollars. Null whenever `interval` is. */
+	amount: number | null
+	/** e.g. "$20/month". Null rather than a placeholder — same rule as everywhere else here. */
+	label: string | null
+	renewsAt: string | null
+	cancelAtPeriodEnd: boolean
+	status: string | null
+	/** Whether to offer the switch. Server-decided: monthly members only. */
+	canSwitch: boolean
+}
+
+export const currentMembershipPlanQueryKey = ["membership-plan", "premium", "current"]
+
+/**
+ * The logged-in member's live Jetzy Premium plan.
+ *
+ * Deliberately its own query key and its own endpoint — see `/api/subscriptions/current-plan`
+ * for why this must not ride on `/api/subscriptions/me`, which the navbar polls on every page.
+ * `enabled` so a non-member never fires it at all.
+ */
+export function useCurrentMembershipPlan(enabled = true) {
+	const query = useQuery({
+		queryKey: currentMembershipPlanQueryKey,
+		queryFn: async () => {
+			const { data } = await axios.get("/api/subscriptions/current-plan")
+			return data?.data as {
+				active: boolean
+				interval: string | null
+				unitAmount: number | null
+				currency: string | null
+				priceId: string | null
+				renewsAt: string | null
+				cancelAtPeriodEnd: boolean
+				status: string | null
+				canSwitch: boolean
+			}
+		},
+		enabled,
+		staleTime: 60_000,
+	})
+
+	const data = query.data
+	const amount = data?.unitAmount != null ? data.unitAmount / 100 : null
+
+	const plan: CurrentMembershipPlan = {
+		active: !!data?.active,
+		interval: data?.interval || null,
+		amount,
+		label: data?.interval ? priceLabel(amount, data.interval) : null,
+		renewsAt: data?.renewsAt || null,
+		cancelAtPeriodEnd: !!data?.cancelAtPeriodEnd,
+		status: data?.status || null,
+		canSwitch: !!data?.canSwitch,
+	}
+
+	return { currentPlan: plan, isLoading: enabled && query.isLoading }
+}

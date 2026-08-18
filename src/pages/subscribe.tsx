@@ -4,8 +4,9 @@ import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toa
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
+import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { CheckIcon } from "@heroicons/react/24/solid"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
 import { signIn, useSession } from "next-auth/react"
@@ -22,37 +23,6 @@ const APP_DEEP_LINK_BASE = "https://jetzy.com/jetzy_event"
 // survive that round trip since Stripe's success_url is a fixed string built
 // server-side (see /api/subscriptions/checkout.ts), so it has to be stashed here.
 const EVENT_ID_STORAGE_KEY = "subscribe_event_id"
-
-type PlanPrice = {
-	id: string
-	unitAmount: number | null
-	currency: string
-	interval: string
-}
-
-type PlanInfo = {
-	name: string
-	unitAmount: number | null
-	currency: string
-	interval: string
-	/** Every interval on sale. Absent from responses served before annual existed. */
-	prices?: PlanPrice[]
-}
-
-/**
- * "$20/month", "$200/year". Whole dollars drop the cents; a fractional amount keeps both digits
- * so $59.50 is never rounded away from what the card is charged. Mirrors `priceLabel` in
- * `usePremiumPlan` — this page fetches the endpoint directly rather than through that hook.
- */
-const formatPrice = (unitAmount: number | null, currency: string, interval: string): string | null => {
-	if (unitAmount == null) return null
-	const dollars = unitAmount / 100
-	return `${dollars.toLocaleString("en-US", {
-		style: "currency",
-		currency: currency || "usd",
-		minimumFractionDigits: Number.isInteger(dollars) ? 0 : 2,
-	})}/${interval}`
-}
 
 export default function SubscribePage() {
 	const router = useRouter()
@@ -127,14 +97,10 @@ export default function SubscribePage() {
 
 	const { isPremium, isLoading: premiumLoading } = usePremiumStatus()
 
-	const { data: plan, isLoading: planLoading } = useQuery({
-		queryKey: ["premium-plan"],
-		queryFn: async () => {
-			const { data } = await axios.get("/api/subscriptions/plan")
-			return data?.data as PlanInfo
-		},
-		enabled: status === "authenticated",
-	})
+	// The shared hook rather than a private `["premium-plan"]` query: one cache entry and one
+	// price formatter between this page and the paywall modal, which is what keeps the two from
+	// quoting the same membership differently.
+	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium", status === "authenticated")
 
 	// Which billing interval the buyer has picked. Left unset until the plan loads, then
 	// defaulted to the product's default price (monthly) rather than guessing a string — the
@@ -143,6 +109,31 @@ export default function SubscribePage() {
 	React.useEffect(() => {
 		if (!selectedInterval && plan?.interval) setSelectedInterval(plan.interval)
 	}, [plan?.interval, selectedInterval])
+
+	// What they are on now — only asked once we know they are a member.
+	const { currentPlan } = useCurrentMembershipPlan(isPremium)
+
+	// Cancel, change card, or switch to annual. `flow: "switch"` opens the Premium-scoped
+	// update flow in Stripe; without it, the ordinary portal.
+	const portalMutation = useMutation({
+		mutationFn: async (flow?: "switch") => {
+			const { data } = await axios.post("/api/subscriptions/portal", {
+				returnTo: "/subscribe",
+				...(flow ? { flow } : {}),
+			})
+			return data?.data as { url: string }
+		},
+		onSuccess: (data) => {
+			if (data?.url) {
+				window.location.href = data.url
+			} else {
+				ErrorToast("Error", "Could not open the billing portal. Please try again.")
+			}
+		},
+		onError: (error: any) => {
+			ErrorToast("Error", error?.response?.data?.message || "Could not open the billing portal. Please try again.")
+		},
+	})
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
@@ -171,11 +162,6 @@ export default function SubscribePage() {
 		},
 	})
 
-	const formattedPrice =
-		plan?.unitAmount != null
-			? (plan.unitAmount / 100).toLocaleString("en-US", { style: "currency", currency: plan.currency || "usd" })
-			: null
-
 	if (isAutoLoggingIn || status === "loading") {
 		return (
 			<div className="flex min-h-screen flex-col items-center justify-center bg-[#0A0B0F]">
@@ -202,19 +188,21 @@ export default function SubscribePage() {
 					planLoading={planLoading}
 					// Monthly/Annual. The selector renders only when the product genuinely has more
 					// than one interval on sale, so this is inert until annual exists in Stripe.
-					prices={(plan?.prices || []).map((price) => ({
-						id: price.id,
-						interval: price.interval,
-						amount: price.unitAmount != null ? price.unitAmount / 100 : null,
-						label: formatPrice(price.unitAmount, price.currency, price.interval),
-					}))}
+					prices={prices}
 					selectedInterval={selectedInterval}
 					onIntervalChange={setSelectedInterval}
 					isPremium={isPremium}
+					// Member state: their live plan, the switch, and the portal. `goToApp` stays on
+					// the third button so the mobile deep-link return is untouched.
+					currentPlan={currentPlan}
+					onSwitchInterval={() => portalMutation.mutate("switch")}
+					onManageBilling={() => portalMutation.mutate(undefined)}
+					billingPending={portalMutation.isPending}
 					premiumDisabled={premiumLoading}
 					premiumPending={subscribeMutation.isPending}
 					onChooseFree={goToApp}
 					onChoosePremium={() => subscribeMutation.mutate()}
+					subscribedCtaLabel="Continue"
 				/>
 			</div>
 		</div>
