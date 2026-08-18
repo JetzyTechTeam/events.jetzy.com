@@ -1,6 +1,7 @@
 import {Flex , Input , Select ,Button } from "@chakra-ui/react"
 import { useRouter } from "next/router"
 import { useState } from "react"
+import { blurOnWheel } from "@/lib/number-input"
 
 type Props = {
     eventId: string
@@ -53,6 +54,7 @@ export default function BookingFilters({ eventId, initialFilters }: Props) {
             </Select>
             <Input placeholder="Tickets (min)"
                 type="number"
+                onWheel={blurOnWheel}
                 value={minTickets}
                 onChange={(e) => setMinTickets(e.target.value)}
                 width="175px"

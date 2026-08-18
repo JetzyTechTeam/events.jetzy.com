@@ -1,6 +1,7 @@
 import type { MembershipKey } from "@/lib/memberships"
 import { uniqueId } from "@/lib/utils"
 import React, { useState } from "react"
+import { blurOnWheel } from "@/lib/number-input"
 
 export type TicketData = {
   id: string | number
@@ -94,6 +95,7 @@ const TicketCard: React.FC<TicketCardProps> = ({ onDelete, onSave, initialData }
         <input
           id="ticket-price"
           type="number"
+          onWheel={blurOnWheel}
           value={data.price}
           onChange={(e) => handleChange("price", Number(e.target.value))}
           placeholder="Enter price"

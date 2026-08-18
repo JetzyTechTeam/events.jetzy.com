@@ -7,6 +7,7 @@ import { CreateInterestGroupApi } from '@Jetzy/services/interests/interestsapis'
 import { Error as ToastError, Success } from '@Jetzy/lib/_toaster'
 import Spinner from '@Jetzy/components/misc/Spinner'
 import { ArrowLeftIcon } from '@heroicons/react/24/solid'
+import { blurOnWheel } from "@/lib/number-input"
 
 export default function CreateInterestGroupPage() {
     const router = useRouter()
@@ -250,6 +251,7 @@ export default function CreateInterestGroupPage() {
                                 <label className="block text-sm font-medium text-gray-400 mb-2">Capacity</label>
                                 <input
                                     type="number"
+                                    onWheel={blurOnWheel}
                                     name="capacity"
                                     value={formData.capacity}
                                     onChange={handleChange}
