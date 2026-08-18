@@ -272,9 +272,12 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 										</div>
 									)}
 								</div>
-								<div className="ml-3">
-									<div className="text-base font-medium leading-none text-white">{user.name}</div>
-									<div className="text-sm font-medium leading-none text-gray-400">{user.email}</div>
+								{/* `min-w-0` is what lets `truncate` work inside a flex row — without it the
+								    email (unbreakable, and the fallback when no name is set) widens the
+								    panel instead of ellipsising. */}
+								<div className="ml-3 min-w-0">
+									<div className="text-base font-medium leading-none text-white truncate">{user.name}</div>
+									<div className="text-sm font-medium leading-none text-gray-400 truncate">{user.email}</div>
 								</div>
 								<button
 									type="button"
