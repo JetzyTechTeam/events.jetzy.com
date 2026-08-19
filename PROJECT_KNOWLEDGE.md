@@ -1765,3 +1765,30 @@ exhausted. The member has lost their benefits either way (the `active` flag is w
 A lapsed member buying a bundled ticket would have been subscribed twice over. `unpaid` is now in
 `ACTIVE_SUBSCRIPTION_STATUSES`.
 
+## Two apps, one Stripe account, four portal configurations (2026-08-19)
+
+selectmemberjetzy ran their own reconcile against the live account and reported the trial issue
+closed. It is closed **for their configurations**, not ours:
+
+| id | owner | plan switching | trial on switch |
+|---|---|---|---|
+| `bpc_1U5sc4…` | ours — `STRIPE_PORTAL_CONFIG_ID` | off | n/a |
+| `bpc_1U5sbo…` | ours — `STRIPE_PORTAL_SWITCH_CONFIG_ID` | on (Premium-scoped) | **`end_trial` — outstanding** |
+| `bpc_1U43Bh…` | theirs (`jetzy_role=select`) | off | `end_trial` (never applies) |
+| `bpc_1U43Gb…` | theirs (`jetzy_role=premium`) | on | `continue_trial` |
+| `bpc_1Lu1FD…` | account default, shared | on | `end_trial` |
+
+Both apps sell Jetzy Premium through one Stripe account, so both maintain portal configurations
+against the same product. Theirs are the ones their script reconciles; ours are the ones
+`api/subscriptions/portal.ts` opens by id. A fix applied to one pair says nothing about the other,
+and their note that "live is now continue_trial" is true only of `bpc_1U43Gb…`.
+
+Their run also used **our** live secret key (`sk_live_…waeX` belongs to events.jetzy.com; theirs
+ends `…10nb`). They changed only configurations they own and left the account default untouched,
+so nothing of ours was altered — but a full-access live key that can charge and refund has now
+been used by another team's tooling, and rotating it is ours to schedule, not theirs.
+
+Their reconcile also confirms the legacy live **$10/month** Premium price (`price_1TzNi9…`) is
+still active and is correctly left out of the switch scope, since Stripe offers one price per
+interval. It should be archived.
+
