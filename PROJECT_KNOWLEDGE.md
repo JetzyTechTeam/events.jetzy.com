@@ -1757,3 +1757,11 @@ They also confirmed their side treats `trialing` as a member throughout — ever
 trial member can't have a second subscription created, and their confirmation copy now reads
 "free trial until <date>" rather than implying a charge.
 
+**One divergence their reply surfaced, now closed:** their lookup filtered four states, ours three
+— we were missing `unpaid`. That is where Stripe parks a subscription once dunning retries are
+exhausted. The member has lost their benefits either way (the `active` flag is written from
+`active|trialing` alone), but the subscription still exists, and
+`findActiveSubscriptionForProduct` is what stops a second one being created on the same customer.
+A lapsed member buying a bundled ticket would have been subscribed twice over. `unpaid` is now in
+`ACTIVE_SUBSCRIPTION_STATUSES`.
+

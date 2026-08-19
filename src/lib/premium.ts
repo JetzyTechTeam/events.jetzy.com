@@ -406,6 +406,14 @@ export async function hasEverHadMembership(customerId: string, key: MembershipKe
  * Used by the inbound SelectMember cancel webhook, which must cancel the CONCIERGE
  * subscription and leave any Premium one alone.
  */
+/**
+ * The states in which a subscription still EXISTS for a customer.
+ *
+ * Deliberately wider than "is a member": `past_due` and `unpaid` hold no benefits, but a second
+ * subscription must not be created alongside them.
+ */
+const ACTIVE_SUBSCRIPTION_STATUSES: Stripe.Subscription.Status[] = ["active", "trialing", "past_due", "unpaid"]
+
 export async function findActiveSubscriptionForProduct(customerId: string, key: MembershipKey): Promise<Stripe.Subscription | null> {
 	if (!customerId) return null
 	const productId = MEMBERSHIPS[key]?.productId
@@ -416,7 +424,13 @@ export async function findActiveSubscriptionForProduct(customerId: string, key: 
 		return (
 			subscriptions.data.find(
 				(subscription) =>
-					(subscription.status === "active" || subscription.status === "trialing" || subscription.status === "past_due") &&
+					// `unpaid` counts too. It is where Stripe parks a subscription once the retries
+					// are exhausted — the member has lost their benefits (the `active` flag is
+					// written from `active|trialing` alone) but the SUBSCRIPTION still exists, and
+					// this lookup is the guard against creating a second one on the same customer.
+					// Missing it meant a lapsed member buying a bundled ticket would be signed up
+					// twice over. selectmember.jetzy.com filters the same four states.
+					ACTIVE_SUBSCRIPTION_STATUSES.includes(subscription.status) &&
 					subscription.items.data.some((item) => {
 						const product = item.price?.product
 						return (typeof product === "string" ? product : product?.id) === productId
