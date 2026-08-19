@@ -1732,3 +1732,28 @@ The env loader shared by the older `src/scripts/*` files is broken on Windows: i
 and its `^([^=]+)=(.*)$` never matches a CRLF line, so every variable reads as unset. New scripts
 use `dotenv`.
 
+## A plan switch must not end a trial (2026-08-19)
+
+Stripe's billing portal defaults `subscription_update.trial_update_behavior` to **`end_trial`**.
+Harmless while nothing was ever on trial; not harmless now. An invite code grants two free months,
+and "Switch to annual" sits on the same plan card — so a member two weeks into a gift who moved to
+annual would have the trial ended and be invoiced $200 immediately, having been told in writing
+they were free until a named date.
+
+`scripts/create-portal-config.ts --switch` now sets `trial_update_behavior: "continue_trial"`, and
+prints it back: unlike `products`, the API echoes this field, so it is verifiable rather than
+assumed. Test config `bpc_1U5j0e…` is updated; **live `bpc_1U5sbo…` still needs the same
+`--update` run** with a live key.
+
+The default (non-switch) configuration disables `subscription_update` entirely, so the setting
+doesn't apply there. But the failure chain is worth stating plainly: if `STRIPE_PORTAL_CONFIG_ID`
+or `STRIPE_PORTAL_SWITCH_CONFIG_ID` is missing in an environment, Stripe falls back to the
+**account default**, which has plan switching enabled *and* `end_trial`. Two unset variables is all
+it takes to bill a trial member.
+
+Raised by selectmember.jetzy.com, who found the same default on their own Premium configuration.
+They also confirmed their side treats `trialing` as a member throughout — every lookup filters
+`["active","trialing","past_due","unpaid"]`, the pre-checkout dedupe uses that same lookup so a
+trial member can't have a second subscription created, and their confirmation copy now reads
+"free trial until <date>" rather than implying a charge.
+
