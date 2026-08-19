@@ -1742,8 +1742,8 @@ they were free until a named date.
 
 `scripts/create-portal-config.ts --switch` now sets `trial_update_behavior: "continue_trial"`, and
 prints it back: unlike `products`, the API echoes this field, so it is verifiable rather than
-assumed. Test config `bpc_1U5j0e…` is updated; **live `bpc_1U5sbo…` still needs the same
-`--update` run** with a live key.
+assumed. Done in both environments — test `bpc_1U5j0e…` and live `bpc_1U5sbo…`, each confirmed by
+retrieving the configuration afterwards and reading `trial_update_behavior`.
 
 The default (non-switch) configuration disables `subscription_update` entirely, so the setting
 doesn't apply there. But the failure chain is worth stating plainly: if `STRIPE_PORTAL_CONFIG_ID`
@@ -1773,7 +1773,7 @@ closed. It is closed **for their configurations**, not ours:
 | id | owner | plan switching | trial on switch |
 |---|---|---|---|
 | `bpc_1U5sc4…` | ours — `STRIPE_PORTAL_CONFIG_ID` | off | n/a |
-| `bpc_1U5sbo…` | ours — `STRIPE_PORTAL_SWITCH_CONFIG_ID` | on (Premium-scoped) | **`end_trial` — outstanding** |
+| `bpc_1U5sbo…` | ours — `STRIPE_PORTAL_SWITCH_CONFIG_ID` | on (Premium-scoped) | `continue_trial` ✓ |
 | `bpc_1U43Bh…` | theirs (`jetzy_role=select`) | off | `end_trial` (never applies) |
 | `bpc_1U43Gb…` | theirs (`jetzy_role=premium`) | on | `continue_trial` |
 | `bpc_1Lu1FD…` | account default, shared | on | `end_trial` |
