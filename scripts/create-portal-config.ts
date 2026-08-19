@@ -153,6 +153,15 @@ async function main() {
 					// this is the same behaviour selectmember.jetzy.com's own configuration uses,
 					// and an upgrade that appears free until next month invites a chargeback.
 					proration_behavior: "always_invoice",
+					// KEEP THE TRIAL RUNNING through a plan change.
+					//
+					// Stripe's default here is `end_trial`: a member switching interval mid-trial
+					// would have the free period ended and be invoiced immediately. That is a real
+					// case now — an invite code grants two free months, and "switch to annual"
+					// sits on the same card — so the default would charge $200 to somebody who was
+					// told they had until a named date. selectmember.jetzy.com hit the same thing
+					// on their own configuration and made the same change.
+					trial_update_behavior: "continue_trial",
 					// The scope. Only this product, only these prices.
 					products: [{ product: productId, prices: prices.map((p) => p.id) }],
 				},
@@ -170,6 +179,8 @@ async function main() {
 	console.log(`  subscription_update     = ${f.subscription_update?.enabled}`)
 	if (f.subscription_update?.enabled) {
 		console.log(`  proration               = ${f.subscription_update.proration_behavior}`)
+		// Echoed by the API, unlike `products` — so this one can be verified rather than trusted.
+		console.log(`  trial on plan change    = ${f.subscription_update.trial_update_behavior || "(default: end_trial)"}`)
 		// The pinned API version (2024-04-10) does not echo `subscription_update.products` in the
 		// response, so there is nothing to read back — but it IS applied and validated: Stripe
 		// rejects an unknown product id, and rejects a price belonging to a different product.
