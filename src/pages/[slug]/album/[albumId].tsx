@@ -418,15 +418,8 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						</Box>
 						)}
 
-						{/* Right: album title + photo grid */}
-						<Box flex="1" width="100%">
-							<Box mb={6}>
-								<Heading size="xl" mb={3}>{album.title}</Heading>
-								{album.description && <AlbumDescription text={album.description} />}
-								<Text color="#8a8a8a" fontSize="sm" mt={3}>
-									{media.length} item{media.length === 1 ? "" : "s"}
-								</Text>
-							</Box>
+						{/* Middle: the photos */}
+						<Box flex="1" width="100%" minW={0}>
 							{media.length === 0 ? (
 								<Text color="#888">No media in this album.</Text>
 							) : (
@@ -489,6 +482,24 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 									</Flex>
 								</Box>
 							)}
+						</Box>
+
+						{/* Right: the album's own details, beside the photos.
+						    `order` puts it FIRST when the columns stack on mobile — the title is
+						    the page's context and belongs above the photos there, not after 100
+						    of them. */}
+						<Box
+							order={{ base: -1, lg: 0 }}
+							width={{ base: "100%", lg: "280px" }}
+							flexShrink={0}
+							position={{ base: "static", lg: "sticky" }}
+							top={{ lg: "88px" }}
+						>
+							<Heading size="xl" mb={3}>{album.title}</Heading>
+							{album.description && <AlbumDescription text={album.description} />}
+							<Text color="#8a8a8a" fontSize="sm" mt={3}>
+								{media.length} item{media.length === 1 ? "" : "s"}
+							</Text>
 						</Box>
 					</Flex>
 				)}
@@ -642,7 +653,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			eventId: event._id,
 			isDeleted: false,
 		})
-			.select("_id eventId title description media publishedAt publishNotifiedAt createdAt")
+			.select("_id eventId title description media showEvents publishedAt publishNotifiedAt createdAt")
 			.lean()
 		if (!album) return { notFound: true }
 
@@ -654,6 +665,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 					title: album.title,
 					description: album.description || "",
 					media: (album.media || []).map((m: any) => ({ url: m.url, type: m.type })),
+					// Only sent when the host has actually set it. Undefined means show, and
+					// JSON.stringify drops the key, which the client reads the same way.
+					showEvents: album.showEvents,
 				}),
 				event: JSON.stringify({
 					_id: event._id.toString(),
