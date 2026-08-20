@@ -14,6 +14,12 @@ export interface IEventAlbum {
 	media: IAlbumMedia[]
 	createdBy?: Schema.Types.ObjectId
 	isDeleted: boolean
+	/**
+	 * Show the promoted-events rail on this album's page. NO DEFAULT: `undefined` means show,
+	 * which is what every album written before the toggle existed needs — adding
+	 * `default: false` would silently hide the rail on all of them at the next save.
+	 */
+	showEvents?: boolean
 	/** Albums are visible immediately; publishing is what notifies attendees by email. */
 	publishedAt?: Date
 	publishNotifiedAt?: Date
@@ -68,6 +74,11 @@ const eventAlbumSchema = new Schema<IEventAlbum>(
 			type: Boolean,
 			default: false,
 			index: true,
+		},
+		// See IEventAlbum.showEvents — deliberately no default.
+		showEvents: {
+			type: Boolean,
+			required: false,
 		},
 		publishedAt: {
 			type: Date,

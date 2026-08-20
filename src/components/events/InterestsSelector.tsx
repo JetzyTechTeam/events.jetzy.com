@@ -15,6 +15,7 @@ type Props = {
 export default function InterestsSelector({ selected, onChange, bare = false }: Props) {
 	const [categories, setCategories] = React.useState<Category[]>([])
 	const [expanded, setExpanded] = React.useState<string | null>(null)
+	const [open, setOpen] = React.useState(false)
 	const [loading, setLoading] = React.useState(false)
 
 	React.useEffect(() => {
@@ -45,6 +46,33 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 			onChange(next)
 		}
 	}
+
+	// The section header is the open/close control. `Flex` renders a div, so it needs the
+	// button role, state and key handling spelled out to stay usable without a mouse.
+	const headerProps = {
+		role: 'button',
+		tabIndex: 0,
+		'aria-expanded': open,
+		cursor: 'pointer',
+		onClick: () => setOpen(o => !o),
+		onKeyDown: (e: React.KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault()
+				setOpen(o => !o)
+			}
+		},
+	} as const
+
+	const chevron = (
+		<Box
+			as={ChevronDownIcon}
+			w="20px"
+			h="20px"
+			color="#9C9C9C"
+			transition="transform 0.2s"
+			transform={open ? 'rotate(180deg)' : 'rotate(0deg)'}
+		/>
+	)
 
 	const list = (
 		<>
@@ -136,26 +164,34 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 	if (bare) {
 		return (
 			<Box>
-				<Flex align="center" justify="space-between" mb={2}>
+				<Flex align="center" justify="space-between" mb={open ? 2 : 0} {...headerProps}>
 					<Text fontWeight="bold" color="white" fontSize="lg">Interests</Text>
-					<Text color="white" fontWeight="semibold">{selected.length} Selected</Text>
+					<Flex align="center" gap={3}>
+						<Text color="white" fontWeight="semibold">{selected.length} Selected</Text>
+						{chevron}
+					</Flex>
 				</Flex>
-				{list}
+				{open && list}
 			</Box>
 		)
 	}
 
 	return (
 		<Box>
-			<Flex align="center" justify="space-between" mb={2}>
+			<Flex align="center" justify="space-between" mb={2} {...headerProps}>
 				<Text fontWeight="semibold" color="gray.400">Interests</Text>
-				{selected.length > 0 && (
-					<Text color="#F79432" fontWeight="semibold" fontSize="sm">{selected.length} Selected</Text>
-				)}
+				<Flex align="center" gap={3}>
+					{selected.length > 0 && (
+						<Text color="#F79432" fontWeight="semibold" fontSize="sm">{selected.length} Selected</Text>
+					)}
+					{chevron}
+				</Flex>
 			</Flex>
-			<Box bg="#141619" rounded="xl" px="4" py="2" mb={4}>
-				{list}
-			</Box>
+			{open && (
+				<Box bg="#141619" rounded="xl" px="4" py="2" mb={4}>
+					{list}
+				</Box>
+			)}
 		</Box>
 	)
 }

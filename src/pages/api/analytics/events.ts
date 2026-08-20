@@ -360,7 +360,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			albumAccessMatch.createdAt = dateFilter
 		}
 
-		const [albumActionStats, albumUniqueViewers, albumCount, perAlbumStats] = await Promise.all([
+		const [albumActionStats, albumUniqueViewers, albumVerifiedViewers, albumCount, perAlbumStats] = await Promise.all([
 			AlbumAccess.aggregate([
 				{ $match: albumAccessMatch },
 				{ $group: { _id: "$action", count: { $sum: 1 } } },
@@ -368,6 +368,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			AlbumAccess.aggregate([
 				{ $match: albumAccessMatch },
 				// Keyed on email, not userId — guest viewers may have no linked account.
+				{ $group: { _id: "$viewerEmail" } },
+				{ $count: "count" },
+			]),
+			// Viewers who proved their email. Rows written before the code gate have no
+			// `verified` field, so they correctly fall outside this count.
+			AlbumAccess.aggregate([
+				{ $match: { ...albumAccessMatch, verified: true } },
 				{ $group: { _id: "$viewerEmail" } },
 				{ $count: "count" },
 			]),
@@ -404,6 +411,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		})
 		const albumTotalAccesses = albumLogins + albumSignups
 		const albumUniqueCount = albumUniqueViewers[0]?.count || 0
+		const albumVerifiedCount = albumVerifiedViewers[0]?.count || 0
 
 		// Calculate conversion rates
 		const viewToBookingRate = views.count > 0 ? (bookings.bookingCount / views.count) * 100 : 0
@@ -453,6 +461,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					albumCount,
 					totalAccesses: albumTotalAccesses,
 					uniqueViewers: albumUniqueCount,
+					verifiedViewers: albumVerifiedCount,
 					logins: albumLogins,
 					signups: albumSignups,
 					perAlbum: perAlbumStats.map((a: any) => ({

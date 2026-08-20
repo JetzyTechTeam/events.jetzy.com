@@ -125,7 +125,10 @@ export default function BookingCard({ booking, onClick }: { booking: BookingRow;
 				</Flex>
 
 				{event.images && event.images.length > 0 ? (
-					<Image src={event.images[0]} alt={stripHtml(event.name || "")} objectFit="cover" w="100%" h="200px" rounded="lg" />
+					// Letterbox on black rather than crop — matches the listing card and the detail page hero.
+					<Box position="relative" w="100%" h="200px" rounded="lg" overflow="hidden" bg="black">
+						<Image src={event.images[0]} alt={stripHtml(event.name || "")} position="absolute" inset={0} objectFit="contain" w="100%" h="100%" />
+					</Box>
 				) : (
 					<Box
 						w="100%"

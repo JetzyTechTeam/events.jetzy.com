@@ -148,7 +148,8 @@ All responses use the standard envelope from the `sendResponse` helper:
 | POST | `/albums` | admin OR owner | `{ title, description?, media[] }` | created `Album` |
 | PUT | `/albums/:albumId` | admin OR owner | `{ title, description?, media[] }` (full replace) | updated `Album` |
 | DELETE | `/albums/:albumId` | admin OR owner | — | `null` (sets `isDeleted: true`) |
-| POST | `/albums/guest-access` | public | `{ name, email }` | `{ email, name, isNewAccount, magicToken? }` |
+| POST | `/albums/send-code` | public | `{ email }` | `{ email }` — emails a 6-digit code, creates nothing |
+| POST | `/albums/guest-access` | public | `{ name, email, code }` | `{ email, name, isNewAccount, magicToken? }` |
 | POST | `/albums/:albumId/access` | any viewer | `{ isNewAccount? }` | `{ firstAccess, action }` |
 | GET | `/albums/participants` | admin OR owner | — | `[{ email, name }]` |
 | GET | `/albums/:albumId/tags` | any viewer | — | `AlbumTag[]` for the whole album, oldest first |
@@ -163,20 +164,38 @@ Validation shared by POST and PUT `/albums` (zod):
 {
   title:        string (1–120),
   description?: string (≤2000),
-  media:        Array<{ url: valid URL, type: "image" | "video" }>  // min 1 item
+  media:        Array<{ url: valid URL, type: "image" | "video" }>, // min 1 item
+  showEvents?:  boolean   // show the promoted-events rail on this album's page
 }
+
+`showEvents` has **no default**. Undefined means show — every album created before the
+toggle existed carries no value and its page shows the rail today. On PUT, omitting it leaves
+the stored value unchanged, so an older client can't switch an album back on.
 ```
+
+### 4.0 `POST /albums/send-code`
+
+Step one of the gate. Body `{ email: valid email }`.
+
+1. Validate the event exists and isn't deleted.
+2. Per-IP rate limit (10/min, `src/lib/rate-limit.ts`) → 429.
+3. `issueAlbumCode` (`src/lib/album-verification.ts`) upserts one row per (event, email) with a **`crypto.randomInt` 6-digit code**, a **10-minute** expiry and `attempts: 0`. Inside the **60s** resend cooldown it returns null → 429, no second email.
+4. `sendAlbumVerificationCode` — **awaited**, unlike most sends here: if the mail fails the visitor would otherwise wait for a code that never arrives.
+
+Creates no account, no cookie and no interest row. Issuing a new code invalidates the previous one.
 
 ### 4.1 `POST /albums/guest-access`
 
-The low-friction gate. Body `{ name: string (1–120), email: valid email }`.
+The gate. Body `{ name: string (1–120), email: valid email, code: 6 digits }`.
 
 1. Validate the event exists and isn't deleted.
-2. Normalise: `email` lowercased/trimmed; `name` split into `firstName` (first word) + `lastName` (the rest).
-3. **Look up `users` by email to compute `isNewAccount`** — this must happen *before* the upsert, or every account looks pre-existing.
-4. Call `createOrUpdateUser({ firstName, lastName, email, phone: "", role: "user" })` (`src/lib/user-utils.ts`) — the exact helper ticket checkout uses. Matches by email or creates. **A failure here is logged but never blocks album viewing.**
-5. Set the `album_guest` cookie.
-6. Return `{ email, name, isNewAccount, magicToken? }` — `magicToken` present **only if `isNewAccount === true`** (see §3.1).
+2. **Verify the code first** — `consumeAlbumCode` before any write, so an unverified attempt leaves nothing behind. Wrong code → `$inc attempts` → 400; **5 attempts** or a lapsed expiry kills it; a correct code is **deleted** (single use).
+3. Normalise: `email` lowercased/trimmed; `name` split into `firstName` (first word) + `lastName` (the rest).
+4. **Look up `users` by email to compute `isNewAccount`** — this must happen *before* the upsert, or every account looks pre-existing.
+5. Call `createOrUpdateUser({ firstName, lastName, email, phone: "", role: "user" })` (`src/lib/user-utils.ts`) — the exact helper ticket checkout uses. Matches by email or creates. **A failure here is logged but never blocks album viewing.**
+6. Set the `album_guest` cookie, carrying `verifiedAt` so the later analytics write knows they were verified.
+7. Upsert the interests row with `verified: true`.
+8. Return `{ email, name, isNewAccount, magicToken? }` — `magicToken` present **only if `isNewAccount === true`** (see §3.1).
 
 `isNewAccount` is also what the client forwards to `/access` to record `signup` vs `login`.
 
@@ -188,7 +207,8 @@ Records that a person opened an album, and triggers the one-time notice email to
 2. Determine `action`:
    - If the body carries `isNewAccount: true` → `"signup"`; `isNewAccount: false` → `"login"`. (The guest gate knows this for certain, so it's preferred.)
    - If `isNewAccount` is **absent** and the viewer has a `userId`, look the account up in `EventUsers` then `Users`; if `createdAt` is within the last **10 minutes** → `"signup"`, else `"login"`.
-3. `AlbumAccess.create({ eventId, albumId, userId?, viewerEmail, viewerName, action })`
+3. `AlbumAccess.create({ eventId, albumId, userId?, viewerEmail, viewerName, action, verified, identifiedAt })`
+   - `verified` / `identifiedAt` come from the resolved viewer: the cookie's `verifiedAt` for a guest, `verified: true` with **no** `identifiedAt` for a session. Both **absent** for cookies issued before the code gate — those rows are *unverified*, not failed.
    - success → `firstAccess = true` → send `sendAlbumAccessNotice`
    - error code **11000** → `firstAccess = false` → **no email** (already recorded)
    - any other error → propagate as 500
@@ -232,7 +252,9 @@ Requires a real session (admin or owner — the guest cookie is not enough).
 
 Query: `eventId` (required), `dateFrom`, `dateTo` (optional, snapped to start/end of day over `createdAt`). Newest first, capped at **5000** rows.
 
-`AccessRow`: `{ _id, albumId, albumTitle, name, email, action, date }`
+`AccessRow`: `{ _id, albumId, albumTitle, name, email, action, verified, identifiedAt, date }`
+
+`date` is `createdAt` — when they opened **this album**. `identifiedAt` is when they signed in / signed up / passed the code, which can be days earlier and is `null` for sessions and pre-gate rows.
 
 `viewerName` / `viewerEmail` on the row are the source of truth; the account lookup in `EventUsers`/`Users` is only a fallback for **legacy rows** written before the guest flow existed. Unknowns render as `"—"`.
 

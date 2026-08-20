@@ -13,6 +13,8 @@ import { Events } from "@/models/events"
 import { EventAlbums as EventAlbumsModel } from "@/models/events/albums"
 import { PhotoTagging, type Album, type AlbumMedia } from "@/components/events/EventAlbums"
 import { useAlbumViewerGate } from "@/components/events/album/useAlbumViewerGate"
+import { PromotedEventCard, PromotedEventsRail, usePromotedEvents } from "@/components/events/album/PromotedEvents"
+import type { IEvent } from "@/models/events/types"
 import { useTrackEventView } from "@/hooks/useTrackEventView"
 import { useAnalytics } from "@/hooks/useAnalytics"
 
@@ -21,8 +23,42 @@ type Props = {
 	event: string
 }
 
+/** Stable reference: a fresh [] each render would churn every consumer downstream. */
+const EMPTY_EVENTS: IEvent[] = []
+
 /** First frame as a poster: browsers paint it when a media fragment is present. */
 const posterSrc = (url: string) => `${url}#t=0.1`
+
+/**
+ * Branding on the photos.
+ *
+ * Sits on the tile rather than the <img> so videos carry it too, and is `pointerEvents:none`
+ * so it never eats a click meant for the tile underneath. Deliberately NOT part of the file:
+ * the lightbox Download button still serves the untouched original, and a CSS overlay is no
+ * kind of anti-theft measure — it is branding on the page, nothing more.
+ */
+const JetzyLifeMark = ({ size = "sm" }: { size?: "sm" | "lg" }) => (
+	<Flex
+		position="absolute"
+		bottom={size === "lg" ? 4 : 2}
+		left={size === "lg" ? 4 : 2}
+		align="center"
+		gap={1.5}
+		px={size === "lg" ? 3 : 2}
+		py={size === "lg" ? 1.5 : 1}
+		borderRadius="full"
+		bg="blackAlpha.600"
+		backdropFilter="blur(6px)"
+		pointerEvents="none"
+		zIndex={2}
+	>
+		{/* eslint-disable-next-line @next/next/no-img-element */}
+		<img src="/imgs/logo.png" alt="" width={size === "lg" ? 18 : 14} height={size === "lg" ? 18 : 14} style={{ borderRadius: "50%" }} />
+		<Text fontSize={size === "lg" ? "sm" : "10px"} fontWeight="700" color="whiteAlpha.900" letterSpacing="0.04em" lineHeight="1">
+			Jetzy Life
+		</Text>
+	</Flex>
+)
 
 /**
  * Grid tile. Declared at module scope on purpose — defining it inside the page component
@@ -89,6 +125,7 @@ const Tile = React.memo(function Tile({
 				// eslint-disable-next-line @next/next/no-img-element
 				<img src={m.url} alt={`${albumTitle} ${index + 1}`} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
 			)}
+			<JetzyLifeMark />
 		</Box>
 	)
 })
@@ -102,6 +139,12 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	const { data: session } = useSession()
 
 	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi } = useAlbumViewerGate(event._id)
+
+	// Live + upcoming events to promote beside the photos, minus this album's own event.
+	// `showEvents === false` is the host switching the rail off for this album; undefined
+	// means show, since albums predating the toggle carry no value.
+	const promotedAll = usePromotedEvents(event._id)
+	const promotedEvents = album.showEvents === false ? EMPTY_EVENTS : promotedAll
 
 	const role = (session?.user as any)?.role
 	const isAdmin = role === "admin" || role === "super admin"
@@ -262,6 +305,32 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 		return out
 	}, [media])
 
+	// Which rows carry a promoted event on mobile, and which slot each one is.
+	//
+	// Computed over the WHOLE row list rather than inline while rendering, so the "rest of the
+	// events" block below the grid knows exactly how many were already used. A short album can
+	// have fewer insertion points than there are events, and those left over would otherwise
+	// never be seen on mobile.
+	//
+	// Insertion is at ROW boundaries, whenever the running tile count crosses a multiple of 2 —
+	// never inside a row, since a 2-up row is a flex row from `sm` up.
+	const { promoSlotByRow, promoSlotCount } = useMemo(() => {
+		const byRow: number[] = []
+		let tiles = 0
+		let slot = 0
+		rows.forEach((row) => {
+			const before = tiles
+			tiles += row.length
+			if (Math.floor(tiles / 2) > Math.floor(before / 2)) {
+				byRow.push(slot)
+				slot += 1
+			} else {
+				byRow.push(-1)
+			}
+		})
+		return { promoSlotByRow: byRow, promoSlotCount: slot }
+	}, [rows])
+
 	// Infinite scroll: keep the initial DOM small on large albums, reveal more rows as the
 	// sentinel nears the viewport. The lightbox always indexes the full `media` array, so
 	// not-yet-rendered items stay reachable once a photo is open.
@@ -318,38 +387,74 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						</Button>
 					</Flex>
 				) : (
-					<Flex direction={{ base: "column", lg: "row" }} gap={{ base: 6, lg: 10 }} maxW="1180px" mx="auto" px={{ base: 4, md: 8 }} py={{ base: 6, md: 10 }} align="flex-start">
-						{/* Left: sticky album info */}
-						<Box width={{ base: "100%", lg: "300px" }} flexShrink={0} position={{ base: "static", lg: "sticky" }} top={{ lg: "88px" }}>
-							<Heading size="xl" mb={3}>{album.title}</Heading>
-							{album.description && <AlbumDescription text={album.description} />}
-							<Text color="#8a8a8a" fontSize="sm" mt={3}>
-								{media.length} item{media.length === 1 ? "" : "s"}
-							</Text>
+					<Flex direction={{ base: "column", lg: "row" }} gap={{ base: 6, lg: 8 }} maxW="1560px" mx="auto" px={{ base: 4, md: 6, xl: 10 }} py={{ base: 6, md: 10 }} align="flex-start">
+						{/* Left: the events rail. Rendered only when there is something to show, so
+						    the photos take the full width otherwise, and desktop-only — below `lg`
+						    the same events are interleaved between the photos instead, and having
+						    both would show them twice. */}
+						{promotedEvents.length > 0 && (
+						<Box
+							display={{ base: "none", lg: "block" }}
+							width={{ base: "100%", lg: "320px" }}
+							flexShrink={0}
+							position={{ base: "static", lg: "sticky" }}
+							top={{ lg: "88px" }}
+							// The rail can outgrow a short viewport, and a sticky column that
+							// overflows clips its last card with no way to reach it.
+							maxH={{ lg: "calc(100vh - 120px)" }}
+							overflowY={{ base: "visible", lg: "auto" }}
+							// The native scrollbar renders as a wide light bar down the middle of a
+							// dark page. Thin and near-invisible until it's needed.
+							sx={{
+								"&::-webkit-scrollbar": { width: "4px" },
+								"&::-webkit-scrollbar-track": { background: "transparent" },
+								"&::-webkit-scrollbar-thumb": { background: "#3a3a3a", borderRadius: "4px" },
+								"&::-webkit-scrollbar-thumb:hover": { background: "#4d4d4d" },
+								scrollbarWidth: "thin",
+								scrollbarColor: "#3a3a3a transparent",
+							}}
+						>
+							<PromotedEventsRail events={promotedEvents} />
 						</Box>
+						)}
 
-						{/* Right: photo grid */}
-						<Box flex="1" width="100%">
+						{/* Middle: the photos */}
+						<Box flex="1" width="100%" minW={0}>
 							{media.length === 0 ? (
 								<Text color="#888">No media in this album.</Text>
 							) : (
 								<Flex direction="column" gap={3}>
 									{rows.slice(0, visibleRows).map((row, ri) => {
 										const offset = rows.slice(0, ri).reduce((n, r) => n + r.length, 0)
+										// One promoted event after roughly every 2 photos, on mobile only.
+										// Inserted at ROW boundaries, never inside a row: a 2-up row is a
+										// flex row from `sm` up, and splitting it would drop a card between
+										// two side-by-side photos. Rows run 1,2,1,2 …, so crossing a new
+										// multiple of 2 lands a card at about every second image.
+										const slot = promoSlotByRow[ri] ?? -1
+										// Cycle so a long album keeps showing cards instead of running dry.
+										const promo = slot >= 0 && promotedEvents.length > 0 ? promotedEvents[slot % promotedEvents.length] : null
 										return (
-											<Flex key={ri} gap={3} direction={{ base: "column", sm: row.length > 1 ? "row" : "column" }}>
-												{row.map((m, ci) => (
-													<Box key={m.url + ci} flex="1" minW={0}>
-														<Tile
-														m={m}
-														index={offset + ci}
-														height={row.length > 1 ? "220px" : "420px"}
-														albumTitle={album.title}
-														onOpen={setOpenIndex}
-													/>
+											<React.Fragment key={ri}>
+												<Flex gap={3} direction={{ base: "column", sm: row.length > 1 ? "row" : "column" }}>
+													{row.map((m, ci) => (
+														<Box key={m.url + ci} flex="1" minW={0}>
+															<Tile
+															m={m}
+															index={offset + ci}
+															height={row.length > 1 ? "220px" : "420px"}
+															albumTitle={album.title}
+															onOpen={setOpenIndex}
+														/>
+														</Box>
+													))}
+												</Flex>
+												{promo && (
+													<Box display={{ base: "block", lg: "none" }} py={2}>
+														<PromotedEventCard event={promo} size="lg" />
 													</Box>
-												))}
-											</Flex>
+												)}
+											</React.Fragment>
 										)
 									})}
 									{visibleRows < rows.length && (
@@ -359,6 +464,42 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 									)}
 								</Flex>
 							)}
+
+							{/* Whatever the photos didn't have room for.
+							    A 5-image album only has a couple of insertion points, so on mobile
+							    the rest of the events would never be seen — the desktop rail shows
+							    them all, and mobile has no rail. Only once every row is rendered,
+							    so it can't appear above photos that are still loading. */}
+							{visibleRows >= rows.length && promotedEvents.length > promoSlotCount && (
+								<Box display={{ base: "block", lg: "none" }} mt={6}>
+									<Text fontSize="xs" fontWeight="bold" color="#8a8a8a" letterSpacing="0.08em" mb={3}>
+										{promoSlotCount > 0 ? "MORE UPCOMING EVENTS" : "UPCOMING EVENTS"}
+									</Text>
+									<Flex direction="column" gap={3}>
+										{promotedEvents.slice(promoSlotCount).map((e) => (
+											<PromotedEventCard key={e._id?.toString()} event={e} size="lg" />
+										))}
+									</Flex>
+								</Box>
+							)}
+						</Box>
+
+						{/* Right: the album's own details, beside the photos.
+						    `order` puts it FIRST when the columns stack on mobile — the title is
+						    the page's context and belongs above the photos there, not after 100
+						    of them. */}
+						<Box
+							order={{ base: -1, lg: 0 }}
+							width={{ base: "100%", lg: "280px" }}
+							flexShrink={0}
+							position={{ base: "static", lg: "sticky" }}
+							top={{ lg: "88px" }}
+						>
+							<Heading size="xl" mb={3}>{album.title}</Heading>
+							{album.description && <AlbumDescription text={album.description} />}
+							<Text color="#8a8a8a" fontSize="sm" mt={3}>
+								{media.length} item{media.length === 1 ? "" : "s"}
+							</Text>
 						</Box>
 					</Flex>
 				)}
@@ -413,6 +554,9 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							// eslint-disable-next-line @next/next/no-img-element
 							<img src={current.url} alt={album.title} loading="eager" decoding="async" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain", borderRadius: "12px" }} />
 						)}
+						{/* On the stage, not the media: `contain` leaves letterbox bars, and pinning
+						    the mark to the image would move it around as aspect ratios change. */}
+						<JetzyLifeMark size="lg" />
 						{media.length > 1 && (
 							<IconButton
 								aria-label="Next"
@@ -509,7 +653,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			eventId: event._id,
 			isDeleted: false,
 		})
-			.select("_id eventId title description media publishedAt publishNotifiedAt createdAt")
+			.select("_id eventId title description media showEvents publishedAt publishNotifiedAt createdAt")
 			.lean()
 		if (!album) return { notFound: true }
 
@@ -521,6 +665,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 					title: album.title,
 					description: album.description || "",
 					media: (album.media || []).map((m: any) => ({ url: m.url, type: m.type })),
+					// Only sent when the host has actually set it. Undefined means show, and
+					// JSON.stringify drops the key, which the client reads the same way.
+					showEvents: album.showEvents,
 				}),
 				event: JSON.stringify({
 					_id: event._id.toString(),

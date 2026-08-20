@@ -13,6 +13,17 @@ export interface IAlbumAccess {
 	viewerEmail: string
 	viewerName?: string
 	action: AlbumAccessAction
+	/**
+	 * Viewer proved their email (a code, or a real NextAuth session). ABSENT on rows written
+	 * before the gate existed — report those as "unverified", not as a failure.
+	 */
+	verified?: boolean
+	/**
+	 * When they signed in / signed up / passed the code — which is NOT `createdAt`.
+	 * `createdAt` is when they opened this album; a viewer can identify once and come back to
+	 * a second album days later.
+	 */
+	identifiedAt?: Date
 	createdAt?: Date
 	updatedAt?: Date
 }
@@ -50,6 +61,15 @@ const albumAccessSchema = new Schema<IAlbumAccess>(
 			type: String,
 			enum: ["login", "signup"],
 			required: true,
+		},
+		// No default: absent means the row predates the verification gate.
+		verified: {
+			type: Boolean,
+			required: false,
+		},
+		identifiedAt: {
+			type: Date,
+			required: false,
 		},
 	},
 	{

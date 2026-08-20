@@ -51,6 +51,8 @@ export interface Album {
 	title: string
 	description?: string
 	media: AlbumMedia[]
+	/** Undefined means show — albums created before the toggle existed carry no value. */
+	showEvents?: boolean
 	createdAt?: string
 	publishedAt?: string
 	publishNotifiedAt?: string
@@ -415,7 +417,7 @@ function useInterestSelection() {
 	const [interests, setInterests] = useState<string[]>([])
 	const [customInterests, setCustomInterests] = useState<string[]>([])
 	const [customDraft, setCustomDraft] = useState("")
-	// "I don't want to attend any other Jetzy event" — optional, and a valid answer on its
+	// "I don't want to attend any other event" — optional, and a valid answer on its
 	// own, so ticking it satisfies the at-least-one-interest requirement.
 	const [optOut, setOptOut] = useState(false)
 
@@ -639,7 +641,7 @@ function InterestsFields({ ix }: { ix: InterestSelection }) {
 						{ix.optOut && <Text fontSize="11px" fontWeight="bold" lineHeight="1" color="#131313">✓</Text>}
 					</Flex>
 					<Text fontSize="xs" fontWeight="600" color={ix.optOut ? "#ffb4b4" : "#d5d5d5"} whiteSpace="normal">
-						I don&apos;t want to attend any other Jetzy event
+						I don&apos;t want to attend any other event
 					</Text>
 				</Flex>
 			</Box>
@@ -728,6 +730,29 @@ export function GuestAccessModal({
 	const [emailError, setEmailError] = useState("")
 	const [acceptedTerms, setAcceptedTerms] = useState(false)
 	const [submitting, setSubmitting] = useState(false)
+	// Two steps: fill the form, then prove the email with the code we mail. Same shape as
+	// the login OTP screen (pages/auth/login-otp.tsx).
+	const [step, setStep] = useState<"FORM" | "CODE">("FORM")
+	const [code, setCode] = useState("")
+	const [resendIn, setResendIn] = useState(0)
+
+	// Resend cooldown, mirroring the server's 60s window so the button can't promise
+	// something the API will refuse.
+	useEffect(() => {
+		if (resendIn <= 0) return
+		const t = setTimeout(() => setResendIn((n) => n - 1), 1000)
+		return () => clearTimeout(t)
+	}, [resendIn])
+
+	// A dismissed dialog must reopen clean — otherwise it returns to a code step whose code
+	// may already have expired.
+	useEffect(() => {
+		if (!isOpen) {
+			setStep("FORM")
+			setCode("")
+			setResendIn(0)
+		}
+	}, [isOpen])
 
 	// Advisory only — surfaced on blur so the viewer catches a typo early. Submit-time
 	// validation is unchanged.
@@ -756,12 +781,41 @@ export function GuestAccessModal({
 		}
 		setSubmitting(true)
 		try {
+			await axios.post(`/api/events/${eventId}/albums/send-code`, { email: email.trim() })
+			setCode("")
+			setResendIn(60)
+			setStep("CODE")
+			toast({ title: `Code sent to ${email.trim()}`, status: "success", duration: 3000, isClosable: true })
+		} catch (err: any) {
+			toast({
+				title: "Couldn't send the code",
+				description: err?.response?.data?.message || err.message,
+				status: "error",
+				duration: 3500,
+				isClosable: true,
+			})
+		} finally {
+			setSubmitting(false)
+		}
+	}
+
+	// Step two: the code proves the address, and only then does the server create anything.
+	const verify = async (e: React.FormEvent) => {
+		e.preventDefault()
+		if (code.trim().length !== 6) {
+			toast({ title: "Enter the 6-digit code from your email", status: "warning", duration: 2500, isClosable: true })
+			return
+		}
+		const { interests, customInterests: effectiveCustoms, optOut } = ix.resolveForSubmit()
+		setSubmitting(true)
+		try {
 			const res = await axios.post(`/api/events/${eventId}/albums/guest-access`, {
 				name: name.trim(),
 				email: email.trim(),
 				interests,
 				customInterests: effectiveCustoms,
 				optOut,
+				code: code.trim(),
 			})
 			// Remember for the access-notice call so it can report returning vs new.
 			try { sessionStorage.setItem("album_is_new_account", res.data?.data?.isNewAccount ? "1" : "0") } catch {}
@@ -792,6 +846,27 @@ export function GuestAccessModal({
 		}
 	}
 
+	const resend = async () => {
+		if (resendIn > 0) return
+		setSubmitting(true)
+		try {
+			await axios.post(`/api/events/${eventId}/albums/send-code`, { email: email.trim() })
+			setCode("")
+			setResendIn(60)
+			toast({ title: "New code sent", status: "success", duration: 2500, isClosable: true })
+		} catch (err: any) {
+			toast({
+				title: "Couldn't resend the code",
+				description: err?.response?.data?.message || err.message,
+				status: "error",
+				duration: 3500,
+				isClosable: true,
+			})
+		} finally {
+			setSubmitting(false)
+		}
+	}
+
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "sm", md: "lg" }} scrollBehavior="inside">
 			<ModalOverlay bg="blackAlpha.700" backdropFilter="blur(8px)" />
@@ -799,7 +874,9 @@ export function GuestAccessModal({
 				<ModalHeader>View the photos</ModalHeader>
 				<ModalCloseButton />
 				<ModalBody>
-					<Text color="#bbbbbb" fontSize="sm" mb={4}>Just your name and email — no password needed.</Text>
+					{step === "FORM" ? (
+					<>
+					<Text color="#bbbbbb" fontSize="sm" mb={4}>Just your name and email — we&apos;ll send a code to confirm it.</Text>
 					<form id="guest-access-form" onSubmit={submit}>
 						<Text fontSize="sm" color="#bbb" mb={1}>Name</Text>
 						<Input
@@ -852,11 +929,64 @@ export function GuestAccessModal({
 							</Text>
 						</label>
 					</form>
+					</>
+					) : (
+					<>
+					<Text color="#bbbbbb" fontSize="sm" mb={1}>Enter the 6-digit code we sent to</Text>
+					<Text color="white" fontSize="sm" fontWeight="600" mb={4}>{email.trim()}</Text>
+					<form id="album-code-form" onSubmit={verify}>
+						<Input
+							value={code}
+							onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+							placeholder="123456"
+							inputMode="numeric"
+							autoComplete="one-time-code"
+							maxLength={6}
+							bg="#1E1E1E"
+							borderColor="#343536"
+							borderRadius="10px"
+							color="white"
+							fontSize="24px"
+							fontWeight="bold"
+							letterSpacing="8px"
+							textAlign="center"
+							_placeholder={{ color: "#444", letterSpacing: "8px" }}
+							autoFocus
+						/>
+					</form>
+					<Flex align="center" justify="space-between" mt={3} gap={3}>
+						{/* Back keeps every field filled — a mistyped address must be fixable
+						    without picking the interests again. */}
+						<Button variant="link" size="sm" color="#bbbbbb" fontWeight="500" onClick={() => setStep("FORM")}>
+							‹ Back
+						</Button>
+						<Button
+							variant="link"
+							size="sm"
+							color={resendIn > 0 ? "#666" : "#F79432"}
+							fontWeight="600"
+							onClick={resend}
+							isDisabled={resendIn > 0 || submitting}
+						>
+							{resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
+						</Button>
+					</Flex>
+					<Text fontSize="xs" color="#777" mt={3}>
+						The code expires in 10 minutes. Nothing is created for you until it&apos;s confirmed.
+					</Text>
+					</>
+					)}
 				</ModalBody>
 				<ModalFooter>
-					<Button type="submit" form="guest-access-form" size="lg" fontWeight="bold" borderRadius="12px" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
-						View Album
-					</Button>
+					{step === "FORM" ? (
+						<Button type="submit" form="guest-access-form" size="lg" fontWeight="bold" borderRadius="12px" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
+							Send code
+						</Button>
+					) : (
+						<Button type="submit" form="album-code-form" size="lg" fontWeight="bold" borderRadius="12px" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} isLoading={submitting} width="100%">
+							Verify &amp; View Album
+						</Button>
+					)}
 				</ModalFooter>
 			</ModalContent>
 		</Modal>
@@ -1394,6 +1524,9 @@ function AlbumFormModal({
 	const videoInputRef = useRef<HTMLInputElement>(null)
 	const [title, setTitle] = useState(album?.title || "")
 	const [description, setDescription] = useState(album?.description || "")
+	// Undefined on an existing album means it predates the toggle, and those pages show the
+	// rail today — so the box starts ticked rather than silently turning it off on save.
+	const [showEvents, setShowEvents] = useState(album?.showEvents !== false)
 	const [staged, setStaged] = useState<StagedMedia[]>(
 		(album?.media || []).map((m) => ({ tempId: uid(), type: m.type, url: m.url, progress: 100, uploading: false })),
 	)
@@ -1478,7 +1611,7 @@ function AlbumFormModal({
 		}
 		setIsSaving(true)
 		try {
-			const payload = { title: title.trim(), description: description.trim(), media }
+			const payload = { title: title.trim(), description: description.trim(), media, showEvents }
 			if (album) {
 				await axios.put(`/api/events/${eventId}/albums/${album._id}`, payload)
 				toast({ title: "Album updated", status: "success", duration: 2000, isClosable: true })
@@ -1506,6 +1639,28 @@ function AlbumFormModal({
 
 					<Text fontSize="sm" color="#bbb" mb={1}>Description (optional)</Text>
 					<Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description" bg="#1E1E1E" borderColor="#343536" color="white" mb={4} _placeholder={{ color: "#666" }} />
+
+					{/* Hosts don't always want the album page selling other events — a client
+					    handover gallery, say. Off hides the rail on this album's page only. */}
+					<Flex
+						as="label"
+						align="flex-start"
+						gap={3}
+						mb={4}
+						p={3}
+						borderRadius="10px"
+						border="1px solid #343536"
+						bg="#1E1E1E"
+						cursor="pointer"
+					>
+						<input type="checkbox" checked={showEvents} onChange={(e) => setShowEvents(e.target.checked)} style={{ marginTop: "3px" }} />
+						<Box>
+							<Text fontSize="sm" fontWeight="600" color="white">Show upcoming events on this album page</Text>
+							<Text fontSize="xs" color="#8a8a8a" mt={0.5}>
+								Promotes your live and upcoming events beside the photos. Turn it off for a private handover gallery.
+							</Text>
+						</Box>
+					</Flex>
 
 					{/* Upload buttons */}
 					<Flex gap={3} mb={3}>

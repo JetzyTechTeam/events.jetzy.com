@@ -11,6 +11,7 @@ import {
   Heading,
   Button,
   Flex,
+  Grid,
   Spacer,
   Menu,
   MenuButton,
@@ -71,6 +72,12 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
     role === "super admin" ||
     userName?.toLowerCase() === "super admin";
 
+  // Owners manage their own events straight from the public list, not just admins.
+  // Events created before `ownerId` existed have none, so their host sees no button.
+  const userId = (session?.user as any)?._id?.toString();
+  const isOwner = !!userId && (event as any).ownerId?.toString() === userId;
+  const canManage = isAdmin || isOwner;
+
   const totalTickets = totals?.data?.totalTickets ?? 0;
   const uniqueGuests = totals?.data?.uniqueGuests ?? 0;
 
@@ -118,7 +125,9 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       overflow="hidden"
       bg={cardBg}
       boxShadow="lg"
-      height='470'
+      h="480px"
+      display="flex"
+      flexDirection="column"
       cursor="pointer"
       _hover={{
         transform: "scale(1.03)",
@@ -126,7 +135,7 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       }}
       onClick={() => onClick(event)}
     >
-      <Box p="2" position="relative">
+      <Box p="2" position="relative" flexShrink={0}>
         {/* Status badge (live / upcoming / tbd / ended) + Premium badge */}
         <Flex position="absolute" top="4" right="4" zIndex="3" gap="1.5" align="center">
           <Box
@@ -145,14 +154,20 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
           </Box>
         </Flex>
         {event.images && event.images.length > 0 ? (
-          <Image
-            src={event.images[0]}
-            alt={stripHtml(event.name)}
-            objectFit="cover"
-            w="100%"
-            h="200px"
-            rounded="lg"
-          />
+          // Banners arrive at whatever aspect the host uploaded, so letterbox on black and
+          // show the whole image — same treatment as the event detail page hero. The fixed
+          // 200px height is what keeps every card at h="480px".
+          <Box position="relative" w="100%" h="200px" rounded="lg" overflow="hidden" bg="black">
+            <Image
+              src={event.images[0]}
+              alt={stripHtml(event.name)}
+              position="absolute"
+              inset={0}
+              objectFit="contain"
+              w="100%"
+              h="100%"
+            />
+          </Box>
         ) : (
           <Box
             w="100%"
@@ -168,29 +183,6 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
             <Text fontSize="3xl">🖼️</Text>
             <Text fontSize="sm" color="gray.500">No image</Text>
           </Box>
-        )}
-        {/* Edit button for admin */}
-        {isAdmin && (
-          <Link
-            href={`/console/events/${event._id}/update`}
-            onClick={(e) => e.stopPropagation()}
-            style={{ position: "absolute", top: "16px", left: "16px", zIndex: 3 }}
-          >
-            <Box
-              bg="#3E3E3E"
-              _hover={{ bg: "#4E4E4E" }}
-              px="3"
-              py="1"
-              rounded="md"
-              fontSize="xs"
-              fontWeight="semibold"
-              color="white"
-              border="1px"
-              borderColor="whiteAlpha.300"
-            >
-              Edit
-            </Box>
-          </Link>
         )}
         {/* Benefits Overlay */}
         {event.benefits && event.benefits.trim() !== "" && (
@@ -228,12 +220,12 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
           </Flex>
         )}
       </Box>
-      <Box p="2">
+      <Box p="2" display="flex" flexDirection="column" flex="1" minH={0}>
         <Stack spacing="3">
-          <Text fontSize="xl" fontWeight="bold" wordBreak="break-word" overflowWrap="anywhere">
+          <Text fontSize="xl" fontWeight="bold" noOfLines={2} minH="3.5rem">
             {stripHtml(event.name)}
           </Text>
-          <Box h="24">
+          <Box h="24" overflow="hidden">
             <Text
               fontSize="sm"
               color="gray.500"
@@ -262,34 +254,52 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
                 ? "📍 Location will be disclosed after registration"
                 : <>
                     <span><LocationSVG /></span>
-                    {location}
+                    <Text as="span" noOfLines={2}>{location}</Text>
                   </>}
             </Text>
           </Box>
-          <Box display="flex" alignItems="center" justifyContent="space-between " mt=" 2">
-            {/* Show tickets sold for admin users only */}
-            {isAdmin && (
-              <Box fontSize="sm" color="gray.400">
-                <Text>Total people: {uniqueGuests}</Text>
-                <Text>Total tickets: {totalTickets}</Text>
-              </Box>
-            )}
-
-            <Box
-              bg="#3E3E3E"
-              w="max-content"
-              px="2"
-              py="1"
-              rounded="lg"
-              display="flex"
-              justifyContent="end"
-            >
-              <Text className="uppercase text-xs font-semibold">get tickets</Text>
+          {/* Show tickets sold for admin users only */}
+          {isAdmin && (
+            <Box fontSize="sm" color="gray.400">
+              <Text>Total people: {uniqueGuests}</Text>
+              <Text>Total tickets: {totalTickets}</Text>
             </Box>
-          </Box>
-
-
+          )}
         </Stack>
+
+        {/* Footer sits outside the Stack so `mt="auto"` can pin it to the bottom of the
+            card — Chakra's Stack owns the top margin of its own children. Three columns
+            keep RSVP centred without the manage button ever overlapping it. */}
+        <Grid templateColumns="1fr auto 1fr" alignItems="center" mt="auto" pt="2">
+          <Box />
+          <Box bg="#F79432" color="black" px="4" py="1.5" rounded="lg">
+            <Text className="uppercase text-xs font-bold">rsvp</Text>
+          </Box>
+          <Flex justify="flex-end">
+            {canManage && (
+              <Link
+                href={`/console/events/${event._id}/manage`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Box
+                  bg="#3E3E3E"
+                  _hover={{ bg: "#4E4E4E" }}
+                  px="3"
+                  py="1"
+                  rounded="md"
+                  fontSize="xs"
+                  fontWeight="semibold"
+                  color="white"
+                  border="1px"
+                  borderColor="whiteAlpha.300"
+                  whiteSpace="nowrap"
+                >
+                  Manage Event
+                </Box>
+              </Link>
+            )}
+          </Flex>
+        </Grid>
       </Box>
     </Box>
   );

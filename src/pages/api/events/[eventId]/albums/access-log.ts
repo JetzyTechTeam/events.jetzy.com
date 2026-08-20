@@ -92,6 +92,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				name: r.viewerName || u?.name || "—",
 				email: r.viewerEmail || u?.email || "—",
 				action: r.action,
+				// undefined on rows written before the code gate — the UI reads that as
+				// "unverified", which is true, rather than as a failed check.
+				verified: r.verified === true,
+				identifiedAt: r.identifiedAt || null,
 				date: r.createdAt,
 			}
 		})
