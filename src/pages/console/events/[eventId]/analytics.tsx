@@ -34,7 +34,7 @@ import {
 	TabPanels,
 	TabPanel,
 } from "@chakra-ui/react"
-import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiChevronLeft, FiChevronRight, FiImage, FiLogIn, FiUserPlus } from "react-icons/fi"
+import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiChevronLeft, FiChevronRight, FiImage, FiLogIn, FiUserPlus, FiCheckCircle } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
 import ClickHeatmap from "@/components/analytics/ClickHeatmap"
@@ -139,6 +139,8 @@ interface EventAnalyticsData {
 		albumCount: number
 		totalAccesses: number
 		uniqueViewers: number
+		/** Distinct viewers who proved their email. Absent from responses predating the gate. */
+		verifiedViewers?: number
 		logins: number
 		signups: number
 		perAlbum: Array<{
@@ -165,10 +167,10 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const toast = useToast()
 
 	const [tabIndex, setTabIndex] = useState(0)
-	const [albumLog, setAlbumLog] = useState<Array<{ _id: string; albumId: string; albumTitle: string; name: string; email: string; action: string; date: string }>>([])
+	const [albumLog, setAlbumLog] = useState<Array<{ _id: string; albumId: string; albumTitle: string; name: string; email: string; action: string; verified?: boolean; identifiedAt?: string | null; date: string }>>([])
 	const [albumLogLoaded, setAlbumLogLoaded] = useState(false)
 	const [albumLogLoading, setAlbumLogLoading] = useState(false)
-	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterests: string[]; optOut?: boolean; date: string }>>([])
+	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterests: string[]; optOut?: boolean; verified?: boolean; date: string }>>([])
 	const [topInterests, setTopInterests] = useState<Array<{ interest: string; count: number }>>([])
 	const [journeyLoaded, setJourneyLoaded] = useState(false)
 	const [journeyLoading, setJourneyLoading] = useState(false)
@@ -277,6 +279,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 					`Albums,${a.albumCount}`,
 					`Total Accesses,${a.totalAccesses}`,
 					`Unique Viewers,${a.uniqueViewers}`,
+					`Verified Viewers,${a.verifiedViewers ?? 0}`,
 					`Logins via Album,${a.logins}`,
 					`Signups via Album,${a.signups}`,
 					"",
@@ -285,9 +288,10 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 					"",
 			  ]
 			: []
-		const logHeader = "Album,Name,Email,Action,Date"
+		const logHeader = "Album,Name,Email,Verified,Action,Signed in/up,Viewed"
 		const logLines = albumLog.map(
-			(r) => `"${r.albumTitle.replace(/"/g, '""')}","${r.name.replace(/"/g, '""')}","${r.email.replace(/"/g, '""')}",${r.action},${new Date(r.date).toISOString()}`,
+			(r) =>
+				`"${r.albumTitle.replace(/"/g, '""')}","${r.name.replace(/"/g, '""')}","${r.email.replace(/"/g, '""')}",${r.verified ? "Yes" : "No"},${r.action},${r.identifiedAt ? new Date(r.identifiedAt).toISOString() : ""},${new Date(r.date).toISOString()}`,
 		)
 
 		const q = (s: string) => `"${(s || "").replace(/"/g, '""')}"`
@@ -298,8 +302,11 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 			? [
 					"",
 					"Interests Log",
-					"Name,Email,Interests,Custom Interest,Opted Out,Date",
-					...interestRows.map((r) => `${q(r.name)},${q(r.email)},${q(r.interests.join("; "))},${q(r.customInterests.join("; "))},${r.optOut ? "Yes" : "No"},${new Date(r.date).toISOString()}`),
+					"Name,Email,Verified,Interests,Custom Interest,Opted Out,Date",
+					...interestRows.map(
+						(r) =>
+							`${q(r.name)},${q(r.email)},${r.verified ? "Yes" : "No"},${q(r.interests.join("; "))},${q(r.customInterests.join("; "))},${r.optOut ? "Yes" : "No"},${new Date(r.date).toISOString()}`,
+					),
 			  ]
 			: []
 
@@ -956,9 +963,12 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									</Flex>
 
 									{analyticsData.albums && (
-										<SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
+										<SimpleGrid columns={{ base: 2, md: 5 }} spacing={4} mb={6}>
 											{[
 												{ label: "Album Viewers", value: analyticsData.albums.uniqueViewers, icon: FiEye, sub: `${formatNumber(analyticsData.albums.totalAccesses)} accesses` },
+												// Viewers who passed the emailed code. Anyone who arrived before that gate
+												// existed counts as unverified, not as a failure.
+												{ label: "Verified Viewers", value: analyticsData.albums.verifiedViewers ?? 0, icon: FiCheckCircle, sub: undefined as string | undefined },
 												{ label: "Logins via Album", value: analyticsData.albums.logins, icon: FiLogIn, sub: undefined as string | undefined },
 												{ label: "Signups via Album", value: analyticsData.albums.signups, icon: FiUserPlus, sub: undefined as string | undefined },
 												{ label: "Albums", value: analyticsData.albums.albumCount, icon: FiImage, sub: undefined as string | undefined },
@@ -1001,14 +1011,18 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 									) : albumLog.length > 0 ? (
 										<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 											<Table variant="simple" size="sm">
-												<Thead><Tr><Th>Album</Th><Th>Name</Th><Th>Email</Th><Th>Action</Th><Th>Date</Th></Tr></Thead>
+												<Thead><Tr><Th>Album</Th><Th>Name</Th><Th>Email</Th><Th>Verified</Th><Th>Action</Th><Th>Signed in/up</Th><Th>Viewed</Th></Tr></Thead>
 												<Tbody>
 													{albumLog.map((r) => (
 														<Tr key={r._id} _hover={{ bg: "#262626" }}>
 															<Td><Text fontSize="sm">{r.albumTitle}</Text></Td>
 															<Td><Text fontSize="sm">{r.name}</Text></Td>
 															<Td><Text fontSize="sm">{r.email}</Text></Td>
+															<Td><Badge colorScheme={r.verified ? "green" : "gray"}>{r.verified ? "Verified" : "Unverified"}</Badge></Td>
 															<Td><Badge colorScheme={r.action === "signup" ? "green" : "blue"}>{r.action === "signup" ? "Signup" : "Login"}</Badge></Td>
+															{/* When they identified themselves — a session carries no such moment, and a
+															    pre-gate cookie never recorded one, so both show a dash. */}
+															<Td><Text fontSize="sm" color="#9C9C9C">{r.identifiedAt ? new Date(r.identifiedAt).toLocaleString() : "—"}</Text></Td>
 															<Td><Text fontSize="sm" color="#9C9C9C">{new Date(r.date).toLocaleString()}</Text></Td>
 														</Tr>
 													))}
@@ -1045,12 +1059,13 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 												<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Per Viewer</Text>
 												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white", verticalAlign: "top" } }}>
 													<Table variant="simple" size="sm">
-														<Thead><Tr><Th>Name</Th><Th>Email</Th><Th>Interests</Th><Th>Their Own</Th><Th>Date</Th></Tr></Thead>
+														<Thead><Tr><Th>Name</Th><Th>Email</Th><Th>Verified</Th><Th>Interests</Th><Th>Their Own</Th><Th>Date</Th></Tr></Thead>
 														<Tbody>
 															{interestRows.map((r) => (
 																<Tr key={r._id} _hover={{ bg: "#262626" }}>
 																	<Td><Text fontSize="sm">{r.name}</Text></Td>
 																	<Td><Text fontSize="sm">{r.email}</Text></Td>
+																	<Td><Badge colorScheme={r.verified ? "green" : "gray"}>{r.verified ? "Verified" : "Unverified"}</Badge></Td>
 																	<Td>
 																		<Flex wrap="wrap" gap={1}>
 																			{r.optOut && (

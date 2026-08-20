@@ -76,6 +76,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				viewerEmail: viewer.email,
 				viewerName: viewer.name,
 				action,
+				// Carried from the gate (or the session) — left undefined for cookies that
+				// predate the code gate, which is what makes those rows readable as unverified.
+				verified: viewer.verified,
+				identifiedAt: viewer.verifiedAt,
 			})
 			firstAccess = true
 		} catch (error: any) {

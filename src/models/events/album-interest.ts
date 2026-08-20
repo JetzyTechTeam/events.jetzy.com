@@ -19,8 +19,14 @@ export interface IAlbumInterest {
 	customInterests: string[]
 	/** Legacy single free-text field (pre multi-custom); kept for reading old rows. */
 	customInterest?: string
-	/** Viewer ticked "I don't want to attend any other Jetzy event" — counts as answered. */
+	/** Viewer ticked "I don't want to attend any other event" — counts as answered. */
 	optOut?: boolean
+	/**
+	 * The email was proved with a code before this row was written. ABSENT on rows captured
+	 * before verification existed — that is not the same as false, and reports must say
+	 * "unverified", never "failed verification".
+	 */
+	verified?: boolean
 	createdAt?: Date
 	updatedAt?: Date
 }
@@ -64,6 +70,11 @@ const albumInterestSchema = new Schema<IAlbumInterest>(
 		optOut: {
 			type: Boolean,
 			default: false,
+		},
+		// No default: absent means the row predates the verification gate.
+		verified: {
+			type: Boolean,
+			required: false,
 		},
 	},
 	{

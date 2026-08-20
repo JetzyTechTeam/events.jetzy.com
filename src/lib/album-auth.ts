@@ -12,6 +12,18 @@ export interface AlbumViewer {
 	userId?: string
 	/** true when identified by the lightweight name+email gate rather than a NextAuth session */
 	isGuest: boolean
+	/**
+	 * The email was proved — a NextAuth session, or a guest who passed the emailed code.
+	 * UNDEFINED for cookies issued before the code gate existed: those people were never
+	 * asked, so they are unverified rather than failed.
+	 */
+	verified?: boolean
+	/**
+	 * When they identified themselves. Only guests carry it (it is stamped into the cookie at
+	 * verification); a session has no such moment recorded, so it stays undefined rather than
+	 * being invented from the request time.
+	 */
+	verifiedAt?: Date
 }
 
 /**
@@ -33,6 +45,8 @@ export async function resolveAlbumViewer(req: NextApiRequest, res: NextApiRespon
 				name: (u.name || u.fullName || "").trim() || email,
 				userId: u._id?.toString(),
 				isGuest: false,
+				// NextAuth authenticated them; there is no separate album code to pass.
+				verified: true,
 			}
 		}
 	}
@@ -46,21 +60,34 @@ export async function resolveAlbumViewer(req: NextApiRequest, res: NextApiRespon
 	if (!email) return null
 
 	const name = [data?.firstName, data?.lastName].filter(Boolean).join(" ").trim()
+	const verifiedAt = data?.verifiedAt ? new Date(data.verifiedAt) : undefined
 	return {
 		email,
 		name: name || email,
 		userId: data?._id?.toString(),
 		isGuest: true,
+		// Only cookies minted after the code gate carry this. Older ones stay undefined.
+		verified: verifiedAt ? true : undefined,
+		verifiedAt,
 	}
 }
 
-/** Issues the signed guest cookie after a successful name+email submission. */
-export function setAlbumGuestCookie(res: NextApiResponse, viewer: { email: string; firstName: string; lastName: string; userId?: string }) {
+/**
+ * Issues the signed guest cookie after a successful name+email submission.
+ *
+ * `verifiedAt` rides along because the analytics rows are written later, by
+ * albums/[albumId]/access.ts, which never sees the gate that verified them.
+ */
+export function setAlbumGuestCookie(
+	res: NextApiResponse,
+	viewer: { email: string; firstName: string; lastName: string; userId?: string; verifiedAt?: Date },
+) {
 	const token = generateMagicToken({
 		email: viewer.email,
 		firstName: viewer.firstName,
 		lastName: viewer.lastName,
 		_id: viewer.userId,
+		verifiedAt: viewer.verifiedAt?.toISOString(),
 	})
 
 	const parts = [

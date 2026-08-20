@@ -11,6 +11,7 @@ import { setAlbumGuestCookie } from "@/lib/album-auth"
 import { generateMagicToken } from "@/lib/magicLink"
 import { sendWelcomeEmail } from "@/lib/send-grid"
 import { AlbumInterest } from "@/models/events/album-interest"
+import { consumeAlbumCode, consumeFailureMessage } from "@/lib/album-verification"
 
 const schema = zod.object({
 	name: zod.string().min(1).max(120),
@@ -20,6 +21,8 @@ const schema = zod.object({
 	interests: zod.array(zod.string().max(60)).max(50).optional(),
 	customInterests: zod.array(zod.string().max(200)).max(50).optional(),
 	optOut: zod.boolean().optional(),
+	// Proof the address is theirs, from /albums/send-code.
+	code: zod.string().regex(/^\d{6}$/),
 })
 
 /**
@@ -28,6 +31,10 @@ const schema = zod.object({
  * If the email already belongs to a Jetzy account we simply let them in — no password,
  * no signup screen. If it doesn't, we create the account silently, exactly the way ticket
  * checkout does (createOrUpdateUser). Either way they get a signed cookie and can view.
+ *
+ * The address must first be proved with the code from /albums/send-code. That check runs
+ * before anything is written, so a mistyped or borrowed address never creates an account
+ * and never lands in the interests report.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -53,6 +60,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const email = validation.data.email.trim().toLowerCase()
+
+		// Prove the address BEFORE creating an account, setting a cookie or recording
+		// interests — an unverified attempt must leave nothing behind.
+		const check = await consumeAlbumCode(eventId, email, validation.data.code)
+		if (!check.ok) {
+			return sendResponse(res, null, consumeFailureMessage(check.reason), false, ResCode.BAD_REQUEST)
+		}
+		const verifiedAt = new Date()
+
 		const fullName = validation.data.name.trim()
 		const firstName = fullName.split(" ")[0] || fullName
 		const lastName = fullName.split(" ").slice(1).join(" ")
@@ -83,7 +99,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.error("[albums/guest-access] createOrUpdateUser failed:", e)
 		}
 
-		setAlbumGuestCookie(res, { email, firstName, lastName, userId })
+		setAlbumGuestCookie(res, { email, firstName, lastName, userId, verifiedAt })
 
 		// Capture the interests for event planning. One row per (event, email), upserted so
 		// re-entry updates. Never block album entry if this write fails.
@@ -102,6 +118,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							interests,
 							customInterests,
 							optOut,
+							verified: true,
 						},
 						// Clear the legacy single field on any fresh write so it can't linger.
 						$unset: { customInterest: "" },

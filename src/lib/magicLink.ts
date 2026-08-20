@@ -8,6 +8,8 @@ interface MagicLinkData {
     lastName?: string;
     _id?: string;
     accessToken?: string;
+    /** ISO timestamp: when an album guest proved their email with a code. */
+    verifiedAt?: string;
 }
 
 /**

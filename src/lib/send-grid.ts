@@ -2768,6 +2768,56 @@ export const sendManualVerificationEmail = async ({ email, code }: { email: stri
 }
 
 /**
+ * Album access verification code.
+ *
+ * Sent before a visitor is let into a shared album, so the email we capture (and the
+ * interests attached to it) belongs to the person typing it. Names the event so it can't be
+ * mistaken for the account-reactivation code sent by sendManualVerificationEmail.
+ */
+export const sendAlbumVerificationCode = async ({ email, code, eventName }: { email: string; code: string; eventName?: string }) => {
+  const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
+  const forEvent = cleanEventName ? ` for &quot;${cleanEventName}&quot;` : ""
+  try {
+    await sgMail.send({
+      to: email,
+      from: mailFrom(),
+      subject: `Your album access code: ${code}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 25px;">
+            <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" style="vertical-align: middle; margin-bottom: 10px;" />
+            <h1 style="color: #333; font-size: 24px; margin: 0;">View the photos</h1>
+          </div>
+
+          <p style="color: #666; font-size: 16px; line-height: 1.5;">
+            Enter this code to confirm your email and open the photo album${forEvent}:
+          </p>
+
+          <div style="background-color: #f9f9f9; padding: 30px; text-align: center; border-radius: 12px; margin: 25px 0; border: 1px dashed #F79432;">
+            <span style="font-family: monospace; font-size: 42px; font-weight: 800; color: #F79432; letter-spacing: 12px;">${code}</span>
+          </div>
+
+          <p style="color: #999; font-size: 14px; line-height: 1.4;">
+            This code expires in 10 minutes. If you didn't ask to view an album, you can ignore this email — nothing has been created for you.
+          </p>
+
+          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
+            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+          </p>
+        </div>
+      `),
+      text: `Your album access code: ${code}
+
+Enter this code to confirm your email and open the photo album${cleanEventName ? ` for "${cleanEventName}"` : ""}. It expires in 10 minutes.`
+    });
+    console.log(`✅ Album verification code sent to: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send album verification code:", error);
+    throw error;
+  }
+}
+
+/**
  * PHASE 2: Admin Compliance Review Alert
  */
 export const sendAdminComplianceAlert = async ({ email, unblockToken }: { email: string; unblockToken: string }) => {

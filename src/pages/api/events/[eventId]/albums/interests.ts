@@ -75,6 +75,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			interests: Array.isArray(r.interests) ? r.interests : [],
 			customInterests: customsOf(r),
 			optOut: r.optOut === true,
+			verified: r.verified === true,
 			date: r.createdAt,
 		}))
 
