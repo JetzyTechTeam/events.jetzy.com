@@ -13,6 +13,7 @@ import { Events } from "@/models/events"
 import { EventAlbums as EventAlbumsModel } from "@/models/events/albums"
 import { PhotoTagging, type Album, type AlbumMedia } from "@/components/events/EventAlbums"
 import { useAlbumViewerGate } from "@/components/events/album/useAlbumViewerGate"
+import { PromotedEventCard, PromotedEventsRail, usePromotedEvents } from "@/components/events/album/PromotedEvents"
 import { useTrackEventView } from "@/hooks/useTrackEventView"
 import { useAnalytics } from "@/hooks/useAnalytics"
 
@@ -23,6 +24,37 @@ type Props = {
 
 /** First frame as a poster: browsers paint it when a media fragment is present. */
 const posterSrc = (url: string) => `${url}#t=0.1`
+
+/**
+ * Branding on the photos.
+ *
+ * Sits on the tile rather than the <img> so videos carry it too, and is `pointerEvents:none`
+ * so it never eats a click meant for the tile underneath. Deliberately NOT part of the file:
+ * the lightbox Download button still serves the untouched original, and a CSS overlay is no
+ * kind of anti-theft measure — it is branding on the page, nothing more.
+ */
+const JetzyLifeMark = ({ size = "sm" }: { size?: "sm" | "lg" }) => (
+	<Flex
+		position="absolute"
+		bottom={size === "lg" ? 4 : 2}
+		left={size === "lg" ? 4 : 2}
+		align="center"
+		gap={1.5}
+		px={size === "lg" ? 3 : 2}
+		py={size === "lg" ? 1.5 : 1}
+		borderRadius="full"
+		bg="blackAlpha.600"
+		backdropFilter="blur(6px)"
+		pointerEvents="none"
+		zIndex={2}
+	>
+		{/* eslint-disable-next-line @next/next/no-img-element */}
+		<img src="/imgs/logo.png" alt="" width={size === "lg" ? 18 : 14} height={size === "lg" ? 18 : 14} style={{ borderRadius: "50%" }} />
+		<Text fontSize={size === "lg" ? "sm" : "10px"} fontWeight="700" color="whiteAlpha.900" letterSpacing="0.04em" lineHeight="1">
+			Jetzy Life
+		</Text>
+	</Flex>
+)
 
 /**
  * Grid tile. Declared at module scope on purpose — defining it inside the page component
@@ -89,6 +121,7 @@ const Tile = React.memo(function Tile({
 				// eslint-disable-next-line @next/next/no-img-element
 				<img src={m.url} alt={`${albumTitle} ${index + 1}`} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
 			)}
+			<JetzyLifeMark />
 		</Box>
 	)
 })
@@ -102,6 +135,9 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	const { data: session } = useSession()
 
 	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi } = useAlbumViewerGate(event._id)
+
+	// Live + upcoming events to promote beside the photos, minus this album's own event.
+	const promotedEvents = usePromotedEvents(event._id)
 
 	const role = (session?.user as any)?.role
 	const isAdmin = role === "admin" || role === "super admin"
@@ -320,12 +356,26 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 				) : (
 					<Flex direction={{ base: "column", lg: "row" }} gap={{ base: 6, lg: 10 }} maxW="1180px" mx="auto" px={{ base: 4, md: 8 }} py={{ base: 6, md: 10 }} align="flex-start">
 						{/* Left: sticky album info */}
-						<Box width={{ base: "100%", lg: "300px" }} flexShrink={0} position={{ base: "static", lg: "sticky" }} top={{ lg: "88px" }}>
+						<Box
+							width={{ base: "100%", lg: "300px" }}
+							flexShrink={0}
+							position={{ base: "static", lg: "sticky" }}
+							top={{ lg: "88px" }}
+							// The rail can outgrow a short viewport, and a sticky column that
+							// overflows clips its last card with no way to reach it.
+							maxH={{ lg: "calc(100vh - 120px)" }}
+							overflowY={{ base: "visible", lg: "auto" }}
+						>
 							<Heading size="xl" mb={3}>{album.title}</Heading>
 							{album.description && <AlbumDescription text={album.description} />}
 							<Text color="#8a8a8a" fontSize="sm" mt={3}>
 								{media.length} item{media.length === 1 ? "" : "s"}
 							</Text>
+							{/* Desktop only — below `lg` the same events are interleaved between
+							    the photos, and rendering both would show them twice. */}
+							<Box display={{ base: "none", lg: "block" }}>
+								<PromotedEventsRail events={promotedEvents} />
+							</Box>
 						</Box>
 
 						{/* Right: photo grid */}
@@ -336,20 +386,37 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 								<Flex direction="column" gap={3}>
 									{rows.slice(0, visibleRows).map((row, ri) => {
 										const offset = rows.slice(0, ri).reduce((n, r) => n + r.length, 0)
+										// One promoted event after roughly every 2 photos, on mobile only.
+										// Inserted at ROW boundaries, never inside a row: a 2-up row is a
+										// flex row from `sm` up, and splitting it would drop a card between
+										// two side-by-side photos. Rows run 1,2,1,2 …, so crossing a new
+										// multiple of 2 lands a card at about every second image.
+										const after = offset + row.length
+										const showPromo =
+											promotedEvents.length > 0 && Math.floor(after / 2) > Math.floor(offset / 2)
+										// Cycle the list so a 100-photo album doesn't run dry after four.
+										const promo = showPromo ? promotedEvents[Math.floor(offset / 2) % promotedEvents.length] : null
 										return (
-											<Flex key={ri} gap={3} direction={{ base: "column", sm: row.length > 1 ? "row" : "column" }}>
-												{row.map((m, ci) => (
-													<Box key={m.url + ci} flex="1" minW={0}>
-														<Tile
-														m={m}
-														index={offset + ci}
-														height={row.length > 1 ? "220px" : "420px"}
-														albumTitle={album.title}
-														onOpen={setOpenIndex}
-													/>
+											<React.Fragment key={ri}>
+												<Flex gap={3} direction={{ base: "column", sm: row.length > 1 ? "row" : "column" }}>
+													{row.map((m, ci) => (
+														<Box key={m.url + ci} flex="1" minW={0}>
+															<Tile
+															m={m}
+															index={offset + ci}
+															height={row.length > 1 ? "220px" : "420px"}
+															albumTitle={album.title}
+															onOpen={setOpenIndex}
+														/>
+														</Box>
+													))}
+												</Flex>
+												{promo && (
+													<Box display={{ base: "block", lg: "none" }} py={1}>
+														<PromotedEventCard event={promo} />
 													</Box>
-												))}
-											</Flex>
+												)}
+											</React.Fragment>
 										)
 									})}
 									{visibleRows < rows.length && (
@@ -413,6 +480,9 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							// eslint-disable-next-line @next/next/no-img-element
 							<img src={current.url} alt={album.title} loading="eager" decoding="async" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain", borderRadius: "12px" }} />
 						)}
+						{/* On the stage, not the media: `contain` leaves letterbox bars, and pinning
+						    the mark to the image would move it around as aspect ratios change. */}
+						<JetzyLifeMark size="lg" />
 						{media.length > 1 && (
 							<IconButton
 								aria-label="Next"

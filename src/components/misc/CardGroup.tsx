@@ -32,9 +32,10 @@ const EventCard: React.FC<EventCardProps> = ({ item, isAdmin }) => {
 	return (
 		<div className="bg-[#1E1E1E] shadow-md rounded-lg overflow-hidden relative">
 			<Link href={eventPath(item?.slug)} className="block">
-				<div className="relative h-48 w-full">
+				<div className="relative h-48 w-full bg-black">
 					{item?.images && item.images.length > 0 ? (
-						<Image className="w-full h-full object-cover object-top" src={item.images[0]} alt={item?.name} width={512} height={512} />
+						/* object-contain over black: show the whole banner, never a cropped one. */
+						<Image className="w-full h-full object-contain" src={item.images[0]} alt={item?.name} width={512} height={512} />
 					) : (
 						<div className="w-full h-full bg-[#2A2D35] flex flex-col items-center justify-center gap-1">
 							<span className="text-3xl">🖼️</span>
