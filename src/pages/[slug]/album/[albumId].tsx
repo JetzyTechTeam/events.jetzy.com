@@ -14,6 +14,7 @@ import { EventAlbums as EventAlbumsModel } from "@/models/events/albums"
 import { PhotoTagging, type Album, type AlbumMedia } from "@/components/events/EventAlbums"
 import { useAlbumViewerGate } from "@/components/events/album/useAlbumViewerGate"
 import { PromotedEventCard, PromotedEventsRail, usePromotedEvents } from "@/components/events/album/PromotedEvents"
+import type { IEvent } from "@/models/events/types"
 import { useTrackEventView } from "@/hooks/useTrackEventView"
 import { useAnalytics } from "@/hooks/useAnalytics"
 
@@ -21,6 +22,9 @@ type Props = {
 	album: string
 	event: string
 }
+
+/** Stable reference: a fresh [] each render would churn every consumer downstream. */
+const EMPTY_EVENTS: IEvent[] = []
 
 /** First frame as a poster: browsers paint it when a media fragment is present. */
 const posterSrc = (url: string) => `${url}#t=0.1`
@@ -137,7 +141,10 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi } = useAlbumViewerGate(event._id)
 
 	// Live + upcoming events to promote beside the photos, minus this album's own event.
-	const promotedEvents = usePromotedEvents(event._id)
+	// `showEvents === false` is the host switching the rail off for this album; undefined
+	// means show, since albums predating the toggle carry no value.
+	const promotedAll = usePromotedEvents(event._id)
+	const promotedEvents = album.showEvents === false ? EMPTY_EVENTS : promotedAll
 
 	const role = (session?.user as any)?.role
 	const isAdmin = role === "admin" || role === "super admin"
@@ -298,6 +305,32 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 		return out
 	}, [media])
 
+	// Which rows carry a promoted event on mobile, and which slot each one is.
+	//
+	// Computed over the WHOLE row list rather than inline while rendering, so the "rest of the
+	// events" block below the grid knows exactly how many were already used. A short album can
+	// have fewer insertion points than there are events, and those left over would otherwise
+	// never be seen on mobile.
+	//
+	// Insertion is at ROW boundaries, whenever the running tile count crosses a multiple of 2 —
+	// never inside a row, since a 2-up row is a flex row from `sm` up.
+	const { promoSlotByRow, promoSlotCount } = useMemo(() => {
+		const byRow: number[] = []
+		let tiles = 0
+		let slot = 0
+		rows.forEach((row) => {
+			const before = tiles
+			tiles += row.length
+			if (Math.floor(tiles / 2) > Math.floor(before / 2)) {
+				byRow.push(slot)
+				slot += 1
+			} else {
+				byRow.push(-1)
+			}
+		})
+		return { promoSlotByRow: byRow, promoSlotCount: slot }
+	}, [rows])
+
 	// Infinite scroll: keep the initial DOM small on large albums, reveal more rows as the
 	// sentinel nears the viewport. The lightbox always indexes the full `media` array, so
 	// not-yet-rendered items stay reachable once a photo is open.
@@ -354,10 +387,15 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						</Button>
 					</Flex>
 				) : (
-					<Flex direction={{ base: "column", lg: "row" }} gap={{ base: 6, lg: 10 }} maxW="1180px" mx="auto" px={{ base: 4, md: 8 }} py={{ base: 6, md: 10 }} align="flex-start">
-						{/* Left: sticky album info */}
+					<Flex direction={{ base: "column", lg: "row" }} gap={{ base: 6, lg: 8 }} maxW="1560px" mx="auto" px={{ base: 4, md: 6, xl: 10 }} py={{ base: 6, md: 10 }} align="flex-start">
+						{/* Left: the events rail. Rendered only when there is something to show, so
+						    the photos take the full width otherwise, and desktop-only — below `lg`
+						    the same events are interleaved between the photos instead, and having
+						    both would show them twice. */}
+						{promotedEvents.length > 0 && (
 						<Box
-							width={{ base: "100%", lg: "300px" }}
+							display={{ base: "none", lg: "block" }}
+							width={{ base: "100%", lg: "320px" }}
 							flexShrink={0}
 							position={{ base: "static", lg: "sticky" }}
 							top={{ lg: "88px" }}
@@ -365,21 +403,30 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							// overflows clips its last card with no way to reach it.
 							maxH={{ lg: "calc(100vh - 120px)" }}
 							overflowY={{ base: "visible", lg: "auto" }}
+							// The native scrollbar renders as a wide light bar down the middle of a
+							// dark page. Thin and near-invisible until it's needed.
+							sx={{
+								"&::-webkit-scrollbar": { width: "4px" },
+								"&::-webkit-scrollbar-track": { background: "transparent" },
+								"&::-webkit-scrollbar-thumb": { background: "#3a3a3a", borderRadius: "4px" },
+								"&::-webkit-scrollbar-thumb:hover": { background: "#4d4d4d" },
+								scrollbarWidth: "thin",
+								scrollbarColor: "#3a3a3a transparent",
+							}}
 						>
-							<Heading size="xl" mb={3}>{album.title}</Heading>
-							{album.description && <AlbumDescription text={album.description} />}
-							<Text color="#8a8a8a" fontSize="sm" mt={3}>
-								{media.length} item{media.length === 1 ? "" : "s"}
-							</Text>
-							{/* Desktop only — below `lg` the same events are interleaved between
-							    the photos, and rendering both would show them twice. */}
-							<Box display={{ base: "none", lg: "block" }}>
-								<PromotedEventsRail events={promotedEvents} />
-							</Box>
+							<PromotedEventsRail events={promotedEvents} />
 						</Box>
+						)}
 
-						{/* Right: photo grid */}
+						{/* Right: album title + photo grid */}
 						<Box flex="1" width="100%">
+							<Box mb={6}>
+								<Heading size="xl" mb={3}>{album.title}</Heading>
+								{album.description && <AlbumDescription text={album.description} />}
+								<Text color="#8a8a8a" fontSize="sm" mt={3}>
+									{media.length} item{media.length === 1 ? "" : "s"}
+								</Text>
+							</Box>
 							{media.length === 0 ? (
 								<Text color="#888">No media in this album.</Text>
 							) : (
@@ -391,11 +438,9 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 										// flex row from `sm` up, and splitting it would drop a card between
 										// two side-by-side photos. Rows run 1,2,1,2 …, so crossing a new
 										// multiple of 2 lands a card at about every second image.
-										const after = offset + row.length
-										const showPromo =
-											promotedEvents.length > 0 && Math.floor(after / 2) > Math.floor(offset / 2)
-										// Cycle the list so a 100-photo album doesn't run dry after four.
-										const promo = showPromo ? promotedEvents[Math.floor(offset / 2) % promotedEvents.length] : null
+										const slot = promoSlotByRow[ri] ?? -1
+										// Cycle so a long album keeps showing cards instead of running dry.
+										const promo = slot >= 0 && promotedEvents.length > 0 ? promotedEvents[slot % promotedEvents.length] : null
 										return (
 											<React.Fragment key={ri}>
 												<Flex gap={3} direction={{ base: "column", sm: row.length > 1 ? "row" : "column" }}>
@@ -425,6 +470,24 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 										</Flex>
 									)}
 								</Flex>
+							)}
+
+							{/* Whatever the photos didn't have room for.
+							    A 5-image album only has a couple of insertion points, so on mobile
+							    the rest of the events would never be seen — the desktop rail shows
+							    them all, and mobile has no rail. Only once every row is rendered,
+							    so it can't appear above photos that are still loading. */}
+							{visibleRows >= rows.length && promotedEvents.length > promoSlotCount && (
+								<Box display={{ base: "block", lg: "none" }} mt={6}>
+									<Text fontSize="xs" fontWeight="bold" color="#8a8a8a" letterSpacing="0.08em" mb={3}>
+										{promoSlotCount > 0 ? "MORE UPCOMING EVENTS" : "UPCOMING EVENTS"}
+									</Text>
+									<Flex direction="column" gap={3}>
+										{promotedEvents.slice(promoSlotCount).map((e) => (
+											<PromotedEventCard key={e._id?.toString()} event={e} size="lg" />
+										))}
+									</Flex>
+								</Box>
 							)}
 						</Box>
 					</Flex>

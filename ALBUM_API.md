@@ -164,8 +164,13 @@ Validation shared by POST and PUT `/albums` (zod):
 {
   title:        string (1–120),
   description?: string (≤2000),
-  media:        Array<{ url: valid URL, type: "image" | "video" }>  // min 1 item
+  media:        Array<{ url: valid URL, type: "image" | "video" }>, // min 1 item
+  showEvents?:  boolean   // show the promoted-events rail on this album's page
 }
+
+`showEvents` has **no default**. Undefined means show — every album created before the
+toggle existed carries no value and its page shows the rail today. On PUT, omitting it leaves
+the stored value unchanged, so an older client can't switch an album back on.
 ```
 
 ### 4.0 `POST /albums/send-code`

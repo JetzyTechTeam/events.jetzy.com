@@ -51,6 +51,8 @@ export interface Album {
 	title: string
 	description?: string
 	media: AlbumMedia[]
+	/** Undefined means show — albums created before the toggle existed carry no value. */
+	showEvents?: boolean
 	createdAt?: string
 	publishedAt?: string
 	publishNotifiedAt?: string
@@ -1522,6 +1524,9 @@ function AlbumFormModal({
 	const videoInputRef = useRef<HTMLInputElement>(null)
 	const [title, setTitle] = useState(album?.title || "")
 	const [description, setDescription] = useState(album?.description || "")
+	// Undefined on an existing album means it predates the toggle, and those pages show the
+	// rail today — so the box starts ticked rather than silently turning it off on save.
+	const [showEvents, setShowEvents] = useState(album?.showEvents !== false)
 	const [staged, setStaged] = useState<StagedMedia[]>(
 		(album?.media || []).map((m) => ({ tempId: uid(), type: m.type, url: m.url, progress: 100, uploading: false })),
 	)
@@ -1606,7 +1611,7 @@ function AlbumFormModal({
 		}
 		setIsSaving(true)
 		try {
-			const payload = { title: title.trim(), description: description.trim(), media }
+			const payload = { title: title.trim(), description: description.trim(), media, showEvents }
 			if (album) {
 				await axios.put(`/api/events/${eventId}/albums/${album._id}`, payload)
 				toast({ title: "Album updated", status: "success", duration: 2000, isClosable: true })
@@ -1634,6 +1639,28 @@ function AlbumFormModal({
 
 					<Text fontSize="sm" color="#bbb" mb={1}>Description (optional)</Text>
 					<Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description" bg="#1E1E1E" borderColor="#343536" color="white" mb={4} _placeholder={{ color: "#666" }} />
+
+					{/* Hosts don't always want the album page selling other events — a client
+					    handover gallery, say. Off hides the rail on this album's page only. */}
+					<Flex
+						as="label"
+						align="flex-start"
+						gap={3}
+						mb={4}
+						p={3}
+						borderRadius="10px"
+						border="1px solid #343536"
+						bg="#1E1E1E"
+						cursor="pointer"
+					>
+						<input type="checkbox" checked={showEvents} onChange={(e) => setShowEvents(e.target.checked)} style={{ marginTop: "3px" }} />
+						<Box>
+							<Text fontSize="sm" fontWeight="600" color="white">Show upcoming events on this album page</Text>
+							<Text fontSize="xs" color="#8a8a8a" mt={0.5}>
+								Promotes your live and upcoming events beside the photos. Turn it off for a private handover gallery.
+							</Text>
+						</Box>
+					</Flex>
 
 					{/* Upload buttons */}
 					<Flex gap={3} mb={3}>

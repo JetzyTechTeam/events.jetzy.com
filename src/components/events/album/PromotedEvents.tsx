@@ -29,16 +29,17 @@ dayjs.extend(timezone)
  * BookingCard.
  */
 
-/** Desktop rail length. Enough to be worth a look, short enough to stay in one viewport. */
-export const PROMOTED_EVENTS_LIMIT = 3
-
 /**
  * Live + upcoming public events, minus the one this album belongs to.
  *
  * `/api/events` already excludes drafts, private events and anything pending admin approval
- * for non-admins, so it is safe on a page anonymous visitors reach. Its LIMIT is hardcoded at
- * 20 with no `limit` param, so the slice happens here. `search` is never passed — that path
- * makes an outbound call to the Jetzy interests API.
+ * for non-admins, so it is safe on a page anonymous visitors reach. `search` is never passed —
+ * that path makes an outbound call to the Jetzy interests API.
+ *
+ * Every live/upcoming event is returned; the rail shows them all. The one ceiling is the
+ * endpoint's own hardcoded page size of 20 (there is no `limit` param), and since it sorts
+ * live → future → tbd → past, that only bites once there are more than 20 live+upcoming
+ * events at once — at which point this needs to walk page 2.
  */
 export function usePromotedEvents(excludeEventId?: string) {
 	const { data } = useQuery({
@@ -136,17 +137,23 @@ export function PromotedEventCard({ event, size = "sm" }: { event: IEvent; size?
 	)
 }
 
-/** Desktop rail. Renders nothing when there is nothing to promote — no empty state. */
+/**
+ * Desktop rail — every live and upcoming event, unrestricted (product decision, 2026-08-21).
+ * Renders nothing when there is nothing to promote; no empty state on a promo rail.
+ *
+ * The column holding this is sticky with its own `maxH`/`overflowY`, so a long list scrolls
+ * inside the column rather than running off the page.
+ */
 export function PromotedEventsRail({ events }: { events: IEvent[] }) {
 	if (events.length === 0) return null
 
 	return (
-		<Box mt={8}>
+		<Box>
 			<Text fontSize="xs" fontWeight="bold" color="#8a8a8a" letterSpacing="0.08em" mb={3}>
-				UPCOMING ON JETZY
+				UPCOMING EVENTS
 			</Text>
 			<Flex direction="column" gap={3}>
-				{events.slice(0, PROMOTED_EVENTS_LIMIT).map((e) => (
+				{events.map((e) => (
 					<PromotedEventCard key={e._id?.toString()} event={e} />
 				))}
 			</Flex>

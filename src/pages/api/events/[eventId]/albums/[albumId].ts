@@ -18,6 +18,7 @@ const updateAlbumSchema = zod.object({
 	title: zod.string().min(1).max(120),
 	description: zod.string().max(2000).optional(),
 	media: zod.array(mediaSchema).min(1, "Add at least one photo or video"),
+	showEvents: zod.boolean().optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -62,10 +63,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			if (!validation.success) {
 				return sendResponse(res, validation.error.errors, "Invalid album data", false, ResCode.BAD_REQUEST)
 			}
-			const { title, description, media } = validation.data
+			const { title, description, media, showEvents } = validation.data
 			album.title = title
 			album.description = description || ""
 			album.media = media as any
+			// Omitted means unchanged — an older client that doesn't send the field must not
+			// reset an album the host has deliberately switched off.
+			if (showEvents !== undefined) album.showEvents = showEvents
 			await album.save()
 			return sendResponse(res, album, "Album updated successfully", true, ResCode.OK)
 		}

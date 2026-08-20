@@ -18,6 +18,7 @@ const createAlbumSchema = zod.object({
 	title: zod.string().min(1).max(120),
 	description: zod.string().max(2000).optional(),
 	media: zod.array(mediaSchema).min(1, "Add at least one photo or video"),
+	showEvents: zod.boolean().optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -60,12 +61,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				return sendResponse(res, validation.error.errors, "Invalid album data", false, ResCode.BAD_REQUEST)
 			}
 
-			const { title, description, media } = validation.data
+			const { title, description, media, showEvents } = validation.data
 			const album = await EventAlbums.create({
 				eventId: eventObjectId,
 				title,
 				description: description || "",
 				media,
+				showEvents,
 				createdBy: userId ? new Types.ObjectId(userId) : undefined,
 			})
 
