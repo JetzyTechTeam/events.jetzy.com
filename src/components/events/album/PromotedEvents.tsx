@@ -24,13 +24,13 @@ dayjs.extend(timezone)
  * event that already happened and leaves. This puts the next event in front of them while
  * they browse — in the left column on desktop, interleaved between photos on mobile.
  *
- * Deliberately its own small card rather than a widened `EventCard`: that one is local to
+ * Deliberately its own card rather than a widened `EventCard`: that one is local to
  * EventsListing, is fixed at 480px tall and fires a totals query per card. Same reasoning as
  * BookingCard.
  */
 
 /** Desktop rail length. Enough to be worth a look, short enough to stay in one viewport. */
-export const PROMOTED_EVENTS_LIMIT = 4
+export const PROMOTED_EVENTS_LIMIT = 3
 
 /**
  * Live + upcoming public events, minus the one this album belongs to.
@@ -63,8 +63,13 @@ export function usePromotedEvents(excludeEventId?: string) {
 	}, [data, excludeEventId])
 }
 
-/** Compact row: thumb + name + when + where. Opens in a new tab so the album isn't lost. */
-export function PromotedEventCard({ event }: { event: IEvent }) {
+/**
+ * Stacked card: banner on top, then name, when and where.
+ *
+ * `size="lg"` is the mobile treatment — a card sitting between two photos competes with
+ * full-bleed imagery, so a thumbnail-sized row reads as a footnote and gets scrolled past.
+ */
+export function PromotedEventCard({ event, size = "sm" }: { event: IEvent; size?: "sm" | "lg" }) {
 	const when = React.useMemo(() => {
 		if (!event?.startsOn) return event?.datePoll?.isActive ? "Date to be decided (Polling)" : "Date to be decided"
 		const date = dayjs.utc(event.startsOn).tz(getEventZone(event.timezone))
@@ -72,20 +77,20 @@ export function PromotedEventCard({ event }: { event: IEvent }) {
 		return event?.hasStartTime !== false ? `${day} ${date.format("hh:mm A")}` : day
 	}, [event?.startsOn, event?.timezone, event?.hasStartTime, event?.datePoll?.isActive])
 
+	const isLg = size === "lg"
+
 	return (
 		<Link href={eventPath(event.slug)} target="_blank" rel="noreferrer" style={{ display: "block" }}>
-			<Flex
-				gap={3}
-				p={2}
-				borderRadius="12px"
+			<Box
+				borderRadius="14px"
 				border="1px solid #2a2a2a"
 				bg="#1a1a1a"
-				align="center"
+				overflow="hidden"
 				transition="border-color .15s ease, background .15s ease"
 				_hover={{ borderColor: "#3f3f3f", bg: "#202020" }}
 			>
 				{/* Letterboxed like every other card in the app — banners have no fixed aspect. */}
-				<Box position="relative" w="72px" h="72px" flexShrink={0} borderRadius="8px" overflow="hidden" bg="black">
+				<Box position="relative" w="100%" h={isLg ? "200px" : "150px"} bg="black">
 					{event.images?.[0] ? (
 						// eslint-disable-next-line @next/next/no-img-element
 						<img
@@ -96,30 +101,37 @@ export function PromotedEventCard({ event }: { event: IEvent }) {
 							style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
 						/>
 					) : (
-						<Flex align="center" justify="center" w="100%" h="100%" fontSize="xl">
+						<Flex align="center" justify="center" w="100%" h="100%" fontSize="3xl">
 							🖼️
 						</Flex>
 					)}
 				</Box>
 
-				<Box minW={0} flex="1">
-					<Text fontSize="sm" fontWeight="bold" color="white" noOfLines={2}>
+				<Box p={isLg ? 4 : 3}>
+					<Text fontSize={isLg ? "lg" : "md"} fontWeight="bold" color="white" noOfLines={2}>
 						{stripHtml(event.name || "")}
 					</Text>
-					<Flex align="center" gap={1.5} mt={1} color="#8a8a8a" fontSize="xs">
+					<Flex align="center" gap={2} mt={2} color="#9a9a9a" fontSize={isLg ? "sm" : "xs"}>
 						<DateTimeSVG />
 						<Text noOfLines={1}>{when}</Text>
 					</Flex>
 					{!event.locationDisclosedAfterBooking && event.location && (
-						<Flex align="center" gap={1.5} mt={0.5} color="#8a8a8a" fontSize="xs">
+						<Flex align="center" gap={2} mt={1} color="#9a9a9a" fontSize={isLg ? "sm" : "xs"}>
 							<span>
 								<LocationSVG />
 							</span>
 							<Text noOfLines={1}>{event.location}</Text>
 						</Flex>
 					)}
+					<Flex mt={3}>
+						<Box bg="#F79432" color="black" px={isLg ? 4 : 3} py={isLg ? 1.5 : 1} borderRadius="lg">
+							<Text fontSize={isLg ? "sm" : "xs"} fontWeight="bold" textTransform="uppercase" letterSpacing="0.04em">
+								RSVP
+							</Text>
+						</Box>
+					</Flex>
 				</Box>
-			</Flex>
+			</Box>
 		</Link>
 	)
 }

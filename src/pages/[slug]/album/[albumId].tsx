@@ -412,8 +412,8 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 													))}
 												</Flex>
 												{promo && (
-													<Box display={{ base: "block", lg: "none" }} py={1}>
-														<PromotedEventCard event={promo} />
+													<Box display={{ base: "block", lg: "none" }} py={2}>
+														<PromotedEventCard event={promo} size="lg" />
 													</Box>
 												)}
 											</React.Fragment>
