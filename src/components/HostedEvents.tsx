@@ -76,6 +76,11 @@ type Props = {
 export default function HostedEvents({ event }: Props) {
 	const [shareUrl, setShareUrl] = useState("")
 	const [activeTab, setActiveTab] = useState<"bookings" | "waiting-list" | "approvals">("bookings")
+	// Once an event is over, the description and the ticket list are history — the photos are
+	// what people come back for. Both collapse (closed by default) so the album sits near the
+	// top of the page instead of below a screen of dead detail. Live events are untouched.
+	const [endedDescOpen, setEndedDescOpen] = useState(false)
+	const [endedTicketsOpen, setEndedTicketsOpen] = useState(false)
 	const { isOpen: isQRModalOpen, onOpen: onQRModalOpen, onClose: onQRModalClose } = useDisclosure()
 	const { isOpen: isDiscussionQRModalOpen, onOpen: onDiscussionQRModalOpen, onClose: onDiscussionQRModalClose } = useDisclosure()
 	const { isOpen: isInviteModalOpen, onOpen: onInviteModalOpen, onClose: onInviteModalClose } = useDisclosure()
@@ -582,8 +587,25 @@ export default function HostedEvents({ event }: Props) {
 								{isDatePollActive && (
 									<DatePollTeaser event={clonedEvent} onOpenPoll={onPollModalOpen} />
 								)}
-								<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-								<EventDescription description={clonedEvent.desc} />
+								{isEnded ? (
+									<>
+										<button
+											type="button"
+											onClick={() => setEndedDescOpen((v) => !v)}
+											aria-expanded={endedDescOpen}
+											className="flex w-full items-center justify-between gap-2 text-left"
+										>
+											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
+											{endedDescOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
+										</button>
+										{endedDescOpen && <EventDescription description={clonedEvent.desc} />}
+									</>
+								) : (
+									<>
+										<h3 className="text-sm sm:text-base font-semibold">Description</h3>
+										<EventDescription description={clonedEvent.desc} />
+									</>
+								)}
 							</div>
 						</div>
 					</div>
@@ -663,11 +685,34 @@ export default function HostedEvents({ event }: Props) {
 					<div className={isDatePollActive ? "max-w-6xl mx-auto lg:pr-[384px]" : ""}>
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
-					{/* Tickets are hidden once the event has ended, except for host/admin. */}
-					{clonedEvent && (!isEnded || canManage) && <EventTicketsComponent event={clonedEvent} />}
+					{/* Tickets are hidden once the event has ended, except for host/admin — and for
+					    them it collapses, since nothing is on sale any more. */}
+					{clonedEvent && !isEnded && <EventTicketsComponent event={clonedEvent} />}
+					{clonedEvent && isEnded && canManage && (
+						<div className={isDatePollActive ? "mt-8" : "max-w-4xl mx-auto mt-8"}>
+							<button
+								type="button"
+								onClick={() => setEndedTicketsOpen((v) => !v)}
+								aria-expanded={endedTicketsOpen}
+								className="flex w-full items-center justify-between gap-2 rounded-2xl border border-[#434343] bg-[#5656561e] px-4 py-3 text-left"
+							>
+								<span className="text-sm sm:text-base font-semibold">Tickets</span>
+								{endedTicketsOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
+							</button>
+							{/* The component carries its own `mt-8`, which would leave a gap between
+							    the toggle and the panel it opens. */}
+							{endedTicketsOpen && (
+								<div className="[&>div]:!mt-2">
+									<EventTicketsComponent event={clonedEvent} />
+								</div>
+							)}
+						</div>
+					)}
 
 					{clonedEvent?._id && (
-						<div className={isDatePollActive ? "" : "max-w-4xl mx-auto"}>
+						/* Wider once the event is over: with the description and tickets collapsed,
+						   the photos are the page, so they get the full 6xl to breathe. */
+						<div className={isDatePollActive ? "" : isEnded ? "max-w-6xl mx-auto" : "max-w-4xl mx-auto"}>
 							<EventAlbums
 								eventId={clonedEvent._id.toString()}
 								eventSlug={clonedEvent.slug}
