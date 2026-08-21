@@ -978,7 +978,7 @@ export function GuestAccessModal({
 						</Button>
 					</Flex>
 					<Text fontSize="xs" color="#777" mt={3}>
-						The code expires in 10 minutes. Nothing is created for you until it&apos;s confirmed.
+						The code expires in 10 minutes. Can&apos;t find the email? Please check your spam folder.
 					</Text>
 					</>
 					)}
