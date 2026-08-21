@@ -52,10 +52,19 @@ const settings = {
 	speed: 500,
 	slidesToShow: 1,
 	slidesToScroll: 1,
+	// Carousel autoplay (advancing slides), not video autoplay — those are unrelated.
 	autoplay: false,
 	arrow: true,
 	beforeChange: (_: number, __: number) => {
 		document.querySelectorAll<HTMLVideoElement>('video').forEach(v => { v.pause() })
+	},
+	// Counterpart to the pause above: without this, sliding onto a video leaves it frozen,
+	// because beforeChange had just paused every video on the page.
+	afterChange: () => {
+		document.querySelectorAll<HTMLVideoElement>('.slick-current video').forEach(v => {
+			// Muted is what makes this allowed at all; a rejected play() must not throw.
+			v.play().catch(() => {})
+		})
 	},
 	nextArrow: (
 		<CustomArrow>
@@ -193,7 +202,24 @@ export default function HostedEvents({ event }: Props) {
 					<p className="text-gray-400">{media.type === "video" ? "Video couldn't load" : "Image couldn't load"}</p>
 				</div>
 			) : media.type === "video" ? (
-				<video src={media.url} controls className="absolute inset-0 w-full h-full object-contain" onError={() => markMediaFailed(media.url)} />
+				/* Plays on arrival. `muted` is not a preference — Chrome and Safari refuse to
+				   start an unmuted video and render a stalled player instead; `controls` is how
+				   a viewer turns the sound on. With `infinite: true` react-slick clones slides,
+				   so the same file may also be playing in an off-screen clone: harmless (muted,
+				   hidden), and `afterChange` is what guarantees the VISIBLE one runs. Don't
+				   "fix" that by dropping autoPlay — a single-media event renders with no Slider
+				   at all, and this attribute is the only thing that starts it. */
+				<video
+					src={media.url}
+					controls
+					autoPlay
+					muted
+					loop
+					playsInline
+					preload="metadata"
+					className="absolute inset-0 w-full h-full object-contain"
+					onError={() => markMediaFailed(media.url)}
+				/>
 			) : (
 				<img src={media.url} alt="Event Banner" className="absolute inset-0 w-full h-full object-contain" onError={() => markMediaFailed(media.url)} />
 			)}

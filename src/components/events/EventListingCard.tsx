@@ -10,6 +10,7 @@ import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 
 import { eventPath } from "@/lib/event-slug"
+import { eventMedia } from "@/lib/event-media"
 import { EventStatus, STATUS_LABEL, getEventStatus } from "@/utils/eventSort"
 import { getEventZone } from "@/utils/eventTime"
 import { stripHtml } from "@/utils/text"
@@ -33,6 +34,8 @@ export interface EventCardItem {
 	name?: string
 	slug?: string
 	images?: string[]
+	videos?: string[]
+	mediaOrder?: string[]
 	location?: string
 	locationDisclosedAfterBooking?: boolean
 	startsOn?: any
@@ -78,6 +81,11 @@ export default function EventListingCard({ event, onClick }: { event: EventCardI
 
 	const cardBg = useColorModeValue("#1e1e1e", "gray.700")
 	const borderColor = useColorModeValue("#434343", "gray.600")
+
+	// The banner's own first item, so a host who dragged a video to the front sees the video
+	// here too. Reading `images[0]` showed a stale photo — or nothing at all on a video-only
+	// event.
+	const lead = eventMedia(event as any)[0]
 
 	const timeStatus: EventStatus = getEventStatus(event as any)
 	const badge = STATUS_BADGE[timeStatus]
@@ -143,17 +151,40 @@ export default function EventListingCard({ event, onClick }: { event: EventCardI
 
 				{/* Banners arrive at whatever aspect the host uploaded, so letterbox on black and
 				    show the whole image — same treatment as the event detail page hero. */}
-				{event.images && event.images.length > 0 ? (
+				{lead ? (
 					<Box position="relative" w="100%" h="200px" rounded="lg" overflow="hidden" bg="black">
-						<Image
-							src={event.images[0]}
-							alt={stripHtml(event.name || "")}
-							position="absolute"
-							inset={0}
-							objectFit="contain"
-							w="100%"
-							h="100%"
-						/>
+						{lead.type === "video" ? (
+							<>
+								{/* First frame only — `#t=0.1` is the media-fragment poster trick used
+								    across the album views. A listing page carries a dozen cards, so
+								    nothing autoplays here. */}
+								<Box
+									as="video"
+									src={`${lead.url}#t=0.1`}
+									muted
+									playsInline
+									preload="metadata"
+									position="absolute"
+									inset={0}
+									w="100%"
+									h="100%"
+									sx={{ objectFit: "contain" }}
+								/>
+								<Flex position="absolute" bottom="2" right="2" align="center" justify="center" w="28px" h="28px" rounded="full" bg="blackAlpha.700" zIndex="2">
+									<Text fontSize="xs" color="white">▶</Text>
+								</Flex>
+							</>
+						) : (
+							<Image
+								src={lead.url}
+								alt={stripHtml(event.name || "")}
+								position="absolute"
+								inset={0}
+								objectFit="contain"
+								w="100%"
+								h="100%"
+							/>
+						)}
 					</Box>
 				) : (
 					<Box w="100%" h="200px" rounded="lg" bg="#2A2D35" display="flex" alignItems="center" justifyContent="center" flexDirection="column" gap="2">

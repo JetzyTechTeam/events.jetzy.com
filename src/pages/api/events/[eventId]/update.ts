@@ -56,6 +56,8 @@ const schema = zod.object({
 			file: zod.string().optional(),
 		}),
 	).optional(),
+	// Banner order across images + videos (urls). See IEvent.mediaOrder.
+	mediaOrder: zod.array(zod.string()).optional(),
 	tickets: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
@@ -130,7 +132,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, mediaOrder, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -312,6 +314,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				tickets: resolvedTickets,
 				images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 				videos: videos?.map((v) => v.file) ?? [],
+				// Preserve-on-omit, like venueName above: an older client or an autosave built
+				// from a stale form doesn't send it, and writing undefined would throw away an
+				// order the host arranged by hand.
+				...(mediaOrder !== undefined ? { mediaOrder } : {}),
 				timezone: timezone || 'UTC',
 				privacy,
 				// Private events are always auto-approved. A public event only needs a

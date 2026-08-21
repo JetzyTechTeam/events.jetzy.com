@@ -365,6 +365,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [uploadProgress, setUploadProgress] = useState(0)
 	const [isUploading, setIsUploading] = useState(false)
 	const [uploadedVideos, setUploadedVideos] = useState<FileUploadData[]>([])
+	// Banner order across both lists, as urls. Empty = the legacy images-then-videos order.
+	const [mediaOrder, setMediaOrder] = useState<string[]>([])
 	const [videoUploadProgress, setVideoUploadProgress] = useState(0)
 	const [isUploadingVideo, setIsUploadingVideo] = useState(false)
 	const [isSubmitting, setIsSubmitting] = useState(false)
@@ -387,6 +389,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		if (draftPayload) {
 			setUploadedImages((draftPayload.images || []).map((img: any) => ({ id: img?.id || uniqueId(10), file: typeof img === "string" ? img : img?.file })))
 			setUploadedVideos((draftPayload.videos || []).map((v: any) => ({ id: v?.id || uniqueId(10), file: typeof v === "string" ? v : v?.file })))
+			setMediaOrder(Array.isArray(draftPayload.mediaOrder) ? draftPayload.mediaOrder : [])
 			if (draftPayload.tickets && formikRef.current) {
 				formikRef.current.setFieldValue("tickets", draftPayload.tickets.map((t: any) => ({
 					id: t.id || uniqueId(10),
@@ -411,6 +414,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		if (event.videos && event.videos.length > 0) {
 			setUploadedVideos(event.videos.map((v: string) => ({ id: uniqueId(10), file: v })))
 		}
+		setMediaOrder(Array.isArray((event as any).mediaOrder) ? (event as any).mediaOrder : [])
 		if (event.tickets && event.tickets.length > 0 && formikRef.current) {
 			formikRef.current.setFieldValue("tickets", event.tickets.map((ticket: any) => ({
 				id: ticket._id?.toString() || uniqueId(10),
@@ -512,8 +516,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	}
 
 	const mediaVersion = React.useMemo(
-		() => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file)]),
-		[uploadedImages, uploadedVideos],
+		// mediaOrder included: dragging changes neither array, so without it a reorder would
+		// never trigger an autosave.
+		() => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file), mediaOrder]),
+		[uploadedImages, uploadedVideos, mediaOrder],
 	)
 
 	// A manual "Update Event" must always win over autosave. Once a manual save reaches
@@ -529,7 +535,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// Published event -> shadow draft (live untouched). Draft event -> update in place (stays draft).
 	const handleAutosave = async (values: CreateEventFormData) => {
 		if (autosaveLockedRef.current) return
-		const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" })
+		const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" }, mediaOrder)
 		const payloadStr = JSON.stringify(payload)
 		const p = isPublished
 			? SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
@@ -558,6 +564,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		const isDraft = values.status === "draft"
 		values.images = uploadedImages
 		values.videos = uploadedVideos
+		values.mediaOrder = mediaOrder
 
 		// A date poll and fixed start/end dates are mutually exclusive — force the user to resolve a conflict
 		const pollActive = !!(values.datePoll?.isActive && values.datePoll?.options?.length)
@@ -1656,6 +1663,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														videoUploadProgress={videoUploadProgress}
 														handleImageDelete={handleImageDelete}
 														handleVideoDelete={handleVideoDelete}
+														mediaOrder={mediaOrder}
+														onReorder={setMediaOrder}
 													/>
 												</Box>
 

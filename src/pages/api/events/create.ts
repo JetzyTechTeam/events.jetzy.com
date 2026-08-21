@@ -64,6 +64,8 @@ const schema = zod.object({
 			file: zod.string().nonempty(),
 		}),
 	).optional(),
+	// Banner order across images + videos (urls). See IEvent.mediaOrder.
+	mediaOrder: zod.array(zod.string()).optional(),
 	tickets: zod.array(
 		zod.object({
 			id: zod.string().nonempty(),
@@ -138,7 +140,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, mediaOrder, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
 
 		// Resolve the event URL. A host-supplied slug is validated and made unique; a blank
 		// one is derived from the event name, falling back to a random id when the name has
@@ -248,6 +250,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			adminApprovalStatus: privacy === "private" ? "approved" : "pending",
 			images: images.length > 0 ? images.map((image) => image.file) : [DEFAULT_EVENT_IMAGE],
 			videos: videos?.map((v) => v.file) ?? [],
+			// Banner order the host arranged; absent means images-then-videos.
+			...(mediaOrder !== undefined ? { mediaOrder } : {}),
 			capacity,
 			requireApproval,
 			showParticipants,

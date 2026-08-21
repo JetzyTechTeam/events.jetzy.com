@@ -7,6 +7,7 @@ import { getEventZone } from "@/utils/eventTime"
 import { EventStatus, STATUS_LABEL } from "@/utils/eventSort"
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import { stripHtml } from "@/utils/text"
+import { eventMedia } from "@/lib/event-media"
 import PremiumBadge from "@/components/premium/PremiumBadge"
 import { isCancelledBooking } from "@/lib/booking-status"
 import { BookingStatus } from "@/models/events/types"
@@ -61,6 +62,8 @@ export type BookingRow = {
 
 export default function BookingCard({ booking, onClick }: { booking: BookingRow; onClick: (b: BookingRow) => void }) {
 	const event = booking.event || {}
+	// The banner's own first item, so a video-first event shows its video here too.
+	const lead = eventMedia(event as any)[0]
 	const cancelled = isCancelledBooking(booking)
 	// The mobile app and admin portal share this collection and write statuses that
 	// BookingStatus doesn't declare (`checked_in` is live today). Anything unrecognised and
@@ -124,10 +127,15 @@ export default function BookingCard({ booking, onClick }: { booking: BookingRow;
 					</Box>
 				</Flex>
 
-				{event.images && event.images.length > 0 ? (
+				{lead ? (
 					// Letterbox on black rather than crop — matches the listing card and the detail page hero.
 					<Box position="relative" w="100%" h="200px" rounded="lg" overflow="hidden" bg="black">
-						<Image src={event.images[0]} alt={stripHtml(event.name || "")} position="absolute" inset={0} objectFit="contain" w="100%" h="100%" />
+						{lead.type === "video" ? (
+							// First frame only, via the `#t=0.1` poster trick. Nothing autoplays in a list.
+							<Box as="video" src={`${lead.url}#t=0.1`} muted playsInline preload="metadata" position="absolute" inset={0} w="100%" h="100%" sx={{ objectFit: "contain" }} />
+						) : (
+							<Image src={lead.url} alt={stripHtml(event.name || "")} position="absolute" inset={0} objectFit="contain" w="100%" h="100%" />
+						)}
 					</Box>
 				) : (
 					<Box
