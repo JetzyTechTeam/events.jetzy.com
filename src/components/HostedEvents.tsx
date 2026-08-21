@@ -736,14 +736,16 @@ export default function HostedEvents({ event }: Props) {
 					)}
 
 					{clonedEvent?._id && (
-						/* Wider once the event is over: with the description and tickets collapsed,
-						   the photos are the page, so they get the full 6xl to breathe. */
-						<div className={isDatePollActive ? "" : isEnded ? "max-w-6xl mx-auto" : "max-w-4xl mx-auto"}>
+						<div className={isDatePollActive ? "" : "max-w-4xl mx-auto"}>
+							{/* Once the event is over the photos are why anyone is still here, so the
+							    album CARDS get bigger. The section keeps its normal width — widening
+							    that just left small cards adrift in a wide box. */}
 							<EventAlbums
 								eventId={clonedEvent._id.toString()}
 								eventSlug={clonedEvent.slug}
 								eventName={stripHtml(clonedEvent.name)}
 								canManage={canManage}
+								largeCards={isEnded}
 							/>
 						</div>
 					)}
