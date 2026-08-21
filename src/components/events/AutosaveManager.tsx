@@ -21,11 +21,14 @@ export function buildEventPayload(
 	images: FileUploadData[],
 	videos: FileUploadData[],
 	overrides?: Partial<CreateEventFormData>,
+	/** Banner order across both lists. Omitted leaves the stored order untouched. */
+	mediaOrder?: string[],
 ): any {
 	return {
 		...values,
 		images,
 		videos,
+		...(mediaOrder !== undefined ? { mediaOrder } : {}),
 		privacy: values.privacy ?? "public",
 		isPaid: values.isPaid ?? ((values.tickets?.length ?? 0) > 0),
 		requireApproval: values.requireApproval ?? false,

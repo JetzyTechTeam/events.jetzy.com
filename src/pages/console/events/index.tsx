@@ -1,5 +1,6 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import { eventPath } from "@/lib/event-slug"
+import { eventMedia } from "@/lib/event-media"
 import { isPendingAdminApproval } from "@/lib/event-approval"
 import { stripHtml, escapeRegExp } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
@@ -275,15 +276,28 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					{/* THUMBNAIL */}
 					<div className="shrink-0">
 						{(() => {
-							const firstImage = event?.images?.[0]
-							// guard bad/seed data ("string", "", etc.); plain <img> so any host loads (mobile stores profile-pic URLs)
-							const isValidImage = typeof firstImage === "string" && (firstImage.startsWith("/") || firstImage.startsWith("http"))
-							return isValidImage ? (
-								<img
-									src={firstImage}
-									alt={stripHtml(event.name)}
-									className={`w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg object-cover ${props.isEnded ? 'opacity-60' : ''}`}
-								/>
+							// The banner's own first item, so a host who dragged a video to the front
+							// sees the video here too rather than a stale photo.
+							const lead = eventMedia(event as any)[0]
+							// guard bad/seed data ("string", "", etc.); plain <img>/<video> so any host loads (mobile stores profile-pic URLs)
+							const isValidUrl = typeof lead?.url === "string" && (lead.url.startsWith("/") || lead.url.startsWith("http"))
+							// Letterbox on black and show the whole banner rather than cropping it,
+							// matching the listing, dashboard and booking cards. Hosts upload at
+							// whatever aspect they like, and object-cover was slicing the artwork.
+							const boxClass = `w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-black overflow-hidden shrink-0 ${props.isEnded ? 'opacity-60' : ''}`
+							return isValidUrl ? (
+								<div className={boxClass}>
+									{lead.type === "video" ? (
+										// First frame only, via the `#t=0.1` poster trick — a list never autoplays.
+										<video src={`${lead.url}#t=0.1`} muted playsInline preload="metadata" className="w-full h-full object-contain" />
+									) : (
+										<img
+											src={lead.url}
+											alt={stripHtml(event.name)}
+											className="w-full h-full object-contain"
+										/>
+									)}
+								</div>
 							) : (
 								<div className={`w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
 									<span className="text-3xl">🖼️</span>

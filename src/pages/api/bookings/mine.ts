@@ -28,7 +28,7 @@ const MAX_BOOKINGS = 500
 // referral internals — stays server-side. `questions` is included so the detail modal can
 // label the guest's own answers; `tickets` so it can name the rows they bought.
 const EVENT_FIELDS =
-	"_id name slug images location locationDisclosedAfterBooking startsOn endsOn hasStartTime hasEndTime timezone datePoll premium tickets questions isDeleted createdAt"
+	"_id name slug images videos mediaOrder location locationDisclosedAfterBooking startsOn endsOn hasStartTime hasEndTime timezone datePoll premium tickets questions isDeleted createdAt"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "GET") {

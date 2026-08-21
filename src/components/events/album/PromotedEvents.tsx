@@ -8,6 +8,7 @@ import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 
 import { eventPath } from "@/lib/event-slug"
+import { eventMedia } from "@/lib/event-media"
 import { getEventStatus } from "@/utils/eventSort"
 import { getEventZone } from "@/utils/eventTime"
 import { stripHtml } from "@/utils/text"
@@ -79,6 +80,8 @@ export function PromotedEventCard({ event, size = "sm" }: { event: IEvent; size?
 	}, [event?.startsOn, event?.timezone, event?.hasStartTime, event?.datePoll?.isActive])
 
 	const isLg = size === "lg"
+	// The banner's own first item, so a video-first event shows its video here too.
+	const lead = eventMedia(event as any)[0]
 
 	return (
 		<Link href={eventPath(event.slug)} target="_blank" rel="noreferrer" style={{ display: "block" }}>
@@ -92,15 +95,26 @@ export function PromotedEventCard({ event, size = "sm" }: { event: IEvent; size?
 			>
 				{/* Letterboxed like every other card in the app — banners have no fixed aspect. */}
 				<Box position="relative" w="100%" h={isLg ? "200px" : "150px"} bg="black">
-					{event.images?.[0] ? (
-						// eslint-disable-next-line @next/next/no-img-element
-						<img
-							src={event.images[0]}
-							alt={stripHtml(event.name || "")}
-							loading="lazy"
-							decoding="async"
-							style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-						/>
+					{lead ? (
+						lead.type === "video" ? (
+							// First frame only, via the `#t=0.1` poster trick — a rail never autoplays.
+							<video
+								src={`${lead.url}#t=0.1`}
+								muted
+								playsInline
+								preload="metadata"
+								style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+							/>
+						) : (
+							// eslint-disable-next-line @next/next/no-img-element
+							<img
+								src={lead.url}
+								alt={stripHtml(event.name || "")}
+								loading="lazy"
+								decoding="async"
+								style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+							/>
+						)
 					) : (
 						<Flex align="center" justify="center" w="100%" h="100%" fontSize="3xl">
 							🖼️

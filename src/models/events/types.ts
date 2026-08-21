@@ -74,6 +74,17 @@ export interface IEvent extends IBaseModelProps {
 	isPaid: boolean
 	images: string[]
 	videos?: string[]
+	/**
+	 * Banner display order, as urls across BOTH `images` and `videos`.
+	 *
+	 * Those two arrays cannot express "video, image, image" between them, so without this a
+	 * video could never lead the banner. NO DEFAULT: undefined means the legacy images-then-
+	 * videos order, which is what every event predating the host-ordering UI needs.
+	 *
+	 * Never treat it as the source of truth for WHICH media exist — the mobile app writes
+	 * `images`/`videos` and knows nothing about this field. See `eventMedia`.
+	 */
+	mediaOrder?: string[]
 	startsOn?: Date
 	endsOn?: Date
 	hasStartTime?: boolean

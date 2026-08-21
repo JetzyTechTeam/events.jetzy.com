@@ -62,6 +62,8 @@ export type CreateEventFormData = {
 	showParticipants?: boolean
 	images: FileUploadData[]
 	videos?: FileUploadData[]
+	/** Banner order across images + videos, as urls. See IEvent.mediaOrder. */
+	mediaOrder?: string[]
 	tickets: TicketData[]
 	isPaid?: boolean
 	desc: string

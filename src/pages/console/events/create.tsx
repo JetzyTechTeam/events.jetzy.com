@@ -134,6 +134,8 @@ const CreateEventPage = () => {
   const [uploadProgress, setUploadProgress] = React.useState(0)
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadedVideos, setUploadedVideos] = React.useState<FileUploadData[]>([]);
+  // Banner order across both lists, as urls. Empty = the legacy images-then-videos order.
+  const [mediaOrder, setMediaOrder] = React.useState<string[]>([]);
   const [videoUploadProgress, setVideoUploadProgress] = React.useState(0);
   const [isUploadingVideo, setIsUploadingVideo] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -165,13 +167,15 @@ const CreateEventPage = () => {
   const autosaveLockedRef = React.useRef(false);
   const autosaveInFlightRef = React.useRef<Promise<any> | null>(null);
   const mediaVersion = React.useMemo(
-    () => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file)]),
-    [uploadedImages, uploadedVideos]
+    // mediaOrder included: dragging changes neither array, so without it a reorder would
+    // never trigger an autosave.
+    () => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file), mediaOrder]),
+    [uploadedImages, uploadedVideos, mediaOrder]
   );
 
   const handleAutosave = async (values: CreateEventFormData) => {
     if (autosaveLockedRef.current) return;
-    const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: 'draft' });
+    const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: 'draft' }, mediaOrder);
     const existingId = autosaveIdRef.current;
     let p: Promise<any>;
     if (existingId) {
@@ -229,6 +233,7 @@ const CreateEventPage = () => {
 
     values.images = uploadedImages;
     values.videos = uploadedVideos;
+    values.mediaOrder = mediaOrder;
 
     // A date poll and fixed start/end dates are mutually exclusive — force the user to resolve a conflict
     const pollActive = !!(values.datePoll?.isActive && values.datePoll?.options?.length)
@@ -922,6 +927,8 @@ const CreateEventPage = () => {
                     videoUploadProgress={videoUploadProgress}
                     handleImageDelete={handleImageDelete}
                     handleVideoDelete={handleVideoDelete}
+                    mediaOrder={mediaOrder}
+                    onReorder={setMediaOrder}
                   />
                 </Box>
               </Flex>

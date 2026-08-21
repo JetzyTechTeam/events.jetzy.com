@@ -241,6 +241,13 @@ const eventsSchema = new Schema<IEvent>(
 			required: false,
 		},
 
+		// Banner order across images + videos. No default — absent means the legacy
+		// images-then-videos order. See IEvent.mediaOrder and `eventMedia`.
+		mediaOrder: {
+			type: [String],
+			required: false,
+		},
+
 		capacity: {
 			type: Number,
 			default: 0, // 0 means unlimited

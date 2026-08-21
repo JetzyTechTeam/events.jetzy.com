@@ -84,6 +84,12 @@ interface Props {
 	eventSlug: string
 	eventName: string
 	canManage: boolean
+	/**
+	 * Bigger album cards. Set once the event has ended, where the photos are the reason
+	 * anyone is still on the page. Widening the section instead just left small cards
+	 * floating in a wide box.
+	 */
+	largeCards?: boolean
 }
 
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -111,7 +117,7 @@ const ALBUM_INTERESTS: { label: string; emoji: string }[] = [
 ]
 const MIN_INTERESTS = 1
 
-export default function EventAlbums({ eventId, eventSlug, eventName, canManage }: Props) {
+export default function EventAlbums({ eventId, eventSlug, eventName, canManage, largeCards = false }: Props) {
 	const { data: session, status } = useSession()
 	const router = useRouter()
 	const toast = useToast()
@@ -271,7 +277,7 @@ export default function EventAlbums({ eventId, eventSlug, eventName, canManage }
 							<Text color="#bbbbbb">No albums yet.{canManage ? " Click “Add Album” to create one." : ""}</Text>
 						</Box>
 					) : (
-						<SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={4}>
+						<SimpleGrid columns={largeCards ? { base: 1, sm: 2, lg: 2 } : { base: 2, md: 3, lg: 4 }} spacing={4}>
 							{albums.map((album) => {
 								const cover = coverOf(album)
 								const firstIsVideo = album.media[0]?.type === "video" && !album.media.some((m) => m.type === "image")
