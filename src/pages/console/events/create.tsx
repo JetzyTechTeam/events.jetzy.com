@@ -48,6 +48,7 @@ import {
 } from "@/assets/icons";
 import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon } from "@heroicons/react/24/outline";
 import { MinusCircleIcon, StarIcon } from "@heroicons/react/24/solid";
+import { EyeIcon } from "@heroicons/react/20/solid";
 import TimePicker from "@/components/form/TimePicker";
 import DatePicker from "@/components/form/DatePicker";
 import { Error } from "@/lib/_toaster";
@@ -65,6 +66,8 @@ import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
 import MediaUploadSection from "../../../components/media-upload-section";
+import ListingCardPreview from "@/components/events/ListingCardPreview";
+import { previewPath } from "@/lib/event-preview";
 import TimezoneSelect from "../../../components/timezone-select";
 import { z } from "zod";
 import { Roboto } from "next/font/google";
@@ -153,6 +156,10 @@ const CreateEventPage = () => {
   const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure();
   const { isOpen: isSuccessOpen, onOpen: onSuccessOpen, onClose: onSuccessClose } = useDisclosure();
   const [createdEventId, setCreatedEventId] = React.useState<string | null>(null);
+  // Kept alongside the id so the preview link is the real event url. `previewPath` falls
+  // back to the id when a slug isn't in the response — `[slug].tsx` resolves a 24-hex path
+  // through its ObjectId lookup — but the slug is the url the host is about to share.
+  const [createdEventSlug, setCreatedEventSlug] = React.useState<string | null>(null);
   const [createdEventPending, setCreatedEventPending] = React.useState(false);
 
   // Autosave: the first save creates ONE draft record; all later saves update it. The
@@ -326,6 +333,7 @@ const CreateEventPage = () => {
           navigation.push('/console/events')
         } else {
           setCreatedEventId(existingId ?? res.payload.data._id);
+          setCreatedEventSlug(res.payload.data?.slug ?? null);
           // A public event is created pending admin review, so inviting now would send
           // guests to the "not yet approved" page. Private events are auto-approved.
           setCreatedEventPending(isPendingAdminApproval(res.payload.data));
@@ -931,6 +939,17 @@ const CreateEventPage = () => {
                     onReorder={setMediaOrder}
                   />
                 </Box>
+
+                {/* ---- Listing card preview ----
+                    A blind form was the whole problem: the host filled in fields and only
+                    found out what the result looked like after creating. The card is the
+                    cheapest honest answer while typing — the full guest page is one click
+                    away from the success modal, and from Manage after that. */}
+                <ListingCardPreview
+                  images={uploadedImages}
+                  videos={uploadedVideos}
+                  mediaOrder={mediaOrder}
+                />
               </Flex>
             </Flex>
 
@@ -1202,6 +1221,20 @@ const CreateEventPage = () => {
             )}
           </ModalBody>
           <ModalFooter gap={3}>
+            {/* Preview is offered on BOTH branches, and deliberately so on the pending one:
+                an event awaiting admin review is exactly the one still worth checking, and
+                `[slug].tsx` exempts the owner from the "not yet approved" bounce. New tab —
+                the modal's other buttons navigate, and closing it should not cost the host
+                the preview. */}
+            <Button
+              variant="ghost"
+              color="gray.300"
+              _hover={{ bg: "#2a2a2a" }}
+              leftIcon={<EyeIcon className="w-5 h-5" />}
+              onClick={() => window.open(previewPath(createdEventSlug || String(createdEventId)), "_blank", "noopener")}
+            >
+              Preview
+            </Button>
             {createdEventPending ? (
               <Button
                 bg="#F79432"

@@ -11,6 +11,7 @@ import Head from "next/head"
 import { stripHTMLAndDecode } from "@/lib/utils"
 import { eventPath, eventUrl, findEventByPreviousSlug, withQuery } from "@/lib/event-slug"
 import { isPendingAdminApproval } from "@/lib/event-approval"
+import { isPreviewQuery } from "@/lib/event-preview"
 import { toMetaDescription } from "@/utils/text"
 import { normalizeEventMediaFields } from "@/lib/event-media"
 import { getServerSession } from "next-auth"
@@ -43,9 +44,17 @@ export default function EventDetailPage({ event, pendingApproval }: Props) {
 		return () => clearTimeout(timer)
 	}, [pendingApproval, router])
 
+	// A host checking their own page must not inflate the number they are checking. Both
+	// counters below feed the event's own "Views" — the guest-mode preview is opened from
+	// Manage and from the post-creation modal, so without this a careful host reads as
+	// traffic. The generic route-level pageview in AnalyticsContext is unaffected: a preview
+	// opens in a new tab, whose initial load is recorded as the `/[slug]` pattern rather than
+	// this event's path.
+	const isPreview = isPreviewQuery(router.query)
+
 	useEffect(() => {
 		const trackView = async () => {
-			if (!data?._id) return
+			if (!data?._id || isPreview) return
 
 			try {
 				// Get visitor ID
@@ -97,7 +106,7 @@ export default function EventDetailPage({ event, pendingApproval }: Props) {
 		}
 
 		trackView()
-	}, [data?._id, trackEventInteraction])
+	}, [data?._id, trackEventInteraction, isPreview])
 
 	if (pendingApproval) {
 		return (

@@ -1809,3 +1809,64 @@ Their reconcile also confirms the legacy live **$10/month** Premium price (`pric
 still active and is correctly left out of the switch scope, since Stripe offers one price per
 interval. It should be archived.
 
+
+## Preview as a guest (2026-08-24)
+
+**The problem.** A host built an event in a form and never saw the result. Worse, opening
+their own event link did not show it either: `HostedEvents` unlocks a dozen blocks behind
+`canManage` (Quick Actions, the bookings / waiting-list / approvals tabs, the guest list,
+the post-event album controls, Manage Event), and `canSeeLocation` hands the host the real
+address even on an event set to disclose it only after booking. So the one person who has
+to check the page before mailing it to a few hundred guests was the only person who could
+not see what those guests would get. Luma and Partiful both make this the centrepiece of
+their create flow; this is the same idea.
+
+- **Use `src/lib/event-preview.ts`** — `PREVIEW_PARAM`, `isPreviewQuery`, `previewPath`,
+  `previewUrl`, `exitPreviewPath`. Never re-derive the parameter name inline.
+- **The preview renders the REAL page, never a mock-up.** `?preview=1` on the ordinary event
+  url; all it does is suppress the viewer's own privileges. A separate preview renderer
+  would drift from the live page, which is the exact failure the shared `EventListingCard`
+  was extracted to stop.
+- **Suppression happens ONCE, at the source.** In `HostedEvents.tsx` the two role flags
+  (`hasAdminRole`, `ownsEvent`) are ANDed with `!previewAsGuest` before `isAdmin` / `isOwner`
+  / `canManage` are derived, so every downstream block follows automatically. Don't add
+  `&& !preview` at individual call sites — the next `canManage` block added will forget it.
+- **`canManageForReal` stays unsuppressed** and gates only `PreviewBanner`. For a visitor
+  with no privileges the parameter changes nothing, so announcing a "preview" of the page
+  they are already seeing normally would be a false claim.
+- **Preview does NOT count as a view.** `[slug].tsx` skips both `trackEventInteraction(…,
+  "view")` and the legacy `/api/analytics/track` call when the flag is set — a host checking
+  their own page must not inflate the number they are checking. It also means `?ref=` is not
+  stashed to sessionStorage during a preview. The route-level pageview in `AnalyticsContext`
+  is untouched: previews open in a NEW TAB, and an initial load records the `/[slug]`
+  pattern rather than this event's path.
+- **A pending-approval event can be previewed by its owner.** `[slug].tsx` already exempts
+  owner/admin from the "not yet approved" bounce, and an event awaiting review is exactly
+  the one still worth checking. The Preview button appears on both branches of the
+  post-creation modal for that reason.
+- **Manage's Preview opens the LAST SAVED version.** Autosave on a published event writes a
+  shadow draft (`event.draftRevision`) and leaves the live record alone, so unsaved edits are
+  deliberately not in the preview. The tooltip says so when the form is dirty rather than the
+  button quietly showing stale content.
+- **Checkout still works inside a preview** — a host can put a real booking through. Left
+  functional on purpose: blocking RSVP would make the preview lie about the single most
+  important button on the page.
+
+### Listing card preview
+
+- **`src/components/events/ListingCardPreview.tsx`** — "In the events list", in the sidebar
+  of BOTH the create and manage forms, under Event Media. Lives inside `<Formik>` and reads
+  `useFormikContext`, same pattern as `AutosaveManager`, so the parent doesn't re-render per
+  keystroke.
+- It renders the real `EventListingCard` with the new **`previewAsGuest`** prop (no Manage
+  button, no ticket counts, no PRIVATE badge, not clickable, no `/totals` fetch). Banners
+  have no enforced upload aspect ratio and cards letterbox on black with `objectFit:
+  contain`, so a portrait poster looks nothing in a listing like it does in the upload box.
+- **`startsOn` is computed exactly as `api/events/create.ts` computes it** — time optional
+  and defaulting to midnight, an active date poll replacing fixed dates altogether. A preview
+  that dated the event differently from the saved record would be worse than no preview.
+
+Files: `src/lib/event-preview.ts`, `src/components/events/PreviewBanner.tsx`,
+`src/components/events/ListingCardPreview.tsx`, `src/components/HostedEvents.tsx`,
+`src/components/events/EventListingCard.tsx`, `src/pages/[slug].tsx`,
+`src/pages/console/events/create.tsx`, `src/pages/console/events/[eventId]/manage.tsx`.

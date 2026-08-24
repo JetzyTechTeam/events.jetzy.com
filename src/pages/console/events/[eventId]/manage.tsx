@@ -84,6 +84,7 @@ import EventDescription from "@/components/events/EventDescription"
 import AnswerText from "@/components/events/AnswerText"
 import InterestsSelector from "@/components/events/InterestsSelector"
 import MediaUploadSection from "@/components/media-upload-section"
+import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
@@ -94,6 +95,7 @@ import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pric
 import EventSlugField from "@/components/events/EventSlugField"
 import { isPendingAdminApproval } from "@/lib/event-approval"
 import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
+import { previewPath } from "@/lib/event-preview"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
@@ -917,6 +919,30 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								View Analytics
 							</Button>
 						)}
+						{/* Preview as a guest. Opens the REAL event page with the host's own privileges
+						    suppressed, rather than a mock-up, so the two can never drift apart.
+						    A new tab because the alternative is losing an in-progress edit.
+
+						    The page it opens is the LAST SAVED version: autosave on a published event
+						    writes a shadow draft and leaves the live record alone, so unsaved changes
+						    are deliberately not part of the preview. The tooltip says so instead of
+						    the button quietly showing stale content. */}
+						<Tooltip
+							label={isFormDirty ? "Opens the last saved version — save first to preview your current changes" : "See the event exactly as a guest sees it"}
+							hasArrow
+						>
+							<Button
+								bg="#3E3E3E"
+								color="white"
+								_hover={{ bg: "#323232" }}
+								_active={{ bg: "#323232" }}
+								fontWeight="bold"
+								leftIcon={<EyeIcon className="w-5 h-5" />}
+								onClick={() => window.open(previewPath(event.slug || String(event._id)), "_blank", "noopener")}
+							>
+								Preview
+							</Button>
+						</Tooltip>
 						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
 							{tabIndex === 0 && isFormDirty && (
 								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
@@ -1667,6 +1693,17 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														onReorder={setMediaOrder}
 													/>
 												</Box>
+
+												{/* ---- Listing card preview ----
+												    Sits under the media box on purpose: it is mostly a question about the
+												    banner. Cards letterbox on black rather than crop, so a portrait poster
+												    looks nothing like it does in the upload box. */}
+												<ListingCardPreview
+													images={uploadedImages}
+													videos={uploadedVideos}
+													mediaOrder={mediaOrder}
+													eventId={String(event._id)}
+												/>
 
 												{/* ---- Quick Actions ----
 												    Hidden while the event is awaiting admin approval: guests can't open
