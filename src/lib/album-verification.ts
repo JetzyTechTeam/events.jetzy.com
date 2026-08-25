@@ -11,6 +11,21 @@ export const RESEND_COOLDOWN_MS = 60 * 1000
 
 export type ConsumeResult = { ok: true } | { ok: false; reason: "invalid" | "expired" | "locked" }
 
+/**
+ * What a pending code is for.
+ *
+ * The same (event, email) pair can legitimately have two codes in flight — one to open a photo
+ * album, one to buy Premium from a shared referral link — and without this they overwrite each
+ * other, so requesting the second silently kills the first.
+ *
+ * `"album"` also matches rows written before this existed, which carry no `purpose` at all. That
+ * is a filter, not a backfill: the old rows expire within ten minutes anyway.
+ */
+export type CodePurpose = "album" | "premium"
+
+const purposeFilter = (purpose: CodePurpose) =>
+	purpose === "album" ? { purpose: { $in: ["album", null] } } : { purpose }
+
 /** Cryptographically random 6-digit code — `Math.random()` is not suitable for a secret. */
 function generateCode(): string {
 	return crypto.randomInt(100000, 1000000).toString()
@@ -23,9 +38,13 @@ function generateCode(): string {
  * without sending a second email. One row per pair, overwritten — an older code stops
  * working the moment a new one is sent.
  */
-export async function issueAlbumCode(eventId: string, email: string): Promise<{ code: string } | null> {
+export async function issueAlbumCode(
+	eventId: string,
+	email: string,
+	purpose: CodePurpose = "album",
+): Promise<{ code: string } | null> {
 	const now = Date.now()
-	const filter = { eventId: new Types.ObjectId(eventId), email }
+	const filter = { eventId: new Types.ObjectId(eventId), email, ...purposeFilter(purpose) }
 
 	const existing = await AlbumVerification.findOne(filter).sort({ createdAt: -1 }).lean()
 	if (existing?.lastSentAt && now - new Date(existing.lastSentAt).getTime() < RESEND_COOLDOWN_MS) {
@@ -38,6 +57,9 @@ export async function issueAlbumCode(eventId: string, email: string): Promise<{ 
 		{
 			$set: {
 				code,
+				// Written explicitly rather than relying on the filter: an upsert built from
+				// `{ $in: [...] }` would insert the operator, not a value.
+				purpose,
 				expiresAt: new Date(now + CODE_TTL_MS),
 				attempts: 0,
 				lastSentAt: new Date(now),
@@ -55,8 +77,13 @@ export async function issueAlbumCode(eventId: string, email: string): Promise<{ 
  * A correct code is deleted, so it works exactly once. A wrong one burns an attempt, which
  * is what stops someone walking the 6-digit space inside the TTL.
  */
-export async function consumeAlbumCode(eventId: string, email: string, code: string): Promise<ConsumeResult> {
-	const filter = { eventId: new Types.ObjectId(eventId), email }
+export async function consumeAlbumCode(
+	eventId: string,
+	email: string,
+	code: string,
+	purpose: CodePurpose = "album",
+): Promise<ConsumeResult> {
+	const filter = { eventId: new Types.ObjectId(eventId), email, ...purposeFilter(purpose) }
 	const row = await AlbumVerification.findOne(filter).sort({ createdAt: -1 })
 
 	if (!row) return { ok: false, reason: "expired" }

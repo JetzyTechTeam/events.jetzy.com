@@ -2048,3 +2048,46 @@ Reporting needs no change: the signup-trial report keys off `Object.keys(TRIAL_C
 `membership_purchases` records `inviteCode` per sale, so `1m-off` appears on
 `/console/analytics/growth` from its first redemption.
 
+## Claiming Premium from a shared link with no account (2026-08-26)
+
+Pressing **Go Premium** on a shared referral link used to throw the visitor at `/login`. For someone
+who came from an email about a free membership and has no account, that is where the journey ended:
+they were being asked to invent a password to accept a gift.
+
+Now, **on shared links only**, a dialog does it in place — email, 6-digit code, then straight to
+Stripe. Plain `/premium` and `/subscribe` are unchanged.
+
+**Almost none of this is new machinery.** The 6-digit code (10 minute TTL, 5 attempts, 60s resend
+cooldown) is the album gate's, and the sign-in is the magic-token path `verify-login-otp.ts` has
+always used: the server mints `generateMagicToken({ email })` after spending the code, and
+NextAuth's `authorize` **JIT-creates the `EventUsers` record** when the token names an address it
+has never seen. So "create the account if they're new" required no code at all — it is what that
+path already does.
+
+| Endpoint | Job |
+|---|---|
+| `POST /api/premium/send-code` | Validate the share link, rate-limit, issue and email the code |
+| `POST /api/premium/verify-code` | Spend the code, return a magic token |
+
+**The link is validated before a single email goes out.** `resolveReferralTrial` runs first, so this
+endpoint can't be used to send Jetzy-branded mail to arbitrary addresses — a valid, unexhausted
+share link is the price of admission. Neither endpoint reveals whether an address has an account.
+
+**`purpose` on the verification store.** Rows were keyed `(eventId, email)`, so a premium code and an
+album code for the same person on the same event overwrote each other — asking for the second
+silently killed the first. `purpose` (`"album" | "premium"`, defaulting to `"album"`) is now part of
+the key. Album queries match `{ $in: ["album", null] }`, so rows written before this keep working;
+no backfill, and no new index required — `{eventId, email}` remains a usable prefix and `autoIndex`
+is off.
+
+**The Basic card comes off shared links** via `hideFreePlan` on `PlanComparison`. The recipient was
+sent one specific offer; putting "Continue with Free" beside it invites them to decline something
+they were given.
+
+After the dialog signs them in, the page runs **the same continuation as the login return** — re-check
+the code against the account we finally know about, then Stripe — rather than a second path that
+could drift from it. A refusal (they've had Premium before) lands in the existing blocked state.
+
+> Signing in by emailed code bypasses any password that address may have. `/auth/login-otp` already
+> worked that way; this is a second door onto the same behaviour, not a new one.
+

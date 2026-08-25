@@ -2818,6 +2818,57 @@ Enter this code to confirm your email and open the photo album${cleanEventName ?
 }
 
 /**
+ * The code that lets somebody claim free Jetzy Premium from a shared referral link without ever
+ * making a password.
+ *
+ * Deliberately its own template rather than reusing the album one: this email confirms an address
+ * that is about to become an account and start a membership, and telling that person about "photo
+ * albums" would read as the wrong email entirely. It names the months so the code arrives with the
+ * offer it belongs to still attached.
+ */
+export const sendPremiumVerificationCode = async ({ email, code, months }: { email: string; code: string; months?: number }) => {
+  const offer = months && months > 0 ? `${months} month${months === 1 ? "" : "s"} of Jetzy Premium free` : "your Jetzy Premium membership"
+  try {
+    await sgMail.send({
+      to: email,
+      from: mailFrom(),
+      subject: `Your Jetzy verification code: ${code}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 25px;">
+            <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" style="vertical-align: middle; margin-bottom: 10px;" />
+            <h1 style="color: #333; font-size: 24px; margin: 0;">Confirm your email</h1>
+          </div>
+
+          <p style="color: #666; font-size: 16px; line-height: 1.5;">
+            Enter this code to confirm your email and claim <strong>${offer}</strong>:
+          </p>
+
+          <div style="background-color: #f9f9f9; padding: 30px; text-align: center; border-radius: 12px; margin: 25px 0; border: 1px dashed #F5C518;">
+            <span style="font-family: monospace; font-size: 42px; font-weight: 800; color: #B7860B; letter-spacing: 12px;">${code}</span>
+          </div>
+
+          <p style="color: #999; font-size: 14px; line-height: 1.4;">
+            This code expires in 10 minutes. If you didn't ask for it, you can ignore this email — nothing has been created for you.
+          </p>
+
+          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
+            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+          </p>
+        </div>
+      `),
+      text: `Your Jetzy verification code: ${code}
+
+Enter this code to confirm your email and claim ${offer}. It expires in 10 minutes.`
+    });
+    console.log(`✅ Premium verification code sent to: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send premium verification code:", error);
+    throw error;
+  }
+}
+
+/**
  * PHASE 2: Admin Compliance Review Alert
  */
 export const sendAdminComplianceAlert = async ({ email, unblockToken }: { email: string; unblockToken: string }) => {

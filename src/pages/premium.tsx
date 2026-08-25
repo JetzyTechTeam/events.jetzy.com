@@ -4,6 +4,7 @@ import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toa
 import { DEFAULT_INVITE_CODE, normalizeTrialCode, resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
+import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
 import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
@@ -72,6 +73,14 @@ export default function PremiumPage() {
 	 * which terms to honour.
 	 */
 	const [referralEventId, setReferralEventId] = React.useState("")
+	/**
+	 * The email-and-code dialog, shown INSTEAD of bouncing to /login — but only on a shared
+	 * referral link. Someone who arrives from an email about a free membership and is asked to
+	 * invent a password does not come back.
+	 */
+	const [verifyOpen, setVerifyOpen] = React.useState(false)
+	/** Free months the shared code grants, so the dialog can name what is being claimed. */
+	const [offerMonths, setOfferMonths] = React.useState<number | undefined>(undefined)
 	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
 
 	/**
@@ -164,6 +173,7 @@ export default function PremiumPage() {
 						code,
 					})
 					const months = Number(data?.data?.freeMembershipMonths) || 0
+					setOfferMonths(months || undefined)
 					if (!months) {
 						setInviteAccepted(null)
 						setInviteError("This code doesn't include free months of Jetzy Premium.")
@@ -304,8 +314,15 @@ export default function PremiumPage() {
 			subscribeMutation.mutate()
 			return
 		}
-		// Send them to log in and come straight back, carrying what they chose. `go=1` is the
-		// record that they had already committed, so they don't have to press the button twice.
+		// A shared referral link keeps everything on this page: prove the email with a code, and
+		// the account is created from it. No password is ever chosen, because asking a stranger to
+		// invent one is where this journey used to end.
+		if (referralEventId && inviteCode.trim()) {
+			setVerifyOpen(true)
+			return
+		}
+		// Everything else still goes through login and comes straight back, carrying what they
+		// chose. `go=1` is the record that they had already committed, so they don't press twice.
 		const params = new URLSearchParams()
 		const code = inviteCode.trim()
 		if (code) params.set("code", code)
@@ -371,6 +388,41 @@ export default function PremiumPage() {
 		})()
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.isReady, router.query.go, isAuthenticated, isPremium, premiumLoading])
+
+	/**
+	 * The session now exists. Run the same continuation the `go=1` return runs — re-check the code
+	 * against the account we finally know about, then open Stripe — rather than a second path that
+	 * could drift from it. A refusal lands in the existing `blocked` state.
+	 */
+	const handleVerified = React.useCallback(() => {
+		setVerifyOpen(false)
+		autoStarted.current = true
+		setAutoState("running")
+
+		;(async () => {
+			const code = inviteCode.trim()
+			try {
+				if (code) {
+					await axios.post("/api/subscriptions/invite-code", {
+						code,
+						interval: selectedInterval,
+						...(referralEventId ? { event: referralEventId } : {}),
+					})
+				}
+				const data = await startCheckout(code || undefined)
+				if (data?.url) {
+					window.location.href = data.url
+					return
+				}
+				setAutoState("blocked")
+				ErrorToast("Error", "Could not start checkout. Please try again.")
+			} catch (error: any) {
+				setAutoState("blocked")
+				setInviteAccepted(null)
+				setInviteError(error?.response?.data?.message || "That code couldn't be applied to this account.")
+			}
+		})()
+	}, [inviteCode, referralEventId, selectedInterval, startCheckout])
 
 	// ---- Back from Stripe ----
 	React.useEffect(() => {
@@ -457,13 +509,25 @@ export default function PremiumPage() {
 					inviteError={inviteError}
 					inviteChecking={inviteChecking}
 					premiumPending={subscribeMutation.isPending}
+					// A shared link is one specific offer, not a menu — "Continue with Free" beside it
+					// invites the recipient to decline something they were given.
+					hideFreePlan={!!referralEventId}
 					// Browsing is the free plan here — there is no app to hand back to.
 					onChooseFree={() => router.push("/")}
 					onChoosePremium={handleChoosePremium}
 					subscribedCtaLabel="Browse events"
 				/>
 
-				{/* Only after a code was refused for THIS account. Buying without it is a real
+				<EmailVerifyDialog
+				open={verifyOpen}
+				eventId={referralEventId}
+				referralCode={inviteCode.trim()}
+				months={offerMonths}
+				onClose={() => setVerifyOpen(false)}
+				onVerified={handleVerified}
+			/>
+
+			{/* Only after a code was refused for THIS account. Buying without it is a real
 				    choice, so it gets a real button rather than being the silent default. */}
 				{autoState === "blocked" && !isPremium && (
 					<div className="mt-6 rounded-xl border border-[#2b2b2b] bg-[#141414] p-4 text-center">
