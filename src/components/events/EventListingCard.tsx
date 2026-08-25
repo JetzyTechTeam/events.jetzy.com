@@ -56,25 +56,36 @@ const STATUS_BADGE: Record<EventStatus, { bg: string; color: string; border?: st
 	past: { bg: "#444444", color: "#A7A7A7" },
 }
 
-export default function EventListingCard({ event, onClick }: { event: EventCardItem; onClick?: (event: EventCardItem) => void }) {
+/**
+ * `previewAsGuest` suppresses the viewer's own privileges so the card renders as a visitor
+ * sees it — no Manage button, no ticket counts, no PRIVATE badge. Used by the host-facing
+ * "In the events list" preview on the manage page, which shows the real card rather than a
+ * mock-up of one so the two cannot drift apart.
+ */
+export default function EventListingCard({ event, onClick, previewAsGuest = false }: { event: EventCardItem; onClick?: (event: EventCardItem) => void; previewAsGuest?: boolean }) {
 	const router = useRouter()
 	const { data: session } = useSession()
 
 	const role = (session?.user as any)?.role
 	const userName = (session?.user as any)?.name || (session?.user as any)?.fullName
-	const isAdmin = role === "admin" || role === "super admin" || userName?.toLowerCase() === "super admin"
+	const hasAdminRole = role === "admin" || role === "super admin" || userName?.toLowerCase() === "super admin"
 
 	// Owners manage their own events straight from the list, not just admins.
 	// Events created before `ownerId` existed have none, so their host sees no button.
 	const userId = (session?.user as any)?._id?.toString()
-	const isOwner = !!userId && event.ownerId?.toString() === userId
+	const ownsEvent = !!userId && event.ownerId?.toString() === userId
+
+	const isAdmin = hasAdminRole && !previewAsGuest
+	const isOwner = ownsEvent && !previewAsGuest
 	const canManage = isAdmin || isOwner
 
 	// Only admins are shown these numbers, so only admins should pay for the request.
+	// The preview never fetches: `_id` may be absent while the host is still typing, and a
+	// count no guest will see is not worth a round trip.
 	const { data: totals } = useQuery({
 		queryKey: ["eventTotals", event._id],
 		queryFn: () => axios.get(`/api/events/${event._id}/totals`).then((r) => r.data),
-		enabled: isAdmin,
+		enabled: isAdmin && !!event._id,
 	})
 	const totalTickets = totals?.totalTickets ?? 0
 	const uniqueGuests = totals?.uniqueGuests ?? 0
@@ -101,6 +112,9 @@ export default function EventListingCard({ event, onClick }: { event: EventCardI
 	}, [event?.startsOn, event?.timezone, event?.hasStartTime])
 
 	const open = () => {
+		// A preview is a picture of the card, not a link. Clicking it would drop the host out
+		// of a form holding unsaved edits.
+		if (previewAsGuest) return
 		if (onClick) {
 			onClick(event)
 			return
@@ -121,8 +135,8 @@ export default function EventListingCard({ event, onClick }: { event: EventCardI
 			h="500px"
 			display="flex"
 			flexDirection="column"
-			cursor="pointer"
-			_hover={{ transform: "scale(1.03)", transition: "transform 0.2s ease-in-out" }}
+			cursor={previewAsGuest ? "default" : "pointer"}
+			_hover={previewAsGuest ? undefined : { transform: "scale(1.03)", transition: "transform 0.2s ease-in-out" }}
 			onClick={open}
 		>
 			<Box p="2" position="relative" flexShrink={0}>

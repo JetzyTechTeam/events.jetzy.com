@@ -1809,3 +1809,285 @@ Their reconcile also confirms the legacy live **$10/month** Premium price (`pric
 still active and is correctly left out of the switch scope, since Stripe offers one price per
 interval. It should be archived.
 
+
+## Preview as a guest (2026-08-24)
+
+**The problem.** A host built an event in a form and never saw the result. Worse, opening
+their own event link did not show it either: `HostedEvents` unlocks a dozen blocks behind
+`canManage` (Quick Actions, the bookings / waiting-list / approvals tabs, the guest list,
+the post-event album controls, Manage Event), and `canSeeLocation` hands the host the real
+address even on an event set to disclose it only after booking. So the one person who has
+to check the page before mailing it to a few hundred guests was the only person who could
+not see what those guests would get. Luma and Partiful both make this the centrepiece of
+their create flow; this is the same idea.
+
+- **Use `src/lib/event-preview.ts`** — `PREVIEW_PARAM`, `isPreviewQuery`, `previewPath`,
+  `previewUrl`, `exitPreviewPath`. Never re-derive the parameter name inline.
+- **The preview renders the REAL page, never a mock-up.** `?preview=1` on the ordinary event
+  url; all it does is suppress the viewer's own privileges. A separate preview renderer
+  would drift from the live page, which is the exact failure the shared `EventListingCard`
+  was extracted to stop.
+- **Suppression happens ONCE, at the source.** In `HostedEvents.tsx` the two role flags
+  (`hasAdminRole`, `ownsEvent`) are ANDed with `!previewAsGuest` before `isAdmin` / `isOwner`
+  / `canManage` are derived, so every downstream block follows automatically. Don't add
+  `&& !preview` at individual call sites — the next `canManage` block added will forget it.
+- **`canManageForReal` stays unsuppressed** and gates only `PreviewBanner`. For a visitor
+  with no privileges the parameter changes nothing, so announcing a "preview" of the page
+  they are already seeing normally would be a false claim.
+- **Preview does NOT count as a view.** `[slug].tsx` skips both `trackEventInteraction(…,
+  "view")` and the legacy `/api/analytics/track` call when the flag is set — a host checking
+  their own page must not inflate the number they are checking. It also means `?ref=` is not
+  stashed to sessionStorage during a preview. The route-level pageview in `AnalyticsContext`
+  is untouched: previews open in a NEW TAB, and an initial load records the `/[slug]`
+  pattern rather than this event's path.
+- **A pending-approval event can be previewed by its owner.** `[slug].tsx` already exempts
+  owner/admin from the "not yet approved" bounce, and an event awaiting review is exactly
+  the one still worth checking. The Preview button appears on both branches of the
+  post-creation modal for that reason.
+- **Manage's Preview opens the LAST SAVED version.** Autosave on a published event writes a
+  shadow draft (`event.draftRevision`) and leaves the live record alone, so unsaved edits are
+  deliberately not in the preview. The tooltip says so when the form is dirty rather than the
+  button quietly showing stale content.
+- **Checkout still works inside a preview** — a host can put a real booking through. Left
+  functional on purpose: blocking RSVP would make the preview lie about the single most
+  important button on the page.
+
+### Listing card preview
+
+- **`src/components/events/ListingCardPreview.tsx`** — "In the events list", in the sidebar
+  of BOTH the create and manage forms, under Event Media. Lives inside `<Formik>` and reads
+  `useFormikContext`, same pattern as `AutosaveManager`, so the parent doesn't re-render per
+  keystroke.
+- It renders the real `EventListingCard` with the new **`previewAsGuest`** prop (no Manage
+  button, no ticket counts, no PRIVATE badge, not clickable, no `/totals` fetch). Banners
+  have no enforced upload aspect ratio and cards letterbox on black with `objectFit:
+  contain`, so a portrait poster looks nothing in a listing like it does in the upload box.
+- **`startsOn` is computed exactly as `api/events/create.ts` computes it** — time optional
+  and defaulting to midnight, an active date poll replacing fixed dates altogether. A preview
+  that dated the event differently from the saved record would be worse than no preview.
+
+Files: `src/lib/event-preview.ts`, `src/components/events/PreviewBanner.tsx`,
+`src/components/events/ListingCardPreview.tsx`, `src/components/HostedEvents.tsx`,
+`src/components/events/EventListingCard.tsx`, `src/pages/[slug].tsx`,
+`src/pages/console/events/create.tsx`, `src/pages/console/events/[eventId]/manage.tsx`.
+
+## Hosts can create interests (2026-08-25)
+
+`InterestsSelector` was read-only: a host whose event didn't fit any existing interest had no
+way to tag it. It can now create both a main category and a sub-interest inline, via the two
+Jetzy backend endpoints the mobile app already uses.
+
+**This taxonomy is SHARED WITH THE MOBILE APP.** Anything created here appears in the app's
+interest list for every user. There is no delete or rename from this UI.
+
+- **Use `src/lib/jetzy-interests.ts`** — `interestsApiBase`, `normalizeInterestName`,
+  `findDuplicateCategory`, `findDuplicateSub`, `fetchInterestCategories`, `createInterest`.
+  Never call the backend or re-derive the base inline.
+- **`api/interests/index.ts` no longer hardcodes `prod-api.jetzy.com`.** It resolved the read
+  to prod while `NEXT_PUBLIC_EXTERNAL_API_BASE_URL` (which issues the very `accessToken` the
+  call authenticates with, see `api/auth/[...nextauth].ts`) points at test. The two
+  environments hold **different taxonomies** — prod leads with `travel`, test with
+  `agentic ai` — so writing to one while reading the other would mean a created interest
+  never appears: a silent failure that reads as a broken button.
+  - Consequence: on staging/local the picker now shows test's taxonomy. Events tagged with
+    prod sub-ids are **not** damaged — `InterestsSelector` only adds and removes on click and
+    never prunes ids it cannot render, so `values.interests` survives a save untouched.
+- **A 2xx from the create endpoints DOES NOT MEAN CREATED.** Both answer `201 "created
+  successfully"` unconditionally and put already-existing names in `data.skipped[]`.
+  `createInterest` returns `alreadyExisted` for exactly this; treating `res.ok` as an insert
+  would report a creation that never happened. Verified live against test.
+- **A created sub carries `_id`; the read endpoint returns the same thing as `id`.** So the
+  UI **re-reads the taxonomy after a create and matches by normalised NAME** rather than
+  threading an id through from the create response.
+- **Names are normalised to lowercase** (`normalizeInterestName`) — the stored taxonomy is
+  lowercase and the UI capitalises with CSS, so "Mobiles" would sit next to "mobiles" as a
+  visually identical second entry.
+- **Duplicates are rejected 409 with the existing name in the message**, so the host picks the
+  one that is there instead of inventing a near-twin. Sub duplicates are scoped to the parent
+  — "apple" under both "mobiles" and "food" is legitimate.
+- **Both routes share ONE rate-limit bucket** (`interest-create:<ip>`, 10 per 10 min, via the
+  existing `src/lib/rate-limit.ts`). Same taxonomy, same person; a per-route allowance would
+  just double the total.
+- **Permission: any authenticated host or admin**, by decision. The backend accepts a
+  `role: "user"` token (verified), and a host who can't add the interest their event is about
+  cannot tag it at all.
+- **The create UI lives in the shared `InterestsSelector`**, so `create.tsx` and `manage.tsx`
+  both get it with no change to either. It renders inside `<Formik>`: every control is
+  `type="button"` and the inline input swallows Enter, or confirming an interest name would
+  submit the whole event form.
+- After creating a main category the UI expands it and opens the sub input — an event is
+  tagged with sub-interests, never a bare category, so a new category alone is unusable.
+
+Files: `src/lib/jetzy-interests.ts`, `src/pages/api/interests/{index,categories,sub-categories}.ts`,
+`src/components/events/InterestsSelector.tsx`.
+
+## `/premium`: the page we can email (2026-08-25)
+
+`/subscribe` belongs to the mobile app. It bounces an unauthenticated visitor to `/login` on mount,
+auto-logs in from a magic token, and sends every exit path to `jetzy.com/jetzy_event`. Emailing that
+link to someone who has never signed in shows them a login form instead of an offer, which is
+exactly what the CEO didn't want — so `/premium` is a second door, and `/subscribe` was not touched.
+
+**Public.** `getServerSideProps` returns `{ props: {} }` with no guard and no redirect. The plan card
+renders for a signed-out visitor because `/api/subscriptions/plan` takes no session, and
+`PlanComparison` is entirely prop-driven.
+
+**The offer line has two sources, and the difference matters.**
+
+| | Source | Why |
+|---|---|---|
+| Logged out | `resolveTrialCode` + `trialDisclosure` in the browser | Pure, isomorphic, same table the server enforces — so the visitor sees what a code is worth without being asked who they are |
+| Logged in | `POST /api/subscriptions/invite-code` | Only the server can apply the first-timer rule |
+
+The logged-out line is a preview of the OFFER, not a promise about the account. That distinction is
+the whole design problem: we show "2 months free" before we can possibly know whether this person
+has had Premium before.
+
+**Carrying intent through login.** "Go Premium" while signed out pushes
+`/login?_cb=/premium?code=…&interval=…&go=1`. `_cb` already survives login, the signup form, and the
+email-verification round trip, so a brand-new account still lands back with the code intact. On
+return, `go=1` re-checks the code and opens Checkout without a second click.
+
+**A refused code stops everything.** If the account isn't eligible, we do not fall through to a
+full-price session: the reason is shown on the field, `go` is stripped from the URL so a refresh
+can't retry it, and buying without the code requires pressing a separate button. Being one silent
+click from paying $20/month for something you were shown as free is the failure this guards.
+
+**Two mechanical traps.** `returnTo` must stay a bare path, because `checkout.ts` builds
+`${baseUrl}${returnTo}?premium_session_id=…` and a query string there produces a second `?`; the
+code therefore crosses the Stripe round trip in `sessionStorage`. And everything read from the URL
+is attacker-craftable — `code` goes through `normalizeTrialCode`, `interval` is accepted only as
+exactly `month` or `year`, and `_cb` is always built by us, never read from a param.
+
+**No new endpoint, no signed token.** A campaign code is not a secret, and a token would add a
+signing surface without changing what is enforced: eligibility is decided at `invite-code` and again
+at `checkout`, server-side, both times.
+
+`"premium"` is now in `RESERVED_SLUGS` — a real page at a top-level path beats `/[slug].tsx`, so an
+event holding that slug would be permanently unreachable with nothing on the host's screen to
+explain it. `subscribe`, `manage-membership` and `my-bookings` had the same gap and were added too.
+
+### The invite field is prefilled (2026-08-25)
+
+`/premium` fills the invite field with `DEFAULT_INVITE_CODE` from `invite-trial.ts` when neither the
+URL nor the Stripe stash supplies one. The page is the campaign; asking the recipient to retype a
+code printed in the same email costs conversions for nothing. One constant to change per campaign,
+and `""` turns the prefill off.
+
+Prefilling for *everyone* introduces a case that didn't exist before: a signed-in visitor who has
+had Premium before now lands on a code they never typed, which the server correctly refuses. So the
+page tracks whether the code is **ours or theirs** (`codeIsOurs`):
+
+- **ours** (prefilled) and refused → clear the field silently; they simply buy at the normal price
+- **theirs** (typed, or arriving on `?code=`) and refused → show the server's reason
+
+Same principle as everywhere else in this flow: explain anything the buyer did, never accuse them of
+something they didn't.
+
+## Sharing a referral code as free Jetzy Premium (2026-08-26)
+
+A host sets **Free Months of Jetzy Premium** on a referral code and can now share it as a link:
+
+```
+https://events.jetzy.com/premium?code=JETZY-ME&event=6a83365808b397827ee83341
+```
+
+The recipient lands on `/premium` with the code filled in and the months already applied — no
+event page, no ticket, no purchase.
+
+**This is a new giveaway path, not a wiring change.** Until now those months only landed on a
+ticket that already sells Premium: the host sold something, Jetzy took the ticket revenue, and the
+membership rode along. A shared link has none of that, so `resolveReferralTrial`
+(`src/lib/referral-trial.ts`) adds two rules on top of the ordinary validation:
+
+1. `freeMembershipMonths > 0` — nothing to share otherwise;
+2. **`maxUses` must be set.** A link can be forwarded, screenshotted or posted publicly, and an
+   unlimited code behind a public URL is an unlimited supply of free memberships. Re-checked at
+   redemption, not only when the host copies the link — so clearing the limit later kills the links
+   already in circulation rather than opening the gate.
+
+It is the single resolver behind both the preview and the charge, so what the link promises and
+what Stripe does cannot drift apart.
+
+**The event id is mandatory in the link.** Referral codes became unique per event on 2026-08-19, so
+the same string can exist elsewhere with a different month count.
+
+**Counting.** `usageCount` is one pool shared with the code's ticket discounts — every membership
+claimed leaves one fewer use for everything else, which the share modal says in as many words. The
+increment happens in the Stripe webhook, never at checkout (a session can be abandoned), and is
+keyed to `recordMembershipPurchase` returning **true only on insert** — it upserts on
+`stripeSubscriptionId`, so a redelivered webhook can't burn a second use.
+
+**Client/server split.** `shareableReason` and `premiumShareLink` live in `src/lib/referral-share.ts`
+because `referral-trial.ts` pulls in mongoose via `referral-validation.ts`, and webpack follows that
+into the client bundle. Same rule as `invite-trial.ts` versus `signup-trial.ts`.
+
+**One deliberate rough edge:** a code whose `maxUses` was cleared *after* being shared still previews
+its months (the public validate route doesn't know about the share rule) and is then refused at
+checkout with "it has no usage limit set". That is the kill switch working — the buyer is told
+before any money moves, and "Continue without the code" is offered.
+
+Standalone redemptions land on the **Jetzy Premium** tab of `/console/analytics/growth` with the
+referral code against them, not the referral tab, which reads bookings.
+
+## A second invite code: `1m-off` (2026-08-26)
+
+`TRIAL_CODES` now carries `1m-off` — one free month — alongside `jetzy-me`'s two. Both are valid on
+monthly and annual; the disclosure names the real amount and date either way ("1 month free, then
+$200/year from 26 Sep"), which is what makes the annual case honest.
+
+**Adding a row to that table opens every door at once**, which is worth knowing before adding a
+third. The same code is then accepted at `/subscribe`, the Buy Jetzy Premium modal and `/premium` —
+where a card is collected and the membership converts — *and* at `/signup` and `/jetzyqrsignup`,
+where `grantSignupTrial` creates it with **no card**, so it ends at the trial rather than
+converting. Accepted deliberately for `1m-off`. A code that should work only where a card is taken
+would need a `doors` (or `signup: false`) field on `TrialOffer` first; nothing supports that split
+today.
+
+Reporting needs no change: the signup-trial report keys off `Object.keys(TRIAL_CODES)`, and
+`membership_purchases` records `inviteCode` per sale, so `1m-off` appears on
+`/console/analytics/growth` from its first redemption.
+
+## Claiming Premium from a shared link with no account (2026-08-26)
+
+Pressing **Go Premium** on a shared referral link used to throw the visitor at `/login`. For someone
+who came from an email about a free membership and has no account, that is where the journey ended:
+they were being asked to invent a password to accept a gift.
+
+Now, **on shared links only**, a dialog does it in place — email, 6-digit code, then straight to
+Stripe. Plain `/premium` and `/subscribe` are unchanged.
+
+**Almost none of this is new machinery.** The 6-digit code (10 minute TTL, 5 attempts, 60s resend
+cooldown) is the album gate's, and the sign-in is the magic-token path `verify-login-otp.ts` has
+always used: the server mints `generateMagicToken({ email })` after spending the code, and
+NextAuth's `authorize` **JIT-creates the `EventUsers` record** when the token names an address it
+has never seen. So "create the account if they're new" required no code at all — it is what that
+path already does.
+
+| Endpoint | Job |
+|---|---|
+| `POST /api/premium/send-code` | Validate the share link, rate-limit, issue and email the code |
+| `POST /api/premium/verify-code` | Spend the code, return a magic token |
+
+**The link is validated before a single email goes out.** `resolveReferralTrial` runs first, so this
+endpoint can't be used to send Jetzy-branded mail to arbitrary addresses — a valid, unexhausted
+share link is the price of admission. Neither endpoint reveals whether an address has an account.
+
+**`purpose` on the verification store.** Rows were keyed `(eventId, email)`, so a premium code and an
+album code for the same person on the same event overwrote each other — asking for the second
+silently killed the first. `purpose` (`"album" | "premium"`, defaulting to `"album"`) is now part of
+the key. Album queries match `{ $in: ["album", null] }`, so rows written before this keep working;
+no backfill, and no new index required — `{eventId, email}` remains a usable prefix and `autoIndex`
+is off.
+
+**The Basic card comes off shared links** via `hideFreePlan` on `PlanComparison`. The recipient was
+sent one specific offer; putting "Continue with Free" beside it invites them to decline something
+they were given.
+
+After the dialog signs them in, the page runs **the same continuation as the login return** — re-check
+the code against the account we finally know about, then Stripe — rather than a second path that
+could drift from it. A refusal (they've had Premium before) lands in the existing blocked state.
+
+> Signing in by emailed code bypasses any password that address may have. `/auth/login-otp` already
+> worked that way; this is a second door onto the same behaviour, not a new one.
+

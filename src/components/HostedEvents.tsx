@@ -40,6 +40,8 @@ import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
 import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
 import { useRouter } from "next/router";
+import { isPreviewQuery } from "@/lib/event-preview"
+import PreviewBanner from "@/components/events/PreviewBanner"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -162,10 +164,26 @@ export default function HostedEvents({ event }: Props) {
 	}, [event, isValidEvent])
 
 
+	// "Preview as a guest" (`?preview=1`). A host opening their own event link otherwise sees
+	// the host page — Quick Actions, the bookings / waiting-list / approvals tabs, the guest
+	// list, and the real address even on an event set to disclose it only after booking — so
+	// the one person who has to check the page before sending it out is the only one who
+	// cannot see it. Suppressing the two role flags here suppresses every block downstream,
+	// which is why this is done once at the source instead of at each `canManage` site.
+	const previewAsGuest = isPreviewQuery(router.query)
+
 	// @ts-ignore
-	const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super admin"
+	const hasAdminRole = session?.user?.role === "admin" || session?.user?.role === "super admin"
 	const userId = (session?.user as any)?._id?.toString()
-	const isOwner = !!userId && event?.ownerId?.toString() === userId
+	const ownsEvent = !!userId && event?.ownerId?.toString() === userId
+
+	// Kept unsuppressed: whether the bar itself should appear. For a visitor with no
+	// privileges the parameter changes nothing, and announcing a "preview" of the page they
+	// are already seeing normally would be a false claim.
+	const canManageForReal = hasAdminRole || ownsEvent
+
+	const isAdmin = hasAdminRole && !previewAsGuest
+	const isOwner = ownsEvent && !previewAsGuest
 	const canManage = isAdmin || isOwner
 	const isDatePollActive = !!(clonedEvent?.datePoll?.isActive && clonedEvent?.datePoll?.options?.length)
 
@@ -367,6 +385,9 @@ export default function HostedEvents({ event }: Props) {
 	try {
 		return (
 			<>
+				{previewAsGuest && canManageForReal && (
+					<PreviewBanner eventId={String(clonedEvent._id)} slugOrId={clonedEvent.slug || String(clonedEvent._id)} query={router.query} />
+				)}
 				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
 					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex flex-wrap items-center justify-between gap-3`}>
 						<div className="flex items-center gap-3">

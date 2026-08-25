@@ -82,10 +82,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Refused loudly here rather than at the door of Stripe, so the buyer can clear the field
 		// and continue instead of meeting a failure they can't act on.
 		const rawInviteCode = typeof req.body?.inviteCode === "string" ? req.body.inviteCode : ""
+		// A host's referral code, shared as a Premium link. The event is what distinguishes it from
+		// an invite code out of the hardcoded table — see `resolveReferralTrial` for the two extra
+		// rules that apply when a membership is given away with no ticket behind it.
+		const referralEventId = typeof req.body?.event === "string" ? req.body.event.trim() : ""
 		let trialEnd: number | undefined
 		/** The NORMALISED code, set only once it has been accepted. Reported on, never displayed. */
 		let trialCodeApplied: string | undefined
-		if (rawInviteCode.trim()) {
+		/** Set instead of `trialCodeApplied` when the months came from a host's referral code. */
+		let referralCodeApplied: string | undefined
+
+		if (rawInviteCode.trim() && referralEventId) {
+			const { resolveReferralTrial } = await import("@/lib/referral-trial")
+			const referral = await resolveReferralTrial(referralEventId, rawInviteCode)
+			if (!referral.ok) {
+				return sendResponse(res, { inviteCode: true }, referral.message, false, ResCode.BAD_REQUEST)
+			}
+			if (await hasEverHadMembership(stripeCustomerId, "premium")) {
+				return sendResponse(
+					res,
+					{ inviteCode: true },
+					"This code is for new members, and this account has had Jetzy Premium before. Remove the code to continue.",
+					false,
+					ResCode.BAD_REQUEST,
+				)
+			}
+			trialEnd = Math.floor(trialEndsOn({ months: referral.months, intervals: [], label: "" }).getTime() / 1000)
+			referralCodeApplied = referral.code
+			console.log(
+				`[subscriptions/checkout] referral code ${referral.code} (event ${referral.eventId}) applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`,
+			)
+		} else if (rawInviteCode.trim()) {
 			const resolved = resolveTrialCode(rawInviteCode, price.recurring?.interval)
 			if (!resolved.ok) {
 				return sendResponse(res, { inviteCode: true }, resolved.message, false, ResCode.BAD_REQUEST)
@@ -120,7 +147,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// `inviteCode` rides along so the webhook can record WHICH code was redeemed. It was
 			// previously applied to `trial_end` and then forgotten, leaving no way to answer how a
 			// campaign performed.
-			metadata: { userId, purpose: "premium_subscription", ...(trialCodeApplied ? { inviteCode: trialCodeApplied } : {}) },
+			metadata: {
+				userId,
+				purpose: "premium_subscription",
+				...(trialCodeApplied ? { inviteCode: trialCodeApplied } : {}),
+				// A referral code is recorded separately from an invite code, and with the event it
+				// belongs to: the webhook needs both to count the redemption against the right row,
+				// now that one code string can exist on several events.
+				...(referralCodeApplied ? { referralCode: referralCodeApplied, referralEventId } : {}),
+			},
 			// Stamped so every webhook branch can identify the product without matching price
 			// ids — the same marker `startMembershipSubscription` sets on the ones we create.
 			// A card IS collected during a trial (Checkout's default), so the membership converts

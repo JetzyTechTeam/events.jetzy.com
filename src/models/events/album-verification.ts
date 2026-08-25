@@ -13,12 +13,17 @@ import { Model, Schema } from "mongoose"
  * that field belongs to the compliance-unblock flow (api/auth/verify/confirm-code.ts), and
  * an album code that also unblocks an account would be a privilege leak.
  *
- * Rows are short-lived and upserted per (event, email); a verified code is deleted on use.
+ * Rows are short-lived and upserted per (event, email, purpose); a verified code is deleted on
+ * use. `purpose` arrived when the same mechanism started gating a Jetzy Premium purchase from a
+ * shared referral link — without it, asking for a premium code would silently overwrite the album
+ * code the same person had just requested for the same event.
  */
 export interface IAlbumVerification {
 	_id?: string
 	eventId: Schema.Types.ObjectId
 	email: string
+	/** What the code is for. Absent on every row written before Premium used this. */
+	purpose?: string
 	/** 6-digit code. Plain, matching the existing manualVerificationCode precedent. */
 	code: string
 	expiresAt: Date
@@ -43,6 +48,12 @@ const albumVerificationSchema = new Schema<IAlbumVerification>(
 			required: true,
 			lowercase: true,
 			trim: true,
+		},
+		// No default, deliberately: existing rows have no `purpose`, and the album queries match
+		// them with `$in: ["album", null]` rather than a backfill.
+		purpose: {
+			type: String,
+			required: false,
 		},
 		code: {
 			type: String,
@@ -69,7 +80,7 @@ const albumVerificationSchema = new Schema<IAlbumVerification>(
 // One pending code per person per event. The connection sets autoIndex: false, so this is
 // built by scripts/create-album-verification-index.ts — every query here reads the newest
 // row (sort by createdAt desc) rather than assuming the index exists.
-albumVerificationSchema.index({ eventId: 1, email: 1 })
+albumVerificationSchema.index({ eventId: 1, email: 1, purpose: 1 })
 
 export const AlbumVerification: Model<IAlbumVerification> =
 	dbconn.models["AlbumVerification"] || dbconn.model("AlbumVerification", albumVerificationSchema, "event-album-verifications")

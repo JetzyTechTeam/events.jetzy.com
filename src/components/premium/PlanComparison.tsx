@@ -131,6 +131,15 @@ type Props = {
 	/** Shows a spinner in place of the Premium CTA label. */
 	premiumPending?: boolean
 	onChooseFree: () => void
+	/**
+	 * Drop the Jetzy Basic card and show Premium alone.
+	 *
+	 * For a shared referral link, where the recipient was sent a specific offer rather than a
+	 * choice of plans — putting "Continue with Free" beside it invites them to decline something
+	 * they were given. Everywhere else the comparison is what makes the price legible, so this
+	 * defaults off.
+	 */
+	hideFreePlan?: boolean
 	onChoosePremium: () => void
 	freeCtaLabel?: string
 	premiumCtaLabel?: string
@@ -166,6 +175,7 @@ const PlanComparison: React.FC<Props> = ({
 	premiumPending = false,
 	onChooseFree,
 	onChoosePremium,
+	hideFreePlan = false,
 	freeCtaLabel = "Continue with Free",
 	premiumCtaLabel = "Go Premium",
 	subscribedCtaLabel = "You're subscribed — Continue",
@@ -194,8 +204,9 @@ const PlanComparison: React.FC<Props> = ({
 	const showSwitch = !!(isPremium && currentPlan?.canSwitch && switchTarget && onSwitchInterval)
 
 	return (
-		<div className="grid gap-6 sm:grid-cols-2">
+		<div className={hideFreePlan ? "grid gap-6 max-w-md mx-auto" : "grid gap-6 sm:grid-cols-2"}>
 			{/* Free tier — no Stripe object backs this, it's just "not subscribed" */}
+			{!hideFreePlan && (
 			<div className="bg-[#1E1E1E] border-2 border-[#2b2b2b] rounded-2xl p-6 flex flex-col">
 				<h2 className="text-xl font-bold mb-1">Jetzy Basic</h2>
 				<p className="text-sm text-gray-400 mb-4">Free, forever</p>
@@ -214,6 +225,7 @@ const PlanComparison: React.FC<Props> = ({
 					{freeCtaLabel}
 				</button>
 			</div>
+			)}
 
 			{/* Premium tier — backed by the real Stripe subscription product */}
 			<div className="bg-[#1E1E1E] border-2 border-jetzy rounded-2xl p-6 flex flex-col relative">

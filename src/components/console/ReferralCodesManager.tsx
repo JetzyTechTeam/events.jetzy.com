@@ -1,7 +1,8 @@
 "use client"
 import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch } from "@chakra-ui/react"
-import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2 } from "react-icons/fi"
+import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2, FiShare2 } from "react-icons/fi"
 import { useState, useEffect } from "react"
+import { premiumShareLink, shareableReason } from "@/lib/referral-share"
 import axios from "axios"
 import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 
@@ -49,6 +50,9 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 	// under the table: this tab's job is managing codes, and a permanent report below them
 	// pushed that work off the screen.
 	const [analyticsCode, setAnalyticsCode] = useState<ReferralCode | null>(null)
+	// The code being shared as a standalone Jetzy Premium link — see `shareableReason` for when
+	// that is allowed at all.
+	const [sharingCode, setSharingCode] = useState<ReferralCode | null>(null)
 	const [statsData, setStatsData] = useState<{ totalSales: number; verifiedUsageCount: number; code: string; commissionPercentage: number } | null>(null)
 	const [statsLoading, setStatsLoading] = useState(false)
 	const [commissionRate, setCommissionRate] = useState<string>("10")
@@ -183,6 +187,25 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		} finally {
 			setDeleting(null)
 		}
+	}
+
+	/**
+	 * The shareable link. `window.location.origin` rather than an env var: whoever is looking at
+	 * this page is already on the host we want the link to point at, staging or production.
+	 */
+	const premiumLinkFor = (code: ReferralCode) =>
+		typeof window === "undefined"
+			? ""
+			: premiumShareLink(window.location.origin, code.code, eventId)
+
+	const handleCopyLink = (code: ReferralCode) => {
+		navigator.clipboard.writeText(premiumLinkFor(code))
+		toast({
+			title: "Link copied",
+			description: "Anyone who opens it gets the free months applied at checkout.",
+			status: "success",
+			duration: 2500,
+		})
 	}
 
 	const handleCopyCode = (code: string) => {
@@ -385,6 +408,28 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 									<Td>{code.maxUses == null ? "Unlimited" : `${code.maxUses} (${code.maxUses - code.usageCount} remaining)`}</Td>
 									<Td>
 										<Flex gap={2}>
+											{/* Sharing gives a membership away with no ticket behind it, so the
+											    button is only live on a code that can actually carry that — free
+											    months set, and a usage limit to cap what a forwarded link can
+											    cost. The reason is on the button itself rather than hidden in a
+											    tooltip nobody hovers. */}
+											<Button
+												size="sm"
+												variant="ghost"
+												color={shareableReason(code) ? "#6B6B6B" : "#F5C518"}
+												_hover={{ bg: shareableReason(code) ? "transparent" : "rgba(245, 197, 24, 0.1)" }}
+												leftIcon={<FiShare2 />}
+												onClick={() => {
+													const reason = shareableReason(code)
+													if (reason) {
+														toast({ title: "Can't share this code yet", description: reason, status: "info", duration: 6000 })
+														return
+													}
+													setSharingCode(code)
+												}}
+											>
+												Share
+											</Button>
 											<Button
 												size="sm"
 												variant="ghost"
@@ -561,6 +606,54 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 							{editingCode ? "Save changes" : "Create"}
 						</Button>
 					</ModalFooter>
+				</ModalContent>
+			</Modal>
+
+			{/* The Premium link. Everything a host needs to decide whether to send it: what the
+			    recipient gets, how many are left, and the fact that the same allowance is shared
+			    with ticket redemptions. */}
+			<Modal isOpen={!!sharingCode} onClose={() => setSharingCode(null)} size="xl" isCentered>
+				<ModalOverlay />
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+					<ModalHeader>Share Jetzy Premium</ModalHeader>
+					<ModalCloseButton />
+					<ModalBody pb={6}>
+						{sharingCode && (
+							<>
+								<Text fontSize="sm" color="#D6D6D6">
+									Anyone who opens this link gets{" "}
+									<Text as="span" color="#F5C518" fontWeight={700}>
+										{sharingCode.freeMembershipMonths} month{sharingCode.freeMembershipMonths === 1 ? "" : "s"} of Jetzy Premium free
+									</Text>{" "}
+									— no ticket needed. They pay nothing until the free months end, then the membership renews at the
+									normal price unless they cancel.
+								</Text>
+
+								<Box bg="#101010" border="1px solid #2a2a2a" borderRadius="md" p={3} mt={4}>
+									<Text fontSize="xs" fontFamily="mono" color="#9C9C9C" wordBreak="break-all">
+										{premiumLinkFor(sharingCode)}
+									</Text>
+								</Box>
+
+								<Flex gap={3} mt={4} align="center" wrap="wrap">
+									<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} leftIcon={<FiCopy />} onClick={() => handleCopyLink(sharingCode)}>
+										Copy link
+									</Button>
+									<Text fontSize="xs" color="#9C9C9C">
+										{Math.max(0, (sharingCode.maxUses || 0) - sharingCode.usageCount)} of {sharingCode.maxUses} uses left
+									</Text>
+								</Flex>
+
+								{/* One code, two jobs, one counter — a host who doesn't know that will
+								    wonder where their ticket discounts went. */}
+								<Text fontSize="xs" color="#9C9C9C" mt={4}>
+									This is the same allowance the code uses for ticket discounts on this event. Every membership claimed
+									here leaves one fewer use for everything else, and the link stops working when the limit is reached or
+									the code is switched off.
+								</Text>
+							</>
+						)}
+					</ModalBody>
 				</ModalContent>
 			</Modal>
 

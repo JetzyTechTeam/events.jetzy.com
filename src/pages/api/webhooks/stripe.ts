@@ -169,7 +169,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 							const soldPrice = subscription.items.data[0]?.price
 							const { recordMembershipPurchase } = await import("@/models/events/membership-purchases")
-							await recordMembershipPurchase({
+							const recorded = await recordMembershipPurchase({
 								key,
 								source: sessionMetadata.purpose === "premium_subscription" ? "subscribe" : "external",
 								email: recipient?.email || checkoutSession.customer_details?.email || undefined,
@@ -183,10 +183,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								...(soldPrice?.currency ? { currency: soldPrice.currency } : {}),
 								// The whole reason the code is stamped into session metadata.
 								...(sessionMetadata.inviteCode ? { inviteCode: sessionMetadata.inviteCode } : {}),
+								// A host's referral code, shared as a Premium link. Recorded with its
+								// event so the sale can be traced back to the campaign that produced it.
+								...(sessionMetadata.referralCode ? { referralCode: sessionMetadata.referralCode } : {}),
+								...(sessionMetadata.referralEventId ? { eventId: sessionMetadata.referralEventId } : {}),
 								...(subscription.trial_end
 									? { trialEndsAt: new Date(subscription.trial_end * 1000) }
 									: {}),
 							})
+
+							// Count the redemption against the code — ONCE.
+							//
+							// Deliberately keyed to `recorded`, which is true only on the first write
+							// for this subscription id: Stripe redelivers webhooks, and a second
+							// increment would eat a use the buyer never took. Scoped by event, because
+							// one code string can now exist on several of them.
+							if (recorded && sessionMetadata.referralCode && sessionMetadata.referralEventId) {
+								const { incrementReferralUsage } = await import("@/lib/checkout-fulfillment")
+								await incrementReferralUsage(sessionMetadata.referralCode, sessionMetadata.referralEventId)
+							}
 						}
 
 						if (sessionMetadata.purpose === "premium_subscription") {

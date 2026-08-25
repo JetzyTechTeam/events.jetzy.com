@@ -12,7 +12,8 @@ Everything a mobile client needs is in this doc: data model, viewer identity, ev
 |---|---|
 | Create / edit / delete an album | event **admin** or **owner** |
 | Publish an album (emails all attendees) | event **admin** or **owner** |
-| View an album | **any identified viewer** — a logged-in user, *or* anyone who supplies name + email |
+| View an album | **any identified viewer** — a logged-in user, *or* anyone who supplies name + email **and confirms a 6-digit code sent to that address** |
+| Say what they want to attend next | any identified viewer (asked once per event) |
 | Share an album link | any viewer |
 | Tag people in a photo | any viewer |
 | Remove a tag | the tagger, the tagged person, or admin/owner |
@@ -21,7 +22,12 @@ Everything a mobile client needs is in this doc: data model, viewer identity, ev
 
 Two design decisions drive most of the complexity — read these first:
 
-1. **Viewing is deliberately not gated behind login.** People arrive from a shared link or an email and drop off if asked to sign up. Instead they type a **name + email** once, and we match or silently create their Jetzy account behind the scenes (the same thing ticket checkout does).
+1. **Viewing is deliberately not gated behind login.** People arrive from a shared link or an
+   email and drop off if asked to sign up. Instead they type a **name + email** once and
+   confirm a 6-digit code, and we match or silently create their Jetzy account behind the
+   scenes (the same thing ticket checkout does). The code was added because the gate
+   previously took the address on trust, so the captured interests were only as good as the
+   visitor's honesty — and people were typing someone else's address.
 2. **Albums are visible as soon as they're created.** "Publish" is *only* the announcement email to attendees — it is not a visibility switch.
 
 ---
@@ -42,9 +48,16 @@ Two design decisions drive most of the complexity — read these first:
 | `publishedAt` | Date | optional — first time it was published |
 | `publishNotifiedAt` | Date | optional — last time the announcement went out |
 | `notifiedCount` | Number | default `0` — how many attendees were emailed on the last publish |
+| `showEvents` | Boolean | optional, **NO default** — whether the album page shows the promoted-events rail. See the warning below |
 | `createdAt` / `updatedAt` | Date | timestamps |
 
 Indexes: `{ eventId: 1 }`, `{ isDeleted: 1 }`, `{ eventId: 1, createdAt: -1 }`.
+
+> **`showEvents` has no default, and `undefined` means SHOW.** Every album created before the
+> toggle existed carries no value and shows the rail today; adding `default: false` would hide
+> it on all of them at the next save. Read it as `album.showEvents === false`, and on update
+> treat an **omitted** field as unchanged (`if (showEvents !== undefined) …`) so an older
+> client cannot switch an album off by not knowing about the field.
 
 > **`media` ordering matters.** The album **cover is the first item of `type: "image"`** in the array (falling back to `media[0]` if there are no images). The web editor lets the host drag-and-drop to reorder, which is how they pick the cover. Mobile must **preserve array order** on both read and write, and should offer the same reorder affordance.
 
@@ -86,6 +99,62 @@ One row per tag. Photos are identified **by URL**, not by index (indexes shift w
 **Index `{ albumId, mediaUrl, personEmail }` — deliberately NOT unique.** Tagging is unrestricted: the same person **can** be tagged more than once on the same photo, and **every tag sends another email**. There is no dedupe, by design.
 
 > **Migration required on existing databases.** An earlier build made this index unique as a dedupe guard. Run `scripts/migrate-album-tags-index.ts` once to drop `albumId_1_mediaUrl_1_personEmail_1` and re-create it non-unique — otherwise re-tagging fails with a duplicate-key error.
+
+### 2.4 `event-album-verifications` (model `AlbumVerification`)
+
+A pending email-verification code for the access gate. Short-lived; upserted per (event, email).
+
+| Field | Type | Notes |
+|---|---|---|
+| `_id` | ObjectId | |
+| `eventId` | ObjectId → Events | indexed |
+| `email` | String | lowercased, trimmed, required |
+| `code` | String | 6 digits, `crypto.randomInt`. Stored **plain**, matching the existing `manualVerificationCode` precedent |
+| `expiresAt` | Date | required — `CODE_TTL_MS` = **10 minutes** |
+| `attempts` | Number | default `0`; `MAX_ATTEMPTS` = **5** wrong guesses, then locked |
+| `lastSentAt` | Date | required — drives the `RESEND_COOLDOWN_MS` = **60s** resend cooldown |
+| `createdAt` / `updatedAt` | Date | timestamps |
+
+Index `{ eventId: 1, email: 1 }` — **deliberately NOT unique.** Both call sites read the
+newest row by `createdAt` desc, so a duplicate is harmless, whereas a failed unique build
+would throw 11000 on every upsert and lock everyone out of albums.
+
+> **Do not reuse `EventUsers.manualVerificationCode` for this.** That field belongs to the
+> compliance-unblock flow (`api/auth/verify/confirm-code.ts`); an album code that also
+> unblocks an account would be a privilege leak. That is why this is its own collection.
+
+> **Index build required on each database.** The connection sets `autoIndex: false`, so run
+> `scripts/create-album-verification-index.ts` once per database. Never `syncIndexes()` on
+> these shared collections — it drops indexes created by the mobile app / admin portal.
+
+Constants live in `src/lib/album-verification.ts` (`issueAlbumCode`, `consumeAlbumCode`,
+`consumeFailureMessage`). A correct code is **deleted** on use (single use); issuing a new
+code invalidates the previous one.
+
+### 2.5 `event-album-interests` (model `AlbumInterest`)
+
+What a viewer said they want to attend next, captured in the access dialog. One row per
+(event, email), upserted — re-entry updates rather than duplicating.
+
+| Field | Type | Notes |
+|---|---|---|
+| `_id` | ObjectId | |
+| `eventId` | ObjectId → Events | indexed |
+| `email` | String | lowercased, trimmed, required — the key |
+| `name` | String | optional |
+| `userId` | ObjectId → Users | optional — may be absent if account creation failed |
+| `interests` | [String] | default `[]` — curated labels picked from the chip grid |
+| `customInterests` | [String] | default `[]` — free-text write-ins, each counts as one of the three |
+| `customInterest` | String | **legacy** single free-text field, pre multi-custom. Read-only for old rows; cleared (`$unset`) on any fresh write |
+| `optOut` | Boolean | default `false` — "I don't want to attend any other event". Counts as answered |
+| `verified` | Boolean | optional, **no default** — see below |
+| `createdAt` / `updatedAt` | Date | timestamps |
+
+**Unique index `{ eventId: 1, email: 1 }`.**
+
+> **`verified` absent ≠ false.** It is unset on every row written before the code gate
+> existed. Reports must say **"unverified"**, never "failed verification". The same rule
+> applies to `AlbumAccess.verified`.
 
 ---
 
@@ -135,6 +204,12 @@ Roles referenced below:
 - **admin** — `session.user.role` is `"admin"` or `"super admin"`
 - **owner** — `event.ownerId === session.user._id`
 - **any viewer** — `resolveAlbumViewer` returned non-null (session **or** guest cookie)
+- **public** — no identity at all is required
+
+> **Listing albums is PUBLIC.** `GET /albums` performs no viewer check: anyone on the event
+> page sees the photos with no prompt. The name+email gate exists to record who arrived from
+> a *share link*, not to restrict viewing. Do not gate the list on mobile — doing so would
+> make albums look broken for ordinary visitors.
 
 All responses use the standard envelope from the `sendResponse` helper:
 
@@ -144,13 +219,17 @@ All responses use the standard envelope from the `sendResponse` helper:
 
 | Method | Path | Access | Body | `data` |
 |---|---|---|---|---|
-| GET | `/albums` | any viewer | — | `Album[]`, newest first, `isDeleted: false` |
-| POST | `/albums` | admin OR owner | `{ title, description?, media[] }` | created `Album` |
-| PUT | `/albums/:albumId` | admin OR owner | `{ title, description?, media[] }` (full replace) | updated `Album` |
+| GET | `/albums` | **public** | — | `Album[]`, newest first, `isDeleted: false` |
+| POST | `/albums` | admin OR owner | `{ title, description?, media[], showEvents? }` | created `Album` |
+| PUT | `/albums/:albumId` | admin OR owner | `{ title, description?, media[], showEvents? }` (full replace, except `showEvents` — omitted = unchanged) | updated `Album` |
 | DELETE | `/albums/:albumId` | admin OR owner | — | `null` (sets `isDeleted: true`) |
+| GET | `/albums/viewer` | **public** | — | `{ identified, email?, name?, isGuest?, hasInterests }` |
 | POST | `/albums/send-code` | public | `{ email }` | `{ email }` — emails a 6-digit code, creates nothing |
-| POST | `/albums/guest-access` | public | `{ name, email, code }` | `{ email, name, isNewAccount, magicToken? }` |
+| POST | `/albums/guest-access` | public | `{ name, email, code, interests?, customInterests?, optOut? }` | `{ email, name, isNewAccount, magicToken? }` |
+| POST | `/albums/my-interests` | any viewer | `{ interests?, customInterests?, optOut? }` | `{ saved: true }` |
+| GET | `/albums/interests?dateFrom&dateTo` | admin OR owner | — | `{ items, total, top }` |
 | POST | `/albums/:albumId/access` | any viewer | `{ isNewAccount? }` | `{ firstAccess, action }` |
+| GET | `/albums/:albumId/download?url=` | **public** | — | the file itself, `Content-Disposition: attachment` |
 | GET | `/albums/participants` | admin OR owner | — | `[{ email, name }]` |
 | GET | `/albums/:albumId/tags` | any viewer | — | `AlbumTag[]` for the whole album, oldest first |
 | POST | `/albums/:albumId/tags` | any viewer | `{ mediaUrl, personEmail, personName? }` | `{ tag, isNew: true }` |
@@ -173,7 +252,24 @@ toggle existed carries no value and its page shows the rail today. On PUT, omitt
 the stored value unchanged, so an older client can't switch an album back on.
 ```
 
-### 4.0 `POST /albums/send-code`
+### 4.1 `GET /albums/viewer`
+
+The identity probe. **Returns 200 with `{ identified: false }` rather than 401** — being
+anonymous is a normal state now that albums are public.
+
+```jsonc
+{ "identified": true, "email": "...", "name": "...", "isGuest": false, "hasInterests": true }
+```
+
+`hasInterests` answers "have we already asked this person on this event?" — true when their
+`AlbumInterest` row has any interest, any custom interest, **or** `optOut === true`. Opting
+out counts as answered; don't keep asking someone who said no thanks.
+
+The client calls this first and **waits for it to settle** before deciding whether to open
+the name+email dialog. Opening optimistically makes it flash for people who already hold a
+valid cookie or session.
+
+### 4.2 `POST /albums/send-code`
 
 Step one of the gate. Body `{ email: valid email }`.
 
@@ -184,7 +280,7 @@ Step one of the gate. Body `{ email: valid email }`.
 
 Creates no account, no cookie and no interest row. Issuing a new code invalidates the previous one.
 
-### 4.1 `POST /albums/guest-access`
+### 4.3 `POST /albums/guest-access`
 
 The gate. Body `{ name: string (1–120), email: valid email, code: 6 digits }`.
 
@@ -194,12 +290,66 @@ The gate. Body `{ name: string (1–120), email: valid email, code: 6 digits }`.
 4. **Look up `users` by email to compute `isNewAccount`** — this must happen *before* the upsert, or every account looks pre-existing.
 5. Call `createOrUpdateUser({ firstName, lastName, email, phone: "", role: "user" })` (`src/lib/user-utils.ts`) — the exact helper ticket checkout uses. Matches by email or creates. **A failure here is logged but never blocks album viewing.**
 6. Set the `album_guest` cookie, carrying `verifiedAt` so the later analytics write knows they were verified.
-7. Upsert the interests row with `verified: true`.
+7. Upsert the interests row with `verified: true` — the body may carry `interests[]`,
+   `customInterests[]` and `optOut`, so the gate captures them in the same round trip. Written
+   only if at least one of the three is present.
 8. Return `{ email, name, isNewAccount, magicToken? }` — `magicToken` present **only if `isNewAccount === true`** (see §3.1).
 
 `isNewAccount` is also what the client forwards to `/access` to record `signup` vs `login`.
 
-### 4.2 `POST /albums/:albumId/access`
+### 4.3-a The interest chips are a FIXED LIST — copy it verbatim
+
+`ALBUM_INTERESTS` in `src/components/events/EventAlbums.tsx`:
+
+| | | | |
+|---|---|---|---|
+| Wine Tastings 🍷 | Hiking 🥾 | Golf ⛳ | Networking 🤝 |
+| Tennis 🎾 | Beach 🏖️ | Travel ✈️ | Founders 🚀 |
+| Art 🎨 | Wellness 🧘 | Live Music 🎵 | Museum 🏛️ |
+
+**The label is what gets stored, and `GET /albums/interests` rolls up by exact string.** A
+client shipping its own preset splits one concept into two rows of the report the feature
+exists to produce. The emoji is display only — never store it.
+
+Do **not** substitute the Jetzy **event-tagging** taxonomy (`/v1/interests/categories`, 35
+categories / 329 sub-interests) here. Different feature, different collection; it would swamp
+the dialog and pollute this report.
+
+Rules: at least **one** (`MIN_INTERESTS = 1`), no upper limit, free-text customs count toward
+the total, and `optOut` alone is a valid answer. All three empty → **400**.
+
+### 4.4 `POST /albums/my-interests`
+
+Saves interests for the **current** viewer on this event. Requires `resolveAlbumViewer`
+(401 otherwise); upserts the same `(eventId, email)` row as the gate.
+
+This exists because the name+email dialog only appears for **unidentified** visitors. Anyone
+arriving already logged in — notably recipients of the publish email, which signs them in —
+would never be asked otherwise.
+
+- Body `{ interests?: string[≤60][≤50], customInterests?: string[≤200][≤50], optOut?: boolean }`.
+- All three empty → **400** `"Select at least one interest"`. Opting out is a valid answer on its own.
+- Any fresh write `$unset`s the legacy `customInterest` so it can't linger beside the array.
+- Note it does **not** set `verified` — that flag belongs to the code gate.
+
+### 4.5 `GET /albums/interests`
+
+Admin/owner reporting on the above. Query `eventId` (required), `dateFrom`, `dateTo`
+(optional, snapped to start/end of day over `createdAt`). Newest first, capped at **5000**.
+
+```jsonc
+{
+  "items": [{ "_id", "name", "email", "interests": [], "customInterests": [], "optOut", "verified", "date" }],
+  "total": 42,
+  "top":   [{ "interest": "Live Music", "count": 12 }]        // sorted desc
+}
+```
+
+`top` merges chip picks and free-text write-ins, with write-ins suffixed **`" (custom)"`** so
+the two are distinguishable in one list. `customInterests` falls back to the legacy
+`customInterest` string for old rows. Unknown name/email render as `"—"`.
+
+### 4.6 `POST /albums/:albumId/access`
 
 Records that a person opened an album, and triggers the one-time notice email to the Jetzy inbox. Call it **once per album open** — the client may guard per session, but the server is the authority.
 
@@ -216,13 +366,33 @@ Records that a person opened an album, and triggers the one-time notice email to
 
 Returns `{ firstAccess: boolean, action: "login" | "signup" }`.
 
-### 4.3 `GET /albums/participants`
+### 4.7 `GET /albums/:albumId/download?url=<mediaUrl>`
+
+Forces a download of one album file. **Public** — no viewer check, because the media is
+already publicly served by the CDN and nothing new is exposed.
+
+It exists because the media CDN sends no CORS headers, so a browser cannot `fetch`→blob it
+cross-origin and the `download` attribute is ignored on a cross-origin href. This proxies
+same-origin and sets `Content-Disposition: attachment`.
+
+- **The entire safety model is that `url` must already be in `album.media`** → else **400**
+  `"That file is not part of this album."` Without that check this is an open proxy for
+  arbitrary hosts. Do not relax it.
+- Streams rather than buffers (`responseLimit: false`) — large videos must not sit in memory.
+- Filename comes from the URL's last path segment, sanitised to `[a-zA-Z0-9._-]`, defaulting
+  to `video.mp4` / `photo.jpg`.
+
+> **Mobile** can usually skip this and download the CDN URL directly — the proxy solves a
+> browser-only restriction. Serve the **clean original**: the `JetzyLife` mark on the web
+> tiles is a CSS overlay for display, not a watermark burned into the file.
+
+### 4.8 `GET /albums/participants`
 
 Attendee suggestions powering the `@`-mention picker when tagging. Backed by `getEventParticipants(eventId)` (`src/lib/event-participants.ts`) = **confirmed bookings + accepted invitations**, returned as `[{ email, name }]`.
 
 **Admin/owner only, on purpose.** Anyone with a share link can view and tag, but the attendee email list must not leak to them. Non-hosts get **`200` with an empty array** — not a 403 — so the client just falls back to manual name + email entry without showing an error.
 
-### 4.4 `POST /albums/:albumId/tags`
+### 4.9 `POST /albums/:albumId/tags`
 
 1. `resolveAlbumViewer` → 401 if null.
 2. Validate `{ mediaUrl: url, personEmail: email, personName?: ≤120 }`.
@@ -233,11 +403,11 @@ Attendee suggestions powering the `@`-mention picker when tagging. Backed by `ge
 
 One person per call. Batching several people is a **client-side** concern — see the tagging flow in §5.3.
 
-### 4.5 `DELETE /albums/:albumId/tags/:tagId`
+### 4.10 `DELETE /albums/:albumId/tags/:tagId`
 
 Permitted if **any** of: the caller's email equals `tag.taggedByEmail`; equals `tag.personEmail`; the caller is admin; or the caller is the event owner. Otherwise **403** with `"You can only remove tags you added, or tags of yourself."` — surface that message verbatim, it explains itself.
 
-### 4.6 `POST /albums/:albumId/publish`
+### 4.11 `POST /albums/:albumId/publish`
 
 Requires a real session (admin or owner — the guest cookie is not enough).
 
@@ -248,7 +418,7 @@ Requires a real session (admin or owner — the guest cookie is not enough).
 5. Stamp `publishedAt` (only if unset — it records the *first* publish), `publishNotifiedAt = now`, `notifiedCount = sent`.
 6. Return `{ notifiedCount, recipientCount, publishedAt, publishNotifiedAt }`.
 
-### 4.7 `GET /albums/access-log`
+### 4.12 `GET /albums/access-log`
 
 Query: `eventId` (required), `dateFrom`, `dateTo` (optional, snapped to start/end of day over `createdAt`). Newest first, capped at **5000** rows.
 
@@ -264,18 +434,46 @@ Query: `eventId` (required), `dateFrom`, `dateTo` (optional, snapped to start/en
 
 ### 5.1 Share link → viewing
 
-Album share URL: **`/{eventSlug}?album={albumId}`**
+**Canonical album URL: `/{eventSlug}/album/{albumId}`** — its own page, built by
+`eventAlbumPath` / `eventAlbumUrl` (`src/lib/event-slug.ts`). Never interpolate a slug
+yourself; slugs may contain spaces and unicode.
 
-1. Recipient opens the link.
-2. The page **scrolls to the albums section**.
-3. If the viewer is **not identified**, a **name + email dialog** opens automatically. No redirect to `/login`, no signup screen.
-4. Submitting calls `POST /albums/guest-access`. If `magicToken` came back (new account only), the client also signs in for real. Either way the person is now identified.
-5. The client auto-opens that album's gallery and fires `POST /albums/:albumId/access` once.
-6. Access is *also* recorded when an album is opened by normal browsing — not just via a share link.
+Query params the page understands:
 
-> Timing note: the client must wait for the identity probe to settle before deciding to show the dialog. Opening it optimistically makes it flash for people who already hold a valid cookie/token.
+| Param | Meaning |
+|---|---|
+| `photo` | open this media URL directly (used by tag links) |
+| `from=event` | the view was already counted by the event page — **do not record a second one** |
 
-**Mobile:** a deep link carrying the event slug (or id) + `albumId`. If the user isn't signed in, collect name + email in a sheet and call `guest-access` — do **not** push them to signup. On first view, POST the access endpoint.
+> **`/{eventSlug}?album={albumId}` is LEGACY back-compat only.** Albums used to be a gallery
+> modal on the event page. Links already in circulation — publish emails, tag notifications,
+> copied share links — still carry the query form, so the event page client-side redirects it
+> to the canonical path, mapping `tagPhoto` → `photo` and adding `from=event`. New clients
+> must emit the path form. Do not build new links on the query form.
+
+**Covers and album metadata are public; opening an album is gated.** `GET /albums` returns
+full album documents including `media` to anyone, so the gate is enforced by the *client*
+on the album page, not by the list endpoint. Do not assume the API hides photos from an
+unidentified caller — if that matters to you, say so and it has to change server-side.
+
+The gate (`useAlbumViewerGate`) runs on the album page:
+
+1. Probe `GET /albums/viewer` and **wait for it to settle**. Opening a dialog optimistically
+   makes it flash for people who already hold a valid cookie or session.
+2. Not identified → **name + email dialog**. No redirect to `/login`, no signup screen.
+   Submitting runs the two-step gate: `send-code`, then `guest-access` with the 6-digit code.
+   If `magicToken` came back (new account only) the client also signs in for real.
+3. Identified but `hasInterests` is false → the **interests-only dialog**. This is how
+   publish-email arrivals — signed in by the magic link, so they never see the name+email
+   dialog — still get asked. It posts to `my-interests`.
+4. Only once both are satisfied is the media revealed, and `POST /albums/:albumId/access`
+   fires once (skipped when `from=event`).
+5. A viewer who dismisses a dialog must have a way to re-open it, or they are stuck on a page
+   with no media and no route forward.
+
+**Mobile:** a deep link carrying the event slug (or id) + `albumId`, matching the path form.
+If the user isn't signed in, collect name + email in a sheet and run the code gate — do
+**not** push them to signup. On first view, POST the access endpoint.
 
 ### 5.2 Creating an album (host)
 
@@ -313,7 +511,26 @@ Host taps **Publish** → confirm dialog → `POST /albums/:albumId/publish` →
 
 ## 6. Emails
 
-All in `src/lib/send-grid.ts`. **All three skip sending when `NEXT_PUBLIC_URL` contains `localhost`** and just log — expect no mail in local dev. Album link in every email: `{NEXT_PUBLIC_URL}/{eventSlug}?album={albumId}`.
+All in `src/lib/send-grid.ts`. **All three skip sending when `NEXT_PUBLIC_URL` contains
+`localhost`** and just log — expect no mail in local dev.
+
+Album link: `{NEXT_PUBLIC_URL}/{eventSlug}/album/{albumId}`, built with `eventAlbumUrl`.
+
+**The publish email is different:** its recipients are known event participants and the link
+lands in their own inbox, so it signs them straight in rather than making them fill in the
+gate —
+
+```
+{root}/login?magicToken={token}&_cb={encodeURIComponent(albumPath)}
+```
+
+falling back to the plain album URL when there is no token. Same one-click pattern the
+discussion emails use. This is also *why* the interests-only dialog exists: these arrivals
+are already identified and never see the name+email step.
+
+There is a fourth album email — `sendAlbumVerificationCode`, the 6-digit code from
+`POST /albums/send-code`. Unlike the three below it is **awaited**, not fire-and-forget: if
+the send fails, the visitor would otherwise sit waiting for a code that never arrives.
 
 | Mailer | Recipient | Trigger | Contents |
 |---|---|---|---|
@@ -363,13 +580,19 @@ Note the two intentional non-errors: `GET /participants` returns **200 + `[]`** 
 
 ## 9. Implementation checklist (mobile)
 
-- [ ] Run both migration scripts against the target database (`migrate-album-access-index.ts`, `migrate-album-tags-index.ts`) — **before** any guest access or re-tagging is attempted.
+- [ ] Run all three index scripts against the target database (`migrate-album-access-index.ts`, `migrate-album-tags-index.ts`, `create-album-verification-index.ts`) — **before** any guest access or re-tagging is attempted. Never `syncIndexes()`.
+- [ ] Probe `GET /albums/viewer` before showing any gate, and wait for it to settle.
+- [ ] Do **not** gate `GET /albums` — listing is public.
+- [ ] Two-step gate: `send-code` then `guest-access` with the 6-digit code. Handle the 429s (60s resend cooldown, 10/min per IP) and the locked-after-5-attempts case.
+- [ ] Collect interests in the gate, and via `my-interests` for viewers who arrive already signed in; skip the ask when `hasInterests` is true. **Use the exact 12 chip labels of §4.3-a** — they are the report's group-by keys.
+- [ ] Agree how a non-browser client carries guest identity. `resolveAlbumViewer` currently reads a NextAuth session **or the `album_guest` cookie, and nothing else** — there is no header path today. Either replay the cookie from `guest-access`'s `Set-Cookie`, or have the web add header support first.
+- [ ] Respect `showEvents` as *undefined means show*, and leave it untouched when updating an album.
 - [ ] Agree the transport for guest identity (signed token in a header vs. real session) and match the 90-day lifetime.
 - [ ] Album list + gallery, preserving `media` order; cover = first image.
 - [ ] Name + email sheet on the album deep link, wired to `guest-access`; auto sign-in **only** when `magicToken` comes back.
 - [ ] Fire `POST /access` once per album open, forwarding `isNewAccount` when known.
 - [ ] Tagging with the stage → confirm → send flow; `@`-search for hosts, manual entry (email required, **name optional**) for everyone; staged tags scoped per photo.
-- [ ] Tag removal with the permission rules of §4.5.
+- [ ] Tag removal with the permission rules of §4.10.
 - [ ] Host-side create/edit/delete with drag-to-reorder, uploading to the `posts` folder.
 - [ ] Publish with the confirm dialog and the `resend: true` retry path.
 - [ ] Handle 401 by re-opening the identity gate rather than showing an error.
@@ -378,11 +601,12 @@ Note the two intentional non-errors: `GET /participants` returns **200 + `[]`** 
 
 ## 10. Web reference files
 
-- **Models:** `src/models/events/albums.ts`, `src/models/events/album-access.ts`, `src/models/events/album-tags.ts`
+- **Models:** `src/models/events/albums.ts`, `src/models/events/album-access.ts`, `src/models/events/album-tags.ts`, `src/models/events/album-verification.ts`, `src/models/events/album-interest.ts`
 - **Viewer identity:** `src/lib/album-auth.ts` (`resolveAlbumViewer`, `setAlbumGuestCookie`, `ALBUM_GUEST_COOKIE`)
 - **Shared helpers reused:** `src/lib/user-utils.ts` (`createOrUpdateUser`), `src/lib/magicLink.ts` (`generateMagicToken` / `verifyMagicToken`), `src/lib/event-participants.ts` (`getEventParticipants`)
-- **APIs:** `src/pages/api/events/[eventId]/albums/{index.ts, [albumId].ts, guest-access.ts, participants.ts, access-log.ts, [albumId]/access.ts, [albumId]/publish.ts, [albumId]/tags/index.ts, [albumId]/tags/[tagId].ts}`
+- **APIs:** `src/pages/api/events/[eventId]/albums/{index.ts, [albumId].ts, viewer.ts, send-code.ts, guest-access.ts, my-interests.ts, interests.ts, participants.ts, access-log.ts, [albumId]/access.ts, [albumId]/download.ts, [albumId]/publish.ts, [albumId]/tags/index.ts, [albumId]/tags/[tagId].ts}`
+- **Verification + rate limiting:** `src/lib/album-verification.ts`, `src/lib/rate-limit.ts`
 - **Emails:** `sendAlbumAccessNotice`, `sendAlbumTagNotification`, `sendAlbumPublishedNotification` in `src/lib/send-grid.ts`
-- **Migrations:** `scripts/migrate-album-access-index.ts`, `scripts/migrate-album-tags-index.ts`
+- **Migrations / index builds:** `scripts/migrate-album-access-index.ts`, `scripts/migrate-album-tags-index.ts`, `scripts/create-album-verification-index.ts`
 - **Analytics:** `src/pages/api/analytics/events.ts` (`albums` block) + `src/pages/console/events/[eventId]/analytics.tsx` (Albums tab)
-- **UI:** `src/components/events/EventAlbums.tsx`, mounted in `src/components/HostedEvents.tsx` above `#discussion-section`
+- **UI:** `src/components/events/EventAlbums.tsx`, mounted in `src/components/HostedEvents.tsx` above `#discussion-section`; album page `src/pages/[slug]/album/[albumId].tsx`; viewer gate `src/components/events/album/useAlbumViewerGate.tsx`; promoted-events rail `src/components/events/album/PromotedEvents.tsx`
