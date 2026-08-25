@@ -1870,3 +1870,53 @@ Files: `src/lib/event-preview.ts`, `src/components/events/PreviewBanner.tsx`,
 `src/components/events/ListingCardPreview.tsx`, `src/components/HostedEvents.tsx`,
 `src/components/events/EventListingCard.tsx`, `src/pages/[slug].tsx`,
 `src/pages/console/events/create.tsx`, `src/pages/console/events/[eventId]/manage.tsx`.
+
+## Hosts can create interests (2026-08-25)
+
+`InterestsSelector` was read-only: a host whose event didn't fit any existing interest had no
+way to tag it. It can now create both a main category and a sub-interest inline, via the two
+Jetzy backend endpoints the mobile app already uses.
+
+**This taxonomy is SHARED WITH THE MOBILE APP.** Anything created here appears in the app's
+interest list for every user. There is no delete or rename from this UI.
+
+- **Use `src/lib/jetzy-interests.ts`** — `interestsApiBase`, `normalizeInterestName`,
+  `findDuplicateCategory`, `findDuplicateSub`, `fetchInterestCategories`, `createInterest`.
+  Never call the backend or re-derive the base inline.
+- **`api/interests/index.ts` no longer hardcodes `prod-api.jetzy.com`.** It resolved the read
+  to prod while `NEXT_PUBLIC_EXTERNAL_API_BASE_URL` (which issues the very `accessToken` the
+  call authenticates with, see `api/auth/[...nextauth].ts`) points at test. The two
+  environments hold **different taxonomies** — prod leads with `travel`, test with
+  `agentic ai` — so writing to one while reading the other would mean a created interest
+  never appears: a silent failure that reads as a broken button.
+  - Consequence: on staging/local the picker now shows test's taxonomy. Events tagged with
+    prod sub-ids are **not** damaged — `InterestsSelector` only adds and removes on click and
+    never prunes ids it cannot render, so `values.interests` survives a save untouched.
+- **A 2xx from the create endpoints DOES NOT MEAN CREATED.** Both answer `201 "created
+  successfully"` unconditionally and put already-existing names in `data.skipped[]`.
+  `createInterest` returns `alreadyExisted` for exactly this; treating `res.ok` as an insert
+  would report a creation that never happened. Verified live against test.
+- **A created sub carries `_id`; the read endpoint returns the same thing as `id`.** So the
+  UI **re-reads the taxonomy after a create and matches by normalised NAME** rather than
+  threading an id through from the create response.
+- **Names are normalised to lowercase** (`normalizeInterestName`) — the stored taxonomy is
+  lowercase and the UI capitalises with CSS, so "Mobiles" would sit next to "mobiles" as a
+  visually identical second entry.
+- **Duplicates are rejected 409 with the existing name in the message**, so the host picks the
+  one that is there instead of inventing a near-twin. Sub duplicates are scoped to the parent
+  — "apple" under both "mobiles" and "food" is legitimate.
+- **Both routes share ONE rate-limit bucket** (`interest-create:<ip>`, 10 per 10 min, via the
+  existing `src/lib/rate-limit.ts`). Same taxonomy, same person; a per-route allowance would
+  just double the total.
+- **Permission: any authenticated host or admin**, by decision. The backend accepts a
+  `role: "user"` token (verified), and a host who can't add the interest their event is about
+  cannot tag it at all.
+- **The create UI lives in the shared `InterestsSelector`**, so `create.tsx` and `manage.tsx`
+  both get it with no change to either. It renders inside `<Formik>`: every control is
+  `type="button"` and the inline input swallows Enter, or confirming an interest name would
+  submit the whole event form.
+- After creating a main category the UI expands it and opens the sub input — an event is
+  tagged with sub-interests, never a bare category, so a new category alone is unusable.
+
+Files: `src/lib/jetzy-interests.ts`, `src/pages/api/interests/{index,categories,sub-categories}.ts`,
+`src/components/events/InterestsSelector.tsx`.
