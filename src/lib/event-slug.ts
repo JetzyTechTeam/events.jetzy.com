@@ -41,6 +41,10 @@ export const RESERVED_SLUGS = new Set([
 	// top-level pages
 	"login", "signup", "post-signup", "jetzyqrsignup", "success", "cancel",
 	"cancel-booking", "terms", "report-abuse", "404", "500",
+	// Membership pages. A real file at a top-level path wins over `/[slug].tsx`, so an event
+	// holding one of these slugs would be permanently unreachable — with nothing on the host's
+	// screen to explain why.
+	"premium", "subscribe", "manage-membership", "my-bookings",
 	// first-segment directories under src/pages
 	"api", "auth", "console", "events", "interests", "plugins", "profile",
 	// public/ assets

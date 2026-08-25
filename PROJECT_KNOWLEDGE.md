@@ -1920,3 +1920,50 @@ interest list for every user. There is no delete or rename from this UI.
 
 Files: `src/lib/jetzy-interests.ts`, `src/pages/api/interests/{index,categories,sub-categories}.ts`,
 `src/components/events/InterestsSelector.tsx`.
+
+## `/premium`: the page we can email (2026-08-25)
+
+`/subscribe` belongs to the mobile app. It bounces an unauthenticated visitor to `/login` on mount,
+auto-logs in from a magic token, and sends every exit path to `jetzy.com/jetzy_event`. Emailing that
+link to someone who has never signed in shows them a login form instead of an offer, which is
+exactly what the CEO didn't want — so `/premium` is a second door, and `/subscribe` was not touched.
+
+**Public.** `getServerSideProps` returns `{ props: {} }` with no guard and no redirect. The plan card
+renders for a signed-out visitor because `/api/subscriptions/plan` takes no session, and
+`PlanComparison` is entirely prop-driven.
+
+**The offer line has two sources, and the difference matters.**
+
+| | Source | Why |
+|---|---|---|
+| Logged out | `resolveTrialCode` + `trialDisclosure` in the browser | Pure, isomorphic, same table the server enforces — so the visitor sees what a code is worth without being asked who they are |
+| Logged in | `POST /api/subscriptions/invite-code` | Only the server can apply the first-timer rule |
+
+The logged-out line is a preview of the OFFER, not a promise about the account. That distinction is
+the whole design problem: we show "2 months free" before we can possibly know whether this person
+has had Premium before.
+
+**Carrying intent through login.** "Go Premium" while signed out pushes
+`/login?_cb=/premium?code=…&interval=…&go=1`. `_cb` already survives login, the signup form, and the
+email-verification round trip, so a brand-new account still lands back with the code intact. On
+return, `go=1` re-checks the code and opens Checkout without a second click.
+
+**A refused code stops everything.** If the account isn't eligible, we do not fall through to a
+full-price session: the reason is shown on the field, `go` is stripped from the URL so a refresh
+can't retry it, and buying without the code requires pressing a separate button. Being one silent
+click from paying $20/month for something you were shown as free is the failure this guards.
+
+**Two mechanical traps.** `returnTo` must stay a bare path, because `checkout.ts` builds
+`${baseUrl}${returnTo}?premium_session_id=…` and a query string there produces a second `?`; the
+code therefore crosses the Stripe round trip in `sessionStorage`. And everything read from the URL
+is attacker-craftable — `code` goes through `normalizeTrialCode`, `interval` is accepted only as
+exactly `month` or `year`, and `_cb` is always built by us, never read from a param.
+
+**No new endpoint, no signed token.** A campaign code is not a secret, and a token would add a
+signing surface without changing what is enforced: eligibility is decided at `invite-code` and again
+at `checkout`, server-side, both times.
+
+`"premium"` is now in `RESERVED_SLUGS` — a real page at a top-level path beats `/[slug].tsx`, so an
+event holding that slug would be permanently unreachable with nothing on the host's screen to
+explain it. `subscribe`, `manage-membership` and `my-bookings` had the same gap and were added too.
+
