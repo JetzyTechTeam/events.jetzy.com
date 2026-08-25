@@ -144,6 +144,12 @@ export default function EmailVerifyDialog({
 						<p className="mt-2 text-sm text-gray-400">
 							We sent a code to <span className="text-white">{email.trim()}</span>. It expires in 10 minutes.
 						</p>
+						{/* Said before they start waiting, not after — a code that landed in spam looks
+						    identical to one that was never sent, and the second guess is "this is
+						    broken". */}
+						<p className="mt-1.5 text-xs text-gray-500">
+							Can&apos;t find it? Check your spam or junk folder.
+						</p>
 						<label htmlFor="premium-verify-otp" className="mt-5 block text-xs text-gray-400">
 							6-digit code
 						</label>
