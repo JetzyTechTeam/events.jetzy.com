@@ -44,6 +44,17 @@ export const TRIAL_CODES: Record<string, TrialOffer> = {
 	"jetzy-me": { months: 2, intervals: ["month", "year"], label: "2 months free" },
 }
 
+/**
+ * The campaign code `/premium` prefills for every visitor.
+ *
+ * A public landing page we email people is a campaign in itself — expecting the recipient to type
+ * a code they were shown in the same email is a step that loses people for no reason. Change this
+ * one constant when the campaign changes; leave it as `""` to prefill nothing.
+ *
+ * It must exist in `TRIAL_CODES` above, or the field prefills something the server will refuse.
+ */
+export const DEFAULT_INVITE_CODE = "jetzy-me"
+
 /** Codes are matched case- and whitespace-insensitively: people type them from a screenshot. */
 export const normalizeTrialCode = (code?: string | null): string => (code || "").trim().toLowerCase()
 

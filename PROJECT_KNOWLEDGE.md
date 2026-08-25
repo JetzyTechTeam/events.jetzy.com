@@ -1967,3 +1967,20 @@ at `checkout`, server-side, both times.
 event holding that slug would be permanently unreachable with nothing on the host's screen to
 explain it. `subscribe`, `manage-membership` and `my-bookings` had the same gap and were added too.
 
+### The invite field is prefilled (2026-08-25)
+
+`/premium` fills the invite field with `DEFAULT_INVITE_CODE` from `invite-trial.ts` when neither the
+URL nor the Stripe stash supplies one. The page is the campaign; asking the recipient to retype a
+code printed in the same email costs conversions for nothing. One constant to change per campaign,
+and `""` turns the prefill off.
+
+Prefilling for *everyone* introduces a case that didn't exist before: a signed-in visitor who has
+had Premium before now lands on a code they never typed, which the server correctly refuses. So the
+page tracks whether the code is **ours or theirs** (`codeIsOurs`):
+
+- **ours** (prefilled) and refused → clear the field silently; they simply buy at the normal price
+- **theirs** (typed, or arriving on `?code=`) and refused → show the server's reason
+
+Same principle as everywhere else in this flow: explain anything the buyer did, never accuse them of
+something they didn't.
+

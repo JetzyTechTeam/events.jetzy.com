@@ -1,7 +1,7 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
-import { normalizeTrialCode, resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
+import { DEFAULT_INVITE_CODE, normalizeTrialCode, resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
@@ -67,6 +67,17 @@ export default function PremiumPage() {
 	const [autoState, setAutoState] = React.useState<"idle" | "running" | "blocked">("idle")
 	const autoStarted = React.useRef(false)
 
+	/**
+	 * Did the buyer put this code in the field, or did we?
+	 *
+	 * It decides what happens when the server refuses it. A code someone typed, or one that came
+	 * in on their emailed link, was a deliberate act and deserves an explanation. The one we
+	 * prefill for everybody is a convenience, and a red error against a field they never touched
+	 * — "this code is for new members", to a returning member who only wants to resubscribe —
+	 * reads as something being broken.
+	 */
+	const codeIsOurs = React.useRef(true)
+
 	// Public price — this endpoint takes no session, which is what lets the card render for a
 	// visitor who has never signed in.
 	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium")
@@ -78,8 +89,17 @@ export default function PremiumPage() {
 		if (!router.isReady) return
 		const fromUrl = normalizeTrialCode(typeof router.query.code === "string" ? router.query.code : "")
 		const stashed = typeof window !== "undefined" ? sessionStorage.getItem(STASH_KEY) : null
-		if (fromUrl) setInviteCode((current) => current || fromUrl)
-		else if (stashed) setInviteCode((current) => current || stashed)
+		// Their link, then whatever survived the trip to Stripe, then the running campaign. The
+		// last one is why nobody has to type anything: the page is itself the campaign.
+		if (fromUrl) {
+			codeIsOurs.current = false
+			setInviteCode((current) => current || fromUrl)
+		} else if (stashed) {
+			codeIsOurs.current = false
+			setInviteCode((current) => current || stashed)
+		} else if (DEFAULT_INVITE_CODE) {
+			setInviteCode((current) => current || DEFAULT_INVITE_CODE)
+		}
 
 		const interval = asInterval(router.query.interval)
 		if (interval) setSelectedInterval((current) => current || interval)
@@ -143,7 +163,14 @@ export default function PremiumPage() {
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
-				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				// Ours and refused — most often a member who has had Premium before. Clear it and
+				// let them buy at the normal price, rather than accusing them of a bad code.
+				if (codeIsOurs.current) {
+					setInviteCode("")
+					setInviteError(null)
+				} else {
+					setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				}
 			} finally {
 				setInviteChecking(false)
 			}
@@ -351,7 +378,11 @@ export default function PremiumPage() {
 					onManageBilling={() => portalMutation.mutate(undefined)}
 					billingPending={portalMutation.isPending}
 					inviteCode={inviteCode}
-					onInviteCodeChange={setInviteCode}
+					onInviteCodeChange={(next) => {
+						// From here on it is their code, so a refusal is explained rather than swallowed.
+						codeIsOurs.current = false
+						setInviteCode(next)
+					}}
 					inviteAccepted={inviteAccepted}
 					inviteError={inviteError}
 					inviteChecking={inviteChecking}
