@@ -42,6 +42,10 @@ export const TRIAL_CODES: Record<string, TrialOffer> = {
 	// $200 charge rather than a $20 one, which is why the card states the amount and the date the
 	// trial converts on rather than the bare "2 months free".
 	"jetzy-me": { months: 2, intervals: ["month", "year"], label: "2 months free" },
+	// A shorter offer for campaigns that don't warrant two months. Both intervals, same reasoning
+	// as above — the card names the real amount and date either way, so "1 month free, then
+	// $200/year from 26 Sep" is as honest on annual as it is on monthly.
+	"1m-off": { months: 1, intervals: ["month", "year"], label: "1 month free" },
 }
 
 /**

@@ -2030,3 +2030,21 @@ before any money moves, and "Continue without the code" is offered.
 Standalone redemptions land on the **Jetzy Premium** tab of `/console/analytics/growth` with the
 referral code against them, not the referral tab, which reads bookings.
 
+## A second invite code: `1m-off` (2026-08-26)
+
+`TRIAL_CODES` now carries `1m-off` — one free month — alongside `jetzy-me`'s two. Both are valid on
+monthly and annual; the disclosure names the real amount and date either way ("1 month free, then
+$200/year from 26 Sep"), which is what makes the annual case honest.
+
+**Adding a row to that table opens every door at once**, which is worth knowing before adding a
+third. The same code is then accepted at `/subscribe`, the Buy Jetzy Premium modal and `/premium` —
+where a card is collected and the membership converts — *and* at `/signup` and `/jetzyqrsignup`,
+where `grantSignupTrial` creates it with **no card**, so it ends at the trial rather than
+converting. Accepted deliberately for `1m-off`. A code that should work only where a card is taken
+would need a `doors` (or `signup: false`) field on `TrialOffer` first; nothing supports that split
+today.
+
+Reporting needs no change: the signup-trial report keys off `Object.keys(TRIAL_CODES)`, and
+`membership_purchases` records `inviteCode` per sale, so `1m-off` appears on
+`/console/analytics/growth` from its first redemption.
+
