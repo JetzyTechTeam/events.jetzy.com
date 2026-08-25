@@ -210,8 +210,69 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 
 	const addingCategory = creating?.kind === 'category'
 
+	// Ids on the event that this taxonomy cannot render at all. The taxonomy is per
+	// environment — an id created against one Jetzy backend does not exist on the other — so
+	// without this the header counts interests the host can see no trace of anywhere.
+	const knownIds = React.useMemo(() => {
+		const set = new Set<string>()
+		categories.forEach(cat => {
+			set.add(cat._id)
+			cat.subCategories.forEach(sub => set.add(sub.id))
+		})
+		return set
+	}, [categories])
+	// Guarded on `categories.length`: mid-load everything looks unrecognised.
+	const unrecognised = categories.length > 0 ? selected.filter(id => !knownIds.has(id)).length : 0
+
 	const list = (
 		<>
+			{unrecognised > 0 && (
+				<Box mb={3} p={3} borderRadius="10px" bg="#1A1206" border="1px solid #F7943255">
+					<Text color="#F79432" fontSize="xs" fontWeight="bold">
+						{unrecognised} selected {unrecognised === 1 ? 'interest is' : 'interests are'} not in this list
+					</Text>
+					<Text color="#9C9C9C" fontSize="xs" mt={1} lineHeight="140%">
+						They were picked against a different Jetzy environment&apos;s interest list, so there is
+						nothing here to highlight. They stay on the event — saving does not remove them.
+					</Text>
+				</Box>
+			)}
+
+			{/* At the TOP, not after the list. There are ~35 categories, so at the bottom this
+			    sat below several screens of chips and a host looking for it never found it. */}
+			<Box pb={3} mb={1} borderBottom={categories.length > 0 ? '1px solid #2E2E2E' : 'none'}>
+				{addingCategory ? (
+					renderCreateForm('New interest category')
+				) : (
+					// `display` is explicit: Flex is display:flex, which would stretch this pill
+					// across the full width of the card instead of hugging its label.
+					<Flex
+						as="button"
+						type="button"
+						align="center"
+						display="inline-flex"
+						gap={2}
+						px={4}
+						py={2}
+						rounded="full"
+						fontSize="sm"
+						fontWeight="bold"
+						cursor="pointer"
+						bg="#F7943214"
+						color="#F79432"
+						border="1px dashed #F79432"
+						onClick={() => openCreate({ kind: 'category' })}
+						_hover={{ bg: '#F7943229' }}
+					>
+						<Box as={PlusIcon} w="16px" h="16px" />
+						New interest category
+					</Flex>
+				)}
+				<Text color="#6B6E73" fontSize="xs" mt={2}>
+					Interests you add here are shared across Jetzy, including the mobile app.
+				</Text>
+			</Box>
+
 			{loading && categories.length === 0 ? (
 				<Text color="gray.500" fontSize="sm">Loading interests...</Text>
 			) : categories.length === 0 ? (
@@ -219,7 +280,12 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 			) : (
 				categories.map((cat, idx) => {
 					const subIds = cat.subCategories.map(s => s.id)
-					const selectedCount = subIds.filter(id => selected.includes(id)).length
+					// `interests` can hold a CATEGORY id, not only sub-interest ids — the Jetzy
+					// app lets people tag an event with a whole top-level interest. Comparing
+					// against sub ids alone made those events show a correct "N Selected" count
+					// with nothing highlighted anywhere.
+					const categorySelected = selected.includes(cat._id)
+					const selectedCount = subIds.filter(id => selected.includes(id)).length + (categorySelected ? 1 : 0)
 					const isExpanded = expanded === cat._id
 					const addingSubHere = creating?.kind === 'sub' && creating.categoryId === cat._id
 					return (
@@ -252,7 +318,59 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 							</Flex>
 							{isExpanded && (
 								<Box pb={4}>
+									{/* Above the chips, not inline with them: the form is far wider than a chip
+									    and would reflow the whole row it sits in. */}
+									{addingSubHere && renderCreateForm('New interest in ' + cat.name)}
 									<Flex wrap="wrap" gap={3} mb={2}>
+										{/* First in the row, so it is visible without scanning to the end of a
+										    long category. Dashed and tinted rather than solid: a solid #F79432
+										    chip is what "selected" looks like here. */}
+										{!addingSubHere && (
+											<Flex
+												as="button"
+												type="button"
+												align="center"
+												gap={1}
+												px={4}
+												py={2}
+												rounded="full"
+												fontSize="sm"
+												fontWeight="bold"
+												cursor="pointer"
+												bg="#F7943214"
+												color="#F79432"
+												border="1px dashed #F79432"
+												onClick={() => openCreate({ kind: 'sub', categoryId: cat._id })}
+												_hover={{ bg: '#F7943229' }}
+											>
+												<Box as={PlusIcon} w="14px" h="14px" />
+												Add interest
+											</Flex>
+										)}
+										{/* Rendered ONLY when it is already selected. Offering it otherwise
+										    would start writing category-level picks from the web, a shape this
+										    form has never produced — surfacing existing data is the job here,
+										    and it stays removable. */}
+										{categorySelected && (
+											<Box
+												as="button"
+												type="button"
+												title="The whole category is selected — picked in the Jetzy app"
+												px={4}
+												py={2}
+												rounded="full"
+												fontSize="sm"
+												fontWeight="medium"
+												cursor="pointer"
+												bg="#F79432"
+												color="white"
+												textTransform="capitalize"
+												border="1px solid #F79432"
+												onClick={() => toggle(cat._id)}
+											>
+												All of {cat.name}
+											</Box>
+										)}
 										{cat.subCategories.map(sub => {
 											const isSelected = selected.includes(sub.id)
 											return (
@@ -278,31 +396,7 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 												</Box>
 											)
 										})}
-										{/* Dashed so it reads as an action rather than one more selectable interest. */}
-										{!addingSubHere && (
-											<Flex
-												as="button"
-												type="button"
-												align="center"
-												gap={1}
-												px={4}
-												py={2}
-												rounded="full"
-												fontSize="sm"
-												fontWeight="medium"
-												cursor="pointer"
-												bg="transparent"
-												color="#9C9C9C"
-												border="1px dashed #3A3D42"
-												onClick={() => openCreate({ kind: 'sub', categoryId: cat._id })}
-												_hover={{ borderColor: '#5A5D62', color: 'white' }}
-											>
-												<Box as={PlusIcon} w="14px" h="14px" />
-												Add interest
-											</Flex>
-										)}
 									</Flex>
-									{addingSubHere && renderCreateForm('New interest in ' + cat.name)}
 									<Button
 										size="xs"
 										variant="ghost"
@@ -320,33 +414,6 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 				})
 			)}
 
-			{/* New main category. Sits below the whole list so it cannot be mistaken for part of
-			    whichever category the host happens to have open. */}
-			<Box pt={3} borderTop={categories.length > 0 ? '1px solid #2E2E2E' : 'none'}>
-				{addingCategory ? (
-					renderCreateForm('New interest category')
-				) : (
-					<Flex
-						as="button"
-						type="button"
-						align="center"
-						gap={2}
-						color="#9C9C9C"
-						fontSize="sm"
-						fontWeight="medium"
-						cursor="pointer"
-						py={2}
-						onClick={() => openCreate({ kind: 'category' })}
-						_hover={{ color: 'white' }}
-					>
-						<Box as={PlusIcon} w="16px" h="16px" />
-						New interest category
-					</Flex>
-				)}
-				<Text color="#6B6E73" fontSize="xs" mt={1}>
-					Interests you add here are shared across Jetzy, including the mobile app.
-				</Text>
-			</Box>
 		</>
 	)
 
