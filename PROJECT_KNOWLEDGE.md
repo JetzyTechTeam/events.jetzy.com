@@ -1984,3 +1984,49 @@ page tracks whether the code is **ours or theirs** (`codeIsOurs`):
 Same principle as everywhere else in this flow: explain anything the buyer did, never accuse them of
 something they didn't.
 
+## Sharing a referral code as free Jetzy Premium (2026-08-26)
+
+A host sets **Free Months of Jetzy Premium** on a referral code and can now share it as a link:
+
+```
+https://events.jetzy.com/premium?code=JETZY-ME&event=6a83365808b397827ee83341
+```
+
+The recipient lands on `/premium` with the code filled in and the months already applied — no
+event page, no ticket, no purchase.
+
+**This is a new giveaway path, not a wiring change.** Until now those months only landed on a
+ticket that already sells Premium: the host sold something, Jetzy took the ticket revenue, and the
+membership rode along. A shared link has none of that, so `resolveReferralTrial`
+(`src/lib/referral-trial.ts`) adds two rules on top of the ordinary validation:
+
+1. `freeMembershipMonths > 0` — nothing to share otherwise;
+2. **`maxUses` must be set.** A link can be forwarded, screenshotted or posted publicly, and an
+   unlimited code behind a public URL is an unlimited supply of free memberships. Re-checked at
+   redemption, not only when the host copies the link — so clearing the limit later kills the links
+   already in circulation rather than opening the gate.
+
+It is the single resolver behind both the preview and the charge, so what the link promises and
+what Stripe does cannot drift apart.
+
+**The event id is mandatory in the link.** Referral codes became unique per event on 2026-08-19, so
+the same string can exist elsewhere with a different month count.
+
+**Counting.** `usageCount` is one pool shared with the code's ticket discounts — every membership
+claimed leaves one fewer use for everything else, which the share modal says in as many words. The
+increment happens in the Stripe webhook, never at checkout (a session can be abandoned), and is
+keyed to `recordMembershipPurchase` returning **true only on insert** — it upserts on
+`stripeSubscriptionId`, so a redelivered webhook can't burn a second use.
+
+**Client/server split.** `shareableReason` and `premiumShareLink` live in `src/lib/referral-share.ts`
+because `referral-trial.ts` pulls in mongoose via `referral-validation.ts`, and webpack follows that
+into the client bundle. Same rule as `invite-trial.ts` versus `signup-trial.ts`.
+
+**One deliberate rough edge:** a code whose `maxUses` was cleared *after* being shared still previews
+its months (the public validate route doesn't know about the share rule) and is then refused at
+checkout with "it has no usage limit set". That is the kill switch working — the buyer is told
+before any money moves, and "Continue without the code" is offered.
+
+Standalone redemptions land on the **Jetzy Premium** tab of `/console/analytics/growth` with the
+referral code against them, not the referral tab, which reads bookings.
+

@@ -106,7 +106,7 @@ export type RecordMembershipPurchase = {
  * the count. `$setOnInsert` on the codes and the source: the FIRST write is the one that saw the
  * checkout, and a later replay carrying less context must not blank what it recorded.
  */
-export async function recordMembershipPurchase(input: RecordMembershipPurchase): Promise<void> {
+export async function recordMembershipPurchase(input: RecordMembershipPurchase): Promise<boolean> {
 	try {
 		const doc: Record<string, any> = {
 			key: input.key,
@@ -128,17 +128,24 @@ export async function recordMembershipPurchase(input: RecordMembershipPurchase):
 		}
 
 		if (input.stripeSubscriptionId) {
-			await MembershipPurchases.updateOne(
+			const result = await MembershipPurchases.updateOne(
 				{ stripeSubscriptionId: input.stripeSubscriptionId },
 				{ $setOnInsert: { ...doc, stripeSubscriptionId: input.stripeSubscriptionId } },
 				{ upsert: true },
 			)
-		} else {
-			// No subscription id means nothing to be idempotent on. Rare enough to accept a
-			// possible duplicate rather than lose the sale from the report entirely.
-			await MembershipPurchases.create(doc)
+			// TRUE only on the first write for this subscription. Callers use it to do the
+			// once-per-sale work — counting a referral redemption — without a redelivered webhook
+			// doing it twice.
+			return (result as any)?.upsertedCount > 0
 		}
+
+		// No subscription id means nothing to be idempotent on. Rare enough to accept a possible
+		// duplicate rather than lose the sale from the report entirely.
+		await MembershipPurchases.create(doc)
+		return true
 	} catch (error: any) {
 		console.error("[membership-purchases] Could not record the sale:", error?.message || error)
+		// Never report a write that didn't happen — a caller keyed to this must not act on it.
+		return false
 	}
 }

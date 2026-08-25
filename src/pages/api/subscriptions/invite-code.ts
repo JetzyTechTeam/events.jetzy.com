@@ -37,9 +37,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, { valid: false }, "Enter a code.", false, ResCode.BAD_REQUEST)
 		}
 
-		const resolved = resolveTrialCode(code, interval)
-		if (!resolved.ok) {
-			return sendResponse(res, { valid: false, reason: resolved.reason }, resolved.message, false, ResCode.BAD_REQUEST)
+		// Two kinds of code reach this endpoint, and the event is what tells them apart.
+		//
+		// With an `event`, it is a host's referral code shared as a Premium link — resolved from
+		// Mongo, with the share-only rules in `resolveReferralTrial`. Without one, it is an invite
+		// code from the hardcoded table, exactly as before. Same response either way, so the page
+		// reads one shape.
+		const eventId = typeof req.body?.event === "string" ? req.body.event.trim() : ""
+
+		let months: number
+		let label: string
+		let resolvedCode: string
+
+		if (eventId) {
+			const { resolveReferralTrial } = await import("@/lib/referral-trial")
+			const referral = await resolveReferralTrial(eventId, code)
+			if (!referral.ok) {
+				return sendResponse(res, { valid: false, reason: "referral" }, referral.message, false, ResCode.BAD_REQUEST)
+			}
+			months = referral.months
+			resolvedCode = referral.code
+			label = `${months} month${months === 1 ? "" : "s"} free`
+		} else {
+			const resolved = resolveTrialCode(code, interval)
+			if (!resolved.ok) {
+				return sendResponse(res, { valid: false, reason: resolved.reason }, resolved.message, false, ResCode.BAD_REQUEST)
+			}
+			months = resolved.offer.months
+			resolvedCode = resolved.code
+			label = resolved.offer.label
 		}
 
 		const userId = (session.user as any)?._id || (session.user as any)?.id
@@ -64,9 +90,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			res,
 			{
 				valid: true,
-				months: resolved.offer.months,
-				label: resolved.offer.label,
-				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
+				months,
+				label,
+				code: resolvedCode,
+				// Same calendar-month maths for both kinds of code, so the date on the card is the
+				// date the subscription actually converts.
+				chargesFrom: trialEndsOn({ months, intervals: [], label }).toISOString(),
 			},
 			"Invite code applied.",
 			true,

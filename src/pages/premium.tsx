@@ -41,6 +41,12 @@ const SELF = "/premium"
  * `?` and a dead link. Same technique `subscribe.tsx` uses for its `eventId`.
  */
 const STASH_KEY = "premium_invite_stash"
+/** The event a shared referral code belongs to. Meaningless without the code, stored beside it. */
+const STASH_EVENT_KEY = "premium_invite_event"
+
+/** 24 hex characters. Anything else in the URL is ignored rather than sent to the server. */
+const asEventId = (value: unknown): string =>
+	typeof value === "string" && /^[a-f0-9]{24}$/i.test(value.trim()) ? value.trim() : ""
 
 /** Only these two exist; anything else in the URL is ignored rather than trusted. */
 const asInterval = (value: unknown): string | undefined =>
@@ -57,6 +63,15 @@ export default function PremiumPage() {
 	const [inviteError, setInviteError] = React.useState<string | null>(null)
 	const [inviteChecking, setInviteChecking] = React.useState(false)
 	const [selectedInterval, setSelectedInterval] = React.useState<string | undefined>(undefined)
+	/**
+	 * Set when the code came from a host's shared link — `/premium?code=…&event=…`.
+	 *
+	 * Its presence is what tells every layer this is a REFERRAL code out of Mongo rather than an
+	 * invite code from the hardcoded table. Codes are unique per event, so the same string can
+	 * exist elsewhere with a different number of months; without the event we would be guessing
+	 * which terms to honour.
+	 */
+	const [referralEventId, setReferralEventId] = React.useState("")
 	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
 
 	/**
@@ -89,6 +104,9 @@ export default function PremiumPage() {
 		if (!router.isReady) return
 		const fromUrl = normalizeTrialCode(typeof router.query.code === "string" ? router.query.code : "")
 		const stashed = typeof window !== "undefined" ? sessionStorage.getItem(STASH_KEY) : null
+		const eventFromUrl = asEventId(router.query.event)
+		const eventStashed = typeof window !== "undefined" ? sessionStorage.getItem(STASH_EVENT_KEY) : null
+		setReferralEventId(eventFromUrl || asEventId(eventStashed) || "")
 		// Their link, then whatever survived the trip to Stripe, then the running campaign. The
 		// last one is why nobody has to type anything: the page is itself the campaign.
 		if (fromUrl) {
@@ -134,6 +152,38 @@ export default function PremiumPage() {
 			return
 		}
 
+		// A shared referral code lives in Mongo, so even the logged-out preview has to ask — but it
+		// asks the PUBLIC validate route, which takes no session. The offer is still shown before
+		// anyone is asked who they are.
+		if (!isAuthenticated && referralEventId) {
+			setInviteChecking(true)
+			inviteTimer.current = setTimeout(async () => {
+				try {
+					const { data } = await axios.post(`/api/events/${referralEventId}/referral-codes/validate`, {
+						eventId: referralEventId,
+						code,
+					})
+					const months = Number(data?.data?.freeMembershipMonths) || 0
+					if (!months) {
+						setInviteAccepted(null)
+						setInviteError("This code doesn't include free months of Jetzy Premium.")
+						return
+					}
+					const offer = { months, intervals: [], label: `${months} month${months === 1 ? "" : "s"} free` }
+					setInviteError(null)
+					setInviteAccepted(trialDisclosure(offer, selectedPrice?.label || null, trialEndsOn(offer)))
+				} catch (error: any) {
+					setInviteAccepted(null)
+					setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				} finally {
+					setInviteChecking(false)
+				}
+			}, 400)
+			return () => {
+				if (inviteTimer.current) clearTimeout(inviteTimer.current)
+			}
+		}
+
 		if (!isAuthenticated) {
 			const resolved = resolveTrialCode(code, selectedInterval)
 			setInviteChecking(false)
@@ -150,7 +200,11 @@ export default function PremiumPage() {
 		setInviteChecking(true)
 		inviteTimer.current = setTimeout(async () => {
 			try {
-				const { data } = await axios.post("/api/subscriptions/invite-code", { code, interval: selectedInterval })
+				const { data } = await axios.post("/api/subscriptions/invite-code", {
+					code,
+					interval: selectedInterval,
+					...(referralEventId ? { event: referralEventId } : {}),
+				})
 				setInviteAccepted(
 					data?.data?.label
 						? trialDisclosure(
@@ -180,7 +234,7 @@ export default function PremiumPage() {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
 		// Re-run on interval too: the amount that follows the free months changes with it.
-	}, [inviteCode, selectedInterval, isAuthenticated, selectedPrice?.label])
+	}, [inviteCode, selectedInterval, isAuthenticated, selectedPrice?.label, referralEventId])
 
 	// ---- Checkout ----
 	const startCheckout = React.useCallback(
@@ -188,17 +242,25 @@ export default function PremiumPage() {
 			if (typeof window !== "undefined") {
 				// Stripe's success_url is built server-side from a bare path, so anything we want
 				// back afterwards has to be stashed rather than appended.
-				if (code) sessionStorage.setItem(STASH_KEY, code)
-				else sessionStorage.removeItem(STASH_KEY)
+				if (code) {
+					sessionStorage.setItem(STASH_KEY, code)
+					if (referralEventId) sessionStorage.setItem(STASH_EVENT_KEY, referralEventId)
+				} else {
+					sessionStorage.removeItem(STASH_KEY)
+					sessionStorage.removeItem(STASH_EVENT_KEY)
+				}
 			}
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo: SELF,
 				...(selectedInterval ? { interval: selectedInterval } : {}),
 				...(code ? { inviteCode: code } : {}),
+				// Present only for a shared referral code — the server reads the months from that
+				// event's record rather than the hardcoded table.
+				...(code && referralEventId ? { event: referralEventId } : {}),
 			})
 			return data?.data as { url: string }
 		},
-		[selectedInterval],
+		[selectedInterval, referralEventId],
 	)
 
 	const subscribeMutation = useMutation({
@@ -247,10 +309,11 @@ export default function PremiumPage() {
 		const params = new URLSearchParams()
 		const code = inviteCode.trim()
 		if (code) params.set("code", code)
+		if (code && referralEventId) params.set("event", referralEventId)
 		if (selectedInterval) params.set("interval", selectedInterval)
 		params.set("go", "1")
 		router.push(`/login?_cb=${encodeURIComponent(`${SELF}?${params.toString()}`)}`)
-	}, [isAuthenticated, inviteCode, selectedInterval, router, subscribeMutation])
+	}, [isAuthenticated, inviteCode, selectedInterval, referralEventId, router, subscribeMutation])
 
 	// ---- Back from login with intent ----
 	//
@@ -271,13 +334,18 @@ export default function PremiumPage() {
 		setAutoState("running")
 
 		const code = normalizeTrialCode(typeof router.query.code === "string" ? router.query.code : "") || inviteCode.trim()
+		const sharedEventId = asEventId(router.query.event) || referralEventId
 
 		;(async () => {
 			try {
 				if (code) {
 					// Throws when the account isn't eligible — which is the case this whole flow
 					// exists to handle honestly.
-					await axios.post("/api/subscriptions/invite-code", { code, interval: asInterval(router.query.interval) || selectedInterval })
+					await axios.post("/api/subscriptions/invite-code", {
+						code,
+						interval: asInterval(router.query.interval) || selectedInterval,
+						...(sharedEventId ? { event: sharedEventId } : {}),
+					})
 				}
 				const data = await startCheckout(code || undefined)
 				if (data?.url) {
@@ -295,6 +363,7 @@ export default function PremiumPage() {
 				// Drop `go` so a refresh doesn't try again.
 				const params = new URLSearchParams()
 				if (code) params.set("code", code)
+				if (code && sharedEventId) params.set("event", sharedEventId)
 				const interval = asInterval(router.query.interval) || selectedInterval
 				if (interval) params.set("interval", interval)
 				router.replace(`${SELF}${params.toString() ? `?${params.toString()}` : ""}`, undefined, { shallow: true })
@@ -312,6 +381,7 @@ export default function PremiumPage() {
 			.get(`/api/subscriptions/confirm?session_id=${sessionId}`)
 			.then(() => {
 				sessionStorage.removeItem(STASH_KEY)
+				sessionStorage.removeItem(STASH_EVENT_KEY)
 				setInviteCode("")
 				Success("Welcome to Jetzy Premium!", "Your membership is now active.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
