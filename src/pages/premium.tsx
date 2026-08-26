@@ -10,6 +10,8 @@ import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } fro
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { useSession } from "next-auth/react"
 import Image from "next/image"
 import { useRouter } from "next/router"
@@ -551,8 +553,14 @@ export default function PremiumPage() {
 	)
 }
 
-// Public on purpose — no `authorizedOnly`, and no redirect for a signed-out visitor. This page is
-// the thing we email to people who have never logged in.
-export const getServerSideProps: GetServerSideProps = async () => {
-	return { props: {} }
+/**
+ * Public on purpose — no guard, and no redirect for a signed-out visitor.
+ *
+ * The session is resolved here all the same and handed to `SessionProvider`, so the navbar knows
+ * who is looking on the FIRST render. Without it `useSession` starts at "loading" and a member
+ * saw Login and Sign Up above a card already showing their own plan.
+ */
+export const getServerSideProps: GetServerSideProps = async (context) => {
+	const session = await getServerSession(context.req, context.res, authOptions)
+	return { props: { session } }
 }

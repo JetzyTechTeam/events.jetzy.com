@@ -2184,6 +2184,43 @@ checked against the recipient's account, which checkout can still refuse. It now
 this code to confirm your email". `send-code` still resolves the referral offer; that is a gate on
 whether to send at all, not a source of copy.
 
+## The welcome email is the CEO's copy (2026-08-27)
+
+`sendMembershipStarted` said "Your Jetzy Premium membership is active. Welcome aboard." and then the
+terms. It now leads with **Welcome to Jetzy Premium!** and the CEO's paragraphs: the trial is
+active, what Premium gets them, the launch price, the lock-in, risk-free, and
+"Enjoy the world differently."
+
+Three things it does NOT do:
+
+- **It does not drop the terms box.** That yellow panel is the card-network disclosure and the only
+  place the exact date and the exact amount appear together. Marketing copy sits around it.
+- **It does not promise "risk-free" to a cardless trial.** A trial granted by a signup invite code
+  has no payment method, so Stripe ends it rather than charging — "cancel before it ends and you
+  won't be charged" describes a charge that was never coming. That sentence renders only when
+  `!endsWithoutCard`.
+- **It does not hardcode $20/month.** The rate comes from the subscription, so an annual member
+  reads "$200/year", and the whole-dollar formatting matches the plan card.
+
+Full Concierge keeps the plain welcome, on the same `label === DEFAULT_MEMBERSHIP_LABEL` gate as the
+cancellation email.
+
+## Two visibility bugs the dialog and navbar shared (2026-08-27)
+
+**"Switch to $200/year" was missing from the reopened dialog.** `useMembershipPlan("premium", isOpen)`
+— but `isOpen` belongs to the navbar and is false on a fresh page load, which is exactly the state a
+dialog reopening itself after checkout is in. No prices meant no second interval, so `switchTarget`
+was undefined and the switch button never rendered, for the member most likely to want it: someone
+who had just subscribed monthly. Both queries now gate on
+`isVisible = isOpen || justSubscribed || alreadyMember`.
+
+**Members saw Login and Sign Up.** `useSession()` starts at `"loading"` on any page that doesn't pass
+a session through `getServerSideProps`, and the navbar's `authenticated ? … : …` treated that as
+signed out — so a member opening a shared `/premium` link got Login/Sign Up above a card already
+showing their own trial. The navbar now renders **neither** half while loading, and `/premium` and
+`/subscribe` resolve the session server-side and hand it to `SessionProvider`, so their first paint
+is right rather than merely quick.
+
 ## The cancellation email is a win-back (2026-08-27)
 
 Jetzy Premium's cancellation notice was a receipt: "your membership is set to end on X, you keep

@@ -77,10 +77,20 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	/** Back from Stripe, on a purchase this dialog started. Reopens it on the member card. */
 	const [justSubscribed, setJustSubscribed] = useState(false)
 
+	/**
+	 * The dialog is VISIBLE in three ways, and the queries below have to follow all three.
+	 *
+	 * `isOpen` is owned by the navbar and is false on a fresh page load, so a dialog that reopens
+	 * itself after checkout (`justSubscribed`) or after a login round trip (`alreadyMember`) was
+	 * fetching nothing: no prices meant no annual option, which meant no "Switch to $200/year" on
+	 * the member card — the one action a member who just subscribed monthly might want.
+	 */
+	const isVisible = isOpen || justSubscribed || alreadyMember
+
 	// The shared hook, not a private query: it already formats every interval's label and shares
 	// its cache key, so opening this after the price has been fetched elsewhere on the page
 	// costs no extra request — and the modal can't drift from `/subscribe` on how a price reads.
-	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium", isOpen)
+	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium", isVisible)
 
 	// Which interval the buyer has picked. Left unset until the plan loads, then defaulted to the
 	// product default (monthly) rather than a guessed string.
@@ -92,7 +102,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	// What they are on now — asked only when the dialog is actually open AND they are a member.
 	// This modal is mounted by every navbar, so an ungated fetch would put a Stripe round-trip
 	// behind every page view for every member.
-	const { currentPlan } = useCurrentMembershipPlan((isOpen || justSubscribed) && isPremium)
+	const { currentPlan } = useCurrentMembershipPlan(isVisible && isPremium)
 
 	// Invite code (a free-trial code) — same behaviour as /subscribe, since both render the
 	// same card and a buyer must not get a different answer depending on which door they used.
@@ -281,7 +291,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 	// Stays mounted while `alreadyMember` or `justSubscribed` is set even if the parent thinks
 	// it's closed — those are the post-login and post-checkout cases described above.
-	if (!isOpen && !alreadyMember && !justSubscribed) return null
+	if (!isVisible) return null
 
 	const handleClose = () => {
 		setAlreadyMember(false)

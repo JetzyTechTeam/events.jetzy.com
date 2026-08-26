@@ -3144,6 +3144,13 @@ type MembershipEmailData = {
 
 const DEFAULT_MEMBERSHIP_LABEL = "Jetzy Premium"
 
+/**
+ * The rate is HALF the "regular price" we advertise — the same claim `COMPARE_AT_MULTIPLIER`
+ * makes on the plan card, kept as one number here so the two can't drift. It is marketing copy:
+ * nothing in Stripe holds a higher price and nobody has ever been billed one.
+ */
+const LAUNCH_DISCOUNT_LABEL = "50% off"
+
 const membershipShell = (bodyHtml: string, accent: string) => wrapHtml(`
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
     <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 4px solid ${accent};">
@@ -3225,23 +3232,90 @@ export const sendMembershipStarted = async ({
 	const renewsOn = nextBillingDate ? dayjs(nextBillingDate).format("MMMM D, YYYY") : null
 
 	// The one sentence that has to be exactly right: what has been taken, what will be taken,
-	// and when.
+	// and when. This is a card-network disclosure, not decoration — it stays regardless of what
+	// the surrounding marketing copy says, and it is the only place the exact date and amount
+	// appear together.
 	const terms = chargesOn && endsWithoutCard
 		? `Your membership is <strong>free until ${chargesOn}</strong>. There's no card on file, so nothing will be charged — it simply ends on that date unless you add one. Keeping it costs ${money(amount)} every ${interval}.`
 		: chargesOn
 			? `Your membership is <strong>free until ${chargesOn}</strong>. After that it renews at <strong>${money(amount)} every ${interval}</strong> until you cancel — cancel any time before then and you won't be charged.`
 			: `You've been charged <strong>${money(amount)}</strong>, and your membership renews at that amount every ${interval} until you cancel${renewsOn ? `, starting <strong>${renewsOn}</strong>` : ""}.`
 
+	// ---- The CEO's welcome copy (2026-08-27), reproduced as written ----
+	//
+	// Premium only. Full Concierge is sold on selectmember.jetzy.com's terms, and its benefits and
+	// price are not these; the plain welcome it always had still serves it.
+	const isPremiumProduct = product === DEFAULT_MEMBERSHIP_LABEL
+	// "$20/month", not "$20.00/month" — whole dollars drop the cents, as on the plan card.
+	const rate = `$${Number.isInteger(amount) ? amount : amount.toFixed(2)}/${interval}`
+
+	const opening = chargesOn
+		? `Your ${product} free trial is now active.`
+		: `Your ${product} membership is now active.`
+
+	const benefits =
+		"You now have access to <strong>Premium benefits, exclusive events, curated networking, customized matches, ability to host events with other members and special travel &amp; lifestyle offers</strong> available to Jetzy Premium members."
+
+	const launch = `As an early member, you've also unlocked our <strong>limited-time launch pricing of just ${rate} — ${LAUNCH_DISCOUNT_LABEL} the regular membership price.</strong>`
+
+	const lockIn = `Your <strong>${LAUNCH_DISCOUNT_LABEL} discounted rate will be locked in for one full year from the date you sign up</strong>, as long as your membership remains active.`
+
+	// Only where it is true. A trial with no card on file never converts, so "cancel before it
+	// ends and you won't be charged" describes a charge that was never coming — the terms box
+	// above already says what actually happens there.
+	const riskFree =
+		chargesOn && !endsWithoutCard
+			? "Enjoy your free trial <strong>risk-free</strong>. Cancel anytime before your trial ends and you won't be charged."
+			: null
+
+	const signOff = `<strong>Welcome to ${product}. Enjoy the world differently.</strong>`
+
+	const para = (html: string, color = "#4B5563", size = 15) =>
+		`<p style="color:${color};font-size:${size}px;line-height:1.6;margin:15px 0;">${html}</p>`
+
+	const heading = isPremiumProduct
+		? `<h1 style="color:#1F2937;font-size:22px;line-height:1.4;margin:0 0 15px 0;">Welcome to ${product}!</h1>`
+		: ""
+
+	const marketing = isPremiumProduct
+		? [para(opening, "#1F2937", 16), para(benefits), para(launch), para(lockIn), riskFree ? para(riskFree) : ""].join("")
+		: para(`Your ${product} membership is active. Welcome aboard.`, "#1F2937", 16)
+
+	const textLines = isPremiumProduct
+		? [
+				`Hi ${name},`,
+				`Welcome to ${product}!`,
+				stripHtml(opening),
+				stripHtml(benefits).replace(/&amp;/g, "&"),
+				stripHtml(launch),
+				stripHtml(lockIn),
+				riskFree ? stripHtml(riskFree) : null,
+				stripHtml(terms),
+				`Browse events at ${baseUrl}`,
+				stripHtml(signOff),
+				"— Team Jetzy",
+		  ]
+		: [
+				`Hi ${name},`,
+				`Your ${product} membership is active. Welcome aboard.`,
+				stripHtml(terms),
+				`Browse events at ${baseUrl}`,
+				"— Team Jetzy",
+		  ]
+
 	try {
 		await sgMail.send({
 			to: email,
 			from: mailFrom(),
-			subject: chargesOn ? `Your ${product} membership is active — free until ${chargesOn}` : `Welcome to ${product}`,
+			subject: isPremiumProduct
+				? `Welcome to ${product}!`
+				: chargesOn
+					? `Your ${product} membership is active — free until ${chargesOn}`
+					: `Welcome to ${product}`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
-        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
-          Your ${product} membership is active. Welcome aboard.
-        </p>
+        ${heading}
+        ${marketing}
         <div style="background-color:#FFFBEB;border:1px solid #F0D78C;border-radius:8px;padding:15px;margin:20px 0;">
           <p style="color:#7A5C00;font-size:15px;line-height:1.6;margin:0;">${terms}</p>
         </div>
@@ -3250,8 +3324,9 @@ export const sendMembershipStarted = async ({
             Browse events
           </a>
         </div>
+        ${isPremiumProduct ? para(signOff, "#1F2937", 16) : ""}
       `, "#F5C518"),
-			text: `Hi ${name},\n\nYour ${product} membership is active. Welcome aboard.\n\n${stripHtml(terms)}\n\nBrowse events at ${baseUrl}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
+			text: textLines.filter(Boolean).join("\n\n"),
 		})
 		console.log(`✅ Membership welcome email sent to: ${email}`)
 	} catch (error) {
@@ -3363,13 +3438,6 @@ export const sendMembershipPaymentFailed = async ({ email, firstName, amount, in
  * ends) or has ACTUALLY ended. One function, two states — the difference matters to the
  * reader, who otherwise can't tell whether they still have access.
  */
-/**
- * The rate is HALF the "regular price" we advertise — the same claim `COMPARE_AT_MULTIPLIER`
- * makes on the plan card, kept as one number here so the two can't drift. It is marketing copy:
- * nothing in Stripe holds a higher price and nobody has ever been billed one.
- */
-const LAUNCH_DISCOUNT_LABEL = "50% off"
-
 export const sendMembershipCancelled = async ({
 	email,
 	firstName,

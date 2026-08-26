@@ -48,6 +48,11 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
   const dispatch = useAppDispatch();
 
   const authenticated = session.status === "authenticated";
+  // `useSession` starts at "loading" on any page that doesn't hand a session to
+  // `SessionProvider` from `getServerSideProps`. Treating that as signed out put Login and
+  // Sign Up in front of members for as long as `/api/auth/session` took to answer — worst on
+  // the membership pages, where the card underneath was already showing their plan.
+  const sessionLoading = session.status === "loading";
   const user = session.data?.user;
   const userRole = (user as any)?.role;
   const isAdmin = userRole === "admin" || userRole === "super admin";
@@ -262,6 +267,10 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
               </MenuList>
             </Menu>
           </Flex>
+        ) : sessionLoading ? (
+          /* Nothing yet, and deliberately nothing: showing either state before we know which is
+             wrong. The bar keeps its height because the heading above sets it. */
+          null
         ) : (
           <Flex align="center" gap={4}>
             {!hideMembershipCta && (

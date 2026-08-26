@@ -12,6 +12,8 @@ import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { signIn, useSession } from "next-auth/react"
 import Image from "next/image"
 import { useRouter } from "next/router"
@@ -337,6 +339,10 @@ export default function SubscribePage() {
 	)
 }
 
-export const getServerSideProps: GetServerSideProps = async () => {
-	return { props: {} }
+// Same as /premium: resolved server-side so the navbar renders the right half on the first
+// paint. The magic-token auto-login above still runs for an app visitor who arrives with no
+// cookie — this only reports a session that already exists.
+export const getServerSideProps: GetServerSideProps = async (context) => {
+	const session = await getServerSession(context.req, context.res, authOptions)
+	return { props: { session } }
 }
