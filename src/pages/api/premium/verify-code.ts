@@ -9,7 +9,8 @@ import zod from "zod"
 
 const schema = zod.object({
 	email: zod.string().email(),
-	event: zod.string().min(1),
+	/** Present only when the code was issued against a shared referral link. */
+	event: zod.string().min(1).optional(),
 	/** The 6-digit code from the email. */
 	otp: zod.string().min(4).max(10),
 })
@@ -46,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const email = validation.data.email.trim().toLowerCase()
-		const result = await consumeAlbumCode(validation.data.event, email, validation.data.otp.trim(), "premium")
+		const result = await consumeAlbumCode(validation.data.event || null, email, validation.data.otp.trim(), "premium")
 
 		if (!result.ok) {
 			return sendResponse(res, { verified: false, reason: result.reason }, consumeFailureMessage(result.reason), false, ResCode.BAD_REQUEST)

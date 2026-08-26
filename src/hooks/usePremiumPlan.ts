@@ -179,6 +179,15 @@ export type CurrentMembershipPlan = {
 	renewsAt: string | null
 	cancelAtPeriodEnd: boolean
 	status: string | null
+	/** When a free trial ends — the date the member is actually asking about. Null when not on one. */
+	trialEnd: string | null
+	/**
+	 * Whether a card is on file.
+	 *
+	 * Decides what a trial MEANS: with a card it converts and they get charged, without one it
+	 * simply ends. A trial granted by a signup invite code has no card.
+	 */
+	hasPaymentMethod: boolean
 	/** Whether to offer the switch. Server-decided: monthly members only. */
 	canSwitch: boolean
 }
@@ -206,6 +215,8 @@ export function useCurrentMembershipPlan(enabled = true) {
 				renewsAt: string | null
 				cancelAtPeriodEnd: boolean
 				status: string | null
+				trialEnd: string | null
+				hasPaymentMethod: boolean
 				canSwitch: boolean
 			}
 		},
@@ -224,6 +235,8 @@ export function useCurrentMembershipPlan(enabled = true) {
 		renewsAt: data?.renewsAt || null,
 		cancelAtPeriodEnd: !!data?.cancelAtPeriodEnd,
 		status: data?.status || null,
+		trialEnd: data?.trialEnd || null,
+		hasPaymentMethod: !!data?.hasPaymentMethod,
 		canSwitch: !!data?.canSwitch,
 	}
 

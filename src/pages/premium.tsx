@@ -5,10 +5,13 @@ import { DEFAULT_INVITE_CODE, normalizeTrialCode, resolveTrialCode, trialDisclos
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import Navbar from "@Jetzy/components/misc/Navbar"
 import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { useSession } from "next-auth/react"
 import Image from "next/image"
 import { useRouter } from "next/router"
@@ -17,21 +20,21 @@ import React from "react"
 /**
  * The PUBLIC Jetzy Premium page — the one we email a link to.
  *
- * `/subscribe` does the same job for the mobile app and is deliberately left alone: it bounces an
- * unauthenticated visitor straight to `/login`, auto-logs in from a magic token, and deep-links
- * back into the app on every exit. All three are wrong for someone opening a link from their
- * inbox, and the first one is the whole reason this page exists — a campaign link must show the
- * offer before it asks for anything.
+ * `/subscribe` does the same job for the mobile app: it auto-logs in from a magic token and
+ * deep-links back into the app on every exit, neither of which is right for someone opening a link
+ * from their inbox. It used to bounce a signed-out visitor straight to `/login` as well, which is
+ * the whole reason this page exists — a campaign link must show the offer before it asks for
+ * anything. That bounce is now gone from both pages.
  *
  * So the order is inverted here: SEE the plan, type the code, see what it is worth, and only then
- * log in — at the moment of actually buying.
+ * identify yourself — at the moment of actually buying, with a 6-digit code rather than a password.
  *
- * The invite code has to survive that round trip. It rides in the URL (it is a campaign string,
- * not a secret) through `/login?_cb=…`, which already carries a callback through login, signup and
- * email verification. What it cannot do is carry a PROMISE: eligibility is per account, so the
- * green line a logged-out visitor sees is a preview. After login the code is re-checked against
- * their account, and if it is refused they are told and asked what to do — never silently charged
- * full price for something they were shown as free.
+ * The invite code has to survive whatever happens in between. It rides in the URL (it is a campaign
+ * string, not a secret) and, across the trip to Stripe, in sessionStorage. What it cannot do is
+ * carry a PROMISE: eligibility is per account, so the green line a logged-out visitor sees is a
+ * preview. Once the account is known the code is re-checked against it, and if it is refused they
+ * are told and asked what to do — never silently charged full price for something they were shown
+ * as free.
  */
 
 const SELF = "/premium"
@@ -74,9 +77,12 @@ export default function PremiumPage() {
 	 */
 	const [referralEventId, setReferralEventId] = React.useState("")
 	/**
-	 * The email-and-code dialog, shown INSTEAD of bouncing to /login — but only on a shared
-	 * referral link. Someone who arrives from an email about a free membership and is asked to
-	 * invent a password does not come back.
+	 * The email-and-code dialog, shown INSTEAD of bouncing to /login for every signed-out buyer.
+	 *
+	 * It started out limited to a shared referral link, on the reasoning that someone arriving
+	 * from an email about a free membership and asked to invent a password does not come back.
+	 * That is just as true of anyone who lands on this page from a campaign, so the dialog is now
+	 * the door for all of them; `/login` remains reachable, it is simply no longer compulsory.
 	 */
 	const [verifyOpen, setVerifyOpen] = React.useState(false)
 	/** Free months the shared code grants, so the dialog can name what is being claimed. */
@@ -308,29 +314,20 @@ export default function PremiumPage() {
 		},
 	})
 
-	// ---- Go Premium ----
+	// ---- Get Premium ----
 	const handleChoosePremium = React.useCallback(() => {
 		if (isAuthenticated) {
 			subscribeMutation.mutate()
 			return
 		}
-		// A shared referral link keeps everything on this page: prove the email with a code, and
-		// the account is created from it. No password is ever chosen, because asking a stranger to
-		// invent one is where this journey used to end.
-		if (referralEventId && inviteCode.trim()) {
-			setVerifyOpen(true)
-			return
-		}
-		// Everything else still goes through login and comes straight back, carrying what they
-		// chose. `go=1` is the record that they had already committed, so they don't press twice.
-		const params = new URLSearchParams()
-		const code = inviteCode.trim()
-		if (code) params.set("code", code)
-		if (code && referralEventId) params.set("event", referralEventId)
-		if (selectedInterval) params.set("interval", selectedInterval)
-		params.set("go", "1")
-		router.push(`/login?_cb=${encodeURIComponent(`${SELF}?${params.toString()}`)}`)
-	}, [isAuthenticated, inviteCode, selectedInterval, referralEventId, router, subscribeMutation])
+		// Everything stays on this page: prove the email with a code, and the account is created
+		// from it. No password is ever chosen, because asking a stranger to invent one is where
+		// this journey used to end.
+		//
+		// The `/login?_cb=…&go=1` round trip it replaced still works — old links carry it and the
+		// effect below still honours it — but nothing sends anyone down it any more.
+		setVerifyOpen(true)
+	}, [isAuthenticated, subscribeMutation])
 
 	// ---- Back from login with intent ----
 	//
@@ -478,7 +475,14 @@ export default function PremiumPage() {
 	}
 
 	return (
-		<div className="min-h-screen bg-[#0A0B0F] text-white px-6 py-16">
+		<div className="min-h-screen bg-[#0A0B0F] text-white">
+			{/* Signing out has to be reachable from here: this page is emailed to people, and until
+			    now the only way off it for someone signed in as the wrong account was the browser's
+			    back button. `handlesPremiumReturn` because the Stripe return is confirmed below;
+			    `hideMembershipCta` because the page underneath already sells the membership. */}
+			<Navbar hideMembershipCta handlesPremiumReturn />
+
+			<div className="px-6 py-16">
 			<div className="max-w-4xl mx-auto text-center mb-12">
 				<Image className="h-14 w-auto mx-auto mb-8" src={Logo} alt="Jetzy" />
 				<h1 className="text-3xl md:text-4xl font-bold mb-3">Choose your Jetzy plan</h1>
@@ -544,12 +548,19 @@ export default function PremiumPage() {
 					</div>
 				)}
 			</div>
+			</div>
 		</div>
 	)
 }
 
-// Public on purpose — no `authorizedOnly`, and no redirect for a signed-out visitor. This page is
-// the thing we email to people who have never logged in.
-export const getServerSideProps: GetServerSideProps = async () => {
-	return { props: {} }
+/**
+ * Public on purpose — no guard, and no redirect for a signed-out visitor.
+ *
+ * The session is resolved here all the same and handed to `SessionProvider`, so the navbar knows
+ * who is looking on the FIRST render. Without it `useSession` starts at "loading" and a member
+ * saw Login and Sign Up above a card already showing their own plan.
+ */
+export const getServerSideProps: GetServerSideProps = async (context) => {
+	const session = await getServerSession(context.req, context.res, authOptions)
+	return { props: { session } }
 }

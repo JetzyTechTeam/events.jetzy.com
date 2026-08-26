@@ -6,11 +6,12 @@ import Spinner from "@Jetzy/components/misc/Spinner"
 /**
  * Email + 6-digit code, in place of sending someone to /login.
  *
- * Only ever shown on a shared referral link. Somebody who arrives from an email about a free
- * membership and is asked to invent a password does not come back, so the account is made for
- * them: the code proves the address, the server mints a magic token, and NextAuth creates the
- * record on sign-in. No password is ever chosen, and none is needed afterwards — they can sign in
- * the same way any time.
+ * Shown wherever Jetzy Premium is bought by someone who isn't signed in — `/premium`,
+ * `/subscribe`, the paywall modal, and a host's shared referral link. Somebody who arrives from an
+ * email about a membership and is asked to invent a password does not come back, so the account is
+ * made for them: the code proves the address, the server mints a magic token, and NextAuth creates
+ * the record on sign-in. No password is ever chosen, and none is needed afterwards — they can sign
+ * in the same way any time.
  *
  * The dialog owns proving the address and nothing else. What happens next — re-checking the offer
  * against the now-known account, then Stripe — belongs to the page, which already has that path
@@ -28,10 +29,13 @@ export default function EmailVerifyDialog({
 	onVerified,
 }: {
 	open: boolean
-	/** The event the shared code belongs to. Both endpoints are scoped by it. */
-	eventId: string
-	referralCode: string
-	/** Free months, so the dialog can say what is being claimed. */
+	/**
+	 * The event a shared referral code belongs to. Both endpoints are scoped by it when it is
+	 * present; off a shared link there is no event and the code is keyed to the address alone.
+	 */
+	eventId?: string
+	referralCode?: string
+	/** Free months, so the dialog can say what is being claimed. Absent at the normal price. */
 	months?: number
 	onClose: () => void
 	/** Fired once the session exists. The page takes it from here. */
@@ -66,7 +70,12 @@ export default function EmailVerifyDialog({
 		setBusy(true)
 		setError(null)
 		try {
-			await axios.post("/api/premium/send-code", { email: email.trim(), event: eventId, code: referralCode })
+			await axios.post("/api/premium/send-code", {
+				email: email.trim(),
+				// Sent only together — the server reads their presence as "this is a shared link"
+				// and resolves the host's offer before mailing anything.
+				...(eventId && referralCode ? { event: eventId, code: referralCode } : {}),
+			})
 			setStep("code")
 			setCooldown(RESEND_SECONDS)
 		} catch (err: any) {
@@ -80,7 +89,11 @@ export default function EmailVerifyDialog({
 		setBusy(true)
 		setError(null)
 		try {
-			const { data } = await axios.post("/api/premium/verify-code", { email: email.trim(), event: eventId, otp: otp.trim() })
+			const { data } = await axios.post("/api/premium/verify-code", {
+				email: email.trim(),
+				...(eventId ? { event: eventId } : {}),
+				otp: otp.trim(),
+			})
 			const magicToken = data?.data?.magicToken
 			if (!magicToken) throw new Error("no token")
 
@@ -96,7 +109,7 @@ export default function EmailVerifyDialog({
 		}
 	}
 
-	const offer = months && months > 0 ? `${months} month${months === 1 ? "" : "s"} free` : "your free months"
+	const hasOffer = !!months && months > 0
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" role="dialog" aria-modal="true" aria-label="Confirm your email">
@@ -111,7 +124,17 @@ export default function EmailVerifyDialog({
 				{step === "email" ? (
 					<>
 						<p className="mt-2 text-sm text-gray-400">
-							We&apos;ll email you a 6-digit code to claim <span style={{ color: "#F5C518" }}>{offer}</span> of Jetzy Premium. No password needed.
+							{hasOffer ? (
+								<>
+									We&apos;ll email you a 6-digit code to claim{" "}
+									<span style={{ color: "#F5C518" }}>
+										{months} month{months === 1 ? "" : "s"} free
+									</span>{" "}
+									of Jetzy Premium. No password needed.
+								</>
+							) : (
+								<>We&apos;ll email you a 6-digit code to continue to Jetzy Premium. No password needed.</>
+							)}
 						</p>
 						<label htmlFor="premium-verify-email" className="mt-5 block text-xs text-gray-400">
 							Email address

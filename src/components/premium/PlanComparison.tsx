@@ -75,6 +75,17 @@ const money = (dollars: number | null): string | null =>
 				minimumFractionDigits: Number.isInteger(dollars) ? 0 : 2,
 		  })
 
+/**
+ * "US$20" — the trial panel's wording, verbatim from the copy the CEO supplied.
+ *
+ * The currency is spelled out there and nowhere else on this card, so it is a formatter of its
+ * own rather than a change to `money`, which every other price on the page goes through.
+ */
+const usd = (dollars: number | null): string | null => {
+	const formatted = money(dollars)
+	return formatted == null ? null : `US${formatted}`
+}
+
 /** "Sep 18, 2026" — the renewal date, in the member state. */
 const renewalDate = (value?: string | null): string | null => {
 	if (!value) return null
@@ -107,6 +118,12 @@ type Props = {
 		label: string | null
 		renewsAt: string | null
 		cancelAtPeriodEnd: boolean
+		/** `"trialing"` is the one that changes what this card must say. */
+		status?: string | null
+		/** When the free period ends. */
+		trialEnd?: string | null
+		/** No card means the trial ENDS rather than converting. */
+		hasPaymentMethod?: boolean
 		canSwitch: boolean
 	} | null
 	/** Opens Stripe's plan-switching flow. Omit and no switch button renders. */
@@ -138,6 +155,10 @@ type Props = {
 	 * choice of plans — putting "Continue with Free" beside it invites them to decline something
 	 * they were given. Everywhere else the comparison is what makes the price legible, so this
 	 * defaults off.
+	 *
+	 * A MEMBER never sees it either, regardless of this prop: the comparison exists to help
+	 * someone decide, and they have decided. Sitting a "Free, forever — $0" card beside an active
+	 * paid membership reads as an offer to downgrade, which it isn't; the button only navigates.
 	 */
 	hideFreePlan?: boolean
 	onChoosePremium: () => void
@@ -177,7 +198,7 @@ const PlanComparison: React.FC<Props> = ({
 	onChoosePremium,
 	hideFreePlan = false,
 	freeCtaLabel = "Continue with Free",
-	premiumCtaLabel = "Go Premium",
+	premiumCtaLabel = "Get Premium",
 	subscribedCtaLabel = "You're subscribed — Continue",
 }) => {
 	// A choice only exists with two or more intervals. One price behaves exactly as before.
@@ -201,12 +222,45 @@ const PlanComparison: React.FC<Props> = ({
 	// The switch target is whichever interval they are NOT on — annual, in practice, since the
 	// server only sets `canSwitch` for monthly members.
 	const switchTarget = memberInterval ? options.find((p) => p.interval !== memberInterval) : undefined
+	// Offered DURING a trial too. It was briefly hidden there, which was over-cautious: since the
+	// portal configuration carries `trial_update_behavior: "continue_trial"`, switching keeps the
+	// free period and simply changes what is charged when it ends. Before that setting the same
+	// click would have ended the trial and billed on the spot, which is presumably why it felt
+	// unsafe.
 	const showSwitch = !!(isPremium && currentPlan?.canSwitch && switchTarget && onSwitchInterval)
 
+	// A trial is only worth describing while it is running, and only when we know the date it
+	// ends — an unnamed "your trial" answers none of the questions a member actually has.
+	const trialEndsOnLabel = currentPlan?.status === "trialing" ? renewalDate(currentPlan?.trialEnd || currentPlan?.renewsAt) : null
+	const onTrial = !!trialEndsOnLabel
+	/** With a card the trial converts and they get charged; without one Stripe simply ends it. */
+	const trialConverts = !!currentPlan?.hasPaymentMethod
+	const memberRate = currentPlan?.label || formattedPrice
+
+	// ---- The annual pitch inside the trial panel ----
+	//
+	// Every figure in it is derived, never written down: the annual price, the twelve-months-of-
+	// monthly it is compared against, and the number of months that difference buys. A hardcoded
+	// "2 months free — $200 instead of $240" is a claim about Stripe's prices that stops being
+	// true the moment either one moves.
+	const memberAmount = currentPlan?.amount ?? null
+	const annualAmount = switchTarget?.amount ?? null
+	const annualCompareAt = memberInterval === "month" && memberAmount != null ? memberAmount * 12 : null
+	const annualMonthsFree =
+		annualCompareAt != null && annualAmount != null && memberAmount
+			? Math.round((annualCompareAt - annualAmount) / memberAmount)
+			: 0
+	// Only when we can state it in full. A half-priced sentence with a missing figure in it is
+	// worse than no sentence.
+	const showAnnualPitch = showSwitch && annualAmount != null && annualCompareAt != null && annualMonthsFree > 0
+
+	// Members never see the comparison — see `hideFreePlan`.
+	const showFreePlan = !hideFreePlan && !isPremium
+
 	return (
-		<div className={hideFreePlan ? "grid gap-6 max-w-md mx-auto" : "grid gap-6 sm:grid-cols-2"}>
+		<div className={showFreePlan ? "grid gap-6 sm:grid-cols-2" : "grid gap-6 max-w-md mx-auto"}>
 			{/* Free tier — no Stripe object backs this, it's just "not subscribed" */}
-			{!hideFreePlan && (
+			{showFreePlan && (
 			<div className="bg-[#1E1E1E] border-2 border-[#2b2b2b] rounded-2xl p-6 flex flex-col">
 				<h2 className="text-xl font-bold mb-1">Jetzy Basic</h2>
 				<p className="text-sm text-gray-400 mb-4">Free, forever</p>
@@ -237,6 +291,58 @@ const PlanComparison: React.FC<Props> = ({
 
 				{/* ---- MEMBER STATE ---- what they pay now, not what they could buy. ---- */}
 				{isPremium ? (
+					onTrial ? (
+						/* ---- ON A FREE TRIAL ----
+						   Leading with "$20 /month" here was reading as a charge that had already
+						   happened: someone who was just given a free month saw a large price and a
+						   date and concluded they had paid. The free period is the headline, the
+						   date is the answer to the only question they have, and the rate is what
+						   comes after — in that order. */
+						<div className="mb-6">
+							<p className="text-2xl font-bold" style={{ color: "#F5C518" }}>
+								Free until {trialEndsOnLabel}
+							</p>
+							<div
+								className="mt-3 rounded-xl p-3 text-sm"
+								style={{ background: "rgba(245,197,24,0.10)", border: "1px solid rgba(245,197,24,0.45)", color: "#F5C518" }}
+							>
+								{trialConverts ? (
+									/* Wording supplied by the CEO and reproduced verbatim; only the date, the
+									   rate and the annual figures are substituted. */
+									<>
+										<p className="font-semibold">Your free trial is active.</p>
+										<p className="mt-2 font-normal">
+											Enjoy Jetzy Premium free until {trialEndsOnLabel}. Cancel anytime before your trial ends, and you
+											won&apos;t be charged.
+										</p>
+										<p className="mt-2 font-normal">
+											After your free trial, your membership will continue at{" "}
+											{usd(memberAmount) || (memberRate ? amountOnly(memberRate) : "the usual rate")}/
+											{memberInterval || interval}.
+										</p>
+										{/* The switch button below raises exactly one question, so it is answered
+										    next to it rather than left to be discovered. */}
+										{showAnnualPitch && (
+											<p className="mt-2 font-normal">
+												Want to save even more? Switch to an annual subscription anytime without losing your free trial
+												and get {annualMonthsFree} month{annualMonthsFree === 1 ? "" : "s"} free—just {usd(annualAmount)}
+												/year instead of {usd(annualCompareAt)}.
+											</p>
+										)}
+									</>
+								) : (
+									/* Kept short on purpose: this member never entered a card, and
+									   explaining the mechanics of that is not what they came for. */
+									<>
+										<p className="font-semibold">Your free trial is active.</p>
+										<p className="mt-1 font-normal">
+											You can use Jetzy Premium free until {trialEndsOnLabel}. To keep it after that, add a card.
+										</p>
+									</>
+								)}
+							</div>
+						</div>
+					) : (
 					<div className="mb-6">
 						<p className="text-3xl font-bold" style={{ color: "#F5C518" }}>
 							{currentPlan?.label ? amountOnly(currentPlan.label) : formattedPrice || "—"}
@@ -260,6 +366,7 @@ const PlanComparison: React.FC<Props> = ({
 							<p className="text-sm text-gray-400 mt-1">or {switchTarget.label}</p>
 						)}
 					</div>
+					)
 				) : (
 					<>
 						{/* Interval selector, only when there is genuinely a choice. Each option carries
@@ -390,12 +497,25 @@ const PlanComparison: React.FC<Props> = ({
 								{billingPending ? <Spinner /> : `Switch to ${switchTarget?.label}`}
 							</button>
 						)}
+						{/* A trial with no card on file ENDS. Saying so and offering nothing would leave
+						    a member watching their membership lapse with no way to stop it — the
+						    billing portal's payment-method page is exactly that way, so it gets its
+						    own label and the primary position. */}
+						{onManageBilling && onTrial && !trialConverts && (
+							<button
+								onClick={onManageBilling}
+								disabled={billingPending}
+								className="bg-jetzy text-black font-bold px-6 py-3 rounded-full transition-colors hover:opacity-90 disabled:opacity-50"
+							>
+								{billingPending ? <Spinner /> : "Add a card to keep it"}
+							</button>
+						)}
 						{onManageBilling && (
 							<button
 								onClick={onManageBilling}
 								disabled={billingPending}
 								className={`font-bold px-6 py-3 rounded-full transition-colors disabled:opacity-50 ${
-									showSwitch
+									showSwitch || (onTrial && !trialConverts)
 										? "border-2 border-[#2b2b2b] text-white hover:border-[#3a3a3a]"
 										: "bg-jetzy text-black hover:opacity-90"
 								}`}

@@ -1,15 +1,19 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
-import { trialDisclosure } from "@/lib/invite-trial"
+import { resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
+import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import Navbar from "@Jetzy/components/misc/Navbar"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { signIn, useSession } from "next-auth/react"
 import Image from "next/image"
 import { useRouter } from "next/router"
@@ -29,6 +33,8 @@ export default function SubscribePage() {
 	const router = useRouter()
 	const { status } = useSession()
 	const queryClient = useQueryClient()
+
+	const isSignedIn = status === "authenticated"
 
 	const [isAutoLoggingIn, setIsAutoLoggingIn] = React.useState(false)
 	const [hasAttemptedMagicLink, setHasAttemptedMagicLink] = React.useState(false)
@@ -70,13 +76,13 @@ export default function SubscribePage() {
 		if (status === "authenticated") setIsAutoLoggingIn(false)
 	}, [status])
 
-	// No token and no existing session — bounce through the standard login page and
-	// come straight back here afterwards.
-	React.useEffect(() => {
-		if (!router.isReady || status !== "unauthenticated" || magicToken) return
-		const dest = resolvedEventId ? `/subscribe?eventId=${resolvedEventId}` : "/subscribe"
-		router.replace(`/login?_cb=${encodeURIComponent(dest)}`)
-	}, [router.isReady, status, magicToken, resolvedEventId, router])
+	// No token and no existing session — the plan is still shown.
+	//
+	// This used to bounce straight to `/login`, which meant the one page whose whole job is to
+	// present the membership never presented it to anyone who wasn't already signed in. Buying
+	// now proves the email with a 6-digit code instead (see `handleChoosePremium`), so there is
+	// nothing left to redirect for. The magic-token auto-login above is untouched — the app still
+	// hands us a session when it has one.
 
 	// Redirect back from Stripe after a successful subscription purchase.
 	React.useEffect(() => {
@@ -101,7 +107,10 @@ export default function SubscribePage() {
 	// The shared hook rather than a private `["premium-plan"]` query: one cache entry and one
 	// price formatter between this page and the paywall modal, which is what keeps the two from
 	// quoting the same membership differently.
-	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium", status === "authenticated")
+	// Fetched regardless of session: `/api/subscriptions/plan` takes none, and a signed-out
+	// visitor now stays on this page, so gating it behind a session would show them a card with
+	// no price on it.
+	const { plan, prices, isLoading: planLoading } = useMembershipPlan("premium")
 
 	// Which billing interval the buyer has picked. Left unset until the plan loads, then
 	// defaulted to the product's default price (monthly) rather than guessing a string — the
@@ -153,6 +162,25 @@ export default function SubscribePage() {
 			setInviteChecking(false)
 			return
 		}
+
+		// Signed out there is no account to check against, so the code is resolved in the browser
+		// from the same shared table the server enforces. It is a PREVIEW of the offer, never a
+		// promise about an account we don't know yet — after sign-in the server re-checks it, and a
+		// refusal is reported then. Without this the field would simply 401 and read as invalid.
+		if (!isSignedIn) {
+			const resolved = resolveTrialCode(code, selectedInterval)
+			setInviteChecking(false)
+			if (!resolved.ok) {
+				setInviteAccepted(null)
+				setInviteError(resolved.message)
+				return
+			}
+			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
+			setInviteError(null)
+			setInviteAccepted(trialDisclosure(resolved.offer, preview?.label || null, trialEndsOn(resolved.offer)))
+			return
+		}
+
 		setInviteChecking(true)
 		inviteTimer.current = setTimeout(async () => {
 			try {
@@ -186,7 +214,16 @@ export default function SubscribePage() {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
 		// Re-checked when the interval changes: a monthly-only code stops applying on annual.
-	}, [inviteCode, selectedInterval])
+	}, [inviteCode, selectedInterval, isSignedIn, prices])
+
+	/**
+	 * Email + 6-digit code, in place of sending a signed-out visitor to `/login`.
+	 *
+	 * Same dialog `/premium` and the paywall modal use, so whichever door someone came through
+	 * they identify themselves the same way. The account is created from the magic token the
+	 * verify endpoint returns; no password is ever chosen.
+	 */
+	const [verifyOpen, setVerifyOpen] = React.useState(false)
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
@@ -223,6 +260,15 @@ export default function SubscribePage() {
 		},
 	})
 
+	/** Signed in — straight to Stripe. Signed out — prove the address first, then the same. */
+	const handleChoosePremium = () => {
+		if (status !== "authenticated") {
+			setVerifyOpen(true)
+			return
+		}
+		subscribeMutation.mutate()
+	}
+
 	if (isAutoLoggingIn || status === "loading") {
 		return (
 			<div className="flex min-h-screen flex-col items-center justify-center bg-[#0A0B0F]">
@@ -234,7 +280,13 @@ export default function SubscribePage() {
 	}
 
 	return (
-		<div className="min-h-screen bg-[#0A0B0F] text-white px-6 py-16">
+		<div className="min-h-screen bg-[#0A0B0F] text-white">
+			{/* `hideEventNav` — this is the mobile app's door, opened in the system browser. The
+			    event links belong to the web product and would strand somebody who came from the
+			    app; what they need here is the avatar menu, and Logout in it. */}
+			<Navbar hideEventNav hideMembershipCta handlesPremiumReturn />
+
+			<div className="px-6 py-16">
 			<div className="max-w-4xl mx-auto text-center mb-12">
 				<Image className="h-14 w-auto mx-auto mb-8" src={Logo} alt="Jetzy" />
 				<h1 className="text-3xl md:text-4xl font-bold mb-3">Choose your Jetzy plan</h1>
@@ -267,14 +319,30 @@ export default function SubscribePage() {
 					premiumDisabled={premiumLoading}
 					premiumPending={subscribeMutation.isPending}
 					onChooseFree={goToApp}
-					onChoosePremium={() => subscribeMutation.mutate()}
+					onChoosePremium={handleChoosePremium}
 					subscribedCtaLabel="Continue"
 				/>
+
+				{/* No event and no referral code — this is the ordinary price, and the endpoints key
+				    the code to the address alone. */}
+				<EmailVerifyDialog
+					open={verifyOpen}
+					onClose={() => setVerifyOpen(false)}
+					onVerified={() => {
+						setVerifyOpen(false)
+						subscribeMutation.mutate()
+					}}
+				/>
+			</div>
 			</div>
 		</div>
 	)
 }
 
-export const getServerSideProps: GetServerSideProps = async () => {
-	return { props: {} }
+// Same as /premium: resolved server-side so the navbar renders the right half on the first
+// paint. The magic-token auto-login above still runs for an app visitor who arrives with no
+// cookie — this only reports a session that already exists.
+export const getServerSideProps: GetServerSideProps = async (context) => {
+	const session = await getServerSession(context.req, context.res, authOptions)
+	return { props: { session } }
 }

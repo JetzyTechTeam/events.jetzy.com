@@ -10,10 +10,15 @@ import zod from "zod"
 
 const schema = zod.object({
 	email: zod.string().email(),
-	/** The event the shared referral code belongs to. */
-	event: zod.string().min(1),
-	/** The referral code from the shared link. */
-	code: zod.string().min(1),
+	/**
+	 * The event the shared referral code belongs to.
+	 *
+	 * Optional: a shared referral link has one, and `/premium`, `/subscribe` and the paywall
+	 * modal have none. Its presence is what selects the referral branch below.
+	 */
+	event: zod.string().min(1).optional(),
+	/** The referral code from the shared link. Only meaningful alongside `event`. */
+	code: zod.string().min(1).optional(),
 })
 
 // Same shape as the album gate: generous for a household behind one IP, tight enough that this
@@ -28,9 +33,15 @@ const RATE_LIMIT_WINDOW_MS = 60_000
  * Nothing is created here — no account, no session, no Stripe customer. Those happen after the
  * code comes back, so an address nobody controls leaves no trace.
  *
- * **The link is validated before a single email goes out.** Without that check this endpoint would
- * send a Jetzy-branded email to any address on request, which is a mail cannon with our name on it.
- * A valid, unexhausted share link is the price of admission.
+ * Two shapes:
+ *
+ * - **With `event` + `code`** — a host's shared referral link. The offer is resolved BEFORE a single
+ *   email goes out, with the same resolver the charge uses, so the code sitting in the inbox can't
+ *   outlive the offer it was sent for.
+ * - **Without either** — buying Premium at the normal price from `/premium`, `/subscribe` or the
+ *   paywall modal. There is no link to validate, so the only gate is the rate limit: this is an
+ *   ordinary "email me a sign-in code" flow, and the code alone gets nobody anything except a
+ *   session on their own address.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -52,19 +63,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { email: rawEmail, event, code } = validation.data
 		const email = rawEmail.trim().toLowerCase()
 
-		// The offer has to be real before we email anybody about it — and the same resolver the
-		// charge uses, so the code in the inbox can't outlive the offer it was sent for.
-		const offer = await resolveReferralTrial(event, code)
-		if (!offer.ok) {
-			return sendResponse(res, null, offer.message, false, ResCode.BAD_REQUEST)
+		if (event && code) {
+			// The offer has to be real before we email anybody about it — and the same resolver the
+			// charge uses, so the code in the inbox can't outlive the offer it was sent for. The
+			// email itself says nothing about the offer; this is a gate, not a source of copy.
+			const offer = await resolveReferralTrial(event, code)
+			if (!offer.ok) {
+				return sendResponse(res, null, offer.message, false, ResCode.BAD_REQUEST)
+			}
 		}
 
-		const issued = await issueAlbumCode(event, email, "premium")
+		const issued = await issueAlbumCode(event || null, email, "premium")
 		if (!issued) {
 			return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
 		}
 
-		await sendPremiumVerificationCode({ email, code: issued.code, months: offer.months })
+		await sendPremiumVerificationCode({ email, code: issued.code })
 
 		// Never the code itself, and never whether the address already has an account.
 		return sendResponse(res, { sent: true }, "We've emailed you a code.", true, ResCode.OK)

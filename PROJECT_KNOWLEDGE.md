@@ -2054,8 +2054,8 @@ Pressing **Go Premium** on a shared referral link used to throw the visitor at `
 who came from an email about a free membership and has no account, that is where the journey ended:
 they were being asked to invent a password to accept a gift.
 
-Now, **on shared links only**, a dialog does it in place — email, 6-digit code, then straight to
-Stripe. Plain `/premium` and `/subscribe` are unchanged.
+Now a dialog does it in place — email, 6-digit code, then straight to Stripe. This shipped for
+shared links only; a day later it became the door everywhere (see the next section).
 
 **Almost none of this is new machinery.** The 6-digit code (10 minute TTL, 5 attempts, 60s resend
 cooldown) is the album gate's, and the sign-in is the magic-token path `verify-login-otp.ts` has
@@ -2069,9 +2069,10 @@ path already does.
 | `POST /api/premium/send-code` | Validate the share link, rate-limit, issue and email the code |
 | `POST /api/premium/verify-code` | Spend the code, return a magic token |
 
-**The link is validated before a single email goes out.** `resolveReferralTrial` runs first, so this
-endpoint can't be used to send Jetzy-branded mail to arbitrary addresses — a valid, unexhausted
-share link is the price of admission. Neither endpoint reveals whether an address has an account.
+**A shared link is validated before a single email goes out.** `resolveReferralTrial` runs first, so
+the referral branch can't be used to send Jetzy-branded mail about an offer that isn't real — a
+valid, unexhausted share link is the price of admission. Neither endpoint reveals whether an address
+has an account.
 
 **`purpose` on the verification store.** Rows were keyed `(eventId, email)`, so a premium code and an
 album code for the same person on the same event overwrote each other — asking for the second
@@ -2090,4 +2091,240 @@ could drift from it. A refusal (they've had Premium before) lands in the existin
 
 > Signing in by emailed code bypasses any password that address may have. `/auth/login-otp` already
 > worked that way; this is a second door onto the same behaviour, not a new one.
+
+## Email-code sign-in is the door to Premium everywhere (2026-08-27)
+
+The dialog above worked, so the CEO asked for it on every surface that sells Premium: **`/premium`,
+`/subscribe`, and the "Jetzy Premium" button's `PremiumPaywallModal`**. A signed-out buyer proves
+their email with a 6-digit code and goes straight to Stripe. None of the three redirects to `/login`
+any more.
+
+The reasoning behind the original limit — somebody asked to invent a password does not come back —
+was never specific to referrals.
+
+**What changed**
+
+| | Before | After |
+|---|---|---|
+| `/premium`, no shared link | `/login?_cb=…&go=1` | dialog |
+| `/subscribe`, signed out | `router.replace("/login?_cb=…")` **on mount** | plan renders; dialog on Get Premium |
+| Paywall modal, signed out | `/login?_cb=…&premiumSubscribe=1` | dialog |
+
+Both old resume paths still work, for links already in the wild. Nothing sends anyone down them.
+
+The button reads **"Get Premium"** (renamed from "Go Premium", 2026-08-27). It is one default on
+`PlanComparison.premiumCtaLabel`, so every surface picked it up at once — earlier notes in this file
+name the old label because that is what it said at the time.
+
+**`event` and `code` are optional on both endpoints now.** Present = a host's shared link, and
+`resolveReferralTrial` still gates the email. Absent = the ordinary price: there is no link to
+validate, so the only gate is the per-IP rate limit. That is what an "email me a sign-in code" flow
+is, and the code alone gets nobody anything except a session on their own address. Send them
+together or not at all — `event` without `code` resolves nothing.
+
+**The code row keys on `(null, email, "premium")` when there is no event.** `AlbumVerification.eventId`
+became `required: false, default: null`, and `issueAlbumCode`/`consumeAlbumCode` take `string | null`.
+Null is *stored*, not omitted, though `{ eventId: null }` matches a missing field too, so it reads
+back either way. **No index and no backfill**: `autoIndex` is off, the existing
+`{eventId, email, purpose}` index still serves, and every read sorts by `createdAt` desc rather than
+assuming an index exists.
+
+**Two follow-on fixes that are not optional:**
+
+- `/subscribe` fetched its plan with `useMembershipPlan("premium", status === "authenticated")`.
+  With the redirect gone, that gate would have shown a signed-out visitor a membership card with no
+  price on it. `/api/subscriptions/plan` takes no session, so the gate is simply removed.
+- The invite-code field on `/subscribe` and in the modal called `/api/subscriptions/invite-code`,
+  which **requires a session** — signed out it 401s, and a perfectly good code reads as invalid.
+  Both now resolve it in the browser from `TRIAL_CODES` (`resolveTrialCode` + `trialDisclosure`),
+  exactly as `/premium` already did. That line is a **preview of the offer**, never a promise about
+  an account nobody knows yet: the server re-checks the code once the session exists, and a refusal
+  is reported then.
+
+> Same caveat as before: signing in by emailed code bypasses any password that address may have.
+> `/auth/login-otp` already worked that way.
+
+## Navbar on the membership pages, and the dialog surviving checkout (2026-08-27)
+
+**Signing out.** `/premium`, `/subscribe` and `/manage-membership` were bare pages with a logo and
+no navigation, so there was no way off them and no way to sign out. That bites hardest on
+`/manage-membership`, whose most common failure — "this account doesn't have an active membership"
+— is usually *the wrong account*: memberships follow the checkout email, not the login. All three
+now mount `misc/Navbar`.
+
+Two props came with it:
+
+| Prop | Why |
+|---|---|
+| `hideMembershipCta` | Drops "Buy Jetzy Premium" on the pages that already sell it. A dialog covering the plan you came to read is a bug, not a CTA. |
+| `handlesPremiumReturn` | `/premium` and `/subscribe` confirm `?premium_session_id` themselves. Without this the navbar confirms it a second time — two requests, two toasts, two `router.replace` calls racing. |
+
+`usePremiumSubscriptionReturn` also latches per session id in a **module-scope Set**, because more
+than one mounted component can legitimately want to handle the return. First one in wins.
+
+**Checkout from the navbar button used to end nowhere.** "Buy Jetzy Premium" opens
+`PremiumPaywallModal`, whose `returnTo` is the current path — so a successful purchase dropped the
+buyer back onto the public home page or an event listing, with a toast as the only evidence.
+
+The dialog now reopens on its **member card**. The mechanism is one sessionStorage marker,
+`jetzy_premium_modal_purchase`, written immediately before the redirect and consumed on return:
+
+- deliberately specific — `/premium` and `/subscribe` don't write it, so their own handling is
+  untouched even though the navbar mounts a dialog on those pages too
+- any return **without** `premium_session_id` (an abandoned checkout comes back as
+  `?premium_cancelled=1`) *clears* the marker instead of consuming it, so a stale one can't open the
+  dialog on somebody else's purchase later. Safe to do unconditionally: the marker is written
+  immediately before a full page navigation, so there is no render in between
+- `justSubscribed` forces the member card on before the status query has refreshed, and enables the
+  return hook — which the latch then de-duplicates against the navbar's
+
+**The verification email dropped its offer line.** It read "Enter this code to confirm your email and
+claim **1 month of Jetzy Premium free**" — an offer stated in an email sent *before* anything is
+checked against the recipient's account, which checkout can still refuse. It now says only "Enter
+this code to confirm your email". `send-code` still resolves the referral offer; that is a gate on
+whether to send at all, not a source of copy.
+
+## The welcome email is the CEO's copy (2026-08-27)
+
+`sendMembershipStarted` said "Your Jetzy Premium membership is active. Welcome aboard." and then the
+terms. It now leads with **Welcome to Jetzy Premium!** and the CEO's paragraphs: the trial is
+active, what Premium gets them, the launch price, the lock-in, risk-free, and
+"Enjoy the world differently."
+
+Three things it does NOT do:
+
+- **It does not drop the terms box.** That yellow panel is the card-network disclosure and the only
+  place the exact date and the exact amount appear together. Marketing copy sits around it.
+- **It does not promise "risk-free" to a cardless trial.** A trial granted by a signup invite code
+  has no payment method, so Stripe ends it rather than charging — "cancel before it ends and you
+  won't be charged" describes a charge that was never coming. That sentence renders only when
+  `!endsWithoutCard`.
+- **It does not hardcode $20/month.** The rate comes from the subscription, so an annual member
+  reads "$200/year", and the whole-dollar formatting matches the plan card.
+
+Full Concierge keeps the plain welcome, on the same `label === DEFAULT_MEMBERSHIP_LABEL` gate as the
+cancellation email.
+
+## Two visibility bugs the dialog and navbar shared (2026-08-27)
+
+**"Switch to $200/year" was missing from the reopened dialog.** `useMembershipPlan("premium", isOpen)`
+— but `isOpen` belongs to the navbar and is false on a fresh page load, which is exactly the state a
+dialog reopening itself after checkout is in. No prices meant no second interval, so `switchTarget`
+was undefined and the switch button never rendered, for the member most likely to want it: someone
+who had just subscribed monthly. Both queries now gate on
+`isVisible = isOpen || justSubscribed || alreadyMember`.
+
+**Members saw Login and Sign Up.** `useSession()` starts at `"loading"` on any page that doesn't pass
+a session through `getServerSideProps`, and the navbar's `authenticated ? … : …` treated that as
+signed out — so a member opening a shared `/premium` link got Login/Sign Up above a card already
+showing their own trial. The navbar now renders **neither** half while loading, and `/premium` and
+`/subscribe` resolve the session server-side and hand it to `SessionProvider`, so their first paint
+is right rather than merely quick.
+
+## The cancellation email is a win-back (2026-08-27)
+
+Jetzy Premium's cancellation notice was a receipt: "your membership is set to end on X, you keep
+access until then." The CEO replaced it with copy that also asks for the member back, reproduced as
+written:
+
+> Your Jetzy Premium membership has been canceled.
+>
+> You'll continue to enjoy Jetzy Premium benefits through the end of your *free trial* on
+> **October 26, 2026**.
+>
+> After *your trial ends*, you'll lose access to Premium benefits and events, as well as our
+> limited-time launch pricing of **$20/month — 50% off the regular price**.
+>
+> If you reactivate, your **$20/month** launch rate will be locked in for one full year from the
+> date you sign up, as long as your membership remains active.
+>
+> **Want to keep your Premium benefits and lock in the 50% launch discount?**
+> Reactivate your membership here: *[button]*
+
+**`onTrial` picks the two italicised phrases.** During a trial `current_period_end` *is* the trial
+end; describing it as a billing period implies a payment that never happened. Both webhook branches
+read `subscription.status === "trialing"`.
+
+**The rate comes off the subscription** (`cancellationRate`), never the product default — an annual
+member must not be told they are losing a monthly price. Both `amount` and `interval` or neither:
+the pricing sentences are dropped rather than half-written.
+
+**Full Concierge keeps the old plain email.** It is sold on selectmember.jetzy.com's terms, and
+quoting Jetzy Premium's launch price at a Concierge member would simply be false. The branch is on
+`label === DEFAULT_MEMBERSHIP_LABEL`.
+
+**Reactivate points at `/premium`**, not `/subscribe`: it is public, it does not redirect a
+signed-out visitor to `/login`, and it signs people in with an emailed code — all of which matter
+for somebody reading a cancellation notice who may not be signed in anywhere. With no
+`NEXT_PUBLIC_URL` the whole win-back block is dropped rather than emitting a path an inbox can't
+follow.
+
+`LAUNCH_DISCOUNT_LABEL` ("50% off") is the same marketing claim `COMPARE_AT_MULTIPLIER` makes on the
+plan card. Nothing in Stripe backs it and nobody has been billed the "regular" price.
+
+## "It looks like I'm being charged" — the trialing member card (2026-08-26)
+
+Reported by the CEO with a screenshot: buy Premium with a free month, land back on the plan page,
+and it shows a big **$20 /Month** with a date. Nothing said a trial was running, so the reasonable
+reading was "I have been charged $20, and will be again".
+
+The card had the information all along — `/api/subscriptions/current-plan` returns
+`status: "trialing"`, and during a trial Stripe's `current_period_end` *is* the trial end — it just
+never looked at it.
+
+**What the member state now does while `status === "trialing"`:**
+
+- headline is **"Free until 21 Sep 2026"**, not the price
+- a panel states the terms in full, with the date
+- the rate appears only as what happens *after*
+- the plan switch stays available. It was briefly hidden here, which was wrong: with
+  `trial_update_behavior: "continue_trial"` on the switch configuration, switching keeps the free
+  period and changes only what is charged when it ends. Before that setting the same click would
+  have ended the trial and billed immediately. The panel now says "switching to annual keeps your
+  free trial", because that button raises exactly one question
+
+**Two kinds of trial, and only one converts.** This is the part the request didn't account for:
+
+| | End of trial | Copy |
+|---|---|---|
+| Card on file (bought at `/subscribe` or `/premium`) | Converts, charged | the CEO's copy below |
+| No card (signup invite code) | **Ends**; never charged | "To keep it after that, add a card." |
+
+Telling the second group they will be charged is simply untrue, so `current-plan` now returns
+`trialEnd` and `hasPaymentMethod` (with the customer expanded, since Checkout stores the card on the
+customer rather than the subscription). The cardless copy is kept deliberately short — no
+explanation of why there is no card — and carries **"Add a card to keep it"**, which opens the
+billing portal's payment-method page. Announcing that a membership will lapse while offering no way
+to prevent it is worse than saying nothing.
+
+### The converting-trial copy (CEO, 2026-08-27)
+
+Reproduced verbatim; only the bracketed values are substituted.
+
+> **Your free trial is active.**
+>
+> Enjoy Jetzy Premium free until *{trial end}*. Cancel anytime before your trial ends, and you won't
+> be charged.
+>
+> After your free trial, your membership will continue at *US${amount}*/*{interval}*.
+>
+> Want to save even more? Switch to an annual subscription anytime without losing your free trial and
+> get *{n}* months free—just *US${annual}*/year instead of *US${monthly × 12}*.
+
+**Every figure in the last paragraph is derived, never written down.** The annual price comes from
+the switch target, the compare-at from `monthly × 12`, and the months free from the difference
+between them. A hardcoded "2 months free — $200 instead of $240" is a claim about Stripe's prices
+that stops being true the moment either one moves. The paragraph renders only when the switch is
+offered *and* every figure is known — a sentence with a gap in it is worse than no sentence.
+
+`usd()` ("US$20") exists for this panel alone; every other price on the card goes through `money()`.
+
+**The cardless copy is unchanged**, deliberately: "you won't be charged" and a continuing rate are
+both false when Stripe simply ends the trial.
+
+**Members no longer see the Jetzy Basic card at all.** The comparison exists to help someone decide;
+a member has decided, and "$0 — Free, forever" sitting beside their active membership reads as an
+offer to downgrade, which that button does not do. `PlanComparison` is shared, so `/subscribe`, the
+paywall modal and `/premium` all pick this up. The mobile deep-link return is unaffected — it lives
+on a button *inside* the Premium card, not the Basic one.
 

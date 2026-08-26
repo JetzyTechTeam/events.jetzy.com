@@ -1,5 +1,6 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
+import Navbar from "@Jetzy/components/misc/Navbar"
 import { ROUTES, homeRouteForRole } from "@Jetzy/configs/routes"
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { useSession } from "next-auth/react"
@@ -94,7 +95,14 @@ export default function ManageMembershipPage() {
 		!returnedFromPortal && !error && (status === "loading" || status === "unauthenticated" || premiumLoading || isOpening)
 
 	return (
-		<div className="min-h-screen bg-[#0A0B0F] text-white flex items-center justify-center px-4">
+		<div className="min-h-screen bg-[#0A0B0F] text-white flex flex-col">
+			{/* Somebody who acquired a membership by buying a ticket may have no idea which account
+			    they are signed in as — and memberships follow the checkout email, so "no membership
+			    here" often means "wrong account". Logout is the fix, and it needs to be on the page
+			    that says so. */}
+			<Navbar hideEventNav />
+
+			<div className="flex flex-1 items-center justify-center px-4 py-12">
 			<div className="w-full max-w-md text-center">
 				<Link href={homeHref} className="inline-block mb-8">
 					<Image src={Logo} alt="Jetzy" width={120} height={40} style={{ objectFit: "contain" }} />
@@ -187,6 +195,7 @@ export default function ManageMembershipPage() {
 						</Link>
 					</div>
 				)}
+			</div>
 			</div>
 		</div>
 	)

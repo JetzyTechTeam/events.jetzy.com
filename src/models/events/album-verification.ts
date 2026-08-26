@@ -20,7 +20,14 @@ import { Model, Schema } from "mongoose"
  */
 export interface IAlbumVerification {
 	_id?: string
-	eventId: Schema.Types.ObjectId
+	/**
+	 * The event the code belongs to — or NULL when it belongs to no event.
+	 *
+	 * Null arrived when Premium started being bought from `/premium`, `/subscribe` and the
+	 * paywall modal, none of which have an event. It is a real stored value, not a missing
+	 * field: `{ eventId: null }` is what the queries match on.
+	 */
+	eventId: Schema.Types.ObjectId | null
 	email: string
 	/** What the code is for. Absent on every row written before Premium used this. */
 	purpose?: string
@@ -37,9 +44,11 @@ export interface IAlbumVerification {
 
 const albumVerificationSchema = new Schema<IAlbumVerification>(
 	{
+		// Not required: a Premium login code is bound to an email and a purpose, not an event.
 		eventId: {
 			type: Schema.Types.ObjectId,
-			required: true,
+			required: false,
+			default: null,
 			ref: "Events",
 			index: true,
 		},
