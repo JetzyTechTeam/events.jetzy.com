@@ -5,6 +5,7 @@ import { DEFAULT_INVITE_CODE, normalizeTrialCode, resolveTrialCode, trialDisclos
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import Navbar from "@Jetzy/components/misc/Navbar"
 import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
@@ -472,7 +473,14 @@ export default function PremiumPage() {
 	}
 
 	return (
-		<div className="min-h-screen bg-[#0A0B0F] text-white px-6 py-16">
+		<div className="min-h-screen bg-[#0A0B0F] text-white">
+			{/* Signing out has to be reachable from here: this page is emailed to people, and until
+			    now the only way off it for someone signed in as the wrong account was the browser's
+			    back button. `handlesPremiumReturn` because the Stripe return is confirmed below;
+			    `hideMembershipCta` because the page underneath already sells the membership. */}
+			<Navbar hideMembershipCta handlesPremiumReturn />
+
+			<div className="px-6 py-16">
 			<div className="max-w-4xl mx-auto text-center mb-12">
 				<Image className="h-14 w-auto mx-auto mb-8" src={Logo} alt="Jetzy" />
 				<h1 className="text-3xl md:text-4xl font-bold mb-3">Choose your Jetzy plan</h1>
@@ -537,6 +545,7 @@ export default function PremiumPage() {
 						</button>
 					</div>
 				)}
+			</div>
 			</div>
 		</div>
 	)

@@ -10,12 +10,24 @@ import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumSt
 import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumPlan"
 import PlanComparison from "@/components/premium/PlanComparison"
 import EmailVerifyDialog from "@/components/premium/EmailVerifyDialog"
+import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
 // straight into Stripe instead of making them click Subscribe a second time.
 const RESUME_PARAM = "premiumSubscribe"
 const RESUME_SESSION_KEY = "jetzy_premium_resume_handled"
+
+/**
+ * Marks "the trip to Stripe was started FROM this dialog".
+ *
+ * Checkout returns to whatever page the button was pressed on — the public home page, an event
+ * page — where the only sign anything happened was a toast. Somebody who bought a membership got
+ * dropped back onto a listing with no membership in sight. The marker is what lets the dialog
+ * reopen on its member card instead, and it is deliberately specific: a purchase begun on
+ * `/premium` or `/subscribe` doesn't set it, so those pages keep their own handling.
+ */
+const PURCHASE_MARKER = "jetzy_premium_modal_purchase"
 
 type Props = {
 	isOpen: boolean
@@ -62,6 +74,9 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	 */
 	const [verifyOpen, setVerifyOpen] = useState(false)
 
+	/** Back from Stripe, on a purchase this dialog started. Reopens it on the member card. */
+	const [justSubscribed, setJustSubscribed] = useState(false)
+
 	// The shared hook, not a private query: it already formats every interval's label and shares
 	// its cache key, so opening this after the price has been fetched elsewhere on the page
 	// costs no extra request — and the modal can't drift from `/subscribe` on how a price reads.
@@ -77,7 +92,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	// What they are on now — asked only when the dialog is actually open AND they are a member.
 	// This modal is mounted by every navbar, so an ungated fetch would put a Stripe round-trip
 	// behind every page view for every member.
-	const { currentPlan } = useCurrentMembershipPlan(isOpen && isPremium)
+	const { currentPlan } = useCurrentMembershipPlan((isOpen || justSubscribed) && isPremium)
 
 	// Invite code (a free-trial code) — same behaviour as /subscribe, since both render the
 	// same card and a buyer must not get a different answer depending on which door they used.
@@ -162,6 +177,9 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		},
 		onSuccess: (data) => {
 			if (data?.url) {
+				// Set before navigating away — this is the only record that survives the trip that
+				// the purchase began here rather than on a page that sells memberships itself.
+				try { sessionStorage.setItem(PURCHASE_MARKER, "1") } catch {}
 				window.location.href = data.url
 			} else {
 				ErrorToast("Error", "Could not start checkout. Please try again.")
@@ -209,6 +227,38 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		},
 	})
 
+	// Back from Stripe on a purchase this dialog started. Reopen on the member card rather than
+	// leaving them on whichever page the button happened to be on.
+	//
+	// Read synchronously off `router.query`, before `usePremiumSubscriptionReturn` strips the
+	// param — that happens in a `.finally()` after a network round trip, so this always wins.
+	useEffect(() => {
+		if (!router.isReady || typeof window === "undefined") return
+
+		// Anything that isn't a completed session clears the marker instead of consuming it —
+		// an abandoned checkout comes back as `?premium_cancelled=1`, and a marker left behind
+		// there would open this dialog on the NEXT return, for a purchase made somewhere else.
+		// Safe to do unconditionally: the marker is written immediately before a full page
+		// navigation, so there is no render between setting it and leaving.
+		if (typeof router.query.premium_session_id !== "string") {
+			try { sessionStorage.removeItem(PURCHASE_MARKER) } catch {}
+			return
+		}
+
+		let marked = false
+		try {
+			marked = sessionStorage.getItem(PURCHASE_MARKER) === "1"
+			if (marked) sessionStorage.removeItem(PURCHASE_MARKER)
+		} catch {}
+		if (marked) setJustSubscribed(true)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.isReady, router.query.premium_session_id])
+
+	// Confirms the session and refreshes the cached membership — but ONLY on our own purchase,
+	// so a page that already owns the return (`/premium`, `/subscribe`, the ticket page) is not
+	// handled twice. The hook itself latches per session id as a second line of defence.
+	usePremiumSubscriptionReturn(justSubscribed)
+
 	// Resuming after a login redirect (see handleSubscribeClick below) — skip straight to
 	// Stripe instead of making the user click Subscribe a second time. Guarded by a
 	// sessionStorage flag since every page can mount its own instance of this modal
@@ -229,12 +279,13 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.isReady, router.query[RESUME_PARAM], sessionStatus])
 
-	// Stays mounted while `alreadyMember` is set even if the parent thinks it's closed —
-	// that is exactly the post-login case described above.
-	if (!isOpen && !alreadyMember) return null
+	// Stays mounted while `alreadyMember` or `justSubscribed` is set even if the parent thinks
+	// it's closed — those are the post-login and post-checkout cases described above.
+	if (!isOpen && !alreadyMember && !justSubscribed) return null
 
 	const handleClose = () => {
 		setAlreadyMember(false)
+		setJustSubscribed(false)
 		onClose()
 	}
 
@@ -262,7 +313,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 	// A member has nothing to buy here, but they DO have something to change — the card shows
 	// their plan, the switch and the portal instead of a dead end pointing at another page.
-	const showMemberCard = alreadyMember || (isOpen && isPremium)
+	const showMemberCard = alreadyMember || justSubscribed || (isOpen && isPremium)
 
 	return (
 		<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -288,10 +339,17 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 						{/* The post-login resume case: they clicked Subscribe, signed in, and turned out
 						    to already be a member. Saying so is the whole point — otherwise the click
 						    appears to have done nothing. */}
-						{alreadyMember && !isOpen && (
+						{justSubscribed ? (
 							<p className="text-sm mb-6 flex items-center justify-center gap-2 text-green-500">
-								<CheckIcon className="w-5 h-5" /> You&apos;re already a Jetzy Premium member.
+								<CheckIcon className="w-5 h-5" /> Welcome to Jetzy Premium — your membership is active.
 							</p>
+						) : (
+							alreadyMember &&
+							!isOpen && (
+								<p className="text-sm mb-6 flex items-center justify-center gap-2 text-green-500">
+									<CheckIcon className="w-5 h-5" /> You&apos;re already a Jetzy Premium member.
+								</p>
+							)
 						)}
 						{!showMemberCard && message && <p className="text-gray-400 text-sm mb-6">{message}</p>}
 					</div>

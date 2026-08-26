@@ -54,6 +54,33 @@ export const config = {
 	},
 }
 
+/**
+ * The rate the cancelling member was on, for the win-back copy.
+ *
+ * Read off the subscription rather than the product default: an annual member must not be told
+ * they are losing a monthly price. Both figures or neither — the sentence needs the pair, and the
+ * email drops it entirely when they are missing.
+ */
+const cancellationRate = (subscription: Stripe.Subscription): { amount?: number; interval?: string } => {
+	const price = subscription.items.data[0]?.price
+	if (price?.unit_amount == null || !price.recurring?.interval) return {}
+	return { amount: price.unit_amount / 100, interval: price.recurring.interval }
+}
+
+/**
+ * Where "Reactivate my membership" points.
+ *
+ * `/premium`, not `/subscribe`: it is public, it does not redirect a signed-out visitor to
+ * `/login`, and it signs people in with an emailed code. Someone reading a cancellation notice
+ * may well no longer be signed in anywhere.
+ */
+const reactivateMembershipUrl = (): string | undefined => {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	// No base url means no link we can trust; the email drops the whole block rather than
+	// printing a relative path an inbox can't follow.
+	return baseUrl ? `${baseUrl.replace(/\/$/, "")}/premium` : undefined
+}
+
 function readRawBody(req: NextApiRequest): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
 		const chunks: Buffer[] = []
@@ -393,9 +420,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					if (recipient) {
 						await sendMembershipCancelled({
 							...recipient,
+							// During a trial the period end IS the trial end, and calling that a
+							// billing period would imply a payment that never happened.
 							endsOn: new Date(subscription.current_period_end * 1000),
 							alreadyEnded: false,
+							onTrial: subscription.status === "trialing",
 							label: MEMBERSHIPS[key].label,
+							...cancellationRate(subscription),
+							reactivateUrl: reactivateMembershipUrl(),
 						})
 					}
 				}
@@ -427,7 +459,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				await mirrorToSelectMember(key, customerId, "cancelled", subscription)
 
 				if (recipient) {
-					await sendMembershipCancelled({ ...recipient, alreadyEnded: true, label: MEMBERSHIPS[key].label })
+					await sendMembershipCancelled({
+						...recipient,
+						alreadyEnded: true,
+						// A subscription that ends while still trialing was never charged.
+						onTrial: subscription.status === "trialing",
+						label: MEMBERSHIPS[key].label,
+						...cancellationRate(subscription),
+						reactivateUrl: reactivateMembershipUrl(),
+					})
 				}
 				break
 			}

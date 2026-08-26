@@ -63,15 +63,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const { email: rawEmail, event, code } = validation.data
 		const email = rawEmail.trim().toLowerCase()
 
-		let months: number | undefined
 		if (event && code) {
 			// The offer has to be real before we email anybody about it — and the same resolver the
-			// charge uses, so the code in the inbox can't outlive the offer it was sent for.
+			// charge uses, so the code in the inbox can't outlive the offer it was sent for. The
+			// email itself says nothing about the offer; this is a gate, not a source of copy.
 			const offer = await resolveReferralTrial(event, code)
 			if (!offer.ok) {
 				return sendResponse(res, null, offer.message, false, ResCode.BAD_REQUEST)
 			}
-			months = offer.months
 		}
 
 		const issued = await issueAlbumCode(event || null, email, "premium")
@@ -79,9 +78,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
 		}
 
-		// `months` is undefined off the referral branch, and the email says "your Jetzy Premium
-		// membership" instead of naming free months that were never promised.
-		await sendPremiumVerificationCode({ email, code: issued.code, months })
+		await sendPremiumVerificationCode({ email, code: issued.code })
 
 		// Never the code itself, and never whether the address already has an account.
 		return sendResponse(res, { sent: true }, "We've emailed you a code.", true, ResCode.OK)

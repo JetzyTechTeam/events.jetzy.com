@@ -6,6 +6,7 @@ import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import Navbar from "@Jetzy/components/misc/Navbar"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -277,7 +278,13 @@ export default function SubscribePage() {
 	}
 
 	return (
-		<div className="min-h-screen bg-[#0A0B0F] text-white px-6 py-16">
+		<div className="min-h-screen bg-[#0A0B0F] text-white">
+			{/* `hideEventNav` — this is the mobile app's door, opened in the system browser. The
+			    event links belong to the web product and would strand somebody who came from the
+			    app; what they need here is the avatar menu, and Logout in it. */}
+			<Navbar hideEventNav hideMembershipCta handlesPremiumReturn />
+
+			<div className="px-6 py-16">
 			<div className="max-w-4xl mx-auto text-center mb-12">
 				<Image className="h-14 w-auto mx-auto mb-8" src={Logo} alt="Jetzy" />
 				<h1 className="text-3xl md:text-4xl font-bold mb-3">Choose your Jetzy plan</h1>
@@ -324,6 +331,7 @@ export default function SubscribePage() {
 						subscribeMutation.mutate()
 					}}
 				/>
+			</div>
 			</div>
 		</div>
 	)

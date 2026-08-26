@@ -2826,8 +2826,15 @@ Enter this code to confirm your email and open the photo album${cleanEventName ?
  * albums" would read as the wrong email entirely. It names the months so the code arrives with the
  * offer it belongs to still attached.
  */
-export const sendPremiumVerificationCode = async ({ email, code, months }: { email: string; code: string; months?: number }) => {
-  const offer = months && months > 0 ? `${months} month${months === 1 ? "" : "s"} of Jetzy Premium free` : "your Jetzy Premium membership"
+/**
+ * The 6-digit code that proves an address before buying Jetzy Premium.
+ *
+ * Deliberately says nothing about what is being claimed. It used to name the free months on a
+ * shared referral link ("claim 1 month of Jetzy Premium free"), which put an offer in an email
+ * that is sent BEFORE anything is checked against the recipient's account — so it read as a
+ * promise the checkout could still refuse. This email does one job: confirm the address.
+ */
+export const sendPremiumVerificationCode = async ({ email, code }: { email: string; code: string }) => {
   try {
     await sgMail.send({
       to: email,
@@ -2841,7 +2848,7 @@ export const sendPremiumVerificationCode = async ({ email, code, months }: { ema
           </div>
 
           <p style="color: #666; font-size: 16px; line-height: 1.5;">
-            Enter this code to confirm your email and claim <strong>${offer}</strong>:
+            Enter this code to confirm your email:
           </p>
 
           <div style="background-color: #f9f9f9; padding: 30px; text-align: center; border-radius: 12px; margin: 25px 0; border: 1px dashed #F5C518;">
@@ -2859,7 +2866,7 @@ export const sendPremiumVerificationCode = async ({ email, code, months }: { ema
       `),
       text: `Your Jetzy verification code: ${code}
 
-Enter this code to confirm your email and claim ${offer}. It expires in 10 minutes.`
+Enter this code to confirm your email. It expires in 10 minutes.`
     });
     console.log(`✅ Premium verification code sent to: ${email}`);
   } catch (error) {
@@ -3356,12 +3363,23 @@ export const sendMembershipPaymentFailed = async ({ email, firstName, amount, in
  * ends) or has ACTUALLY ended. One function, two states — the difference matters to the
  * reader, who otherwise can't tell whether they still have access.
  */
+/**
+ * The rate is HALF the "regular price" we advertise — the same claim `COMPARE_AT_MULTIPLIER`
+ * makes on the plan card, kept as one number here so the two can't drift. It is marketing copy:
+ * nothing in Stripe holds a higher price and nobody has ever been billed one.
+ */
+const LAUNCH_DISCOUNT_LABEL = "50% off"
+
 export const sendMembershipCancelled = async ({
 	email,
 	firstName,
 	endsOn,
 	alreadyEnded,
 	label,
+	onTrial = false,
+	amount,
+	interval,
+	reactivateUrl,
 }: {
 	email: string
 	firstName?: string
@@ -3369,34 +3387,126 @@ export const sendMembershipCancelled = async ({
 	alreadyEnded: boolean
 	/** Which membership ended. A member of both cannot tell from an unlabelled message. */
 	label?: string
+	/**
+	 * Cancelled DURING a free trial.
+	 *
+	 * Changes what the member is losing and when: "the end of your free trial" is the honest
+	 * description of a period they were never charged for, and "your current billing period"
+	 * would imply a payment that never happened.
+	 */
+	onTrial?: boolean
+	/** What they were paying, for the win-back. Both or neither — the sentence needs the pair. */
+	amount?: number
+	interval?: string
+	/** Where "Reactivate" points. Omitted and no win-back block renders. */
+	reactivateUrl?: string
 }) => {
 	const name = firstName || email.split("@")[0]
 	const product = label || DEFAULT_MEMBERSHIP_LABEL
 	const endsOnLabel = endsOn ? dayjs(endsOn).format("MMMM D, YYYY") : null
 
-	const headline = alreadyEnded
-		? `Your ${product} membership has ended.`
-		: endsOnLabel
-			? `Your ${product} membership is set to end on <strong>${endsOnLabel}</strong>.`
-			: `Your ${product} membership is set to end at the close of your current billing period.`
+	// The win-back copy is Jetzy Premium's, supplied by the CEO. Full Concierge is sold on
+	// selectmember.jetzy.com's own terms, so it keeps the plain message it always had — quoting
+	// Premium's launch price at a Concierge member would be a straightforwardly wrong statement.
+	const isPremiumProduct = product === DEFAULT_MEMBERSHIP_LABEL
+	// "$20/month", not "$20.00/month" — whole dollars drop the cents, matching how the price
+	// reads on the plan card and in the CEO's copy.
+	const rate =
+		amount != null && interval
+			? `$${Number.isInteger(amount) ? amount : amount.toFixed(2)}/${interval}`
+			: null
+	const useWinBack = isPremiumProduct && !!reactivateUrl
 
-	const body = alreadyEnded
-		? "You won't be charged again. Any tickets you've already bought are unaffected and remain valid."
-		: "You keep full access until then, and you won't be charged again. Any tickets you've already bought are unaffected and remain valid."
+	if (!useWinBack) {
+		const headline = alreadyEnded
+			? `Your ${product} membership has ended.`
+			: endsOnLabel
+				? `Your ${product} membership is set to end on <strong>${endsOnLabel}</strong>.`
+				: `Your ${product} membership is set to end at the close of your current billing period.`
+
+		const body = alreadyEnded
+			? "You won't be charged again. Any tickets you've already bought are unaffected and remain valid."
+			: "You keep full access until then, and you won't be charged again. Any tickets you've already bought are unaffected and remain valid."
+
+		try {
+			await sgMail.send({
+				to: email,
+				from: mailFrom(),
+				subject: alreadyEnded ? `Your ${product} membership has ended` : `Your ${product} membership is scheduled to end`,
+				html: membershipShell(`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${body}</p>
+      `, "#6B7280"),
+				text: `Hi ${name},\n\n${stripHtml(headline)}\n\n${body}\n\n— Team Jetzy`,
+			})
+			console.log(`✅ Membership cancellation email sent to: ${email} (alreadyEnded=${alreadyEnded})`)
+		} catch (error) {
+			console.error("❌ Failed to send membership cancellation email:", error)
+		}
+		return
+	}
+
+	// ---- Jetzy Premium: the CEO's win-back copy, reproduced as written ----
+	//
+	// Only the date and the rate are substituted, and each sentence that needs one is dropped
+	// rather than half-written when it is missing.
+	const period = onTrial ? "free trial" : "current billing period"
+	const ends = onTrial ? "your trial ends" : "your membership ends"
+
+	const headline = `Your ${product} membership has been canceled.`
+
+	const throughLine = alreadyEnded
+		? null
+		: endsOnLabel
+			? `You'll continue to enjoy ${product} benefits through the end of your ${period} on <strong>${endsOnLabel}</strong>.`
+			: `You'll continue to enjoy ${product} benefits through the end of your ${period}.`
+
+	const losingLine = rate
+		? alreadyEnded
+			? `You've lost access to Premium benefits and events, as well as our limited-time launch pricing of <strong>${rate} — ${LAUNCH_DISCOUNT_LABEL} the regular price</strong>.`
+			: `After ${ends}, you'll lose access to Premium benefits and events, as well as our limited-time launch pricing of <strong>${rate} — ${LAUNCH_DISCOUNT_LABEL} the regular price</strong>.`
+		: alreadyEnded
+			? "You've lost access to Premium benefits and events."
+			: `After ${ends}, you'll lose access to Premium benefits and events.`
+
+	const lockInLine = rate
+		? `If you reactivate, your <strong>${rate}</strong> launch rate will be locked in for one full year from the date you sign up, as long as your membership remains active.`
+		: null
 
 	try {
 		await sgMail.send({
 			to: email,
 			from: mailFrom(),
-			subject: alreadyEnded ? `Your ${product} membership has ended` : `Your ${product} membership is scheduled to end`,
+			subject: `Your ${product} membership has been canceled`,
 			html: membershipShell(`
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0;">Hi ${name},</p>
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">${headline}</p>
-        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${body}</p>
-      `, "#6B7280"),
-			text: `Hi ${name},\n\n${stripHtml(headline)}\n\n${body}\n\n— Team Jetzy`,
+        ${throughLine ? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${throughLine}</p>` : ""}
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${losingLine}</p>
+        ${lockInLine ? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${lockInLine}</p>` : ""}
+        <div style="background-color:#FEF9E7;border:1px solid #F5C518;border-radius:10px;padding:18px;margin:22px 0;text-align:center;">
+          <p style="color:#1F2937;font-size:15px;font-weight:bold;line-height:1.5;margin:0 0 14px 0;">
+            Want to keep your Premium benefits and lock in the ${LAUNCH_DISCOUNT_LABEL} launch discount?
+          </p>
+          <a href="${reactivateUrl}" style="display:inline-block;background-color:#F5C518;color:#000000;font-weight:bold;font-size:15px;text-decoration:none;padding:12px 26px;border-radius:999px;">
+            Reactivate my membership
+          </a>
+        </div>
+      `, "#F5C518"),
+			text: [
+				`Hi ${name},`,
+				stripHtml(headline),
+				throughLine ? stripHtml(throughLine) : null,
+				stripHtml(losingLine),
+				lockInLine ? stripHtml(lockInLine) : null,
+				`Want to keep your Premium benefits and lock in the ${LAUNCH_DISCOUNT_LABEL} launch discount? Reactivate your membership here: ${reactivateUrl}`,
+				"— Team Jetzy",
+			]
+				.filter(Boolean)
+				.join("\n\n"),
 		})
-		console.log(`✅ Membership cancellation email sent to: ${email} (alreadyEnded=${alreadyEnded})`)
+		console.log(`✅ Membership cancellation email sent to: ${email} (alreadyEnded=${alreadyEnded}, onTrial=${onTrial})`)
 	} catch (error) {
 		console.error("❌ Failed to send membership cancellation email:", error)
 	}

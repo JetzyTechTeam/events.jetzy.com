@@ -24,9 +24,25 @@ import { useMembershipDialog } from "@/hooks/useMembershipDialog";
 
 type NavbarProps = {
   hideEventNav?: boolean;
+  /**
+   * Drop the "Buy Jetzy Premium" button.
+   *
+   * For the pages that ARE the membership — /premium, /subscribe. Opening a dialog that sells
+   * what the page below is already selling reads as a bug, and it covers the plan they came to
+   * look at.
+   */
+  hideMembershipCta?: boolean;
+  /**
+   * The page confirms the Stripe return itself.
+   *
+   * /premium and /subscribe both own `?premium_session_id`, with their own copy and their own
+   * cleanup. Without this the navbar would confirm it a second time — two toasts, and two
+   * `router.replace` calls racing.
+   */
+  handlesPremiumReturn?: boolean;
 };
 
-const Navbar = ({ hideEventNav = false }: NavbarProps) => {
+const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiumReturn = false }: NavbarProps) => {
   const router = useRouter();
   const session = useSession();
   const dispatch = useAppDispatch();
@@ -41,7 +57,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
   // sent straight to Stripe from the menu below, which is the cancel-only portal — so there was
   // nowhere in the product to move from monthly to annual.
   const { open: openMembershipDialog, dialog: membershipDialog, label: membershipLabel } = useMembershipDialog();
-  usePremiumSubscriptionReturn();
+  usePremiumSubscriptionReturn(!handlesPremiumReturn);
 
   return (
     <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={2}>
@@ -123,7 +139,7 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
             )}
 
             {/* Buy Jetzy Premium — only shown to non-members, sits right next to the profile menu */}
-            {!isPremium && (
+            {!isPremium && !hideMembershipCta && (
               <Button
                 size="sm"
                 bg="#F5C518"
@@ -248,16 +264,18 @@ const Navbar = ({ hideEventNav = false }: NavbarProps) => {
           </Flex>
         ) : (
           <Flex align="center" gap={4}>
-            <Button
-              bg="#F5C518"
-              color="black"
-              _hover={{ bg: "#E0B317" }}
-              onClick={openMembershipDialog}
-              leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
-              display={{ base: "none", sm: "flex" }}
-            >
-              Buy Jetzy Premium
-            </Button>
+            {!hideMembershipCta && (
+              <Button
+                bg="#F5C518"
+                color="black"
+                _hover={{ bg: "#E0B317" }}
+                onClick={openMembershipDialog}
+                leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
+                display={{ base: "none", sm: "flex" }}
+              >
+                Buy Jetzy Premium
+              </Button>
+            )}
             <Button
               variant="outline"
               colorScheme="orange"

@@ -2144,6 +2144,87 @@ assuming an index exists.
 > Same caveat as before: signing in by emailed code bypasses any password that address may have.
 > `/auth/login-otp` already worked that way.
 
+## Navbar on the membership pages, and the dialog surviving checkout (2026-08-27)
+
+**Signing out.** `/premium`, `/subscribe` and `/manage-membership` were bare pages with a logo and
+no navigation, so there was no way off them and no way to sign out. That bites hardest on
+`/manage-membership`, whose most common failure — "this account doesn't have an active membership"
+— is usually *the wrong account*: memberships follow the checkout email, not the login. All three
+now mount `misc/Navbar`.
+
+Two props came with it:
+
+| Prop | Why |
+|---|---|
+| `hideMembershipCta` | Drops "Buy Jetzy Premium" on the pages that already sell it. A dialog covering the plan you came to read is a bug, not a CTA. |
+| `handlesPremiumReturn` | `/premium` and `/subscribe` confirm `?premium_session_id` themselves. Without this the navbar confirms it a second time — two requests, two toasts, two `router.replace` calls racing. |
+
+`usePremiumSubscriptionReturn` also latches per session id in a **module-scope Set**, because more
+than one mounted component can legitimately want to handle the return. First one in wins.
+
+**Checkout from the navbar button used to end nowhere.** "Buy Jetzy Premium" opens
+`PremiumPaywallModal`, whose `returnTo` is the current path — so a successful purchase dropped the
+buyer back onto the public home page or an event listing, with a toast as the only evidence.
+
+The dialog now reopens on its **member card**. The mechanism is one sessionStorage marker,
+`jetzy_premium_modal_purchase`, written immediately before the redirect and consumed on return:
+
+- deliberately specific — `/premium` and `/subscribe` don't write it, so their own handling is
+  untouched even though the navbar mounts a dialog on those pages too
+- any return **without** `premium_session_id` (an abandoned checkout comes back as
+  `?premium_cancelled=1`) *clears* the marker instead of consuming it, so a stale one can't open the
+  dialog on somebody else's purchase later. Safe to do unconditionally: the marker is written
+  immediately before a full page navigation, so there is no render in between
+- `justSubscribed` forces the member card on before the status query has refreshed, and enables the
+  return hook — which the latch then de-duplicates against the navbar's
+
+**The verification email dropped its offer line.** It read "Enter this code to confirm your email and
+claim **1 month of Jetzy Premium free**" — an offer stated in an email sent *before* anything is
+checked against the recipient's account, which checkout can still refuse. It now says only "Enter
+this code to confirm your email". `send-code` still resolves the referral offer; that is a gate on
+whether to send at all, not a source of copy.
+
+## The cancellation email is a win-back (2026-08-27)
+
+Jetzy Premium's cancellation notice was a receipt: "your membership is set to end on X, you keep
+access until then." The CEO replaced it with copy that also asks for the member back, reproduced as
+written:
+
+> Your Jetzy Premium membership has been canceled.
+>
+> You'll continue to enjoy Jetzy Premium benefits through the end of your *free trial* on
+> **October 26, 2026**.
+>
+> After *your trial ends*, you'll lose access to Premium benefits and events, as well as our
+> limited-time launch pricing of **$20/month — 50% off the regular price**.
+>
+> If you reactivate, your **$20/month** launch rate will be locked in for one full year from the
+> date you sign up, as long as your membership remains active.
+>
+> **Want to keep your Premium benefits and lock in the 50% launch discount?**
+> Reactivate your membership here: *[button]*
+
+**`onTrial` picks the two italicised phrases.** During a trial `current_period_end` *is* the trial
+end; describing it as a billing period implies a payment that never happened. Both webhook branches
+read `subscription.status === "trialing"`.
+
+**The rate comes off the subscription** (`cancellationRate`), never the product default — an annual
+member must not be told they are losing a monthly price. Both `amount` and `interval` or neither:
+the pricing sentences are dropped rather than half-written.
+
+**Full Concierge keeps the old plain email.** It is sold on selectmember.jetzy.com's terms, and
+quoting Jetzy Premium's launch price at a Concierge member would simply be false. The branch is on
+`label === DEFAULT_MEMBERSHIP_LABEL`.
+
+**Reactivate points at `/premium`**, not `/subscribe`: it is public, it does not redirect a
+signed-out visitor to `/login`, and it signs people in with an emailed code — all of which matter
+for somebody reading a cancellation notice who may not be signed in anywhere. With no
+`NEXT_PUBLIC_URL` the whole win-back block is dropped rather than emitting a path an inbox can't
+follow.
+
+`LAUNCH_DISCOUNT_LABEL` ("50% off") is the same marketing claim `COMPARE_AT_MULTIPLIER` makes on the
+plan card. Nothing in Stripe backs it and nobody has been billed the "regular" price.
+
 ## "It looks like I'm being charged" — the trialing member card (2026-08-26)
 
 Reported by the CEO with a screenshot: buy Premium with a free month, land back on the plan page,
