@@ -2106,8 +2106,11 @@ never looked at it.
 - headline is **"Free until 21 Sep 2026"**, not the price
 - a panel states the terms in full, with the date
 - the rate appears only as what happens *after*
-- the plan switch is hidden (mid-trial interval changes are a different conversation, and with
-  `continue_trial` the member sees nothing happen)
+- the plan switch stays available. It was briefly hidden here, which was wrong: with
+  `trial_update_behavior: "continue_trial"` on the switch configuration, switching keeps the free
+  period and changes only what is charged when it ends. Before that setting the same click would
+  have ended the trial and billed immediately. The panel now says "switching to annual keeps your
+  free trial", because that button raises exactly one question
 
 **Two kinds of trial, and only one converts.** This is the part the request didn't account for:
 

@@ -211,7 +211,12 @@ const PlanComparison: React.FC<Props> = ({
 	// The switch target is whichever interval they are NOT on — annual, in practice, since the
 	// server only sets `canSwitch` for monthly members.
 	const switchTarget = memberInterval ? options.find((p) => p.interval !== memberInterval) : undefined
-	const showSwitch = !!(isPremium && currentPlan?.canSwitch && switchTarget && onSwitchInterval && currentPlan?.status !== "trialing")
+	// Offered DURING a trial too. It was briefly hidden there, which was over-cautious: since the
+	// portal configuration carries `trial_update_behavior: "continue_trial"`, switching keeps the
+	// free period and simply changes what is charged when it ends. Before that setting the same
+	// click would have ended the trial and billed on the spot, which is presumably why it felt
+	// unsafe.
+	const showSwitch = !!(isPremium && currentPlan?.canSwitch && switchTarget && onSwitchInterval)
 
 	// A trial is only worth describing while it is running, and only when we know the date it
 	// ends — an unnamed "your trial" answers none of the questions a member actually has.
@@ -281,6 +286,11 @@ const PlanComparison: React.FC<Props> = ({
 											charged. Keep it and you&apos;ll be charged {memberRate ? amountOnly(memberRate) : "the usual rate"} per{" "}
 											{PERIOD_LABELS[memberInterval || interval] || memberInterval || interval} from {trialEndsOnLabel}.
 										</p>
+										{/* The switch button below raises exactly one question, so it is answered
+										    next to it rather than left to be discovered. */}
+										{showSwitch && (
+											<p className="mt-2 font-normal">Switching to annual keeps your free trial — only the rate afterwards changes.</p>
+										)}
 									</>
 								) : (
 									/* Kept short on purpose: this member never entered a card, and
