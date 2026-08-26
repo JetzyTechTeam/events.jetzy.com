@@ -528,6 +528,8 @@ falling back to the plain album URL when there is no token. Same one-click patte
 discussion emails use. This is also *why* the interests-only dialog exists: these arrivals
 are already identified and never see the name+email step.
 
+**Full HTML and plain-text bodies for all four are in §10** — reproduce them verbatim so mail from the app is indistinguishable from the web's.
+
 There is a fourth album email — `sendAlbumVerificationCode`, the 6-digit code from
 `POST /albums/send-code`. Unlike the three below it is **awaited**, not fire-and-forget: if
 the send fails, the visitor would otherwise sit waiting for a code that never arrives.
@@ -599,7 +601,206 @@ Note the two intentional non-errors: `GET /participants` returns **200 + `[]`** 
 
 ---
 
-## 10. Web reference files
+## 10. Email templates, verbatim
+
+Reproduce these exactly so mail sent from the app and from the web is indistinguishable. All
+four live in `src/lib/send-grid.ts`.
+
+### Shared rules
+
+- **From is always `{ email: SENDGRID_EMAIL_SENDER, name: "Jetzy" }`** via one `mailFrom()`
+  helper. A bare address string makes clients display the mailbox name ("contact") instead of
+  "Jetzy". The only exception is the access notice, which goes to an internal inbox.
+- Every body is wrapped by `wrapHtml()`:
+  `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body>…</body></html>`
+- **Event names are rich text.** Strip tags, then decode entities (`decodeHTMLEntities`),
+  before interpolating — otherwise the subject line renders literal `<p>` tags.
+- Styles are inline only: no `<style>` block, no external CSS. Brand orange is `#F79432`.
+- The album link is always `eventAlbumUrl(base, slug, albumId)` →
+  `{base}/{slug}/album/{albumId}`. Never interpolate a slug by hand; slugs may contain spaces
+  and unicode.
+- All four skip sending when `NEXT_PUBLIC_URL` contains `localhost`, and just log.
+- Three are **fire-and-forget** — a mail failure must never fail the request. The verification
+  code is the exception: it is **awaited**, because a failed send leaves the visitor waiting
+  for a code that never arrives.
+
+### 1. Verification code — `sendAlbumVerificationCode`
+
+To the address being verified. **Awaited.**
+
+**Subject:** `Your album access code: {CODE}`
+
+`{FOR_EVENT}` is `` for &quot;{EVENT_NAME}&quot; `` when an event name is known, otherwise an
+empty string. In the text part it is ` for "{EVENT_NAME}"` with real quotes.
+
+```html
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+  <div style="text-align: center; margin-bottom: 25px;">
+    <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" style="vertical-align: middle; margin-bottom: 10px;" />
+    <h1 style="color: #333; font-size: 24px; margin: 0;">View the photos</h1>
+  </div>
+  <p style="color: #666; font-size: 16px; line-height: 1.5;">
+    Enter this code to confirm your email and open the photo album{FOR_EVENT}:
+  </p>
+  <div style="background-color: #f9f9f9; padding: 30px; text-align: center; border-radius: 12px; margin: 25px 0; border: 1px dashed #F79432;">
+    <span style="font-family: monospace; font-size: 42px; font-weight: 800; color: #F79432; letter-spacing: 12px;">{CODE}</span>
+  </div>
+  <p style="color: #999; font-size: 14px; line-height: 1.4;">
+    This code expires in 10 minutes. If you didn't ask to view an album, you can ignore this email — nothing has been created for you.
+  </p>
+  <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
+    &copy; {YEAR} Jetzy Events, Inc.
+  </p>
+</div>
+```
+
+```
+Your album access code: {CODE}
+
+Enter this code to confirm your email and open the photo album{FOR_EVENT}. It expires in 10 minutes.
+```
+
+> This copy commits you to the behaviour in §2.4: 10-minute TTL, 5 attempts, 60s resend, and
+> **nothing written before the code checks out**. If your backend differs, the email is lying.
+
+### 2. Access notice — `sendAlbumAccessNotice`
+
+**To the internal inbox**, not the viewer: `ADMIN_NOTIFICATION_EMAIL`, falling back to
+`SENDGRID_EMAIL_SENDER`. Sent the *first* time a given person opens a given album — the
+`{albumId, viewerEmail}` unique index is what makes it once-per-person (§2.2).
+
+`{ACTION}` is `signed up` or `logged in`. `{WHEN}` is
+`toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" })` plus
+`" UTC"`.
+
+**Subject:** `[Album] {VIEWER_NAME} {ACTION} — {EVENT_NAME}`
+
+```html
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
+  <h2 style="color: #F79432; margin-top: 0;">New Album Viewer</h2>
+  <p style="color: #333; font-size: 16px;">
+    A user <strong>{ACTION}</strong> from a shared album link and can now view it:
+  </p>
+  <div style="background-color: #f4f4f4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <p style="margin: 5px 0;"><strong>Name:</strong> {VIEWER_NAME}</p>
+    <p style="margin: 5px 0;"><strong>Email:</strong> {VIEWER_EMAIL}</p>
+    <p style="margin: 5px 0;"><strong>Action:</strong> {ACTION}</p>
+    <p style="margin: 5px 0;"><strong>Event:</strong> {EVENT_NAME}</p>
+    <p style="margin: 5px 0;"><strong>Album:</strong> {ALBUM_TITLE}</p>
+    <p style="margin: 5px 0;"><strong>When:</strong> {WHEN}</p>
+  </div>
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="{ALBUM_URL}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+      Open Album
+    </a>
+  </div>
+  <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+    Automated notification from Jetzy Events.
+  </p>
+</div>
+```
+
+```
+New album viewer
+Name: {VIEWER_NAME}
+Email: {VIEWER_EMAIL}
+Action: {ACTION}
+Event: {EVENT_NAME}
+Album: {ALBUM_TITLE}
+When: {WHEN}
+Open: {ALBUM_URL}
+```
+
+### 3. Tag notification — `sendAlbumTagNotification`
+
+To the **tagged person**, on **every** tag including repeats — tagging is deliberately not
+deduped (§2.3).
+
+**Subject:** `{TAGGER_NAME} tagged you in a photo from {EVENT_NAME}`
+
+```html
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #333; text-align: center;">You were tagged in a photo 📸</h1>
+  <p style="color: #555; font-size: 16px; line-height: 1.6;">
+    Hi {RECIPIENT_NAME}, <strong>{TAGGER_NAME}</strong> tagged you in a photo from
+    <strong>{EVENT_NAME}</strong> (album: {ALBUM_TITLE}).
+  </p>
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="{ALBUM_URL}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+      View the Photo
+    </a>
+  </div>
+  <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+    You're receiving this because someone tagged you in a Jetzy event album.
+  </p>
+</div>
+```
+
+```
+{TAGGER_NAME} tagged you in a photo from "{EVENT_NAME}" (album: {ALBUM_TITLE}).
+
+View it: {ALBUM_URL}
+```
+
+> **The photo is deliberately NOT embedded.** `mediaUrl` is accepted by the function and
+> deliberately unused in the body — the recipient must click through. Don't "improve" this by
+> inlining the image: it would put a photo of someone into an inbox that never passed the
+> album gate, and into every mail provider that caches remote images.
+
+### 4. Publish notification — `sendAlbumPublishedNotification`
+
+To **every event attendee** (`getEventParticipants` = confirmed bookings + accepted
+invitations) when the host publishes.
+
+**Subject:** `📸 The photos from {EVENT_NAME} are up!`
+
+The cover block is omitted entirely when there is no cover. Cover = first `type: "image"` in
+`media`, else `media[0]`.
+
+**The link is a magic-link sign-in, not a plain album URL:**
+
+```
+{root}/login?magicToken={TOKEN}&_cb={encodeURIComponent(albumPath)}
+```
+
+falling back to `{root}{albumPath}` when there is no token. Recipients are known participants
+and the link lands in their own inbox, so they are signed straight in rather than sent through
+the gate. **This is why the interests-only dialog exists** (§4.4) — these arrivals are already
+identified and never see the name+email step.
+
+```html
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #333; text-align: center;">The photos are here! 🎉</h1>
+  <p style="color: #555; font-size: 16px; line-height: 1.6;">
+    Hi {RECIPIENT_NAME}, the album <strong>{ALBUM_TITLE}</strong> from
+    <strong>{EVENT_NAME}</strong> has just been published. Take a look and find yourself!
+  </p>
+  <!-- only when a cover exists -->
+  <div style="text-align: center; margin: 25px 0;">
+    <img src="{COVER_URL}" alt="{ALBUM_TITLE}" style="max-width: 100%; border-radius: 12px;" />
+  </div>
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="{ALBUM_URL}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+      View the Album
+    </a>
+  </div>
+  <p style="margin-top: 30px; text-align: center; color: #666;">Thanks for being part of it!</p>
+</div>
+```
+
+```
+The photos from "{EVENT_NAME}" are up!
+
+Album: {ALBUM_TITLE}
+View it: {ALBUM_URL}
+```
+
+> Unlike the other three, this one **throws** on failure, because `publish` counts successes
+> into `notifiedCount`. Per-recipient failures are logged and skipped, not fatal to the batch.
+
+---
+
+## 11. Web reference files
 
 - **Models:** `src/models/events/albums.ts`, `src/models/events/album-access.ts`, `src/models/events/album-tags.ts`, `src/models/events/album-verification.ts`, `src/models/events/album-interest.ts`
 - **Viewer identity:** `src/lib/album-auth.ts` (`resolveAlbumViewer`, `setAlbumGuestCookie`, `ALBUM_GUEST_COOKIE`)
