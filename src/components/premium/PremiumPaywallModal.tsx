@@ -5,10 +5,11 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { Error as ErrorToast } from "@/lib/_toaster"
-import { trialDisclosure } from "@/lib/invite-trial"
+import { resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumPlan"
 import PlanComparison from "@/components/premium/PlanComparison"
+import EmailVerifyDialog from "@/components/premium/EmailVerifyDialog"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -39,6 +40,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	const router = useRouter()
 	const queryClient = useQueryClient()
 	const { isPremium } = usePremiumStatus()
+	const isSignedIn = sessionStatus === "authenticated"
 
 	// "You already have this" is a RESULT worth showing, not an error to swallow.
 	//
@@ -49,6 +51,16 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	// the click appeared to do nothing at all. This state lets the modal reopen itself and
 	// say so plainly.
 	const [alreadyMember, setAlreadyMember] = useState(false)
+
+	/**
+	 * Email + 6-digit code, in place of sending a signed-out visitor to `/login`.
+	 *
+	 * The login round trip below still exists for anything that arrives back with the resume
+	 * param, but nothing sends anyone down it any more: a buyer who has to leave the dialog,
+	 * invent a password and find their way back is a buyer who mostly doesn't. The code proves
+	 * the address and NextAuth creates the account from the magic token it returns.
+	 */
+	const [verifyOpen, setVerifyOpen] = useState(false)
 
 	// The shared hook, not a private query: it already formats every interval's label and shares
 	// its cache key, so opening this after the price has been fetched elsewhere on the page
@@ -84,6 +96,25 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			setInviteChecking(false)
 			return
 		}
+
+		// Signed out there is no account to check against, so the code is resolved in the browser
+		// from the same shared table the server enforces. It is a PREVIEW of the offer, never a
+		// promise about an account we don't know yet — after sign-in the server re-checks it, and a
+		// refusal is reported then. Without this the field would simply 401 and read as invalid.
+		if (!isSignedIn) {
+			const resolved = resolveTrialCode(code, selectedInterval)
+			setInviteChecking(false)
+			if (!resolved.ok) {
+				setInviteAccepted(null)
+				setInviteError(resolved.message)
+				return
+			}
+			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
+			setInviteError(null)
+			setInviteAccepted(trialDisclosure(resolved.offer, preview?.label || null, trialEndsOn(resolved.offer)))
+			return
+		}
+
 		setInviteChecking(true)
 		inviteTimer.current = setTimeout(async () => {
 			try {
@@ -116,7 +147,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		return () => {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
-	}, [inviteCode, selectedInterval])
+	}, [inviteCode, selectedInterval, isSignedIn, prices])
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
@@ -207,13 +238,11 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		onClose()
 	}
 
-	// Subscribing requires an account. A logged-out visitor is sent to log in first,
-	// then automatically resumed straight into Stripe on return (see the effect above).
+	// Subscribing requires an account. A logged-out visitor proves their email with a code
+	// instead — the account is created from it — and checkout opens without leaving this dialog.
 	const handleSubscribeClick = () => {
 		if (sessionStatus !== "authenticated") {
-			const url = new URL(window.location.href)
-			url.searchParams.set(RESUME_PARAM, "1")
-			router.push(`/login?_cb=${encodeURIComponent(url.pathname + url.search)}`)
+			setVerifyOpen(true)
 			return
 		}
 		// Caught client-side too, so a member who reaches this dialog is told immediately
@@ -222,6 +251,12 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			setAlreadyMember(true)
 			return
 		}
+		subscribeMutation.mutate()
+	}
+
+	// The session now exists. Straight to Stripe, which is what they pressed the button for.
+	const handleVerified = () => {
+		setVerifyOpen(false)
 		subscribeMutation.mutate()
 	}
 
@@ -285,6 +320,11 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 					/>
 				</div>
 			</div>
+
+			{/* Sits above the card, on top of this dialog's own overlay — it is `fixed` itself, so
+			    nesting is only about ownership. No event and no referral code: this is the ordinary
+			    price, and the endpoints key the code to the address alone. */}
+			<EmailVerifyDialog open={verifyOpen} onClose={() => setVerifyOpen(false)} onVerified={handleVerified} />
 		</div>
 	)
 }

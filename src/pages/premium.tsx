@@ -17,21 +17,21 @@ import React from "react"
 /**
  * The PUBLIC Jetzy Premium page — the one we email a link to.
  *
- * `/subscribe` does the same job for the mobile app and is deliberately left alone: it bounces an
- * unauthenticated visitor straight to `/login`, auto-logs in from a magic token, and deep-links
- * back into the app on every exit. All three are wrong for someone opening a link from their
- * inbox, and the first one is the whole reason this page exists — a campaign link must show the
- * offer before it asks for anything.
+ * `/subscribe` does the same job for the mobile app: it auto-logs in from a magic token and
+ * deep-links back into the app on every exit, neither of which is right for someone opening a link
+ * from their inbox. It used to bounce a signed-out visitor straight to `/login` as well, which is
+ * the whole reason this page exists — a campaign link must show the offer before it asks for
+ * anything. That bounce is now gone from both pages.
  *
  * So the order is inverted here: SEE the plan, type the code, see what it is worth, and only then
- * log in — at the moment of actually buying.
+ * identify yourself — at the moment of actually buying, with a 6-digit code rather than a password.
  *
- * The invite code has to survive that round trip. It rides in the URL (it is a campaign string,
- * not a secret) through `/login?_cb=…`, which already carries a callback through login, signup and
- * email verification. What it cannot do is carry a PROMISE: eligibility is per account, so the
- * green line a logged-out visitor sees is a preview. After login the code is re-checked against
- * their account, and if it is refused they are told and asked what to do — never silently charged
- * full price for something they were shown as free.
+ * The invite code has to survive whatever happens in between. It rides in the URL (it is a campaign
+ * string, not a secret) and, across the trip to Stripe, in sessionStorage. What it cannot do is
+ * carry a PROMISE: eligibility is per account, so the green line a logged-out visitor sees is a
+ * preview. Once the account is known the code is re-checked against it, and if it is refused they
+ * are told and asked what to do — never silently charged full price for something they were shown
+ * as free.
  */
 
 const SELF = "/premium"
@@ -74,9 +74,12 @@ export default function PremiumPage() {
 	 */
 	const [referralEventId, setReferralEventId] = React.useState("")
 	/**
-	 * The email-and-code dialog, shown INSTEAD of bouncing to /login — but only on a shared
-	 * referral link. Someone who arrives from an email about a free membership and is asked to
-	 * invent a password does not come back.
+	 * The email-and-code dialog, shown INSTEAD of bouncing to /login for every signed-out buyer.
+	 *
+	 * It started out limited to a shared referral link, on the reasoning that someone arriving
+	 * from an email about a free membership and asked to invent a password does not come back.
+	 * That is just as true of anyone who lands on this page from a campaign, so the dialog is now
+	 * the door for all of them; `/login` remains reachable, it is simply no longer compulsory.
 	 */
 	const [verifyOpen, setVerifyOpen] = React.useState(false)
 	/** Free months the shared code grants, so the dialog can name what is being claimed. */
@@ -314,23 +317,14 @@ export default function PremiumPage() {
 			subscribeMutation.mutate()
 			return
 		}
-		// A shared referral link keeps everything on this page: prove the email with a code, and
-		// the account is created from it. No password is ever chosen, because asking a stranger to
-		// invent one is where this journey used to end.
-		if (referralEventId && inviteCode.trim()) {
-			setVerifyOpen(true)
-			return
-		}
-		// Everything else still goes through login and comes straight back, carrying what they
-		// chose. `go=1` is the record that they had already committed, so they don't press twice.
-		const params = new URLSearchParams()
-		const code = inviteCode.trim()
-		if (code) params.set("code", code)
-		if (code && referralEventId) params.set("event", referralEventId)
-		if (selectedInterval) params.set("interval", selectedInterval)
-		params.set("go", "1")
-		router.push(`/login?_cb=${encodeURIComponent(`${SELF}?${params.toString()}`)}`)
-	}, [isAuthenticated, inviteCode, selectedInterval, referralEventId, router, subscribeMutation])
+		// Everything stays on this page: prove the email with a code, and the account is created
+		// from it. No password is ever chosen, because asking a stranger to invent one is where
+		// this journey used to end.
+		//
+		// The `/login?_cb=…&go=1` round trip it replaced still works — old links carry it and the
+		// effect below still honours it — but nothing sends anyone down it any more.
+		setVerifyOpen(true)
+	}, [isAuthenticated, subscribeMutation])
 
 	// ---- Back from login with intent ----
 	//

@@ -2054,8 +2054,8 @@ Pressing **Go Premium** on a shared referral link used to throw the visitor at `
 who came from an email about a free membership and has no account, that is where the journey ended:
 they were being asked to invent a password to accept a gift.
 
-Now, **on shared links only**, a dialog does it in place — email, 6-digit code, then straight to
-Stripe. Plain `/premium` and `/subscribe` are unchanged.
+Now a dialog does it in place — email, 6-digit code, then straight to Stripe. This shipped for
+shared links only; a day later it became the door everywhere (see the next section).
 
 **Almost none of this is new machinery.** The 6-digit code (10 minute TTL, 5 attempts, 60s resend
 cooldown) is the album gate's, and the sign-in is the magic-token path `verify-login-otp.ts` has
@@ -2069,9 +2069,10 @@ path already does.
 | `POST /api/premium/send-code` | Validate the share link, rate-limit, issue and email the code |
 | `POST /api/premium/verify-code` | Spend the code, return a magic token |
 
-**The link is validated before a single email goes out.** `resolveReferralTrial` runs first, so this
-endpoint can't be used to send Jetzy-branded mail to arbitrary addresses — a valid, unexhausted
-share link is the price of admission. Neither endpoint reveals whether an address has an account.
+**A shared link is validated before a single email goes out.** `resolveReferralTrial` runs first, so
+the referral branch can't be used to send Jetzy-branded mail about an offer that isn't real — a
+valid, unexhausted share link is the price of admission. Neither endpoint reveals whether an address
+has an account.
 
 **`purpose` on the verification store.** Rows were keyed `(eventId, email)`, so a premium code and an
 album code for the same person on the same event overwrote each other — asking for the second
@@ -2090,6 +2091,54 @@ could drift from it. A refusal (they've had Premium before) lands in the existin
 
 > Signing in by emailed code bypasses any password that address may have. `/auth/login-otp` already
 > worked that way; this is a second door onto the same behaviour, not a new one.
+
+## Email-code sign-in is the door to Premium everywhere (2026-08-27)
+
+The dialog above worked, so the CEO asked for it on every surface that sells Premium: **`/premium`,
+`/subscribe`, and the "Jetzy Premium" button's `PremiumPaywallModal`**. A signed-out buyer proves
+their email with a 6-digit code and goes straight to Stripe. None of the three redirects to `/login`
+any more.
+
+The reasoning behind the original limit — somebody asked to invent a password does not come back —
+was never specific to referrals.
+
+**What changed**
+
+| | Before | After |
+|---|---|---|
+| `/premium`, no shared link | `/login?_cb=…&go=1` | dialog |
+| `/subscribe`, signed out | `router.replace("/login?_cb=…")` **on mount** | plan renders; dialog on Go Premium |
+| Paywall modal, signed out | `/login?_cb=…&premiumSubscribe=1` | dialog |
+
+Both old resume paths still work, for links already in the wild. Nothing sends anyone down them.
+
+**`event` and `code` are optional on both endpoints now.** Present = a host's shared link, and
+`resolveReferralTrial` still gates the email. Absent = the ordinary price: there is no link to
+validate, so the only gate is the per-IP rate limit. That is what an "email me a sign-in code" flow
+is, and the code alone gets nobody anything except a session on their own address. Send them
+together or not at all — `event` without `code` resolves nothing.
+
+**The code row keys on `(null, email, "premium")` when there is no event.** `AlbumVerification.eventId`
+became `required: false, default: null`, and `issueAlbumCode`/`consumeAlbumCode` take `string | null`.
+Null is *stored*, not omitted, though `{ eventId: null }` matches a missing field too, so it reads
+back either way. **No index and no backfill**: `autoIndex` is off, the existing
+`{eventId, email, purpose}` index still serves, and every read sorts by `createdAt` desc rather than
+assuming an index exists.
+
+**Two follow-on fixes that are not optional:**
+
+- `/subscribe` fetched its plan with `useMembershipPlan("premium", status === "authenticated")`.
+  With the redirect gone, that gate would have shown a signed-out visitor a membership card with no
+  price on it. `/api/subscriptions/plan` takes no session, so the gate is simply removed.
+- The invite-code field on `/subscribe` and in the modal called `/api/subscriptions/invite-code`,
+  which **requires a session** — signed out it 401s, and a perfectly good code reads as invalid.
+  Both now resolve it in the browser from `TRIAL_CODES` (`resolveTrialCode` + `trialDisclosure`),
+  exactly as `/premium` already did. That line is a **preview of the offer**, never a promise about
+  an account nobody knows yet: the server re-checks the code once the session exists, and a refusal
+  is reported then.
+
+> Same caveat as before: signing in by emailed code bypasses any password that address may have.
+> `/auth/login-otp` already worked that way.
 
 ## "It looks like I'm being charged" — the trialing member card (2026-08-26)
 
@@ -2116,7 +2165,7 @@ never looked at it.
 
 | | End of trial | Copy |
 |---|---|---|
-| Card on file (bought at `/subscribe` or `/premium`) | Converts, charged | "Cancel before then and you won't be charged. Keep it and you'll be charged $20 per month from 21 Sep." |
+| Card on file (bought at `/subscribe` or `/premium`) | Converts, charged | the CEO's copy below |
 | No card (signup invite code) | **Ends**; never charged | "To keep it after that, add a card." |
 
 Telling the second group they will be charged is simply untrue, so `current-plan` now returns
@@ -2125,6 +2174,31 @@ customer rather than the subscription). The cardless copy is kept deliberately s
 explanation of why there is no card — and carries **"Add a card to keep it"**, which opens the
 billing portal's payment-method page. Announcing that a membership will lapse while offering no way
 to prevent it is worse than saying nothing.
+
+### The converting-trial copy (CEO, 2026-08-27)
+
+Reproduced verbatim; only the bracketed values are substituted.
+
+> **Your free trial is active.**
+>
+> Enjoy Jetzy Premium free until *{trial end}*. Cancel anytime before your trial ends, and you won't
+> be charged.
+>
+> After your free trial, your membership will continue at *US${amount}*/*{interval}*.
+>
+> Want to save even more? Switch to an annual subscription anytime without losing your free trial and
+> get *{n}* months free—just *US${annual}*/year instead of *US${monthly × 12}*.
+
+**Every figure in the last paragraph is derived, never written down.** The annual price comes from
+the switch target, the compare-at from `monthly × 12`, and the months free from the difference
+between them. A hardcoded "2 months free — $200 instead of $240" is a claim about Stripe's prices
+that stops being true the moment either one moves. The paragraph renders only when the switch is
+offered *and* every figure is known — a sentence with a gap in it is worse than no sentence.
+
+`usd()` ("US$20") exists for this panel alone; every other price on the card goes through `money()`.
+
+**The cardless copy is unchanged**, deliberately: "you won't be charged" and a continuing rate are
+both false when Stripe simply ends the trial.
 
 **Members no longer see the Jetzy Basic card at all.** The comparison exists to help someone decide;
 a member has decided, and "$0 — Free, forever" sitting beside their active membership reads as an

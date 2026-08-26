@@ -26,6 +26,15 @@ export type CodePurpose = "album" | "premium"
 const purposeFilter = (purpose: CodePurpose) =>
 	purpose === "album" ? { purpose: { $in: ["album", null] } } : { purpose }
 
+/**
+ * The event half of the key, or NULL when there isn't one.
+ *
+ * Buying Premium from `/premium`, `/subscribe` or the paywall modal has no event at all, so the
+ * pair is (null, email). Null is stored, not omitted — `{ eventId: null }` also matches a row
+ * where the field is absent, so this reads back either way.
+ */
+const eventKey = (eventId: string | null) => (eventId ? new Types.ObjectId(eventId) : null)
+
 /** Cryptographically random 6-digit code — `Math.random()` is not suitable for a secret. */
 function generateCode(): string {
 	return crypto.randomInt(100000, 1000000).toString()
@@ -39,12 +48,12 @@ function generateCode(): string {
  * working the moment a new one is sent.
  */
 export async function issueAlbumCode(
-	eventId: string,
+	eventId: string | null,
 	email: string,
 	purpose: CodePurpose = "album",
 ): Promise<{ code: string } | null> {
 	const now = Date.now()
-	const filter = { eventId: new Types.ObjectId(eventId), email, ...purposeFilter(purpose) }
+	const filter = { eventId: eventKey(eventId), email, ...purposeFilter(purpose) }
 
 	const existing = await AlbumVerification.findOne(filter).sort({ createdAt: -1 }).lean()
 	if (existing?.lastSentAt && now - new Date(existing.lastSentAt).getTime() < RESEND_COOLDOWN_MS) {
@@ -78,12 +87,12 @@ export async function issueAlbumCode(
  * is what stops someone walking the 6-digit space inside the TTL.
  */
 export async function consumeAlbumCode(
-	eventId: string,
+	eventId: string | null,
 	email: string,
 	code: string,
 	purpose: CodePurpose = "album",
 ): Promise<ConsumeResult> {
-	const filter = { eventId: new Types.ObjectId(eventId), email, ...purposeFilter(purpose) }
+	const filter = { eventId: eventKey(eventId), email, ...purposeFilter(purpose) }
 	const row = await AlbumVerification.findOne(filter).sort({ createdAt: -1 })
 
 	if (!row) return { ok: false, reason: "expired" }

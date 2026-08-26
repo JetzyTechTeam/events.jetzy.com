@@ -75,6 +75,17 @@ const money = (dollars: number | null): string | null =>
 				minimumFractionDigits: Number.isInteger(dollars) ? 0 : 2,
 		  })
 
+/**
+ * "US$20" — the trial panel's wording, verbatim from the copy the CEO supplied.
+ *
+ * The currency is spelled out there and nowhere else on this card, so it is a formatter of its
+ * own rather than a change to `money`, which every other price on the page goes through.
+ */
+const usd = (dollars: number | null): string | null => {
+	const formatted = money(dollars)
+	return formatted == null ? null : `US${formatted}`
+}
+
 /** "Sep 18, 2026" — the renewal date, in the member state. */
 const renewalDate = (value?: string | null): string | null => {
 	if (!value) return null
@@ -226,6 +237,23 @@ const PlanComparison: React.FC<Props> = ({
 	const trialConverts = !!currentPlan?.hasPaymentMethod
 	const memberRate = currentPlan?.label || formattedPrice
 
+	// ---- The annual pitch inside the trial panel ----
+	//
+	// Every figure in it is derived, never written down: the annual price, the twelve-months-of-
+	// monthly it is compared against, and the number of months that difference buys. A hardcoded
+	// "2 months free — $200 instead of $240" is a claim about Stripe's prices that stops being
+	// true the moment either one moves.
+	const memberAmount = currentPlan?.amount ?? null
+	const annualAmount = switchTarget?.amount ?? null
+	const annualCompareAt = memberInterval === "month" && memberAmount != null ? memberAmount * 12 : null
+	const annualMonthsFree =
+		annualCompareAt != null && annualAmount != null && memberAmount
+			? Math.round((annualCompareAt - annualAmount) / memberAmount)
+			: 0
+	// Only when we can state it in full. A half-priced sentence with a missing figure in it is
+	// worse than no sentence.
+	const showAnnualPitch = showSwitch && annualAmount != null && annualCompareAt != null && annualMonthsFree > 0
+
 	// Members never see the comparison — see `hideFreePlan`.
 	const showFreePlan = !hideFreePlan && !isPremium
 
@@ -279,17 +307,27 @@ const PlanComparison: React.FC<Props> = ({
 								style={{ background: "rgba(245,197,24,0.10)", border: "1px solid rgba(245,197,24,0.45)", color: "#F5C518" }}
 							>
 								{trialConverts ? (
+									/* Wording supplied by the CEO and reproduced verbatim; only the date, the
+									   rate and the annual figures are substituted. */
 									<>
 										<p className="font-semibold">Your free trial is active.</p>
-										<p className="mt-1 font-normal">
-											You can use Jetzy Premium free until {trialEndsOnLabel}. Cancel before then and you won&apos;t be
-											charged. Keep it and you&apos;ll be charged {memberRate ? amountOnly(memberRate) : "the usual rate"} per{" "}
-											{PERIOD_LABELS[memberInterval || interval] || memberInterval || interval} from {trialEndsOnLabel}.
+										<p className="mt-2 font-normal">
+											Enjoy Jetzy Premium free until {trialEndsOnLabel}. Cancel anytime before your trial ends, and you
+											won&apos;t be charged.
+										</p>
+										<p className="mt-2 font-normal">
+											After your free trial, your membership will continue at{" "}
+											{usd(memberAmount) || (memberRate ? amountOnly(memberRate) : "the usual rate")}/
+											{memberInterval || interval}.
 										</p>
 										{/* The switch button below raises exactly one question, so it is answered
 										    next to it rather than left to be discovered. */}
-										{showSwitch && (
-											<p className="mt-2 font-normal">Switching to annual keeps your free trial — only the rate afterwards changes.</p>
+										{showAnnualPitch && (
+											<p className="mt-2 font-normal">
+												Want to save even more? Switch to an annual subscription anytime without losing your free trial
+												and get {annualMonthsFree} month{annualMonthsFree === 1 ? "" : "s"} free—just {usd(annualAmount)}
+												/year instead of {usd(annualCompareAt)}.
+											</p>
 										)}
 									</>
 								) : (
