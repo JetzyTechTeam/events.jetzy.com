@@ -107,6 +107,12 @@ type Props = {
 		label: string | null
 		renewsAt: string | null
 		cancelAtPeriodEnd: boolean
+		/** `"trialing"` is the one that changes what this card must say. */
+		status?: string | null
+		/** When the free period ends. */
+		trialEnd?: string | null
+		/** No card means the trial ENDS rather than converting. */
+		hasPaymentMethod?: boolean
 		canSwitch: boolean
 	} | null
 	/** Opens Stripe's plan-switching flow. Omit and no switch button renders. */
@@ -138,6 +144,10 @@ type Props = {
 	 * choice of plans — putting "Continue with Free" beside it invites them to decline something
 	 * they were given. Everywhere else the comparison is what makes the price legible, so this
 	 * defaults off.
+	 *
+	 * A MEMBER never sees it either, regardless of this prop: the comparison exists to help
+	 * someone decide, and they have decided. Sitting a "Free, forever — $0" card beside an active
+	 * paid membership reads as an offer to downgrade, which it isn't; the button only navigates.
 	 */
 	hideFreePlan?: boolean
 	onChoosePremium: () => void
@@ -201,12 +211,23 @@ const PlanComparison: React.FC<Props> = ({
 	// The switch target is whichever interval they are NOT on — annual, in practice, since the
 	// server only sets `canSwitch` for monthly members.
 	const switchTarget = memberInterval ? options.find((p) => p.interval !== memberInterval) : undefined
-	const showSwitch = !!(isPremium && currentPlan?.canSwitch && switchTarget && onSwitchInterval)
+	const showSwitch = !!(isPremium && currentPlan?.canSwitch && switchTarget && onSwitchInterval && currentPlan?.status !== "trialing")
+
+	// A trial is only worth describing while it is running, and only when we know the date it
+	// ends — an unnamed "your trial" answers none of the questions a member actually has.
+	const trialEndsOnLabel = currentPlan?.status === "trialing" ? renewalDate(currentPlan?.trialEnd || currentPlan?.renewsAt) : null
+	const onTrial = !!trialEndsOnLabel
+	/** With a card the trial converts and they get charged; without one Stripe simply ends it. */
+	const trialConverts = !!currentPlan?.hasPaymentMethod
+	const memberRate = currentPlan?.label || formattedPrice
+
+	// Members never see the comparison — see `hideFreePlan`.
+	const showFreePlan = !hideFreePlan && !isPremium
 
 	return (
-		<div className={hideFreePlan ? "grid gap-6 max-w-md mx-auto" : "grid gap-6 sm:grid-cols-2"}>
+		<div className={showFreePlan ? "grid gap-6 sm:grid-cols-2" : "grid gap-6 max-w-md mx-auto"}>
 			{/* Free tier — no Stripe object backs this, it's just "not subscribed" */}
-			{!hideFreePlan && (
+			{showFreePlan && (
 			<div className="bg-[#1E1E1E] border-2 border-[#2b2b2b] rounded-2xl p-6 flex flex-col">
 				<h2 className="text-xl font-bold mb-1">Jetzy Basic</h2>
 				<p className="text-sm text-gray-400 mb-4">Free, forever</p>
@@ -237,6 +258,43 @@ const PlanComparison: React.FC<Props> = ({
 
 				{/* ---- MEMBER STATE ---- what they pay now, not what they could buy. ---- */}
 				{isPremium ? (
+					onTrial ? (
+						/* ---- ON A FREE TRIAL ----
+						   Leading with "$20 /month" here was reading as a charge that had already
+						   happened: someone who was just given a free month saw a large price and a
+						   date and concluded they had paid. The free period is the headline, the
+						   date is the answer to the only question they have, and the rate is what
+						   comes after — in that order. */
+						<div className="mb-6">
+							<p className="text-2xl font-bold" style={{ color: "#F5C518" }}>
+								Free until {trialEndsOnLabel}
+							</p>
+							<div
+								className="mt-3 rounded-xl p-3 text-sm"
+								style={{ background: "rgba(245,197,24,0.10)", border: "1px solid rgba(245,197,24,0.45)", color: "#F5C518" }}
+							>
+								{trialConverts ? (
+									<>
+										<p className="font-semibold">Your free trial is active.</p>
+										<p className="mt-1 font-normal">
+											You can use Jetzy Premium free until {trialEndsOnLabel}. Cancel before then and you won&apos;t be
+											charged. Keep it and you&apos;ll be charged {memberRate ? amountOnly(memberRate) : "the usual rate"} per{" "}
+											{PERIOD_LABELS[memberInterval || interval] || memberInterval || interval} from {trialEndsOnLabel}.
+										</p>
+									</>
+								) : (
+									/* Kept short on purpose: this member never entered a card, and
+									   explaining the mechanics of that is not what they came for. */
+									<>
+										<p className="font-semibold">Your free trial is active.</p>
+										<p className="mt-1 font-normal">
+											You can use Jetzy Premium free until {trialEndsOnLabel}. To keep it after that, add a card.
+										</p>
+									</>
+								)}
+							</div>
+						</div>
+					) : (
 					<div className="mb-6">
 						<p className="text-3xl font-bold" style={{ color: "#F5C518" }}>
 							{currentPlan?.label ? amountOnly(currentPlan.label) : formattedPrice || "—"}
@@ -260,6 +318,7 @@ const PlanComparison: React.FC<Props> = ({
 							<p className="text-sm text-gray-400 mt-1">or {switchTarget.label}</p>
 						)}
 					</div>
+					)
 				) : (
 					<>
 						{/* Interval selector, only when there is genuinely a choice. Each option carries
@@ -390,12 +449,25 @@ const PlanComparison: React.FC<Props> = ({
 								{billingPending ? <Spinner /> : `Switch to ${switchTarget?.label}`}
 							</button>
 						)}
+						{/* A trial with no card on file ENDS. Saying so and offering nothing would leave
+						    a member watching their membership lapse with no way to stop it — the
+						    billing portal's payment-method page is exactly that way, so it gets its
+						    own label and the primary position. */}
+						{onManageBilling && onTrial && !trialConverts && (
+							<button
+								onClick={onManageBilling}
+								disabled={billingPending}
+								className="bg-jetzy text-black font-bold px-6 py-3 rounded-full transition-colors hover:opacity-90 disabled:opacity-50"
+							>
+								{billingPending ? <Spinner /> : "Add a card to keep it"}
+							</button>
+						)}
 						{onManageBilling && (
 							<button
 								onClick={onManageBilling}
 								disabled={billingPending}
 								className={`font-bold px-6 py-3 rounded-full transition-colors disabled:opacity-50 ${
-									showSwitch
+									showSwitch || (onTrial && !trialConverts)
 										? "border-2 border-[#2b2b2b] text-white hover:border-[#3a3a3a]"
 										: "bg-jetzy text-black hover:opacity-90"
 								}`}

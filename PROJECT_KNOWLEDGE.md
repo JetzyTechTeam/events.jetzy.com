@@ -2091,3 +2091,41 @@ could drift from it. A refusal (they've had Premium before) lands in the existin
 > Signing in by emailed code bypasses any password that address may have. `/auth/login-otp` already
 > worked that way; this is a second door onto the same behaviour, not a new one.
 
+## "It looks like I'm being charged" — the trialing member card (2026-08-26)
+
+Reported by the CEO with a screenshot: buy Premium with a free month, land back on the plan page,
+and it shows a big **$20 /Month** with a date. Nothing said a trial was running, so the reasonable
+reading was "I have been charged $20, and will be again".
+
+The card had the information all along — `/api/subscriptions/current-plan` returns
+`status: "trialing"`, and during a trial Stripe's `current_period_end` *is* the trial end — it just
+never looked at it.
+
+**What the member state now does while `status === "trialing"`:**
+
+- headline is **"Free until 21 Sep 2026"**, not the price
+- a panel states the terms in full, with the date
+- the rate appears only as what happens *after*
+- the plan switch is hidden (mid-trial interval changes are a different conversation, and with
+  `continue_trial` the member sees nothing happen)
+
+**Two kinds of trial, and only one converts.** This is the part the request didn't account for:
+
+| | End of trial | Copy |
+|---|---|---|
+| Card on file (bought at `/subscribe` or `/premium`) | Converts, charged | "Cancel before then and you won't be charged. Keep it and you'll be charged $20 per month from 21 Sep." |
+| No card (signup invite code) | **Ends**; never charged | "To keep it after that, add a card." |
+
+Telling the second group they will be charged is simply untrue, so `current-plan` now returns
+`trialEnd` and `hasPaymentMethod` (with the customer expanded, since Checkout stores the card on the
+customer rather than the subscription). The cardless copy is kept deliberately short — no
+explanation of why there is no card — and carries **"Add a card to keep it"**, which opens the
+billing portal's payment-method page. Announcing that a membership will lapse while offering no way
+to prevent it is worse than saying nothing.
+
+**Members no longer see the Jetzy Basic card at all.** The comparison exists to help someone decide;
+a member has decided, and "$0 — Free, forever" sitting beside their active membership reads as an
+offer to downgrade, which that button does not do. `PlanComparison` is shared, so `/subscribe`, the
+paywall modal and `/premium` all pick this up. The mobile deep-link return is unaffected — it lives
+on a button *inside* the Premium card, not the Basic one.
+

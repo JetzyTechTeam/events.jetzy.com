@@ -56,6 +56,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					renewsAt: stored?.currentPeriodEnd || null,
 					cancelAtPeriodEnd: !!stored?.cancelAtPeriodEnd,
 					status: stored?.status || null,
+					trialEnd: null,
+					hasPaymentMethod: false,
 					canSwitch: false,
 				},
 				"Subscription plan fetched.",
@@ -67,7 +69,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let price: Stripe.Price | null = null
 		let subscription: Stripe.Subscription | null = null
 		try {
-			subscription = await getStripeClient().subscriptions.retrieve(stored.stripeSubscriptionId)
+			// The customer comes back expanded because a trial's meaning depends on it: with a card
+			// the trial CONVERTS and the member gets charged, without one Stripe ends it and they
+			// never are. Telling those two groups the same thing makes one of them wrong.
+			subscription = await getStripeClient().subscriptions.retrieve(stored.stripeSubscriptionId, {
+				expand: ["default_payment_method", "customer"],
+			})
 			// Read the price off the subscription only when the product is one we recognise — an
 			// unknown product must never be described to the member as their Jetzy Premium plan.
 			if (subscriptionMembershipKey(subscription) === "premium") {
@@ -92,6 +99,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					: stored.currentPeriodEnd || null,
 				cancelAtPeriodEnd: subscription ? !!subscription.cancel_at_period_end : !!stored.cancelAtPeriodEnd,
 				status: subscription?.status || stored.status || null,
+				// When the free period actually ends. During a trial Stripe's `current_period_end`
+				// is the same date, but naming it separately keeps the card from having to infer
+				// which kind of date it is holding.
+				trialEnd: subscription?.trial_end ? new Date(subscription.trial_end * 1000) : null,
+				hasPaymentMethod: (() => {
+					if (!subscription) return false
+					if (subscription.default_payment_method) return true
+					const customer = subscription.customer
+					if (!customer || typeof customer === "string" || (customer as any).deleted) return false
+					return !!(customer as Stripe.Customer).invoice_settings?.default_payment_method
+				})(),
 				// Only a monthly member is offered a switch. A mid-term move off annual leaves an
 				// unused credit on their Stripe customer that no refund policy here covers.
 				canSwitch: price?.recurring?.interval === "month",
