@@ -311,7 +311,7 @@ export default function PremiumPage() {
 		},
 	})
 
-	// ---- Go Premium ----
+	// ---- Get Premium ----
 	const handleChoosePremium = React.useCallback(() => {
 		if (isAuthenticated) {
 			subscribeMutation.mutate()

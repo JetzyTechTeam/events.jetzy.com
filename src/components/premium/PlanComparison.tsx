@@ -198,7 +198,7 @@ const PlanComparison: React.FC<Props> = ({
 	onChoosePremium,
 	hideFreePlan = false,
 	freeCtaLabel = "Continue with Free",
-	premiumCtaLabel = "Go Premium",
+	premiumCtaLabel = "Get Premium",
 	subscribedCtaLabel = "You're subscribed — Continue",
 }) => {
 	// A choice only exists with two or more intervals. One price behaves exactly as before.

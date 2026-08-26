@@ -2107,10 +2107,14 @@ was never specific to referrals.
 | | Before | After |
 |---|---|---|
 | `/premium`, no shared link | `/login?_cb=…&go=1` | dialog |
-| `/subscribe`, signed out | `router.replace("/login?_cb=…")` **on mount** | plan renders; dialog on Go Premium |
+| `/subscribe`, signed out | `router.replace("/login?_cb=…")` **on mount** | plan renders; dialog on Get Premium |
 | Paywall modal, signed out | `/login?_cb=…&premiumSubscribe=1` | dialog |
 
 Both old resume paths still work, for links already in the wild. Nothing sends anyone down them.
+
+The button reads **"Get Premium"** (renamed from "Go Premium", 2026-08-27). It is one default on
+`PlanComparison.premiumCtaLabel`, so every surface picked it up at once — earlier notes in this file
+name the old label because that is what it said at the time.
 
 **`event` and `code` are optional on both endpoints now.** Present = a host's shared link, and
 `resolveReferralTrial` still gates the email. Absent = the ordinary price: there is no link to
