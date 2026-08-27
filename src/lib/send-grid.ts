@@ -30,6 +30,9 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY?.trim() as string)
  */
 const SENDER_NAME = "Jetzy"
 
+/** Where unwatermarked-photo requests are worked. Override with PHOTO_REQUEST_NOTIFICATION_EMAIL. */
+const PHOTO_REQUEST_INBOX = "tech@jetzyapp.com"
+
 const mailFrom = (email?: string) => ({
 	email: (email || (process.env.SENDGRID_EMAIL_SENDER as string))?.trim(),
 	name: SENDER_NAME,
@@ -2925,9 +2928,13 @@ export const sendAlbumPhotoRequestNotice = async ({
     return { success: true, message: "Email skipped in localhost mode" }
   }
   const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
-  const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
-  if (!adminEmail || !senderEmail) {
-    console.error("SENDGRID_EMAIL_SENDER / ADMIN_NOTIFICATION_EMAIL not set — cannot send photo request notice")
+  // Its OWN recipient, not the shared ADMIN_NOTIFICATION_EMAIL: these requests are worked by
+  // the tech inbox, and pointing them there must not move the album-access notices or the
+  // security alerts that share that variable. Defaulted rather than required so it works
+  // without an env change; the env var is there to redirect staging traffic.
+  const recipient = (process.env.PHOTO_REQUEST_NOTIFICATION_EMAIL as string)?.trim() || PHOTO_REQUEST_INBOX
+  if (!senderEmail) {
+    console.error("SENDGRID_EMAIL_SENDER not set — cannot send photo request notice")
     return
   }
   const cleanEventName = decodeHTMLEntities(eventName)
@@ -2938,7 +2945,9 @@ export const sendAlbumPhotoRequestNotice = async ({
   const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
   try {
     await sgMail.send({
-      to: adminEmail,
+      to: recipient,
+      // Still the verified sender — only the RECIPIENT is different. Changing `from` would
+      // break sender verification.
       from: mailFrom(senderEmail),
       subject: `[Album] ${urls.length > 1 ? `${urls.length} unwatermarked photos` : "Unwatermarked photo"} requested — ${cleanEventName}`,
       html: wrapHtml(`
