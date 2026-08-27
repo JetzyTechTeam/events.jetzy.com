@@ -4,6 +4,7 @@ import {
 	Box,
 	Button,
 	Flex,
+	Icon,
 	Image,
 	Input,
 	Modal,
@@ -16,19 +17,20 @@ import {
 	Text,
 	useToast,
 } from "@chakra-ui/react"
+import { FiCheck } from "react-icons/fi"
 import type { AlbumMedia } from "@/components/events/EventAlbums"
 
 /**
  * "Request Unwatermarked Photos".
  *
- * The photos on the album page carry a `JetzyLifeMark` overlay; this is how a viewer asks the
- * host for the clean original of ONE of them. Per-photo by decision — a host answering "someone
- * wants some photos" has nothing to act on, whereas a named image is a request they can fill.
+ * The photos on the album page carry a `JetzyLifeMark` overlay; this is how a viewer asks for
+ * the clean originals. Several photos can go in one request, but each one is recorded as its
+ * own row server-side — the host sends files one at a time and marks off what they have sent.
  *
  * Steps depend on what we already know about the viewer:
  *
- *   verified viewer   -> pick a photo -> Send request -> "Request received!"
- *   unverified viewer -> pick a photo -> email (read-only) -> code -> Verify -> "Request received!"
+ *   verified viewer   -> choose photos -> Send request -> "Request received!"
+ *   unverified viewer -> choose photos -> email (read-only) -> code -> Verify -> "Request received!"
  *
  * Everyone who came through today's album gate is verified, so the code step is effectively
  * only for guest cookies minted before that gate existed. The email is never a free-text field:
@@ -51,7 +53,7 @@ export function RequestUnwatermarkedDialog({
 	eventId: string
 	albumId: string
 	media: AlbumMedia[]
-	/** Set when opened from the lightbox — that photo is the one being asked for. */
+	/** Set when opened from the lightbox — that photo starts selected. */
 	preselectedUrl?: string | null
 	viewerEmail?: string
 	/** UNDEFINED for a legacy guest cookie: never asked, so not proved. */
@@ -59,23 +61,23 @@ export function RequestUnwatermarkedDialog({
 }) {
 	const toast = useToast()
 	const [step, setStep] = useState<Step>("PICK")
-	const [selected, setSelected] = useState<string | null>(null)
+	const [selected, setSelected] = useState<string[]>([])
 	const [code, setCode] = useState("")
 	const [submitting, setSubmitting] = useState(false)
 	const [resendIn, setResendIn] = useState(0)
-	// Opened from the lightbox's side panel, the photo is already decided — show it rather
-	// than a grid to hunt through. The grid is one click away for a change of mind.
+	// Opened from the lightbox's side panel the photo is already decided, so show it rather
+	// than a grid to hunt through. The grid is one click away for adding more.
 	const [picking, setPicking] = useState(false)
 
 	const photos = useMemo(() => media.filter((m) => m.type !== "video"), [media])
 
-	// Reset on every open, and preselect whatever the lightbox named.
+	// Reset on every open, seeded with whatever the lightbox named.
 	useEffect(() => {
 		if (!isOpen) return
 		setCode("")
 		setSubmitting(false)
 		setResendIn(0)
-		setSelected(preselectedUrl || null)
+		setSelected(preselectedUrl ? [preselectedUrl] : [])
 		setPicking(!preselectedUrl)
 		setStep("PICK")
 	}, [isOpen, preselectedUrl])
@@ -85,6 +87,9 @@ export function RequestUnwatermarkedDialog({
 		const t = setTimeout(() => setResendIn((n) => n - 1), 1000)
 		return () => clearTimeout(t)
 	}, [resendIn])
+
+	const toggle = (url: string) =>
+		setSelected((cur) => (cur.includes(url) ? cur.filter((u) => u !== url) : [...cur, url]))
 
 	const fail = useCallback(
 		(err: any, title: string) => {
@@ -102,11 +107,11 @@ export function RequestUnwatermarkedDialog({
 	// The one call that files the request. `code` is only sent on the unverified path.
 	const send = useCallback(
 		async (withCode?: string) => {
-			if (!selected) return
+			if (selected.length === 0) return
 			setSubmitting(true)
 			try {
 				await axios.post(`/api/events/${eventId}/albums/${albumId}/photo-request`, {
-					mediaUrl: selected,
+					mediaUrls: selected,
 					...(withCode ? { code: withCode } : {}),
 				})
 				setStep("DONE")
@@ -147,6 +152,8 @@ export function RequestUnwatermarkedDialog({
 	// Verified viewers file it straight away; everyone else gets the code round trip.
 	const confirm = () => (viewerVerified === true ? send() : setStep("EMAIL"))
 
+	const count = selected.length
+	const photoWord = count === 1 ? "photo" : "photos"
 	const title = step === "DONE" ? "Request received" : step === "CODE" ? "Enter Verification Code" : "Request Unwatermarked Photos"
 
 	return (
@@ -160,46 +167,78 @@ export function RequestUnwatermarkedDialog({
 						<>
 							<Text color="#bbbbbb" fontSize="sm" mb={4}>
 								{picking
-									? "Pick the photo you'd like without the Jetzy Life mark. We'll pass the request on and get back to you."
+									? "Tap the photos you'd like without the Jetzy Life mark. We'll pass the request on and get back to you."
 									: "We'll ask for this photo without the Jetzy Life mark and get back to you."}
 							</Text>
-							{!picking && selected ? (
+
+							{/* Single photo carried in from the lightbox: show it, don't make them
+							    find it again in a grid. Adding more is one tap away. */}
+							{!picking && count === 1 ? (
 								<Box textAlign="center">
 									<Box width="100%" maxW="320px" height="220px" mx="auto" borderRadius="10px" overflow="hidden" bg="black">
-										<Image src={selected} alt="" width="100%" height="100%" objectFit="contain" />
+										<Image src={selected[0]} alt="" width="100%" height="100%" objectFit="contain" />
 									</Box>
 									<Button variant="link" size="sm" color="#F79432" fontWeight="600" mt={3} onClick={() => setPicking(true)}>
-										Pick a different photo
+										Choose more photos
 									</Button>
 								</Box>
 							) : photos.length === 0 ? (
 								<Text color="#888" fontSize="sm">There are no photos in this album to request.</Text>
 							) : (
-								<Flex wrap="wrap" gap={2}>
-									{photos.map((m) => {
-										const isSelected = selected === m.url
-										return (
-											<Box
-												as="button"
-												type="button"
-												key={m.url}
-												onClick={() => setSelected(m.url)}
-												width="88px"
-												height="88px"
-												borderRadius="8px"
-												overflow="hidden"
-												bg="black"
-												border="2px solid"
-												borderColor={isSelected ? "#F79432" : "transparent"}
-												flexShrink={0}
-											>
-												{/* `contain`, like the tiles: a cropped thumbnail can make two
-												    similar photos indistinguishable when picking one. */}
-												<Image src={m.url} alt="" width="100%" height="100%" objectFit="contain" loading="lazy" />
-											</Box>
-										)
-									})}
-								</Flex>
+								<>
+									<Flex wrap="wrap" gap={2}>
+										{photos.map((m) => {
+											const isSelected = selected.includes(m.url)
+											return (
+												<Box
+													as="button"
+													type="button"
+													key={m.url}
+													onClick={() => toggle(m.url)}
+													position="relative"
+													width="88px"
+													height="88px"
+													borderRadius="8px"
+													overflow="hidden"
+													bg="black"
+													border="2px solid"
+													borderColor={isSelected ? "#F79432" : "transparent"}
+													flexShrink={0}
+												>
+													{/* `contain`, like the tiles: a cropped thumbnail can make two
+													    similar photos indistinguishable when picking one. */}
+													<Image
+														src={m.url}
+														alt=""
+														width="100%"
+														height="100%"
+														objectFit="contain"
+														loading="lazy"
+														opacity={isSelected ? 0.65 : 1}
+													/>
+													{isSelected && (
+														<Flex
+															position="absolute"
+															top="4px"
+															right="4px"
+															width="20px"
+															height="20px"
+															borderRadius="full"
+															bg="#F79432"
+															align="center"
+															justify="center"
+														>
+															<Icon as={FiCheck} color="black" boxSize="12px" />
+														</Flex>
+													)}
+												</Box>
+											)
+										})}
+									</Flex>
+									<Text color="#8a8a8a" fontSize="xs" mt={3}>
+										{count === 0 ? "Nothing selected yet." : `${count} ${photoWord} selected.`}
+									</Text>
+								</>
 							)}
 						</>
 					)}
@@ -279,10 +318,17 @@ export function RequestUnwatermarkedDialog({
 
 					{step === "DONE" && (
 						<Box textAlign="center" py={4}>
-							{selected && (
-								<Box width="140px" height="140px" mx="auto" mb={4} borderRadius="10px" overflow="hidden" bg="black">
-									<Image src={selected} alt="" width="100%" height="100%" objectFit="contain" />
-								</Box>
+							{count > 0 && (
+								<Flex justify="center" wrap="wrap" gap={2} mb={4}>
+									{selected.slice(0, 4).map((url) => (
+										<Box key={url} width="88px" height="88px" borderRadius="10px" overflow="hidden" bg="black">
+											<Image src={url} alt="" width="100%" height="100%" objectFit="contain" />
+										</Box>
+									))}
+								</Flex>
+							)}
+							{count > 4 && (
+								<Text color="#8a8a8a" fontSize="xs" mb={3}>and {count - 4} more</Text>
 							)}
 							<Text fontSize="lg" fontWeight="700" mb={2}>Request received!</Text>
 							<Text color="#bbbbbb" fontSize="sm">We&apos;ll get back to you soon.</Text>
@@ -299,11 +345,20 @@ export function RequestUnwatermarkedDialog({
 							color="black"
 							_hover={{ bg: "#e58220" }}
 							width="100%"
-							isDisabled={!selected}
+							whiteSpace="normal"
+							height="auto"
+							minH="48px"
+							py={3}
+							lineHeight="1.3"
+							isDisabled={count === 0}
 							isLoading={submitting}
 							onClick={confirm}
 						>
-							{viewerVerified === true ? "Send request" : "Continue"}
+							{viewerVerified === true
+								? count > 1
+									? `Request ${count} photos`
+									: "Send request"
+								: "Continue"}
 						</Button>
 					)}
 					{step === "EMAIL" && (
@@ -315,6 +370,11 @@ export function RequestUnwatermarkedDialog({
 							color="black"
 							_hover={{ bg: "#e58220" }}
 							width="100%"
+							whiteSpace="normal"
+							height="auto"
+							minH="48px"
+							py={3}
+							lineHeight="1.3"
 							isLoading={submitting}
 							onClick={sendCode}
 						>

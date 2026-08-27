@@ -163,10 +163,12 @@ What a viewer said they want to attend next, captured in the access dialog. One 
 One row per (person, photo) asking for the unwatermarked original.
 
 ```
-eventId, albumId, mediaUrl, mediaType?, userId?,
+eventId, albumId, mediaUrl, mediaType?, batchId?, userId?,
 requesterEmail (lowercase), requesterName?, verified?,
 status: "pending" | "handled", handledAt?, handledBy?, timestamps
 ```
+
+`batchId` groups the rows written by one multi-photo submission. Absent on single-photo requests and on everything written before multi-select existed, so it is a display hint and never a key.
 
 Index `{ eventId: 1, createdAt: -1 }`, built by `scripts/create-album-photo-request-index.ts` (`autoIndex` is off). **Deliberately not unique** on (albumId, email, mediaUrl): asking again after being ignored is legitimate, and a unique index that failed to build would throw 11000 at a visitor. The duplicate guard is the advisory pending-row lookup in the API.
 
@@ -446,7 +448,13 @@ Query: `eventId` (required), `dateFrom`, `dateTo` (optional, snapped to start/en
 
 ### 4.13 `POST /albums/:albumId/photo-request` — **any viewer**
 
-Records a request for the unwatermarked original of **one** photo. Body: `{ mediaUrl, code? }`.
+Records a request for the unwatermarked originals of one or more photos. Body: `{ mediaUrls: string[], code? }` (`mediaUrl` is still accepted as the single-photo form). Capped at **30** per submission.
+
+Several photos write **one row per photo**, sharing a `batchId` — the host sends files one at a time and marks off what they have sent, so a single row covering five photos could only ever be half true. `batchId` is a display hint, never a key: absent on single-photo requests and on everything written before multi-select.
+
+Validation is **all-or-nothing** — if any url is not part of this album the whole request is refused, rather than leaving the viewer believing they asked for photos nobody recorded.
+
+**One confirmation email per submission, never one per photo** (up to 6 thumbnails then "and N more"). The inbox notice covers only the photos actually newly recorded.
 
 The address is **never taken from the body** — `resolveAlbumViewer` already knows it, and accepting one would let anyone file a request under someone else's name. So there is no email field anywhere in this flow; the dialog shows the resolved address read-only.
 
@@ -462,7 +470,7 @@ Rate limited `album-photo-request:<ip>` at 10/60s.
 
 Query: `eventId` (required), `dateFrom`, `dateTo`. Newest first, capped at **5000** rows, no server-side CSV — same shape as `access-log`.
 
-Row: `{ _id, albumId, albumTitle, mediaUrl, mediaType, name, email, verified, status, handledAt, date }`
+Row: `{ _id, albumId, albumTitle, mediaUrl, mediaType, batchId, name, email, verified, status, handledAt, date }`
 
 ### 4.15 `PATCH /albums/photo-requests/:requestId` — **admin or owner**
 

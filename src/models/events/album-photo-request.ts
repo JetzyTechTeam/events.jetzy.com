@@ -11,6 +11,10 @@ import { Model, Schema } from "mongoose"
  * Deliberately a LOG, not a fulfilment workflow: nothing here changes what any endpoint
  * serves. The host reads the request in the manage console and follows up by hand, which is
  * what the confirmation email promises ("we'll get back to you").
+ *
+ * A viewer can ask for several photos at once. That still writes ONE ROW PER PHOTO, sharing a
+ * `batchId` — the host sends files one at a time and marks off what they have sent, so a single
+ * row covering five photos could only ever be half true.
  */
 export type AlbumPhotoRequestStatus = "pending" | "handled"
 
@@ -21,6 +25,11 @@ export interface IAlbumPhotoRequest {
 	/** The exact media item asked for. Validated against the album's stored media on write. */
 	mediaUrl: string
 	mediaType?: "image" | "video"
+	/**
+	 * Groups the rows written by one multi-photo request. Absent on single-photo requests and
+	 * on everything written before multi-select existed — so it is a display hint, never a key.
+	 */
+	batchId?: string
 	/** Optional: a NextAuth session _id can come from EventUsers while the guest gate maps to `users`. */
 	userId?: Schema.Types.ObjectId
 	/** Stable identity across both paths — this is the dedupe key, like AlbumAccess.viewerEmail. */
@@ -60,6 +69,10 @@ const albumPhotoRequestSchema = new Schema<IAlbumPhotoRequest>(
 			trim: true,
 		},
 		mediaType: {
+			type: String,
+			required: false,
+		},
+		batchId: {
 			type: String,
 			required: false,
 		},

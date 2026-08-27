@@ -2828,24 +2828,28 @@ export const sendAlbumPhotoRequestReceived = async ({
   email,
   eventName,
   albumTitle,
-  mediaUrl,
+  mediaUrls,
 }: {
   email: string
   eventName?: string
   albumTitle?: string
-  mediaUrl?: string
+  /** Every photo in this submission — one email covers the lot, never one per photo. */
+  mediaUrls?: string[]
 }) => {
   const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
   const cleanAlbumTitle = albumTitle ? stripHtml(decodeHTMLEntities(albumTitle)) : ""
-  // The photo itself, so the reply is unambiguous about which one they asked for. Images
-  // only — a video frame can't be shown in an email client.
-  const isImage = !!mediaUrl && !/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(mediaUrl)
+  // Images only — a video frame can't be shown in an email client.
+  const images = (mediaUrls || []).filter((u) => !/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(u))
+  // Enough to confirm what was asked for without building a mail nobody can open.
+  const shown = images.slice(0, 6)
+  const extra = images.length - shown.length
+  const count = (mediaUrls || []).length
   const context = [cleanAlbumTitle, cleanEventName].filter(Boolean).join(" — ")
   try {
     await sgMail.send({
       to: email,
       from: mailFrom(),
-      subject: `We received your request for unwatermarked photos`,
+      subject: count > 1 ? `We received your request for ${count} unwatermarked photos` : `We received your request for unwatermarked photos`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
           <div style="text-align: center; margin-bottom: 25px;">
@@ -2858,9 +2862,10 @@ export const sendAlbumPhotoRequestReceived = async ({
             We received your request for unwatermarked photos. We&#39;ll get back to you with more information soon.
           </p>
 
-          ${isImage ? `
+          ${shown.length > 0 ? `
           <div style="background-color: #f9f9f9; padding: 12px; border-radius: 12px; margin: 25px 0; text-align: center;">
-            <img src="${mediaUrl}" alt="Requested photo" style="max-width: 100%; border-radius: 8px;" />
+            ${shown.map((u) => `<img src="${u}" alt="Requested photo" style="max-width: ${shown.length > 1 ? "45%" : "100%"}; border-radius: 8px; margin: 4px;" />`).join("")}
+            ${extra > 0 ? `<p style="color: #999; font-size: 13px; margin: 10px 0 0;">and ${extra} more</p>` : ""}
             ${context ? `<p style="color: #999; font-size: 13px; margin: 10px 0 0;">${context}</p>` : ""}
           </div>` : context ? `
           <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 25px 0;">
@@ -2904,7 +2909,7 @@ export const sendAlbumPhotoRequestNotice = async ({
   eventSlug,
   albumTitle,
   albumId,
-  mediaUrl,
+  mediaUrls,
 }: {
   requesterName: string
   requesterEmail: string
@@ -2912,7 +2917,7 @@ export const sendAlbumPhotoRequestNotice = async ({
   eventSlug: string
   albumTitle: string
   albumId: string
-  mediaUrl: string
+  mediaUrls: string[]
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
@@ -2927,13 +2932,15 @@ export const sendAlbumPhotoRequestNotice = async ({
   }
   const cleanEventName = decodeHTMLEntities(eventName)
   const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
-  const isImage = !/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(mediaUrl)
+  const urls = mediaUrls || []
+  const images = urls.filter((u) => !/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(u))
+  const others = urls.filter((u) => !images.includes(u))
   const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
   try {
     await sgMail.send({
       to: adminEmail,
       from: mailFrom(senderEmail),
-      subject: `[Album] Unwatermarked photo requested — ${cleanEventName}`,
+      subject: `[Album] ${urls.length > 1 ? `${urls.length} unwatermarked photos` : "Unwatermarked photo"} requested — ${cleanEventName}`,
       html: wrapHtml(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
           <h2 style="color: #F79432; margin-top: 0;">Unwatermarked Photo Request</h2>
@@ -2942,9 +2949,11 @@ export const sendAlbumPhotoRequestNotice = async ({
             <p style="margin: 5px 0;"><strong>Email:</strong> ${requesterEmail}</p>
             <p style="margin: 5px 0;"><strong>Event:</strong> ${cleanEventName}</p>
             <p style="margin: 5px 0;"><strong>Album:</strong> ${albumTitle}</p>
+            <p style="margin: 5px 0;"><strong>Photos:</strong> ${urls.length}</p>
             <p style="margin: 5px 0;"><strong>When:</strong> ${when}</p>
           </div>
-          ${isImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${mediaUrl}" alt="Requested photo" style="max-width: 100%; border-radius: 8px;" /></div>` : `<p style="margin: 5px 0;"><strong>File:</strong> ${mediaUrl}</p>`}
+          ${images.length > 0 ? `<div style="text-align: center; margin: 20px 0;">${images.map((u) => `<img src="${u}" alt="Requested photo" style="max-width: ${images.length > 1 ? "45%" : "100%"}; border-radius: 8px; margin: 4px;" />`).join("")}</div>` : ""}
+          ${others.map((u) => `<p style="margin: 5px 0; word-break: break-all;"><strong>File:</strong> ${u}</p>`).join("")}
           <div style="text-align: center; margin: 30px 0;">
             <a href="${albumUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
               Open Album
@@ -2955,7 +2964,7 @@ export const sendAlbumPhotoRequestNotice = async ({
           </p>
         </div>
       `),
-      text: `Unwatermarked photo request\nName: ${requesterName}\nEmail: ${requesterEmail}\nEvent: ${cleanEventName}\nAlbum: ${albumTitle}\nFile: ${mediaUrl}\nWhen: ${when}\nOpen: ${albumUrl}`,
+      text: `Unwatermarked photo request\nName: ${requesterName}\nEmail: ${requesterEmail}\nEvent: ${cleanEventName}\nAlbum: ${albumTitle}\nPhotos: ${urls.length}\n${urls.join("\n")}\nWhen: ${when}\nOpen: ${albumUrl}`,
     })
   } catch (error) {
     console.error("Failed to send photo request notice:", error)

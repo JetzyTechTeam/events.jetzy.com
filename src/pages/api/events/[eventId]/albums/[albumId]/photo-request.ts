@@ -10,10 +10,20 @@ import { consumeAlbumCode, consumeFailureMessage } from "@/lib/album-verificatio
 import { sendAlbumPhotoRequestNotice, sendAlbumPhotoRequestReceived } from "@/lib/send-grid"
 import { clientKey, isRateLimited } from "@/lib/rate-limit"
 import { Types } from "mongoose"
+import { randomUUID } from "crypto"
 import zod from "zod"
 
+/**
+ * Bounds one request. Not a product rule — it keeps a single submission from writing hundreds
+ * of rows and building an email nobody can open.
+ */
+const MAX_PHOTOS_PER_REQUEST = 30
+
 const schema = zod.object({
-	mediaUrl: zod.string().min(1),
+	// `mediaUrl` is the single-photo form kept for older clients; `mediaUrls` is what the
+	// multi-select dialog sends. At least one of them has to be present.
+	mediaUrl: zod.string().min(1).optional(),
+	mediaUrls: zod.array(zod.string().min(1)).min(1).max(MAX_PHOTOS_PER_REQUEST).optional(),
 	// Only needed when the viewer's address hasn't been proved yet — see below.
 	code: zod.string().regex(/^\d{6}$/).optional(),
 })
@@ -22,7 +32,7 @@ const RATE_LIMIT_MAX = 10
 const RATE_LIMIT_WINDOW_MS = 60_000
 
 /**
- * Records a request for the unwatermarked original of ONE album photo.
+ * Records a request for the unwatermarked originals of one or more album photos.
  *
  * Identity, and why there is no email field:
  *
@@ -35,6 +45,10 @@ const RATE_LIMIT_WINDOW_MS = 60_000
  *
  * Nothing about what the CDN serves changes here. This is a log the host reads in the manage
  * console; the confirmation email promises a reply, not a file.
+ *
+ * Several photos write several ROWS sharing a `batchId` — the host marks off what they have
+ * sent — but only ONE confirmation email and ONE inbox notice. Five emails for one click would
+ * read as a fault.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -55,6 +69,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const validation = schema.safeParse(req.body)
 		if (!validation.success) {
 			return sendResponse(res, null, "Choose a photo to request.", false, ResCode.BAD_REQUEST)
+		}
+
+		// Deduped: the same url twice in one submission is one request, not two rows.
+		const requestedUrls = Array.from(
+			new Set([...(validation.data.mediaUrls || []), ...(validation.data.mediaUrl ? [validation.data.mediaUrl] : [])]),
+		)
+		if (requestedUrls.length === 0) {
+			return sendResponse(res, null, "Choose a photo to request.", false, ResCode.BAD_REQUEST)
+		}
+		if (requestedUrls.length > MAX_PHOTOS_PER_REQUEST) {
+			return sendResponse(
+				res,
+				null,
+				"Please request up to " + MAX_PHOTOS_PER_REQUEST + " photos at a time.",
+				false,
+				ResCode.BAD_REQUEST,
+			)
 		}
 
 		if (isRateLimited(`album-photo-request:${clientKey(req)}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
@@ -82,10 +113,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Album not found", false, ResCode.NOT_FOUND)
 		}
 
-		// Same safety model as the download proxy: the photo has to belong to THIS album.
-		const item = ((album as any).media || []).find((m: any) => m.url === validation.data.mediaUrl)
-		if (!item) {
-			return sendResponse(res, null, "That photo is not part of this album.", false, ResCode.BAD_REQUEST)
+		// Same safety model as the download proxy: every photo has to belong to THIS album.
+		// All-or-nothing — a partially honoured request would leave the viewer believing they
+		// asked for photos nobody recorded.
+		const albumMedia = ((album as any).media || []) as { url: string; type?: "image" | "video" }[]
+		if (requestedUrls.some((url) => !albumMedia.find((m) => m.url === url))) {
+			return sendResponse(res, null, "One of those photos is not part of this album.", false, ResCode.BAD_REQUEST)
 		}
 
 		// Unverified (legacy cookie) viewers prove the address before anything is written —
@@ -102,39 +135,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Advisory dedupe, not an index: asking again after being ignored is legitimate, but
 		// double-clicking the button should not open two rows for the host to work through.
-		const existing = await AlbumPhotoRequest.findOne({
+		const alreadyPending = await AlbumPhotoRequest.find({
 			albumId: new Types.ObjectId(albumId),
 			requesterEmail: viewer.email,
-			mediaUrl: validation.data.mediaUrl,
+			mediaUrl: { $in: requestedUrls },
 			status: "pending",
 		})
-			.select("_id")
+			.select("mediaUrl")
 			.lean()
+		const pendingUrls = new Set(alreadyPending.map((r: any) => r.mediaUrl))
+		const toCreate = requestedUrls.filter((url) => !pendingUrls.has(url))
 
-		if (!existing) {
-			await AlbumPhotoRequest.create({
-				eventId: new Types.ObjectId(eventId),
-				albumId: new Types.ObjectId(albumId),
-				mediaUrl: validation.data.mediaUrl,
-				mediaType: item.type,
-				userId: viewer.userId && Types.ObjectId.isValid(viewer.userId) ? new Types.ObjectId(viewer.userId) : undefined,
-				requesterEmail: viewer.email,
-				requesterName: viewer.name,
-				verified: true,
-				status: "pending",
-			})
+		// One row per photo, sharing a batch id so the host can see they arrived together.
+		// Only stamped on a real batch: on a single-photo request it would mean nothing.
+		const batchId = toCreate.length > 1 ? randomUUID() : undefined
+		if (toCreate.length > 0) {
+			await AlbumPhotoRequest.insertMany(
+				toCreate.map((url) => ({
+					eventId: new Types.ObjectId(eventId),
+					albumId: new Types.ObjectId(albumId),
+					mediaUrl: url,
+					mediaType: albumMedia.find((m) => m.url === url)?.type,
+					batchId,
+					userId: viewer.userId && Types.ObjectId.isValid(viewer.userId) ? new Types.ObjectId(viewer.userId) : undefined,
+					requesterEmail: viewer.email,
+					requesterName: viewer.name,
+					verified: true,
+					status: "pending",
+				})),
+			)
 		}
 
 		// Both sends are fire-and-forget: the request is recorded, and a mail failure must not
-		// tell the visitor it wasn't.
+		// tell the visitor it wasn't. ONE email covering every photo asked for — the whole
+		// submission is what the viewer thinks of as "the request".
 		sendAlbumPhotoRequestReceived({
 			email: viewer.email,
 			eventName: (event as any).name,
 			albumTitle: (album as any).title,
-			mediaUrl: validation.data.mediaUrl,
+			mediaUrls: requestedUrls,
 		}).catch((e) => console.error("photo request confirmation failed", e))
 
-		if (!existing) {
+		// Only for photos that were actually newly recorded — re-asking for something already
+		// pending should not put the same thing in the inbox twice.
+		if (toCreate.length > 0) {
 			sendAlbumPhotoRequestNotice({
 				requesterName: viewer.name,
 				requesterEmail: viewer.email,
@@ -142,11 +186,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				eventSlug: (event as any).slug || eventId,
 				albumTitle: (album as any).title,
 				albumId,
-				mediaUrl: validation.data.mediaUrl,
+				mediaUrls: toCreate,
 			}).catch((e) => console.error("photo request notice failed", e))
 		}
 
-		return sendResponse(res, { alreadyRequested: !!existing }, "Request received", true, ResCode.OK)
+		return sendResponse(
+			res,
+			{ requested: requestedUrls.length, created: toCreate.length },
+			"Request received",
+			true,
+			ResCode.OK,
+		)
 	} catch (error: any) {
 		console.error("[albums/photo-request] Error:", error)
 		return sendResponse(res, null, "We couldn't send that request. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)

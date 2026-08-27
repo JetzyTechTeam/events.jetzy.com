@@ -42,6 +42,7 @@ type PhotoRequest = {
 	albumTitle: string
 	mediaUrl: string
 	mediaType: string
+	batchId: string | null
 	name: string
 	email: string
 	verified: boolean
@@ -74,6 +75,18 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 	})
 
 	const rows = useMemo(() => data || [], [data])
+
+	// How many rows each batch holds, so a row can say it was part of a larger ask. One row per
+	// photo is deliberate — the host sends files one at a time — but five rows landing in the
+	// same second from the same person would otherwise read as five separate requests.
+	const batchSizes = useMemo(() => {
+		const sizes = new Map<string, number>()
+		rows.forEach((r) => {
+			if (!r.batchId) return
+			sizes.set(r.batchId, (sizes.get(r.batchId) || 0) + 1)
+		})
+		return sizes
+	}, [rows])
 
 	const filtered = useMemo(() => {
 		const q = search.trim().toLowerCase()
@@ -110,7 +123,7 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 
 	// Exports the whole FILTERED set, not the page on screen.
 	const exportCsv = () => {
-		const headers = ["Album", "Photo URL", "Name", "Email", "Verified", "Status", "Requested", "Handled"]
+		const headers = ["Album", "Photo URL", "Name", "Email", "Verified", "Status", "Photos in request", "Requested", "Handled"]
 		const body = filtered.map((r) => [
 			r.albumTitle,
 			r.mediaUrl,
@@ -118,6 +131,7 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 			r.email,
 			r.verified ? "Verified" : "Unverified",
 			r.status === "handled" ? "Handled" : "Pending",
+			r.batchId ? batchSizes.get(r.batchId) || 1 : 1,
 			r.date ? DateTime.fromISO(r.date).toFormat("yyyy-LL-dd HH:mm") : "",
 			r.handledAt ? DateTime.fromISO(r.handledAt).toFormat("yyyy-LL-dd HH:mm") : "",
 		])
@@ -254,7 +268,14 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 										)}
 									</Td>
 									<Td color="white">{r.albumTitle}</Td>
-									<Td color="white">{r.name}</Td>
+									<Td color="white">
+										{r.name}
+										{r.batchId && (batchSizes.get(r.batchId) || 0) > 1 && (
+											<Badge ml={2} colorScheme="purple" variant="subtle">
+												1 of {batchSizes.get(r.batchId)}
+											</Badge>
+										)}
+									</Td>
 									<Td color="white">{r.email}</Td>
 									<Td>
 										<Badge colorScheme={r.status === "handled" ? "green" : "orange"}>

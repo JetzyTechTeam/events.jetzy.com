@@ -74,6 +74,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			albumTitle: albumTitle.get(r.albumId?.toString()) || "—",
 			mediaUrl: r.mediaUrl,
 			mediaType: r.mediaType || "image",
+			// Absent on single-photo requests and on anything written before multi-select.
+			// A display hint for the host, never a key.
+			batchId: r.batchId || null,
 			name: r.requesterName || "—",
 			email: r.requesterEmail || "—",
 			verified: r.verified === true,
