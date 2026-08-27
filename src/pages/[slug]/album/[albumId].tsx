@@ -509,6 +509,13 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 										_hover={{ bg: "#e58220" }}
 										fontWeight="bold"
 										borderRadius="12px"
+										whiteSpace="normal"
+										height="auto"
+										minH="44px"
+										py={3}
+										px={5}
+										lineHeight="1.3"
+										maxW="100%"
 										onClick={() => openRequest(null)}
 									>
 										Request Unwatermarked Photos
@@ -624,6 +631,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 					<Box
 						width={{ base: "100%", md: "300px" }}
 						flexShrink={0}
+						minW={0}
 						borderLeft={{ base: "none", md: "1px solid #262626" }}
 						borderTop={{ base: "1px solid #262626", md: "none" }}
 						px={{ base: 4, md: 5 }}
@@ -636,6 +644,9 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						<Text color="#bbbbbb" fontSize="sm" mb={4}>
 							Want it without the Jetzy Life mark? Ask us and we&apos;ll get back to you.
 						</Text>
+						{/* `whiteSpace="normal"` + `height="auto"`: Chakra buttons are nowrap by
+						    default, so this label ran straight out of the 300px panel. It has to
+						    be allowed to wrap rather than shrunk to something vaguer. */}
 						<Button
 							leftIcon={<FiImage />}
 							bg="#F79432"
@@ -644,6 +655,13 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							fontWeight="bold"
 							borderRadius="12px"
 							width="100%"
+							whiteSpace="normal"
+							height="auto"
+							minH="44px"
+							py={3}
+							px={4}
+							lineHeight="1.3"
+							textAlign="center"
 							onClick={() => openRequest(current.url)}
 						>
 							Request Unwatermarked Photo
