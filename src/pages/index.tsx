@@ -1,4 +1,4 @@
-import EventListing from "@/components/misc/EventsListing";
+import EventListing, { type PrivacyFilter } from "@/components/misc/EventsListing";
 import type { EventStatus } from "@/utils/eventSort";
 import { IEvent } from "@/models/events/types";
 import { GetServerSideProps } from "next";
@@ -7,7 +7,7 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { Spinner, Center } from "@chakra-ui/react";
-import { getSession } from "next-auth/react";
+import { getSession, useSession } from "next-auth/react";
 
 const HostedEvents = dynamic(() => import("@Jetzy/components/HostedEvents"), {
   ssr: false,
@@ -31,16 +31,23 @@ export default function Home(props: Props) {
   // server-paginated — narrowing on the client would leave the total and the pager
   // describing every event while showing a subset.
   const [status, setStatus] = React.useState<EventStatus | "">("");
+  // Admin-only. Private events are invisible to everyone else, so for them this chip would
+  // filter a set that is already fixed — the server ignores the param in that case too.
+  const [privacy, setPrivacy] = React.useState<PrivacyFilter>("");
+
+  const { data: session } = useSession();
+  const role = (session?.user as any)?.role;
+  const isAdmin = role === "admin" || role === "super admin";
 
   // The SSR payload is unfiltered and unsearched, so it may only stand in for the
   // unfiltered, unsearched first page. Using it under an active chip would paint every
   // event for a moment before the real query resolved.
-  const isDefaultView = !search && !status;
+  const isDefaultView = !search && !status && !privacy;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["events", page, search, status],
+    queryKey: ["events", page, search, status, privacy],
     queryFn: async () => {
-      const url = `/api/events?page=${page}${search ? `&search=${encodeURIComponent(search)}` : ""}${status ? `&status=${status}` : ""}`;
+      const url = `/api/events?page=${page}${search ? `&search=${encodeURIComponent(search)}` : ""}${status ? `&status=${status}` : ""}${privacy ? `&privacy=${privacy}` : ""}`;
       const response = await axios.get(url);
       return response.data;
     },
@@ -73,6 +80,9 @@ export default function Home(props: Props) {
       onSearch={(q) => { setSearch(q); setPage(1); }}
       status={status}
       onStatusChange={(next) => { setStatus(next); setPage(1); }}
+      showPrivacyFilter={isAdmin}
+      privacy={privacy}
+      onPrivacyChange={(next) => { setPrivacy(next); setPage(1); }}
     />
   );
 }
