@@ -176,6 +176,21 @@ Per-photo by decision: a host reading "someone wants some photos" has nothing to
 
 ---
 
+### 2.7 `event-album-views` (model `AlbumView`)
+
+The album-page landing funnel, recorded before anyone is identified.
+
+```
+eventId, albumId, anonId, sessionId?, views,
+landedAt?, gateShownAt?, codeSentAt?, identifiedAt?, viewerEmail?, timestamps
+```
+
+One row per person per album, keyed on the analytics `anonId`. Stage timestamps are written with `$min` so the earliest wins — a return visit must not rewrite when they first got through — and `views` is incremented, so `visitors` counts people while `views` counts visits.
+
+Indexes `{albumId, anonId}` and `{eventId, createdAt:-1}`, built by `scripts/create-album-view-index.ts`. **Not unique**: an upsert can duplicate under a race, but every exact count groups by `anonId`, whereas a unique index that failed to build would throw 11000 during a page visit.
+
+---
+
 ## 3. Viewer identity
 
 This is the part that differs most from the rest of the platform, so implement it before the endpoints.
@@ -445,6 +460,18 @@ Query: `eventId` (required), `dateFrom`, `dateTo` (optional, snapped to start/en
 `date` is `createdAt` — when they opened **this album**. `identifiedAt` is when they signed in / signed up / passed the code, which can be days earlier and is `null` for sessions and pre-gate rows.
 
 `viewerName` / `viewerEmail` on the row are the source of truth; the account lookup in `EventUsers`/`Users` is only a fallback for **legacy rows** written before the guest flow existed. Unknowns render as `"—"`.
+
+### 4.12-a `POST /albums/:albumId/view` — **public**
+
+Records where a visitor got to on an album page. Body: `{ anonId, sessionId?, stage, email? }`, where `stage` is `landed` | `gate_shown` | `code_sent` | `identified`.
+
+No identity of any kind is required — that is the point. `AlbumAccess` is only written once somebody is through the gate, so the people who landed and gave up at the name+email dialog left no trace at all.
+
+Rate-limited `album-view:<ip>` at 60/min, and **every failure path returns 200** — this is instrumentation on a page the visitor came to look at, so a dropped ping must never surface to them.
+
+Fired by `useAlbumViewerGate`, which owns the dialog state. `GuestAccessModal` gained an `onCodeSent` callback for the middle step. Stages queue client-side until both the album id and the `anonId` are known.
+
+---
 
 ### 4.13 `POST /albums/:albumId/photo-request` — **any viewer**
 
@@ -862,3 +889,4 @@ View it: {ALBUM_URL}
 - **Analytics:** `src/pages/api/analytics/events.ts` (`albums` block) + `src/pages/console/events/[eventId]/analytics.tsx` (Albums tab)
 - **UI:** `src/components/events/EventAlbums.tsx`, mounted in `src/components/HostedEvents.tsx` above `#discussion-section`; album page `src/pages/[slug]/album/[albumId].tsx`; viewer gate `src/components/events/album/useAlbumViewerGate.tsx`; promoted-events rail `src/components/events/album/PromotedEvents.tsx`
 - **Unwatermarked-photo requests:** dialog `src/components/events/album/RequestUnwatermarkedDialog.tsx`; host table `src/components/console/AlbumPhotoRequests.tsx` (Photo Requests tab on `/console/events/[eventId]/manage`)
+- **Album page funnel:** `src/models/events/album-view.ts`, `POST /albums/:albumId/view`, `scripts/create-album-view-index.ts`; surfaced on the analytics Albums tab as the Album Page Funnel strip

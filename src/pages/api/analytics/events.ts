@@ -8,6 +8,7 @@ import { BookingStatus } from "@/models/events/types"
 import { CheckIn } from "@/models/checkIn"
 import { EventInteraction, PageView, UserSession } from "@/models/analytics"
 import { AlbumAccess } from "@/models/events/album-access"
+import { AlbumView } from "@/models/events/album-view"
 import { EventAlbums } from "@/models/events/albums"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
@@ -360,7 +361,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			albumAccessMatch.createdAt = dateFilter
 		}
 
-		const [albumActionStats, albumUniqueViewers, albumVerifiedViewers, albumCount, perAlbumStats] = await Promise.all([
+		// The gate funnel. AlbumAccess is only written once somebody is THROUGH the gate, so it
+		// cannot answer "how many turned up and left at the name+email dialog" — which is the
+		// question a host actually has. event-album-views records the landing itself.
+		const albumViewMatch: any = { eventId: eventObjectId }
+		if (Object.keys(dateFilter).length > 0) {
+			albumViewMatch.createdAt = dateFilter
+		}
+
+		const [albumActionStats, albumUniqueViewers, albumVerifiedViewers, albumCount, perAlbumStats, albumFunnel, perAlbumViews] = await Promise.all([
 			AlbumAccess.aggregate([
 				{ $match: albumAccessMatch },
 				{ $group: { _id: "$action", count: { $sum: 1 } } },
@@ -401,6 +410,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					},
 				},
 			]),
+			// One row per person per album, so `visitors` counts people and `views` counts
+			// visits. Grouped by anonId first: a duplicate row from an upsert race must not
+			// inflate the people count.
+			AlbumView.aggregate([
+				{ $match: albumViewMatch },
+				{
+					$group: {
+						_id: "$anonId",
+						views: { $sum: "$views" },
+						gateShown: { $max: { $cond: [{ $ifNull: ["$gateShownAt", false] }, 1, 0] } },
+						codeSent: { $max: { $cond: [{ $ifNull: ["$codeSentAt", false] }, 1, 0] } },
+						identified: { $max: { $cond: [{ $ifNull: ["$identifiedAt", false] }, 1, 0] } },
+					},
+				},
+				{
+					$group: {
+						_id: null,
+						visitors: { $sum: 1 },
+						views: { $sum: "$views" },
+						gateShown: { $sum: "$gateShown" },
+						codeSent: { $sum: "$codeSent" },
+						identified: { $sum: "$identified" },
+					},
+				},
+			]),
+			AlbumView.aggregate([
+				{ $match: albumViewMatch },
+				{ $group: { _id: { albumId: "$albumId", anonId: "$anonId" }, views: { $sum: "$views" } } },
+				{ $group: { _id: "$_id.albumId", visitors: { $sum: 1 }, views: { $sum: "$views" } } },
+			]),
 		])
 
 		let albumLogins = 0
@@ -412,6 +451,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const albumTotalAccesses = albumLogins + albumSignups
 		const albumUniqueCount = albumUniqueViewers[0]?.count || 0
 		const albumVerifiedCount = albumVerifiedViewers[0]?.count || 0
+
+		const funnel = albumFunnel[0] || { visitors: 0, views: 0, gateShown: 0, codeSent: 0, identified: 0 }
+		// Everyone who was shown the door and never came through. This is the number the whole
+		// funnel exists for, so it is computed rather than left to the UI to subtract.
+		const albumAbandoned = Math.max(0, (funnel.gateShown || 0) - (funnel.identified || 0))
+		const viewsByAlbum = new Map<string, { visitors: number; views: number }>(
+			perAlbumViews.map((r: any) => [r._id?.toString(), { visitors: r.visitors || 0, views: r.views || 0 }]),
+		)
 
 		// Calculate conversion rates
 		const viewToBookingRate = views.count > 0 ? (bookings.bookingCount / views.count) * 100 : 0
@@ -464,11 +511,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					verifiedViewers: albumVerifiedCount,
 					logins: albumLogins,
 					signups: albumSignups,
+					// Landing funnel. `visitors` is people, `views` is visits; `gateShown` is
+					// how many were asked to identify themselves and `abandoned` how many of
+					// those never did. Zero across the board on events whose albums were only
+					// visited before this was recorded — absent history, not zero traffic.
+					pageVisitors: funnel.visitors || 0,
+					pageViews: funnel.views || 0,
+					gateShown: funnel.gateShown || 0,
+					codeSent: funnel.codeSent || 0,
+					identified: funnel.identified || 0,
+					abandoned: albumAbandoned,
 					perAlbum: perAlbumStats.map((a: any) => ({
 						albumId: a.albumId?.toString(),
 						title: a.title,
 						accesses: a.accesses,
 						uniqueViewers: a.uniqueViewers,
+						visitors: viewsByAlbum.get(a.albumId?.toString())?.visitors || 0,
+						views: viewsByAlbum.get(a.albumId?.toString())?.views || 0,
 					})),
 				},
 				trends: {

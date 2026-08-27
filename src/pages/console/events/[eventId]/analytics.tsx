@@ -143,11 +143,25 @@ interface EventAnalyticsData {
 		verifiedViewers?: number
 		logins: number
 		signups: number
+		/**
+		 * Landing funnel — see api/analytics/events.ts. All optional: an event whose albums were
+		 * only visited before this was recorded has no history, which is not the same as no
+		 * traffic, so the UI hides the block rather than showing zeroes.
+		 */
+		pageVisitors?: number
+		pageViews?: number
+		gateShown?: number
+		codeSent?: number
+		identified?: number
+		abandoned?: number
 		perAlbum: Array<{
 			albumId: string
 			title: string
 			accesses: number
 			uniqueViewers: number
+			/** People who opened the page, identified or not. Always >= accesses. */
+			visitors?: number
+			views?: number
 		}>
 	}
 	dateRange: {
@@ -283,8 +297,16 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 					`Logins via Album,${a.logins}`,
 					`Signups via Album,${a.signups}`,
 					"",
-					"Per Album,Accesses,Unique Viewers",
-					...a.perAlbum.map((p) => `"${p.title.replace(/"/g, '""')}",${p.accesses},${p.uniqueViewers}`),
+					"Album Page Funnel",
+					`Landed on an album,${a.pageVisitors ?? 0}`,
+					`Total visits,${a.pageViews ?? 0}`,
+					`Asked to identify,${a.gateShown ?? 0}`,
+					`Entered their email,${a.codeSent ?? 0}`,
+					`Got through,${a.identified ?? 0}`,
+					`Left at the dialog,${a.abandoned ?? 0}`,
+					"",
+					"Per Album,Visitors,Accesses,Unique Viewers",
+					...a.perAlbum.map((p) => `"${p.title.replace(/"/g, '""')}",${p.visitors ?? 0},${p.accesses},${p.uniqueViewers}`),
 					"",
 			  ]
 			: []
@@ -962,6 +984,44 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 										</Button>
 									</Flex>
 
+									{/* The gate funnel.
+									    Every tile and table below this counts people who got THROUGH
+									    the name+email dialog. This is the only place that counts the
+									    ones who turned up and left at it — usually the bigger number,
+									    and the one worth acting on. Hidden entirely when there is no
+									    history, since zeroes here would read as no traffic. */}
+									{analyticsData.albums && (analyticsData.albums.pageVisitors ?? 0) > 0 && (
+										<Box mb={6} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
+											<Flex align="center" justify="space-between" mb={3} wrap="wrap" gap={2}>
+												<Text fontSize="sm" fontWeight="bold" color="#9C9C9C">Album Page Funnel</Text>
+												<Text fontSize="xs" color="#65676B">
+													{formatNumber(analyticsData.albums.pageViews ?? 0)} visits from {formatNumber(analyticsData.albums.pageVisitors ?? 0)} people
+												</Text>
+											</Flex>
+											<SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+												{[
+													{ label: "Landed on an album", value: analyticsData.albums.pageVisitors ?? 0, tone: "white" },
+													{ label: "Asked to identify", value: analyticsData.albums.gateShown ?? 0, tone: "white" },
+													{ label: "Entered their email", value: analyticsData.albums.codeSent ?? 0, tone: "white" },
+													{ label: "Got through", value: analyticsData.albums.identified ?? 0, tone: "#48BB78" },
+												].map((t) => (
+													<Box key={t.label}>
+														<Text fontSize="xs" color="#9C9C9C" fontWeight="bold" mb={1}>{t.label}</Text>
+														<Text fontSize="2xl" fontWeight="bold" color={t.tone}>{formatNumber(t.value)}</Text>
+														<Text fontSize="xs" color="#65676B">
+															{Math.round((t.value / (analyticsData.albums?.pageVisitors || 1)) * 100)}% of visitors
+														</Text>
+													</Box>
+												))}
+											</SimpleGrid>
+											{(analyticsData.albums.abandoned ?? 0) > 0 && (
+												<Text fontSize="xs" color="#E9A23B" mt={3}>
+													{formatNumber(analyticsData.albums.abandoned ?? 0)} saw the name &amp; email dialog and left without completing it.
+												</Text>
+											)}
+										</Box>
+									)}
+
 									{analyticsData.albums && (
 										<SimpleGrid columns={{ base: 2, md: 5 }} spacing={4} mb={6}>
 											{[
@@ -990,11 +1050,14 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 											<Text fontSize="sm" fontWeight="bold" color="#9C9C9C" mb={3}>Top Albums by Access</Text>
 											<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
 												<Table variant="simple" size="sm">
-													<Thead><Tr><Th>Album</Th><Th isNumeric>Accesses</Th><Th isNumeric>Unique Viewers</Th></Tr></Thead>
+													<Thead><Tr><Th>Album</Th><Th isNumeric>Visitors</Th><Th isNumeric>Accesses</Th><Th isNumeric>Unique Viewers</Th></Tr></Thead>
 													<Tbody>
 														{analyticsData.albums.perAlbum.map((a) => (
 															<Tr key={a.albumId} _hover={{ bg: "#262626" }}>
 																<Td><Text fontSize="sm">{a.title}</Text></Td>
+																{/* Everyone who opened the page, identified or not — always
+																    >= Accesses, which only counts those who got through. */}
+																<Td isNumeric><Text color="#9C9C9C">{(a.visitors ?? 0).toLocaleString()}</Text></Td>
 																<Td isNumeric><Text fontWeight="semibold">{a.accesses.toLocaleString()}</Text></Td>
 																<Td isNumeric><Badge colorScheme="teal">{a.uniqueViewers.toLocaleString()}</Badge></Td>
 															</Tr>

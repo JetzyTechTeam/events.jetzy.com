@@ -143,7 +143,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	const toast = useToast()
 	const { data: session } = useSession()
 
-	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, viewer } = useAlbumViewerGate(event._id)
+	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, viewer, trackAlbumLanding } = useAlbumViewerGate(event._id)
 
 	// Live + upcoming events to promote beside the photos, minus this album's own event.
 	// `showEvents === false` is the host switching the rail off for this album; undefined
@@ -173,6 +173,13 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	}
 	const trackingEnabled = router.isReady && cameFromEventRef.current === false
 	useTrackEventView(event._id, { enabled: trackingEnabled })
+
+	// The landing, recorded BEFORE anything is known about who this is — including for people
+	// who take one look at the name+email dialog and leave. `recordAlbumAccess` below only runs
+	// once they are through, so on its own it can never show who was lost at the door.
+	useEffect(() => {
+		trackAlbumLanding(album._id)
+	}, [album._id, trackAlbumLanding])
 
 	// Record the view once the viewer is through the gate.
 	useEffect(() => {
