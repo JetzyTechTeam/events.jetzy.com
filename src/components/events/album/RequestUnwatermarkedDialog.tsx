@@ -310,7 +310,8 @@ export function RequestUnwatermarkedDialog({
 									{resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}
 								</Button>
 							</Flex>
-							<Text fontSize="xs" color="#777" mt={3}>
+							{/* Matches the album gate's own code step — same sentence, same weight. */}
+							<Text fontSize="sm" color="#F5C518" mt={3}>
 								The code expires in 10 minutes. Can&apos;t find the email? Please check your spam folder.
 							</Text>
 						</>
