@@ -86,6 +86,17 @@ const usd = (dollars: number | null): string | null => {
 	return formatted == null ? null : `US${formatted}`
 }
 
+/**
+ * How many months of the monthly rate the annual price gives away.
+ *
+ * $200/year against $20/month is twelve months for the price of ten, so: two. Derived rather
+ * than written down — a hardcoded "2 months free" is a claim about Stripe's prices that stops
+ * being true the moment either one moves. Returns 0 when it can't be computed, and every caller
+ * drops the sentence rather than half-writing it.
+ */
+const monthsFreeOnAnnual = (monthly: number | null | undefined, annual: number | null | undefined): number =>
+	monthly && annual != null ? Math.max(0, Math.round((monthly * 12 - annual) / monthly)) : 0
+
 /** "Sep 18, 2026" — the renewal date, in the member state. */
 const renewalDate = (value?: string | null): string | null => {
 	if (!value) return null
@@ -216,6 +227,15 @@ const PlanComparison: React.FC<Props> = ({
 	// when there is genuinely another one on sale, so a single-price product is unchanged.
 	const alternate = options.find((p) => p.interval !== interval)
 
+	// ---- The annual pitch, for somebody still choosing ----
+	//
+	// Off `options` (what is on sale) rather than the member's own plan, which is what the trial
+	// panel further down uses — a legacy $10/month member must not be quoted a saving computed
+	// against today's $20.
+	const monthlyOption = options.find((p) => p.interval === "month")
+	const annualOption = options.find((p) => p.interval === "year")
+	const annualMonthsFreeOnSale = monthsFreeOnAnnual(monthlyOption?.amount, annualOption?.amount)
+
 	// A member is not buying. Everything below the current-plan block is the member state.
 	const memberInterval = currentPlan?.interval || null
 	const memberRenewal = renewalDate(currentPlan?.renewsAt)
@@ -246,10 +266,7 @@ const PlanComparison: React.FC<Props> = ({
 	const memberAmount = currentPlan?.amount ?? null
 	const annualAmount = switchTarget?.amount ?? null
 	const annualCompareAt = memberInterval === "month" && memberAmount != null ? memberAmount * 12 : null
-	const annualMonthsFree =
-		annualCompareAt != null && annualAmount != null && memberAmount
-			? Math.round((annualCompareAt - annualAmount) / memberAmount)
-			: 0
+	const annualMonthsFree = memberInterval === "month" ? monthsFreeOnAnnual(memberAmount, annualAmount) : 0
 	// Only when we can state it in full. A half-priced sentence with a missing figure in it is
 	// worse than no sentence.
 	const showAnnualPitch = showSwitch && annualAmount != null && annualCompareAt != null && annualMonthsFree > 0
@@ -424,14 +441,31 @@ const PlanComparison: React.FC<Props> = ({
 										<span className="text-sm font-semibold text-green-500">{DISCOUNT_BADGE}</span>
 									)}
 								</p>
-								{alternate?.amount != null && (
-									<p className="text-sm text-gray-400 mt-1 flex items-baseline gap-2">
-										<span>
-											or {money(alternate.amount)}/{alternate.interval}
-										</span>
-										<span className="font-semibold text-green-500">{DISCOUNT_BADGE}</span>
-									</p>
-								)}
+								{/* The annual option, sold rather than merely listed.
+								    "or $200/year — 50% Off" stated the price and left the buyer to work
+								    out that twelve months at the monthly rate would be $240. Saying what
+								    the saving actually is, is the whole pitch. Falls back to the plain
+								    line whenever the figures aren't there to say it honestly, or when
+								    annual is already the selected plan and the alternate is monthly. */}
+								{alternate?.amount != null &&
+									(alternate.interval === "year" && annualMonthsFreeOnSale > 0 ? (
+										<div className="mt-1 text-sm">
+											<p className="text-gray-300">
+												{money(alternate.amount)}/{PERIOD_LABELS[alternate.interval] || alternate.interval} — Save Even More
+											</p>
+											<p className="font-semibold text-green-500">
+												{DISCOUNT_BADGE} + {annualMonthsFreeOnSale} Additional Month
+												{annualMonthsFreeOnSale === 1 ? "" : "s"} Free
+											</p>
+										</div>
+									) : (
+										<p className="text-sm text-gray-400 mt-1 flex items-baseline gap-2">
+											<span>
+												or {money(alternate.amount)}/{alternate.interval}
+											</span>
+											<span className="font-semibold text-green-500">{DISCOUNT_BADGE}</span>
+										</p>
+									))}
 							</div>
 						)}
 					</>

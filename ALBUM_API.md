@@ -158,6 +158,39 @@ What a viewer said they want to attend next, captured in the access dialog. One 
 
 ---
 
+### 2.6 `event-album-photo-requests` (model `AlbumPhotoRequest`)
+
+One row per (person, photo) asking for the unwatermarked original.
+
+```
+eventId, albumId, mediaUrl, mediaType?, batchId?, userId?,
+requesterEmail (lowercase), requesterName?, verified?,
+status: "pending" | "handled", handledAt?, handledBy?, timestamps
+```
+
+`batchId` groups the rows written by one multi-photo submission. Absent on single-photo requests and on everything written before multi-select existed, so it is a display hint and never a key.
+
+Index `{ eventId: 1, createdAt: -1 }`, built by `scripts/create-album-photo-request-index.ts` (`autoIndex` is off). **Deliberately not unique** on (albumId, email, mediaUrl): asking again after being ignored is legitimate, and a unique index that failed to build would throw 11000 at a visitor. The duplicate guard is the advisory pending-row lookup in the API.
+
+Per-photo by decision: a host reading "someone wants some photos" has nothing to act on, whereas a named image is a request they can fill.
+
+---
+
+### 2.7 `event-album-views` (model `AlbumView`)
+
+The album-page landing funnel, recorded before anyone is identified.
+
+```
+eventId, albumId, anonId, sessionId?, views,
+landedAt?, gateShownAt?, codeSentAt?, identifiedAt?, viewerEmail?, timestamps
+```
+
+One row per person per album, keyed on the analytics `anonId`. Stage timestamps are written with `$min` so the earliest wins — a return visit must not rewrite when they first got through — and `views` is incremented, so `visitors` counts people while `views` counts visits.
+
+Indexes `{albumId, anonId}` and `{eventId, createdAt:-1}`, built by `scripts/create-album-view-index.ts`. **Not unique**: an upsert can duplicate under a race, but every exact count groups by `anonId`, whereas a unique index that failed to build would throw 11000 during a page visit.
+
+---
+
 ## 3. Viewer identity
 
 This is the part that differs most from the rest of the platform, so implement it before the endpoints.
@@ -427,6 +460,50 @@ Query: `eventId` (required), `dateFrom`, `dateTo` (optional, snapped to start/en
 `date` is `createdAt` — when they opened **this album**. `identifiedAt` is when they signed in / signed up / passed the code, which can be days earlier and is `null` for sessions and pre-gate rows.
 
 `viewerName` / `viewerEmail` on the row are the source of truth; the account lookup in `EventUsers`/`Users` is only a fallback for **legacy rows** written before the guest flow existed. Unknowns render as `"—"`.
+
+### 4.12-a `POST /albums/:albumId/view` — **public**
+
+Records where a visitor got to on an album page. Body: `{ anonId, sessionId?, stage, email? }`, where `stage` is `landed` | `gate_shown` | `code_sent` | `identified`.
+
+No identity of any kind is required — that is the point. `AlbumAccess` is only written once somebody is through the gate, so the people who landed and gave up at the name+email dialog left no trace at all.
+
+Rate-limited `album-view:<ip>` at 60/min, and **every failure path returns 200** — this is instrumentation on a page the visitor came to look at, so a dropped ping must never surface to them.
+
+Fired by `useAlbumViewerGate`, which owns the dialog state. `GuestAccessModal` gained an `onCodeSent` callback for the middle step. Stages queue client-side until both the album id and the `anonId` are known.
+
+---
+
+### 4.13 `POST /albums/:albumId/photo-request` — **any viewer**
+
+Records a request for the unwatermarked originals of one or more photos. Body: `{ mediaUrls: string[], code? }` (`mediaUrl` is still accepted as the single-photo form). Capped at **30** per submission.
+
+Several photos write **one row per photo**, sharing a `batchId` — the host sends files one at a time and marks off what they have sent, so a single row covering five photos could only ever be half true. `batchId` is a display hint, never a key: absent on single-photo requests and on everything written before multi-select.
+
+Validation is **all-or-nothing** — if any url is not part of this album the whole request is refused, rather than leaving the viewer believing they asked for photos nobody recorded.
+
+**One confirmation email per submission, never one per photo** (up to 6 thumbnails then "and N more"). The inbox notice covers only the photos actually newly recorded.
+
+The address is **never taken from the body** — `resolveAlbumViewer` already knows it, and accepting one would let anyone file a request under someone else's name. So there is no email field anywhere in this flow; the dialog shows the resolved address read-only.
+
+`code` is only needed when `viewer.verified !== true`, which today means a guest cookie minted **before** the code gate existed. Everyone who came through the current gate already proved their address minutes earlier and is not asked twice. When a code is required and absent, the response is `400` with `data: { needsVerification: true, email }` — the client reads that flag rather than deciding from its own copy of `verified`. The code itself is the ordinary album code: `POST /albums/send-code` with the resolved address, `purpose: "album"`.
+
+`mediaUrl` must be present in **this** album's stored `media`, the same safety model as the download proxy.
+
+Duplicate guard is a **pending-row lookup**, not an index: a second request for a photo that is still pending does not open a new row (and does not re-notify the inbox), but the confirmation email is re-sent so the visitor gets an answer either way. Asking again after a request was handled is legitimate and creates a new row.
+
+Rate limited `album-photo-request:<ip>` at 10/60s.
+
+### 4.14 `GET /albums/photo-requests` — **admin or owner**
+
+Query: `eventId` (required), `dateFrom`, `dateTo`. Newest first, capped at **5000** rows, no server-side CSV — same shape as `access-log`.
+
+Row: `{ _id, albumId, albumTitle, mediaUrl, mediaType, batchId, name, email, verified, status, handledAt, date }`
+
+### 4.15 `PATCH /albums/photo-requests/:requestId` — **admin or owner**
+
+Body: `{ status: "pending" | "handled" }`. Sets/clears `handledAt` + `handledBy`.
+
+**`status` gates nothing.** Fulfilment is manual and off-platform — the host emails the file themselves. It is a note-to-self so a host working through a list knows which ones they have answered.
 
 ---
 
@@ -807,7 +884,9 @@ View it: {ALBUM_URL}
 - **Shared helpers reused:** `src/lib/user-utils.ts` (`createOrUpdateUser`), `src/lib/magicLink.ts` (`generateMagicToken` / `verifyMagicToken`), `src/lib/event-participants.ts` (`getEventParticipants`)
 - **APIs:** `src/pages/api/events/[eventId]/albums/{index.ts, [albumId].ts, viewer.ts, send-code.ts, guest-access.ts, my-interests.ts, interests.ts, participants.ts, access-log.ts, [albumId]/access.ts, [albumId]/download.ts, [albumId]/publish.ts, [albumId]/tags/index.ts, [albumId]/tags/[tagId].ts}`
 - **Verification + rate limiting:** `src/lib/album-verification.ts`, `src/lib/rate-limit.ts`
-- **Emails:** `sendAlbumAccessNotice`, `sendAlbumTagNotification`, `sendAlbumPublishedNotification` in `src/lib/send-grid.ts`
-- **Migrations / index builds:** `scripts/migrate-album-access-index.ts`, `scripts/migrate-album-tags-index.ts`, `scripts/create-album-verification-index.ts`
+- **Emails:** `sendAlbumAccessNotice`, `sendAlbumTagNotification`, `sendAlbumPublishedNotification`, `sendAlbumVerificationCode`, `sendAlbumPhotoRequestReceived`, `sendAlbumPhotoRequestNotice` in `src/lib/send-grid.ts`
+- **Migrations / index builds:** `scripts/migrate-album-access-index.ts`, `scripts/migrate-album-tags-index.ts`, `scripts/create-album-verification-index.ts`, `scripts/create-album-photo-request-index.ts`
 - **Analytics:** `src/pages/api/analytics/events.ts` (`albums` block) + `src/pages/console/events/[eventId]/analytics.tsx` (Albums tab)
 - **UI:** `src/components/events/EventAlbums.tsx`, mounted in `src/components/HostedEvents.tsx` above `#discussion-section`; album page `src/pages/[slug]/album/[albumId].tsx`; viewer gate `src/components/events/album/useAlbumViewerGate.tsx`; promoted-events rail `src/components/events/album/PromotedEvents.tsx`
+- **Unwatermarked-photo requests:** dialog `src/components/events/album/RequestUnwatermarkedDialog.tsx`; host table `src/components/console/AlbumPhotoRequests.tsx` (Photo Requests tab on `/console/events/[eventId]/manage`)
+- **Album page funnel:** `src/models/events/album-view.ts`, `POST /albums/:albumId/view`, `scripts/create-album-view-index.ts`; surfaced on the analytics Albums tab as the Album Page Funnel strip

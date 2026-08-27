@@ -33,7 +33,7 @@ type Pagination = {
 	totalPages: number
 }
 
-type FilterKey = "all" | "upcoming" | "ended" | "tbd" | "pending"
+type FilterKey = "all" | "public" | "private" | "upcoming" | "ended" | "tbd" | "pending"
 
 type Props = {
 	events: string
@@ -44,8 +44,14 @@ type Props = {
 	pendingCount: number
 }
 
+// Public / Private sit right after All: with a hundred events in the list, "which of these can
+// anyone actually find" is the first question an admin asks, and unlisted events were the noise
+// making it hard to answer. They filter on PRIVACY only — draft vs published is a separate axis
+// and is still shown as a badge on each row.
 const FILTERS: { key: FilterKey; label: string }[] = [
 	{ key: "all", label: "All" },
+	{ key: "public", label: "Public" },
+	{ key: "private", label: "Private" },
 	{ key: "upcoming", label: "Upcoming" },
 	{ key: "ended", label: "Ended" },
 	{ key: "tbd", label: "TBD" },
@@ -462,7 +468,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const allEvents = sortEvents(Array.from(allEventsMap.values()))
 
 	// Apply status filter chip (server-side) before pagination
-	const allowedFilters = ["all", "upcoming", "ended", "tbd", "pending"]
+	const allowedFilters = ["all", "public", "private", "upcoming", "ended", "tbd", "pending"]
 	const rawFilter = (context.query.filter as string) || "all"
 	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
 
@@ -471,6 +477,13 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 	const filteredEvents = allEvents.filter((e: any) => {
 		switch (filter) {
+			// `privacy` is absent on events created before the field existed, and absent means
+			// public — so match by exclusion rather than by `=== "public"`, which would hide every
+			// legacy event from the Public tab.
+			case "public":
+				return e.privacy !== "private"
+			case "private":
+				return e.privacy === "private"
 			case "upcoming":
 				return e.timeStatus === "live" || e.timeStatus === "future"
 			case "ended":

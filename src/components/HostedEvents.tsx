@@ -489,7 +489,17 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 					</div>
 					<div className={`${isDatePollActive ? "max-w-6xl mx-auto flex flex-col lg:flex-row lg:gap-6 lg:items-start" : "max-w-4xl mx-auto"}`}>
-					<div className={`${isDatePollActive ? "flex-1 min-w-0" : ""} bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all`}>
+					{/* The LEFT COLUMN — everything on the page except the date-poll sidebar.
+					    It used to hold only the event card, with the admin panel, tickets, albums
+					    and discussion following AFTER the flex row and reserving a right gutter with
+					    `lg:pr-[384px]`. That made the row exactly as tall as the taller of the card
+					    and the sidebar, so a short description left a band of empty space above the
+					    tickets — visible to anyone without the admin panel to fill it, which is why
+					    it showed up first in `?preview=1`.
+					    `contents` when there is no poll: the wrapper then has no layout effect at
+					    all and the ordinary page renders exactly as it did. */}
+					<div className={isDatePollActive ? "flex-1 min-w-0" : "contents"}>
+					<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 						{/* Banner Media (images + videos combined) */}
 						<div className="relative p-3">
 							{(() => {
@@ -656,15 +666,9 @@ export default function HostedEvents({ event }: Props) {
 							</div>
 						</div>
 					</div>
-					{isDatePollActive && (
-						<div className="hidden lg:block w-[360px] flex-shrink-0 sticky top-8 self-start">
-							<DatePollSidebar event={clonedEvent} isAdmin={isAdmin} />
-						</div>
-					)}
-					</div>
 
 					{isAdmin && clonedEvent?._id && (
-						<div className={`${isDatePollActive ? "max-w-6xl mx-auto lg:pr-[384px]" : "max-w-4xl mx-auto"} mt-8`}>
+						<div className={`${isDatePollActive ? "" : "max-w-4xl mx-auto"} mt-8`}>
 							{/* Admin Tabs */}
 							<div className="bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden">
 								{/* Section header toggle */}
@@ -729,7 +733,7 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 					)}
 
-					<div className={isDatePollActive ? "max-w-6xl mx-auto lg:pr-[384px]" : ""}>
+					<div>
 					{isAdmin && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
 
 					{/* Tickets are hidden once the event has ended, except for host/admin — and for
@@ -865,6 +869,18 @@ export default function HostedEvents({ event }: Props) {
 							<Box id="discussion-board">
 								<DiscussionBoard eventId={clonedEvent._id.toString()} canManage={canManage} />
 							</Box>
+						</div>
+					)}
+					</div>
+					</div>
+
+					{/* The sidebar is the flex row's SECOND child, beside the whole left column
+					    rather than beside the card alone — which is what lets `sticky` actually
+					    travel: a sticky element only moves within its own container, and its
+					    container used to end at the bottom of the card. */}
+					{isDatePollActive && (
+						<div className="hidden lg:block w-[360px] flex-shrink-0 sticky top-8 self-start">
+							<DatePollSidebar event={clonedEvent} isAdmin={isAdmin} />
 						</div>
 					)}
 					</div>

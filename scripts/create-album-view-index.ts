@@ -1,17 +1,19 @@
 /**
- * Creates the lookup index for album email-verification codes.
+ * Creates the lookup indexes for album page views (the gate funnel).
  *
- *   npx tsx scripts/create-album-verification-index.ts
+ *   npx tsx scripts/create-album-view-index.ts
  *
  * WHY
  *
- * `event-album-verifications` is read on every code send and every code check, both keyed on
- * { eventId, email }. The connection sets `autoIndex: false`, so the index declared on the
- * schema never builds itself — without this the lookups collection-scan.
+ * `event-album-views` is written on every album page load (an upsert keyed on
+ * { albumId, anonId }) and read by the Albums analytics tab as { eventId }. The connection sets
+ * `autoIndex: false`, so the indexes declared on the schema never build themselves — without
+ * these, a write on a page visit collection-scans.
  *
- * The index is deliberately NOT unique: a duplicate row is harmless (both the issue and the
- * consume path read the newest row by `createdAt`), whereas a unique index that failed to
- * build would leave upserts throwing 11000 and lock people out of albums.
+ * Deliberately NOT unique. An upsert can duplicate under a race without one, but every count
+ * that has to be exact groups by `anonId` anyway — whereas a unique index that failed to build
+ * would throw 11000 during a page visit, which is the one place an analytics write must never
+ * be visible.
  *
  * `collection.createIndex`, never `syncIndexes()` — the mobile app and the admin portal share
  * this database, and syncIndexes drops anything they created.
@@ -32,12 +34,12 @@ dotenv.config({ path: path.join(process.cwd(), ".env") })
  * `src/configs/database.ts` reads NEXT_EVENTS_DB_URL at module scope and falls back to
  * `mongodb://localhost:27017/missing-db-url` when it is missing. A static `import` is hoisted
  * above the dotenv calls above, so the module would read an empty env and this script would
- * happily build the index on a LOCAL database while printing "Done." — the failure is silent,
- * which is the dangerous part. Same reason as scripts/backfill-event-slug-alias.ts.
+ * happily create the index on a LOCAL database while printing "Done." — which is exactly what
+ * happened the first time it was run (2026-08-27).
  */
 async function run() {
 	const { ensureDbConnected } = await import("../src/configs/database")
-	const { AlbumVerification } = await import("../src/models/events/album-verification")
+	const { AlbumView } = await import("../src/models/events/album-view")
 
 	if (!process.env.NEXT_EVENTS_DB_URL) {
 		throw new Error("NEXT_EVENTS_DB_URL is not set — refusing to run against the localhost fallback.")
@@ -45,12 +47,14 @@ async function run() {
 
 	console.log("Connecting to DB...")
 	await ensureDbConnected()
-	const collection = AlbumVerification.collection
+	const collection = AlbumView.collection
 	console.log(`Database: ${collection.conn.name}`)
 
-	console.log("Creating { eventId: 1, email: 1 } on event-album-verifications...")
-	const name = await collection.createIndex({ eventId: 1, email: 1 })
-	console.log(`Created (or already present): ${name}`)
+	console.log("Creating { albumId: 1, anonId: 1 } on event-album-views...")
+	console.log(`Created (or already present): ${await collection.createIndex({ albumId: 1, anonId: 1 })}`)
+
+	console.log("Creating { eventId: 1, createdAt: -1 } on event-album-views...")
+	console.log(`Created (or already present): ${await collection.createIndex({ eventId: 1, createdAt: -1 })}`)
 
 	console.log("Final indexes:")
 	console.log((await collection.indexes()).map((i) => i.name).join(", "))

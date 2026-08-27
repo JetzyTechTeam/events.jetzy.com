@@ -2818,6 +2818,162 @@ Enter this code to confirm your email and open the photo album${cleanEventName ?
 }
 
 /**
+ * Confirms that we received a request for the unwatermarked original of an album photo.
+ *
+ * Copy is the CEO's, verbatim (2026-08-27). It deliberately promises follow-up rather than a
+ * file: nothing is fulfilled automatically, a person handles it from the Photo Requests tab
+ * in the manage console. Saying anything more here would be a promise the product doesn't keep.
+ */
+export const sendAlbumPhotoRequestReceived = async ({
+  email,
+  eventName,
+  albumTitle,
+  mediaUrls,
+}: {
+  email: string
+  eventName?: string
+  albumTitle?: string
+  /** Every photo in this submission — one email covers the lot, never one per photo. */
+  mediaUrls?: string[]
+}) => {
+  const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
+  const cleanAlbumTitle = albumTitle ? stripHtml(decodeHTMLEntities(albumTitle)) : ""
+  // Images only — a video frame can't be shown in an email client.
+  const images = (mediaUrls || []).filter((u) => !/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(u))
+  // Enough to confirm what was asked for without building a mail nobody can open.
+  const shown = images.slice(0, 6)
+  const extra = images.length - shown.length
+  const count = (mediaUrls || []).length
+  const context = [cleanAlbumTitle, cleanEventName].filter(Boolean).join(" — ")
+  try {
+    await sgMail.send({
+      to: email,
+      from: mailFrom(),
+      subject: count > 1 ? `We received your request for ${count} unwatermarked photos` : `We received your request for unwatermarked photos`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 25px;">
+            <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" style="vertical-align: middle; margin-bottom: 10px;" />
+            <h1 style="color: #333; font-size: 24px; margin: 0;">Request received</h1>
+          </div>
+
+          <p style="color: #333; font-size: 16px; line-height: 1.6;">Hi,</p>
+          <p style="color: #333; font-size: 16px; line-height: 1.6;">
+            We received your request for unwatermarked photos. We&#39;ll get back to you with more information soon.
+          </p>
+
+          ${shown.length > 0 ? `
+          <div style="background-color: #f9f9f9; padding: 12px; border-radius: 12px; margin: 25px 0; text-align: center;">
+            ${shown.map((u) => `<img src="${u}" alt="Requested photo" style="max-width: ${shown.length > 1 ? "45%" : "100%"}; border-radius: 8px; margin: 4px;" />`).join("")}
+            ${extra > 0 ? `<p style="color: #999; font-size: 13px; margin: 10px 0 0;">and ${extra} more</p>` : ""}
+            ${context ? `<p style="color: #999; font-size: 13px; margin: 10px 0 0;">${context}</p>` : ""}
+          </div>` : context ? `
+          <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 25px 0;">
+            <p style="margin: 0; color: #666; font-size: 14px;">${context}</p>
+          </div>` : ""}
+
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-top: 25px;">
+            Thank you,<br />Jetzy Team
+          </p>
+
+          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
+            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+          </p>
+        </div>
+      `),
+      text: `Hi,
+
+We received your request for unwatermarked photos. We'll get back to you with more information soon.
+
+Thank you,
+Jetzy Team`,
+    });
+    console.log(`✅ Photo request confirmation sent to: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send photo request confirmation:", error);
+    // Best-effort: the request is already recorded, and failing the call would tell the
+    // visitor their request didn't land when it did.
+  }
+}
+
+/**
+ * Tells the Jetzy inbox that somebody asked for an unwatermarked photo.
+ *
+ * The request also lands in the manage console's Photo Requests tab; this exists because
+ * nobody is watching that tab, and the confirmation email has already promised a reply.
+ */
+export const sendAlbumPhotoRequestNotice = async ({
+  requesterName,
+  requesterEmail,
+  eventName,
+  eventSlug,
+  albumTitle,
+  albumId,
+  mediaUrls,
+}: {
+  requesterName: string
+  requesterEmail: string
+  eventName: string
+  eventSlug: string
+  albumTitle: string
+  albumId: string
+  mediaUrls: string[]
+}) => {
+  const baseUrl = process.env.NEXT_PUBLIC_URL
+  if (baseUrl?.includes("localhost")) {
+    console.log(`[LOCALHOST MODE] sendAlbumPhotoRequestNotice skipped - would notify admin for:`, requesterEmail)
+    return { success: true, message: "Email skipped in localhost mode" }
+  }
+  const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+  const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
+  if (!adminEmail || !senderEmail) {
+    console.error("SENDGRID_EMAIL_SENDER / ADMIN_NOTIFICATION_EMAIL not set — cannot send photo request notice")
+    return
+  }
+  const cleanEventName = decodeHTMLEntities(eventName)
+  const albumUrl = buildEventAlbumUrl(baseUrl || "", eventSlug, albumId)
+  const urls = mediaUrls || []
+  const images = urls.filter((u) => !/\.(mp4|mov|webm|m4v|avi)(\?|$)/i.test(u))
+  const others = urls.filter((u) => !images.includes(u))
+  const when = new Date().toLocaleString("en-US", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC"
+  try {
+    await sgMail.send({
+      to: adminEmail,
+      from: mailFrom(senderEmail),
+      subject: `[Album] ${urls.length > 1 ? `${urls.length} unwatermarked photos` : "Unwatermarked photo"} requested — ${cleanEventName}`,
+      html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #F79432; border-radius: 12px;">
+          <h2 style="color: #F79432; margin-top: 0;">Unwatermarked Photo Request</h2>
+          <div style="background-color: #f4f4f4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Name:</strong> ${requesterName}</p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${requesterEmail}</p>
+            <p style="margin: 5px 0;"><strong>Event:</strong> ${cleanEventName}</p>
+            <p style="margin: 5px 0;"><strong>Album:</strong> ${albumTitle}</p>
+            <p style="margin: 5px 0;"><strong>Photos:</strong> ${urls.length}</p>
+            <p style="margin: 5px 0;"><strong>When:</strong> ${when}</p>
+          </div>
+          ${images.length > 0 ? `<div style="text-align: center; margin: 20px 0;">${images.map((u) => `<img src="${u}" alt="Requested photo" style="max-width: ${images.length > 1 ? "45%" : "100%"}; border-radius: 8px; margin: 4px;" />`).join("")}</div>` : ""}
+          ${others.map((u) => `<p style="margin: 5px 0; word-break: break-all;"><strong>File:</strong> ${u}</p>`).join("")}
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${albumUrl}" style="background-color: #F79432; color: #000; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              Open Album
+            </a>
+          </div>
+          <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
+            Automated notification from Jetzy Events.
+          </p>
+        </div>
+      `),
+      text: `Unwatermarked photo request\nName: ${requesterName}\nEmail: ${requesterEmail}\nEvent: ${cleanEventName}\nAlbum: ${albumTitle}\nPhotos: ${urls.length}\n${urls.join("\n")}\nWhen: ${when}\nOpen: ${albumUrl}`,
+    })
+  } catch (error) {
+    console.error("Failed to send photo request notice:", error)
+    // Non-fatal — do not throw; the request is already recorded.
+  }
+}
+
+
+/**
  * The code that lets somebody claim free Jetzy Premium from a shared referral link without ever
  * making a password.
  *

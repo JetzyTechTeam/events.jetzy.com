@@ -6,7 +6,7 @@ import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
 import { Types } from "mongoose"
 import { Box, Flex, Text, Heading, Icon, IconButton, Button, Spinner, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton } from "@chakra-ui/react"
-import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX } from "react-icons/fi"
+import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX, FiImage } from "react-icons/fi"
 
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
@@ -14,6 +14,7 @@ import { EventAlbums as EventAlbumsModel } from "@/models/events/albums"
 import { PhotoTagging, type Album, type AlbumMedia } from "@/components/events/EventAlbums"
 import { useAlbumViewerGate } from "@/components/events/album/useAlbumViewerGate"
 import { PromotedEventCard, PromotedEventsRail, usePromotedEvents } from "@/components/events/album/PromotedEvents"
+import { RequestUnwatermarkedDialog } from "@/components/events/album/RequestUnwatermarkedDialog"
 import type { IEvent } from "@/models/events/types"
 import { useTrackEventView } from "@/hooks/useTrackEventView"
 import { useAnalytics } from "@/hooks/useAnalytics"
@@ -110,20 +111,24 @@ const Tile = React.memo(function Tile({
 			height={height}
 			borderRadius="12px"
 			overflow="hidden"
-			bg="#0f0f0f"
+			// Black, and `contain` below: album photos arrive at whatever aspect the camera shot
+			// them at, and cropping to a fixed tile height was cutting people's heads off. The
+			// whole frame shows, letterboxed — the same treatment the event cards and the detail
+			// page hero already use, and what this album's own lightbox has always done.
+			bg="black"
 			transition="transform .15s ease"
 			_hover={{ transform: "scale(1.01)" }}
 		>
 			{m.type === "video" ? (
 				<>
 					{inView && (
-						<Box as="video" src={posterSrc(m.url)} preload="metadata" muted playsInline width="100%" height="100%" sx={{ objectFit: "cover" }} />
+						<Box as="video" src={posterSrc(m.url)} preload="metadata" muted playsInline width="100%" height="100%" sx={{ objectFit: "contain" }} />
 					)}
 					<Icon as={FiPlayCircle} color="whiteAlpha.900" boxSize={10} position="absolute" top="50%" left="50%" transform="translate(-50%,-50%)" />
 				</>
 			) : (
 				// eslint-disable-next-line @next/next/no-img-element
-				<img src={m.url} alt={`${albumTitle} ${index + 1}`} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+				<img src={m.url} alt={`${albumTitle} ${index + 1}`} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
 			)}
 			<JetzyLifeMark />
 		</Box>
@@ -138,7 +143,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	const toast = useToast()
 	const { data: session } = useSession()
 
-	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi } = useAlbumViewerGate(event._id)
+	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, viewer, trackAlbumLanding } = useAlbumViewerGate(event._id)
 
 	// Live + upcoming events to promote beside the photos, minus this album's own event.
 	// `showEvents === false` is the host switching the rail off for this album; undefined
@@ -169,6 +174,13 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	const trackingEnabled = router.isReady && cameFromEventRef.current === false
 	useTrackEventView(event._id, { enabled: trackingEnabled })
 
+	// The landing, recorded BEFORE anything is known about who this is — including for people
+	// who take one look at the name+email dialog and leave. `recordAlbumAccess` below only runs
+	// once they are through, so on its own it can never show who was lost at the door.
+	useEffect(() => {
+		trackAlbumLanding(album._id)
+	}, [album._id, trackAlbumLanding])
+
 	// Record the view once the viewer is through the gate.
 	useEffect(() => {
 		if (ready) recordAlbumAccess(album._id)
@@ -177,6 +189,15 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	// ── Lightbox ────────────────────────────────────────────────────────────
 	const [openIndex, setOpenIndex] = useState<number | null>(null)
 	const [tagOpen, setTagOpen] = useState(false)
+
+	// Unwatermarked-photo request. `requestPhoto` is the photo the lightbox named; null means
+	// the viewer came from the button under the grid and still has to pick one.
+	const [requestOpen, setRequestOpen] = useState(false)
+	const [requestPhoto, setRequestPhoto] = useState<string | null>(null)
+	const openRequest = useCallback((mediaUrl?: string | null) => {
+		setRequestPhoto(mediaUrl || null)
+		setRequestOpen(true)
+	}, [])
 	const current = openIndex === null ? null : media[openIndex]
 
 	const close = useCallback(() => { setOpenIndex(null); setTagOpen(false) }, [])
@@ -482,6 +503,32 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 									</Flex>
 								</Box>
 							)}
+
+							{/* Every photo above carries the Jetzy Life mark. This is how a viewer asks
+							    for the clean original of one of them — per photo, so the request names
+							    an image somebody can actually go and send. */}
+							{media.length > 0 && (
+								<Box mt={8} pt={6} borderTop="1px solid #262626" textAlign="center">
+									<Button
+										leftIcon={<FiImage />}
+										bg="#F79432"
+										color="black"
+										_hover={{ bg: "#e58220" }}
+										fontWeight="bold"
+										borderRadius="12px"
+										whiteSpace="normal"
+										height="auto"
+										minH="44px"
+										py={3}
+										px={5}
+										lineHeight="1.3"
+										maxW="100%"
+										onClick={() => openRequest(null)}
+									>
+										Request Unwatermarked Photos
+									</Button>
+								</Box>
+							)}
 						</Box>
 
 						{/* Right: the album's own details, beside the photos.
@@ -508,6 +555,17 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 			{/* Access / interests dialogs */}
 			{gateUi}
 
+			<RequestUnwatermarkedDialog
+				isOpen={requestOpen}
+				onClose={() => setRequestOpen(false)}
+				eventId={event._id}
+				albumId={album._id}
+				media={media}
+				preselectedUrl={requestPhoto}
+				viewerEmail={viewer?.email || (session?.user as any)?.email}
+				viewerVerified={viewer?.verified}
+			/>
+
 			{/* ── Lightbox ── */}
 			{current && openIndex !== null && (
 				<Box position="fixed" inset={0} zIndex={1400} bg="#131313" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
@@ -533,7 +591,12 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						</Flex>
 					</Flex>
 
-					<Flex align="center" justify="center" position="relative" height="calc(100vh - 80px)" px={{ base: 2, md: 16 }}>
+					{/* The opened photo, with the request panel BESIDE it (under it on mobile).
+					    On the side by decision (CEO, 2026-08-27): clicking a photo is the moment
+					    somebody decides they want it, and an icon in the header is not where they
+					    are looking. */}
+					<Flex height="calc(100vh - 80px)" direction={{ base: "column", md: "row" }}>
+					<Flex align="center" justify="center" position="relative" flex="1" minH={0} minW={0} px={{ base: 2, md: 16 }}>
 						{media.length > 1 && (
 							<IconButton
 								aria-label="Previous"
@@ -570,6 +633,47 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 								onClick={next}
 							/>
 						)}
+					</Flex>
+
+					<Box
+						width={{ base: "100%", md: "300px" }}
+						flexShrink={0}
+						minW={0}
+						borderLeft={{ base: "none", md: "1px solid #262626" }}
+						borderTop={{ base: "1px solid #262626", md: "none" }}
+						px={{ base: 4, md: 5 }}
+						py={{ base: 4, md: 6 }}
+						overflowY="auto"
+					>
+						<Text fontSize="xs" fontWeight="bold" color="#8a8a8a" letterSpacing="0.08em" mb={3}>
+							THIS PHOTO
+						</Text>
+						<Text color="#bbbbbb" fontSize="sm" mb={4}>
+							Want it without the Jetzy Life mark? Ask us and we&apos;ll get back to you.
+						</Text>
+						{/* `whiteSpace="normal"` + `height="auto"`: Chakra buttons are nowrap by
+						    default, so this label ran straight out of the 300px panel. It has to
+						    be allowed to wrap rather than shrunk to something vaguer. */}
+						<Button
+							leftIcon={<FiImage />}
+							bg="#F79432"
+							color="black"
+							_hover={{ bg: "#e58220" }}
+							fontWeight="bold"
+							borderRadius="12px"
+							width="100%"
+							whiteSpace="normal"
+							height="auto"
+							minH="44px"
+							py={3}
+							px={4}
+							lineHeight="1.3"
+							textAlign="center"
+							onClick={() => openRequest(current.url)}
+						>
+							Request Unwatermarked Photo
+						</Button>
+					</Box>
 					</Flex>
 				</Box>
 			)}

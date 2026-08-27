@@ -723,11 +723,17 @@ export function GuestAccessModal({
 	onClose,
 	eventId,
 	onGranted,
+	onCodeSent,
 }: {
 	isOpen: boolean
 	onClose: () => void
 	eventId: string
-	onGranted: () => void
+	// Carries who was just verified, so callers don't have to re-probe /albums/viewer to learn
+	// the address they already proved here.
+	onGranted: (granted?: { email?: string; name?: string }) => void
+	// Fires when the form is accepted and a code is on its way. The gate funnel needs this
+	// step: it is the difference between "saw the dialog" and "actually tried".
+	onCodeSent?: (email: string) => void
 }) {
 	const toast = useToast()
 	const ix = useInterestSelection()
@@ -791,6 +797,7 @@ export function GuestAccessModal({
 			setCode("")
 			setResendIn(60)
 			setStep("CODE")
+			onCodeSent?.(email.trim().toLowerCase())
 			toast({ title: `Code sent to ${email.trim()}`, status: "success", duration: 3000, isClosable: true })
 		} catch (err: any) {
 			toast({
@@ -838,7 +845,7 @@ export function GuestAccessModal({
 				}
 			}
 
-			onGranted()
+			onGranted({ email: email.trim().toLowerCase(), name: name.trim() })
 		} catch (err: any) {
 			toast({
 				title: "Couldn't get you in",

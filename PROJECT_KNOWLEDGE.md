@@ -79,6 +79,12 @@ Fields: eventId, email, name, userId (optional), interests[], customInterests[],
 ### `src/models/events/album-verification.ts` — IAlbumVerification
 Fields: eventId, email, code (6 digits), expiresAt, attempts, lastSentAt. Collection `event-album-verifications`. Pending email-verification codes for the album gate; a used code is deleted, so it works exactly once. Index `{eventId,email}` is **non-unique on purpose** and is built by `scripts/create-album-verification-index.ts` (`autoIndex: false`) — both call sites read the newest row by `createdAt`, so a duplicate is harmless while a failed unique build would lock people out.
 
+### `src/models/events/album-view.ts` — IAlbumView
+Fields: eventId, albumId, anonId, sessionId, views, landedAt, gateShownAt, codeSentAt, identifiedAt, viewerEmail. Collection `event-album-views`. One row per person per album, recording the album-page landing **before** anyone is identified — `AlbumAccess` only exists once they are through the gate, so without this everyone who left at the name+email dialog was invisible. Stage timestamps use `$min` (earliest wins); `views` is incremented. Indexes `{albumId, anonId}` and `{eventId, createdAt:-1}` built by `scripts/create-album-view-index.ts`, **non-unique** — a duplicate from an upsert race costs a slightly high `views` sum, while a failed unique build would throw 11000 during a page visit.
+
+### `src/models/events/album-photo-request.ts` — IAlbumPhotoRequest
+Fields: eventId, albumId, mediaUrl, mediaType, userId?, requesterEmail, requesterName, verified, status (`pending`/`handled`), handledAt, handledBy. Collection `event-album-photo-requests`. One row per person per photo asking for the unwatermarked original. Index `{eventId, createdAt:-1}` built by `scripts/create-album-photo-request-index.ts` (`autoIndex: false`), **non-unique on purpose** — asking again after being ignored is legitimate, and a failed unique build would throw 11000 at a visitor.
+
 ### `src/models/events/album-tags.ts` — IAlbumTag
 Fields: eventId, albumId, mediaUrl, personEmail, personName, taggedByEmail, taggedByName, notifiedAt. Collection `event-album-tags`. Index `{albumId,mediaUrl,personEmail}` is a **plain lookup index, not unique** — tagging is unrestricted, so the same person can be tagged repeatedly on one photo and is emailed each time. (Was unique in an earlier build; `scripts/migrate-album-tags-index.ts` drops it.)
 
@@ -1092,6 +1098,8 @@ Photo/video albums on the public event page, rendered **above** the Discussion s
 - **Share deep-link:** `/{slug}?album={albumId}`. Logged-out recipient is bounced to login; after auth returns, that album auto-opens AND `POST …/access` fires once (sessionStorage guard `album_access_<id>` + server unique-index dedupe).
 - **Notify email:** `sendAlbumAccessNotice` ([send-grid.ts](src/lib/send-grid.ts)) → `SENDGRID_EMAIL_SENDER` inbox, first time each user opens each shared album. login-vs-signup comes from the `isNewAccount` flag the gate posts; account age (<10 min = signup) is only the fallback for an already-logged-in session.
 - **Analytics:** `/api/analytics/events` returns an `albums` block (albumCount, totalAccesses, uniqueViewers, **verifiedViewers**, logins, signups, perAlbum[]). The Access Log carries `Verified` and `Signed in/up` (`identifiedAt`) columns beside the existing `Viewed` date, and the Viewer Interests table carries `Verified`; both are in the CSV export. Surfaced in [analytics.tsx](src/pages/console/events/[eventId]/analytics.tsx) as a dedicated **"Albums" tab** (4th tab): summary cards + Top Albums table + per-viewer **Access Log** (name/email/login-vs-signup/date from `GET …/albums/access-log`) + **Export CSV** (summary + per-album + full access log). Admin-only page.
+- **Unwatermarked photo requests (2026-08-27):** every photo carries the `JetzyLifeMark` overlay; **"Request Unwatermarked Photos"** sits under the grid on the album page, and the lightbox carries a **side panel** (beside the photo on desktop, under it on mobile) for the photo that is open — on the side by CEO decision (2026-08-27), since clicking a photo is the moment someone decides they want it. Opened from there the dialog shows that photo with a "Pick a different photo" link instead of the grid. **Per photo, by decision** — a host reading "someone wants some photos" has nothing to act on. **Multi-select**: the picker toggles any number of photos (cap 30), which writes one row per photo sharing a `batchId` so the host can mark off what they have sent while still seeing they arrived together (`1 of 3` badge, and a column in the CSV). One confirmation email per submission, not per photo. The dialog is `RequestUnwatermarkedDialog.tsx`: pick a photo → (already verified) file it, or (legacy cookie) read-only email → 6-digit code → Verify → **"Request received! We'll get back to you soon."** The **email field is never editable** — the server takes the address from the session/cookie, so an editable one would let anyone file under someone else's name and would be theatre besides. Confirmation email is `sendAlbumPhotoRequestReceived` (CEO's copy, verbatim), plus a best-effort `sendAlbumPhotoRequestNotice` to the admin inbox. Host reads them on the **Photo Requests** tab of `/console/events/[eventId]/manage` (owner **or** admin, unlike the analytics Albums tab which is admin-only): thumbnail-first table, search, status filter, Mark handled, client-side CSV over the whole filtered set. **`status` gates nothing** — fulfilment is manual and off-platform; the `/albums/:albumId/download` proxy still serves the clean original to anyone, as it always did, so this flow is a request channel and not an access control.
+- **Album page funnel (2026-08-27):** `POST /api/events/[eventId]/albums/[albumId]/view` records `landed` → `gate_shown` → `code_sent` → `identified` against the analytics `anonId`, anonymously. Fired from `useAlbumViewerGate` (which owns the dialog state; `GuestAccessModal` gained `onCodeSent`), with stages queued until the album id and anonId are both known. Surfaced as the **Album Page Funnel** strip on the analytics Albums tab, a **Visitors** column on Top Albums, and lines in the CSV; `/api/analytics/events` returns `pageVisitors`, `pageViews`, `gateShown`, `codeSent`, `identified`, `abandoned`. The strip is hidden when there is no history rather than showing zeroes.
 - **Cross-team contract:** `MEDIA_CONTRACT.md` (repo root) documents `images`/`videos`/`mediaOrder`, the ordering algorithm and the create/update write rules for the mobile app team. Keep it current with any change here.
 - **Host-ordered banner media:** `mediaOrder: [String]` on the event (urls across `images` + `videos`), no default — absent = legacy images-then-videos. [event-media.ts](src/lib/event-media.ts) `eventMedia()` applies it via the shared `applyMediaOrder`, which the host's media grid uses too. Unnamed urls append (the mobile app writes `images`/`videos` without knowing about the field); dead entries are skipped. Edited in [media-upload-section.tsx](src/components/media-upload-section.tsx) — one combined draggable grid (native HTML5 DnD, same approach as the album form), a **FIRST** badge on position 0, shared by create and manage. Both forms hold `mediaOrder` state beside `uploadedImages`/`uploadedVideos`, include it in `mediaVersion` (a drag changes neither array, so autosave wouldn't otherwise fire) and pass it through `buildEventPayload`.
 - **Banner videos autoplay** ([HostedEvents.tsx](src/components/HostedEvents.tsx)): `autoPlay muted loop playsInline preload="metadata"` plus `controls`. Muted is mandatory — browsers refuse unmuted autoplay. `afterChange` replays `.slick-current` because the existing `beforeChange` pauses every video on the page.
@@ -2183,6 +2191,45 @@ claim **1 month of Jetzy Premium free**" — an offer stated in an email sent *b
 checked against the recipient's account, which checkout can still refuse. It now says only "Enter
 this code to confirm your email". `send-code` still resolves the referral offer; that is a gate on
 whether to send at all, not a source of copy.
+
+## Four small corrections (2026-08-27)
+
+**Album tiles cropped their photos.** `Tile` in `src/pages/[slug]/album/[albumId].tsx` rendered
+`objectFit: "cover"` against hard-coded row heights (220px in a 2-up row, 420px full width), so a
+portrait photo lost its top and bottom — the CEO's screenshot was a headless one. Now `contain` on
+black, which is what the album's own lightbox has always done and what the event cards do. The
+`JetzyLifeMark` needed no change: it is anchored to the tile box, not the image, for exactly this
+reason.
+
+**The annual option was listed, not sold.** Under the big monthly price the card said
+"or $200/year — 50% Off", leaving the buyer to work out that twelve months at $20 would be $240. It
+now reads **"$200/Year — Save Even More"** / **"50% Off + 2 Additional Months Free"**. The months are
+derived by a shared `monthsFreeOnAnnual(monthly, annual)` helper — the same arithmetic the trial
+panel already did inline, now in one place. Two call sites, deliberately different inputs: the
+buying card reads the prices ON SALE, the member card reads the member's OWN rate, so a legacy
+$10/month member isn't quoted a saving computed against today's $20. Falls back to the old plain
+line whenever the figures aren't there, or when annual is already selected and the alternate is
+monthly.
+
+**My Events gained Public / Private chips.** With ~100 events an admin's first question is "which of
+these can anyone actually find", and unlisted events were the noise. Privacy only — draft vs
+published stays a badge. `privacy !== "private"` rather than `=== "public"`, because events created
+before the field existed carry no value and would otherwise vanish from the Public tab. Server-side,
+over the full set before pagination, like every other chip; a new key must go into `allowedFilters`
+AND the `switch` or it silently falls through to `all`.
+
+**The gap above tickets was the date-poll sidebar.** Reported as preview-only, but it never was. The
+sidebar was a flex sibling of the event CARD, and the flex row is as tall as its tallest child — so a
+long date list beside a short description left a band of empty space, and everything after the row
+(admin panel, tickets, albums, discussion) reserved a right gutter with `lg:pr-[384px]` to stay
+aligned. For a host the admin panel filled that space; `?preview=1` drops it, which is why the CEO
+saw it there first. A logged-out visitor saw it too.
+
+The fix moves the whole page into a left column and makes the sidebar that column's sibling. Two
+things follow: every `lg:pr-[384px]` disappears, and `sticky top-8` finally works — a sticky element
+only travels inside its own container, and its container used to end at the bottom of the card. The
+non-poll layout is unchanged **by construction**: the new column wrapper is `display: contents`
+there, so it contributes no box at all.
 
 ## The welcome email is the CEO's copy (2026-08-27)
 

@@ -97,6 +97,7 @@ import { isPendingAdminApproval } from "@/lib/event-approval"
 import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { previewPath } from "@/lib/event-preview"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
+import { AlbumPhotoRequests } from "@/components/console/AlbumPhotoRequests"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
 import { useAppDispatch } from "@/redux/stores"
@@ -235,12 +236,20 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// event-level default is on — a single flagged ticket is enough.
 	const hasApprovalTickets = React.useMemo(() => eventHasAnyApprovalTicket(event as any), [event])
 
+	// Approvals is conditional, so every tab after it shifts by one when it is absent.
+	// Derived rather than written down twice — a hardcoded index here silently opens the
+	// wrong panel on an event with no approval tickets.
+	const photoRequestsTabIndex = hasApprovalTickets ? 7 : 6
+
 	// Deep-link from the admin approval-request email opens the Approvals tab
 	useEffect(() => {
 		if (router.query.tab === "approvals" && hasApprovalTickets) {
 			setTabIndex(6)
 		}
-	}, [router.query.tab, hasApprovalTickets])
+		if (router.query.tab === "photo-requests") {
+			setTabIndex(photoRequestsTabIndex)
+		}
+	}, [router.query.tab, hasApprovalTickets, photoRequestsTabIndex])
 
 	const { data: analytics } = useQuery({
 		queryKey: ["event-analytics", event._id],
@@ -1107,6 +1116,25 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								Approvals
 							</Tab>
 						)}
+						{/* Unconditional, and LAST — Approvals above it is conditional, so anything
+						    added before it would shift its index. */}
+						<Tab
+							className={roboto.className}
+							fontWeight={500}
+							fontSize="18px"
+							lineHeight="100%"
+							color="#FFFFFF"
+							borderTopRadius="10px"
+							px={5}
+							_selected={{
+								bg: "#FFFFFF",
+								color: "#0B0B0B",
+								fontWeight: 700,
+								borderColor: "#FFFFFF",
+							}}
+						>
+							Photo Requests
+						</Tab>
 					</TabList>
 					<TabPanels>
 						<TabPanel px={0}>
@@ -1960,6 +1988,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								</div>
 							</TabPanel>
 						)}
+						<TabPanel>
+							<div className="bg-[#181818] rounded-xl p-3">
+								<AlbumPhotoRequests eventId={event._id} eventName={event.name} />
+							</div>
+						</TabPanel>
 					</TabPanels>
 				</Tabs>
 
