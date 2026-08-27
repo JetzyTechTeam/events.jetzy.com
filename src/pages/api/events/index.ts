@@ -28,6 +28,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Hide public events still awaiting admin approval. $ne (not $eq 'approved')
 			// also matches legacy documents that predate this field entirely.
 			filter.adminApprovalStatus = { $ne: 'pending' }
+		} else {
+			// Admin-only chips on the public list. Ignored for everyone else, whose privacy
+			// clause is already fixed above — so the param can never widen what a visitor sees.
+			//
+			// Public is matched BY EXCLUSION: events created before `privacy` existed carry no
+			// value at all, and `$eq: 'public'` would hide every one of them. Same rule as the
+			// My Events chips in console/events/index.tsx.
+			const requestedPrivacy = (req.query.privacy as string)?.trim()
+			if (requestedPrivacy === "private") filter.privacy = "private"
+			else if (requestedPrivacy === "public") filter.privacy = { $ne: "private" }
 		}
 		if (search) {
 			const searchRegex = escapeRegExp(search)

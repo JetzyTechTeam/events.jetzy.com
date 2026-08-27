@@ -481,7 +481,7 @@ Several photos write **one row per photo**, sharing a `batchId` — the host sen
 
 Validation is **all-or-nothing** — if any url is not part of this album the whole request is refused, rather than leaving the viewer believing they asked for photos nobody recorded.
 
-**One confirmation email per submission, never one per photo** (up to 6 thumbnails then "and N more"). The inbox notice covers only the photos actually newly recorded.
+**One confirmation email per submission, never one per photo** (up to 6 thumbnails then "and N more"). The inbox notice covers only the photos actually newly recorded, and goes to **`tech@jetzyapp.com`** (`PHOTO_REQUEST_NOTIFICATION_EMAIL` overrides) — its own recipient, not the shared `ADMIN_NOTIFICATION_EMAIL`, so redirecting these cannot move the album-access notices or the security alerts.
 
 The address is **never taken from the body** — `resolveAlbumViewer` already knows it, and accepting one would let anyone file a request under someone else's name. So there is no email field anywhere in this flow; the dialog shows the resolved address read-only.
 

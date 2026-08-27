@@ -65,7 +65,18 @@ type EventListProps = {
   /** "" = All. Server-side, so the total and pager describe the filtered set. */
   status?: EventStatus | "";
   onStatusChange?: (status: EventStatus | "") => void;
+  /**
+   * Privacy chips, admin only. "" = All.
+   *
+   * Private events are already invisible to everyone else (api/events/index.ts fixes their
+   * privacy clause), so this filters a set only an admin can see in the first place.
+   */
+  showPrivacyFilter?: boolean;
+  privacy?: PrivacyFilter;
+  onPrivacyChange?: (privacy: PrivacyFilter) => void;
 };
+
+export type PrivacyFilter = "" | "public" | "private";
 
 // Chips for the public list. Deliberately different from the console, where "Upcoming" means
 // live-or-future: here LIVE is its own chip, so the four statuses are mutually exclusive and
@@ -79,7 +90,26 @@ const STATUS_FILTERS: { key: EventStatus | ""; label: string }[] = [
   { key: "tbd", label: STATUS_LABEL.tbd },
 ];
 
-const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, search, onSearch, status = "", onStatusChange }) => {
+// Match by EXCLUSION, like the console chips: events created before `privacy` existed carry no
+// value, so "public" has to mean "not private" rather than `=== "public"`.
+const PRIVACY_FILTERS: { key: PrivacyFilter; label: string }[] = [
+  { key: "", label: "All" },
+  { key: "public", label: "Public" },
+  { key: "private", label: "Private" },
+];
+
+const EventList: React.FC<EventListProps> = ({
+  items,
+  pagination,
+  onPageChange,
+  search,
+  onSearch,
+  status = "",
+  onStatusChange,
+  showPrivacyFilter = false,
+  privacy = "",
+  onPrivacyChange,
+}) => {
   const router = useRouter();
 
   const [inputValue, setInputValue] = React.useState(search ?? "");
@@ -273,6 +303,33 @@ const EventList: React.FC<EventListProps> = ({ items, pagination, onPageChange, 
             </button>
           );
         })}
+
+        {/* Admin only, pushed to the right. `ml-auto` rather than a second row: when the
+            status chips wrap on a phone these follow them instead of stranding an empty
+            gutter. The orange active state marks them as a different axis from the status
+            chips beside them — an event is filtered by both at once, not by one or the other. */}
+        {showPrivacyFilter && (
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs text-[#6B6B6B] uppercase tracking-wide">Visibility</span>
+            {PRIVACY_FILTERS.map(({ key, label }) => {
+              const active = privacy === key;
+              return (
+                <button
+                  key={key || "all"}
+                  type="button"
+                  onClick={() => onPrivacyChange?.(key)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-[#F79432] text-black"
+                      : "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>
