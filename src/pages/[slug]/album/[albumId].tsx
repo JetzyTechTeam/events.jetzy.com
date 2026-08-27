@@ -110,20 +110,24 @@ const Tile = React.memo(function Tile({
 			height={height}
 			borderRadius="12px"
 			overflow="hidden"
-			bg="#0f0f0f"
+			// Black, and `contain` below: album photos arrive at whatever aspect the camera shot
+			// them at, and cropping to a fixed tile height was cutting people's heads off. The
+			// whole frame shows, letterboxed — the same treatment the event cards and the detail
+			// page hero already use, and what this album's own lightbox has always done.
+			bg="black"
 			transition="transform .15s ease"
 			_hover={{ transform: "scale(1.01)" }}
 		>
 			{m.type === "video" ? (
 				<>
 					{inView && (
-						<Box as="video" src={posterSrc(m.url)} preload="metadata" muted playsInline width="100%" height="100%" sx={{ objectFit: "cover" }} />
+						<Box as="video" src={posterSrc(m.url)} preload="metadata" muted playsInline width="100%" height="100%" sx={{ objectFit: "contain" }} />
 					)}
 					<Icon as={FiPlayCircle} color="whiteAlpha.900" boxSize={10} position="absolute" top="50%" left="50%" transform="translate(-50%,-50%)" />
 				</>
 			) : (
 				// eslint-disable-next-line @next/next/no-img-element
-				<img src={m.url} alt={`${albumTitle} ${index + 1}`} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+				<img src={m.url} alt={`${albumTitle} ${index + 1}`} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
 			)}
 			<JetzyLifeMark />
 		</Box>

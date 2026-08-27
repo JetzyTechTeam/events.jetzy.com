@@ -2184,6 +2184,45 @@ checked against the recipient's account, which checkout can still refuse. It now
 this code to confirm your email". `send-code` still resolves the referral offer; that is a gate on
 whether to send at all, not a source of copy.
 
+## Four small corrections (2026-08-27)
+
+**Album tiles cropped their photos.** `Tile` in `src/pages/[slug]/album/[albumId].tsx` rendered
+`objectFit: "cover"` against hard-coded row heights (220px in a 2-up row, 420px full width), so a
+portrait photo lost its top and bottom — the CEO's screenshot was a headless one. Now `contain` on
+black, which is what the album's own lightbox has always done and what the event cards do. The
+`JetzyLifeMark` needed no change: it is anchored to the tile box, not the image, for exactly this
+reason.
+
+**The annual option was listed, not sold.** Under the big monthly price the card said
+"or $200/year — 50% Off", leaving the buyer to work out that twelve months at $20 would be $240. It
+now reads **"$200/Year — Save Even More"** / **"50% Off + 2 Additional Months Free"**. The months are
+derived by a shared `monthsFreeOnAnnual(monthly, annual)` helper — the same arithmetic the trial
+panel already did inline, now in one place. Two call sites, deliberately different inputs: the
+buying card reads the prices ON SALE, the member card reads the member's OWN rate, so a legacy
+$10/month member isn't quoted a saving computed against today's $20. Falls back to the old plain
+line whenever the figures aren't there, or when annual is already selected and the alternate is
+monthly.
+
+**My Events gained Public / Private chips.** With ~100 events an admin's first question is "which of
+these can anyone actually find", and unlisted events were the noise. Privacy only — draft vs
+published stays a badge. `privacy !== "private"` rather than `=== "public"`, because events created
+before the field existed carry no value and would otherwise vanish from the Public tab. Server-side,
+over the full set before pagination, like every other chip; a new key must go into `allowedFilters`
+AND the `switch` or it silently falls through to `all`.
+
+**The gap above tickets was the date-poll sidebar.** Reported as preview-only, but it never was. The
+sidebar was a flex sibling of the event CARD, and the flex row is as tall as its tallest child — so a
+long date list beside a short description left a band of empty space, and everything after the row
+(admin panel, tickets, albums, discussion) reserved a right gutter with `lg:pr-[384px]` to stay
+aligned. For a host the admin panel filled that space; `?preview=1` drops it, which is why the CEO
+saw it there first. A logged-out visitor saw it too.
+
+The fix moves the whole page into a left column and makes the sidebar that column's sibling. Two
+things follow: every `lg:pr-[384px]` disappears, and `sticky top-8` finally works — a sticky element
+only travels inside its own container, and its container used to end at the bottom of the card. The
+non-poll layout is unchanged **by construction**: the new column wrapper is `display: contents`
+there, so it contributes no box at all.
+
 ## The welcome email is the CEO's copy (2026-08-27)
 
 `sendMembershipStarted` said "Your Jetzy Premium membership is active. Welcome aboard." and then the
