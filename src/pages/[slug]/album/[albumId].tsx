@@ -6,7 +6,7 @@ import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
 import { Types } from "mongoose"
 import { Box, Flex, Text, Heading, Icon, IconButton, Button, Spinner, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton } from "@chakra-ui/react"
-import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX } from "react-icons/fi"
+import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX, FiImage } from "react-icons/fi"
 
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
@@ -14,6 +14,7 @@ import { EventAlbums as EventAlbumsModel } from "@/models/events/albums"
 import { PhotoTagging, type Album, type AlbumMedia } from "@/components/events/EventAlbums"
 import { useAlbumViewerGate } from "@/components/events/album/useAlbumViewerGate"
 import { PromotedEventCard, PromotedEventsRail, usePromotedEvents } from "@/components/events/album/PromotedEvents"
+import { RequestUnwatermarkedDialog } from "@/components/events/album/RequestUnwatermarkedDialog"
 import type { IEvent } from "@/models/events/types"
 import { useTrackEventView } from "@/hooks/useTrackEventView"
 import { useAnalytics } from "@/hooks/useAnalytics"
@@ -142,7 +143,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	const toast = useToast()
 	const { data: session } = useSession()
 
-	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi } = useAlbumViewerGate(event._id)
+	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, viewer } = useAlbumViewerGate(event._id)
 
 	// Live + upcoming events to promote beside the photos, minus this album's own event.
 	// `showEvents === false` is the host switching the rail off for this album; undefined
@@ -181,6 +182,15 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	// ── Lightbox ────────────────────────────────────────────────────────────
 	const [openIndex, setOpenIndex] = useState<number | null>(null)
 	const [tagOpen, setTagOpen] = useState(false)
+
+	// Unwatermarked-photo request. `requestPhoto` is the photo the lightbox named; null means
+	// the viewer came from the button under the grid and still has to pick one.
+	const [requestOpen, setRequestOpen] = useState(false)
+	const [requestPhoto, setRequestPhoto] = useState<string | null>(null)
+	const openRequest = useCallback((mediaUrl?: string | null) => {
+		setRequestPhoto(mediaUrl || null)
+		setRequestOpen(true)
+	}, [])
 	const current = openIndex === null ? null : media[openIndex]
 
 	const close = useCallback(() => { setOpenIndex(null); setTagOpen(false) }, [])
@@ -486,6 +496,25 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 									</Flex>
 								</Box>
 							)}
+
+							{/* Every photo above carries the Jetzy Life mark. This is how a viewer asks
+							    for the clean original of one of them — per photo, so the request names
+							    an image somebody can actually go and send. */}
+							{media.length > 0 && (
+								<Box mt={8} pt={6} borderTop="1px solid #262626" textAlign="center">
+									<Button
+										leftIcon={<FiImage />}
+										bg="#F79432"
+										color="black"
+										_hover={{ bg: "#e58220" }}
+										fontWeight="bold"
+										borderRadius="12px"
+										onClick={() => openRequest(null)}
+									>
+										Request Unwatermarked Photos
+									</Button>
+								</Box>
+							)}
 						</Box>
 
 						{/* Right: the album's own details, beside the photos.
@@ -512,6 +541,17 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 			{/* Access / interests dialogs */}
 			{gateUi}
 
+			<RequestUnwatermarkedDialog
+				isOpen={requestOpen}
+				onClose={() => setRequestOpen(false)}
+				eventId={event._id}
+				albumId={album._id}
+				media={media}
+				preselectedUrl={requestPhoto}
+				viewerEmail={viewer?.email || (session?.user as any)?.email}
+				viewerVerified={viewer?.verified}
+			/>
+
 			{/* ── Lightbox ── */}
 			{current && openIndex !== null && (
 				<Box position="fixed" inset={0} zIndex={1400} bg="#131313" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
@@ -537,7 +577,12 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						</Flex>
 					</Flex>
 
-					<Flex align="center" justify="center" position="relative" height="calc(100vh - 80px)" px={{ base: 2, md: 16 }}>
+					{/* The opened photo, with the request panel BESIDE it (under it on mobile).
+					    On the side by decision (CEO, 2026-08-27): clicking a photo is the moment
+					    somebody decides they want it, and an icon in the header is not where they
+					    are looking. */}
+					<Flex height="calc(100vh - 80px)" direction={{ base: "column", md: "row" }}>
+					<Flex align="center" justify="center" position="relative" flex="1" minH={0} minW={0} px={{ base: 2, md: 16 }}>
 						{media.length > 1 && (
 							<IconButton
 								aria-label="Previous"
@@ -574,6 +619,36 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 								onClick={next}
 							/>
 						)}
+					</Flex>
+
+					<Box
+						width={{ base: "100%", md: "300px" }}
+						flexShrink={0}
+						borderLeft={{ base: "none", md: "1px solid #262626" }}
+						borderTop={{ base: "1px solid #262626", md: "none" }}
+						px={{ base: 4, md: 5 }}
+						py={{ base: 4, md: 6 }}
+						overflowY="auto"
+					>
+						<Text fontSize="xs" fontWeight="bold" color="#8a8a8a" letterSpacing="0.08em" mb={3}>
+							THIS PHOTO
+						</Text>
+						<Text color="#bbbbbb" fontSize="sm" mb={4}>
+							Want it without the Jetzy Life mark? Ask us and we&apos;ll get back to you.
+						</Text>
+						<Button
+							leftIcon={<FiImage />}
+							bg="#F79432"
+							color="black"
+							_hover={{ bg: "#e58220" }}
+							fontWeight="bold"
+							borderRadius="12px"
+							width="100%"
+							onClick={() => openRequest(current.url)}
+						>
+							Request Unwatermarked Photo
+						</Button>
+					</Box>
 					</Flex>
 				</Box>
 			)}

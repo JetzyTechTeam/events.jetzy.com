@@ -158,6 +158,22 @@ What a viewer said they want to attend next, captured in the access dialog. One 
 
 ---
 
+### 2.6 `event-album-photo-requests` (model `AlbumPhotoRequest`)
+
+One row per (person, photo) asking for the unwatermarked original.
+
+```
+eventId, albumId, mediaUrl, mediaType?, userId?,
+requesterEmail (lowercase), requesterName?, verified?,
+status: "pending" | "handled", handledAt?, handledBy?, timestamps
+```
+
+Index `{ eventId: 1, createdAt: -1 }`, built by `scripts/create-album-photo-request-index.ts` (`autoIndex` is off). **Deliberately not unique** on (albumId, email, mediaUrl): asking again after being ignored is legitimate, and a unique index that failed to build would throw 11000 at a visitor. The duplicate guard is the advisory pending-row lookup in the API.
+
+Per-photo by decision: a host reading "someone wants some photos" has nothing to act on, whereas a named image is a request they can fill.
+
+---
+
 ## 3. Viewer identity
 
 This is the part that differs most from the rest of the platform, so implement it before the endpoints.
@@ -427,6 +443,32 @@ Query: `eventId` (required), `dateFrom`, `dateTo` (optional, snapped to start/en
 `date` is `createdAt` — when they opened **this album**. `identifiedAt` is when they signed in / signed up / passed the code, which can be days earlier and is `null` for sessions and pre-gate rows.
 
 `viewerName` / `viewerEmail` on the row are the source of truth; the account lookup in `EventUsers`/`Users` is only a fallback for **legacy rows** written before the guest flow existed. Unknowns render as `"—"`.
+
+### 4.13 `POST /albums/:albumId/photo-request` — **any viewer**
+
+Records a request for the unwatermarked original of **one** photo. Body: `{ mediaUrl, code? }`.
+
+The address is **never taken from the body** — `resolveAlbumViewer` already knows it, and accepting one would let anyone file a request under someone else's name. So there is no email field anywhere in this flow; the dialog shows the resolved address read-only.
+
+`code` is only needed when `viewer.verified !== true`, which today means a guest cookie minted **before** the code gate existed. Everyone who came through the current gate already proved their address minutes earlier and is not asked twice. When a code is required and absent, the response is `400` with `data: { needsVerification: true, email }` — the client reads that flag rather than deciding from its own copy of `verified`. The code itself is the ordinary album code: `POST /albums/send-code` with the resolved address, `purpose: "album"`.
+
+`mediaUrl` must be present in **this** album's stored `media`, the same safety model as the download proxy.
+
+Duplicate guard is a **pending-row lookup**, not an index: a second request for a photo that is still pending does not open a new row (and does not re-notify the inbox), but the confirmation email is re-sent so the visitor gets an answer either way. Asking again after a request was handled is legitimate and creates a new row.
+
+Rate limited `album-photo-request:<ip>` at 10/60s.
+
+### 4.14 `GET /albums/photo-requests` — **admin or owner**
+
+Query: `eventId` (required), `dateFrom`, `dateTo`. Newest first, capped at **5000** rows, no server-side CSV — same shape as `access-log`.
+
+Row: `{ _id, albumId, albumTitle, mediaUrl, mediaType, name, email, verified, status, handledAt, date }`
+
+### 4.15 `PATCH /albums/photo-requests/:requestId` — **admin or owner**
+
+Body: `{ status: "pending" | "handled" }`. Sets/clears `handledAt` + `handledBy`.
+
+**`status` gates nothing.** Fulfilment is manual and off-platform — the host emails the file themselves. It is a note-to-self so a host working through a list knows which ones they have answered.
 
 ---
 
@@ -807,7 +849,8 @@ View it: {ALBUM_URL}
 - **Shared helpers reused:** `src/lib/user-utils.ts` (`createOrUpdateUser`), `src/lib/magicLink.ts` (`generateMagicToken` / `verifyMagicToken`), `src/lib/event-participants.ts` (`getEventParticipants`)
 - **APIs:** `src/pages/api/events/[eventId]/albums/{index.ts, [albumId].ts, viewer.ts, send-code.ts, guest-access.ts, my-interests.ts, interests.ts, participants.ts, access-log.ts, [albumId]/access.ts, [albumId]/download.ts, [albumId]/publish.ts, [albumId]/tags/index.ts, [albumId]/tags/[tagId].ts}`
 - **Verification + rate limiting:** `src/lib/album-verification.ts`, `src/lib/rate-limit.ts`
-- **Emails:** `sendAlbumAccessNotice`, `sendAlbumTagNotification`, `sendAlbumPublishedNotification` in `src/lib/send-grid.ts`
-- **Migrations / index builds:** `scripts/migrate-album-access-index.ts`, `scripts/migrate-album-tags-index.ts`, `scripts/create-album-verification-index.ts`
+- **Emails:** `sendAlbumAccessNotice`, `sendAlbumTagNotification`, `sendAlbumPublishedNotification`, `sendAlbumVerificationCode`, `sendAlbumPhotoRequestReceived`, `sendAlbumPhotoRequestNotice` in `src/lib/send-grid.ts`
+- **Migrations / index builds:** `scripts/migrate-album-access-index.ts`, `scripts/migrate-album-tags-index.ts`, `scripts/create-album-verification-index.ts`, `scripts/create-album-photo-request-index.ts`
 - **Analytics:** `src/pages/api/analytics/events.ts` (`albums` block) + `src/pages/console/events/[eventId]/analytics.tsx` (Albums tab)
 - **UI:** `src/components/events/EventAlbums.tsx`, mounted in `src/components/HostedEvents.tsx` above `#discussion-section`; album page `src/pages/[slug]/album/[albumId].tsx`; viewer gate `src/components/events/album/useAlbumViewerGate.tsx`; promoted-events rail `src/components/events/album/PromotedEvents.tsx`
+- **Unwatermarked-photo requests:** dialog `src/components/events/album/RequestUnwatermarkedDialog.tsx`; host table `src/components/console/AlbumPhotoRequests.tsx` (Photo Requests tab on `/console/events/[eventId]/manage`)

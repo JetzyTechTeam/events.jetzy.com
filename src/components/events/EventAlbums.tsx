@@ -727,7 +727,9 @@ export function GuestAccessModal({
 	isOpen: boolean
 	onClose: () => void
 	eventId: string
-	onGranted: () => void
+	// Carries who was just verified, so callers don't have to re-probe /albums/viewer to learn
+	// the address they already proved here.
+	onGranted: (granted?: { email?: string; name?: string }) => void
 }) {
 	const toast = useToast()
 	const ix = useInterestSelection()
@@ -838,7 +840,7 @@ export function GuestAccessModal({
 				}
 			}
 
-			onGranted()
+			onGranted({ email: email.trim().toLowerCase(), name: name.trim() })
 		} catch (err: any) {
 			toast({
 				title: "Couldn't get you in",

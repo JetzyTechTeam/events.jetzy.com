@@ -20,6 +20,10 @@ export function useAlbumViewerGate(eventId: string) {
 	const { data: session, status } = useSession()
 
 	const [hasGuestAccess, setHasGuestAccess] = useState(false)
+	// Who the server says this is. Used by anything that needs to act AS the viewer (the
+	// unwatermarked-photo request), so it can prefill the address and skip a second code for
+	// someone whose address was proved at the gate minutes ago.
+	const [viewer, setViewer] = useState<{ email?: string; name?: string; verified?: boolean } | null>(null)
 	const [needsInterests, setNeedsInterests] = useState(false)
 	const [probeSettled, setProbeSettled] = useState(false)
 	const [guestOpen, setGuestOpen] = useState(false)
@@ -39,6 +43,9 @@ export function useAlbumViewerGate(eventId: string) {
 				if (d?.identified) {
 					setHasGuestAccess(true)
 					setNeedsInterests(!d.hasInterests)
+					// `verified` is UNDEFINED on cookies minted before the code gate — keep it
+					// that way rather than flattening it to false.
+					setViewer({ email: d.email, name: d.name, verified: d.verified })
 				}
 			})
 			.catch(() => { /* treat as anonymous */ })
@@ -86,11 +93,14 @@ export function useAlbumViewerGate(eventId: string) {
 				isOpen={guestOpen}
 				onClose={() => setGuestOpen(false)}
 				eventId={eventId}
-				onGranted={() => {
+				onGranted={(granted?: { email?: string; name?: string }) => {
 					setHasGuestAccess(true)
 					// The name+email gate collects interests too.
 					setNeedsInterests(false)
 					setGuestOpen(false)
+					// They just passed the emailed code, so they ARE verified — the probe
+					// above ran before that and would otherwise leave this stale.
+					setViewer((v) => ({ ...(v || {}), ...(granted || {}), verified: true }))
 				}}
 			/>
 			<InterestsModal
@@ -105,5 +115,5 @@ export function useAlbumViewerGate(eventId: string) {
 		</>
 	)
 
-	return { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, session }
+	return { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, session, viewer }
 }

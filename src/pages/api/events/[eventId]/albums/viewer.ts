@@ -42,7 +42,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		return sendResponse(
 			res,
-			{ identified: true, email: viewer.email, name: viewer.name, isGuest: viewer.isGuest, hasInterests },
+			{
+				identified: true,
+				email: viewer.email,
+				name: viewer.name,
+				isGuest: viewer.isGuest,
+				hasInterests,
+				// UNDEFINED for guest cookies minted before the code gate — those people were never
+				// asked. The unwatermarked-photo request reads this to decide whether it still has
+				// to prove the address, so it must not be flattened to false here.
+				verified: viewer.verified,
+			},
 			"Viewer resolved",
 			true,
 			ResCode.OK,
