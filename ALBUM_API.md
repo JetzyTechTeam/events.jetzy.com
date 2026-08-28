@@ -473,6 +473,8 @@ Fired by `useAlbumViewerGate`, which owns the dialog state. `GuestAccessModal` g
 
 ---
 
+> **A deleted album does NOT 404.** `[slug]/album/[albumId].tsx` re-checks by id alone when the `isDeleted: false` lookup misses, and renders a "These photos are no longer available" screen linking back to the event. The site 404 says "Event Not Found" and offers the full listing, which is the wrong thing to tell someone whose photo link came from a publish email. A wrong album id still 404s.
+
 ### 4.12-b `PATCH /albums/:albumId/order` — **admin or owner**
 
 Reorders an album's media. Body: `{ mediaUrls: string[] }`.

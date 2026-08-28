@@ -21,8 +21,16 @@ import { useTrackEventView } from "@/hooks/useTrackEventView"
 import { useAnalytics } from "@/hooks/useAnalytics"
 
 type Props = {
-	album: string
+	/** Absent when the album has been deleted — see `removed`. */
+	album?: string
 	event: string
+	/**
+	 * The album existed and was deleted. Deliberately NOT a 404: the shared photo link is the
+	 * one people were mailed, and the site-wide 404 tells them "Event Not Found" and offers the
+	 * full events list — so a guest whose album was taken down was told the event they attended
+	 * doesn't exist.
+	 */
+	removed?: boolean
 }
 
 /** Stable reference: a fresh [] each render would churn every consumer downstream. */
@@ -136,7 +144,69 @@ const Tile = React.memo(function Tile({
 	)
 })
 
-export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: Props) {
+/**
+ * What a guest sees when the album behind their link has been deleted.
+ *
+ * Its own screen rather than the site 404, which says "Event Not Found" — the event is usually
+ * fine, only the photos are gone, and telling someone their event doesn't exist reads as a
+ * broken site. Sends them back to THAT event rather than the full listing.
+ */
+function AlbumRemoved({ event: eventJson }: { event: string }) {
+	const router = useRouter()
+	const event = useMemo(() => JSON.parse(eventJson) as { name: string; slug: string }, [eventJson])
+
+	return (
+		<>
+			<Head>
+				<title>Photos no longer available — {event.name}</title>
+				{/* Nothing here to index, and the link may still be circulating in an old email. */}
+				<meta name="robots" content="noindex" />
+			</Head>
+			<Flex minH="100vh" bg="#131313" color="white" align="center" justify="center" px={6}>
+				<Box textAlign="center" maxW="440px">
+					<Flex
+						width="64px"
+						height="64px"
+						borderRadius="full"
+						bg="#1E1E1E"
+						border="1px solid #2a2a2a"
+						align="center"
+						justify="center"
+						mx="auto"
+						mb={5}
+					>
+						<Icon as={FiImage} boxSize="26px" color="#8a8a8a" />
+					</Flex>
+					<Heading size="lg" mb={3}>These photos are no longer available</Heading>
+					<Text color="#9a9a9a" fontSize="sm" mb={6}>
+						The album for {event.name} has been removed by the organizer. Everything else about the event is still there.
+					</Text>
+					<Button
+						bg="#F79432"
+						color="black"
+						_hover={{ bg: "#e58220" }}
+						fontWeight="bold"
+						borderRadius="12px"
+						onClick={() => router.push(eventPath(event.slug))}
+					>
+						Back to the event
+					</Button>
+				</Box>
+			</Flex>
+		</>
+	)
+}
+
+/**
+ * Two screens behind one url. Split at the top rather than branching inside the page: the album
+ * view runs a couple of dozen hooks, and a removed album must not mount any of them.
+ */
+export default function AlbumPage(props: Props) {
+	if (props.removed || !props.album) return <AlbumRemoved event={props.event} />
+	return <AlbumPhotoTourPage album={props.album} event={props.event} />
+}
+
+function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: string; event: string }) {
 	const album = useMemo(() => JSON.parse(albumJson) as Album, [albumJson])
 	const event = useMemo(() => JSON.parse(eventJson) as { _id: string; name: string; slug: string; ownerId?: string }, [eventJson])
 
@@ -943,7 +1013,26 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		})
 			.select("_id eventId title description media showEvents publishedAt publishNotifiedAt createdAt")
 			.lean()
-		if (!album) return { notFound: true }
+
+		if (!album) {
+			// Deleted, or never existed? The publish email means a deleted album's link is
+			// already in a lot of inboxes, so those people get a real explanation instead of
+			// the site 404 telling them the event doesn't exist. A genuinely wrong id still
+			// 404s. Deletion is soft, so the row is still there to be found.
+			const removed = await EventAlbumsModel.exists({ _id: new Types.ObjectId(albumId), eventId: event._id })
+			if (!removed) return { notFound: true }
+			return {
+				props: {
+					removed: true,
+					event: JSON.stringify({
+						_id: event._id.toString(),
+						name: event.name,
+						slug: event.slug,
+						ownerId: event.ownerId ? event.ownerId.toString() : null,
+					}),
+				},
+			}
+		}
 
 		return {
 			props: {
