@@ -19,6 +19,9 @@ Everything a mobile client needs is in this doc: data model, viewer identity, ev
 | Remove a tag | the tagger, the tagged person, or admin/owner |
 | Attendee suggestions for tagging | admin/owner only (privacy) |
 | Album analytics + access log | admin/owner only |
+| **Reorder photos in an album** | event **admin** or **owner**, from the album page itself |
+| **Request the unwatermarked original of a photo** | any identified viewer |
+| **See who requested photos, and mark them handled** | event **admin** or **owner** |
 
 Two design decisions drive most of the complexity — read these first:
 
@@ -29,6 +32,16 @@ Two design decisions drive most of the complexity — read these first:
    previously took the address on trust, so the captured interests were only as good as the
    visitor's honesty — and people were typing someone else's address.
 2. **Albums are visible as soon as they're created.** "Publish" is *only* the announcement email to attendees — it is not a visibility switch.
+
+---
+
+### 1.1 Added since the first version of this document
+
+- **Unwatermarked-photo requests** (§2.6, §4.13–4.15) — a viewer asks for the clean original of one or more photos; the host works them from a Photo Requests tab.
+- **Album page landing funnel** (§2.7, §4.12-a) — counts people who land on an album and leave at the identity gate, who were previously invisible.
+- **Reorder from the album page** (§4.12-b) — its own PATCH, permutation-checked, so reordering can never lose a photo.
+- **A deleted album explains itself** rather than 404ing (note above §4.12-b).
+- `GET /albums/viewer` now returns **`verified`**.
 
 ---
 
@@ -256,7 +269,7 @@ All responses use the standard envelope from the `sendResponse` helper:
 | POST | `/albums` | admin OR owner | `{ title, description?, media[], showEvents? }` | created `Album` |
 | PUT | `/albums/:albumId` | admin OR owner | `{ title, description?, media[], showEvents? }` (full replace, except `showEvents` — omitted = unchanged) | updated `Album` |
 | DELETE | `/albums/:albumId` | admin OR owner | — | `null` (sets `isDeleted: true`) |
-| GET | `/albums/viewer` | **public** | — | `{ identified, email?, name?, isGuest?, hasInterests }` |
+| GET | `/albums/viewer` | **public** | — | `{ identified, email?, name?, isGuest?, hasInterests, verified? }` |
 | POST | `/albums/send-code` | public | `{ email }` | `{ email }` — emails a 6-digit code, creates nothing |
 | POST | `/albums/guest-access` | public | `{ name, email, code, interests?, customInterests?, optOut? }` | `{ email, name, isNewAccount, magicToken? }` |
 | POST | `/albums/my-interests` | any viewer | `{ interests?, customInterests?, optOut? }` | `{ saved: true }` |
@@ -269,6 +282,11 @@ All responses use the standard envelope from the `sendResponse` helper:
 | DELETE | `/albums/:albumId/tags/:tagId` | tagger, tagged person, or admin/owner | — | `null` |
 | POST | `/albums/:albumId/publish` | admin OR owner | `{ resend?: boolean }` | `{ notifiedCount, recipientCount, publishedAt, publishNotifiedAt }` |
 | GET | `/albums/access-log?dateFrom&dateTo` | admin OR owner | — | `{ items: AccessRow[], total }` |
+| POST | `/albums/:albumId/view` | **public** | `{ anonId, sessionId?, stage, email? }` | `null` — landing funnel, §4.12-a |
+| PATCH | `/albums/:albumId/order` | admin OR owner | `{ mediaUrls: string[] }` | `{ media }` — reorder only, §4.12-b |
+| POST | `/albums/:albumId/photo-request` | any viewer | `{ mediaUrls: string[], code? }` | `{ requested, created }` — §4.13 |
+| GET | `/albums/photo-requests?dateFrom&dateTo` | admin OR owner | — | `{ items, total }` — §4.14 |
+| PATCH | `/albums/photo-requests/:requestId` | admin OR owner | `{ status: "pending" \| "handled" }` | `{ _id, status }` — §4.15 |
 
 Validation shared by POST and PUT `/albums` (zod):
 
@@ -602,8 +620,24 @@ Host taps **Publish** → confirm dialog → `POST /albums/:albumId/publish` →
 
 ## 6. Emails
 
-All in `src/lib/send-grid.ts`. **All three skip sending when `NEXT_PUBLIC_URL` contains
-`localhost`** and just log — expect no mail in local dev.
+All in `src/lib/send-grid.ts`. **The admin-notice sends skip when `NEXT_PUBLIC_URL` contains
+`localhost`** and just log — expect no such mail in local dev. The album verification code and
+the photo-request confirmation always send, since a code that never arrives blocks the flow.
+
+Album-related sends, current list:
+
+| Function | To | When |
+|---|---|---|
+| `sendAlbumVerificationCode` | the visitor | gate step one (`send-code`) |
+| `sendAlbumAccessNotice` | `ADMIN_NOTIFICATION_EMAIL` | first time a person opens a shared album |
+| `sendAlbumTagNotification` | the tagged person | a tag is confirmed |
+| `sendAlbumPublishedNotification` | event participants | host publishes an album |
+| `sendAlbumPhotoRequestReceived` | the requester | unwatermarked-photo request filed |
+| `sendAlbumPhotoRequestNotice` | **`tech@jetzyapp.com`** (`PHOTO_REQUEST_NOTIFICATION_EMAIL`) | same, for whoever fulfils it |
+
+`sendAlbumPhotoRequestNotice` has its **own** recipient, deliberately not the shared
+`ADMIN_NOTIFICATION_EMAIL` — that variable also carries the access notices and the security
+alerts, and redirecting photo requests must not move those.
 
 Album link: `{NEXT_PUBLIC_URL}/{eventSlug}/album/{albumId}`, built with `eventAlbumUrl`.
 
@@ -673,7 +707,7 @@ Note the two intentional non-errors: `GET /participants` returns **200 + `[]`** 
 
 ## 9. Implementation checklist (mobile)
 
-- [ ] Run all three index scripts against the target database (`migrate-album-access-index.ts`, `migrate-album-tags-index.ts`, `create-album-verification-index.ts`) — **before** any guest access or re-tagging is attempted. Never `syncIndexes()`.
+- [ ] Run all index scripts against the target database (`migrate-album-access-index.ts`, `migrate-album-tags-index.ts`, `create-album-verification-index.ts`, `create-album-photo-request-index.ts`, `create-album-view-index.ts`) — **before** any guest access, re-tagging, photo request or album-page view is attempted. Never `syncIndexes()`. Already run on staging and production by web.
 - [ ] Probe `GET /albums/viewer` before showing any gate, and wait for it to settle.
 - [ ] Do **not** gate `GET /albums` — listing is public.
 - [ ] Two-step gate: `send-code` then `guest-access` with the 6-digit code. Handle the 429s (60s resend cooldown, 10/min per IP) and the locked-after-5-attempts case.
@@ -689,6 +723,10 @@ Note the two intentional non-errors: `GET /participants` returns **200 + `[]`** 
 - [ ] Host-side create/edit/delete with drag-to-reorder, uploading to the `posts` folder.
 - [ ] Publish with the confirm dialog and the `resend: true` retry path.
 - [ ] Handle 401 by re-opening the identity gate rather than showing an error.
+- [ ] **Deleted album:** do not show a generic "not found". The album row still exists (`isDeleted: true`), so tell the user the photos were removed and offer the event — see the note above §4.12-b.
+- [ ] **Reorder (host):** `PATCH /albums/:albumId/order` with the full url list. Offer arrows as well as drag — dragging is awkward on a phone. Refresh and retry on the "album changed" 400 rather than resending.
+- [ ] **Unwatermarked-photo requests:** the CTA under the photos and on the opened photo; several photos in one request; skip the code step when `GET /albums/viewer` says `verified: true`, and trust the server's `data.needsVerification` over your own copy of that flag.
+- [ ] **Landing funnel:** `POST /albums/:albumId/view` on album open and at each gate step, with a stable per-install `anonId`. Fire-and-forget — never surface a failure, and never block the page on it.
 
 ---
 
