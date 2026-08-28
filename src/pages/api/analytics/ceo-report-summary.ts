@@ -12,6 +12,7 @@ import { EventUsers } from "@/models/eventUsersModal"
 import { DiscussionPosts } from "@/models/events/discussion-posts"
 import { WaitingList } from "@/models/waitingList"
 import { PageView, UserSession, EventInteraction } from "@/models/analytics"
+import { WINDOW_KEYS, buildWindows, countByWindow, emptyByWindow, sumByWindow, type ReportWindow, type WindowKey } from "@/lib/analytics-windows"
 
 /**
  * Service-to-service summary for the apis-service "Daily Users Overview" CEO email — it fetches
@@ -20,45 +21,15 @@ import { PageView, UserSession, EventInteraction } from "@/models/analytics"
  * admin session auth, since the caller is another backend, not a browser.
  */
 
-type WindowKey = "24h" | "7days" | "30days" | "60days"
-const WINDOW_KEYS: WindowKey[] = ["24h", "7days", "30days", "60days"]
-
-interface Window {
-  key: WindowKey
-  from: Date
-  to: Date
-}
+// Local alias so the helper signatures below read unchanged. The shape lives in
+// @/lib/analytics-windows, shared with the per-event summary.
+type Window = ReportWindow
 
 const secretMatches = (provided: string, expected: string): boolean => {
   const a = createHash("sha256").update(provided).digest()
   const b = createHash("sha256").update(expected).digest()
   return timingSafeEqual(a, b)
 }
-
-function utcStartOfDay(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0))
-}
-function utcEndOfDay(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999))
-}
-function subDays(d: Date, days: number): Date {
-  return new Date(d.getTime() - days * 24 * 60 * 60 * 1000)
-}
-
-// Matches apis-service's dailyUsersOverviewReportGenerator.ts buildPeriods() exactly (24h is a
-// rolling window, 7/30/60 days are calendar-day-aligned) — same shape, computed independently
-// here in UTC so the two "Last 24h" columns actually line up when merged into one email.
-function buildWindows(now: Date): Window[] {
-  return [
-    { key: "24h", from: subDays(now, 1), to: now },
-    { key: "7days", from: utcStartOfDay(subDays(now, 6)), to: utcEndOfDay(now) },
-    { key: "30days", from: utcStartOfDay(subDays(now, 29)), to: utcEndOfDay(now) },
-    { key: "60days", from: utcStartOfDay(subDays(now, 59)), to: utcEndOfDay(now) },
-  ]
-}
-
-const emptyByWindow = <T,>(value: T): Record<WindowKey, T> =>
-  WINDOW_KEYS.reduce((acc, k) => ({ ...acc, [k]: value }), {} as Record<WindowKey, T>)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -176,40 +147,7 @@ async function activeUsersByWindow(windows: Window[]): Promise<Record<WindowKey,
   return out
 }
 
-async function countByWindow(
-  model: any,
-  dateField: string,
-  windows: Window[],
-  extraMatch: Record<string, any> = {}
-): Promise<Record<WindowKey, number>> {
-  const facet: Record<string, any[]> = {}
-  for (const w of windows) {
-    facet[w.key] = [{ $match: { ...extraMatch, [dateField]: { $gte: w.from, $lte: w.to } } }, { $count: "n" }]
-  }
-  const [result] = await model.aggregate([{ $facet: facet }])
-  const out: Record<WindowKey, number> = emptyByWindow(0)
-  for (const key of WINDOW_KEYS) out[key] = result?.[key]?.[0]?.n || 0
-  return out
-}
 
-async function sumByWindow(
-  model: any,
-  dateField: string,
-  sumField: string,
-  windows: Window[]
-): Promise<Record<WindowKey, number>> {
-  const facet: Record<string, any[]> = {}
-  for (const w of windows) {
-    facet[w.key] = [
-      { $match: { [dateField]: { $gte: w.from, $lte: w.to } } },
-      { $group: { _id: null, total: { $sum: `$${sumField}` } } },
-    ]
-  }
-  const [result] = await model.aggregate([{ $facet: facet }])
-  const out: Record<WindowKey, number> = emptyByWindow(0)
-  for (const key of WINDOW_KEYS) out[key] = result?.[key]?.[0]?.total || 0
-  return out
-}
 
 interface BookingWindowStats {
   created: number

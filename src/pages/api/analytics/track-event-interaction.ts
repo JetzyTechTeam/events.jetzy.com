@@ -22,8 +22,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event ID, session ID, and interaction type are required", false, ResCode.BAD_REQUEST)
 		}
 
-		// Validate interaction type
-		const validTypes = ["view", "click", "share", "ticket_select", "booking_start"]
+		// Validate interaction type.
+		//
+		// `ticket_select` / `booking_start` were accepted here long before anything sent them —
+		// the checkout funnel read as permanently empty because the client never wrote a single
+		// row. `checkout_submit` closes the last gap: booking_start is the modal OPENING, which a
+		// browser tells us nothing more about, so without it "started booking" and "paid" had a
+		// silent step between them (filled the form, pressed the button, Stripe or validation
+		// refused). See EventTicketsComponent / EventCheckoutModel for the writers.
+		const validTypes = ["view", "click", "share", "ticket_select", "booking_start", "checkout_submit"]
 		if (!validTypes.includes(interactionType)) {
 			return sendResponse(res, null, "Invalid interaction type", false, ResCode.BAD_REQUEST)
 		}

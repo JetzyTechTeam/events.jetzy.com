@@ -16,6 +16,9 @@ import { StarIcon } from "@heroicons/react/24/solid"
 import ReturnToAppButton from "./misc/ReturnToAppButton"
 import { cameFromApp } from "@/lib/app-return"
 import { trialEndsOn } from "@/lib/invite-trial"
+import { useRouter } from "next/router"
+import { useAnalytics } from "@/hooks/useAnalytics"
+import { isPreviewQuery } from "@/lib/event-preview"
 
 /**
  * "monthly" reads better than "every month" in the billing disclosure, but the interval
@@ -50,6 +53,24 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	const termsRef = useRef<HTMLLabelElement | null>(null)
 	// The buyer has already used part of their Premium allowance for this event.
 	const [allowanceError, setAllowanceError] = useState(false)
+
+	// Checkout funnel instrumentation — the last stage before money.
+	//
+	// `booking_start` (fired by EventTicketsComponent) only says the modal OPENED. Everything
+	// between opening it and a booking row appearing was invisible: the form filled in, the
+	// button pressed, and then Stripe or a validation rule refusing. `checkout_submit` marks
+	// the press, so the gap between "submitted" and "booked" is finally measurable.
+	//
+	// Suppressed under `?preview=1`, like every other tracker on this page.
+	const checkoutRouter = useRouter()
+	const { trackEventInteraction } = useAnalytics()
+	const trackCheckout = (type: string, metadata?: Record<string, unknown>) => {
+		if (isPreviewQuery(checkoutRouter.query)) return
+		const id = (tickets[0] as any)?.eventId || eventData?._id
+		if (!id) return
+		// Fire and forget — never let analytics stand between a buyer and their ticket.
+		trackEventInteraction(String(id), type, metadata).catch(() => {})
+	}
 
 	// State for form data
 	const [formData, setFormData] = useState({
@@ -297,6 +318,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			category: "Event",
 			action: "Checkout Form Submitted",
 			label: event,
+		})
+
+		// Same moment as the GA event above: every early return has been passed, and this order
+		// is now going to either the free path or Stripe. Reached once per order — the
+		// details→questions step returns before here.
+		trackCheckout("checkout_submit", {
+			ticketCount: tickets.reduce((n: number, t: any) => n + (t.quantity || 0), 0),
+			dueToday: pricing.dueToday ?? pricing.total,
+			needsApproval: selectionNeedsApproval,
 		})
 
 		// Detect free ticket flow — skip Stripe and register directly. Paid approval orders

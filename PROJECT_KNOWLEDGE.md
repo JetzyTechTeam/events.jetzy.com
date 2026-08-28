@@ -2375,3 +2375,134 @@ offer to downgrade, which that button does not do. `PlanComparison` is shared, s
 paywall modal and `/premium` all pick this up. The mobile deep-link return is unaffected — it lives
 on a button *inside* the Premium card, not the Basic one.
 
+
+---
+
+## Per-event analytics, rebuilt for people who don't read dashboards (2026-08-28)
+
+Four tabs became two, three panels that could never show data were removed, and the checkout
+funnel finally has something writing to it. Driven by the CEO not being able to read the page
+(2026-08-28): *"what is mean by recent interaction, i dont what this for"*, *"what is mean by
+named event, our ceo doesnot undertsand this"*, *"album is good"* — so the Albums tab is the
+model the rest now follows.
+
+### What was actually broken
+
+Not just presentation. Three panels were structurally incapable of showing anything:
+
+- **"Event Page Views" / the whole checkout funnel.** `trackEventInteraction` is only ever called
+  with `"view"` (and `"share"`, 3 times ever). Production holds **9,045** interaction rows across
+  exactly two types. `ticket_select` and `booking_start` were accepted by
+  `track-event-interaction.ts` and read by `journey/funnel.ts`, `analytics/events.ts` and the CEO
+  report — and written by nobody. Every funnel on the platform was a single bar.
+- **"Page Dwell & Scroll Depth".** `journey/dwell.ts` scopes to an event with
+  `pageMatch.page = { $regex: new RegExp(eventId) }`, but `PageView.page` records `/[slug]` or the
+  resolved slug — **never an event id**. The table was empty on every event, always.
+- **"Click Heatmap".** Coordinates over an unlabelled 600×400 canvas. Even populated it told a host
+  nothing they could act on; the named targets beside it carried the same information legibly.
+
+Plus a units bug: `journey/funnel.ts` counted view/ticket_select/booking_start as **distinct
+sessions** and `booking_complete` as **`countDocuments`**. One person buying three times showed as
+three completions against one view — a funnel that could exceed 100%.
+
+And the Overview tab was **light-themed inside a dark console** (`bg="white"`, `color="#1C1E21"`),
+including the page's own `<h1>`, which is why it read as unreadable rather than merely ugly.
+
+### The writers (this is the part that matters)
+
+`ticket_select` and `booking_start` are now written by `EventTicketsComponent.tsx`; a new
+`checkout_submit` by `EventCheckoutModel.tsx`.
+
+- **`ticket_select`** fires on the turning-ON edge only, from *both* `handleTicketSelection` (card
+  click) and `handleQuantityChange` at quantity 0→1 (pressing `+` selects without ever going
+  through the former, so tracking only one of them would miss everyone who buys that way).
+  De-selecting is not a funnel step. A `useRef<Set>` reports each ticket at most once per mount so
+  an undecided visitor toggling back and forth can't inflate the raw row count.
+- **`booking_start`** fires inside `showCheckoutForm` after every early return has been passed, so
+  it means *the modal is opening*, not *the button was pressed*.
+- **`checkout_submit`** fires alongside the existing `sendGAEvent("Checkout Form Submitted")` —
+  the one point where validation, the terms box, and the membership allowance have all passed and
+  the order is going to either the free path or Stripe. The details→questions step returns before
+  it, so it is once per order. **Without this stage there is a silent gap**: `booking_start` only
+  says the modal opened, and everything between that and a booking row appearing (form filled,
+  button pressed, Stripe or a validation rule refusing) was invisible.
+- **All three are suppressed under `?preview=1`**, same rule as `[slug].tsx` skipping its view
+  tracking: a host checking their own page must not move the numbers they are checking.
+- All three are fire-and-forget with a `.catch(() => {})`. Analytics must never stand between a
+  buyer and their ticket.
+
+**Old traffic will never have these stages.** An event can legitimately show 4 views, three empty
+middle steps, and 1 booking, because bookings are counted from booking records that go back to the
+beginning while the middle stages start today. The funnel panel says so in a note, checked by
+**stage name** rather than by slicing an index range so adding a stage later can't mis-target it.
+
+### `src/lib/analytics-windows.ts` — shared, so the two reports can't drift
+
+`buildWindows` / `countByWindow` / `distinctCountByWindow` / `sumByWindow` / `WINDOW_KEYS` /
+`WINDOW_LABELS`, extracted from `ceo-report-summary.ts` (which now imports them; behaviour
+byte-identical). 24h is a **rolling** window; 7/30/60 are **UTC calendar-day aligned**. Two
+surfaces quoting "Last 7 days" with different boundaries is the fastest way to make a host
+distrust both.
+
+### `GET /api/analytics/event-windows?eventId=` — the CEO's shape, one event
+
+Session-authenticated **admin OR owner** (the platform report is secret-header authenticated
+because its caller is another backend; this one's caller is a browser). Returns the four windows
+for: Page Views, Unique Visitors, Ticket Selections, Checkout Opened, Checkout Submitted, Bookings
+Created, Bookings Confirmed, Tickets Booked, Revenue, Check-ins, Shares, Discussion Posts, Waiting
+List Joins, Album Visitors.
+
+**Deliberately not filtered by the page's date picker.** Fixed, comparable windows are the entire
+point — the picker drives everything *below* the snapshot and nothing inside it.
+
+Revenue is `booking.total` (ticket money). Membership sales ride on `payment.amount` and are **not**
+included; the row is labelled "Ticket revenue — excludes membership sales" rather than left to be
+misread.
+
+### The page now
+
+`/console/events/[eventId]/analytics` — **Overview** and **Albums**. Albums is untouched.
+
+Overview, in order: **Performance snapshot** (the four windows, CSV export) → **Headline numbers**
+(dark tiles, follow the date picker) → **From visit to booking** (the funnel) → **Most-clicked
+buttons** + **Form drop-off** → **Where visitors came from** → **What they viewed it on**.
+
+- **Journey tab merged in, tab dropped.** After removing the heatmap and the dead dwell table it
+  held one panel; hiding one panel behind a tab is not organisation.
+- **Named Events tab deleted.** The label was jargon and the rows were raw
+  (`"<form> / focus"`, `"<form> / submit"`, one per line). The *data* was real, so it survives as
+  two plain-language panels: `topTargets` from `journey/heat.ts` drives **Most-clicked buttons**
+  (with rage clicks shown as "N frustrated"), and `formStats` pairs the focus/submit rows into one
+  line per form with a completion rate. A host cannot read an abandonment rate off two rows several
+  lines apart.
+- **"Recent Interactions" deleted.** A paginated table of `VIEW / <blank timestamp> / <blank user
+  id> / daa50bac…`. Session ids are not information for the person reading this page.
+- **Both trend charts deleted.** They rendered an inverted y-axis (0 at top, 5 at bottom) and a
+  flat line for a 9-view event.
+- **`hideWhenEmpty`** on snapshot rows: check-ins, shares, waiting list, discussion posts and album
+  visitors are hidden when zero in *every* window. An event with no albums and no door would
+  otherwise show rows of zeroes that read as failure rather than as "never used here". The **CSV
+  exports every row regardless** — a zero is information in a spreadsheet comparing two events.
+- Snapshot rows are declared once in `SNAPSHOT_ROWS`, shared by the table and the CSV, so the two
+  cannot disagree.
+
+### `journey/funnel.ts` changes
+
+Every stage is now a **distinct-people count**: the interaction stages by `sessionId`, the booking
+stage by lower-cased `customerEmail` (`Bookings.customerEmail` has no `lowercase: true` — the same
+trap `booking-identity.ts` documents). Also gained `dateFrom`/`dateTo` (it described all time while
+every tile beside it was filtered) and `isDeleted: false`. Stage labels are plain English:
+"Opened the event page / Picked a ticket / Opened checkout / Submitted checkout / Booked".
+
+### Verified against production
+
+`/api/analytics/events` numbers reproduced for `6a8f1f10c5ebf9d6e5a4f7f2` ("Final Album", staging):
+9 page views, 4 unique visitors, 1 booking, 1 ticket, $0 — matching the page exactly. The three new
+funnel stages read 0 there, correctly: nothing had been written yet when the check ran.
+
+### Untouched on purpose
+
+`api/analytics/events.ts` still returns `trends` and `recentInteractions`. **`manage.tsx:983` reads
+`analytics?.trends?.views`** for its own sparkline, so removing the aggregation would have broken a
+page that isn't part of this work. `ClickHeatmap.tsx` is still used by
+`/console/analytics/journey` (the platform-wide page) and was not deleted.
