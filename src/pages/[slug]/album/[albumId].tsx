@@ -4,9 +4,10 @@ import Head from "next/head"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
+import axios from "axios"
 import { Types } from "mongoose"
-import { Box, Flex, Text, Heading, Icon, IconButton, Button, Spinner, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton } from "@chakra-ui/react"
-import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX, FiImage } from "react-icons/fi"
+import { Box, Flex, Text, Heading, Icon, IconButton, Button, Spinner, SimpleGrid, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton } from "@chakra-ui/react"
+import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX, FiImage, FiMove, FiChevronUp, FiChevronDown } from "react-icons/fi"
 
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
@@ -159,7 +160,10 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 	// guest cookie is enough to view but not to tag.
 	const canTag = !!session
 
-	const media = useMemo(() => album.media || [], [album.media])
+	// State rather than a memo: an admin reordering the photos has to see the new order
+	// immediately, without a page reload throwing them back to the top of a long album.
+	const [media, setMedia] = useState<AlbumMedia[]>(album.media || [])
+	useEffect(() => { setMedia(album.media || []) }, [album.media])
 
 	// Publish emails and album share links open this page directly, so the event view has to
 	// be recorded here too. `from=event` means the event page already counted it (card click
@@ -198,6 +202,65 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 		setRequestPhoto(mediaUrl || null)
 		setRequestOpen(true)
 	}, [])
+
+	// ── Reorder (admin / event owner) ───────────────────────────────────────
+	// Done right here on the album rather than in the edit modal: the person arranging photos
+	// is looking at them, and making them open a form to do it means working blind.
+	const [reordering, setReordering] = useState(false)
+	const [draft, setDraft] = useState<AlbumMedia[]>([])
+	const [savingOrder, setSavingOrder] = useState(false)
+
+	// Ref holds the drag source (no side effects inside a state updater); state mirrors it
+	// only so the dragged tile can dim. Same approach as the album edit modal, which is a
+	// native HTML5 drag for the same reason: framer-motion's Reorder is single-axis and tiles
+	// fly out of a wrapping 2D grid.
+	const dragFromRef = React.useRef<number | null>(null)
+	const [dragIndex, setDragIndex] = useState<number | null>(null)
+
+	const moveDraft = (from: number, to: number) =>
+		setDraft((prev) => {
+			if (to < 0 || to >= prev.length) return prev
+			const arr = [...prev]
+			const [moved] = arr.splice(from, 1)
+			arr.splice(to, 0, moved)
+			return arr
+		})
+
+	const startReorder = () => {
+		setDraft(media)
+		setOpenIndex(null)
+		setReordering(true)
+	}
+
+	const cancelReorder = () => {
+		setReordering(false)
+		setDraft([])
+		dragFromRef.current = null
+		setDragIndex(null)
+	}
+
+	const saveOrder = async () => {
+		setSavingOrder(true)
+		try {
+			await axios.patch(`/api/events/${event._id}/albums/${album._id}/order`, {
+				mediaUrls: draft.map((m) => m.url),
+			})
+			setMedia(draft)
+			setReordering(false)
+			setDraft([])
+			toast({ title: "Photo order saved", status: "success", duration: 2500, isClosable: true })
+		} catch (err: any) {
+			toast({
+				title: "Couldn't save the order",
+				description: err?.response?.data?.message || err.message,
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
+		} finally {
+			setSavingOrder(false)
+		}
+	}
 	const current = openIndex === null ? null : media[openIndex]
 
 	const close = useCallback(() => { setOpenIndex(null); setTagOpen(false) }, [])
@@ -387,10 +450,38 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 						_hover={{ bg: "whiteAlpha.100" }}
 						onClick={() => router.push(eventPath(event.slug))}
 					/>
-					<Text fontWeight="700">Photo tour</Text>
-					<Button leftIcon={<FiShare2 />} size="sm" variant="ghost" color="white" _hover={{ bg: "whiteAlpha.100" }} onClick={shareAlbum}>
-						Share
-					</Button>
+					<Text fontWeight="700">{reordering ? "Arrange photos" : "Photo tour"}</Text>
+					{reordering ? (
+						<Flex gap={2}>
+							<Button size="sm" variant="ghost" color="#bbbbbb" _hover={{ bg: "whiteAlpha.100" }} onClick={cancelReorder} isDisabled={savingOrder}>
+								Cancel
+							</Button>
+							<Button size="sm" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} fontWeight="bold" onClick={saveOrder} isLoading={savingOrder}>
+								Save order
+							</Button>
+						</Flex>
+					) : (
+						<Flex gap={1} align="center">
+							{/* Admin or the event's owner. Right here on the album by decision — the
+							    person arranging photos is looking at them, and sending them into an
+							    edit form to do it means working blind. */}
+							{canManage && media.length > 1 && (
+								<Button
+									leftIcon={<FiMove />}
+									size="sm"
+									variant="ghost"
+									color="#F79432"
+									_hover={{ bg: "whiteAlpha.100" }}
+									onClick={startReorder}
+								>
+									Reorder
+								</Button>
+							)}
+							<Button leftIcon={<FiShare2 />} size="sm" variant="ghost" color="white" _hover={{ bg: "whiteAlpha.100" }} onClick={shareAlbum}>
+								Share
+							</Button>
+						</Flex>
+					)}
 				</Flex>
 
 				{!probeSettled ? (
@@ -441,7 +532,100 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 
 						{/* Middle: the photos */}
 						<Box flex="1" width="100%" minW={0}>
-							{media.length === 0 ? (
+							{reordering ? (
+								<>
+									<Text color="#bbbbbb" fontSize="sm" mb={1}>
+										Drag a photo, or use the arrows, to set the order guests will see.
+									</Text>
+									<Text color="#8a8a8a" fontSize="xs" mb={4}>
+										The first photo is the album cover. Nothing changes for guests until you press Save order.
+									</Text>
+									{/* Every photo at once: no infinite scroll here, since dragging one
+									    to the front of a long album has to be possible without the
+									    target row existing yet. */}
+									<SimpleGrid columns={{ base: 2, sm: 3, md: 4 }} spacing={3}>
+										{draft.map((m, i) => (
+											<Box
+												key={m.url}
+												position="relative"
+												borderRadius="10px"
+												overflow="hidden"
+												bg="black"
+												height="150px"
+												border="1px solid #2a2a2a"
+												opacity={dragIndex === i ? 0.4 : 1}
+												cursor="grab"
+												draggable
+												onDragStart={() => { dragFromRef.current = i; setDragIndex(i) }}
+												onDragEnd={() => { dragFromRef.current = null; setDragIndex(null) }}
+												onDragOver={(e) => e.preventDefault()}
+												onDragEnter={() => {
+													const from = dragFromRef.current
+													if (from === null || from === i) return
+													moveDraft(from, i)
+													dragFromRef.current = i
+													setDragIndex(i)
+												}}
+											>
+												{m.type === "video" ? (
+													// eslint-disable-next-line jsx-a11y/media-has-caption
+													<Box as="video" src={posterSrc(m.url)} width="100%" height="100%" sx={{ objectFit: "contain" }} muted preload="metadata" />
+												) : (
+													// eslint-disable-next-line @next/next/no-img-element
+													<img src={m.url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+												)}
+
+												{/* Position, so someone arranging by number can see where
+												    they are without counting tiles. */}
+												<Flex
+													position="absolute"
+													top="6px"
+													left="6px"
+													minW="24px"
+													height="24px"
+													px={2}
+													borderRadius="full"
+													bg={i === 0 ? "#F79432" : "blackAlpha.700"}
+													color={i === 0 ? "black" : "white"}
+													align="center"
+													justify="center"
+													fontSize="xs"
+													fontWeight="bold"
+												>
+													{i === 0 ? "COVER" : i + 1}
+												</Flex>
+
+												{/* Arrows as well as dragging: dragging is awkward on a
+												    phone and impossible with a keyboard. */}
+												<Flex position="absolute" bottom="6px" right="6px" gap={1}>
+													<IconButton
+														aria-label="Move earlier"
+														icon={<FiChevronUp />}
+														size="xs"
+														borderRadius="full"
+														bg="blackAlpha.800"
+														color="white"
+														_hover={{ bg: "#F79432", color: "black" }}
+														isDisabled={i === 0}
+														onClick={() => moveDraft(i, i - 1)}
+													/>
+													<IconButton
+														aria-label="Move later"
+														icon={<FiChevronDown />}
+														size="xs"
+														borderRadius="full"
+														bg="blackAlpha.800"
+														color="white"
+														_hover={{ bg: "#F79432", color: "black" }}
+														isDisabled={i === draft.length - 1}
+														onClick={() => moveDraft(i, i + 1)}
+													/>
+												</Flex>
+											</Box>
+										))}
+									</SimpleGrid>
+								</>
+							) : media.length === 0 ? (
 								<Text color="#888">No media in this album.</Text>
 							) : (
 								<Flex direction="column" gap={3}>
@@ -491,7 +675,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							    the rest of the events would never be seen — the desktop rail shows
 							    them all, and mobile has no rail. Only once every row is rendered,
 							    so it can't appear above photos that are still loading. */}
-							{visibleRows >= rows.length && promotedEvents.length > promoSlotCount && (
+							{!reordering && visibleRows >= rows.length && promotedEvents.length > promoSlotCount && (
 								<Box display={{ base: "block", lg: "none" }} mt={6}>
 									<Text fontSize="xs" fontWeight="bold" color="#8a8a8a" letterSpacing="0.08em" mb={3}>
 										{promoSlotCount > 0 ? "MORE UPCOMING EVENTS" : "UPCOMING EVENTS"}
@@ -507,7 +691,7 @@ export default function AlbumPhotoTourPage({ album: albumJson, event: eventJson 
 							{/* Every photo above carries the Jetzy Life mark. This is how a viewer asks
 							    for the clean original of one of them — per photo, so the request names
 							    an image somebody can actually go and send. */}
-							{media.length > 0 && (
+							{!reordering && media.length > 0 && (
 								<Box mt={8} pt={6} borderTop="1px solid #262626" textAlign="center">
 									<Button
 										leftIcon={<FiImage />}
