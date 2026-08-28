@@ -473,6 +473,20 @@ Fired by `useAlbumViewerGate`, which owns the dialog state. `GuestAccessModal` g
 
 ---
 
+> **A deleted album does NOT 404.** `[slug]/album/[albumId].tsx` re-checks by id alone when the `isDeleted: false` lookup misses, and renders a "These photos are no longer available" screen linking back to the event. The site 404 says "Event Not Found" and offers the full listing, which is the wrong thing to tell someone whose photo link came from a publish email. A wrong album id still 404s.
+
+### 4.12-b `PATCH /albums/:albumId/order` — **admin or owner**
+
+Reorders an album's media. Body: `{ mediaUrls: string[] }`.
+
+Its own route rather than the existing full-replace `PUT`, which requires title, description and the whole media array — reordering through it would mean a stale tab could revert a title, and a bug in the media round-trip could delete photos.
+
+The list must be an **exact permutation** of what is stored (same length, same set, no duplicates, checked both ways). Anything else is refused with "This album changed since you opened it" rather than partially applied. `album.media` is rebuilt from the stored sub-documents keyed by url, so `type` survives — the client only sends urls.
+
+Driven from the album page itself (drag, plus up/down arrows for phones and keyboards), not from the edit modal.
+
+---
+
 ### 4.13 `POST /albums/:albumId/photo-request` — **any viewer**
 
 Records a request for the unwatermarked originals of one or more photos. Body: `{ mediaUrls: string[], code? }` (`mediaUrl` is still accepted as the single-photo form). Capped at **30** per submission.
