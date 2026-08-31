@@ -48,7 +48,6 @@ import {
 	FormLabel,
 	InputGroup,
 	InputLeftElement,
-	InputRightElement,
 	useDisclosure,
 	Menu,
 	MenuButton,
@@ -69,7 +68,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline"
-import { MinusCircleIcon, StarIcon } from "@heroicons/react/24/solid"
+import { StarIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
 import Link from "next/link"
@@ -84,6 +83,7 @@ import EventDescription from "@/components/events/EventDescription"
 import AnswerText from "@/components/events/AnswerText"
 import InterestsSelector from "@/components/events/InterestsSelector"
 import MediaUploadSection from "@/components/media-upload-section"
+import BenefitsField from "@/components/events/BenefitsField"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
@@ -391,7 +391,6 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [pollTime, setPollTime] = useState("")
 	const [editPollIndex, setEditPollIndex] = useState<number | null>(null)
 	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = useState(false)
-	const [benefitInput, setBenefitInput] = useState("")
 	const [isFormDirty, setIsFormDirty] = useState(false)
 
 	// Initialize images, videos and tickets on mount. When a shadow draft exists, seed
@@ -1452,67 +1451,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													<InterestsSelector bare selected={values.interests ?? []} onChange={(ids) => setFieldValue("interests", ids)} />
 												</Box>
 
-												{/* ---- Event Benefits ---- */}
+												{/* ---- Event Benefits ----
+												    The same control the public event page's inline editor uses, so the two
+												    cannot drift. */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-													<Flex align="baseline" gap={2} mb={4}>
-														<Heading size="md" color="white">Event Benefits</Heading>
-														<Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max 23 chars)</Text>
-													</Flex>
-													{(() => {
-														const addBenefit = () => {
-															const v = benefitInput.trim()
-															if (!v) return
-															const list = (values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean)
-															setFieldValue("benefits", [...list, v].join(","))
-															setBenefitInput("")
-														}
-														return (
-															<InputGroup mb={4}>
-																<Input
-																	placeholder="e.g free food, free drinks etc"
-																	className={roboto.className}
-																	bg="#090C10"
-																	color="white"
-																	fontSize="sm"
-																	h="48px"
-																	border="1px solid #343536"
-																	_focus={{ borderColor: "#343536", boxShadow: "none" }}
-																	pr="70px"
-																	maxLength={23}
-																	value={benefitInput}
-																	onChange={(e) => setBenefitInput(e.target.value)}
-																	onKeyDown={(e) => {
-																		if (e.key === "Enter") { e.preventDefault(); addBenefit() }
-																	}}
-																/>
-																<InputRightElement w="auto" right="4" h="48px">
-																	<Button size="sm" variant="ghost" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} p="0" onClick={addBenefit}>
-																		+ Add
-																	</Button>
-																</InputRightElement>
-															</InputGroup>
-														)
-													})()}
-													<Flex gap={3} flexWrap="wrap">
-														{(values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean).map((b: string, idx: number) => (
-															<Flex key={`${b}-${idx}`} align="center" gap={2} bg="#090C10" border="1px solid #343536" rounded="md" px="4" py="2">
-																<Text className={roboto.className} fontSize="sm" color="white">{b}</Text>
-																<Box
-																	as="button"
-																	type="button"
-																	display="flex"
-																	alignItems="center"
-																	onClick={() => {
-																		const list = (values.benefits || "").split(",").map((x: string) => x.trim()).filter(Boolean)
-																		list.splice(idx, 1)
-																		setFieldValue("benefits", list.join(","))
-																	}}
-																>
-																	<MinusCircleIcon className="w-5 h-5 text-[#EC5E5E]" />
-																</Box>
-															</Flex>
-														))}
-													</Flex>
+													<BenefitsField value={values.benefits || ""} onChange={(next) => setFieldValue("benefits", next)} />
 												</Box>
 
 												{/* ---- Event Options ---- */}

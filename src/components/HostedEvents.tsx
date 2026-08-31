@@ -5,8 +5,15 @@ import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import { ROUTES, homeRouteForRole } from "@/configs/routes"
 import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
-import { eventMedia, type EventMedia } from "@/lib/event-media"
+import { applyMediaOrder, eventMedia, type EventMedia } from "@/lib/event-media"
 import { uploadFile } from "@/services/upload.service"
+// The very same controls the manage form uses, so the two screens cannot drift apart.
+import RichTextEditor from "@/components/misc/RichTextEditor"
+import MediaUploadSection from "@/components/media-upload-section"
+import BenefitsField from "@/components/events/BenefitsField"
+import type { FileUploadData } from "@/components/misc/DragAndDropUploader"
+import { uniqueId } from "@/lib/utils"
+import { Roboto } from "next/font/google"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -24,7 +31,7 @@ import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
-import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
+import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, InputGroup, InputLeftElement, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
 import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
 import Pagination from "@/components/misc/Pagination"
@@ -49,6 +56,8 @@ dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
+
+const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 
 const settings = {
 	infinite: true,
@@ -201,12 +210,15 @@ export default function HostedEvents({ event }: Props) {
 	const [draftName, setDraftName] = useState("")
 	const [draftDesc, setDraftDesc] = useState("")
 	const [draftBenefits, setDraftBenefits] = useState("")
-	const [draftMedia, setDraftMedia] = useState<{ url: string; type: "image" | "video" }[]>([])
-	const [mediaUploads, setMediaUploads] = useState<{ id: string; progress: number; type: "image" | "video" }[]>([])
-	const eventPhotoInputRef = useRef<HTMLInputElement | null>(null)
-	const eventVideoInputRef = useRef<HTMLInputElement | null>(null)
-	const mediaDragFrom = useRef<number | null>(null)
-	const [mediaDragIndex, setMediaDragIndex] = useState<number | null>(null)
+	// Media state mirrors the manage form's exactly — same shapes, same handler names — so
+	// `MediaUploadSection` behaves identically on both screens. `file` holds a URL, not a File.
+	const [draftImages, setDraftImages] = useState<FileUploadData[]>([])
+	const [draftVideos, setDraftVideos] = useState<FileUploadData[]>([])
+	const [draftMediaOrder, setDraftMediaOrder] = useState<string[]>([])
+	const [isUploadingImage, setIsUploadingImage] = useState(false)
+	const [isUploadingVideo, setIsUploadingVideo] = useState(false)
+	const [imageUploadProgress, setImageUploadProgress] = useState(0)
+	const [videoUploadProgress, setVideoUploadProgress] = useState(0)
 
 	// What the page renders. Seeded from props and updated on save, so an edit shows
 	// immediately instead of needing a reload.
@@ -230,49 +242,85 @@ export default function HostedEvents({ event }: Props) {
 	const shownMedia = liveMedia ?? (clonedEvent ? eventMedia(clonedEvent) : [])
 
 	const startEventEdit = () => {
+		// `stripHtml` on load, raw on save — the same asymmetry manage has, so the two forms
+		// seed from the stored value identically.
 		setDraftName(stripHtml(shownName))
 		setDraftDesc(shownDesc)
 		setDraftBenefits(shownBenefits)
-		setDraftMedia(shownMedia.map((m) => ({ url: m.url, type: m.type as "image" | "video" })))
+		setDraftImages(shownMedia.filter((m) => m.type !== "video").map((m) => ({ id: uniqueId(10), file: m.url })))
+		setDraftVideos(shownMedia.filter((m) => m.type === "video").map((m) => ({ id: uniqueId(10), file: m.url })))
+		setDraftMediaOrder(shownMedia.map((m) => m.url))
 		setEditing(true)
 	}
 
 	const cancelEventEdit = () => {
 		setEditing(false)
-		setMediaUploads([])
-		mediaDragFrom.current = null
-		setMediaDragIndex(null)
 	}
 
-	const moveDraftMedia = (from: number, to: number) =>
-		setDraftMedia((prev) => {
-			if (to < 0 || to >= prev.length) return prev
-			const arr = [...prev]
-			const [moved] = arr.splice(from, 1)
-			arr.splice(to, 0, moved)
-			return arr
-		})
+	// Upload handlers, matching manage's: sequential, `posts` folder, one shared progress
+	// number per kind.
+	const handleEventImageUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploadingImage) return
+		setIsUploadingImage(true)
+		try {
+			for (const file of Array.from(files)) {
+				const res = await uploadFile(file, { folder: "posts", onProgressChange: setImageUploadProgress })
+				setDraftImages((prev) => [...prev, { id: uniqueId(10), file: res.url }])
+			}
+		} catch (error) {
+			toast({ title: "Error", description: "Failed to upload file", status: "error", duration: 4000, isClosable: true })
+		} finally {
+			setIsUploadingImage(false)
+			setImageUploadProgress(0)
+		}
+	}
 
-	const addEventMedia = (files: FileList | null, type: "image" | "video") => {
-		if (!files || files.length === 0) return
-		Array.from(files).forEach((file) => {
-			const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-			setMediaUploads((prev) => [...prev, { id, progress: 0, type }])
-			uploadFile(file, {
-				folder: "posts",
-				onProgressChange: (progress) => setMediaUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress } : u))),
+	const handleEventVideoUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploadingVideo) return
+		setIsUploadingVideo(true)
+		try {
+			for (const file of Array.from(files)) {
+				const res = await uploadFile(file, { folder: "posts", onProgressChange: setVideoUploadProgress })
+				setDraftVideos((prev) => [...prev, { id: uniqueId(10), file: res.url }])
+			}
+		} catch (error) {
+			console.error("Error uploading video", error)
+		} finally {
+			setIsUploadingVideo(false)
+			setVideoUploadProgress(0)
+		}
+	}
+
+	/**
+	 * Deleting an image is IMMEDIATE, exactly as it is in the manage form — the API call
+	 * happens on the click, not on Save, so Cancel does not bring it back. That asymmetry is
+	 * deliberate (the two screens must not disagree about what a delete means), which is why
+	 * the edit panel says so out loud.
+	 *
+	 * `liveMedia` is updated too: the banner behind the editor has to stop showing a file that
+	 * is already gone from the record.
+	 */
+	const handleEventImageDelete = async (imageUrl: string) => {
+		try {
+			await axios.post("/api/delete-image", { eventId: clonedEvent?._id, url: imageUrl })
+			setDraftImages((prev) => prev.filter((img) => img.file !== imageUrl))
+			setDraftMediaOrder((prev) => prev.filter((u) => u !== imageUrl))
+			setLiveMedia((prev) => (prev ?? shownMedia).filter((m) => m.url !== imageUrl))
+		} catch (error: any) {
+			toast({
+				title: "Couldn't remove that image",
+				description: error?.response?.data?.message,
+				status: "error",
+				duration: 4000,
+				isClosable: true,
 			})
-				.then(({ url }) => {
-					// Appended, never inserted — a new file landing mid-order would undo an
-					// arrangement the host is in the middle of making.
-					setDraftMedia((prev) => (prev.some((m) => m.url === url) ? prev : [...prev, { url, type }]))
-					setMediaUploads((prev) => prev.filter((u) => u.id !== id))
-				})
-				.catch(() => {
-					setMediaUploads((prev) => prev.filter((u) => u.id !== id))
-					toast({ title: "Upload failed", description: file.name, status: "error", duration: 4000, isClosable: true })
-				})
-		})
+		}
+	}
+
+	// Local-only, like manage's: there is no delete-video endpoint, so it lands on Save.
+	const handleEventVideoDelete = async (videoUrl: string) => {
+		setDraftVideos((prev) => prev.filter((v) => v.file !== videoUrl))
+		setDraftMediaOrder((prev) => prev.filter((u) => u !== videoUrl))
 	}
 
 	const saveEventEdits = async () => {
@@ -281,11 +329,11 @@ export default function HostedEvents({ event }: Props) {
 			toast({ title: "The event needs a name", status: "warning", duration: 3000, isClosable: true })
 			return
 		}
-		if (draftMedia.length === 0) {
+		if (draftImages.length === 0 && draftVideos.length === 0) {
 			toast({ title: "Keep at least one photo or video", status: "warning", duration: 3000, isClosable: true })
 			return
 		}
-		if (mediaUploads.length > 0) {
+		if (isUploadingImage || isUploadingVideo) {
 			toast({ title: "Still uploading", description: "Wait for the uploads to finish first.", status: "warning", duration: 3000, isClosable: true })
 			return
 		}
@@ -293,21 +341,34 @@ export default function HostedEvents({ event }: Props) {
 		try {
 			// `images` and `videos` are two separate arrays that cannot express order between
 			// them; `mediaOrder` is what carries the host's arrangement across both. All three
-			// go together — the endpoint rejects them apart.
-			const images = draftMedia.filter((m) => m.type !== "video").map((m) => m.url)
-			const videos = draftMedia.filter((m) => m.type === "video").map((m) => m.url)
+			// go together — the endpoint rejects them apart, and rejects an order that isn't
+			// exactly the set of stored urls.
+			//
+			// `applyMediaOrder` is what produces that exact set: it is the same function the
+			// media grid and the public banner both order by, and it appends anything the
+			// stored order doesn't name (a file just uploaded, or one the mobile app added)
+			// rather than dropping it.
+			const ordered = applyMediaOrder(
+				[
+					...draftImages.map((m) => ({ ...m, type: "image" as const, url: m.file })),
+					...draftVideos.map((m) => ({ ...m, type: "video" as const, url: m.file })),
+				],
+				draftMediaOrder,
+			)
+			const images = draftImages.map((m) => m.file)
+			const videos = draftVideos.map((m) => m.file)
 			await axios.patch(`/api/events/${clonedEvent?._id}/details`, {
 				name,
 				desc: draftDesc,
 				benefits: draftBenefits,
 				images,
 				videos,
-				mediaOrder: draftMedia.map((m) => m.url),
+				mediaOrder: ordered.map((m) => m.url),
 			})
 			setLiveName(name)
 			setLiveDesc(draftDesc)
 			setLiveBenefits(draftBenefits)
-			setLiveMedia(draftMedia)
+			setLiveMedia(ordered.map((m) => ({ url: m.url, type: m.type })))
 			setEditing(false)
 			toast({ title: "Event updated", status: "success", duration: 2500, isClosable: true })
 		} catch (err: any) {
@@ -665,128 +726,30 @@ export default function HostedEvents({ event }: Props) {
 						<div className="relative p-3">
 							{editing ? (
 								<div className="rounded-xl border border-[#2a2a2a] bg-[#181818] p-4">
-									<div className="flex flex-wrap items-center gap-2 mb-3">
-										<button
-											type="button"
-											onClick={() => eventPhotoInputRef.current?.click()}
-											className="border border-[#434343] rounded-lg px-3 py-1.5 text-sm hover:border-white"
-										>
-											+ Add photos
-										</button>
-										<button
-											type="button"
-											onClick={() => eventVideoInputRef.current?.click()}
-											className="border border-[#434343] rounded-lg px-3 py-1.5 text-sm hover:border-white"
-										>
-											+ Add videos
-										</button>
-										<span className="text-xs text-[#8a8a8a] ml-auto">
-											Drag or use the arrows. The first one leads the banner.
-										</span>
-										<input
-											ref={eventPhotoInputRef}
-											type="file"
-											accept="image/*"
-											multiple
-											hidden
-											onChange={(e) => { addEventMedia(e.target.files, "image"); e.target.value = "" }}
-										/>
-										<input
-											ref={eventVideoInputRef}
-											type="file"
-											accept="video/*"
-											multiple
-											hidden
-											onChange={(e) => { addEventMedia(e.target.files, "video"); e.target.value = "" }}
-										/>
-									</div>
+									{/* Same component, same props, same handler names as the manage form's
+									    Event Media box — including that deleting an IMAGE is immediate. */}
+									<MediaUploadSection
+										uploadedImages={draftImages}
+										uploadedVideos={draftVideos}
+										onImageChange={handleEventImageUpload}
+										onVideoChange={handleEventVideoUpload}
+										isUploadingImage={isUploadingImage}
+										isUploadingVideo={isUploadingVideo}
+										imageUploadProgress={imageUploadProgress}
+										videoUploadProgress={videoUploadProgress}
+										handleImageDelete={handleEventImageDelete}
+										handleVideoDelete={handleEventVideoDelete}
+										mediaOrder={draftMediaOrder}
+										onReorder={setDraftMediaOrder}
+									/>
+									{/* Said out loud because it contradicts the Cancel button beside it:
+									    an image delete is written immediately, exactly as in Manage Event. */}
+									<p className="text-xs text-[#E9A23B] mt-3">
+										Removing a photo takes effect straight away — Cancel won&apos;t bring it back. Everything else waits for Save.
+									</p>
 
-									<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-										{draftMedia.map((m, i) => (
-											<div
-												key={m.url}
-												draggable
-												onDragStart={() => { mediaDragFrom.current = i; setMediaDragIndex(i) }}
-												onDragEnd={() => { mediaDragFrom.current = null; setMediaDragIndex(null) }}
-												onDragOver={(e) => e.preventDefault()}
-												onDragEnter={() => {
-													const from = mediaDragFrom.current
-													if (from === null || from === i) return
-													moveDraftMedia(from, i)
-													mediaDragFrom.current = i
-													setMediaDragIndex(i)
-												}}
-												className={`relative h-32 rounded-lg overflow-hidden bg-black border border-[#2a2a2a] cursor-grab ${mediaDragIndex === i ? "opacity-40" : ""}`}
-											>
-												{m.type === "video" ? (
-													// eslint-disable-next-line jsx-a11y/media-has-caption
-													<video src={`${m.url}#t=0.1`} muted preload="metadata" className="w-full h-full object-contain" />
-												) : (
-													// eslint-disable-next-line @next/next/no-img-element
-													<img src={m.url} alt="" loading="lazy" className="w-full h-full object-contain" />
-												)}
-												<span className={`absolute top-1.5 left-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold ${i === 0 ? "bg-[#F79432] text-black" : "bg-black/70 text-white"}`}>
-													{i === 0 ? "LEAD" : i + 1}
-												</span>
-												{/* Removes from the draft only — Cancel puts it back. */}
-												<button
-													type="button"
-													aria-label="Remove"
-													onClick={() => setDraftMedia((prev) => prev.filter((x) => x.url !== m.url))}
-													className="absolute top-1.5 right-1.5 rounded-full bg-black/80 hover:bg-red-600 w-6 h-6 text-xs"
-												>
-													×
-												</button>
-												{/* Arrows as well as dragging — dragging is awkward on a
-												    phone and impossible with a keyboard. */}
-												<div className="absolute bottom-1.5 right-1.5 flex gap-1">
-													<button
-														type="button"
-														aria-label="Move earlier"
-														disabled={i === 0}
-														onClick={() => moveDraftMedia(i, i - 1)}
-														className="rounded-full bg-black/80 hover:bg-[#F79432] hover:text-black w-6 h-6 text-xs disabled:opacity-30"
-													>
-														↑
-													</button>
-													<button
-														type="button"
-														aria-label="Move later"
-														disabled={i === draftMedia.length - 1}
-														onClick={() => moveDraftMedia(i, i + 1)}
-														className="rounded-full bg-black/80 hover:bg-[#F79432] hover:text-black w-6 h-6 text-xs disabled:opacity-30"
-													>
-														↓
-													</button>
-												</div>
-											</div>
-										))}
-
-										{mediaUploads.map((u) => (
-											<div key={u.id} className="h-32 rounded-lg border border-dashed border-[#343536] bg-[#131313] flex flex-col items-center justify-center px-3">
-												<span className="text-xs text-[#8a8a8a] mb-2">Uploading {u.type}…</span>
-												<div className="w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
-													<div className="h-full bg-[#F79432]" style={{ width: `${u.progress}%` }} />
-												</div>
-											</div>
-										))}
-									</div>
-
-									{draftMedia.length === 0 && mediaUploads.length === 0 && (
-										<p className="text-sm text-[#8a8a8a] mt-3">No media yet. Add a photo or a video.</p>
-									)}
-
-									<div className="mt-4">
-										<label className="block text-xs text-[#8a8a8a] mb-1">Benefits (comma separated — shown as chips over the banner)</label>
-										<Input
-											value={draftBenefits}
-											onChange={(e) => setDraftBenefits(e.target.value)}
-											placeholder="Free drinks, Live music"
-											bg="#1E1E1E"
-											borderColor="#343536"
-											color="white"
-											borderRadius="10px"
-										/>
+									<div className="mt-5">
+										<BenefitsField value={draftBenefits} onChange={setDraftBenefits} />
 									</div>
 								</div>
 							) : (
@@ -853,18 +816,29 @@ export default function HostedEvents({ event }: Props) {
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
 								<div className="text-left w-full sm:w-auto min-w-0">
 									{editing ? (
-										<Input
-											value={draftName}
-											onChange={(e) => setDraftName(e.target.value)}
-											placeholder="Event name"
-											bg="#1E1E1E"
-											borderColor="#343536"
-											color="white"
-											borderRadius="10px"
-											fontSize={{ base: "xl", sm: "2xl" }}
-											fontWeight="bold"
-											maxLength={300}
-										/>
+										// Same field as the manage form's Event title, down to the 100-char
+										// cap and the counter. The server accepts up to 300, but a title that
+										// only one of the two screens will let you type is worse than a
+										// shared limit.
+										<InputGroup>
+											<Input
+												value={draftName}
+												onChange={(e) => setDraftName(e.target.value)}
+												placeholder="Event title"
+												className={roboto.className}
+												bg="#090C10"
+												color="white"
+												fontSize="14px"
+												h="48px"
+												border="1px solid #343536"
+												_focus={{ borderColor: "#343536", boxShadow: "none" }}
+												maxLength={100}
+												pr="60px"
+											/>
+											<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" color="gray.500" fontSize="xs">
+												{draftName?.length || 0}/100
+											</InputLeftElement>
+										</InputGroup>
 									) : (
 										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
 									)}
@@ -953,23 +927,12 @@ export default function HostedEvents({ event }: Props) {
 								{editing ? (
 									<>
 										<h3 className="text-sm sm:text-base font-semibold mb-2">Description</h3>
-										<Textarea
-											value={draftDesc}
-											onChange={(e) => setDraftDesc(e.target.value)}
-											placeholder="What is this event about?"
-											bg="#1E1E1E"
-											borderColor="#343536"
-											color="white"
-											borderRadius="10px"
-											rows={8}
-										/>
-										{/* The stored description may be HTML written by the rich editor in
-										    the console. Editing it here is plain text on purpose — a
-										    textarea that silently swallowed markup would be worse than
-										    saying so. */}
-										<p className="text-xs text-[#8a8a8a] mt-2">
-											Plain text. For formatting, use the description editor in Manage Event.
-										</p>
+										{/* The same editor as the manage form, so both screens read and write
+										    the same HTML. A plain textarea here would have flattened markup a
+										    host wrote in the console. `EventDescription` below already
+										    sanitises and renders that HTML for guests. */}
+										<RichTextEditor value={draftDesc} onChange={setDraftDesc} placeholder="Add Description" />
+										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{stripHtml(draftDesc || "").length}/500</p>
 									</>
 								) : isEnded ? (
 									<>
