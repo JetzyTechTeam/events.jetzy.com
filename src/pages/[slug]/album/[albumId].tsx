@@ -6,9 +6,10 @@ import { useRouter } from "next/router"
 import { useSession } from "next-auth/react"
 import axios from "axios"
 import { Types } from "mongoose"
-import { Box, Flex, Text, Heading, Icon, IconButton, Button, Spinner, SimpleGrid, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton } from "@chakra-ui/react"
-import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX, FiImage, FiMove, FiChevronUp, FiChevronDown } from "react-icons/fi"
+import { Box, Flex, Text, Heading, Icon, IconButton, Button, Spinner, SimpleGrid, Input, Textarea, Checkbox, Progress, useToast, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton } from "@chakra-ui/react"
+import { FiArrowLeft, FiShare2, FiDownload, FiTag, FiPlayCircle, FiChevronLeft, FiChevronRight, FiX, FiImage, FiEdit2, FiChevronUp, FiChevronDown, FiPlus, FiTrash2, FiVideo } from "react-icons/fi"
 
+import { uploadFile } from "@/services/upload.service"
 import { ensureDbConnected } from "@/configs/database"
 import { Events } from "@/models/events"
 import { EventAlbums as EventAlbumsModel } from "@/models/events/albums"
@@ -216,11 +217,25 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 
 	const { ready, hasAccess, probeSettled, recordAlbumAccess, openGate, gateUi, viewer, trackAlbumLanding } = useAlbumViewerGate(event._id)
 
+	// State rather than a memo: an admin editing the album has to see the result immediately,
+	// without a page reload throwing them back to the top of a long album.
+	const [media, setMedia] = useState<AlbumMedia[]>(album.media || [])
+	const [title, setTitle] = useState(album.title)
+	const [description, setDescription] = useState(album.description || "")
+	const [showEvents, setShowEvents] = useState<boolean | undefined>(album.showEvents)
+	useEffect(() => {
+		setMedia(album.media || [])
+		setTitle(album.title)
+		setDescription(album.description || "")
+		setShowEvents(album.showEvents)
+	}, [album])
+
 	// Live + upcoming events to promote beside the photos, minus this album's own event.
 	// `showEvents === false` is the host switching the rail off for this album; undefined
-	// means show, since albums predating the toggle carry no value.
+	// means show, since albums predating the toggle carry no value. Reads the STATE, so
+	// toggling it in the editor takes effect on save without a reload.
 	const promotedAll = usePromotedEvents(event._id)
-	const promotedEvents = album.showEvents === false ? EMPTY_EVENTS : promotedAll
+	const promotedEvents = showEvents === false ? EMPTY_EVENTS : promotedAll
 
 	const role = (session?.user as any)?.role
 	const isAdmin = role === "admin" || role === "super admin"
@@ -229,11 +244,6 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 	// Tagging emails someone in your name, so it needs a real session — the name+email
 	// guest cookie is enough to view but not to tag.
 	const canTag = !!session
-
-	// State rather than a memo: an admin reordering the photos has to see the new order
-	// immediately, without a page reload throwing them back to the top of a long album.
-	const [media, setMedia] = useState<AlbumMedia[]>(album.media || [])
-	useEffect(() => { setMedia(album.media || []) }, [album.media])
 
 	// Publish emails and album share links open this page directly, so the event view has to
 	// be recorded here too. `from=event` means the event page already counted it (card click
@@ -273,12 +283,24 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 		setRequestOpen(true)
 	}, [])
 
-	// ── Reorder (admin / event owner) ───────────────────────────────────────
-	// Done right here on the album rather than in the edit modal: the person arranging photos
-	// is looking at them, and making them open a form to do it means working blind.
-	const [reordering, setReordering] = useState(false)
+	// ── Inline editing (admin / event owner) ────────────────────────────────
+	// Everything the album edit modal could do — title, description, add, remove, reorder —
+	// done right here on the album. CEO decision: nobody should be sent to another screen to
+	// change what they are looking at.
+	const [editing, setEditing] = useState(false)
 	const [draft, setDraft] = useState<AlbumMedia[]>([])
+	const [draftTitle, setDraftTitle] = useState("")
+	const [draftDescription, setDraftDescription] = useState("")
+	const [draftShowEvents, setDraftShowEvents] = useState<boolean | undefined>(undefined)
 	const [savingOrder, setSavingOrder] = useState(false)
+	const [deleting, setDeleting] = useState(false)
+	const [confirmDelete, setConfirmDelete] = useState(false)
+
+	// In-flight uploads, rendered as placeholder tiles so a slow file is visible rather than
+	// looking like nothing happened.
+	const [uploads, setUploads] = useState<{ id: string; progress: number; type: "image" | "video" }[]>([])
+	const photoInputRef = React.useRef<HTMLInputElement | null>(null)
+	const videoInputRef = React.useRef<HTMLInputElement | null>(null)
 
 	// Ref holds the drag source (no side effects inside a state updater); state mirrors it
 	// only so the dragged tile can dim. Same approach as the album edit modal, which is a
@@ -296,32 +318,81 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 			return arr
 		})
 
-	const startReorder = () => {
+	const startEditing = () => {
 		setDraft(media)
+		setDraftTitle(title)
+		setDraftDescription(description)
+		setDraftShowEvents(showEvents)
 		setOpenIndex(null)
-		setReordering(true)
+		setEditing(true)
 	}
 
-	const cancelReorder = () => {
-		setReordering(false)
+	const cancelEditing = () => {
+		setEditing(false)
 		setDraft([])
+		setUploads([])
 		dragFromRef.current = null
 		setDragIndex(null)
 	}
 
-	const saveOrder = async () => {
+	const addFiles = (files: FileList | null, type: "image" | "video") => {
+		if (!files || files.length === 0) return
+		Array.from(files).forEach((file) => {
+			const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+			setUploads((prev) => [...prev, { id, progress: 0, type }])
+			uploadFile(file, {
+				folder: "posts",
+				onProgressChange: (progress) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress } : u))),
+			})
+				.then(({ url }) => {
+					// Appended, not inserted: a new photo joining in the middle of an order the
+					// host is in the middle of arranging would be its own small betrayal.
+					setDraft((prev) => (prev.some((m) => m.url === url) ? prev : [...prev, { url, type }]))
+					setUploads((prev) => prev.filter((u) => u.id !== id))
+				})
+				.catch(() => {
+					setUploads((prev) => prev.filter((u) => u.id !== id))
+					toast({ title: "Upload failed", description: file.name, status: "error", duration: 4000, isClosable: true })
+				})
+		})
+	}
+
+	const saveEdits = async () => {
+		const cleanTitle = draftTitle.trim()
+		if (!cleanTitle) {
+			toast({ title: "The album needs a title", status: "warning", duration: 3000, isClosable: true })
+			return
+		}
+		if (draft.length === 0) {
+			toast({ title: "Keep at least one photo", description: "Delete the whole album instead if that's what you meant.", status: "warning", duration: 4000, isClosable: true })
+			return
+		}
+		if (uploads.length > 0) {
+			toast({ title: "Still uploading", description: "Wait for the uploads to finish first.", status: "warning", duration: 3000, isClosable: true })
+			return
+		}
 		setSavingOrder(true)
 		try {
-			await axios.patch(`/api/events/${event._id}/albums/${album._id}/order`, {
-				mediaUrls: draft.map((m) => m.url),
+			// The full-replace PUT, the same call the edit modal makes. Safe from here because
+			// this page holds the whole record — title, description, media and showEvents all
+			// came from getServerSideProps and are all being sent back.
+			await axios.put(`/api/events/${event._id}/albums/${album._id}`, {
+				title: cleanTitle,
+				description: draftDescription.trim(),
+				media: draft.map((m) => ({ url: m.url, type: m.type })),
+				// Omitted means unchanged on the server, so only send a real boolean.
+				...(draftShowEvents === undefined ? {} : { showEvents: draftShowEvents }),
 			})
 			setMedia(draft)
-			setReordering(false)
+			setTitle(cleanTitle)
+			setDescription(draftDescription.trim())
+			setShowEvents(draftShowEvents)
+			setEditing(false)
 			setDraft([])
-			toast({ title: "Photo order saved", status: "success", duration: 2500, isClosable: true })
+			toast({ title: "Album updated", status: "success", duration: 2500, isClosable: true })
 		} catch (err: any) {
 			toast({
-				title: "Couldn't save the order",
+				title: "Couldn't save the album",
 				description: err?.response?.data?.message || err.message,
 				status: "error",
 				duration: 5000,
@@ -329,6 +400,25 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 			})
 		} finally {
 			setSavingOrder(false)
+		}
+	}
+
+	const deleteAlbum = async () => {
+		setDeleting(true)
+		try {
+			await axios.delete(`/api/events/${event._id}/albums/${album._id}`)
+			toast({ title: "Album deleted", status: "success", duration: 2500, isClosable: true })
+			router.push(eventPath(event.slug))
+		} catch (err: any) {
+			setDeleting(false)
+			setConfirmDelete(false)
+			toast({
+				title: "Couldn't delete the album",
+				description: err?.response?.data?.message || err.message,
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
 		}
 	}
 	const current = openIndex === null ? null : media[openIndex]
@@ -402,7 +492,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 	const shareLink = async (url: string) => {
 		try {
 			if (typeof navigator !== "undefined" && (navigator as any).share) {
-				await (navigator as any).share({ title: album.title, url })
+				await (navigator as any).share({ title, url })
 				return
 			}
 		} catch (e: any) {
@@ -506,7 +596,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 	return (
 		<>
 			<Head>
-				<title>{album.title} — {event.name}</title>
+				<title>{title} — {event.name}</title>
 			</Head>
 
 			<Box minH="100vh" bg="#131313" color="white">
@@ -520,31 +610,31 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 						_hover={{ bg: "whiteAlpha.100" }}
 						onClick={() => router.push(eventPath(event.slug))}
 					/>
-					<Text fontWeight="700">{reordering ? "Arrange photos" : "Photo tour"}</Text>
-					{reordering ? (
+					<Text fontWeight="700">{editing ? "Editing album" : "Photo tour"}</Text>
+					{editing ? (
 						<Flex gap={2}>
-							<Button size="sm" variant="ghost" color="#bbbbbb" _hover={{ bg: "whiteAlpha.100" }} onClick={cancelReorder} isDisabled={savingOrder}>
+							<Button size="sm" variant="ghost" color="#bbbbbb" _hover={{ bg: "whiteAlpha.100" }} onClick={cancelEditing} isDisabled={savingOrder}>
 								Cancel
 							</Button>
-							<Button size="sm" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} fontWeight="bold" onClick={saveOrder} isLoading={savingOrder}>
-								Save order
+							<Button size="sm" bg="#F79432" color="black" _hover={{ bg: "#e58220" }} fontWeight="bold" onClick={saveEdits} isLoading={savingOrder}>
+								Save changes
 							</Button>
 						</Flex>
 					) : (
 						<Flex gap={1} align="center">
 							{/* Admin or the event's owner. Right here on the album by decision — the
-							    person arranging photos is looking at them, and sending them into an
-							    edit form to do it means working blind. */}
-							{canManage && media.length > 1 && (
+							    person editing is looking at what they are editing, and sending them
+							    to another screen to do it means working blind. */}
+							{canManage && (
 								<Button
-									leftIcon={<FiMove />}
+									leftIcon={<FiEdit2 />}
 									size="sm"
 									variant="ghost"
 									color="#F79432"
 									_hover={{ bg: "whiteAlpha.100" }}
-									onClick={startReorder}
+									onClick={startEditing}
 								>
-									Reorder
+									Edit
 								</Button>
 							)}
 							<Button leftIcon={<FiShare2 />} size="sm" variant="ghost" color="white" _hover={{ bg: "whiteAlpha.100" }} onClick={shareAlbum}>
@@ -558,7 +648,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 					<Flex justify="center" py={20}><Spinner color="#F79432" /></Flex>
 				) : !ready ? (
 					<Flex direction="column" align="center" justify="center" py={24} px={6} textAlign="center" gap={4}>
-						<Heading size="md">{album.title}</Heading>
+						<Heading size="md">{title}</Heading>
 						<Text color="#9a9a9a" fontSize="sm" maxW="420px">
 							{hasAccess ? "One quick question before you view the photos." : "Enter your name and email to view these photos."}
 						</Text>
@@ -602,13 +692,103 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 
 						{/* Middle: the photos */}
 						<Box flex="1" width="100%" minW={0}>
-							{reordering ? (
+							{editing ? (
 								<>
+									{/* Album details, editable in place. */}
+									<Box mb={5} p={4} bg="#181818" border="1px solid #2a2a2a" borderRadius="12px">
+										<Text fontSize="xs" color="#8a8a8a" mb={1}>Album title</Text>
+										<Input
+											value={draftTitle}
+											onChange={(e) => setDraftTitle(e.target.value)}
+											placeholder="Album title"
+											bg="#1E1E1E"
+											borderColor="#343536"
+											borderRadius="10px"
+											color="white"
+											mb={3}
+											maxLength={120}
+										/>
+										<Text fontSize="xs" color="#8a8a8a" mb={1}>Description</Text>
+										<Textarea
+											value={draftDescription}
+											onChange={(e) => setDraftDescription(e.target.value)}
+											placeholder="What was this album about?"
+											bg="#1E1E1E"
+											borderColor="#343536"
+											borderRadius="10px"
+											color="white"
+											rows={3}
+											maxLength={2000}
+										/>
+										{/* Undefined means SHOW — albums predating the toggle carry no
+										    value, so this must not be rendered as an unchecked box. */}
+										<Checkbox
+											mt={3}
+											colorScheme="orange"
+											isChecked={draftShowEvents !== false}
+											onChange={(e) => setDraftShowEvents(e.target.checked)}
+										>
+											<Text fontSize="sm" color="#bbbbbb">Show upcoming events beside these photos</Text>
+										</Checkbox>
+									</Box>
+
+									<Flex align="center" gap={2} mb={3} wrap="wrap">
+										<Button
+											leftIcon={<FiPlus />}
+											size="sm"
+											bg="#1E1E1E"
+											color="white"
+											border="1px solid #343536"
+											_hover={{ bg: "#2A2A2A" }}
+											onClick={() => photoInputRef.current?.click()}
+										>
+											Add photos
+										</Button>
+										<Button
+											leftIcon={<FiVideo />}
+											size="sm"
+											bg="#1E1E1E"
+											color="white"
+											border="1px solid #343536"
+											_hover={{ bg: "#2A2A2A" }}
+											onClick={() => videoInputRef.current?.click()}
+										>
+											Add videos
+										</Button>
+										<Button
+											leftIcon={<FiTrash2 />}
+											size="sm"
+											variant="ghost"
+											color="#E53E3E"
+											_hover={{ bg: "whiteAlpha.100" }}
+											ml="auto"
+											onClick={() => setConfirmDelete(true)}
+										>
+											Delete album
+										</Button>
+										<input
+											ref={photoInputRef}
+											type="file"
+											accept="image/*"
+											multiple
+											hidden
+											onChange={(e) => { addFiles(e.target.files, "image"); e.target.value = "" }}
+										/>
+										<input
+											ref={videoInputRef}
+											type="file"
+											accept="video/*"
+											multiple
+											hidden
+											onChange={(e) => { addFiles(e.target.files, "video"); e.target.value = "" }}
+										/>
+									</Flex>
+
 									<Text color="#bbbbbb" fontSize="sm" mb={1}>
 										Drag a photo, or use the arrows, to set the order guests will see.
 									</Text>
 									<Text color="#8a8a8a" fontSize="xs" mb={4}>
-										The first photo is the album cover. Nothing changes for guests until you press Save order.
+										The first photo is the album cover. Nothing changes for guests until you press Save changes.
 									</Text>
 									{/* Every photo at once: no infinite scroll here, since dragging one
 									    to the front of a long album has to be possible without the
@@ -665,6 +845,22 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 													{i === 0 ? "COVER" : i + 1}
 												</Flex>
 
+												{/* Remove. Only from the draft — nothing leaves the album
+												    until Save, so a misfire is undone by Cancel. */}
+												<IconButton
+													aria-label="Remove this photo"
+													icon={<FiX />}
+													size="xs"
+													borderRadius="full"
+													position="absolute"
+													top="6px"
+													right="6px"
+													bg="blackAlpha.800"
+													color="white"
+													_hover={{ bg: "#E53E3E" }}
+													onClick={() => setDraft((prev) => prev.filter((x) => x.url !== m.url))}
+												/>
+
 												{/* Arrows as well as dragging: dragging is awkward on a
 												    phone and impossible with a keyboard. */}
 												<Flex position="absolute" bottom="6px" right="6px" gap={1}>
@@ -693,7 +889,34 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 												</Flex>
 											</Box>
 										))}
+
+										{/* In-flight uploads. Shown as tiles so a slow file looks like
+										    something happening rather than nothing. */}
+										{uploads.map((u) => (
+											<Flex
+												key={u.id}
+												direction="column"
+												align="center"
+												justify="center"
+												height="150px"
+												borderRadius="10px"
+												bg="#181818"
+												border="1px dashed #343536"
+												px={3}
+											>
+												<Text fontSize="xs" color="#8a8a8a" mb={2}>
+													Uploading {u.type === "video" ? "video" : "photo"}…
+												</Text>
+												<Progress value={u.progress} size="xs" width="100%" colorScheme="orange" bg="#2a2a2a" borderRadius="full" />
+											</Flex>
+										))}
 									</SimpleGrid>
+
+									{draft.length === 0 && uploads.length === 0 && (
+										<Text color="#8a8a8a" fontSize="sm" mt={4}>
+											No photos left. Add some, or delete the album.
+										</Text>
+									)}
 								</>
 							) : media.length === 0 ? (
 								<Text color="#888">No media in this album.</Text>
@@ -718,7 +941,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 															m={m}
 															index={offset + ci}
 															height={row.length > 1 ? "220px" : "420px"}
-															albumTitle={album.title}
+															albumTitle={title}
 															onOpen={setOpenIndex}
 														/>
 														</Box>
@@ -745,7 +968,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 							    the rest of the events would never be seen — the desktop rail shows
 							    them all, and mobile has no rail. Only once every row is rendered,
 							    so it can't appear above photos that are still loading. */}
-							{!reordering && visibleRows >= rows.length && promotedEvents.length > promoSlotCount && (
+							{!editing && visibleRows >= rows.length && promotedEvents.length > promoSlotCount && (
 								<Box display={{ base: "block", lg: "none" }} mt={6}>
 									<Text fontSize="xs" fontWeight="bold" color="#8a8a8a" letterSpacing="0.08em" mb={3}>
 										{promoSlotCount > 0 ? "MORE UPCOMING EVENTS" : "UPCOMING EVENTS"}
@@ -761,7 +984,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 							{/* Every photo above carries the Jetzy Life mark. This is how a viewer asks
 							    for the clean original of one of them — per photo, so the request names
 							    an image somebody can actually go and send. */}
-							{!reordering && media.length > 0 && (
+							{!editing && media.length > 0 && (
 								<Box mt={8} pt={6} borderTop="1px solid #262626" textAlign="center">
 									<Button
 										leftIcon={<FiImage />}
@@ -796,8 +1019,8 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 							position={{ base: "static", lg: "sticky" }}
 							top={{ lg: "88px" }}
 						>
-							<Heading size="xl" mb={3}>{album.title}</Heading>
-							{album.description && <AlbumDescription text={album.description} />}
+							<Heading size="xl" mb={3}>{title}</Heading>
+							{description && <AlbumDescription text={description} />}
 							<Text color="#8a8a8a" fontSize="sm" mt={3}>
 								{media.length} item{media.length === 1 ? "" : "s"}
 							</Text>
@@ -805,6 +1028,29 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 					</Flex>
 				)}
 			</Box>
+
+			{/* Deleting is the one action here that a guest can see the effect of and the host
+			    can't undo, so it asks first. */}
+			<Modal isOpen={confirmDelete} onClose={() => !deleting && setConfirmDelete(false)} isCentered size={{ base: "sm", md: "md" }}>
+				<ModalOverlay bg="blackAlpha.700" backdropFilter="blur(8px)" />
+				<ModalContent bg="#131313" color="white" border="1px solid #343536" borderRadius="12px">
+					<ModalHeader>Delete this album?</ModalHeader>
+					<ModalBody>
+						<Text color="#bbbbbb" fontSize="sm">
+							{media.length} item{media.length === 1 ? "" : "s"} will stop being visible to guests. Anyone who already has the
+							link will be told the photos were removed.
+						</Text>
+					</ModalBody>
+					<ModalFooter gap={2}>
+						<Button variant="ghost" color="#bbbbbb" _hover={{ bg: "whiteAlpha.100" }} onClick={() => setConfirmDelete(false)} isDisabled={deleting}>
+							Keep it
+						</Button>
+						<Button bg="#E53E3E" color="white" _hover={{ bg: "#c53030" }} onClick={deleteAlbum} isLoading={deleting}>
+							Delete album
+						</Button>
+					</ModalFooter>
+				</ModalContent>
+			</Modal>
 
 			{/* Access / interests dialogs */}
 			{gateUi}
@@ -828,7 +1074,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 							Close
 						</Button>
 						<Box textAlign="center">
-							<Text fontWeight="700" fontSize="sm">{album.title}</Text>
+							<Text fontWeight="700" fontSize="sm">{title}</Text>
 							<Text fontSize="xs" color="#9a9a9a">{openIndex + 1} of {media.length}</Text>
 						</Box>
 						<Flex gap={1}>
@@ -869,7 +1115,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 							<Box as="video" src={current.url} controls maxH="100%" maxW="100%" sx={{ objectFit: "contain" }} borderRadius="12px" />
 						) : (
 							// eslint-disable-next-line @next/next/no-img-element
-							<img src={current.url} alt={album.title} loading="eager" decoding="async" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain", borderRadius: "12px" }} />
+							<img src={current.url} alt={title} loading="eager" decoding="async" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain", borderRadius: "12px" }} />
 						)}
 						{/* On the stage, not the media: `contain` leaves letterbox bars, and pinning
 						    the mark to the image would move it around as aspect ratios change. */}

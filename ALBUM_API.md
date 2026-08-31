@@ -495,6 +495,9 @@ Fired by `useAlbumViewerGate`, which owns the dialog state. `GuestAccessModal` g
 
 ### 4.12-b `PATCH /albums/:albumId/order` — **admin or owner**
 
+> **The web no longer calls this** — the album page's inline editor saves everything through the full-replace `PUT`, since it holds the whole record. This route is kept because it is permutation-checked and is the right shape for a mobile reorder: it cannot touch the title, and it cannot lose a photo.
+
+
 Reorders an album's media. Body: `{ mediaUrls: string[] }`.
 
 Its own route rather than the existing full-replace `PUT`, which requires title, description and the whole media array — reordering through it would mean a stale tab could revert a title, and a bug in the media round-trip could delete photos.
