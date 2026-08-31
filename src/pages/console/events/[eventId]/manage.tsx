@@ -829,7 +829,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const handleImageDelete = async (imageUrl: string) => {
 		try {
 			try { await deleteFile(imageUrl) } catch {}
-			await axios.post("/api/delete-image", { url: imageUrl })
+			// The event id is required now: the endpoint used to match the url across every
+			// event, which meant it could strip an image off somebody else's.
+			await axios.post("/api/delete-image", { eventId: event._id, url: imageUrl })
 			setUploadedImages((prev) => prev.filter((img) => img.file !== imageUrl))
 		} catch (error: any) {
 			console.error("Error deleting image", error)

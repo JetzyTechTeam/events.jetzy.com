@@ -53,8 +53,26 @@ export const getServerSideProps: GetServerSideProps<any, Params> = async (contex
 
 	// using event id, fetch event tickets from the database
 
-	const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false }, "tickets name")
+	const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false }, "tickets name ownerId")
 	if (!event) {
+		return {
+			props: {
+				tickets: null,
+				eventName: "",
+				eventId: eventId,
+			},
+		}
+	}
+
+	// Admin OR the event's owner, matching the manage page and the ticket APIs this page calls.
+	// Without it any logged-in user could open /console/events/<any-id>/tickets and read another
+	// host's ticket names and prices — and the props are the leak, so this withholds the data
+	// rather than hiding the table.
+	const session = (authResult as any)?.props?.session
+	const role = (session?.user as any)?.role
+	const uid = (session?.user as any)?._id?.toString()
+	const isAdmin = role === "admin" || role === "super admin"
+	if (!isAdmin && (event as any).ownerId?.toString() !== uid) {
 		return {
 			props: {
 				tickets: null,
