@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
+import dynamic from "next/dynamic"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
 import EventAlbums from "@/components/events/EventAlbums"
 import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
@@ -7,13 +8,29 @@ import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
 import { applyMediaOrder, eventMedia, type EventMedia } from "@/lib/event-media"
 import { uploadFile } from "@/services/upload.service"
-// The very same controls the manage form uses, so the two screens cannot drift apart.
-import RichTextEditor from "@/components/misc/RichTextEditor"
-import MediaUploadSection from "@/components/media-upload-section"
 import BenefitsField from "@/components/events/BenefitsField"
+import type { PlaceSelection } from "@/lib/google-place"
+
+/**
+ * The very same controls the manage form uses, so the two screens cannot drift apart — but
+ * loaded on demand.
+ *
+ * This is a PUBLIC page and these are host-only controls. Importing them statically pulled
+ * Quill, the Google Places widget and `moment-timezone` (which enumerates every zone at module
+ * scope) into the event page's module graph, which was enough to run the Next build worker out
+ * of heap during "Collecting page data" — and would have shipped all of it to every guest.
+ * `ssr: false` because none of them render anything meaningful on the server.
+ */
+const RichTextEditor = dynamic(() => import("@/components/misc/RichTextEditor"), { ssr: false })
+const MediaUploadSection = dynamic(() => import("@/components/media-upload-section"), { ssr: false })
+const EventLocationField = dynamic(() => import("@/components/events/fields/EventLocationField"), { ssr: false })
+const DatePicker = dynamic(() => import("@/components/form/DatePicker"), { ssr: false })
+const TimePicker = dynamic(() => import("@/components/form/TimePicker"), { ssr: false })
+const TimezoneSelect = dynamic(() => import("@/components/timezone-select"), { ssr: false })
 import type { FileUploadData } from "@/components/misc/DragAndDropUploader"
 import { uniqueId } from "@/lib/utils"
 import { Roboto } from "next/font/google"
+import { CalendarDaysIcon, ChevronDownIcon, ClockIcon } from "@heroicons/react/24/outline"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -58,6 +75,11 @@ import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
+
+// Same field classes the manage form uses, so the pickers render identically here.
+const fieldBase = "w-full h-[48px] rounded-md bg-[#090C10] text-white text-[14px] border border-[#343536] focus:outline-none"
+const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`
+const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`
 
 const settings = {
 	infinite: true,
@@ -215,6 +237,16 @@ export default function HostedEvents({ event }: Props) {
 	const [draftImages, setDraftImages] = useState<FileUploadData[]>([])
 	const [draftVideos, setDraftVideos] = useState<FileUploadData[]>([])
 	const [draftMediaOrder, setDraftMediaOrder] = useState<string[]>([])
+	const [draftLocation, setDraftLocation] = useState("")
+	const [draftVenueName, setDraftVenueName] = useState("")
+	const [draftEntrance, setDraftEntrance] = useState("")
+	const [draftCoords, setDraftCoords] = useState<{ latitude?: number; longitude?: number; placeId?: string }>({})
+	const [draftCapacity, setDraftCapacity] = useState("")
+	const [draftTimezone, setDraftTimezone] = useState("")
+	const [draftStartDate, setDraftStartDate] = useState("")
+	const [draftStartTime, setDraftStartTime] = useState("")
+	const [draftEndDate, setDraftEndDate] = useState("")
+	const [draftEndTime, setDraftEndTime] = useState("")
 	const [isUploadingImage, setIsUploadingImage] = useState(false)
 	const [isUploadingVideo, setIsUploadingVideo] = useState(false)
 	const [imageUploadProgress, setImageUploadProgress] = useState(0)
@@ -226,11 +258,14 @@ export default function HostedEvents({ event }: Props) {
 	const [liveDesc, setLiveDesc] = useState<string | null>(null)
 	const [liveBenefits, setLiveBenefits] = useState<string | null>(null)
 	const [liveMedia, setLiveMedia] = useState<{ url: string; type: "image" | "video" }[] | null>(null)
+	// The saved event, so the header lines (date, location) update without a reload.
+	const [liveEvent, setLiveEvent] = useState<Partial<IEvent> | null>(null)
 	useEffect(() => {
 		setLiveName(null)
 		setLiveDesc(null)
 		setLiveBenefits(null)
 		setLiveMedia(null)
+		setLiveEvent(null)
 	}, [event])
 
 	// What the page shows: the edited value once saved, otherwise what came from the server.
@@ -240,6 +275,12 @@ export default function HostedEvents({ event }: Props) {
 	// `eventMedia` applies the host's `mediaOrder` across the two arrays — never read
 	// `images` directly, or a video lead and any hand-arranged order are lost.
 	const shownMedia = liveMedia ?? (clonedEvent ? eventMedia(clonedEvent) : [])
+	// The event as the page should show it: saved edits layered over the server copy. Used by
+	// everything that reads a scalar field (dates, location, capacity).
+	const shownEvent = useMemo(
+		() => (clonedEvent ? ({ ...clonedEvent, ...(liveEvent || {}) } as IEvent) : clonedEvent),
+		[clonedEvent, liveEvent],
+	)
 
 	const startEventEdit = () => {
 		// `stripHtml` on load, raw on save — the same asymmetry manage has, so the two forms
@@ -250,6 +291,24 @@ export default function HostedEvents({ event }: Props) {
 		setDraftImages(shownMedia.filter((m) => m.type !== "video").map((m) => ({ id: uniqueId(10), file: m.url })))
 		setDraftVideos(shownMedia.filter((m) => m.type === "video").map((m) => ({ id: uniqueId(10), file: m.url })))
 		setDraftMediaOrder(shownMedia.map((m) => m.url))
+
+		// Dates are split into date + time IN THE EVENT'S ZONE, exactly the way the manage form
+		// seeds its own pickers — an instant rendered in the browser's zone would show the host
+		// a different day than the one guests see.
+		const zone = getEventZone(shownEvent?.timezone)
+		const start = shownEvent?.startsOn ? dayjs.utc(shownEvent.startsOn).tz(zone) : null
+		const end = shownEvent?.endsOn ? dayjs.utc(shownEvent.endsOn).tz(zone) : null
+		setDraftTimezone(normalizeTimezone(shownEvent?.timezone))
+		setDraftStartDate(start ? start.format("YYYY-MM-DD") : "")
+		setDraftStartTime(start && shownEvent?.hasStartTime !== false ? start.format("HH:mm") : "")
+		setDraftEndDate(end ? end.format("YYYY-MM-DD") : "")
+		setDraftEndTime(end && shownEvent?.hasEndTime !== false ? end.format("HH:mm") : "")
+
+		setDraftLocation(shownEvent?.location || "")
+		setDraftVenueName((shownEvent as any)?.venueName || "")
+		setDraftEntrance((shownEvent as any)?.entrance || "")
+		setDraftCoords({})
+		setDraftCapacity(shownEvent?.capacity != null ? String(shownEvent.capacity) : "")
 		setEditing(true)
 	}
 
@@ -357,18 +416,56 @@ export default function HostedEvents({ event }: Props) {
 			)
 			const images = draftImages.map((m) => m.file)
 			const videos = draftVideos.map((m) => m.file)
-			await axios.patch(`/api/events/${clonedEvent?._id}/details`, {
+			// Dates go out as resolved instants. The date + time the host typed are read IN THE
+			// EVENT'S ZONE — the same combination manage makes on submit — so 7pm means 7pm
+			// where the event is, not where the browser is.
+			const zone = getEventZone(draftTimezone)
+			const toInstant = (date: string, time: string) =>
+				date ? dayjs.tz(`${date} ${time || "00:00"}`, "YYYY-MM-DD HH:mm", zone).utc().toISOString() : ""
+
+			const payload: any = {
 				name,
 				desc: draftDesc,
 				benefits: draftBenefits,
 				images,
 				videos,
 				mediaOrder: ordered.map((m) => m.url),
-			})
+				location: draftLocation,
+				venueName: draftVenueName,
+				entrance: draftEntrance,
+				timezone: draftTimezone,
+				capacity: Number(draftCapacity) || 0,
+				...(draftCoords.latitude !== undefined && draftCoords.longitude !== undefined ? draftCoords : {}),
+			}
+			// Only touch the dates when this event isn't running a poll — a poll and fixed dates
+			// are mutually exclusive, and the poll is edited in Manage Event.
+			if (!isDatePollActive) {
+				payload.startsOn = toInstant(draftStartDate, draftStartTime)
+				payload.endsOn = toInstant(draftEndDate, draftEndTime)
+				payload.hasStartTime = !!draftStartTime
+				payload.hasEndTime = !!draftEndTime
+			}
+
+			await axios.patch(`/api/events/${clonedEvent?._id}/details`, payload)
 			setLiveName(name)
 			setLiveDesc(draftDesc)
 			setLiveBenefits(draftBenefits)
 			setLiveMedia(ordered.map((m) => ({ url: m.url, type: m.type })))
+			setLiveEvent({
+				location: draftLocation,
+				venueName: draftVenueName,
+				entrance: draftEntrance,
+				timezone: draftTimezone,
+				capacity: Number(draftCapacity) || 0,
+				...(isDatePollActive
+					? {}
+					: {
+							startsOn: payload.startsOn ? new Date(payload.startsOn) : undefined,
+							endsOn: payload.endsOn ? new Date(payload.endsOn) : undefined,
+							hasStartTime: payload.hasStartTime,
+							hasEndTime: payload.hasEndTime,
+					  }),
+			} as any)
 			setEditing(false)
 			toast({ title: "Event updated", status: "success", duration: 2500, isClosable: true })
 		} catch (err: any) {
@@ -397,7 +494,7 @@ export default function HostedEvents({ event }: Props) {
 	// appear straight after a booking made on this page rather than only on the next load.
 	const hasLiveBooking = !!myBooking && !isPendingBooking(myBooking)
 	const canSeeLocation = !clonedEvent?.locationDisclosedAfterBooking || hasLiveBooking || canManage
-	const disclosedLocation = (hasLiveBooking && myBooking?.eventLocation) || clonedEvent?.location
+	const disclosedLocation = (hasLiveBooking && myBooking?.eventLocation) || shownEvent?.location
 
 	// A media url that 404s and an event with no media at all used to look identical
 	// on screen ("No image available"), which made bug reports unfalsifiable — the
@@ -534,21 +631,21 @@ export default function HostedEvents({ event }: Props) {
 	})
 
 	const { formattedDate, formattedTime } = useMemo(() => {
-		if (!clonedEvent?.startsOn) return { formattedDate: "", formattedTime: "" }
+		if (!shownEvent?.startsOn) return { formattedDate: "", formattedTime: "" }
 
 		try {
-			const userTimeZone = getEventZone(clonedEvent?.timezone)
-			const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
+			const userTimeZone = getEventZone(shownEvent?.timezone)
+			const date = dayjs.utc(shownEvent.startsOn).tz(userTimeZone)
 
 			const formattedDate = date.format("MMMM DD, YYYY")
-			const formattedTime = clonedEvent?.hasStartTime !== false ? date.format("hh:mm A") : ""
+			const formattedTime = shownEvent?.hasStartTime !== false ? date.format("hh:mm A") : ""
 
 			return { formattedDate, formattedTime }
 		} catch (error) {
 			console.error("Error formatting date:", error)
 			return { formattedDate: "", formattedTime: "" }
 		}
-	}, [clonedEvent?.startsOn, clonedEvent?.timezone, clonedEvent?.hasStartTime])
+	}, [shownEvent?.startsOn, shownEvent?.timezone, shownEvent?.hasStartTime])
 
 	// Add error boundary for event data - only show if event is truly invalid
 	if (!isValidEvent || !clonedEvent) {
@@ -842,15 +939,113 @@ export default function HostedEvents({ event }: Props) {
 									) : (
 										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
 									)}
+									{editing && (
+										<Box mt={4} mb={2} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4}>
+											{/* Time zone — same control and same class as the manage form. */}
+											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Time zone</Text>
+											<Box position="relative" mb={4}>
+												<TimezoneSelect
+													className={tzFieldCls}
+													value={draftTimezone}
+													onChange={(tz: string) => setDraftTimezone(tz)}
+												/>
+												<ChevronDownIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+											</Box>
+
+											{/* A poll and fixed dates are mutually exclusive, and the poll (with
+											    its votes) is edited in Manage Event — so the dates are read-only
+											    here rather than silently ignored on save. */}
+											{isDatePollActive ? (
+												<Text fontSize="xs" color="orange.400" mb={4}>
+													This event is running a date poll, so its dates are set by the poll. Edit it in Manage Event.
+												</Text>
+											) : (
+												<Flex direction="column" gap={3} mb={4}>
+													<Flex gap={3} flexWrap={{ base: "wrap", md: "nowrap" }}>
+														<Box position="relative" flex="1" minW="140px">
+															<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<DatePicker className={dtFieldCls} onChange={(date: string) => setDraftStartDate(date)} placeholder="Start Date" defaultDate={draftStartDate} />
+														</Box>
+														<Box position="relative" flex="1" minW="120px">
+															<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<TimePicker className={dtFieldCls} onChange={(time: string) => setDraftStartTime(time)} placeholder="Start Time" defaultValue={draftStartTime} />
+														</Box>
+													</Flex>
+													<Flex gap={3} flexWrap={{ base: "wrap", md: "nowrap" }}>
+														<Box position="relative" flex="1" minW="140px">
+															<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<DatePicker className={dtFieldCls} onChange={(date: string) => setDraftEndDate(date)} placeholder="End Date" defaultDate={draftEndDate} />
+														</Box>
+														<Box position="relative" flex="1" minW="120px">
+															<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<TimePicker className={dtFieldCls} onChange={(time: string) => setDraftEndTime(time)} placeholder="End Time" defaultValue={draftEndTime} />
+														</Box>
+													</Flex>
+												</Flex>
+											)}
+
+											{/* Google Places, the same component the manage form uses — picking a
+											    place keeps the venue name and the coordinates together. */}
+											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Location</Text>
+											<Box mb={4}>
+												<EventLocationField
+													value={draftLocation}
+													onTextChange={setDraftLocation}
+													onPick={(picked: PlaceSelection) => {
+														setDraftLocation(picked.location)
+														setDraftVenueName(picked.venueName)
+														setDraftCoords({ latitude: picked.latitude, longitude: picked.longitude, placeId: picked.placeId })
+													}}
+													id="inline-location"
+												/>
+											</Box>
+
+											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>
+												Entrance <span style={{ color: "#868686" }}>(optional)</span>
+											</Text>
+											<Input
+												value={draftEntrance}
+												onChange={(e) => setDraftEntrance(e.target.value)}
+												placeholder="e.g. West side at 69th Street"
+												maxLength={200}
+												className={roboto.className}
+												bg="#090C10"
+												color="white"
+												fontSize="14px"
+												h="48px"
+												border="1px solid #343536"
+												_focus={{ borderColor: "#343536", boxShadow: "none" }}
+											/>
+											<Text fontSize="xs" color="gray.500" mt={1} mb={4}>
+												Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
+											</Text>
+
+											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Capacity</Text>
+											<Input
+												value={draftCapacity}
+												onChange={(e) => setDraftCapacity(e.target.value.replace(/\D/g, ""))}
+												placeholder="0"
+												inputMode="numeric"
+												className={roboto.className}
+												bg="#090C10"
+												color="white"
+												fontSize="14px"
+												h="48px"
+												border="1px solid #343536"
+												_focus={{ borderColor: "#343536", boxShadow: "none" }}
+											/>
+										</Box>
+									)}
+
 									{/* `items-start` + a non-shrinking icon: a wrapping date or venue used to
 									    squash the icon to a sliver and vertically centre it against two
 									    lines of text. */}
 									<p className="text-sm sm:text-base mt-4 sm:mt-5 flex items-start gap-x-2 text-[#bbbbbb] break-words">
 										<span className="flex-shrink-0 mt-0.5"><DateTimeSVG /></span>
-										{!clonedEvent?.startsOn && !clonedEvent?.endsOn && clonedEvent?.datePoll?.isActive
+										{!shownEvent?.startsOn && !shownEvent?.endsOn && shownEvent?.datePoll?.isActive
 											? "Date to be decided (Polling)"
-											: clonedEvent?.startsOn
-											? `${formattedDate}${formattedTime ? `, ${formattedTime}` : ""} ${normalizeTimezone(clonedEvent?.timezone)}`
+											: shownEvent?.startsOn
+											? `${formattedDate}${formattedTime ? `, ${formattedTime}` : ""} ${normalizeTimezone(shownEvent?.timezone)}`
 											: "Date to be decided"}
 									</p>
 									<p className="text-sm sm:text-base mt-1 flex items-start gap-x-2 text-[#bbbbbb] break-words">

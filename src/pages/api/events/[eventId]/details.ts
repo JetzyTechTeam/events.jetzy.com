@@ -15,6 +15,21 @@ const schema = zod.object({
 	images: zod.array(zod.string().min(1)).optional(),
 	videos: zod.array(zod.string().min(1)).optional(),
 	mediaOrder: zod.array(zod.string().min(1)).optional(),
+	location: zod.string().max(500).optional(),
+	venueName: zod.string().max(300).optional(),
+	entrance: zod.string().max(200).optional(),
+	latitude: zod.number().optional(),
+	longitude: zod.number().optional(),
+	placeId: zod.string().optional(),
+	capacity: zod.number().int().min(0).optional(),
+	timezone: zod.string().max(100).optional(),
+	// Dates arrive already resolved to an instant, NOT as the date/time/timezone triple that
+	// `update.ts` splits and reassembles. That round trip is where its date bugs live, and this
+	// endpoint has no reason to repeat it. Empty string clears the date.
+	startsOn: zod.string().optional(),
+	endsOn: zod.string().optional(),
+	hasStartTime: zod.boolean().optional(),
+	hasEndTime: zod.boolean().optional(),
 })
 
 /**
@@ -30,6 +45,14 @@ const schema = zod.object({
  *
  * Here **only the keys actually sent are written**. Nothing else on the event can change, so
  * inline editing on the public page cannot reach the fields that carry money or bookings.
+ *
+ * Deliberately NOT accepted here, each for its own reason:
+ *  - `tickets` — prices mint Stripe prices, and bookings reference ticket ids.
+ *  - `slug` — changing it retires the old one and rewrites every link; that belongs with the
+ *    slug field's own history handling.
+ *  - `privacy` / `status` — flipping either moves an event through admin approval or publishes
+ *    a draft, which is a workflow rather than an edit.
+ *  - `datePoll` — mutually exclusive with fixed dates and holds votes.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "PATCH") {
@@ -67,12 +90,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Access denied. You can only edit your own events.", false, ResCode.FORBIDDEN)
 		}
 
-		const { name, desc, benefits, images, videos, mediaOrder } = validation.data
+		const {
+			name, desc, benefits, images, videos, mediaOrder,
+			location, venueName, entrance, latitude, longitude, placeId,
+			capacity, timezone, startsOn, endsOn, hasStartTime, hasEndTime,
+		} = validation.data
 
 		const set: any = {}
+		const unset: any = {}
 		if (name !== undefined) set.name = name.trim()
 		if (desc !== undefined) set.desc = desc
 		if (benefits !== undefined) set.benefits = benefits
+		if (location !== undefined) set.location = location
+		// `venueName` and `entrance` are preserve-on-omit everywhere else too — a form that
+		// doesn't send them must not wipe a venue name that was set by hand.
+		if (venueName !== undefined) set.venueName = venueName
+		if (entrance !== undefined) set.entrance = entrance
+		if (capacity !== undefined) set.capacity = capacity
+		if (timezone !== undefined) set.timezone = timezone || "UTC"
+
+		// Only overwrite stored coordinates when the client actually sent new ones, i.e. the
+		// user re-picked a place. Same rule as update.ts.
+		if (typeof latitude === "number" && typeof longitude === "number") {
+			set.coordinates = { long: longitude, lat: latitude, placeId }
+		}
+
+		// A date is `$unset` when cleared rather than written as null, so "no date" reads the
+		// same way it does for an event that never had one.
+		if (startsOn !== undefined) {
+			if (startsOn === "") unset.startsOn = ""
+			else {
+				const d = new Date(startsOn)
+				if (Number.isNaN(d.getTime())) {
+					return sendResponse(res, null, "Invalid start date", false, ResCode.BAD_REQUEST)
+				}
+				set.startsOn = d
+			}
+		}
+		if (endsOn !== undefined) {
+			if (endsOn === "") unset.endsOn = ""
+			else {
+				const d = new Date(endsOn)
+				if (Number.isNaN(d.getTime())) {
+					return sendResponse(res, null, "Invalid end date", false, ResCode.BAD_REQUEST)
+				}
+				set.endsOn = d
+			}
+		}
+		if (hasStartTime !== undefined) set.hasStartTime = hasStartTime
+		if (hasEndTime !== undefined) set.hasEndTime = hasEndTime
 
 		// Media is three fields that only make sense together: `images` and `videos` are two
 		// separate arrays and cannot express order between them, which is what `mediaOrder`
@@ -103,12 +169,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			set.mediaOrder = mediaOrder
 		}
 
-		if (Object.keys(set).length === 0) {
+		if (Object.keys(set).length === 0 && Object.keys(unset).length === 0) {
 			return sendResponse(res, null, "Nothing to update", false, ResCode.BAD_REQUEST)
 		}
 
-		const updated = await Events.findByIdAndUpdate(eventId, { $set: set }, { new: true })
-			.select("_id name desc benefits images videos mediaOrder")
+		const updateDoc: any = {}
+		if (Object.keys(set).length > 0) updateDoc.$set = set
+		if (Object.keys(unset).length > 0) updateDoc.$unset = unset
+
+		const updated = await Events.findByIdAndUpdate(eventId, updateDoc, { new: true })
+			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates capacity timezone startsOn endsOn hasStartTime hasEndTime")
 			.lean()
 
 		return sendResponse(res, updated, "Event updated", true, ResCode.OK)
