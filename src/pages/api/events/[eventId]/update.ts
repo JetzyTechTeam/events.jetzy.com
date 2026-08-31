@@ -7,12 +7,10 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
-import { sanitizeMembershipKeys } from "@/lib/memberships"
+import { resolveTickets, ticketsById, validateTicketBundles } from "@/lib/event-tickets"
 import { buildUniqueSlug, nextSlugHistory, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
-import Stripe from "stripe"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
 import dayjs from "dayjs";
@@ -111,7 +109,6 @@ const schema = zod.object({
 })
 
 // create stripe instance
-const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	await ensureDbConnected()
@@ -204,82 +201,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// The "Premium Event" hosting gate is gone with the member-discount model — membership
 		// is sold per ticket now, so there is nothing to gate here.
 
-		// Preserve each ticket's existing _id/stripeProductId across edits (client `ticket.id` is the
-		// previous `_id.toString()`) — bookings reference tickets by _id, so regenerating it here would
-		// silently orphan every past purchase's ticket-type link. Only mint a new Stripe price when the
-		// ticket is new or its price actually changed.
-		const existingTicketById = new Map<string, any>()
-		;(event.tickets || []).forEach((t: any) => existingTicketById.set(t._id?.toString(), t))
-
-		// Preserve-on-omit: an older client (or an autosave built from a stale form) may not
-		// send `memberships` at all. Falling back to the stored value means such a save leaves
-		// the ticket selling what it already sold, instead of silently un-bundling it.
-		const resolveMemberships = (ticket: any, existing: any) => {
-			if (ticket.memberships !== undefined) return sanitizeMembershipKeys(ticket.memberships)
-			if (ticket.includesPremium !== undefined) return ticket.includesPremium ? (["premium"] as const).slice() : []
-			return ticketMemberships(existing)
+		// Ticket resolution lives in src/lib/event-tickets.ts, shared with the inline tickets
+		// endpoint. It preserves each ticket's `_id` and `stripeProductId`, mints a new Stripe
+		// price only when the price actually changed, and treats requireApproval / memberships /
+		// membershipInterval as preserve-on-omit. Two copies of that would be two chances to
+		// orphan a booking or double-charge a buyer.
+		const bundleError = validateTicketBundles(ticketsById(event.tickets as any), tickets as any)
+		if (bundleError) {
+			return sendResponse(res, null, bundleError, false, ResCode.BAD_REQUEST)
 		}
 
-		// Validate the bundle rules against the RESOLVED memberships (incoming value, else
-		// stored), before anything is written or any Stripe price is minted. Enforced here as
-		// well as in the form: a subscription needs a real charge to start against.
-		for (const ticket of tickets) {
-			const existing = existingTicketById.get(ticket.id.toString())
-			const willSell = resolveMemberships(ticket, existing)
-			if (willSell.length === 0) continue
-
-			// A bundled ticket MAY require approval — it is held as a `mode: "payment"`
-			// authorization and the subscriptions are created at approval time.
-			if (!(ticket.price > 0)) {
-				return sendResponse(res, null, bundleFreeTicketMessage(willSell as any), false, ResCode.BAD_REQUEST)
-			}
-		}
-
-		const resolvedTickets = await Promise.all(tickets.map(async (ticket) => {
-			const existing = existingTicketById.get(ticket.id.toString())
-			const priceChanged = !existing || Number(existing.price) !== ticket.price
-			const stripeProductId = priceChanged
-				? (await stripe.prices.create({
-					// Math.round, not `* 100` alone: 19.99 * 100 is 1998.9999999999998 in floating
-					// point, and Stripe rejects a non-integer unit_amount. Matches clone.ts.
-					unit_amount: Math.round(ticket.price * 100),
-					currency: "usd",
-					product_data: { name: ticket.title },
-				} as Stripe.PriceCreateParams)).id
-				: existing.stripeProductId
-
-			// Preserve-on-omit: an older client (or an autosave built from a stale form) may not
-			// send `requireApproval` at all. Falling back to the stored value means such a save
-			// leaves the flag alone instead of silently wiping every per-ticket override.
-			const resolvedRequireApproval =
-				ticket.requireApproval !== undefined ? ticket.requireApproval
-					: existing?.requireApproval !== undefined ? existing.requireApproval
-						: undefined
-
-			const resolvedMemberships = resolveMemberships(ticket, existing)
-
-			// Same preserve-on-omit rule: undefined means "leave it alone", so an older client or
-			// a stale autosave can't move an annual ticket back to monthly — which would quietly
-			// change what the next buyer's card is charged.
-			const resolvedMembershipInterval =
-				ticket.membershipInterval !== undefined ? ticket.membershipInterval
-					: existing?.membershipInterval !== undefined ? existing.membershipInterval
-						: undefined
-
-			return {
-				...(existing ? { _id: existing._id } : {}),
-				name: ticket.title,
-				desc: ticket.description,
-				price: ticket.price.toFixed(2),
-				stripeProductId,
-				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
-				memberships: resolvedMemberships,
-				...(resolvedMembershipInterval !== undefined ? { membershipInterval: resolvedMembershipInterval } : {}),
-				// Written alongside the array purely so the mobile app and any older reader still
-				// see a bundled Premium ticket. The array is the authority.
-				includesPremium: resolvedMemberships.includes("premium"),
-			}
-		}))
+		const resolvedTickets = await resolveTickets(event.tickets as any, tickets as any)
 
 		// The event-level default that tickets without their own flag inherit
 		// (see src/lib/ticket-approval.ts). The old private-Premium force-on rule is gone.

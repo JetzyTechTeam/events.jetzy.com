@@ -39,6 +39,9 @@ import { isPreviewQuery } from "@/lib/event-preview";
 
 type Props = {
   event: IEvent;
+  /** Renders the host's "Edit tickets" control in the header. Omitted for guests. */
+  canManage?: boolean;
+  onEditTickets?: () => void;
 };
 
 /**
@@ -77,7 +80,7 @@ const TicketDescription: React.FC<{ description: string }> = ({ description }) =
   );
 };
 
-const EventTicketsComponent: React.FC<Props> = ({ event }) => {
+const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEditTickets }) => {
   const dispatcher = useAppDispatch();
   const { isPremium } = usePremiumStatus();
   const [showPremiumPromo, setShowPremiumPromo] = useState(false);
@@ -338,6 +341,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                 Select your tickets and proceed to checkout.
               </p>
             </div>
+            {/* The right half of this justify-between row was always empty — the host's Edit
+                goes here, beside the heading, rather than above the whole page. */}
+            {canManage && onEditTickets && (
+              <button
+                type="button"
+                onClick={onEditTickets}
+                className="border border-[#F79432] text-[#F79432] py-1 px-3 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors flex-shrink-0"
+              >
+                Edit tickets
+              </button>
+            )}
           </div>
 
           {/* The event-level "Includes Jetzy Premium" banner was removed — it duplicated the

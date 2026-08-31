@@ -84,6 +84,7 @@ import AnswerText from "@/components/events/AnswerText"
 import InterestsSelector from "@/components/events/InterestsSelector"
 import MediaUploadSection from "@/components/media-upload-section"
 import BenefitsField from "@/components/events/BenefitsField"
+import TicketEditorModal from "@/components/events/TicketEditorModal"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
@@ -1742,110 +1743,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 											</Flex>
 										</Flex>
 
-										{/* Tickets Modal */}
+										{/* Tickets Modal — the shared editor, so the inline one on the public
+										    event page is literally the same dialog. Manage keeps ownership of
+										    where a saved ticket goes: into the Formik FieldArray. */}
 										<FieldArray name="tickets">
 											{({ push, replace }) => (
-												<Modal isOpen={isOpen} onClose={onClose} isCentered>
-													<ModalOverlay />
-													<ModalContent bg="#1E1E1E" color="white">
-														<ModalHeader>{editIndex !== null ? "Edit Ticket" : "Add Ticket"}</ModalHeader>
-														<ModalCloseButton />
-														<ModalBody>
-															<FormControl mb={4}>
-																<FormLabel>Ticket Name</FormLabel>
-																<Input placeholder="Enter ticket name" bg="#090C10" border="1px solid #444" value={tempTicket.title} onChange={(e) => setTempTicket({ ...tempTicket, title: e.target.value })} />
-															</FormControl>
-															<FormControl mb={4}>
-																<FormLabel>Description</FormLabel>
-																{/* Same editor as the event description — stores HTML, rendered publicly through
-																	    the shared EventDescription, which still handles older plain-text values. */}
-																<RichTextEditor value={tempTicket.description} onChange={(val) => setTempTicket({ ...tempTicket, description: val })} placeholder="Enter description" />
-															</FormControl>
-															<FormControl mb={4}>
-																<FormLabel>Price</FormLabel>
-																{/* NaN would break the controlled value, so an empty field stays
-																    empty and is treated as free ($0) on save.
-
-																    `Math.max(0, …)` is the real guard, not `min={0}` — the HTML
-																    attribute only styles the spinner and fails on native form
-																    submit, which this modal never does, so -5 typed or pasted here
-																    reached the server and came back as a validation error the host
-																    couldn't act on. Math.max passes NaN through unchanged, so the
-																    empty-field behaviour above is untouched. */}
-																<Input type="number" onWheel={blurOnWheel} min={0} step="0.01" placeholder="Enter price (0 for free)" bg="#090C10" border="1px solid #444" value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""} onChange={(e) => setTempTicket({ ...tempTicket, price: Math.max(0, parseFloat(e.target.value)) })} />
-															</FormControl>
-															<FormControl mb={4}>
-																<Flex align="center" justify="space-between" gap={4}>
-																	<Box>
-																		<FormLabel mb={0}>Require Approval</FormLabel>
-																		<Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
-																			{tempTicket.requireApproval === undefined
-																				? `Inherits the event setting (${values.requireApproval ? "On" : "Off"})`
-																				: !tempTicket.requireApproval
-																					? "Guests book this ticket instantly."
-																					: Number(tempTicket.price) > 0
-																						? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
-																						: "Guests request a spot; you approve or decline."}
-																		</Text>
-																	</Box>
-																	<Switch
-																		colorScheme="orange"
-																		isChecked={tempTicket.requireApproval ?? values.requireApproval}
-																		onChange={(e) => setTempTicket({ ...tempTicket, requireApproval: e.target.checked })}
-																	/>
-																</Flex>
-															</FormControl>
-
-															{/* Which memberships this ticket sells — either, both or neither. */}
-															<TicketMembershipToggles
-																value={ticketMemberships(tempTicket as any)}
-																onChange={(memberships) =>
-																	setTempTicket({
-																		...tempTicket,
-																		memberships,
-																		// Kept in step so the mobile app and any older reader still
-																		// see a bundled Premium ticket. The array is the authority.
-																		includesPremium: memberships.includes("premium"),
-																	} as any)
-																}
-																requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
-																price={Number(tempTicket.price)}
-																interval={ticketMembershipInterval(tempTicket as any)}
-																onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
-															/>
-														</ModalBody>
-														<ModalFooter>
-															<Button bg="#F79432" color="black" mr={3} onClick={() => {
-																// Only the title is required — description is optional server-side
-																// (zod `.optional()`), and requiring it here made tickets created
-																// without one impossible to edit.
-																if (!tempTicket.title.trim()) {
-																	toast({ title: "Missing ticket name", description: "You need to provide a ticket name.", status: "error", duration: 4000, isClosable: true })
-																	return
-																}
-																// Stripe won't charge under $0.50, so a ticket priced there can never
-																// be sold — the failure would only surface at the buyer's checkout.
-																if (isBelowStripeMinimum(tempTicket.price)) {
-																	toast({ title: "Price too low", description: BELOW_MIN_PRICE_MESSAGE, status: "error", duration: 5000, isClosable: true })
-																	return
-																}
-																// Blank price means free. `parseFloat("")` is NaN, which would
-																// otherwise reach the server and fail zod's number check.
-																const normalised = {
-																	...tempTicket,
-																	title: tempTicket.title.trim(),
-																	price: Number.isFinite(tempTicket.price) ? tempTicket.price : 0,
-																}
-																if (editIndex !== null) replace(editIndex, normalised)
-																else push({ ...normalised, id: uniqueId(10) })
-																onClose()
-															}}>
-																{editIndex !== null ? "Save Changes" : "Add Ticket"}
-															</Button>
-															<Button variant="ghost" color="white" _hover={{ color: "black", bg: "orange" }} onClick={onClose}>Cancel</Button>
-														</ModalFooter>
-													</ModalContent>
-												</Modal>
+												<TicketEditorModal
+													isOpen={isOpen}
+													onClose={onClose}
+													ticket={tempTicket}
+													onTicketChange={setTempTicket}
+													isEditing={editIndex !== null}
+													eventRequireApproval={!!values.requireApproval}
+													onSave={(normalised) => {
+														if (editIndex !== null) replace(editIndex, normalised)
+														else push({ ...normalised, id: uniqueId(10) })
+														onClose()
+													}}
+												/>
 											)}
 										</FieldArray>
 

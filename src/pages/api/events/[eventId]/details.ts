@@ -29,6 +29,13 @@ const schema = zod.object({
 	endsOn: zod.string().optional(),
 	hasStartTime: zod.boolean().optional(),
 	hasEndTime: zod.boolean().optional(),
+	// Interests are ids as strings — either a sub-interest id or a whole category id, which is
+	// what the mobile app writes when someone tags a top-level interest.
+	interests: zod.array(zod.string()).optional(),
+	// Event Options. The event-level default that tickets without their own flag inherit.
+	requireApproval: zod.boolean().optional(),
+	locationDisclosedAfterBooking: zod.boolean().optional(),
+	showOnMobile: zod.boolean().optional(),
 })
 
 /**
@@ -52,6 +59,8 @@ const schema = zod.object({
  *  - `privacy` / `status` — flipping either moves an event through admin approval or publishes
  *    a draft, which is a workflow rather than an edit.
  *  - `datePoll` — mutually exclusive with fixed dates and holds votes.
+ *  - `showParticipants` — no UI in the manage form and `update.ts` never writes it, so accepting
+ *    it here would be new behaviour rather than parity.
  *  - `capacity` — a change has to re-sync `EventTracker.eventCapacity`, which only `update.ts`
  *    does. Accepting it here would silently leave the tracker holding the old number, so
  *    capacity stays in Manage Event.
@@ -96,6 +105,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			name, desc, benefits, images, videos, mediaOrder,
 			location, venueName, entrance, latitude, longitude, placeId,
 			timezone, startsOn, endsOn, hasStartTime, hasEndTime,
+			interests, requireApproval, locationDisclosedAfterBooking, showOnMobile,
 		} = validation.data
 
 		const set: any = {}
@@ -109,6 +119,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (venueName !== undefined) set.venueName = venueName
 		if (entrance !== undefined) set.entrance = entrance
 		if (timezone !== undefined) set.timezone = timezone || "UTC"
+		// `update.ts` writes `interests` unconditionally, so a partial save through it wipes
+		// them. Here it moves only when actually sent.
+		if (interests !== undefined) set.interests = interests
+		if (requireApproval !== undefined) set.requireApproval = requireApproval
+		if (locationDisclosedAfterBooking !== undefined) set.locationDisclosedAfterBooking = locationDisclosedAfterBooking
+		if (showOnMobile !== undefined) set.showOnMobile = showOnMobile
 
 		// Only overwrite stored coordinates when the client actually sent new ones, i.e. the
 		// user re-picked a place. Same rule as update.ts.
@@ -179,7 +195,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (Object.keys(unset).length > 0) updateDoc.$unset = unset
 
 		const updated = await Events.findByIdAndUpdate(eventId, updateDoc, { new: true })
-			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime")
+			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime interests requireApproval locationDisclosedAfterBooking showOnMobile")
 			.lean()
 
 		return sendResponse(res, updated, "Event updated", true, ResCode.OK)
