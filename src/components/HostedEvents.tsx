@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
 import EventAlbums from "@/components/events/EventAlbums"
 import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
@@ -6,6 +6,7 @@ import { ROUTES, homeRouteForRole } from "@/configs/routes"
 import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
 import { eventMedia, type EventMedia } from "@/lib/event-media"
+import { uploadFile } from "@/services/upload.service"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -186,6 +187,135 @@ export default function HostedEvents({ event }: Props) {
 	const isOwner = ownsEvent && !previewAsGuest
 	const canManage = isAdmin || isOwner
 	const isDatePollActive = !!(clonedEvent?.datePoll?.isActive && clonedEvent?.datePoll?.options?.length)
+
+	// ── Inline editing (admin / event owner) ────────────────────────────────
+	// The album page does this already; the CEO's rule is that it should be true everywhere —
+	// nobody is sent to another screen to change what they are looking at. Step one covers the
+	// presentational fields: title, description, benefits and the banner media.
+	//
+	// Saved through PATCH /api/events/:id/details, NOT the full-replace `update.ts`, which
+	// rewrites tickets, capacity, timezone, status, interests and the date poll on every call.
+	// A title edit must not be able to reach any of that.
+	const [editing, setEditing] = useState(false)
+	const [savingEdits, setSavingEdits] = useState(false)
+	const [draftName, setDraftName] = useState("")
+	const [draftDesc, setDraftDesc] = useState("")
+	const [draftBenefits, setDraftBenefits] = useState("")
+	const [draftMedia, setDraftMedia] = useState<{ url: string; type: "image" | "video" }[]>([])
+	const [mediaUploads, setMediaUploads] = useState<{ id: string; progress: number; type: "image" | "video" }[]>([])
+	const eventPhotoInputRef = useRef<HTMLInputElement | null>(null)
+	const eventVideoInputRef = useRef<HTMLInputElement | null>(null)
+	const mediaDragFrom = useRef<number | null>(null)
+	const [mediaDragIndex, setMediaDragIndex] = useState<number | null>(null)
+
+	// What the page renders. Seeded from props and updated on save, so an edit shows
+	// immediately instead of needing a reload.
+	const [liveName, setLiveName] = useState<string | null>(null)
+	const [liveDesc, setLiveDesc] = useState<string | null>(null)
+	const [liveBenefits, setLiveBenefits] = useState<string | null>(null)
+	const [liveMedia, setLiveMedia] = useState<{ url: string; type: "image" | "video" }[] | null>(null)
+	useEffect(() => {
+		setLiveName(null)
+		setLiveDesc(null)
+		setLiveBenefits(null)
+		setLiveMedia(null)
+	}, [event])
+
+	// What the page shows: the edited value once saved, otherwise what came from the server.
+	const shownName = liveName ?? (clonedEvent?.name || "")
+	const shownDesc = liveDesc ?? (clonedEvent?.desc || "")
+	const shownBenefits = liveBenefits ?? (clonedEvent?.benefits || "")
+	// `eventMedia` applies the host's `mediaOrder` across the two arrays — never read
+	// `images` directly, or a video lead and any hand-arranged order are lost.
+	const shownMedia = liveMedia ?? (clonedEvent ? eventMedia(clonedEvent) : [])
+
+	const startEventEdit = () => {
+		setDraftName(stripHtml(shownName))
+		setDraftDesc(shownDesc)
+		setDraftBenefits(shownBenefits)
+		setDraftMedia(shownMedia.map((m) => ({ url: m.url, type: m.type as "image" | "video" })))
+		setEditing(true)
+	}
+
+	const cancelEventEdit = () => {
+		setEditing(false)
+		setMediaUploads([])
+		mediaDragFrom.current = null
+		setMediaDragIndex(null)
+	}
+
+	const moveDraftMedia = (from: number, to: number) =>
+		setDraftMedia((prev) => {
+			if (to < 0 || to >= prev.length) return prev
+			const arr = [...prev]
+			const [moved] = arr.splice(from, 1)
+			arr.splice(to, 0, moved)
+			return arr
+		})
+
+	const addEventMedia = (files: FileList | null, type: "image" | "video") => {
+		if (!files || files.length === 0) return
+		Array.from(files).forEach((file) => {
+			const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+			setMediaUploads((prev) => [...prev, { id, progress: 0, type }])
+			uploadFile(file, {
+				folder: "posts",
+				onProgressChange: (progress) => setMediaUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress } : u))),
+			})
+				.then(({ url }) => {
+					// Appended, never inserted — a new file landing mid-order would undo an
+					// arrangement the host is in the middle of making.
+					setDraftMedia((prev) => (prev.some((m) => m.url === url) ? prev : [...prev, { url, type }]))
+					setMediaUploads((prev) => prev.filter((u) => u.id !== id))
+				})
+				.catch(() => {
+					setMediaUploads((prev) => prev.filter((u) => u.id !== id))
+					toast({ title: "Upload failed", description: file.name, status: "error", duration: 4000, isClosable: true })
+				})
+		})
+	}
+
+	const saveEventEdits = async () => {
+		const name = draftName.trim()
+		if (!name) {
+			toast({ title: "The event needs a name", status: "warning", duration: 3000, isClosable: true })
+			return
+		}
+		if (draftMedia.length === 0) {
+			toast({ title: "Keep at least one photo or video", status: "warning", duration: 3000, isClosable: true })
+			return
+		}
+		if (mediaUploads.length > 0) {
+			toast({ title: "Still uploading", description: "Wait for the uploads to finish first.", status: "warning", duration: 3000, isClosable: true })
+			return
+		}
+		setSavingEdits(true)
+		try {
+			// `images` and `videos` are two separate arrays that cannot express order between
+			// them; `mediaOrder` is what carries the host's arrangement across both. All three
+			// go together — the endpoint rejects them apart.
+			const images = draftMedia.filter((m) => m.type !== "video").map((m) => m.url)
+			const videos = draftMedia.filter((m) => m.type === "video").map((m) => m.url)
+			await axios.patch(`/api/events/${clonedEvent?._id}/details`, {
+				name,
+				desc: draftDesc,
+				benefits: draftBenefits,
+				images,
+				videos,
+				mediaOrder: draftMedia.map((m) => m.url),
+			})
+			setLiveName(name)
+			setLiveDesc(draftDesc)
+			setLiveBenefits(draftBenefits)
+			setLiveMedia(draftMedia)
+			setEditing(false)
+			toast({ title: "Event updated", status: "success", duration: 2500, isClosable: true })
+		} catch (err: any) {
+			toast({ title: "Couldn't save those changes", description: err?.response?.data?.message, status: "error", duration: 5000, isClosable: true })
+		} finally {
+			setSavingEdits(false)
+		}
+	}
 
 	// Cancel-own-booking flow. This used to be gated to free events, which meant a paid
 	// booking could never be cancelled from anywhere in the product. The API decides
@@ -410,7 +540,38 @@ export default function HostedEvents({ event }: Props) {
 						    three right-aligned buttons down the page above the banner. On mobile they
 						    collapse into one menu instead; the desktop row is unchanged. */}
 						<div className="hidden sm:flex flex-wrap items-center justify-end gap-2">
-							{canManage && (
+							{/* Edit in place. "Manage Event" stays: it is the way to the things this
+							    editor deliberately doesn't touch — tickets, dates, guests, blasts. */}
+							{canManage && !editing && (
+								<button
+									type="button"
+									onClick={startEventEdit}
+									className="border border-[#F79432] text-[#F79432] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:bg-[#F79432] hover:text-black transition-colors"
+								>
+									Edit
+								</button>
+							)}
+							{canManage && editing && (
+								<>
+									<button
+										type="button"
+										onClick={cancelEventEdit}
+										disabled={savingEdits}
+										className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white disabled:opacity-50"
+									>
+										Cancel
+									</button>
+									<button
+										type="button"
+										onClick={saveEventEdits}
+										disabled={savingEdits}
+										className="bg-[#F79432] text-black font-bold py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:bg-[#e58220] disabled:opacity-50"
+									>
+										{savingEdits ? "Saving…" : "Save changes"}
+									</button>
+								</>
+							)}
+							{canManage && !editing && (
 								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white">
 									Manage Event
 								</Link>
@@ -502,8 +663,136 @@ export default function HostedEvents({ event }: Props) {
 					<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 						{/* Banner Media (images + videos combined) */}
 						<div className="relative p-3">
+							{editing ? (
+								<div className="rounded-xl border border-[#2a2a2a] bg-[#181818] p-4">
+									<div className="flex flex-wrap items-center gap-2 mb-3">
+										<button
+											type="button"
+											onClick={() => eventPhotoInputRef.current?.click()}
+											className="border border-[#434343] rounded-lg px-3 py-1.5 text-sm hover:border-white"
+										>
+											+ Add photos
+										</button>
+										<button
+											type="button"
+											onClick={() => eventVideoInputRef.current?.click()}
+											className="border border-[#434343] rounded-lg px-3 py-1.5 text-sm hover:border-white"
+										>
+											+ Add videos
+										</button>
+										<span className="text-xs text-[#8a8a8a] ml-auto">
+											Drag or use the arrows. The first one leads the banner.
+										</span>
+										<input
+											ref={eventPhotoInputRef}
+											type="file"
+											accept="image/*"
+											multiple
+											hidden
+											onChange={(e) => { addEventMedia(e.target.files, "image"); e.target.value = "" }}
+										/>
+										<input
+											ref={eventVideoInputRef}
+											type="file"
+											accept="video/*"
+											multiple
+											hidden
+											onChange={(e) => { addEventMedia(e.target.files, "video"); e.target.value = "" }}
+										/>
+									</div>
+
+									<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+										{draftMedia.map((m, i) => (
+											<div
+												key={m.url}
+												draggable
+												onDragStart={() => { mediaDragFrom.current = i; setMediaDragIndex(i) }}
+												onDragEnd={() => { mediaDragFrom.current = null; setMediaDragIndex(null) }}
+												onDragOver={(e) => e.preventDefault()}
+												onDragEnter={() => {
+													const from = mediaDragFrom.current
+													if (from === null || from === i) return
+													moveDraftMedia(from, i)
+													mediaDragFrom.current = i
+													setMediaDragIndex(i)
+												}}
+												className={`relative h-32 rounded-lg overflow-hidden bg-black border border-[#2a2a2a] cursor-grab ${mediaDragIndex === i ? "opacity-40" : ""}`}
+											>
+												{m.type === "video" ? (
+													// eslint-disable-next-line jsx-a11y/media-has-caption
+													<video src={`${m.url}#t=0.1`} muted preload="metadata" className="w-full h-full object-contain" />
+												) : (
+													// eslint-disable-next-line @next/next/no-img-element
+													<img src={m.url} alt="" loading="lazy" className="w-full h-full object-contain" />
+												)}
+												<span className={`absolute top-1.5 left-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold ${i === 0 ? "bg-[#F79432] text-black" : "bg-black/70 text-white"}`}>
+													{i === 0 ? "LEAD" : i + 1}
+												</span>
+												{/* Removes from the draft only — Cancel puts it back. */}
+												<button
+													type="button"
+													aria-label="Remove"
+													onClick={() => setDraftMedia((prev) => prev.filter((x) => x.url !== m.url))}
+													className="absolute top-1.5 right-1.5 rounded-full bg-black/80 hover:bg-red-600 w-6 h-6 text-xs"
+												>
+													×
+												</button>
+												{/* Arrows as well as dragging — dragging is awkward on a
+												    phone and impossible with a keyboard. */}
+												<div className="absolute bottom-1.5 right-1.5 flex gap-1">
+													<button
+														type="button"
+														aria-label="Move earlier"
+														disabled={i === 0}
+														onClick={() => moveDraftMedia(i, i - 1)}
+														className="rounded-full bg-black/80 hover:bg-[#F79432] hover:text-black w-6 h-6 text-xs disabled:opacity-30"
+													>
+														↑
+													</button>
+													<button
+														type="button"
+														aria-label="Move later"
+														disabled={i === draftMedia.length - 1}
+														onClick={() => moveDraftMedia(i, i + 1)}
+														className="rounded-full bg-black/80 hover:bg-[#F79432] hover:text-black w-6 h-6 text-xs disabled:opacity-30"
+													>
+														↓
+													</button>
+												</div>
+											</div>
+										))}
+
+										{mediaUploads.map((u) => (
+											<div key={u.id} className="h-32 rounded-lg border border-dashed border-[#343536] bg-[#131313] flex flex-col items-center justify-center px-3">
+												<span className="text-xs text-[#8a8a8a] mb-2">Uploading {u.type}…</span>
+												<div className="w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
+													<div className="h-full bg-[#F79432]" style={{ width: `${u.progress}%` }} />
+												</div>
+											</div>
+										))}
+									</div>
+
+									{draftMedia.length === 0 && mediaUploads.length === 0 && (
+										<p className="text-sm text-[#8a8a8a] mt-3">No media yet. Add a photo or a video.</p>
+									)}
+
+									<div className="mt-4">
+										<label className="block text-xs text-[#8a8a8a] mb-1">Benefits (comma separated — shown as chips over the banner)</label>
+										<Input
+											value={draftBenefits}
+											onChange={(e) => setDraftBenefits(e.target.value)}
+											placeholder="Free drinks, Live music"
+											bg="#1E1E1E"
+											borderColor="#343536"
+											color="white"
+											borderRadius="10px"
+										/>
+									</div>
+								</div>
+							) : (
+							<>
 							{(() => {
-								const allMedia = eventMedia(clonedEvent)
+								const allMedia = shownMedia
 								if (allMedia.length > 1) {
 									return (
 										<Slider {...settings}>
@@ -522,9 +811,9 @@ export default function HostedEvents({ event }: Props) {
 							})()}
 
 							{/* Benefits Overlay */}
-							{clonedEvent?.benefits && clonedEvent.benefits.trim() !== "" && (
+							{shownBenefits && shownBenefits.trim() !== "" && (
 								<div className="absolute top-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
-									{clonedEvent.benefits
+									{shownBenefits
 										.split(",")
 										.map((b) => b.trim())
 										.filter((b) => b !== "")
@@ -551,6 +840,8 @@ export default function HostedEvents({ event }: Props) {
 									}
 								}
 							`}</style>
+							</>
+							)}
 						</div>
 
 						{/* Content Section */}
@@ -561,7 +852,22 @@ export default function HostedEvents({ event }: Props) {
 							    produced ragged centred text under a centred heading. */}
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
 								<div className="text-left w-full sm:w-auto min-w-0">
-									<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(clonedEvent.name)}</h2>
+									{editing ? (
+										<Input
+											value={draftName}
+											onChange={(e) => setDraftName(e.target.value)}
+											placeholder="Event name"
+											bg="#1E1E1E"
+											borderColor="#343536"
+											color="white"
+											borderRadius="10px"
+											fontSize={{ base: "xl", sm: "2xl" }}
+											fontWeight="bold"
+											maxLength={300}
+										/>
+									) : (
+										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
+									)}
 									{/* `items-start` + a non-shrinking icon: a wrapping date or venue used to
 									    squash the icon to a sliver and vertically centre it against two
 									    lines of text. */}
@@ -644,7 +950,28 @@ export default function HostedEvents({ event }: Props) {
 								{isDatePollActive && (
 									<DatePollTeaser event={clonedEvent} onOpenPoll={onPollModalOpen} />
 								)}
-								{isEnded ? (
+								{editing ? (
+									<>
+										<h3 className="text-sm sm:text-base font-semibold mb-2">Description</h3>
+										<Textarea
+											value={draftDesc}
+											onChange={(e) => setDraftDesc(e.target.value)}
+											placeholder="What is this event about?"
+											bg="#1E1E1E"
+											borderColor="#343536"
+											color="white"
+											borderRadius="10px"
+											rows={8}
+										/>
+										{/* The stored description may be HTML written by the rich editor in
+										    the console. Editing it here is plain text on purpose — a
+										    textarea that silently swallowed markup would be worse than
+										    saying so. */}
+										<p className="text-xs text-[#8a8a8a] mt-2">
+											Plain text. For formatting, use the description editor in Manage Event.
+										</p>
+									</>
+								) : isEnded ? (
 									<>
 										<button
 											type="button"
@@ -655,12 +982,12 @@ export default function HostedEvents({ event }: Props) {
 											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
 											{endedDescOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
 										</button>
-										{endedDescOpen && <EventDescription description={clonedEvent.desc} />}
+										{endedDescOpen && <EventDescription description={shownDesc} />}
 									</>
 								) : (
 									<>
 										<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-										<EventDescription description={clonedEvent.desc} />
+										<EventDescription description={shownDesc} />
 									</>
 								)}
 							</div>
@@ -768,7 +1095,7 @@ export default function HostedEvents({ event }: Props) {
 							<EventAlbums
 								eventId={clonedEvent._id.toString()}
 								eventSlug={clonedEvent.slug}
-								eventName={stripHtml(clonedEvent.name)}
+								eventName={stripHtml(shownName)}
 								canManage={canManage}
 								largeCards={isEnded}
 							/>
@@ -834,7 +1161,7 @@ export default function HostedEvents({ event }: Props) {
 										<Box id="discussion-chat-body" display={isChatExpanded ? "block" : "none"}>
 											<JetzyChatIntegration
 												eventId={clonedEvent._id.toString()}
-												eventName={stripHtml(clonedEvent.name)}
+												eventName={stripHtml(shownName)}
 												onHasMessages={() => setIsChatExpanded(true)}
 											/>
 										</Box>
@@ -885,7 +1212,7 @@ export default function HostedEvents({ event }: Props) {
 					)}
 					</div>
 				</div>
-				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
+				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(shownName)} eventData={clonedEvent} />}
 
 			{/* Buy Premium, or manage what you already have — one dialog, opened from the
 			    membership entry in both menus on this page. */}
@@ -909,7 +1236,7 @@ export default function HostedEvents({ event }: Props) {
 						isOpen={isQRModalOpen}
 						onClose={onQRModalClose}
 						url={shareUrl}
-						title={`${stripHtml(clonedEvent.name)}`}
+						title={`${stripHtml(shownName)}`}
 					/>
 				)}
 
@@ -1067,8 +1394,8 @@ export default function HostedEvents({ event }: Props) {
 											emails: selectedInvitees.map((u) => u.email),
 											eventId: clonedEvent._id,
 											eventLink: shareUrl,
-											subject: `You're invited to ${stripHtml(clonedEvent.name)}`,
-											message: inviteMessage || `Join me at ${stripHtml(clonedEvent.name)}!`,
+											subject: `You're invited to ${stripHtml(shownName)}`,
+											message: inviteMessage || `Join me at ${stripHtml(shownName)}!`,
 										})
 										toast({ title: "Invitations sent!", status: "success", duration: 3000, isClosable: true })
 										setSelectedInvitees([])
