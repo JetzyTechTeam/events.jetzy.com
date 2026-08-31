@@ -21,7 +21,6 @@ const schema = zod.object({
 	latitude: zod.number().optional(),
 	longitude: zod.number().optional(),
 	placeId: zod.string().optional(),
-	capacity: zod.number().int().min(0).optional(),
 	timezone: zod.string().max(100).optional(),
 	// Dates arrive already resolved to an instant, NOT as the date/time/timezone triple that
 	// `update.ts` splits and reassembles. That round trip is where its date bugs live, and this
@@ -53,6 +52,9 @@ const schema = zod.object({
  *  - `privacy` / `status` — flipping either moves an event through admin approval or publishes
  *    a draft, which is a workflow rather than an edit.
  *  - `datePoll` — mutually exclusive with fixed dates and holds votes.
+ *  - `capacity` — a change has to re-sync `EventTracker.eventCapacity`, which only `update.ts`
+ *    does. Accepting it here would silently leave the tracker holding the old number, so
+ *    capacity stays in Manage Event.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "PATCH") {
@@ -93,7 +95,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const {
 			name, desc, benefits, images, videos, mediaOrder,
 			location, venueName, entrance, latitude, longitude, placeId,
-			capacity, timezone, startsOn, endsOn, hasStartTime, hasEndTime,
+			timezone, startsOn, endsOn, hasStartTime, hasEndTime,
 		} = validation.data
 
 		const set: any = {}
@@ -106,7 +108,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// doesn't send them must not wipe a venue name that was set by hand.
 		if (venueName !== undefined) set.venueName = venueName
 		if (entrance !== undefined) set.entrance = entrance
-		if (capacity !== undefined) set.capacity = capacity
 		if (timezone !== undefined) set.timezone = timezone || "UTC"
 
 		// Only overwrite stored coordinates when the client actually sent new ones, i.e. the
@@ -178,7 +179,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (Object.keys(unset).length > 0) updateDoc.$unset = unset
 
 		const updated = await Events.findByIdAndUpdate(eventId, updateDoc, { new: true })
-			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates capacity timezone startsOn endsOn hasStartTime hasEndTime")
+			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime")
 			.lean()
 
 		return sendResponse(res, updated, "Event updated", true, ResCode.OK)

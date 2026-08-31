@@ -241,7 +241,6 @@ export default function HostedEvents({ event }: Props) {
 	const [draftVenueName, setDraftVenueName] = useState("")
 	const [draftEntrance, setDraftEntrance] = useState("")
 	const [draftCoords, setDraftCoords] = useState<{ latitude?: number; longitude?: number; placeId?: string }>({})
-	const [draftCapacity, setDraftCapacity] = useState("")
 	const [draftTimezone, setDraftTimezone] = useState("")
 	const [draftStartDate, setDraftStartDate] = useState("")
 	const [draftStartTime, setDraftStartTime] = useState("")
@@ -276,7 +275,7 @@ export default function HostedEvents({ event }: Props) {
 	// `images` directly, or a video lead and any hand-arranged order are lost.
 	const shownMedia = liveMedia ?? (clonedEvent ? eventMedia(clonedEvent) : [])
 	// The event as the page should show it: saved edits layered over the server copy. Used by
-	// everything that reads a scalar field (dates, location, capacity).
+	// everything that reads a scalar field (dates, location).
 	const shownEvent = useMemo(
 		() => (clonedEvent ? ({ ...clonedEvent, ...(liveEvent || {}) } as IEvent) : clonedEvent),
 		[clonedEvent, liveEvent],
@@ -308,7 +307,6 @@ export default function HostedEvents({ event }: Props) {
 		setDraftVenueName((shownEvent as any)?.venueName || "")
 		setDraftEntrance((shownEvent as any)?.entrance || "")
 		setDraftCoords({})
-		setDraftCapacity(shownEvent?.capacity != null ? String(shownEvent.capacity) : "")
 		setEditing(true)
 	}
 
@@ -434,7 +432,6 @@ export default function HostedEvents({ event }: Props) {
 				venueName: draftVenueName,
 				entrance: draftEntrance,
 				timezone: draftTimezone,
-				capacity: Number(draftCapacity) || 0,
 				...(draftCoords.latitude !== undefined && draftCoords.longitude !== undefined ? draftCoords : {}),
 			}
 			// Only touch the dates when this event isn't running a poll — a poll and fixed dates
@@ -456,7 +453,6 @@ export default function HostedEvents({ event }: Props) {
 				venueName: draftVenueName,
 				entrance: draftEntrance,
 				timezone: draftTimezone,
-				capacity: Number(draftCapacity) || 0,
 				...(isDatePollActive
 					? {}
 					: {
@@ -1016,24 +1012,14 @@ export default function HostedEvents({ event }: Props) {
 												border="1px solid #343536"
 												_focus={{ borderColor: "#343536", boxShadow: "none" }}
 											/>
-											<Text fontSize="xs" color="gray.500" mt={1} mb={4}>
+											<Text fontSize="xs" color="gray.500" mt={1}>
 												Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
 											</Text>
 
-											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Capacity</Text>
-											<Input
-												value={draftCapacity}
-												onChange={(e) => setDraftCapacity(e.target.value.replace(/\D/g, ""))}
-												placeholder="0"
-												inputMode="numeric"
-												className={roboto.className}
-												bg="#090C10"
-												color="white"
-												fontSize="14px"
-												h="48px"
-												border="1px solid #343536"
-												_focus={{ borderColor: "#343536", boxShadow: "none" }}
-											/>
+											{/* Capacity is deliberately NOT here. Changing it has to re-sync
+											    `EventTracker.eventCapacity`, which only `update.ts` does — editing
+											    it from this page would leave the tracker holding the old number.
+											    It stays in Manage Event. */}
 										</Box>
 									)}
 
