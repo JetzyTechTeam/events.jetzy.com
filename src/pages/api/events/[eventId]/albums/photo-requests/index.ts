@@ -77,6 +77,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Absent on single-photo requests and on anything written before multi-select.
 			// A display hint for the host, never a key.
 			batchId: r.batchId || null,
+			// This row's place in that batch. Null on rows written before it was stored — the
+			// table derives one from the listing order there.
+			batchIndex: typeof r.batchIndex === "number" ? r.batchIndex : null,
 			name: r.requesterName || "—",
 			email: r.requesterEmail || "—",
 			verified: r.verified === true,

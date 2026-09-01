@@ -260,6 +260,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Nothing to update", false, ResCode.BAD_REQUEST)
 		}
 
+		// A live save supersedes any autosaved shadow draft, exactly as `update.ts` does.
+		// Manage Event prefers `draftRevision` over the live document, so a draft left behind by
+		// an abandoned console edit would keep showing the OLD interests/images/dates to the host
+		// AND to an admin — and the next "Update Event" would republish them over what was just
+		// saved here.
+		unset.draftRevision = ""
+
 		const updateDoc: any = {}
 		if (Object.keys(set).length > 0) updateDoc.$set = set
 		if (Object.keys(unset).length > 0) updateDoc.$unset = unset

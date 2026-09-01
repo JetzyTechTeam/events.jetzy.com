@@ -201,7 +201,18 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// A PUBLISHED event with an autosaved shadow draft ("draft 2"): seed the form from
 	// the pending edits instead of the live fields, and offer to Discard back to live.
 	const isPublished = (event.status ?? "published") === "published"
-	const draftPayload: any = isPublished && event.draftRevision?.payload ? event.draftRevision.payload : null
+
+	// A shadow draft is only worth seeding from while it is NEWER than the live document.
+	// The inline editor on the event page (`details.ts`) and the tickets endpoint now clear the
+	// draft when they save, but drafts written before that are still in the database — and
+	// preferring one of those showed the host, and any admin, the interests/images/dates the
+	// event had BEFORE those edits, then republished them on the next "Update Event".
+	// The 5s slack absorbs legacy drafts, whose write bumped `updatedAt` a few ms after `savedAt`
+	// (autosave no longer touches `updatedAt` at all — see draft-revision.ts).
+	const draftSavedMs = event.draftRevision?.savedAt ? new Date(event.draftRevision.savedAt).getTime() : 0
+	const liveSavedMs = event.updatedAt ? new Date(event.updatedAt).getTime() : 0
+	const draftIsCurrent = draftSavedMs > 0 && draftSavedMs + 5000 >= liveSavedMs
+	const draftPayload: any = isPublished && event.draftRevision?.payload && draftIsCurrent ? event.draftRevision.payload : null
 	const draftSavedAt: string | null = draftPayload ? event.draftRevision?.savedAt ?? null : null
 
 	const [autosaveState, setAutosaveState] = useState<AutosaveState>({ status: "idle" })
@@ -783,8 +794,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		})
 	}
 
+	// Only switches the poll OFF — the question and the date options are kept, so turning it
+	// back on in the same session restores what was there. The server does the same with the
+	// votes (see the datePoll block in api/events/[eventId]/update.ts): picking a fixed date
+	// must not be a way to delete what guests voted for.
 	const clearDatePoll = () => {
-		formikRef.current?.setFieldValue("datePoll", { isActive: false, question: "", options: [] })
+		formikRef.current?.setFieldValue("datePoll.isActive", false)
 	}
 
 	const handleStartDateChange = (date?: string, time?: string) => {

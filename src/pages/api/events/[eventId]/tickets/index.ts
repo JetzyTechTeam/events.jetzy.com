@@ -96,7 +96,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const updated = await Events.findByIdAndUpdate(
 			eventId,
-			{ $set: { tickets: resolvedTickets, isPaid: resolvedTickets.length > 0 } },
+			{
+				$set: { tickets: resolvedTickets, isPaid: resolvedTickets.length > 0 },
+				// Same rule as `update.ts` and `details.ts`: a live save supersedes an autosaved
+				// shadow draft. Manage Event seeds its form from `draftRevision` when one exists,
+				// so a stale draft would show the old tickets and republish them on the next save.
+				$unset: { draftRevision: "" },
+			},
 			{ new: true },
 		)
 			.select("_id tickets isPaid")

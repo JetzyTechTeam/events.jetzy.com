@@ -100,6 +100,8 @@ const schema = zod.object({
 			date: zod.string(),
 			time: zod.string().optional(),
 			label: zod.string().optional(),
+			// Still accepted so an older client doesn't fail validation, but IGNORED: votes are
+			// preserved server-side from the stored options, keyed by option id.
 			votes: zod.array(zod.string()).optional(),
 		})),
 	}).optional(),
@@ -213,6 +215,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const resolvedTickets = await resolveTickets(event.tickets as any, tickets as any)
 
+		// Date poll: votes are never taken from the client and never wiped by a save.
+		//
+		// This route used to write `{isActive:false, question:'', options:[]}` on every save
+		// where the submitted poll wasn't active — so disabling the poll, or merely picking a
+		// fixed start date (which clears the poll client-side), destroyed every vote guests had
+		// cast. Same rule as the inline editor in `details.ts` now: surviving options keep their
+		// votes, matched by option id, and turning the poll off only flips `isActive`.
+		const storedPollOptions = ((event as any).datePoll?.options || []) as any[]
+		const pollVotesById = new Map<string, string[]>(storedPollOptions.map((o: any) => [o.id, o.votes || []]))
+		const datePollSet: any = {}
+		if (datePoll === undefined) {
+			// Preserve-on-omit, like venueName/mediaOrder: a client that doesn't send the poll
+			// must not switch one off.
+		} else if (datePoll.isActive && datePoll.options?.length > 0) {
+			datePollSet.datePoll = {
+				isActive: true,
+				question: datePoll.question || '',
+				options: datePoll.options.map(opt => ({
+					id: opt.id,
+					date: opt.date,
+					time: opt.time || '',
+					label: opt.label || '',
+					// Ignores anything the client sent for `votes` — the stored value wins.
+					votes: pollVotesById.get(opt.id) || [],
+				})),
+			}
+		} else {
+			// Dotted path on purpose: question, options and votes are left alone, so re-enabling
+			// the poll brings it back exactly as it was.
+			datePollSet["datePoll.isActive"] = false
+		}
+
 		// The event-level default that tickets without their own flag inherit
 		// (see src/lib/ticket-approval.ts). The old private-Premium force-on rule is gone.
 		const effectiveRequireApproval = requireApproval
@@ -265,19 +299,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				showOnMobile: showOnMobile ?? false,
 				status: status ?? 'published',
 				interests: interests ?? [],
-				...(datePoll?.isActive && datePoll.options?.length > 0 ? {
-					datePoll: {
-						isActive: true,
-						question: datePoll.question || '',
-						options: datePoll.options.map(opt => ({
-							id: opt.id,
-							date: opt.date,
-							time: opt.time || '',
-							label: opt.label || '',
-							votes: opt.votes || [],
-						})),
-					},
-				} : { datePoll: { isActive: false, question: '', options: [] } }),
+				// Built above, with the stored votes re-attached by option id.
+				...datePollSet,
 			},
 		}
 

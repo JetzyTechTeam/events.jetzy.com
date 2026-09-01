@@ -52,7 +52,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const savedAt = new Date()
-		await Events.updateOne({ _id: event._id }, { $set: { draftRevision: { payload, savedAt } } })
+		// `timestamps: false`: autosaving a shadow draft does NOT change the live event, so it
+		// must not move `updatedAt`. Manage Event compares the draft's `savedAt` against
+		// `updatedAt` to decide whether the draft is still newer than the live document — if the
+		// draft write bumped `updatedAt` too, that comparison could never tell them apart.
+		await Events.updateOne({ _id: event._id }, { $set: { draftRevision: { payload, savedAt } } }, { timestamps: false })
 
 		return sendResponse(res, { savedAt }, "Draft saved.", true, ResCode.OK)
 	} catch (error: any) {
