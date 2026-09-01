@@ -36,6 +36,8 @@ const schema = zod.object({
 	requireApproval: zod.boolean().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
+	capacity: zod.number().int().min(0).optional(),
+	privacy: zod.enum(["public", "private"]).optional(),
 })
 
 /**
@@ -56,14 +58,10 @@ const schema = zod.object({
  *  - `tickets` — prices mint Stripe prices, and bookings reference ticket ids.
  *  - `slug` — changing it retires the old one and rewrites every link; that belongs with the
  *    slug field's own history handling.
- *  - `privacy` / `status` — flipping either moves an event through admin approval or publishes
- *    a draft, which is a workflow rather than an edit.
+ *  - `status` — publishing a draft is a workflow rather than an edit.
  *  - `datePoll` — mutually exclusive with fixed dates and holds votes.
  *  - `showParticipants` — no UI in the manage form and `update.ts` never writes it, so accepting
  *    it here would be new behaviour rather than parity.
- *  - `capacity` — a change has to re-sync `EventTracker.eventCapacity`, which only `update.ts`
- *    does. Accepting it here would silently leave the tracker holding the old number, so
- *    capacity stays in Manage Event.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "PATCH") {
@@ -92,7 +90,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
-			.select("_id ownerId images videos")
+			.select("_id ownerId images videos privacy")
 			.lean()
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
@@ -106,6 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			location, venueName, entrance, latitude, longitude, placeId,
 			timezone, startsOn, endsOn, hasStartTime, hasEndTime,
 			interests, requireApproval, locationDisclosedAfterBooking, showOnMobile,
+			capacity, privacy,
 		} = validation.data
 
 		const set: any = {}
@@ -125,6 +124,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (requireApproval !== undefined) set.requireApproval = requireApproval
 		if (locationDisclosedAfterBooking !== undefined) set.locationDisclosedAfterBooking = locationDisclosedAfterBooking
 		if (showOnMobile !== undefined) set.showOnMobile = showOnMobile
+		if (capacity !== undefined) set.capacity = capacity
+
+		// Only written when actually sent — `update.ts` writes `privacy` unconditionally, so an
+		// omitted value there lands as `undefined` over the stored one. This endpoint must not.
+		if (privacy !== undefined) {
+			set.privacy = privacy
+			// Private events are always auto-approved. A public one needs a fresh admin review
+			// only when it is NEWLY becoming public — don't re-trigger pending on an unrelated
+			// edit, and don't silently approve one that is already pending. Same rule as update.ts.
+			if (privacy === "private") set.adminApprovalStatus = "approved"
+			else if ((event as any).privacy === "private") set.adminApprovalStatus = "pending"
+		}
 
 		// Only overwrite stored coordinates when the client actually sent new ones, i.e. the
 		// user re-picked a place. Same rule as update.ts.
@@ -194,8 +205,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (Object.keys(set).length > 0) updateDoc.$set = set
 		if (Object.keys(unset).length > 0) updateDoc.$unset = unset
 
+		// Capacity is mirrored on the tracker that gates checkout, approvals and the waiting
+		// list. Same block as `update.ts`: no tracker means no upsert, so a legacy event without
+		// one stays without one rather than gaining a gate it never had.
+		if (capacity !== undefined) {
+			const { EventTracker } = await import("@/models/events/event-tracker")
+			const tracker = await EventTracker.findOne({ eventId: new Types.ObjectId(eventId) })
+			if (tracker) {
+				tracker.eventCapacity = capacity
+				await tracker.save()
+			}
+		}
+
 		const updated = await Events.findByIdAndUpdate(eventId, updateDoc, { new: true })
-			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime interests requireApproval locationDisclosedAfterBooking showOnMobile")
+			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime interests requireApproval locationDisclosedAfterBooking showOnMobile capacity privacy adminApprovalStatus")
 			.lean()
 
 		return sendResponse(res, updated, "Event updated", true, ResCode.OK)

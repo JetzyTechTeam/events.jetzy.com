@@ -34,6 +34,7 @@ const TicketEditorModal = dynamic(() => import("@/components/events/TicketEditor
 const InterestsSelector = dynamic(() => import("@/components/events/InterestsSelector"), { ssr: false })
 import type { FileUploadData } from "@/components/misc/DragAndDropUploader"
 import { uniqueId } from "@/lib/utils"
+import { blurOnWheel } from "@/lib/number-input"
 import { Roboto } from "next/font/google"
 import { CalendarDaysIcon, ChevronDownIcon, ClockIcon } from "@heroicons/react/24/outline"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
@@ -268,6 +269,8 @@ export default function HostedEvents({ event }: Props) {
 	const [draftRequireApproval, setDraftRequireApproval] = useState(false)
 	const [draftLocationDisclosed, setDraftLocationDisclosed] = useState(false)
 	const [draftShowOnMobile, setDraftShowOnMobile] = useState(false)
+	const [draftCapacity, setDraftCapacity] = useState("")
+	const [draftPrivacy, setDraftPrivacy] = useState<"public" | "private">("public")
 	// Ticket drafts mirror the manage form's: a working list plus the one being edited.
 	const [draftTickets, setDraftTickets] = useState<TicketData[]>([])
 	const [ticketEditIndex, setTicketEditIndex] = useState<number | null>(null)
@@ -280,41 +283,24 @@ export default function HostedEvents({ event }: Props) {
 
 	// What the page renders. Seeded from props and updated on save, so an edit shows
 	// immediately instead of needing a reload.
-	const [liveName, setLiveName] = useState<string | null>(null)
-	const [liveDesc, setLiveDesc] = useState<string | null>(null)
-	const [liveBenefits, setLiveBenefits] = useState<string | null>(null)
-	const [liveMedia, setLiveMedia] = useState<{ url: string; type: "image" | "video" }[] | null>(null)
-	// The saved event, so the header lines (date, location) update without a reload.
-	const [liveEvent, setLiveEvent] = useState<Partial<IEvent> | null>(null)
-	useEffect(() => {
-		setLiveName(null)
-		setLiveDesc(null)
-		setLiveBenefits(null)
-		setLiveMedia(null)
-		setLiveEvent(null)
-	}, [event])
-
-	// What the page shows: the edited value once saved, otherwise what came from the server.
-	const shownName = liveName ?? (clonedEvent?.name || "")
-	const shownDesc = liveDesc ?? (clonedEvent?.desc || "")
-	const shownBenefits = liveBenefits ?? (clonedEvent?.benefits || "")
+	/**
+	 * What the page renders is simply the server's copy.
+	 *
+	 * There used to be a `live*` overlay here that patched the saved values in without a
+	 * reload. It was always incomplete — `canSeeLocation`, `isEnded`, `eventNeedsApproval`,
+	 * the date-poll components and the checkout modal all read `clonedEvent` directly, so
+	 * toggling "disclose location after booking" saved but the location line kept the old
+	 * visibility. A save now re-runs `getServerSideProps` instead (see `saveEventEdits`),
+	 * which is correct for every consumer rather than the handful the overlay knew about.
+	 */
+	const shownName = clonedEvent?.name || ""
+	const shownDesc = clonedEvent?.desc || ""
+	const shownBenefits = clonedEvent?.benefits || ""
 	// `eventMedia` applies the host's `mediaOrder` across the two arrays — never read
 	// `images` directly, or a video lead and any hand-arranged order are lost.
-	const shownMedia = liveMedia ?? (clonedEvent ? eventMedia(clonedEvent) : [])
-	// The event as the page should show it: saved edits layered over the server copy. Used by
-	// everything that reads a scalar field (dates, location).
-	const shownEvent = useMemo(
-		() => (clonedEvent ? ({ ...clonedEvent, ...(liveEvent || {}) } as IEvent) : clonedEvent),
-		[clonedEvent, liveEvent],
-	)
+	const shownMedia = clonedEvent ? eventMedia(clonedEvent) : []
+	const shownEvent = clonedEvent
 
-	/**
-	 * Opens one section, seeding EVERY draft.
-	 *
-	 * Seeding the lot rather than just this section's is deliberate: switching sections then
-	 * needs no re-seed, and a per-section save can send only its own keys knowing the rest are
-	 * still the stored values.
-	 */
 	const startEventEdit = (section: EditSection) => {
 		// `stripHtml` on load, raw on save — the same asymmetry manage has, so the two forms
 		// seed from the stored value identically.
@@ -341,6 +327,8 @@ export default function HostedEvents({ event }: Props) {
 		setDraftRequireApproval(!!shownEvent?.requireApproval)
 		setDraftLocationDisclosed(!!shownEvent?.locationDisclosedAfterBooking)
 		setDraftShowOnMobile(!!(shownEvent as any)?.showOnMobile)
+		setDraftCapacity(shownEvent?.capacity != null ? String(shownEvent.capacity) : "")
+		setDraftPrivacy(shownEvent?.privacy === "private" ? "private" : "public")
 		// Same mapping the manage form makes: stored `_id` becomes the client `id`, which is what
 		// keeps a ticket's identity (and its Stripe price) across an edit.
 		setDraftTickets(
@@ -414,7 +402,6 @@ export default function HostedEvents({ event }: Props) {
 			await axios.post("/api/delete-image", { eventId: clonedEvent?._id, url: imageUrl })
 			setDraftImages((prev) => prev.filter((img) => img.file !== imageUrl))
 			setDraftMediaOrder((prev) => prev.filter((u) => u !== imageUrl))
-			setLiveMedia((prev) => (prev ?? shownMedia).filter((m) => m.url !== imageUrl))
 		} catch (error: any) {
 			toast({
 				title: "Couldn't remove that image",
@@ -471,16 +458,15 @@ export default function HostedEvents({ event }: Props) {
 						...((t as any).membershipInterval !== undefined ? { membershipInterval: (t as any).membershipInterval } : {}),
 					})),
 				})
-				// The public ticket list seeds its state once, so it is remounted by `key` rather
-				// than re-rendered — see where EventTicketsComponent is rendered.
-				setLiveEvent((prev) => ({ ...(prev || {}), tickets: draftTickets as any }) as any)
 				setEditingSection(null)
 				toast({ title: "Tickets updated", status: "success", duration: 2500, isClosable: true })
+				// Re-runs getServerSideProps, so the ticket list, the checkout modal and the
+				// approval gates all see the new prices rather than the ones they mounted with.
+				router.replace(router.asPath)
 				return
 			}
 
 			const payload: any = {}
-			const live: any = {}
 
 			if (section === "details") {
 				// `images` and `videos` are two separate arrays that cannot express order between
@@ -503,12 +489,10 @@ export default function HostedEvents({ event }: Props) {
 				payload.mediaOrder = ordered.map((m) => m.url)
 				// Benefits are edited in the media panel, over the banner they render on.
 				payload.benefits = draftBenefits
-				setLiveMedia(ordered.map((m) => ({ url: m.url, type: m.type })))
-				setLiveBenefits(draftBenefits)
 			}
 
+			payload.name = name
 			{
-				payload.name = name
 				payload.location = draftLocation
 				payload.venueName = draftVenueName
 				payload.entrance = draftEntrance
@@ -530,44 +514,24 @@ export default function HostedEvents({ event }: Props) {
 					payload.hasStartTime = !!draftStartTime
 					payload.hasEndTime = !!draftEndTime
 				}
-				setLiveName(name)
-				Object.assign(live, {
-					location: draftLocation,
-					venueName: draftVenueName,
-					entrance: draftEntrance,
-					timezone: draftTimezone,
-					...(isDatePollActive
-						? {}
-						: {
-								startsOn: payload.startsOn ? new Date(payload.startsOn) : undefined,
-								endsOn: payload.endsOn ? new Date(payload.endsOn) : undefined,
-								hasStartTime: payload.hasStartTime,
-								hasEndTime: payload.hasEndTime,
-						  }),
-				})
 			}
 
 			payload.desc = draftDesc
-			setLiveDesc(draftDesc)
 
 			payload.interests = draftInterests
-			live.interests = draftInterests
 
-			{
-				payload.requireApproval = draftRequireApproval
-				payload.locationDisclosedAfterBooking = draftLocationDisclosed
-				payload.showOnMobile = draftShowOnMobile
-				Object.assign(live, {
-					requireApproval: draftRequireApproval,
-					locationDisclosedAfterBooking: draftLocationDisclosed,
-					showOnMobile: draftShowOnMobile,
-				})
-			}
+			payload.requireApproval = draftRequireApproval
+			payload.locationDisclosedAfterBooking = draftLocationDisclosed
+			payload.showOnMobile = draftShowOnMobile
+			payload.capacity = Number(draftCapacity) || 0
+			payload.privacy = draftPrivacy
 
 			await axios.patch(`/api/events/${clonedEvent?._id}/details`, payload)
-			if (Object.keys(live).length > 0) setLiveEvent((prev) => ({ ...(prev || {}), ...live }) as any)
 			setEditingSection(null)
 			toast({ title: "Event updated", status: "success", duration: 2500, isClosable: true })
+			// Re-runs getServerSideProps rather than patching state locally: half the page reads
+			// the event document directly, so anything short of this leaves some of it stale.
+			router.replace(router.asPath)
 		} catch (err: any) {
 			toast({ title: "Couldn't save those changes", description: err?.response?.data?.message, status: "error", duration: 5000, isClosable: true })
 		} finally {
@@ -832,36 +796,18 @@ export default function HostedEvents({ event }: Props) {
 		</div>
 	)
 
-	/** Edit / Save / Cancel for one section, rendered to the right of its heading. */
+	/**
+	 * The Edit button beside a section heading. Save and Cancel are NOT here — they live in the
+	 * fixed bar at the bottom of the window, because this editor is far longer than one screen
+	 * and a Save pinned to the heading scrolls out of reach.
+	 */
 	const SectionEditControls = ({ section, label = "Edit" }: { section: EditSection; label?: string }) => {
-		if (!canManage) return null
-		if (editingSection === section) {
-			return (
-				<Flex gap={2} align="center" flexShrink={0}>
-					<button
-						type="button"
-						onClick={cancelEventEdit}
-						disabled={savingEdits}
-						className="border border-[#434343] py-1 px-3 text-xs rounded-lg hover:border-white disabled:opacity-50"
-					>
-						Cancel
-					</button>
-					<button
-						type="button"
-						onClick={() => saveEventEdits(section)}
-						disabled={savingEdits}
-						className="bg-[#F79432] text-black font-bold py-1 px-3 text-xs rounded-lg hover:bg-[#e58220] disabled:opacity-50"
-					>
-						{savingEdits ? "Saving…" : "Save"}
-					</button>
-				</Flex>
-			)
-		}
-		// Opening another section while one is mid-edit would silently drop that work.
+		if (!canManage || editingSection === section) return null
 		return (
 			<button
 				type="button"
 				onClick={() => {
+					// Opening another section while one is mid-edit would silently drop that work.
 					if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
 					startEventEdit(section)
 				}}
@@ -901,7 +847,7 @@ export default function HostedEvents({ event }: Props) {
 				{previewAsGuest && canManageForReal && (
 					<PreviewBanner eventId={String(clonedEvent._id)} slugOrId={clonedEvent.slug || String(clonedEvent._id)} query={router.query} />
 				)}
-				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
+				<div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-7 ${editingSection ? "pb-32" : ""}`}>
 					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex flex-wrap items-center justify-between gap-3`}>
 						<div className="flex items-center gap-3">
 							{/* Most traffic to an event page arrives from OUTSIDE Jetzy — email, QR, blast,
@@ -1021,6 +967,7 @@ export default function HostedEvents({ event }: Props) {
 						<div className="relative p-3">
 							{editingSection === "details" ? (
 								<div className="rounded-xl border border-[#2a2a2a] bg-[#181818] p-4">
+									<Heading size="md" color="white" mb={4}>Banner &amp; benefits</Heading>
 									{/* Same component, same props, same handler names as the manage form's
 									    Event Media box — including that deleting an IMAGE is immediate. */}
 									<MediaUploadSection
@@ -1141,6 +1088,7 @@ export default function HostedEvents({ event }: Props) {
 									)}
 									{editingSection === "details" && (
 										<Box mt={4} mb={2} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4}>
+											<Heading size="md" color="white" mb={4}>When &amp; where</Heading>
 											{/* Time zone — same control and same class as the manage form. */}
 											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Time zone</Text>
 											<Box position="relative" mb={4}>
@@ -1311,10 +1259,7 @@ export default function HostedEvents({ event }: Props) {
 								)}
 								{editingSection === "details" ? (
 									<>
-										<div className="flex items-center justify-between gap-2 mb-2">
-											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-											<SectionEditControls section="details" label="Edit" />
-										</div>
+										<Heading size="md" color="white" mb={3}>Description</Heading>
 										{/* The same editor as the manage form, so both screens read and write
 										    the same HTML. A plain textarea here would have flattened markup a
 										    host wrote in the console. `EventDescription` below already
@@ -1329,6 +1274,49 @@ export default function HostedEvents({ event }: Props) {
 										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={5}>
 											<Heading size="md" color="white" mb={4}>Event Options</Heading>
 											<Flex direction="column" gap={4}>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Privacy</Text>
+														<Text fontSize="12px" color="#868686">Who can view and join this event</Text>
+														{/* Becoming public re-opens admin review, which takes the event off
+														    the public list until it is approved. Said here rather than
+														    discovered afterwards. */}
+														{draftPrivacy === "public" && shownEvent?.privacy === "private" && (
+															<Text fontSize="12px" color="#E9A23B" mt={1} maxW="420px">
+																Making this public sends it back for admin review, and it won&apos;t appear in the events list until approved.
+															</Text>
+														)}
+													</Box>
+													<select
+														value={draftPrivacy}
+														onChange={(e) => setDraftPrivacy(e.target.value === "private" ? "private" : "public")}
+														className="bg-[#090C10] block w-[110px] h-10 rounded-md border border-[#2A2D31] text-white text-sm px-2"
+													>
+														<option value="private">Private</option>
+														<option value="public">Public</option>
+													</select>
+												</Flex>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Capacity</Text>
+														<Text fontSize="12px" color="#868686">Maximum number of attendees</Text>
+													</Box>
+													<Input
+														type="number"
+														min={0}
+														onWheel={blurOnWheel}
+														onKeyDown={(e) => { if (e.key === "-") e.preventDefault() }}
+														value={draftCapacity}
+														onChange={(e) => setDraftCapacity(e.target.value)}
+														placeholder="0"
+														bg="#090C10"
+														color="white"
+														border="1px solid #343536"
+														_focus={{ borderColor: "#343536", boxShadow: "none" }}
+														h="40px"
+														w="110px"
+													/>
+												</Flex>
 												<Flex align="center" justify="space-between" gap={4}>
 													<Box>
 														<Text color="white" fontWeight={500}>Require Approval</Text>
@@ -1352,11 +1340,10 @@ export default function HostedEvents({ event }: Props) {
 													</Box>
 													<Switch colorScheme="orange" isChecked={draftShowOnMobile} onChange={(e) => setDraftShowOnMobile(e.target.checked)} />
 												</Flex>
-												{/* Privacy, status and capacity stay in Manage Event — each has a
-												    side effect beyond this page (admin re-approval, publishing a
-												    draft, the capacity tracker). */}
+												{/* Draft/published is a workflow, not an edit — publishing from the
+												    public page would be a surprising place to do it. */}
 												<Text fontSize="xs" color="#8a8a8a">
-													Privacy, draft/published and capacity are in Manage Event.
+													Draft / published status is in Manage Event.
 												</Text>
 											</Flex>
 										</Box>
@@ -1661,7 +1648,49 @@ export default function HostedEvents({ event }: Props) {
 					)}
 					</div>
 				</div>
-				<TicketEditorModal
+				{/* The save bar.
+			    FIXED, and rendered here at the root rather than inside the event card — that card
+			    sets both `overflow-hidden` and `transform`, and a transform makes `position:
+			    fixed` resolve against the card instead of the viewport while the overflow makes
+			    it the nearest scroll container, so neither `fixed` nor `sticky` works from in
+			    there. The details editor runs to several screens, so this is the only Save the
+			    host can always reach. */}
+			{editingSection && (
+				<div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#343536] bg-[#131313]/95 backdrop-blur-sm px-4 py-3">
+					<div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+						<div className="min-w-0">
+							<p className="text-sm font-semibold text-white truncate">
+								{editingSection === "tickets" ? "Editing tickets" : "Editing event details"}
+							</p>
+							<p className="text-xs text-[#8a8a8a] truncate">
+								{editingSection === "tickets"
+									? "Changing a price creates a new Stripe price."
+									: "Nothing is visible to guests until you save."}
+							</p>
+						</div>
+						<div className="flex items-center gap-2 flex-shrink-0">
+							<button
+								type="button"
+								onClick={cancelEventEdit}
+								disabled={savingEdits}
+								className="border border-[#434343] py-2 px-4 text-sm rounded-lg hover:border-white disabled:opacity-50"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={() => saveEventEdits(editingSection)}
+								disabled={savingEdits}
+								className="bg-[#F79432] text-black font-bold py-2 px-5 text-sm rounded-lg hover:bg-[#e58220] disabled:opacity-50"
+							>
+								{savingEdits ? "Saving…" : "Save changes"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			<TicketEditorModal
 				isOpen={ticketModalOpen}
 				onClose={() => setTicketModalOpen(false)}
 				ticket={tempTicket}
