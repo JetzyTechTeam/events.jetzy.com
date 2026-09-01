@@ -1098,7 +1098,7 @@ Photo/video albums on the public event page, rendered **above** the Discussion s
 - **Share deep-link:** `/{slug}?album={albumId}`. Logged-out recipient is bounced to login; after auth returns, that album auto-opens AND `POST …/access` fires once (sessionStorage guard `album_access_<id>` + server unique-index dedupe).
 - **Notify email:** `sendAlbumAccessNotice` ([send-grid.ts](src/lib/send-grid.ts)) → `SENDGRID_EMAIL_SENDER` inbox, first time each user opens each shared album. login-vs-signup comes from the `isNewAccount` flag the gate posts; account age (<10 min = signup) is only the fallback for an already-logged-in session.
 - **Analytics:** `/api/analytics/events` returns an `albums` block (albumCount, totalAccesses, uniqueViewers, **verifiedViewers**, logins, signups, perAlbum[]). The Access Log carries `Verified` and `Signed in/up` (`identifiedAt`) columns beside the existing `Viewed` date, and the Viewer Interests table carries `Verified`; both are in the CSV export. Surfaced in [analytics.tsx](src/pages/console/events/[eventId]/analytics.tsx) as a dedicated **"Albums" tab** (4th tab): summary cards + Top Albums table + per-viewer **Access Log** (name/email/login-vs-signup/date from `GET …/albums/access-log`) + **Export CSV** (summary + per-album + full access log). Admin-only page.
-- **Unwatermarked photo requests (2026-08-27):** every photo carries the `JetzyLifeMark` overlay; **"Request Unwatermarked Photos"** sits under the grid on the album page, and the lightbox carries a **side panel** (beside the photo on desktop, under it on mobile) for the photo that is open — on the side by CEO decision (2026-08-27), since clicking a photo is the moment someone decides they want it. Opened from there the dialog shows that photo with a "Pick a different photo" link instead of the grid. **Per photo, by decision** — a host reading "someone wants some photos" has nothing to act on. **Multi-select**: the picker toggles any number of photos (cap 30), which writes one row per photo sharing a `batchId` so the host can mark off what they have sent while still seeing they arrived together (`1 of 3` badge, and a column in the CSV). One confirmation email per submission, not per photo. The dialog is `RequestUnwatermarkedDialog.tsx`: pick a photo → (already verified) file it, or (legacy cookie) read-only email → 6-digit code → Verify → **"Request received! We'll get back to you soon."** The **email field is never editable** — the server takes the address from the session/cookie, so an editable one would let anyone file under someone else's name and would be theatre besides. Confirmation email is `sendAlbumPhotoRequestReceived` (CEO's copy, verbatim), plus a best-effort `sendAlbumPhotoRequestNotice` to the admin inbox. Host reads them on the **Photo Requests** tab of `/console/events/[eventId]/manage` (owner **or** admin, unlike the analytics Albums tab which is admin-only): thumbnail-first table, search, status filter, Mark handled, client-side CSV over the whole filtered set. **`status` gates nothing** — fulfilment is manual and off-platform; the `/albums/:albumId/download` proxy still serves the clean original to anyone, as it always did, so this flow is a request channel and not an access control.
+- **Unwatermarked photo requests (2026-08-27):** every photo carries the `JetzyLifeMark` overlay; **"Request Unwatermarked Photos"** sits under the grid on the album page, and the lightbox carries a **side panel** (beside the photo on desktop, under it on mobile) for the photo that is open — on the side by CEO decision (2026-08-27), since clicking a photo is the moment someone decides they want it. Opened from there the dialog shows that photo with a "Pick a different photo" link instead of the grid. **Per photo, by decision** — a host reading "someone wants some photos" has nothing to act on. **Multi-select**: the picker toggles any number of photos (cap 30), which writes one row per photo sharing a `batchId` so the host can mark off what they have sent while still seeing they arrived together (`2 of 3` badge, and two columns in the CSV). Each row stores its own **`batchIndex`** (1-based, written beside `batchId`) — the badge used to be a hardcoded `1 of N`, so a three-photo request read "1 of 3" three times; it is stored rather than derived because every row of one submission shares a timestamp to the second, and the table falls back to listing order only for rows written before the field existed. One confirmation email per submission, not per photo. The dialog is `RequestUnwatermarkedDialog.tsx`: pick a photo → (already verified) file it, or email → 6-digit code → Verify → **"Request received! We'll get back to you soon."** The **email IS editable** (2026-09-01): the cookie's address can be old or wrong and it is where the host replies, so the pick step shows "We'll reply to X · Use a different email". Safety is unchanged — **any** address other than the resolved viewer's costs a 6-digit code sent to that address, verified before a row is written, whether or not the viewer is otherwise verified, so a request can still only be filed under an address the sender can read; `userId` is dropped on the row when the address isn't the viewer's own. (It was previously an `isReadOnly` input, which on Safari still raises a caret and keyboard and so read as broken.) Confirmation email is `sendAlbumPhotoRequestReceived` (CEO's copy, verbatim), plus a best-effort `sendAlbumPhotoRequestNotice` to the admin inbox. Host reads them on the **Photo Requests** tab of `/console/events/[eventId]/manage` (owner **or** admin, unlike the analytics Albums tab which is admin-only): thumbnail-first table, search, status filter, Mark handled, client-side CSV over the whole filtered set. **`status` gates nothing** — fulfilment is manual and off-platform; the `/albums/:albumId/download` proxy still serves the clean original to anyone, as it always did, so this flow is a request channel and not an access control.
 - **Album page funnel (2026-08-27):** `POST /api/events/[eventId]/albums/[albumId]/view` records `landed` → `gate_shown` → `code_sent` → `identified` against the analytics `anonId`, anonymously. Fired from `useAlbumViewerGate` (which owns the dialog state; `GuestAccessModal` gained `onCodeSent`), with stages queued until the album id and anonId are both known. Surfaced as the **Album Page Funnel** strip on the analytics Albums tab, a **Visitors** column on Top Albums, and lines in the CSV; `/api/analytics/events` returns `pageVisitors`, `pageViews`, `gateShown`, `codeSent`, `identified`, `abandoned`. The strip is hidden when there is no history rather than showing zeroes.
 - **Cross-team contract:** `MEDIA_CONTRACT.md` (repo root) documents `images`/`videos`/`mediaOrder`, the ordering algorithm and the create/update write rules for the mobile app team. Keep it current with any change here.
 - **Host-ordered banner media:** `mediaOrder: [String]` on the event (urls across `images` + `videos`), no default — absent = legacy images-then-videos. [event-media.ts](src/lib/event-media.ts) `eventMedia()` applies it via the shared `applyMediaOrder`, which the host's media grid uses too. Unnamed urls append (the mobile app writes `images`/`videos` without knowing about the field); dead entries are skipped. Edited in [media-upload-section.tsx](src/components/media-upload-section.tsx) — one combined draggable grid (native HTML5 DnD, same approach as the album form), a **FIRST** badge on position 0, shared by create and manage. Both forms hold `mediaOrder` state beside `uploadedImages`/`uploadedVideos`, include it in `mediaVersion` (a drag changes neither array, so autosave wouldn't otherwise fire) and pass it through `buildEventPayload`.
@@ -1121,6 +1121,13 @@ Pagination + serialization fixes applied
 Schema: `datePoll.isActive`, `datePoll.question`, `datePoll.options[]` (id, date, time, label, votes)
 API: `GET/POST /api/events/[eventId]/poll`, `POST /api/events/[eventId]/poll/vote`
 Safari date parse issue fixed (commit 5b977a7)
+
+### Votes survive every save (2026-09-01)
+`votes` is **never taken from the client and never wiped by a save**, on either editing surface.
+- **`update.ts` (Manage Event)** used to write `{isActive:false, question:'', options:[]}` whenever the submitted poll wasn't active — so switching the poll off, or merely picking a fixed start date (which clears the poll client-side), destroyed every vote guests had cast. It now reads the stored options first, re-attaches votes **by option id** to the surviving options, and turning the poll off writes the dotted path `datePoll.isActive = false` only, leaving question/options/votes intact so re-enabling restores the poll as it was. Matches `details.ts`, which has always done this.
+- `votes` is still accepted by `update.ts`'s zod schema (so an older client doesn't fail validation) but **ignored** — the stored value wins. Only an option actually removed loses its votes.
+- **`datePoll` omitted entirely = unchanged** (preserve-on-omit, like `venueName`/`mediaOrder`). It used to switch a poll off.
+- `clearDatePoll()` in `manage.tsx` now sets `datePoll.isActive` alone instead of replacing the whole object, so the options stay in form state too.
 
 ### Mutual exclusion with fixed dates (Date Poll ⟷ Start/End)
 An event has EITHER a fixed start/end date OR an active date poll, never both.
@@ -1148,6 +1155,7 @@ Debounced (~2s) autosave with a "Saving… / Saved / Unsaved" pill next to the S
 - **Manage page** (`console/events/[eventId]/manage.tsx`): a **draft** event autosaves in place (stays draft); a **published** event autosaves into a server-side **shadow draft** `event.draftRevision` — live fields untouched until Save. On load, if `draftRevision` exists the form seeds from it and shows a banner with **Discard draft** (reverts to live).
 - Autosave bypasses the redux thunks (which toast) and calls service APIs directly: `CreateEventApis`/`UpdateEventApis`/`SaveDraftRevisionApis`/`DiscardDraftRevisionApis`. Always stores `status:'draft'`; never runs the published Zod schema.
 - Schema: `draftRevision: { payload, savedAt }` (Mixed, optional) on `src/models/events/index.ts` + `IEvent`. `update.ts` `$unset`s it on every real save. New route `src/pages/api/events/[eventId]/draft-revision.ts` (POST save / DELETE discard, admin-or-owner).
+- **A stale shadow draft used to override the live event (fixed 2026-09-01).** Only `update.ts` cleared `draftRevision`, so an edit made through the **inline editor on the event page** (`details.ts`) or the **tickets endpoint** left an older draft in place — and Manage Event prefers the draft unconditionally. The symptom was "the creator added interests/images/dates and an admin can't see them in Manage Event": the form was seeding from a draft written before those edits, and the next "Update Event" would have republished the old values over them. Three changes: `details.ts` and `tickets/index.ts` now `$unset` `draftRevision` on save; `draft-revision.ts` writes with **`timestamps: false`** (autosaving a draft doesn't change the live event, so it must not move `updatedAt`); and `manage.tsx` seeds from the draft only while `draftRevision.savedAt + 5s >= event.updatedAt`, which retires drafts already in the database with no migration.
 - Shared UI/logic: `src/components/events/AutosaveManager.tsx` — `<AutosaveManager>` (inside Formik, debounces via `useFormikContext`), `<AutosaveStatusPill>`, `buildEventPayload(values, images, videos, overrides)`. Media (`uploadedImages`/`uploadedVideos`) merged in via `mediaVersion` signature since it lives outside Formik.
 
 ## Feature: My Bookings (guest-facing) + cancellation
@@ -2375,3 +2383,134 @@ offer to downgrade, which that button does not do. `PlanComparison` is shared, s
 paywall modal and `/premium` all pick this up. The mobile deep-link return is unaffected — it lives
 on a button *inside* the Premium card, not the Basic one.
 
+
+---
+
+## Per-event analytics, rebuilt for people who don't read dashboards (2026-08-28)
+
+Four tabs became two, three panels that could never show data were removed, and the checkout
+funnel finally has something writing to it. Driven by the CEO not being able to read the page
+(2026-08-28): *"what is mean by recent interaction, i dont what this for"*, *"what is mean by
+named event, our ceo doesnot undertsand this"*, *"album is good"* — so the Albums tab is the
+model the rest now follows.
+
+### What was actually broken
+
+Not just presentation. Three panels were structurally incapable of showing anything:
+
+- **"Event Page Views" / the whole checkout funnel.** `trackEventInteraction` is only ever called
+  with `"view"` (and `"share"`, 3 times ever). Production holds **9,045** interaction rows across
+  exactly two types. `ticket_select` and `booking_start` were accepted by
+  `track-event-interaction.ts` and read by `journey/funnel.ts`, `analytics/events.ts` and the CEO
+  report — and written by nobody. Every funnel on the platform was a single bar.
+- **"Page Dwell & Scroll Depth".** `journey/dwell.ts` scopes to an event with
+  `pageMatch.page = { $regex: new RegExp(eventId) }`, but `PageView.page` records `/[slug]` or the
+  resolved slug — **never an event id**. The table was empty on every event, always.
+- **"Click Heatmap".** Coordinates over an unlabelled 600×400 canvas. Even populated it told a host
+  nothing they could act on; the named targets beside it carried the same information legibly.
+
+Plus a units bug: `journey/funnel.ts` counted view/ticket_select/booking_start as **distinct
+sessions** and `booking_complete` as **`countDocuments`**. One person buying three times showed as
+three completions against one view — a funnel that could exceed 100%.
+
+And the Overview tab was **light-themed inside a dark console** (`bg="white"`, `color="#1C1E21"`),
+including the page's own `<h1>`, which is why it read as unreadable rather than merely ugly.
+
+### The writers (this is the part that matters)
+
+`ticket_select` and `booking_start` are now written by `EventTicketsComponent.tsx`; a new
+`checkout_submit` by `EventCheckoutModel.tsx`.
+
+- **`ticket_select`** fires on the turning-ON edge only, from *both* `handleTicketSelection` (card
+  click) and `handleQuantityChange` at quantity 0→1 (pressing `+` selects without ever going
+  through the former, so tracking only one of them would miss everyone who buys that way).
+  De-selecting is not a funnel step. A `useRef<Set>` reports each ticket at most once per mount so
+  an undecided visitor toggling back and forth can't inflate the raw row count.
+- **`booking_start`** fires inside `showCheckoutForm` after every early return has been passed, so
+  it means *the modal is opening*, not *the button was pressed*.
+- **`checkout_submit`** fires alongside the existing `sendGAEvent("Checkout Form Submitted")` —
+  the one point where validation, the terms box, and the membership allowance have all passed and
+  the order is going to either the free path or Stripe. The details→questions step returns before
+  it, so it is once per order. **Without this stage there is a silent gap**: `booking_start` only
+  says the modal opened, and everything between that and a booking row appearing (form filled,
+  button pressed, Stripe or a validation rule refusing) was invisible.
+- **All three are suppressed under `?preview=1`**, same rule as `[slug].tsx` skipping its view
+  tracking: a host checking their own page must not move the numbers they are checking.
+- All three are fire-and-forget with a `.catch(() => {})`. Analytics must never stand between a
+  buyer and their ticket.
+
+**Old traffic will never have these stages.** An event can legitimately show 4 views, three empty
+middle steps, and 1 booking, because bookings are counted from booking records that go back to the
+beginning while the middle stages start today. The funnel panel says so in a note, checked by
+**stage name** rather than by slicing an index range so adding a stage later can't mis-target it.
+
+### `src/lib/analytics-windows.ts` — shared, so the two reports can't drift
+
+`buildWindows` / `countByWindow` / `distinctCountByWindow` / `sumByWindow` / `WINDOW_KEYS` /
+`WINDOW_LABELS`, extracted from `ceo-report-summary.ts` (which now imports them; behaviour
+byte-identical). 24h is a **rolling** window; 7/30/60 are **UTC calendar-day aligned**. Two
+surfaces quoting "Last 7 days" with different boundaries is the fastest way to make a host
+distrust both.
+
+### `GET /api/analytics/event-windows?eventId=` — the CEO's shape, one event
+
+Session-authenticated **admin OR owner** (the platform report is secret-header authenticated
+because its caller is another backend; this one's caller is a browser). Returns the four windows
+for: Page Views, Unique Visitors, Ticket Selections, Checkout Opened, Checkout Submitted, Bookings
+Created, Bookings Confirmed, Tickets Booked, Revenue, Check-ins, Shares, Discussion Posts, Waiting
+List Joins, Album Visitors.
+
+**Deliberately not filtered by the page's date picker.** Fixed, comparable windows are the entire
+point — the picker drives everything *below* the snapshot and nothing inside it.
+
+Revenue is `booking.total` (ticket money). Membership sales ride on `payment.amount` and are **not**
+included; the row is labelled "Ticket revenue — excludes membership sales" rather than left to be
+misread.
+
+### The page now
+
+`/console/events/[eventId]/analytics` — **Overview** and **Albums**. Albums is untouched.
+
+Overview, in order: **Performance snapshot** (the four windows, CSV export) → **Headline numbers**
+(dark tiles, follow the date picker) → **From visit to booking** (the funnel) → **Most-clicked
+buttons** + **Form drop-off** → **Where visitors came from** → **What they viewed it on**.
+
+- **Journey tab merged in, tab dropped.** After removing the heatmap and the dead dwell table it
+  held one panel; hiding one panel behind a tab is not organisation.
+- **Named Events tab deleted.** The label was jargon and the rows were raw
+  (`"<form> / focus"`, `"<form> / submit"`, one per line). The *data* was real, so it survives as
+  two plain-language panels: `topTargets` from `journey/heat.ts` drives **Most-clicked buttons**
+  (with rage clicks shown as "N frustrated"), and `formStats` pairs the focus/submit rows into one
+  line per form with a completion rate. A host cannot read an abandonment rate off two rows several
+  lines apart.
+- **"Recent Interactions" deleted.** A paginated table of `VIEW / <blank timestamp> / <blank user
+  id> / daa50bac…`. Session ids are not information for the person reading this page.
+- **Both trend charts deleted.** They rendered an inverted y-axis (0 at top, 5 at bottom) and a
+  flat line for a 9-view event.
+- **`hideWhenEmpty`** on snapshot rows: check-ins, shares, waiting list, discussion posts and album
+  visitors are hidden when zero in *every* window. An event with no albums and no door would
+  otherwise show rows of zeroes that read as failure rather than as "never used here". The **CSV
+  exports every row regardless** — a zero is information in a spreadsheet comparing two events.
+- Snapshot rows are declared once in `SNAPSHOT_ROWS`, shared by the table and the CSV, so the two
+  cannot disagree.
+
+### `journey/funnel.ts` changes
+
+Every stage is now a **distinct-people count**: the interaction stages by `sessionId`, the booking
+stage by lower-cased `customerEmail` (`Bookings.customerEmail` has no `lowercase: true` — the same
+trap `booking-identity.ts` documents). Also gained `dateFrom`/`dateTo` (it described all time while
+every tile beside it was filtered) and `isDeleted: false`. Stage labels are plain English:
+"Opened the event page / Picked a ticket / Opened checkout / Submitted checkout / Booked".
+
+### Verified against production
+
+`/api/analytics/events` numbers reproduced for `6a8f1f10c5ebf9d6e5a4f7f2` ("Final Album", staging):
+9 page views, 4 unique visitors, 1 booking, 1 ticket, $0 — matching the page exactly. The three new
+funnel stages read 0 there, correctly: nothing had been written yet when the check ran.
+
+### Untouched on purpose
+
+`api/analytics/events.ts` still returns `trends` and `recentInteractions`. **`manage.tsx:983` reads
+`analytics?.trends?.views`** for its own sparkline, so removing the aggregation would have broken a
+page that isn't part of this work. `ClickHeatmap.tsx` is still used by
+`/console/analytics/journey` (the platform-wide page) and was not deleted.

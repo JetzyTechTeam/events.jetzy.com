@@ -48,7 +48,6 @@ import {
 	FormLabel,
 	InputGroup,
 	InputLeftElement,
-	InputRightElement,
 	useDisclosure,
 	Menu,
 	MenuButton,
@@ -69,7 +68,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
 import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline"
-import { MinusCircleIcon, StarIcon } from "@heroicons/react/24/solid"
+import { StarIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
 import Link from "next/link"
@@ -84,6 +83,8 @@ import EventDescription from "@/components/events/EventDescription"
 import AnswerText from "@/components/events/AnswerText"
 import InterestsSelector from "@/components/events/InterestsSelector"
 import MediaUploadSection from "@/components/media-upload-section"
+import BenefitsField from "@/components/events/BenefitsField"
+import TicketEditorModal from "@/components/events/TicketEditorModal"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
@@ -200,7 +201,18 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// A PUBLISHED event with an autosaved shadow draft ("draft 2"): seed the form from
 	// the pending edits instead of the live fields, and offer to Discard back to live.
 	const isPublished = (event.status ?? "published") === "published"
-	const draftPayload: any = isPublished && event.draftRevision?.payload ? event.draftRevision.payload : null
+
+	// A shadow draft is only worth seeding from while it is NEWER than the live document.
+	// The inline editor on the event page (`details.ts`) and the tickets endpoint now clear the
+	// draft when they save, but drafts written before that are still in the database — and
+	// preferring one of those showed the host, and any admin, the interests/images/dates the
+	// event had BEFORE those edits, then republished them on the next "Update Event".
+	// The 5s slack absorbs legacy drafts, whose write bumped `updatedAt` a few ms after `savedAt`
+	// (autosave no longer touches `updatedAt` at all — see draft-revision.ts).
+	const draftSavedMs = event.draftRevision?.savedAt ? new Date(event.draftRevision.savedAt).getTime() : 0
+	const liveSavedMs = event.updatedAt ? new Date(event.updatedAt).getTime() : 0
+	const draftIsCurrent = draftSavedMs > 0 && draftSavedMs + 5000 >= liveSavedMs
+	const draftPayload: any = isPublished && event.draftRevision?.payload && draftIsCurrent ? event.draftRevision.payload : null
 	const draftSavedAt: string | null = draftPayload ? event.draftRevision?.savedAt ?? null : null
 
 	const [autosaveState, setAutosaveState] = useState<AutosaveState>({ status: "idle" })
@@ -391,7 +403,6 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [pollTime, setPollTime] = useState("")
 	const [editPollIndex, setEditPollIndex] = useState<number | null>(null)
 	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = useState(false)
-	const [benefitInput, setBenefitInput] = useState("")
 	const [isFormDirty, setIsFormDirty] = useState(false)
 
 	// Initialize images, videos and tickets on mount. When a shadow draft exists, seed
@@ -783,8 +794,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		})
 	}
 
+	// Only switches the poll OFF — the question and the date options are kept, so turning it
+	// back on in the same session restores what was there. The server does the same with the
+	// votes (see the datePoll block in api/events/[eventId]/update.ts): picking a fixed date
+	// must not be a way to delete what guests voted for.
 	const clearDatePoll = () => {
-		formikRef.current?.setFieldValue("datePoll", { isActive: false, question: "", options: [] })
+		formikRef.current?.setFieldValue("datePoll.isActive", false)
 	}
 
 	const handleStartDateChange = (date?: string, time?: string) => {
@@ -829,7 +844,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const handleImageDelete = async (imageUrl: string) => {
 		try {
 			try { await deleteFile(imageUrl) } catch {}
-			await axios.post("/api/delete-image", { url: imageUrl })
+			// The event id is required now: the endpoint used to match the url across every
+			// event, which meant it could strip an image off somebody else's.
+			await axios.post("/api/delete-image", { eventId: event._id, url: imageUrl })
 			setUploadedImages((prev) => prev.filter((img) => img.file !== imageUrl))
 		} catch (error: any) {
 			console.error("Error deleting image", error)
@@ -900,15 +917,20 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			<ConsoleLayout
 				stickyHeader
 				page={
-					<span className="flex flex-col mt-3">
-						<span className={`${roboto.className} mb-3`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
+					<span className="flex flex-col mt-3 min-w-0">
+						<span className={`${roboto.className} mb-2`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
 							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}>My Events &rsaquo; </span>
 							<span className="text-[#F79432] font-normal">{stripHtml(event.name)}</span>
 						</span>
-						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>
-							{stripHtml(event.name)}
+						{/* Title and badge are flex siblings, not inline text: as an inline span the
+						    badge broke across two lines ("PENDING" / "APPROVAL") the moment the name
+						    filled the row. `whiteSpace: nowrap` keeps it one chip whatever the width. */}
+						<span className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+							<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "1.15", letterSpacing: "-0.03em", color: "#FFFFFF", minWidth: 0, overflowWrap: "anywhere" }}>
+								{stripHtml(event.name)}
+							</span>
 							{isPendingApproval && (
-								<Box as="span" ml={3} px="10px" py="3px" borderRadius="md" fontSize="13px" fontWeight="bold" letterSpacing="0.03em" bg="#3A2A00" color="#F79432" border="1px solid #F79432" verticalAlign="middle">
+								<Box as="span" px="10px" py="3px" borderRadius="md" fontSize="12px" fontWeight="bold" letterSpacing="0.03em" whiteSpace="nowrap" bg="#3A2A00" color="#F79432" border="1px solid #F79432">
 									PENDING APPROVAL
 								</Box>
 							)}
@@ -916,16 +938,23 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					</span> as any
 				}
 				component={
-					<div className="flex flex-wrap gap-2 items-center self-end">
-						{tabIndex === 0 && <AutosaveStatusPill state={autosaveState} />}
-						{isAdmin && isPendingApproval && (
-							<Button bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
-								Approve Event
-							</Button>
+					/* Six equal-weight buttons wrapped onto a ragged second row and gave a destructive
+					   Delete the same presence as the primary Save. The row now carries only what is
+					   used while editing — Approve (when it applies), Preview, Update Event — and the
+					   rest sit behind a "More" menu. The autosave pill moves above the row so it stops
+					   competing with the buttons for the same line. */
+					<div className="flex flex-col items-end gap-2 self-end min-w-0">
+						{tabIndex === 0 && (
+							<div className="flex justify-end">
+								<AutosaveStatusPill state={autosaveState} />
+							</div>
 						)}
-						{isAdmin && (
-							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
-								View Analytics
+						{/* Wraps on a phone, one row from `sm` up. Not `xs:` — that breakpoint is 300px
+						    here, which would force four buttons onto one line on every handset. */}
+						<div className="flex flex-wrap sm:flex-nowrap gap-2 items-center justify-end">
+						{isAdmin && isPendingApproval && (
+							<Button size={{ base: "sm", md: "md" }} flexShrink={0} bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
+								Approve Event
 							</Button>
 						)}
 						{/* Preview as a guest. Opens the REAL event page with the host's own privileges
@@ -941,6 +970,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							hasArrow
 						>
 							<Button
+								size={{ base: "sm", md: "md" }}
+								flexShrink={0}
 								bg="#3E3E3E"
 								color="white"
 								_hover={{ bg: "#323232" }}
@@ -952,18 +983,41 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								Preview
 							</Button>
 						</Tooltip>
-						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
+						<Button size={{ base: "sm", md: "md" }} flexShrink={0} bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
 							{tabIndex === 0 && isFormDirty && (
 								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
 							)}
 							Update Event
 						</Button>
-						<Button bg="#3E3E3E" color="white" _hover={{ bg: "#323232" }} _active={{ bg: "#323232" }} fontWeight="bold" isLoading={isCloning} onClick={handleCloneEvent}>
-							Clone
-						</Button>
-						<Button bg="#EC5E5E" color="white" _hover={{ bg: "#d94c4c" }} _active={{ bg: "#d94c4c" }} fontWeight="bold" onClick={onDeleteOpen}>
-							Delete Event
-						</Button>
+						{/* Analytics, Clone and Delete are occasional, and Delete is destructive — none
+						    of them belong beside the button the host presses every few minutes. */}
+						<Menu placement="bottom-end">
+							<MenuButton
+								as={IconButton}
+								size={{ base: "sm", md: "md" }}
+								flexShrink={0}
+								aria-label="More event actions"
+								icon={<EllipsisHorizontalIcon className="w-5 h-5" />}
+								bg="#3E3E3E"
+								color="white"
+								_hover={{ bg: "#323232" }}
+								_active={{ bg: "#323232" }}
+							/>
+							<MenuList bg="#1D1F24" border="1px solid #444" color="white" minW="200px">
+								{isAdmin && (
+									<MenuItem bg="transparent" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)}>
+										View Analytics
+									</MenuItem>
+								)}
+								<MenuItem bg="transparent" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} isDisabled={isCloning} onClick={handleCloneEvent}>
+									{isCloning ? "Cloning…" : "Clone Event"}
+								</MenuItem>
+								<MenuItem bg="transparent" color="#EC5E5E" _hover={{ bg: "#3A2222" }} _focus={{ bg: "#3A2222" }} onClick={onDeleteOpen}>
+									Delete Event
+								</MenuItem>
+							</MenuList>
+						</Menu>
+						</div>
 					</div>
 				}
 			>
@@ -1450,67 +1504,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													<InterestsSelector bare selected={values.interests ?? []} onChange={(ids) => setFieldValue("interests", ids)} />
 												</Box>
 
-												{/* ---- Event Benefits ---- */}
+												{/* ---- Event Benefits ----
+												    The same control the public event page's inline editor uses, so the two
+												    cannot drift. */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-													<Flex align="baseline" gap={2} mb={4}>
-														<Heading size="md" color="white">Event Benefits</Heading>
-														<Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max 23 chars)</Text>
-													</Flex>
-													{(() => {
-														const addBenefit = () => {
-															const v = benefitInput.trim()
-															if (!v) return
-															const list = (values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean)
-															setFieldValue("benefits", [...list, v].join(","))
-															setBenefitInput("")
-														}
-														return (
-															<InputGroup mb={4}>
-																<Input
-																	placeholder="e.g free food, free drinks etc"
-																	className={roboto.className}
-																	bg="#090C10"
-																	color="white"
-																	fontSize="sm"
-																	h="48px"
-																	border="1px solid #343536"
-																	_focus={{ borderColor: "#343536", boxShadow: "none" }}
-																	pr="70px"
-																	maxLength={23}
-																	value={benefitInput}
-																	onChange={(e) => setBenefitInput(e.target.value)}
-																	onKeyDown={(e) => {
-																		if (e.key === "Enter") { e.preventDefault(); addBenefit() }
-																	}}
-																/>
-																<InputRightElement w="auto" right="4" h="48px">
-																	<Button size="sm" variant="ghost" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} p="0" onClick={addBenefit}>
-																		+ Add
-																	</Button>
-																</InputRightElement>
-															</InputGroup>
-														)
-													})()}
-													<Flex gap={3} flexWrap="wrap">
-														{(values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean).map((b: string, idx: number) => (
-															<Flex key={`${b}-${idx}`} align="center" gap={2} bg="#090C10" border="1px solid #343536" rounded="md" px="4" py="2">
-																<Text className={roboto.className} fontSize="sm" color="white">{b}</Text>
-																<Box
-																	as="button"
-																	type="button"
-																	display="flex"
-																	alignItems="center"
-																	onClick={() => {
-																		const list = (values.benefits || "").split(",").map((x: string) => x.trim()).filter(Boolean)
-																		list.splice(idx, 1)
-																		setFieldValue("benefits", list.join(","))
-																	}}
-																>
-																	<MinusCircleIcon className="w-5 h-5 text-[#EC5E5E]" />
-																</Box>
-															</Flex>
-														))}
-													</Flex>
+													<BenefitsField value={values.benefits || ""} onChange={(next) => setFieldValue("benefits", next)} />
 												</Box>
 
 												{/* ---- Event Options ---- */}
@@ -1797,110 +1795,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 											</Flex>
 										</Flex>
 
-										{/* Tickets Modal */}
+										{/* Tickets Modal — the shared editor, so the inline one on the public
+										    event page is literally the same dialog. Manage keeps ownership of
+										    where a saved ticket goes: into the Formik FieldArray. */}
 										<FieldArray name="tickets">
 											{({ push, replace }) => (
-												<Modal isOpen={isOpen} onClose={onClose} isCentered>
-													<ModalOverlay />
-													<ModalContent bg="#1E1E1E" color="white">
-														<ModalHeader>{editIndex !== null ? "Edit Ticket" : "Add Ticket"}</ModalHeader>
-														<ModalCloseButton />
-														<ModalBody>
-															<FormControl mb={4}>
-																<FormLabel>Ticket Name</FormLabel>
-																<Input placeholder="Enter ticket name" bg="#090C10" border="1px solid #444" value={tempTicket.title} onChange={(e) => setTempTicket({ ...tempTicket, title: e.target.value })} />
-															</FormControl>
-															<FormControl mb={4}>
-																<FormLabel>Description</FormLabel>
-																{/* Same editor as the event description — stores HTML, rendered publicly through
-																	    the shared EventDescription, which still handles older plain-text values. */}
-																<RichTextEditor value={tempTicket.description} onChange={(val) => setTempTicket({ ...tempTicket, description: val })} placeholder="Enter description" />
-															</FormControl>
-															<FormControl mb={4}>
-																<FormLabel>Price</FormLabel>
-																{/* NaN would break the controlled value, so an empty field stays
-																    empty and is treated as free ($0) on save.
-
-																    `Math.max(0, …)` is the real guard, not `min={0}` — the HTML
-																    attribute only styles the spinner and fails on native form
-																    submit, which this modal never does, so -5 typed or pasted here
-																    reached the server and came back as a validation error the host
-																    couldn't act on. Math.max passes NaN through unchanged, so the
-																    empty-field behaviour above is untouched. */}
-																<Input type="number" onWheel={blurOnWheel} min={0} step="0.01" placeholder="Enter price (0 for free)" bg="#090C10" border="1px solid #444" value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""} onChange={(e) => setTempTicket({ ...tempTicket, price: Math.max(0, parseFloat(e.target.value)) })} />
-															</FormControl>
-															<FormControl mb={4}>
-																<Flex align="center" justify="space-between" gap={4}>
-																	<Box>
-																		<FormLabel mb={0}>Require Approval</FormLabel>
-																		<Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
-																			{tempTicket.requireApproval === undefined
-																				? `Inherits the event setting (${values.requireApproval ? "On" : "Off"})`
-																				: !tempTicket.requireApproval
-																					? "Guests book this ticket instantly."
-																					: Number(tempTicket.price) > 0
-																						? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
-																						: "Guests request a spot; you approve or decline."}
-																		</Text>
-																	</Box>
-																	<Switch
-																		colorScheme="orange"
-																		isChecked={tempTicket.requireApproval ?? values.requireApproval}
-																		onChange={(e) => setTempTicket({ ...tempTicket, requireApproval: e.target.checked })}
-																	/>
-																</Flex>
-															</FormControl>
-
-															{/* Which memberships this ticket sells — either, both or neither. */}
-															<TicketMembershipToggles
-																value={ticketMemberships(tempTicket as any)}
-																onChange={(memberships) =>
-																	setTempTicket({
-																		...tempTicket,
-																		memberships,
-																		// Kept in step so the mobile app and any older reader still
-																		// see a bundled Premium ticket. The array is the authority.
-																		includesPremium: memberships.includes("premium"),
-																	} as any)
-																}
-																requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
-																price={Number(tempTicket.price)}
-																interval={ticketMembershipInterval(tempTicket as any)}
-																onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
-															/>
-														</ModalBody>
-														<ModalFooter>
-															<Button bg="#F79432" color="black" mr={3} onClick={() => {
-																// Only the title is required — description is optional server-side
-																// (zod `.optional()`), and requiring it here made tickets created
-																// without one impossible to edit.
-																if (!tempTicket.title.trim()) {
-																	toast({ title: "Missing ticket name", description: "You need to provide a ticket name.", status: "error", duration: 4000, isClosable: true })
-																	return
-																}
-																// Stripe won't charge under $0.50, so a ticket priced there can never
-																// be sold — the failure would only surface at the buyer's checkout.
-																if (isBelowStripeMinimum(tempTicket.price)) {
-																	toast({ title: "Price too low", description: BELOW_MIN_PRICE_MESSAGE, status: "error", duration: 5000, isClosable: true })
-																	return
-																}
-																// Blank price means free. `parseFloat("")` is NaN, which would
-																// otherwise reach the server and fail zod's number check.
-																const normalised = {
-																	...tempTicket,
-																	title: tempTicket.title.trim(),
-																	price: Number.isFinite(tempTicket.price) ? tempTicket.price : 0,
-																}
-																if (editIndex !== null) replace(editIndex, normalised)
-																else push({ ...normalised, id: uniqueId(10) })
-																onClose()
-															}}>
-																{editIndex !== null ? "Save Changes" : "Add Ticket"}
-															</Button>
-															<Button variant="ghost" color="white" _hover={{ color: "black", bg: "orange" }} onClick={onClose}>Cancel</Button>
-														</ModalFooter>
-													</ModalContent>
-												</Modal>
+												<TicketEditorModal
+													isOpen={isOpen}
+													onClose={onClose}
+													ticket={tempTicket}
+													onTicketChange={setTempTicket}
+													isEditing={editIndex !== null}
+													eventRequireApproval={!!values.requireApproval}
+													onSave={(normalised) => {
+														if (editIndex !== null) replace(editIndex, normalised)
+														else push({ ...normalised, id: uniqueId(10) })
+														onClose()
+													}}
+												/>
 											)}
 										</FieldArray>
 

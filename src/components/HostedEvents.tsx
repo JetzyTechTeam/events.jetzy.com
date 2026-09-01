@@ -1,11 +1,42 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
+import dynamic from "next/dynamic"
 import DiscussionBoard from "@/components/events/DiscussionBoard"
 import EventAlbums from "@/components/events/EventAlbums"
 import JetzyChatIntegration from "@/components/events/JetzyChatIntegration"
 import { ROUTES, homeRouteForRole } from "@/configs/routes"
 import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
-import { eventMedia, type EventMedia } from "@/lib/event-media"
+import { applyMediaOrder, eventMedia, type EventMedia } from "@/lib/event-media"
+import { uploadFile } from "@/services/upload.service"
+import BenefitsField from "@/components/events/BenefitsField"
+import type { PlaceSelection } from "@/lib/google-place"
+import type { TicketData } from "@/components/events/TicketCard"
+import { ticketMemberships } from "@/lib/premium-bundle"
+import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList"
+
+/**
+ * The very same controls the manage form uses, so the two screens cannot drift apart — but
+ * loaded on demand.
+ *
+ * This is a PUBLIC page and these are host-only controls. Importing them statically pulled
+ * Quill, the Google Places widget and `moment-timezone` (which enumerates every zone at module
+ * scope) into the event page's module graph, which was enough to run the Next build worker out
+ * of heap during "Collecting page data" — and would have shipped all of it to every guest.
+ * `ssr: false` because none of them render anything meaningful on the server.
+ */
+const RichTextEditor = dynamic(() => import("@/components/misc/RichTextEditor"), { ssr: false })
+const MediaUploadSection = dynamic(() => import("@/components/media-upload-section"), { ssr: false })
+const EventLocationField = dynamic(() => import("@/components/events/fields/EventLocationField"), { ssr: false })
+const DatePicker = dynamic(() => import("@/components/form/DatePicker"), { ssr: false })
+const TimePicker = dynamic(() => import("@/components/form/TimePicker"), { ssr: false })
+const TimezoneSelect = dynamic(() => import("@/components/timezone-select"), { ssr: false })
+const TicketEditorModal = dynamic(() => import("@/components/events/TicketEditorModal"), { ssr: false })
+const InterestsSelector = dynamic(() => import("@/components/events/InterestsSelector"), { ssr: false })
+import type { FileUploadData } from "@/components/misc/DragAndDropUploader"
+import { uniqueId } from "@/lib/utils"
+import { blurOnWheel } from "@/lib/number-input"
+import { Roboto } from "next/font/google"
+import { CalendarDaysIcon, ChevronDownIcon, ClockIcon } from "@heroicons/react/24/outline"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -14,7 +45,7 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
-import { eventHasAnyApprovalTicket } from "@/lib/ticket-approval"
+import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
@@ -23,8 +54,8 @@ import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
-import { Button, Image, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
-import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
+import { Badge, Button, Image, Switch, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, InputGroup, InputLeftElement, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
+import { ShareIcon, QrCodeIcon as QrCodeIconOutline } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
 import Pagination from "@/components/misc/Pagination"
 import { useQuery } from "@tanstack/react-query"
@@ -48,6 +79,23 @@ dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
+
+const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
+
+/**
+ * Which block of the event page is in edit mode.
+ *
+ * Two, by decision: "details" is everything about the event itself — banner, benefits, title,
+ * schedule, location, description, options and interests, opened by the one Edit beside the
+ * Description heading — and "tickets" is its own, because tickets carry money and save through
+ * a different endpoint.
+ */
+type EditSection = "details" | "tickets"
+
+// Same field classes the manage form uses, so the pickers render identically here.
+const fieldBase = "w-full h-[48px] rounded-md bg-[#090C10] text-white text-[14px] border border-[#343536] focus:outline-none"
+const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`
+const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`
 
 const settings = {
 	infinite: true,
@@ -187,6 +235,337 @@ export default function HostedEvents({ event }: Props) {
 	const canManage = isAdmin || isOwner
 	const isDatePollActive = !!(clonedEvent?.datePoll?.isActive && clonedEvent?.datePoll?.options?.length)
 
+	// ── Inline editing (admin / event owner) ────────────────────────────────
+	// The album page does this already; the CEO's rule is that it should be true everywhere —
+	// nobody is sent to another screen to change what they are looking at. Step one covers the
+	// presentational fields: title, description, benefits and the banner media.
+	//
+	// Saved through PATCH /api/events/:id/details, NOT the full-replace `update.ts`, which
+	// rewrites tickets, capacity, timezone, status, interests and the date poll on every call.
+	// A title edit must not be able to reach any of that.
+	// One section at a time. A single global flag put every control on screen at once and gave
+	// the host one Save for six unrelated things; per-section editing is what the CEO asked for
+	// and it also means a save can send only the fields that section owns.
+	const [editingSection, setEditingSection] = useState<EditSection | null>(null)
+	const [savingEdits, setSavingEdits] = useState(false)
+	const [draftName, setDraftName] = useState("")
+	const [draftDesc, setDraftDesc] = useState("")
+	const [draftBenefits, setDraftBenefits] = useState("")
+	// Media state mirrors the manage form's exactly — same shapes, same handler names — so
+	// `MediaUploadSection` behaves identically on both screens. `file` holds a URL, not a File.
+	const [draftImages, setDraftImages] = useState<FileUploadData[]>([])
+	const [draftVideos, setDraftVideos] = useState<FileUploadData[]>([])
+	const [draftMediaOrder, setDraftMediaOrder] = useState<string[]>([])
+	const [draftLocation, setDraftLocation] = useState("")
+	const [draftVenueName, setDraftVenueName] = useState("")
+	const [draftEntrance, setDraftEntrance] = useState("")
+	const [draftCoords, setDraftCoords] = useState<{ latitude?: number; longitude?: number; placeId?: string }>({})
+	const [draftTimezone, setDraftTimezone] = useState("")
+	const [draftStartDate, setDraftStartDate] = useState("")
+	const [draftStartTime, setDraftStartTime] = useState("")
+	const [draftEndDate, setDraftEndDate] = useState("")
+	const [draftEndTime, setDraftEndTime] = useState("")
+	const [draftInterests, setDraftInterests] = useState<string[]>([])
+	const [draftRequireApproval, setDraftRequireApproval] = useState(false)
+	const [draftLocationDisclosed, setDraftLocationDisclosed] = useState(false)
+	const [draftShowOnMobile, setDraftShowOnMobile] = useState(false)
+	const [draftCapacity, setDraftCapacity] = useState("")
+	const [draftPrivacy, setDraftPrivacy] = useState<"public" | "private">("public")
+	// Poll options are drafted WITHOUT votes — the server preserves those by option id, so the
+	// client never has to carry (or risk dropping) what guests voted for.
+	type DraftPollOption = { id: string; date: string; time?: string; label?: string }
+	const [draftPollActive, setDraftPollActive] = useState(false)
+	const [draftPollQuestion, setDraftPollQuestion] = useState("")
+	const [draftPollOptions, setDraftPollOptions] = useState<DraftPollOption[]>([])
+	const [newPollDate, setNewPollDate] = useState("")
+	const [newPollTime, setNewPollTime] = useState("")
+	const [newPollLabel, setNewPollLabel] = useState("")
+	// Ticket drafts mirror the manage form's: a working list plus the one being edited.
+	const [draftTickets, setDraftTickets] = useState<TicketData[]>([])
+	const [ticketEditIndex, setTicketEditIndex] = useState<number | null>(null)
+	const [tempTicket, setTempTicket] = useState<TicketData>({ id: "", title: "", description: "", price: 0 })
+	const [ticketModalOpen, setTicketModalOpen] = useState(false)
+	const [isUploadingImage, setIsUploadingImage] = useState(false)
+	const [isUploadingVideo, setIsUploadingVideo] = useState(false)
+	const [imageUploadProgress, setImageUploadProgress] = useState(0)
+	const [videoUploadProgress, setVideoUploadProgress] = useState(0)
+
+	// What the page renders. Seeded from props and updated on save, so an edit shows
+	// immediately instead of needing a reload.
+	/**
+	 * What the page renders is simply the server's copy.
+	 *
+	 * There used to be a `live*` overlay here that patched the saved values in without a
+	 * reload. It was always incomplete — `canSeeLocation`, `isEnded`, `eventNeedsApproval`,
+	 * the date-poll components and the checkout modal all read `clonedEvent` directly, so
+	 * toggling "disclose location after booking" saved but the location line kept the old
+	 * visibility. A save now re-runs `getServerSideProps` instead (see `saveEventEdits`),
+	 * which is correct for every consumer rather than the handful the overlay knew about.
+	 */
+	const shownName = clonedEvent?.name || ""
+	const shownDesc = clonedEvent?.desc || ""
+	const shownBenefits = clonedEvent?.benefits || ""
+	// `eventMedia` applies the host's `mediaOrder` across the two arrays — never read
+	// `images` directly, or a video lead and any hand-arranged order are lost.
+	const shownMedia = clonedEvent ? eventMedia(clonedEvent) : []
+	const shownEvent = clonedEvent
+
+	const startEventEdit = (section: EditSection) => {
+		// `stripHtml` on load, raw on save — the same asymmetry manage has, so the two forms
+		// seed from the stored value identically.
+		setDraftName(stripHtml(shownName))
+		setDraftDesc(shownDesc)
+		setDraftBenefits(shownBenefits)
+		setDraftImages(shownMedia.filter((m) => m.type !== "video").map((m) => ({ id: uniqueId(10), file: m.url })))
+		setDraftVideos(shownMedia.filter((m) => m.type === "video").map((m) => ({ id: uniqueId(10), file: m.url })))
+		setDraftMediaOrder(shownMedia.map((m) => m.url))
+
+		// Dates are split into date + time IN THE EVENT'S ZONE, exactly the way the manage form
+		// seeds its own pickers — an instant rendered in the browser's zone would show the host
+		// a different day than the one guests see.
+		const zone = getEventZone(shownEvent?.timezone)
+		const start = shownEvent?.startsOn ? dayjs.utc(shownEvent.startsOn).tz(zone) : null
+		const end = shownEvent?.endsOn ? dayjs.utc(shownEvent.endsOn).tz(zone) : null
+		setDraftTimezone(normalizeTimezone(shownEvent?.timezone))
+		setDraftStartDate(start ? start.format("YYYY-MM-DD") : "")
+		setDraftStartTime(start && shownEvent?.hasStartTime !== false ? start.format("HH:mm") : "")
+		setDraftEndDate(end ? end.format("YYYY-MM-DD") : "")
+		setDraftEndTime(end && shownEvent?.hasEndTime !== false ? end.format("HH:mm") : "")
+
+		setDraftInterests(((shownEvent?.interests ?? []) as any[]).map((id: any) => id?.toString?.() ?? id))
+		setDraftRequireApproval(!!shownEvent?.requireApproval)
+		setDraftLocationDisclosed(!!shownEvent?.locationDisclosedAfterBooking)
+		setDraftShowOnMobile(!!(shownEvent as any)?.showOnMobile)
+		setDraftCapacity(shownEvent?.capacity != null ? String(shownEvent.capacity) : "")
+		setDraftPrivacy(shownEvent?.privacy === "private" ? "private" : "public")
+		setDraftPollActive(!!shownEvent?.datePoll?.isActive)
+		setDraftPollQuestion(shownEvent?.datePoll?.question || "")
+		setDraftPollOptions(
+			((shownEvent?.datePoll?.options || []) as any[]).map((o: any) => ({
+				id: o.id,
+				date: o.date,
+				time: o.time || "",
+				label: o.label || "",
+			})),
+		)
+		setNewPollDate("")
+		setNewPollTime("")
+		setNewPollLabel("")
+		// Same mapping the manage form makes: stored `_id` becomes the client `id`, which is what
+		// keeps a ticket's identity (and its Stripe price) across an edit.
+		setDraftTickets(
+			((shownEvent?.tickets || []) as any[]).map((ticket: any) => ({
+				id: ticket._id?.toString() || uniqueId(10),
+				title: stripHtml(ticket.name),
+				price: Number(ticket.price),
+				description: stripHtml(ticket.desc),
+				requireApproval: ticket.requireApproval,
+				memberships: ticketMemberships(ticket),
+				membershipInterval: ticket.membershipInterval,
+				includesPremium: ticketMemberships(ticket).includes("premium"),
+			})) as TicketData[],
+		)
+		setDraftLocation(shownEvent?.location || "")
+		setDraftVenueName((shownEvent as any)?.venueName || "")
+		setDraftEntrance((shownEvent as any)?.entrance || "")
+		setDraftCoords({})
+		setEditingSection(section)
+	}
+
+	const cancelEventEdit = () => {
+		setEditingSection(null)
+	}
+
+	// Upload handlers, matching manage's: sequential, `posts` folder, one shared progress
+	// number per kind.
+	const handleEventImageUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploadingImage) return
+		setIsUploadingImage(true)
+		try {
+			for (const file of Array.from(files)) {
+				const res = await uploadFile(file, { folder: "posts", onProgressChange: setImageUploadProgress })
+				setDraftImages((prev) => [...prev, { id: uniqueId(10), file: res.url }])
+			}
+		} catch (error) {
+			toast({ title: "Error", description: "Failed to upload file", status: "error", duration: 4000, isClosable: true })
+		} finally {
+			setIsUploadingImage(false)
+			setImageUploadProgress(0)
+		}
+	}
+
+	const handleEventVideoUpload = async (files: FileList | null) => {
+		if (!files || files.length === 0 || isUploadingVideo) return
+		setIsUploadingVideo(true)
+		try {
+			for (const file of Array.from(files)) {
+				const res = await uploadFile(file, { folder: "posts", onProgressChange: setVideoUploadProgress })
+				setDraftVideos((prev) => [...prev, { id: uniqueId(10), file: res.url }])
+			}
+		} catch (error) {
+			console.error("Error uploading video", error)
+		} finally {
+			setIsUploadingVideo(false)
+			setVideoUploadProgress(0)
+		}
+	}
+
+	/**
+	 * Deleting an image is IMMEDIATE, exactly as it is in the manage form — the API call
+	 * happens on the click, not on Save, so Cancel does not bring it back. That asymmetry is
+	 * deliberate (the two screens must not disagree about what a delete means), which is why
+	 * the edit panel says so out loud.
+	 *
+	 * `liveMedia` is updated too: the banner behind the editor has to stop showing a file that
+	 * is already gone from the record.
+	 */
+	const handleEventImageDelete = async (imageUrl: string) => {
+		try {
+			await axios.post("/api/delete-image", { eventId: clonedEvent?._id, url: imageUrl })
+			setDraftImages((prev) => prev.filter((img) => img.file !== imageUrl))
+			setDraftMediaOrder((prev) => prev.filter((u) => u !== imageUrl))
+		} catch (error: any) {
+			toast({
+				title: "Couldn't remove that image",
+				description: error?.response?.data?.message,
+				status: "error",
+				duration: 4000,
+				isClosable: true,
+			})
+		}
+	}
+
+	// Local-only, like manage's: there is no delete-video endpoint, so it lands on Save.
+	const handleEventVideoDelete = async (videoUrl: string) => {
+		setDraftVideos((prev) => prev.filter((v) => v.file !== videoUrl))
+		setDraftMediaOrder((prev) => prev.filter((u) => u !== videoUrl))
+	}
+
+	/**
+	 * Saves ONE section. Each sends only the keys it owns, so editing the description cannot
+	 * touch the schedule and vice versa — `/details` writes only what it is given.
+	 *
+	 * Tickets go to their own endpoint: they mint Stripe prices and bookings reference their
+	 * ids, so they never travel with presentational fields.
+	 */
+	const saveEventEdits = async (section: EditSection) => {
+		const name = draftName.trim()
+
+		if (section === "details" && !name) {
+			toast({ title: "The event needs a name", status: "warning", duration: 3000, isClosable: true })
+			return
+		}
+		if (section === "details") {
+			if (draftImages.length === 0 && draftVideos.length === 0) {
+				toast({ title: "Keep at least one photo or video", status: "warning", duration: 3000, isClosable: true })
+				return
+			}
+			if (isUploadingImage || isUploadingVideo) {
+				toast({ title: "Still uploading", description: "Wait for the uploads to finish first.", status: "warning", duration: 3000, isClosable: true })
+				return
+			}
+		}
+
+		setSavingEdits(true)
+		try {
+			if (section === "tickets") {
+				await axios.patch(`/api/events/${clonedEvent?._id}/tickets`, {
+					tickets: draftTickets.map((t) => ({
+						id: t.id,
+						title: t.title,
+						description: t.description,
+						price: Number(t.price),
+						...(t.requireApproval !== undefined ? { requireApproval: t.requireApproval } : {}),
+						...((t as any).memberships !== undefined ? { memberships: (t as any).memberships } : {}),
+						...((t as any).membershipInterval !== undefined ? { membershipInterval: (t as any).membershipInterval } : {}),
+					})),
+				})
+				setEditingSection(null)
+				toast({ title: "Tickets updated", status: "success", duration: 2500, isClosable: true })
+				// Re-runs getServerSideProps, so the ticket list, the checkout modal and the
+				// approval gates all see the new prices rather than the ones they mounted with.
+				router.replace(router.asPath)
+				return
+			}
+
+			const payload: any = {}
+
+			if (section === "details") {
+				// `images` and `videos` are two separate arrays that cannot express order between
+				// them; `mediaOrder` is what carries the host's arrangement across both. All three
+				// go together — the endpoint rejects them apart, and rejects an order that isn't
+				// exactly the set of stored urls.
+				//
+				// `applyMediaOrder` produces that exact set: the same function the media grid and
+				// the public banner order by, and it appends anything the stored order doesn't
+				// name (a file just uploaded, or one the mobile app added) rather than dropping it.
+				const ordered = applyMediaOrder(
+					[
+						...draftImages.map((m) => ({ ...m, type: "image" as const, url: m.file })),
+						...draftVideos.map((m) => ({ ...m, type: "video" as const, url: m.file })),
+					],
+					draftMediaOrder,
+				)
+				payload.images = draftImages.map((m) => m.file)
+				payload.videos = draftVideos.map((m) => m.file)
+				payload.mediaOrder = ordered.map((m) => m.url)
+				// Benefits are edited in the media panel, over the banner they render on.
+				payload.benefits = draftBenefits
+			}
+
+			payload.name = name
+			{
+				payload.location = draftLocation
+				payload.venueName = draftVenueName
+				payload.entrance = draftEntrance
+				payload.timezone = draftTimezone
+				if (draftCoords.latitude !== undefined && draftCoords.longitude !== undefined) {
+					Object.assign(payload, draftCoords)
+				}
+				// Dates go out as resolved instants. The date + time the host typed are read IN
+				// THE EVENT'S ZONE — the same combination manage makes on submit — so 7pm means
+				// 7pm where the event is, not where the browser is.
+				const zone = getEventZone(draftTimezone)
+				const toInstant = (date: string, time: string) =>
+					date ? dayjs.tz(`${date} ${time || "00:00"}`, "YYYY-MM-DD HH:mm", zone).utc().toISOString() : ""
+				// Only when this event isn't running a poll — a poll and fixed dates are mutually
+				// exclusive, and the poll is edited in Manage Event.
+				if (!draftPollActive) {
+					payload.startsOn = toInstant(draftStartDate, draftStartTime)
+					payload.endsOn = toInstant(draftEndDate, draftEndTime)
+					payload.hasStartTime = !!draftStartTime
+					payload.hasEndTime = !!draftEndTime
+				}
+			}
+
+			payload.desc = draftDesc
+
+			payload.interests = draftInterests
+
+			payload.requireApproval = draftRequireApproval
+			payload.locationDisclosedAfterBooking = draftLocationDisclosed
+			payload.showOnMobile = draftShowOnMobile
+			payload.capacity = Number(draftCapacity) || 0
+			payload.privacy = draftPrivacy
+			payload.datePoll = {
+				isActive: draftPollActive,
+				question: draftPollQuestion,
+				options: draftPollOptions,
+			}
+
+			await axios.patch(`/api/events/${clonedEvent?._id}/details`, payload)
+			setEditingSection(null)
+			toast({ title: "Event updated", status: "success", duration: 2500, isClosable: true })
+			// Re-runs getServerSideProps rather than patching state locally: half the page reads
+			// the event document directly, so anything short of this leaves some of it stale.
+			router.replace(router.asPath)
+		} catch (err: any) {
+			toast({ title: "Couldn't save those changes", description: err?.response?.data?.message, status: "error", duration: 5000, isClosable: true })
+		} finally {
+			setSavingEdits(false)
+		}
+	}
+
 	// Cancel-own-booking flow. This used to be gated to free events, which meant a paid
 	// booking could never be cancelled from anywhere in the product. The API decides
 	// eligibility now (see lib/booking-cancellation.ts) and returns `canCancel` with it.
@@ -206,7 +585,7 @@ export default function HostedEvents({ event }: Props) {
 	// appear straight after a booking made on this page rather than only on the next load.
 	const hasLiveBooking = !!myBooking && !isPendingBooking(myBooking)
 	const canSeeLocation = !clonedEvent?.locationDisclosedAfterBooking || hasLiveBooking || canManage
-	const disclosedLocation = (hasLiveBooking && myBooking?.eventLocation) || clonedEvent?.location
+	const disclosedLocation = (hasLiveBooking && myBooking?.eventLocation) || shownEvent?.location
 
 	// A media url that 404s and an event with no media at all used to look identical
 	// on screen ("No image available"), which made bug reports unfalsifiable — the
@@ -343,21 +722,128 @@ export default function HostedEvents({ event }: Props) {
 	})
 
 	const { formattedDate, formattedTime } = useMemo(() => {
-		if (!clonedEvent?.startsOn) return { formattedDate: "", formattedTime: "" }
+		if (!shownEvent?.startsOn) return { formattedDate: "", formattedTime: "" }
 
 		try {
-			const userTimeZone = getEventZone(clonedEvent?.timezone)
-			const date = dayjs.utc(clonedEvent.startsOn).tz(userTimeZone)
+			const userTimeZone = getEventZone(shownEvent?.timezone)
+			const date = dayjs.utc(shownEvent.startsOn).tz(userTimeZone)
 
 			const formattedDate = date.format("MMMM DD, YYYY")
-			const formattedTime = clonedEvent?.hasStartTime !== false ? date.format("hh:mm A") : ""
+			const formattedTime = shownEvent?.hasStartTime !== false ? date.format("hh:mm A") : ""
 
 			return { formattedDate, formattedTime }
 		} catch (error) {
 			console.error("Error formatting date:", error)
 			return { formattedDate: "", formattedTime: "" }
 		}
-	}, [clonedEvent?.startsOn, clonedEvent?.timezone, clonedEvent?.hasStartTime])
+	}, [shownEvent?.startsOn, shownEvent?.timezone, shownEvent?.hasStartTime])
+
+	/**
+	 * Ticket editing, inline. The list, the reordering and the dialog are the manage form's own
+	 * components, so the two screens cannot disagree about what a ticket is.
+	 *
+	 * Nothing is written until Save: the draft list is local, and only then does it go to the
+	 * tickets endpoint, which preserves each ticket's id and Stripe price.
+	 */
+	const TicketsInlineEditor = () => (
+		<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8" id="event-tickets">
+			<div className="p-4 sm:p-8">
+				<Flex align="center" justify="space-between" gap={2} mb={4} wrap="wrap">
+					<Box>
+						<h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
+						<p className="text-[#bbbbbb] text-sm">Drag to reorder — the order here is the order guests see.</p>
+					</Box>
+					<SectionEditControls section="tickets" />
+				</Flex>
+
+				<SortableTicketList
+					items={draftTickets.map((t, i) => String(t.id || i))}
+					onReorder={(from: number, to: number) =>
+						setDraftTickets((prev) => {
+							const arr = [...prev]
+							const [moved] = arr.splice(from, 1)
+							arr.splice(to, 0, moved)
+							return arr
+						})
+					}
+				>
+					{draftTickets.map((ticket, index) => (
+						<SortableTicketItem key={ticket.id || index} id={String(ticket.id || index)}>
+							<Flex align="center" justify="space-between" gap={3} pl="10">
+								<Box minW={0}>
+									<Flex align="center" gap={2}>
+										<Text color="white" fontWeight="600">{ticket.title}</Text>
+										{ticketApprovalFlag(shownEvent as any, ticket as any) && (
+											<Badge colorScheme="orange">Approval</Badge>
+										)}
+									</Flex>
+									<Text color="#9C9C9C" fontSize="sm">${ticket.price}</Text>
+								</Box>
+								<Flex gap={2} flexShrink={0}>
+									<button
+										type="button"
+										onClick={() => { setTicketEditIndex(index); setTempTicket(ticket); setTicketModalOpen(true) }}
+										className="border border-[#434343] py-1 px-3 text-xs rounded-lg hover:border-white"
+									>
+										Edit
+									</button>
+									<button
+										type="button"
+										onClick={() => setDraftTickets((prev) => prev.filter((_, i) => i !== index))}
+										className="border border-[#434343] text-red-300 py-1 px-3 text-xs rounded-lg hover:border-red-400"
+									>
+										Delete
+									</button>
+								</Flex>
+							</Flex>
+						</SortableTicketItem>
+					))}
+				</SortableTicketList>
+
+				{draftTickets.length === 0 && (
+					<Text color="#9C9C9C" fontSize="sm" mt={3}>No tickets yet.</Text>
+				)}
+
+				<button
+					type="button"
+					onClick={() => {
+						setTicketEditIndex(null)
+						setTempTicket({ id: "", title: "", description: "", price: 0 })
+						setTicketModalOpen(true)
+					}}
+					className="mt-4 border border-dashed border-[#666] w-full py-2 text-sm rounded-lg hover:bg-[#1C1F24]"
+				>
+					+ Add ticket
+				</button>
+
+				<Text fontSize="xs" color="#8a8a8a" mt={3}>
+					Changing a price creates a new Stripe price. Existing bookings keep the price they were sold at.
+				</Text>
+			</div>
+		</div>
+	)
+
+	/**
+	 * The Edit button beside a section heading. Save and Cancel are NOT here — they live in the
+	 * fixed bar at the bottom of the window, because this editor is far longer than one screen
+	 * and a Save pinned to the heading scrolls out of reach.
+	 */
+	const SectionEditControls = ({ section, label = "Edit" }: { section: EditSection; label?: string }) => {
+		if (!canManage || editingSection === section) return null
+		return (
+			<button
+				type="button"
+				onClick={() => {
+					// Opening another section while one is mid-edit would silently drop that work.
+					if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
+					startEventEdit(section)
+				}}
+				className="border border-[#F79432] text-[#F79432] py-1 px-3 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors flex-shrink-0"
+			>
+				{label}
+			</button>
+		)
+	}
 
 	// Add error boundary for event data - only show if event is truly invalid
 	if (!isValidEvent || !clonedEvent) {
@@ -388,7 +874,7 @@ export default function HostedEvents({ event }: Props) {
 				{previewAsGuest && canManageForReal && (
 					<PreviewBanner eventId={String(clonedEvent._id)} slugOrId={clonedEvent.slug || String(clonedEvent._id)} query={router.query} />
 				)}
-				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
+				<div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-7 ${editingSection ? "pb-32" : ""}`}>
 					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex flex-wrap items-center justify-between gap-3`}>
 						<div className="flex items-center gap-3">
 							{/* Most traffic to an event page arrives from OUTSIDE Jetzy — email, QR, blast,
@@ -410,6 +896,10 @@ export default function HostedEvents({ event }: Props) {
 						    three right-aligned buttons down the page above the banner. On mobile they
 						    collapse into one menu instead; the desktop row is unchanged. */}
 						<div className="hidden sm:flex flex-wrap items-center justify-end gap-2">
+							{/* The Edit affordance lives beside each section heading now, not here —
+							    one button that opened six unrelated regions at once was the thing being
+							    replaced. "Manage Event" stays: it is the way to what the inline editor
+							    deliberately doesn't touch. */}
 							{canManage && (
 								<Link href={`/console/events/${clonedEvent._id}/manage`} className="border border-[#434343] py-2 px-3 sm:px-4 text-sm sm:text-base rounded-lg hover:border-white">
 									Manage Event
@@ -502,8 +992,39 @@ export default function HostedEvents({ event }: Props) {
 					<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 						{/* Banner Media (images + videos combined) */}
 						<div className="relative p-3">
+							{editingSection === "details" ? (
+								<div className="rounded-xl border border-[#2a2a2a] bg-[#181818] p-4">
+									<Heading size="md" color="white" mb={4}>Banner &amp; benefits</Heading>
+									{/* Same component, same props, same handler names as the manage form's
+									    Event Media box — including that deleting an IMAGE is immediate. */}
+									<MediaUploadSection
+										uploadedImages={draftImages}
+										uploadedVideos={draftVideos}
+										onImageChange={handleEventImageUpload}
+										onVideoChange={handleEventVideoUpload}
+										isUploadingImage={isUploadingImage}
+										isUploadingVideo={isUploadingVideo}
+										imageUploadProgress={imageUploadProgress}
+										videoUploadProgress={videoUploadProgress}
+										handleImageDelete={handleEventImageDelete}
+										handleVideoDelete={handleEventVideoDelete}
+										mediaOrder={draftMediaOrder}
+										onReorder={setDraftMediaOrder}
+									/>
+									{/* Said out loud because it contradicts the Cancel button beside it:
+									    an image delete is written immediately, exactly as in Manage Event. */}
+									<p className="text-xs text-[#E9A23B] mt-3">
+										Removing a photo takes effect straight away — Cancel won&apos;t bring it back. Everything else waits for Save.
+									</p>
+
+									<div className="mt-5">
+										<BenefitsField value={draftBenefits} onChange={setDraftBenefits} />
+									</div>
+								</div>
+							) : (
+							<>
 							{(() => {
-								const allMedia = eventMedia(clonedEvent)
+								const allMedia = shownMedia
 								if (allMedia.length > 1) {
 									return (
 										<Slider {...settings}>
@@ -522,9 +1043,9 @@ export default function HostedEvents({ event }: Props) {
 							})()}
 
 							{/* Benefits Overlay */}
-							{clonedEvent?.benefits && clonedEvent.benefits.trim() !== "" && (
+							{shownBenefits && shownBenefits.trim() !== "" && (
 								<div className="absolute top-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
-									{clonedEvent.benefits
+									{shownBenefits
 										.split(",")
 										.map((b) => b.trim())
 										.filter((b) => b !== "")
@@ -551,6 +1072,8 @@ export default function HostedEvents({ event }: Props) {
 									}
 								}
 							`}</style>
+							</>
+							)}
 						</div>
 
 						{/* Content Section */}
@@ -561,16 +1084,133 @@ export default function HostedEvents({ event }: Props) {
 							    produced ragged centred text under a centred heading. */}
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
 								<div className="text-left w-full sm:w-auto min-w-0">
-									<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(clonedEvent.name)}</h2>
+									{editingSection === "details" ? (
+										// Same field as the manage form's Event title, down to the 100-char
+										// cap and the counter. The server accepts up to 300, but a title that
+										// only one of the two screens will let you type is worse than a
+										// shared limit.
+										<>
+										<InputGroup>
+											<Input
+												value={draftName}
+												onChange={(e) => setDraftName(e.target.value)}
+												placeholder="Event title"
+												className={roboto.className}
+												bg="#090C10"
+												color="white"
+												fontSize="14px"
+												h="48px"
+												border="1px solid #343536"
+												_focus={{ borderColor: "#343536", boxShadow: "none" }}
+												maxLength={100}
+												pr="60px"
+											/>
+											<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" color="gray.500" fontSize="xs">
+												{draftName?.length || 0}/100
+											</InputLeftElement>
+										</InputGroup>
+										</>
+									) : (
+										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
+									)}
+									{editingSection === "details" && (
+										<Box mt={4} mb={2} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4}>
+											<Heading size="md" color="white" mb={4}>When &amp; where</Heading>
+											{/* Time zone — same control and same class as the manage form. */}
+											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Time zone</Text>
+											<Box position="relative" mb={4}>
+												<TimezoneSelect
+													className={tzFieldCls}
+													value={draftTimezone}
+													onChange={(tz: string) => setDraftTimezone(tz)}
+												/>
+												<ChevronDownIcon className="w-5 h-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+											</Box>
+
+											{/* A poll and fixed dates are mutually exclusive, and the poll (with
+											    its votes) is edited in Manage Event — so the dates are read-only
+											    here rather than silently ignored on save. */}
+											{draftPollActive ? (
+												<Text fontSize="xs" color="orange.400" mb={4}>
+													The date poll below decides this event&apos;s dates, so the fixed dates are off.
+												</Text>
+											) : (
+												<Flex direction="column" gap={3} mb={4}>
+													<Flex gap={3} flexWrap={{ base: "wrap", md: "nowrap" }}>
+														<Box position="relative" flex="1" minW="140px">
+															<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<DatePicker className={dtFieldCls} onChange={(date: string) => setDraftStartDate(date)} placeholder="Start Date" defaultDate={draftStartDate} />
+														</Box>
+														<Box position="relative" flex="1" minW="120px">
+															<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<TimePicker className={dtFieldCls} onChange={(time: string) => setDraftStartTime(time)} placeholder="Start Time" defaultValue={draftStartTime} />
+														</Box>
+													</Flex>
+													<Flex gap={3} flexWrap={{ base: "wrap", md: "nowrap" }}>
+														<Box position="relative" flex="1" minW="140px">
+															<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<DatePicker className={dtFieldCls} onChange={(date: string) => setDraftEndDate(date)} placeholder="End Date" defaultDate={draftEndDate} />
+														</Box>
+														<Box position="relative" flex="1" minW="120px">
+															<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<TimePicker className={dtFieldCls} onChange={(time: string) => setDraftEndTime(time)} placeholder="End Time" defaultValue={draftEndTime} />
+														</Box>
+													</Flex>
+												</Flex>
+											)}
+
+											{/* Google Places, the same component the manage form uses — picking a
+											    place keeps the venue name and the coordinates together. */}
+											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Location</Text>
+											<Box mb={4}>
+												<EventLocationField
+													value={draftLocation}
+													onTextChange={setDraftLocation}
+													onPick={(picked: PlaceSelection) => {
+														setDraftLocation(picked.location)
+														setDraftVenueName(picked.venueName)
+														setDraftCoords({ latitude: picked.latitude, longitude: picked.longitude, placeId: picked.placeId })
+													}}
+													id="inline-location"
+												/>
+											</Box>
+
+											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>
+												Entrance <span style={{ color: "#868686" }}>(optional)</span>
+											</Text>
+											<Input
+												value={draftEntrance}
+												onChange={(e) => setDraftEntrance(e.target.value)}
+												placeholder="e.g. West side at 69th Street"
+												maxLength={200}
+												className={roboto.className}
+												bg="#090C10"
+												color="white"
+												fontSize="14px"
+												h="48px"
+												border="1px solid #343536"
+												_focus={{ borderColor: "#343536", boxShadow: "none" }}
+											/>
+											<Text fontSize="xs" color="gray.500" mt={1}>
+												Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
+											</Text>
+
+											{/* Capacity is deliberately NOT here. Changing it has to re-sync
+											    `EventTracker.eventCapacity`, which only `update.ts` does — editing
+											    it from this page would leave the tracker holding the old number.
+											    It stays in Manage Event. */}
+										</Box>
+									)}
+
 									{/* `items-start` + a non-shrinking icon: a wrapping date or venue used to
 									    squash the icon to a sliver and vertically centre it against two
 									    lines of text. */}
 									<p className="text-sm sm:text-base mt-4 sm:mt-5 flex items-start gap-x-2 text-[#bbbbbb] break-words">
 										<span className="flex-shrink-0 mt-0.5"><DateTimeSVG /></span>
-										{!clonedEvent?.startsOn && !clonedEvent?.endsOn && clonedEvent?.datePoll?.isActive
+										{!shownEvent?.startsOn && !shownEvent?.endsOn && shownEvent?.datePoll?.isActive
 											? "Date to be decided (Polling)"
-											: clonedEvent?.startsOn
-											? `${formattedDate}${formattedTime ? `, ${formattedTime}` : ""} ${normalizeTimezone(clonedEvent?.timezone)}`
+											: shownEvent?.startsOn
+											? `${formattedDate}${formattedTime ? `, ${formattedTime}` : ""} ${normalizeTimezone(shownEvent?.timezone)}`
 											: "Date to be decided"}
 									</p>
 									<p className="text-sm sm:text-base mt-1 flex items-start gap-x-2 text-[#bbbbbb] break-words">
@@ -605,15 +1245,9 @@ export default function HostedEvents({ event }: Props) {
 									<button onClick={() => sharer.share()} aria-label="Share event" className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2.5 whitespace-nowrap rounded-full transition-all hover:bg-[#444]">
 										<ShareIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white inline-block" />
 									</button>
-									{session && (
-										<button
-											onClick={onInviteModalOpen}
-											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2.5 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
-											title="Invite Friends"
-										>
-											<UserPlusIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white inline-block" />
-										</button>
-									)}
+									{/* The Invite Friends button was removed from this row (2026-09-02).
+									    The modal below and its `onInviteModalOpen` handler are kept intact,
+									    so restoring it is putting this button back — nothing else. */}
 
 									{/* Hidden once the event has ended (host/admin keep it for reference). */}
 									{(!isEnded || canManage) && (
@@ -644,23 +1278,248 @@ export default function HostedEvents({ event }: Props) {
 								{isDatePollActive && (
 									<DatePollTeaser event={clonedEvent} onOpenPoll={onPollModalOpen} />
 								)}
-								{isEnded ? (
+								{editingSection === "details" ? (
 									<>
-										<button
-											type="button"
-											onClick={() => setEndedDescOpen((v) => !v)}
-											aria-expanded={endedDescOpen}
-											className="flex w-full items-center justify-between gap-2 text-left"
-										>
-											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-											{endedDescOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
-										</button>
-										{endedDescOpen && <EventDescription description={clonedEvent.desc} />}
+										<Heading size="md" color="white" mb={3}>Description</Heading>
+										{/* The same editor as the manage form, so both screens read and write
+										    the same HTML. A plain textarea here would have flattened markup a
+										    host wrote in the console. `EventDescription` below already
+										    sanitises and renders that HTML for guests. */}
+										<RichTextEditor value={draftDesc} onChange={setDraftDesc} placeholder="Add Description" />
+										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{stripHtml(draftDesc || "").length}/500</p>
+
+										{/* Options and Interests live inside this one editor rather than
+										    carrying Edit buttons of their own — there are two on the page,
+										    this and Tickets, and everything about the event itself saves
+										    together here. */}
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={5}>
+											<Heading size="md" color="white" mb={4}>Event Options</Heading>
+											<Flex direction="column" gap={4}>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Privacy</Text>
+														<Text fontSize="12px" color="#868686">Who can view and join this event</Text>
+														{/* Becoming public re-opens admin review, which takes the event off
+														    the public list until it is approved. Said here rather than
+														    discovered afterwards. */}
+														{draftPrivacy === "public" && shownEvent?.privacy === "private" && (
+															<Text fontSize="12px" color="#E9A23B" mt={1} maxW="420px">
+																Making this public sends it back for admin review, and it won&apos;t appear in the events list until approved.
+															</Text>
+														)}
+													</Box>
+													<select
+														value={draftPrivacy}
+														onChange={(e) => setDraftPrivacy(e.target.value === "private" ? "private" : "public")}
+														className="bg-[#090C10] block w-[110px] h-10 rounded-md border border-[#2A2D31] text-white text-sm px-2"
+													>
+														<option value="private">Private</option>
+														<option value="public">Public</option>
+													</select>
+												</Flex>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Capacity</Text>
+														<Text fontSize="12px" color="#868686">Maximum number of attendees</Text>
+													</Box>
+													<Input
+														type="number"
+														min={0}
+														onWheel={blurOnWheel}
+														onKeyDown={(e) => { if (e.key === "-") e.preventDefault() }}
+														value={draftCapacity}
+														onChange={(e) => setDraftCapacity(e.target.value)}
+														placeholder="0"
+														bg="#090C10"
+														color="white"
+														border="1px solid #343536"
+														_focus={{ borderColor: "#343536", boxShadow: "none" }}
+														h="40px"
+														w="110px"
+													/>
+												</Flex>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Require Approval</Text>
+														<Text fontSize="12px" color="#868686" maxW="420px" lineHeight="140%">
+															Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.
+														</Text>
+													</Box>
+													<Switch colorScheme="orange" isChecked={draftRequireApproval} onChange={(e) => setDraftRequireApproval(e.target.checked)} />
+												</Flex>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Disclose Location After Booking</Text>
+														<Text fontSize="12px" color="#868686">Attendees see location only in booking email</Text>
+													</Box>
+													<Switch colorScheme="orange" isChecked={draftLocationDisclosed} onChange={(e) => setDraftLocationDisclosed(e.target.checked)} />
+												</Flex>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Show on Mobile</Text>
+														<Text fontSize="12px" color="#868686">Display this event in the Jetzy mobile app</Text>
+													</Box>
+													<Switch colorScheme="orange" isChecked={draftShowOnMobile} onChange={(e) => setDraftShowOnMobile(e.target.checked)} />
+												</Flex>
+												{/* Draft/published is a workflow, not an edit — publishing from the
+												    public page would be a surprising place to do it. */}
+												<Text fontSize="xs" color="#8a8a8a">
+													Draft / published status is in Manage Event.
+												</Text>
+											</Flex>
+										</Box>
+
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={4}>
+											<Flex align="center" justify="space-between" gap={4} mb={draftPollActive ? 4 : 0}>
+												<Box>
+													<Heading size="md" color="white">Date Poll</Heading>
+													<Text fontSize="12px" color="#868686" mt={1}>
+														Let attendees vote on a date instead of fixing one.
+													</Text>
+												</Box>
+												<Switch
+													colorScheme="orange"
+													isChecked={draftPollActive}
+													onChange={(e) => {
+														const next = e.target.checked
+														setDraftPollActive(next)
+														// A poll and fixed dates are mutually exclusive — the poll IS the
+														// date. Clearing them here is what manage does on the same toggle.
+														if (next) {
+															setDraftStartDate("")
+															setDraftStartTime("")
+															setDraftEndDate("")
+															setDraftEndTime("")
+														}
+													}}
+												/>
+											</Flex>
+
+											{draftPollActive && (
+												<>
+													<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Question (optional)</Text>
+													<Input
+														value={draftPollQuestion}
+														onChange={(e) => setDraftPollQuestion(e.target.value)}
+														placeholder="e.g. Which date suits you best?"
+														maxLength={300}
+														className={roboto.className}
+														bg="#090C10"
+														color="white"
+														fontSize="14px"
+														h="48px"
+														border="1px solid #343536"
+														_focus={{ borderColor: "#343536", boxShadow: "none" }}
+														mb={4}
+													/>
+
+													{draftPollOptions.map((opt, idx) => (
+														<Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
+															<Box minW={0}>
+																<Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
+																{opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
+															</Box>
+															<button
+																type="button"
+																onClick={() => setDraftPollOptions((prev) => prev.filter((_, i) => i !== idx))}
+																className="text-red-400 text-xs px-2 py-1 rounded hover:bg-[#3A3A3A] flex-shrink-0"
+															>
+																Remove
+															</button>
+														</Flex>
+													))}
+
+													{draftPollOptions.length === 0 && (
+														<Text fontSize="xs" color="#8a8a8a" mb={2}>
+															No dates yet — add at least one, or turn the poll off.
+														</Text>
+													)}
+
+													{/* Added inline rather than behind a modal: a modal to type one date
+													    is a lot of ceremony inside an editor the host is already in. */}
+													<Flex gap={2} mt={3} wrap="wrap" align="center">
+														<Box position="relative" flex="1" minW="140px">
+															<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<DatePicker key={`poll-date-${draftPollOptions.length}`} className={dtFieldCls} onChange={(d: string) => setNewPollDate(d)} defaultDate={newPollDate} placeholder="Date" />
+														</Box>
+														<Box position="relative" flex="1" minW="120px">
+															<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<TimePicker key={`poll-time-${draftPollOptions.length}`} className={dtFieldCls} onChange={(t: string) => setNewPollTime(t)} defaultValue={newPollTime} placeholder="Time" />
+														</Box>
+														<Input
+															value={newPollLabel}
+															onChange={(e) => setNewPollLabel(e.target.value)}
+															placeholder="Label (optional)"
+															className={roboto.className}
+															bg="#090C10"
+															color="white"
+															fontSize="14px"
+															h="48px"
+															border="1px solid #343536"
+															_focus={{ borderColor: "#343536", boxShadow: "none" }}
+															flex="1"
+															minW="140px"
+														/>
+														<button
+															type="button"
+															onClick={() => {
+																if (!newPollDate) {
+																	toast({ title: "Pick a date first", status: "warning", duration: 2500, isClosable: true })
+																	return
+																}
+																// A fresh id: the server keys votes off it, so a new option
+																// correctly starts with none.
+																setDraftPollOptions((prev) => [
+																	...prev,
+																	{ id: uniqueId(10), date: newPollDate, time: newPollTime, label: newPollLabel },
+																])
+																setNewPollDate("")
+																setNewPollTime("")
+																setNewPollLabel("")
+															}}
+															className="border border-dashed border-[#666] px-4 h-[48px] text-sm rounded-md hover:bg-[#1C1F24] flex-shrink-0"
+														>
+															+ Add date
+														</button>
+													</Flex>
+
+													<Text fontSize="xs" color="#8a8a8a" mt={3}>
+														Votes already cast are kept — only a date you remove loses its votes.
+													</Text>
+												</>
+											)}
+										</Box>
+
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={4}>
+											{/* The same selector the manage form uses, `bare` and all. */}
+											<InterestsSelector bare selected={draftInterests} onChange={setDraftInterests} />
+										</Box>
+									</>
+								) : isEnded ? (
+									<>
+										{/* The Edit control is a SIBLING of the collapse toggle, never inside
+										    it — a button nested in a button is invalid and swallows the click. */}
+										<div className="flex items-center gap-2">
+											<button
+												type="button"
+												onClick={() => setEndedDescOpen((v) => !v)}
+												aria-expanded={endedDescOpen}
+												className="flex flex-1 items-center justify-between gap-2 text-left"
+											>
+												<h3 className="text-sm sm:text-base font-semibold">Description</h3>
+												{endedDescOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
+											</button>
+											<SectionEditControls section="details" label="Edit" />
+										</div>
+										{endedDescOpen && <EventDescription description={shownDesc} />}
 									</>
 								) : (
 									<>
-										<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-										<EventDescription description={clonedEvent.desc} />
+										<div className="flex items-center justify-between gap-2">
+											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
+											<SectionEditControls section="details" label="Edit" />
+										</div>
+										<EventDescription description={shownDesc} />
 									</>
 								)}
 							</div>
@@ -738,23 +1597,69 @@ export default function HostedEvents({ event }: Props) {
 
 					{/* Tickets are hidden once the event has ended, except for host/admin — and for
 					    them it collapses, since nothing is on sale any more. */}
-					{clonedEvent && !isEnded && <EventTicketsComponent event={clonedEvent} />}
+					{clonedEvent && !isEnded && (
+						editingSection === "tickets" ? (
+							<TicketsInlineEditor />
+						) : (
+							<EventTicketsComponent
+								// Remounted by key after a save: the component seeds its ticket state
+								// once, so a mutated prop alone would leave the host looking at the
+								// rows they just changed.
+								key={(shownEvent?.tickets || []).map((t: any) => `${t._id || t.id}:${t.price}:${t.name}`).join("|")}
+								event={shownEvent as IEvent}
+								canManage={canManage}
+								onEditTickets={() => {
+									if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
+									startEventEdit("tickets")
+								}}
+							/>
+						)
+					)}
 					{clonedEvent && isEnded && canManage && (
 						<div className={isDatePollActive ? "mt-8" : "max-w-4xl mx-auto mt-8"}>
-							<button
-								type="button"
-								onClick={() => setEndedTicketsOpen((v) => !v)}
-								aria-expanded={endedTicketsOpen}
-								className="flex w-full items-center justify-between gap-2 rounded-2xl border border-[#434343] bg-[#5656561e] px-4 py-3 text-left"
-							>
-								<span className="text-sm sm:text-base font-semibold">Tickets</span>
-								{endedTicketsOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
-							</button>
+							{/* An ended event's tickets are still editable — prices and names get
+							    corrected after the fact, and the host shouldn't have to go to
+							    Manage Event for that. The Edit control is a SIBLING of the collapse
+							    toggle, never inside it: a button within a button is invalid and
+							    swallows the click. */}
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => setEndedTicketsOpen((v) => !v)}
+									aria-expanded={endedTicketsOpen}
+									className="flex flex-1 items-center justify-between gap-2 rounded-2xl border border-[#434343] bg-[#5656561e] px-4 py-3 text-left"
+								>
+									<span className="text-sm sm:text-base font-semibold">Tickets</span>
+									{endedTicketsOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
+								</button>
+								{editingSection !== "tickets" && (
+									<button
+										type="button"
+										onClick={() => {
+											if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
+											// Opening the editor opens the panel with it — editing a list
+											// the host can't see would be its own small trap.
+											setEndedTicketsOpen(true)
+											startEventEdit("tickets")
+										}}
+										className="border border-[#F79432] text-[#F79432] py-1 px-3 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors flex-shrink-0"
+									>
+										Edit tickets
+									</button>
+								)}
+							</div>
 							{/* The component carries its own `mt-8`, which would leave a gap between
 							    the toggle and the panel it opens. */}
 							{endedTicketsOpen && (
 								<div className="[&>div]:!mt-2">
-									<EventTicketsComponent event={clonedEvent} />
+									{editingSection === "tickets" ? (
+										<TicketsInlineEditor />
+									) : (
+										<EventTicketsComponent
+											key={(shownEvent?.tickets || []).map((t: any) => `${t._id || t.id}:${t.price}:${t.name}`).join("|")}
+											event={shownEvent as IEvent}
+										/>
+									)}
 								</div>
 							)}
 						</div>
@@ -768,7 +1673,7 @@ export default function HostedEvents({ event }: Props) {
 							<EventAlbums
 								eventId={clonedEvent._id.toString()}
 								eventSlug={clonedEvent.slug}
-								eventName={stripHtml(clonedEvent.name)}
+								eventName={stripHtml(shownName)}
 								canManage={canManage}
 								largeCards={isEnded}
 							/>
@@ -834,7 +1739,7 @@ export default function HostedEvents({ event }: Props) {
 										<Box id="discussion-chat-body" display={isChatExpanded ? "block" : "none"}>
 											<JetzyChatIntegration
 												eventId={clonedEvent._id.toString()}
-												eventName={stripHtml(clonedEvent.name)}
+												eventName={stripHtml(shownName)}
 												onHasMessages={() => setIsChatExpanded(true)}
 											/>
 										</Box>
@@ -885,7 +1790,69 @@ export default function HostedEvents({ event }: Props) {
 					)}
 					</div>
 				</div>
-				{clonedEvent?.name && <EventCheckoutModel event={stripHtml(clonedEvent.name)} eventData={clonedEvent} />}
+				{/* The save bar.
+			    FIXED, and rendered here at the root rather than inside the event card — that card
+			    sets both `overflow-hidden` and `transform`, and a transform makes `position:
+			    fixed` resolve against the card instead of the viewport while the overflow makes
+			    it the nearest scroll container, so neither `fixed` nor `sticky` works from in
+			    there. The details editor runs to several screens, so this is the only Save the
+			    host can always reach. */}
+			{editingSection && (
+				<div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#343536] bg-[#131313]/95 backdrop-blur-sm px-4 py-3">
+					<div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+						<div className="min-w-0">
+							<p className="text-sm font-semibold text-white truncate">
+								{editingSection === "tickets" ? "Editing tickets" : "Editing event details"}
+							</p>
+							<p className="text-xs text-[#8a8a8a] truncate">
+								{editingSection === "tickets"
+									? "Changing a price creates a new Stripe price."
+									: "Nothing is visible to guests until you save."}
+							</p>
+						</div>
+						<div className="flex items-center gap-2 flex-shrink-0">
+							<button
+								type="button"
+								onClick={cancelEventEdit}
+								disabled={savingEdits}
+								className="border border-[#434343] py-2 px-4 text-sm rounded-lg hover:border-white disabled:opacity-50"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={() => saveEventEdits(editingSection)}
+								disabled={savingEdits}
+								className="bg-[#F79432] text-black font-bold py-2 px-5 text-sm rounded-lg hover:bg-[#e58220] disabled:opacity-50"
+							>
+								{savingEdits ? "Saving…" : "Save changes"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			<TicketEditorModal
+				isOpen={ticketModalOpen}
+				onClose={() => setTicketModalOpen(false)}
+				ticket={tempTicket}
+				onTicketChange={setTempTicket}
+				isEditing={ticketEditIndex !== null}
+				eventRequireApproval={!!shownEvent?.requireApproval}
+				onSave={(normalised: TicketData) => {
+					setDraftTickets((prev) => {
+						if (ticketEditIndex !== null) {
+							const arr = [...prev]
+							arr[ticketEditIndex] = normalised
+							return arr
+						}
+						return [...prev, { ...normalised, id: uniqueId(10) }]
+					})
+					setTicketModalOpen(false)
+				}}
+			/>
+
+			{clonedEvent?.name && <EventCheckoutModel event={stripHtml(shownName)} eventData={clonedEvent} />}
 
 			{/* Buy Premium, or manage what you already have — one dialog, opened from the
 			    membership entry in both menus on this page. */}
@@ -909,7 +1876,7 @@ export default function HostedEvents({ event }: Props) {
 						isOpen={isQRModalOpen}
 						onClose={onQRModalClose}
 						url={shareUrl}
-						title={`${stripHtml(clonedEvent.name)}`}
+						title={`${stripHtml(shownName)}`}
 					/>
 				)}
 
@@ -1067,8 +2034,8 @@ export default function HostedEvents({ event }: Props) {
 											emails: selectedInvitees.map((u) => u.email),
 											eventId: clonedEvent._id,
 											eventLink: shareUrl,
-											subject: `You're invited to ${stripHtml(clonedEvent.name)}`,
-											message: inviteMessage || `Join me at ${stripHtml(clonedEvent.name)}!`,
+											subject: `You're invited to ${stripHtml(shownName)}`,
+											message: inviteMessage || `Join me at ${stripHtml(shownName)}!`,
 										})
 										toast({ title: "Invitations sent!", status: "success", duration: 3000, isClosable: true })
 										setSelectedInvitees([])

@@ -43,6 +43,8 @@ type PhotoRequest = {
 	mediaUrl: string
 	mediaType: string
 	batchId: string | null
+	/** 1-based place in the batch. Null on rows written before it was stored. */
+	batchIndex: number | null
 	name: string
 	email: string
 	verified: boolean
@@ -88,6 +90,22 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 		return sizes
 	}, [rows])
 
+	// Which one of the batch each row is. `batchIndex` is stored on write; rows from before that
+	// have none, so their position is derived from the listing order (newest first, so the batch
+	// is walked backwards to number the first-requested photo 1). Every row used to render a
+	// hardcoded "1 of N", which said the same thing three times for one three-photo request.
+	const batchPositions = useMemo(() => {
+		const positions = new Map<string, number>()
+		const seen = new Map<string, number>()
+		;[...rows].reverse().forEach((r) => {
+			if (!r.batchId) return
+			const next = (seen.get(r.batchId) || 0) + 1
+			seen.set(r.batchId, next)
+			positions.set(r._id, r.batchIndex ?? next)
+		})
+		return positions
+	}, [rows])
+
 	const filtered = useMemo(() => {
 		const q = search.trim().toLowerCase()
 		return rows.filter((r) => {
@@ -123,7 +141,7 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 
 	// Exports the whole FILTERED set, not the page on screen.
 	const exportCsv = () => {
-		const headers = ["Album", "Photo URL", "Name", "Email", "Verified", "Status", "Photos in request", "Requested", "Handled"]
+		const headers = ["Album", "Photo URL", "Name", "Email", "Verified", "Status", "Photo in request", "Photos in request", "Requested", "Handled"]
 		const body = filtered.map((r) => [
 			r.albumTitle,
 			r.mediaUrl,
@@ -131,6 +149,7 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 			r.email,
 			r.verified ? "Verified" : "Unverified",
 			r.status === "handled" ? "Handled" : "Pending",
+			r.batchId ? batchPositions.get(r._id) ?? 1 : 1,
 			r.batchId ? batchSizes.get(r.batchId) || 1 : 1,
 			r.date ? DateTime.fromISO(r.date).toFormat("yyyy-LL-dd HH:mm") : "",
 			r.handledAt ? DateTime.fromISO(r.handledAt).toFormat("yyyy-LL-dd HH:mm") : "",
@@ -272,7 +291,7 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 										{r.name}
 										{r.batchId && (batchSizes.get(r.batchId) || 0) > 1 && (
 											<Badge ml={2} colorScheme="purple" variant="subtle">
-												1 of {batchSizes.get(r.batchId)}
+												{batchPositions.get(r._id) ?? 1} of {batchSizes.get(r.batchId)}
 											</Badge>
 										)}
 									</Td>

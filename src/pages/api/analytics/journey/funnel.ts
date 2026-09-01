@@ -40,23 +40,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Forbidden", false, ResCode.FORBIDDEN)
 		}
 
+		// Optional date bounds, so the funnel answers the same question as the rest of the page.
+		// Without these it always described all time while every tile beside it was filtered.
+		const { dateFrom, dateTo } = req.query as Record<string, string>
+		const dateFilter: any = {}
+		if (dateFrom) {
+			const d = new Date(dateFrom)
+			d.setHours(0, 0, 0, 0)
+			dateFilter.$gte = d
+		}
+		if (dateTo) {
+			const d = new Date(dateTo)
+			d.setHours(23, 59, 59, 999)
+			dateFilter.$lte = d
+		}
+		const hasDates = Object.keys(dateFilter).length > 0
+		if (hasDates) match.timestamp = dateFilter
+
 		const grouped = await EventInteraction.aggregate([
 			{ $match: match },
 			{ $group: { _id: "$interactionType", sessions: { $addToSet: "$sessionId" } } },
 		])
 
-		const counts: Record<string, number> = { view: 0, ticket_select: 0, booking_start: 0, share: 0, click: 0 }
+		const counts: Record<string, number> = { view: 0, ticket_select: 0, booking_start: 0, checkout_submit: 0, share: 0, click: 0 }
 		for (const g of grouped) counts[g._id] = (g.sessions as any[]).length
 
-		const bookingMatch: any = { status: { $in: ["confirmed", "approved"] } }
+		// EVERY STAGE IS A DISTINCT SESSION COUNT. The booking stage used to be a raw
+		// countDocuments, so one visitor buying three times showed as three "completed" against
+		// one "viewed" — a funnel that could exceed 100% and a drop-off figure that meant nothing.
+		// Bookings carry the sessionId that produced them only sometimes, so fall back to counting
+		// distinct buyers, which is still people rather than rows.
+		const bookingMatch: any = { status: { $in: ["confirmed", "approved"] }, isDeleted: false }
 		if (eventId) bookingMatch.eventId = new Types.ObjectId(eventId)
-		const bookingComplete = await Bookings.countDocuments(bookingMatch).catch(() => 0)
+		if (hasDates) bookingMatch.createdAt = dateFilter
+
+		const bookingBuyers = await Bookings.aggregate([
+			{ $match: bookingMatch },
+			// customerEmail has no `lowercase: true`, so fold case before de-duplicating or one
+			// person with a capitalised address counts twice.
+			{ $group: { _id: { $toLower: { $ifNull: ["$customerEmail", { $toString: "$_id" }] } } } },
+			{ $count: "n" },
+		]).catch(() => [] as any[])
+		const bookingComplete = bookingBuyers?.[0]?.n || 0
 
 		const funnel = [
-			{ stage: "view", label: "Viewed event", count: counts.view },
-			{ stage: "ticket_select", label: "Selected ticket", count: counts.ticket_select },
-			{ stage: "booking_start", label: "Started booking", count: counts.booking_start },
-			{ stage: "booking_complete", label: "Completed booking", count: bookingComplete },
+			{ stage: "view", label: "Opened the event page", count: counts.view },
+			{ stage: "ticket_select", label: "Picked a ticket", count: counts.ticket_select },
+			{ stage: "booking_start", label: "Opened checkout", count: counts.booking_start },
+			{ stage: "checkout_submit", label: "Submitted checkout", count: counts.checkout_submit },
+			{ stage: "booking_complete", label: "Booked", count: bookingComplete },
 		]
 
 		const withRates = funnel.map((stage, i) => {

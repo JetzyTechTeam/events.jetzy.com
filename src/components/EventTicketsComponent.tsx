@@ -3,7 +3,7 @@ import {
   toggleCheckoutForm,
 } from "@Jetzy/redux/reducers/checkoutSlice";
 import { useAppDispatch } from "@Jetzy/redux/stores";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { waitUntil } from "@Jetzy/lib/utils";
 import Spinner from "./misc/Spinner";
 import { Error } from "@Jetzy/lib/_toaster";
@@ -33,9 +33,15 @@ import { stripHtml } from "@/utils/text";
 import EventDescription from "@/components/events/EventDescription";
 import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn";
+import { useRouter } from "next/router";
+import { useAnalytics } from "@/hooks/useAnalytics";
+import { isPreviewQuery } from "@/lib/event-preview";
 
 type Props = {
   event: IEvent;
+  /** Renders the host's "Edit tickets" control in the header. Omitted for guests. */
+  canManage?: boolean;
+  onEditTickets?: () => void;
 };
 
 /**
@@ -74,7 +80,7 @@ const TicketDescription: React.FC<{ description: string }> = ({ description }) =
   );
 };
 
-const EventTicketsComponent: React.FC<Props> = ({ event }) => {
+const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEditTickets }) => {
   const dispatcher = useAppDispatch();
   const { isPremium } = usePremiumStatus();
   const [showPremiumPromo, setShowPremiumPromo] = useState(false);
@@ -123,11 +129,47 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
 
   const eventId = event._id.toString();
 
+  // Checkout funnel instrumentation.
+  //
+  // `ticket_select` and `booking_start` have been accepted by the API and read by the funnel
+  // since it was built, but nothing ever WROTE them — so "Picked a ticket" and "Opened
+  // checkout" sat at zero on every event forever, and the drop-off between viewing and buying
+  // was invisible. These two calls are the writers.
+  //
+  // Suppressed under `?preview=1` for the same reason the event page skips its view tracking:
+  // a host checking their own page must not move the numbers they are checking.
+  const router = useRouter();
+  const { trackEventInteraction } = useAnalytics();
+  const previewAsGuest = isPreviewQuery(router.query);
+  const track = (type: string, metadata?: Record<string, unknown>) => {
+    if (previewAsGuest) return;
+    // Fire and forget — an analytics failure must never interrupt someone buying a ticket.
+    trackEventInteraction(eventId, type, metadata).catch(() => {});
+  };
+
+  // A ticket can be selected two ways — clicking the card, or pressing `+` from zero — and a
+  // visitor comparing options may toggle several times. Report each ticket at most once per
+  // mount so the raw row count stays close to the number of real decisions. (The funnel counts
+  // distinct sessions and would survive duplicates; the Page Views style totals would not.)
+  const selectionReported = useRef<Set<string>>(new Set());
+  const reportTicketSelected = (id: string, name?: string) => {
+    if (selectionReported.current.has(id)) return;
+    selectionReported.current.add(id);
+    track("ticket_select", { ticketId: id, ticketName: name });
+  };
+
   // Clone a static verion of the tickets so when increasing the qty the amount is not recalculated from the original price
   const staticTickets = ticketsItems.copyWithin(0, 0);
 
   // Handle increment/decrement for tickets
   const handleQuantityChange = (id: string, delta: number) => {
+    // Pressing `+` from zero selects the ticket without ever going through
+    // handleTicketSelection, so the funnel would miss everyone who buys that way.
+    const stepped = tickets.find((t) => t.id === id);
+    if (stepped && delta > 0 && stepped.quantity === 0) {
+      reportTicketSelected(id, stepped.name);
+    }
+
     setTickets((prevTickets) =>
       prevTickets.map((ticket, index) => {
         // A Premium ticket also sells a membership, so it is capped. Everything else is
@@ -151,6 +193,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
   };
 
   const handleTicketSelection = (id: string) => {
+    // Only the turning-ON edge counts. De-selecting is not a funnel step, and counting it
+    // would let one undecided visitor inflate "Picked a ticket" by toggling.
+    const picked = tickets.find((t) => t.id === id);
+    if (picked && !picked.isSelected) {
+      reportTicketSelected(id, picked.name);
+    }
+
     setTickets((prevTickets) =>
       prevTickets.map((ticket, index) => {
         const ticketItem = ticketsItems[index];
@@ -215,6 +264,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
       .filter((ticket) => ticket.isSelected);
 
     dispatcher(setSelectedTickets(ticketsSelected));
+
+    // The modal is definitely opening — every early return above has already fired. This is
+    // "Opened checkout" in the funnel; what happens inside it is EventCheckoutModel's to report.
+    if (showCheckout) {
+      track("booking_start", {
+        ticketCount: ticketsSelected.reduce((n, t) => n + (t.quantity || 0), 0),
+        subtotal: ticketsSelected.reduce((n, t) => n + (t.price || 0) * (t.quantity || 0), 0),
+      });
+    }
 
     waitUntil(500).then(() => {
       setLoader(false);
@@ -283,6 +341,17 @@ const EventTicketsComponent: React.FC<Props> = ({ event }) => {
                 Select your tickets and proceed to checkout.
               </p>
             </div>
+            {/* The right half of this justify-between row was always empty — the host's Edit
+                goes here, beside the heading, rather than above the whole page. */}
+            {canManage && onEditTickets && (
+              <button
+                type="button"
+                onClick={onEditTickets}
+                className="border border-[#F79432] text-[#F79432] py-1 px-3 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors flex-shrink-0"
+              >
+                Edit tickets
+              </button>
+            )}
           </div>
 
           {/* The event-level "Includes Jetzy Premium" banner was removed — it duplicated the

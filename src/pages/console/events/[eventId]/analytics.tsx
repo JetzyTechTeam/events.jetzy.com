@@ -23,27 +23,23 @@ import {
 	Th,
 	Td,
 	TableContainer,
-	Image,
 	Badge,
 	Button,
 	HStack,
-	IconButton,
 	Tabs,
 	TabList,
 	Tab,
 	TabPanels,
 	TabPanel,
 } from "@chakra-ui/react"
-import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiChevronLeft, FiChevronRight, FiImage, FiLogIn, FiUserPlus, FiCheckCircle } from "react-icons/fi"
+import { FiUsers, FiDollarSign, FiTrendingUp, FiEye, FiShare2, FiArrowLeft, FiImage, FiLogIn, FiUserPlus, FiCheckCircle } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
-import ClickHeatmap from "@/components/analytics/ClickHeatmap"
-import NextLink from "next/link"
+import { WINDOW_KEYS, WINDOW_LABELS, type WindowKey } from "@/lib/analytics-windows"
 import SafeHTML from "@/components/misc/SafeHTML"
 import { stripHTMLAndDecode } from "@/lib/utils"
 
 interface FunnelStage { stage: string; label: string; count: number; dropOffPct: number; conversionPct: number }
-interface DwellRow { page: string; views: number; avgTimeSec: number; p50Sec: number; p90Sec: number; avgScrollDepthPct: number | null }
 interface HeatTopTarget { text: string | null; dataTrack: string | null; count: number; rageCount: number }
 
 interface EventAnalyticsData {
@@ -170,13 +166,38 @@ interface EventAnalyticsData {
 	}
 }
 
+/**
+ * Rows of the Performance snapshot, in reading order: how many turned up, how far they got,
+ * what it produced, and what happened afterwards. Keys must match the labels
+ * /api/analytics/event-windows emits.
+ *
+ * `hideWhenEmpty` suppresses a row that is zero in every window. An event with no albums, no
+ * door and no discussion board would otherwise show three rows of zeroes that look like
+ * failures rather than like features it never used.
+ */
+const SNAPSHOT_ROWS: Array<{ key: string; label: string; hint?: string; money?: boolean; emphasis?: boolean; hideWhenEmpty?: boolean }> = [
+	{ key: "Unique Visitors", label: "Visitors", hint: "People who opened the event page" },
+	{ key: "Page Views", label: "Page views", hint: "Including repeat visits" },
+	{ key: "Ticket Selections", label: "Picked a ticket" },
+	{ key: "Checkout Opened", label: "Opened checkout" },
+	{ key: "Checkout Submitted", label: "Submitted checkout" },
+	{ key: "Bookings Created", label: "Bookings started", hint: "Any status, including pending approval" },
+	{ key: "Bookings Confirmed", label: "Bookings confirmed", emphasis: true },
+	{ key: "Tickets Booked", label: "Tickets booked", emphasis: true },
+	{ key: "Revenue", label: "Ticket revenue", hint: "Excludes membership sales", money: true, emphasis: true },
+	{ key: "Check-ins", label: "Checked in at the door", hideWhenEmpty: true },
+	{ key: "Shares", label: "Shared the event", hideWhenEmpty: true },
+	{ key: "Waiting List Joins", label: "Joined the waiting list", hideWhenEmpty: true },
+	{ key: "Discussion Posts", label: "Discussion posts", hideWhenEmpty: true },
+	{ key: "Album Visitors", label: "Album visitors", hint: "Opened a photo album from this event", hideWhenEmpty: true },
+]
+
 export default function EventAnalyticsPage({ event }: { event: string }) {
 	const eventData = JSON.parse(event) as { _id: string; name: string; slug: string }
 	const [analyticsData, setAnalyticsData] = useState<EventAnalyticsData | null>(null)
 	const [isLoading, setIsLoading] = useState(true)
 	const [dateFrom, setDateFrom] = useState<Date | null>(null)
 	const [dateTo, setDateTo] = useState<Date | null>(null)
-	const [currentPage, setCurrentPage] = useState(1)
 	const router = useRouter()
 	const toast = useToast()
 
@@ -186,73 +207,133 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 	const [albumLogLoading, setAlbumLogLoading] = useState(false)
 	const [interestRows, setInterestRows] = useState<Array<{ _id: string; name: string; email: string; interests: string[]; customInterests: string[]; optOut?: boolean; verified?: boolean; date: string }>>([])
 	const [topInterests, setTopInterests] = useState<Array<{ interest: string; count: number }>>([])
-	const [journeyLoaded, setJourneyLoaded] = useState(false)
-	const [journeyLoading, setJourneyLoading] = useState(false)
+	// Visitor-behaviour data. Used to be a separate "Journey" tab; it is now part of Overview,
+	// so it loads with the page rather than on tab change.
+	const [behaviourLoading, setBehaviourLoading] = useState(false)
 	const [funnel, setFunnel] = useState<FunnelStage[]>([])
-	const [dwell, setDwell] = useState<DwellRow[]>([])
-	const [heatPoints, setHeatPoints] = useState<any[]>([])
 	const [topTargets, setTopTargets] = useState<HeatTopTarget[]>([])
 
+	// The CEO's Last 24h / 7 / 30 / 60 day columns, scoped to this event. Deliberately NOT
+	// filtered by the date picker — fixed windows are the whole point of the comparison.
+	const [windowRows, setWindowRows] = useState<Record<WindowKey, Record<string, number>> | null>(null)
+	const [windowsLoading, setWindowsLoading] = useState(true)
+
+	// Raw interaction / CTA / form rows. The "Named Events" tab that used to show them verbatim
+	// is gone — the label meant nothing to anyone reading it. The rows still feed the
+	// "Most-clicked buttons" and "Form drop-off" panels on Overview, in plain language.
 	const [namedEventsLoaded, setNamedEventsLoaded] = useState(false)
 	const [namedEventsLoading, setNamedEventsLoading] = useState(false)
 	const [namedEventsRows, setNamedEventsRows] = useState<Array<{ category: string; eventName: string; totalEvents: number; uniqueUsers: number }>>([])
-	const [namedEventsCategory, setNamedEventsCategory] = useState<string>("all")
-	const [namedEventsPage, setNamedEventsPage] = useState(1)
-	const NAMED_EVENTS_PER_PAGE = 20
 
-	const exportNamedEventsCSV = () => {
-		const rows = namedEventsRows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
-		const header = "Category,Event Name,Total Events,Unique Users"
-		const lines = rows.map((r) => `"${r.category}","${r.eventName.replace(/"/g, '""')}",${r.totalEvents},${r.uniqueUsers}`)
-		const csv = "﻿" + [header, ...lines].join("\n")
+	/**
+	 * The snapshot as a CSV, one row per metric and one column per window — the shape the CEO
+	 * report is read in. Exports the WHOLE table, including rows hidden on screen for being
+	 * empty: a zero is information in a spreadsheet being compared against another event.
+	 */
+	const exportSummaryCSV = () => {
+		if (!windowRows) return
+		const q = (v: string) => `"${(v || "").replace(/"/g, '""')}"`
+		const header = ["Metric", ...WINDOW_KEYS.map((k) => WINDOW_LABELS[k])].join(",")
+		const lines = SNAPSHOT_ROWS.map((row) => [q(row.label), ...WINDOW_KEYS.map((k) => windowRows[k]?.[row.key] ?? 0)].join(","))
+		const csv = "\ufeff" + [q(stripHTMLAndDecode(eventData.name)), "", header, ...lines].join("\n")
 		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
 		const url = URL.createObjectURL(blob)
 		const a = document.createElement("a")
 		a.href = url
-		a.download = `named-events-${stripHTMLAndDecode(eventData.name).slice(0, 30).replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`
+		a.download = `event-snapshot-${stripHTMLAndDecode(eventData.name).slice(0, 30).replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`
 		document.body.appendChild(a)
 		a.click()
 		document.body.removeChild(a)
 		URL.revokeObjectURL(url)
 	}
 
-	const loadJourney = async () => {
-		if (journeyLoaded || journeyLoading) return
-		setJourneyLoading(true)
+	/**
+	 * Form focus/submit rows paired into one line per form.
+	 *
+	 * named-events returns them as two separate rows named "<form> / focus" and "<form> / submit",
+	 * which is what the old table showed verbatim. A host cannot read an abandonment rate off two
+	 * rows several lines apart, so they are joined here. A form with submits but no recorded
+	 * focus is still listed — dropping it would hide a working form.
+	 */
+	const formStats = React.useMemo(() => {
+		const byForm = new Map<string, { started: number; submitted: number }>()
+		for (const row of namedEventsRows) {
+			if (row.category !== "Form Events") continue
+			const sep = row.eventName.lastIndexOf(" / ")
+			if (sep < 0) continue
+			const form = row.eventName.slice(0, sep).trim()
+			const kind = row.eventName.slice(sep + 3).trim()
+			const entry = byForm.get(form) || { started: 0, submitted: 0 }
+			if (kind === "focus") entry.started += row.uniqueUsers
+			else if (kind === "submit") entry.submitted += row.uniqueUsers
+			byForm.set(form, entry)
+		}
+		return Array.from(byForm.entries())
+			.map(([form, v]) => ({
+				form,
+				started: v.started,
+				submitted: v.submitted,
+				// Against whichever is larger, so a form whose focus rows predate submit tracking
+				// reports 100% rather than an impossible figure above it.
+				rate: Math.round((v.submitted / Math.max(1, v.started, v.submitted)) * 100),
+			}))
+			.sort((a, b) => Math.max(b.started, b.submitted) - Math.max(a.started, a.submitted))
+	}, [namedEventsRows])
+
+	/**
+	 * Funnel + most-clicked buttons.
+	 *
+	 * The page-dwell table that used to sit here was permanently empty: dwell.ts scopes an event
+	 * by matching `page` against the eventId, but pageviews record `/[slug]`, never an id. The
+	 * click heatmap is gone too — a coordinate cloud over an unlabelled grid told a host nothing
+	 * they could act on. The named targets below carry the same information legibly.
+	 */
+	const loadBehaviour = async (from: Date | null = dateFrom, to: Date | null = dateTo) => {
+		setBehaviourLoading(true)
 		try {
-			const eid = eventData._id
-			const [f, d, h] = await Promise.all([
-				fetch(`/api/analytics/journey/funnel?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
-				fetch(`/api/analytics/journey/dwell?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
-				fetch(`/api/analytics/journey/heat?eventId=${eid}`, { credentials: "include" }).then((r) => r.json()),
+			const params = new URLSearchParams({ eventId: eventData._id })
+			if (from) params.append("dateFrom", from.toISOString())
+			if (to) params.append("dateTo", to.toISOString())
+			const [f, h] = await Promise.all([
+				fetch(`/api/analytics/journey/funnel?${params.toString()}`, { credentials: "include" }).then((r) => r.json()),
+				fetch(`/api/analytics/journey/heat?${params.toString()}`, { credentials: "include" }).then((r) => r.json()),
 			])
 			if (f?.status) setFunnel(f.data.funnel || [])
-			if (d?.status) setDwell(d.data.pages || [])
-			if (h?.status) {
-				setHeatPoints(h.data.clicks || [])
-				setTopTargets(h.data.topTargets || [])
-			}
-			setJourneyLoaded(true)
+			if (h?.status) setTopTargets(h.data.topTargets || [])
 		} catch (e: any) {
-			toast({ title: "Failed to load journey data", description: e.message, status: "error" })
+			toast({ title: "Couldn't load visitor behaviour", description: e.message, status: "error" })
 		} finally {
-			setJourneyLoading(false)
+			setBehaviourLoading(false)
 		}
 	}
 
-	const loadNamedEvents = async () => {
-		if (namedEventsLoaded || namedEventsLoading) return
+	/** This event's numbers in the same four windows the CEO report uses. */
+	const loadWindows = async () => {
+		setWindowsLoading(true)
+		try {
+			const res = await fetch(`/api/analytics/event-windows?eventId=${eventData._id}`, { credentials: "include" })
+			const json = await res.json()
+			if (json?.status) setWindowRows(json.data.summary || null)
+		} catch (e: any) {
+			console.error("[Event Analytics] Failed to load summary windows:", e)
+		} finally {
+			setWindowsLoading(false)
+		}
+	}
+
+	const loadNamedEvents = async (force = false, from: Date | null = dateFrom, to: Date | null = dateTo) => {
+		if (!force && (namedEventsLoaded || namedEventsLoading)) return
 		setNamedEventsLoading(true)
 		try {
 			const params = new URLSearchParams({ eventId: eventData._id })
-			if (dateFrom) params.append("dateFrom", dateFrom.toISOString())
-			if (dateTo) params.append("dateTo", dateTo.toISOString())
+			if (from) params.append("dateFrom", from.toISOString())
+			if (to) params.append("dateTo", to.toISOString())
 			const res = await fetch(`/api/analytics/named-events?${params.toString()}`, { credentials: "include" })
 			const json = await res.json()
 			if (json?.status) setNamedEventsRows(json.data.rows || [])
 			setNamedEventsLoaded(true)
 		} catch (e: any) {
-			toast({ title: "Failed to load named events", description: e.message, status: "error" })
+			console.error("[Event Analytics] Failed to load interaction breakdown:", e)
 		} finally {
 			setNamedEventsLoading(false)
 		}
@@ -344,10 +425,10 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 		URL.revokeObjectURL(url)
 	}
 
+	// Albums is the only lazily-loaded tab left; everything else lives on Overview and loads
+	// with the page.
 	useEffect(() => {
-		if (tabIndex === 1) loadJourney()
-		if (tabIndex === 2) loadNamedEvents()
-		if (tabIndex === 3) loadAlbumLog()
+		if (tabIndex === 1) loadAlbumLog()
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tabIndex])
 
@@ -371,7 +452,6 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 				const result = await response.json()
 				if (result.status && result.data) {
 					setAnalyticsData(result.data)
-					setCurrentPage(page)
 				} else {
 					const errorMessage = result.message || "Failed to fetch analytics data"
 					throw new Error(errorMessage)
@@ -396,172 +476,29 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 
 	useEffect(() => {
 		fetchAnalytics(dateFrom, dateTo, 1)
+		loadBehaviour(dateFrom, dateTo)
+		// The CTA/form panels re-read for the new range.
+		setNamedEventsLoaded(false)
+		loadNamedEvents(true, dateFrom, dateTo)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [dateFrom, dateTo, eventData._id])
+
+	// Fixed windows — unaffected by the picker, so fetched once.
+	useEffect(() => {
+		loadWindows()
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [eventData._id])
 
 	const handleDateChange = (from: Date | null, to: Date | null) => {
 		setDateFrom(from)
 		setDateTo(to)
-		setCurrentPage(1)
 		// Invalidate lazily-loaded album log so it refetches for the new range.
 		setAlbumLogLoaded(false)
-		if (tabIndex === 3) loadAlbumLog(true, from, to)
-	}
-
-	const handlePageChange = (newPage: number) => {
-		fetchAnalytics(dateFrom, dateTo, newPage)
+		if (tabIndex === 1) loadAlbumLog(true, from, to)
 	}
 
 	const formatCurrency = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount)
 	const formatNumber = (num: number) => new Intl.NumberFormat("en-US").format(num)
-	const formatDate = (date: string) => new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-	const formatDateTime = (date: string) => new Date(date).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })
-
-	// Simple chart component for views
-	const ViewsChart = ({ data }: { data: Array<{ date: string; views: number; uniqueViewers: number }> }) => {
-		if (!data || data.length === 0) {
-			return (
-				<Box p={8} textAlign="center" color="#65676B">
-					<Text>No view data available for the selected period</Text>
-				</Box>
-			)
-		}
-
-		const maxValue = Math.max(...data.map((d) => Math.max(d.views, d.uniqueViewers)))
-
-		return (
-			<Box>
-				<Box position="relative" height="300px" width="100%">
-					<Box position="absolute" left={0} top={0} bottom={0} width="40px" borderRight="1px solid #E5E7EB">
-						{[...Array(5)].map((_, i) => {
-							const value = Math.round((maxValue / 4) * (4 - i))
-							return (
-								<Box key={i} position="absolute" bottom={`${(i / 4) * 100}%`} fontSize="xs" color="#65676B" right="4px">
-									{value}
-								</Box>
-							)
-						})}
-					</Box>
-					<Box ml="50px" mr="20px" position="relative" height="100%">
-						{[...Array(5)].map((_, i) => (
-							<Box key={i} position="absolute" top={`${(i / 4) * 100}%`} left={0} right={0} borderTop="1px solid #F0F2F5" height="1px" />
-						))}
-						<Box display="flex" height="100%" alignItems="flex-end" gap="8px" paddingBottom="20px">
-							{data.map((item, index) => {
-								const barHeight = maxValue > 0 ? (item.views / maxValue) * 100 : 0
-								return (
-									<Box key={index} flex="1" display="flex" flexDirection="column" alignItems="center" position="relative">
-										<Box width="100%" height={`${barHeight}%`} bg="#1877F2" borderRadius="4px 4px 0 0" minHeight="2px" title={`${item.views} views`} />
-										<Text fontSize="xs" color="#65676B" mt={1} style={{ transform: "rotate(-45deg)", transformOrigin: "center" }} whiteSpace="nowrap">
-											{new Date(item.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-										</Text>
-									</Box>
-								)
-							})}
-						</Box>
-					</Box>
-				</Box>
-				<Box display="flex" gap={4} justifyContent="center" mt={4}>
-					<Box display="flex" alignItems="center" gap={2}>
-						<Box width="16px" height="16px" bg="#1877F2" borderRadius="2px" />
-						<Text fontSize="sm" color="#65676B">
-							Views
-						</Text>
-					</Box>
-				</Box>
-			</Box>
-		)
-	}
-
-	// Simple chart component for bookings
-	const BookingsChart = ({ data }: { data: Array<{ date: string; revenue: number; bookings: number; tickets: number }> }) => {
-		if (!data || data.length === 0) {
-			return (
-				<Box p={8} textAlign="center" color="#65676B">
-					<Text>No booking data available for the selected period</Text>
-				</Box>
-			)
-		}
-
-		const maxBookings = Math.max(...data.map((d) => d.bookings))
-		const maxRevenue = Math.max(...data.map((d) => d.revenue))
-
-		return (
-			<Box>
-				<Box mb={8}>
-					<Text fontSize="md" fontWeight="bold" mb={4} color="#1C1E21">
-						Bookings Over Time
-					</Text>
-					<Box position="relative" height="250px" width="100%">
-						<Box position="absolute" left={0} top={0} bottom={0} width="40px" borderRight="1px solid #E5E7EB">
-							{[...Array(5)].map((_, i) => {
-								const value = Math.round((maxBookings / 4) * (4 - i))
-								return (
-									<Box key={i} position="absolute" bottom={`${(i / 4) * 100}%`} fontSize="xs" color="#65676B" right="4px">
-										{value}
-									</Box>
-								)
-							})}
-						</Box>
-						<Box ml="50px" mr="20px" position="relative" height="100%">
-							{[...Array(5)].map((_, i) => (
-								<Box key={i} position="absolute" top={`${(i / 4) * 100}%`} left={0} right={0} borderTop="1px solid #F0F2F5" height="1px" />
-							))}
-							<Box display="flex" height="100%" alignItems="flex-end" gap="4px" paddingBottom="20px">
-								{data.map((item, index) => {
-									const barHeight = maxBookings > 0 ? (item.bookings / maxBookings) * 100 : 0
-									return (
-										<Box key={index} flex="1" display="flex" flexDirection="column" alignItems="center" position="relative">
-											<Box width="100%" height={`${barHeight}%`} bg="#4CAF50" borderRadius="4px 4px 0 0" minHeight="2px" title={`${item.bookings} bookings`} />
-											<Text fontSize="xs" color="#65676B" mt={1} style={{ transform: "rotate(-45deg)", transformOrigin: "center" }} whiteSpace="nowrap">
-												{new Date(item.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-											</Text>
-										</Box>
-									)
-								})}
-							</Box>
-						</Box>
-					</Box>
-				</Box>
-
-				<Box>
-					<Text fontSize="md" fontWeight="bold" mb={4} color="#1C1E21">
-						Revenue Over Time
-					</Text>
-					<Box position="relative" height="250px" width="100%">
-						<Box position="absolute" left={0} top={0} bottom={0} width="60px" borderRight="1px solid #E5E7EB">
-							{[...Array(5)].map((_, i) => {
-								const value = (maxRevenue / 4) * (4 - i)
-								const formatted = value >= 1000 ? `$${(value / 1000).toFixed(1)}k` : `$${Math.round(value)}`
-								return (
-									<Box key={i} position="absolute" bottom={`${(i / 4) * 100}%`} fontSize="xs" color="#65676B" right="4px">
-										{formatted}
-									</Box>
-								)
-							})}
-						</Box>
-						<Box ml="70px" mr="20px" position="relative" height="100%">
-							{[...Array(5)].map((_, i) => (
-								<Box key={i} position="absolute" top={`${(i / 4) * 100}%`} left={0} right={0} borderTop="1px solid #F0F2F5" height="1px" />
-							))}
-							<Box display="flex" height="100%" alignItems="flex-end" gap="4px" paddingBottom="20px">
-								{data.map((item, index) => {
-									const barHeight = maxRevenue > 0 ? (item.revenue / maxRevenue) * 100 : 0
-									return (
-										<Box key={index} flex="1" display="flex" flexDirection="column" alignItems="center" position="relative">
-											<Box width="100%" height={`${barHeight}%`} bg="#2196F3" borderRadius="4px 4px 0 0" minHeight="2px" title={formatCurrency(item.revenue)} />
-											<Text fontSize="xs" color="#65676B" mt={1} style={{ transform: "rotate(-45deg)", transformOrigin: "center" }} whiteSpace="nowrap">
-												{new Date(item.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-											</Text>
-										</Box>
-									)
-								})}
-							</Box>
-						</Box>
-					</Box>
-				</Box>
-			</Box>
-		)
-	}
 
 	return (
 		<>
@@ -574,404 +511,308 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 				<Box maxW="1400px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
 					{/* Header */}
 					<Flex align="center" mb={6} gap={4}>
-						<Button leftIcon={<FiArrowLeft />} variant="ghost" size="sm" onClick={() => router.back()}>
+						<Button leftIcon={<FiArrowLeft />} variant="ghost" size="sm" color="#9C9C9C" _hover={{ bg: "#1a1a1a", color: "white" }} onClick={() => router.back()}>
 							Back
 						</Button>
 						<Box flex={1}>
-							<Text fontSize="2xl" fontWeight="bold" color="#1C1E21">
+							<Text fontSize="2xl" fontWeight="bold" color="white">
 								Event Analytics
 							</Text>
-							<Box fontSize="lg" color="#65676B">
+							<Box fontSize="lg" color="#9C9C9C">
 								<SafeHTML html={eventData.name} />
 							</Box>
 						</Box>
 					</Flex>
 
 					{/* Date Range Selector */}
-					<Box bg="white" p={4} borderRadius="lg" boxShadow="sm" mb={6}>
-						<DateRangeSelector dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
+					<Box bg="#1a1a1a" border="1px solid #2a2a2a" p={4} borderRadius="lg" mb={6}>
+						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
 					</Box>
 
 					{/* Loading State */}
 					{isLoading ? (
 						<Center py={20}>
-							<Spinner size="xl" color="#1877F2" />
+							<Spinner size="xl" color="#F79432" />
 						</Center>
 					) : analyticsData ? (
 						<Tabs variant="line" index={tabIndex} onChange={setTabIndex} isLazy>
 							<TabList mb={4} borderBottom="2px solid #2a2a2a">
 								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Overview</Tab>
-								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Journey</Tab>
-								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Named Events</Tab>
 								<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Albums</Tab>
 							</TabList>
 							<TabPanels>
 								<TabPanel px={0}>
-							{/* Summary Metrics */}
-							<Box mb={6}>
-								<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-									Overview
-								</Text>
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-									<MetricsCard title="Total Views" value={formatNumber(analyticsData.summary.views)} icon={FiEye} subtitle={`${formatNumber(analyticsData.summary.uniqueViewers)} unique viewers`} />
-									<MetricsCard title="Total Bookings" value={formatNumber(analyticsData.summary.bookings)} icon={FiUsers} />
-									<MetricsCard title="Total Revenue" value={formatCurrency(analyticsData.summary.revenue.total)} icon={FiDollarSign} subtitle={`Net: ${formatCurrency(analyticsData.summary.revenue.net)}`} />
-									<MetricsCard title="Tickets Sold" value={formatNumber(analyticsData.summary.tickets.sold)} icon={FiShoppingCart} subtitle={`${formatNumber(analyticsData.summary.tickets.checkedIn)} checked in`} />
-								</SimpleGrid>
-							</Box>
 
-							{/* Revenue & Conversion Metrics */}
-							<Box mb={6}>
-								<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-									Revenue & Conversion
-								</Text>
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-									<MetricsCard title="Net Revenue" value={formatCurrency(analyticsData.summary.revenue.net)} icon={FiDollarSign} bgColor="#E8F5E9" iconColor="#4CAF50" subtitle={`After ${formatCurrency(analyticsData.summary.revenue.discounts)} discounts`} />
-									<MetricsCard title="Avg per Booking" value={formatCurrency(analyticsData.summary.revenue.averagePerBooking)} icon={FiTrendingUp} />
-									<MetricsCard title="Check-in Rate" value={`${analyticsData.summary.tickets.checkInRate.toFixed(1)}%`} icon={FiUsers} bgColor="#E3F2FD" iconColor="#2196F3" />
-									<MetricsCard title="View to Booking" value={`${analyticsData.summary.conversionRates.viewToBooking.toFixed(2)}%`} icon={FiTrendingUp} bgColor="#E8F5E9" iconColor="#4CAF50" />
-								</SimpleGrid>
-							</Box>
+									{/* Performance snapshot.
+									    The same four windows the CEO already reads in the Daily Users Overview
+									    email, for this one event. Fixed windows on purpose: the date picker
+									    above changes everything BELOW this block, never this block, or the
+									    columns stop being comparable to the email. */}
+									<Box mb={8} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" overflow="hidden">
+										<Flex justify="space-between" align="center" px={5} py={4} borderBottom="1px solid #2a2a2a" wrap="wrap" gap={3}>
+											<Box>
+												<Text fontSize="lg" fontWeight="bold" color="white">Performance snapshot</Text>
+												<Text fontSize="xs" color="#65676B">Fixed windows, always up to now &mdash; not affected by the dates above.</Text>
+											</Box>
+											{windowRows && (
+												<Button size="sm" onClick={exportSummaryCSV} bg="#F79432" color="black" _hover={{ bg: "#E68422" }} borderRadius="full" px={4}>
+													Export CSV
+												</Button>
+											)}
+										</Flex>
 
-							{/* Interactions */}
-							<Box mb={6}>
-								<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-									Interactions
-								</Text>
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 3 }} spacing={4}>
-									<MetricsCard title="Views" value={formatNumber(analyticsData.summary.interactions.views)} icon={FiEye} />
-									<MetricsCard title="Shares" value={formatNumber(analyticsData.summary.interactions.shares)} icon={FiShare2} />
-									<MetricsCard title="Booking Starts" value={formatNumber(analyticsData.summary.interactions.bookingStarts)} icon={FiShoppingCart} />
-								</SimpleGrid>
-							</Box>
+										{windowsLoading ? (
+											<Center py={12}><Spinner color="#F79432" /></Center>
+										) : !windowRows ? (
+											<Box px={5} py={6}><Text color="#9C9C9C" fontSize="sm">Snapshot unavailable right now.</Text></Box>
+										) : (
+											<TableContainer>
+												<Table variant="simple" size="sm" sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+													<Thead>
+														<Tr>
+															<Th>Metric</Th>
+															{WINDOW_KEYS.map((k) => (
+																<Th key={k} isNumeric>{WINDOW_LABELS[k]}</Th>
+															))}
+														</Tr>
+													</Thead>
+													<Tbody>
+														{SNAPSHOT_ROWS.map((row) => {
+															// A metric with nothing in any window is hidden rather than shown as
+															// four zeroes. Album Visitors on an event with no albums, or check-ins
+															// on one that never ran a door, would otherwise read as a failure
+															// instead of as "not applicable here".
+															const values = WINDOW_KEYS.map((k) => windowRows[k]?.[row.key] ?? 0)
+															if (row.hideWhenEmpty && values.every((v) => !v)) return null
+															return (
+																<Tr key={row.key} _hover={{ bg: "#262626" }}>
+																	<Td>
+																		<Text fontSize="sm" fontWeight={row.emphasis ? "bold" : "normal"}>{row.label}</Text>
+																		{row.hint && <Text fontSize="xs" color="#65676B">{row.hint}</Text>}
+																	</Td>
+																	{values.map((v, idx) => (
+																		<Td key={idx} isNumeric>
+																			<Text fontSize="sm" fontWeight={row.emphasis ? "bold" : "normal"} color={row.emphasis && v > 0 ? "#48BB78" : "white"}>
+																				{row.money ? formatCurrency(v) : formatNumber(v)}
+																			</Text>
+																		</Td>
+																	))}
+																</Tr>
+															)
+														})}
+													</Tbody>
+												</Table>
+											</TableContainer>
+										)}
+									</Box>
 
-							{/* Charts */}
-							<Box bg="white" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-								<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-									Views Over Time
-								</Text>
-								<ViewsChart data={analyticsData.trends.views} />
-							</Box>
+									{/* Headline numbers.
+									    These follow the date picker. Dark tiles: this panel used to render
+									    white cards inside a dark console, which is why it was the one tab
+									    nobody could read. */}
+									<Box mb={8}>
+										<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Headline numbers</Text>
+										<Text fontSize="xs" color="#65676B" mb={4}>{dateFrom || dateTo ? "For the dates selected above." : "All time."}</Text>
+										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
+											<MetricsCard dark title="Page Views" value={formatNumber(analyticsData.summary.views)} icon={FiEye} subtitle={`${formatNumber(analyticsData.summary.uniqueViewers)} unique visitors`} />
+											<MetricsCard dark title="Bookings" value={formatNumber(analyticsData.summary.bookings)} icon={FiUsers} subtitle={`${formatNumber(analyticsData.summary.tickets.sold)} tickets`} />
+											<MetricsCard dark title="Revenue" value={formatCurrency(analyticsData.summary.revenue.total)} icon={FiDollarSign} subtitle={analyticsData.summary.revenue.discounts > 0 ? `${formatCurrency(analyticsData.summary.revenue.net)} after discounts` : "Ticket revenue"} />
+											<MetricsCard dark title="Checked In" value={formatNumber(analyticsData.summary.tickets.checkedIn)} icon={FiCheckCircle} subtitle={`${analyticsData.summary.tickets.checkInRate.toFixed(0)}% of tickets sold`} />
+										</SimpleGrid>
+										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mt={4}>
+											<MetricsCard dark title="Avg per Booking" value={formatCurrency(analyticsData.summary.revenue.averagePerBooking)} icon={FiTrendingUp} />
+											<MetricsCard dark title="Discounts Given" value={formatCurrency(analyticsData.summary.revenue.discounts)} icon={FiDollarSign} />
+											<MetricsCard dark title="Visitors Who Booked" value={`${analyticsData.summary.conversionRates.viewToBooking.toFixed(1)}%`} icon={FiTrendingUp} />
+											<MetricsCard dark title="Shares" value={formatNumber(analyticsData.summary.interactions.shares)} icon={FiShare2} />
+										</SimpleGrid>
+									</Box>
 
-							{analyticsData.trends.bookings.length > 0 && (
-								<Box bg="white" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-										Bookings & Revenue Trends
-									</Text>
-									<BookingsChart data={analyticsData.trends.bookings} />
-								</Box>
-							)}
+									{/* Checkout funnel.
+									    Every stage is a distinct-session count (see journey/funnel.ts), so the
+									    drop-off between two bars is a real comparison. "Picked a ticket" and the
+									    two checkout stages were dead until the writers were added to
+									    EventTicketsComponent / EventCheckoutModel, so an event with no traffic
+									    since then still shows zeroes there. The note below says so rather than
+									    leaving it as a silent mystery. */}
+									<Box mb={8} bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5}>
+										<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>From visit to booking</Text>
+										<Text fontSize="xs" color="#65676B" mb={5}>How many people reached each step. Each person counted once.</Text>
 
-							{/* Traffic Sources */}
-							{analyticsData.trafficSources.referrers.length > 0 && (
-								<Box bg="white" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-										Traffic Sources
-									</Text>
-									<TableContainer>
-										<Table variant="simple">
-											<Thead>
-												<Tr>
-													<Th>Referrer</Th>
-													<Th>Category</Th>
-													<Th isNumeric>Page Views</Th>
-													<Th isNumeric>Sessions</Th>
-													<Th isNumeric>% of Total</Th>
-												</Tr>
-											</Thead>
-											<Tbody>
-												{analyticsData.trafficSources.referrers.map((ref, idx) => (
-													<Tr key={idx}>
-														<Td>
-															<Text fontSize="sm" isTruncated maxW="300px">
-																{ref.domain}
-															</Text>
-														</Td>
-														<Td>
-															<Badge
-																colorScheme={
-																	ref.category === "search_engine" ? "blue" : ref.category === "social_media" ? "purple" : ref.category === "email" ? "orange" : "gray"
-																}
-																size="sm"
-															>
-																{ref.category.replace(/_/g, " ")}
-															</Badge>
-														</Td>
-														<Td isNumeric>{formatNumber(ref.pageViews)}</Td>
-														<Td isNumeric>{formatNumber(ref.uniqueSessions)}</Td>
-														<Td isNumeric>{ref.percentage.toFixed(1)}%</Td>
-													</Tr>
-												))}
-											</Tbody>
-										</Table>
-									</TableContainer>
-								</Box>
-							)}
+										{behaviourLoading ? (
+											<Center py={10}><Spinner color="#F79432" /></Center>
+										) : funnel.length === 0 || funnel[0].count === 0 ? (
+											<Text color="#9C9C9C" fontSize="sm">Nobody has opened this event page in the selected period.</Text>
+										) : (
+											<>
+												{funnel.map((stage, i) => {
+													const top = funnel[0]?.count || 1
+													const w = stage.count === 0 ? 0 : Math.max(3, (stage.count / top) * 100)
+													const lost = i > 0 ? funnel[i - 1].count - stage.count : 0
+													return (
+														<Box key={stage.stage} mb={i === funnel.length - 1 ? 0 : 5}>
+															<Flex justify="space-between" align="baseline" mb={2} wrap="wrap" gap={2}>
+																<Text fontSize="sm" color="white" fontWeight="semibold">{stage.label}</Text>
+																<HStack spacing={3}>
+																	<Text fontSize="lg" color="white" fontWeight="bold" lineHeight="1">{formatNumber(stage.count)}</Text>
+																	<Text fontSize="xs" color="#9C9C9C">{stage.conversionPct}% of visitors</Text>
+																</HStack>
+															</Flex>
+															<Box h="10px" bg="#2a2a2a" borderRadius="full" overflow="hidden">
+																<Box h="100%" w={`${w}%`} bg={i === funnel.length - 1 ? "#48BB78" : "#F79432"} borderRadius="full" />
+															</Box>
+															{i > 0 && lost > 0 && (
+																<Text fontSize="xs" color="#E9A23B" mt={1}>
+																	{formatNumber(lost)} stopped here ({stage.dropOffPct}% of the previous step)
+																</Text>
+															)}
+														</Box>
+													)
+												})}
+												{/* The three middle stages are written by the browser; "Booked" is counted
+												    from booking records, which go back to the beginning. So an event can
+												    legitimately show 4 views, three empty steps, and 1 booking — which reads
+												    as broken unless it is explained. Checked by STAGE NAME, not by slicing an
+												    index range, so adding a stage later can't silently mis-target it. */}
+												{["ticket_select", "booking_start", "checkout_submit"].every((k) => (funnel.find((st) => st.stage === k)?.count ?? 0) === 0) && (
+													<Text fontSize="xs" color="#65676B" mt={5}>
+														The middle steps are only recorded for visits made since checkout tracking was added, so older traffic appears as views and bookings with nothing in between.
+													</Text>
+												)}
+											</>
+										)}
+									</Box>
 
-							{/* Devices */}
-							{analyticsData.devices.length > 0 && (
-								<Box bg="white" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-									<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-										Device Breakdown
-									</Text>
-									<TableContainer>
-										<Table variant="simple">
-											<Thead>
-												<Tr>
-													<Th>Device Type</Th>
-													<Th isNumeric>Page Views</Th>
-													<Th isNumeric>Sessions</Th>
-													<Th isNumeric>% of Total</Th>
-												</Tr>
-											</Thead>
-											<Tbody>
-												{analyticsData.devices.map((device, idx) => (
-													<Tr key={idx}>
-														<Td>
-															<Badge colorScheme="blue" textTransform="capitalize">
-																{device.deviceType}
-															</Badge>
-														</Td>
-														<Td isNumeric>{formatNumber(device.count)}</Td>
-														<Td isNumeric>{formatNumber(device.uniqueSessionsCount)}</Td>
-														<Td isNumeric>{device.percentage.toFixed(1)}%</Td>
-													</Tr>
-												))}
-											</Tbody>
-										</Table>
-									</TableContainer>
-								</Box>
-							)}
-
-							{/* Recent Interactions */}
-							<Box bg="white" p={6} borderRadius="lg" boxShadow="sm" mb={6}>
-								<Text fontSize="xl" fontWeight="bold" color="#1C1E21" mb={4}>
-									Recent Interactions
-								</Text>
-								<TableContainer>
-									<Table variant="simple">
-										<Thead>
-											<Tr>
-												<Th>Type</Th>
-												<Th>Timestamp</Th>
-												<Th>User ID</Th>
-												<Th>Session ID</Th>
-											</Tr>
-										</Thead>
-										<Tbody>
-											{analyticsData.recentInteractions.items.map((interaction) => (
-												<Tr key={interaction._id}>
-													<Td>
-														<Badge colorScheme={interaction.interactionType === "view" ? "blue" : interaction.interactionType === "share" ? "purple" : "green"}>{interaction.interactionType}</Badge>
-													</Td>
-													<Td>
-														<Text fontSize="sm">{formatDateTime(interaction.timestamp)}</Text>
-													</Td>
-													<Td>
-														<Text fontSize="sm" fontFamily="mono">
-															{interaction.userId || "Anonymous"}
-														</Text>
-													</Td>
-													<Td>
-														<Text fontSize="xs" fontFamily="mono" color="gray.500">
-															{interaction.sessionId.substring(0, 8)}...
-														</Text>
-													</Td>
-												</Tr>
-											))}
-										</Tbody>
-									</Table>
-								</TableContainer>
-
-								{/* Pagination */}
-								{analyticsData.recentInteractions.pagination.totalPages > 1 && (
-									<Flex justify="space-between" align="center" mt={4}>
-										<Text fontSize="sm" color="#65676B">
-											Page {analyticsData.recentInteractions.pagination.page} of {analyticsData.recentInteractions.pagination.totalPages} ({formatNumber(analyticsData.recentInteractions.pagination.total)} total)
-										</Text>
-										<HStack spacing={2}>
-											<IconButton
-												aria-label="Previous page"
-												icon={<FiChevronLeft />}
-												size="sm"
-												onClick={() => handlePageChange(currentPage - 1)}
-												isDisabled={!analyticsData.recentInteractions.pagination.hasPreviousPage}
-											/>
-											<IconButton
-												aria-label="Next page"
-												icon={<FiChevronRight />}
-												size="sm"
-												onClick={() => handlePageChange(currentPage + 1)}
-												isDisabled={!analyticsData.recentInteractions.pagination.hasNextPage}
-											/>
-										</HStack>
-									</Flex>
-								)}
-							</Box>
-								</TabPanel>
-								<TabPanel px={0}>
-									{journeyLoading ? (
-										<Center py={20}><Spinner size="xl" color="#F79432" /></Center>
-									) : (
-										<>
-											<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Conversion Funnel</Text>
-												{funnel.length === 0 ? (
-													<Text color="#9C9C9C" fontSize="sm">No funnel data yet.</Text>
-												) : (
-													funnel.map((stage, i) => {
-														const maxCount = funnel[0]?.count || 1
-														const w = Math.max(8, (stage.count / maxCount) * 100)
+									<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={8}>
+										{/* What people actually clicked. Replaces the coordinate heatmap, which
+										    showed where on an unlabelled canvas clicks landed and therefore told
+										    a host nothing they could change. */}
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5}>
+											<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Most-clicked buttons</Text>
+											<Text fontSize="xs" color="#65676B" mb={4}>Repeated clicks flag a control people expected to do something.</Text>
+											{behaviourLoading ? (
+												<Center py={8}><Spinner color="#F79432" size="sm" /></Center>
+											) : topTargets.length === 0 ? (
+												<Text color="#9C9C9C" fontSize="sm">No button clicks recorded yet.</Text>
+											) : (
+												<Box>
+													{topTargets.slice(0, 8).map((t, idx) => {
+														const top = topTargets[0]?.count || 1
 														return (
-															<Box key={stage.stage} mb={3}>
-																<Flex justify="space-between" mb={1}>
-																	<Text fontSize="sm" color="white">{stage.label}</Text>
-																	<Text fontSize="sm" color="#9C9C9C">{stage.count.toLocaleString()} · {stage.conversionPct}%{i > 0 ? ` · drop ${stage.dropOffPct}%` : ""}</Text>
+															<Box key={idx} mb={idx === Math.min(7, topTargets.length - 1) ? 0 : 3}>
+																<Flex justify="space-between" align="baseline" mb={1} gap={3}>
+																	<Text fontSize="sm" color="white" noOfLines={1}>{t.dataTrack || t.text || "Unlabelled"}</Text>
+																	<HStack spacing={2} flexShrink={0}>
+																		{t.rageCount > 0 && <Badge colorScheme="red" fontSize="10px">{t.rageCount} frustrated</Badge>}
+																		<Text fontSize="sm" color="#9C9C9C" fontWeight="semibold">{formatNumber(t.count)}</Text>
+																	</HStack>
 																</Flex>
-																<Box h="24px" bg="#2a2a2a" borderRadius="md" overflow="hidden">
-																	<Box h="100%" w={`${w}%`} bg="#F79432" />
+																<Box h="6px" bg="#2a2a2a" borderRadius="full" overflow="hidden">
+																	<Box h="100%" w={`${Math.max(3, (t.count / top) * 100)}%`} bg="#F79432" borderRadius="full" />
 																</Box>
 															</Box>
 														)
-													})
-												)}
-											</Box>
+													})}
+												</Box>
+											)}
+										</Box>
 
-											<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Page Dwell &amp; Scroll Depth</Text>
-												<TableContainer>
-													<Table size="sm">
-														<Thead>
-															<Tr>
-																<Th color="#9C9C9C" borderColor="#2a2a2a">Page</Th>
-																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Views</Th>
-																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Avg time (s)</Th>
-																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>p50</Th>
-																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>p90</Th>
-																<Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Avg scroll %</Th>
-															</Tr>
-														</Thead>
+										{/* Form drop-off, paired from the raw focus/submit rows the old "Named
+										    Events" table listed one line at a time. */}
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5}>
+											<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Form drop-off</Text>
+											<Text fontSize="xs" color="#65676B" mb={4}>Started filling a form versus actually sending it.</Text>
+											{namedEventsLoading ? (
+												<Center py={8}><Spinner color="#F79432" size="sm" /></Center>
+											) : formStats.length === 0 ? (
+												<Text color="#9C9C9C" fontSize="sm">No form activity recorded yet.</Text>
+											) : (
+												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+													<Table variant="simple" size="sm">
+														<Thead><Tr><Th>Form</Th><Th isNumeric>Started</Th><Th isNumeric>Sent</Th><Th isNumeric>Completed</Th></Tr></Thead>
 														<Tbody>
-															{dwell.length === 0 ? (
-																<Tr><Td colSpan={6} borderColor="#2a2a2a"><Text color="#9C9C9C" fontSize="sm">No dwell data yet.</Text></Td></Tr>
-															) : dwell.map((r) => (
-																<Tr key={r.page} _hover={{ bg: "#262626" }}>
-																	<Td borderColor="#2a2a2a"><Text fontSize="xs" color="white" maxW="400px" isTruncated>{r.page}</Text></Td>
-																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.views}</Td>
-																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.avgTimeSec}</Td>
-																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.p50Sec}</Td>
-																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.p90Sec}</Td>
-																	<Td color="white" borderColor="#2a2a2a" isNumeric>{r.avgScrollDepthPct ?? "—"}</Td>
+															{formStats.map((f) => (
+																<Tr key={f.form} _hover={{ bg: "#262626" }}>
+																	<Td><Text fontSize="sm" noOfLines={1}>{f.form}</Text></Td>
+																	<Td isNumeric>{formatNumber(f.started)}</Td>
+																	<Td isNumeric>{formatNumber(f.submitted)}</Td>
+																	<Td isNumeric>
+																		<Badge colorScheme={f.rate >= 50 ? "green" : f.rate >= 20 ? "yellow" : "red"}>{f.rate}%</Badge>
+																	</Td>
 																</Tr>
 															))}
 														</Tbody>
 													</Table>
 												</TableContainer>
-											</Box>
+											)}
+										</Box>
+									</SimpleGrid>
 
-											<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={6}>
-												<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
-													<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Click Heatmap</Text>
-													<ClickHeatmap points={heatPoints} width={600} height={400} />
-												</Box>
-												<Box bg="#1a1a1a" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
-													<Text fontWeight="bold" fontSize="lg" mb={4} color="white">Top Click Targets</Text>
-													<TableContainer>
-														<Table size="sm">
-															<Thead><Tr><Th color="#9C9C9C" borderColor="#2a2a2a">Target</Th><Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Clicks</Th><Th color="#9C9C9C" borderColor="#2a2a2a" isNumeric>Rage</Th></Tr></Thead>
-															<Tbody>
-																{topTargets.length === 0 ? (
-																	<Tr><Td colSpan={3} borderColor="#2a2a2a"><Text color="#9C9C9C" fontSize="sm">No clicks yet.</Text></Td></Tr>
-																) : topTargets.map((t, idx) => (
-																	<Tr key={idx} _hover={{ bg: "#262626" }}>
-																		<Td borderColor="#2a2a2a"><Text fontSize="xs" color="white" maxW="280px" isTruncated>{t.dataTrack || t.text || "—"}</Text></Td>
-																		<Td color="white" borderColor="#2a2a2a" isNumeric>{t.count}</Td>
-																		<Td color="white" borderColor="#2a2a2a" isNumeric>{t.rageCount > 0 ? <Badge colorScheme="red">{t.rageCount}</Badge> : 0}</Td>
-																	</Tr>
-																))}
-															</Tbody>
-														</Table>
-													</TableContainer>
-												</Box>
-											</SimpleGrid>
-										</>
-									)}
-								</TabPanel>
-								<TabPanel px={0}>
-									{namedEventsLoading ? (
-										<Center py={20}><Spinner size="xl" color="#F79432" /></Center>
-									) : (() => {
-										const filteredRows = namedEventsRows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
-										const totalPages = Math.max(1, Math.ceil(filteredRows.length / NAMED_EVENTS_PER_PAGE))
-										const safePage = Math.min(namedEventsPage, totalPages)
-										const paginatedRows = filteredRows.slice((safePage - 1) * NAMED_EVENTS_PER_PAGE, safePage * NAMED_EVENTS_PER_PAGE)
-										return (
-											<Box bg="#1a1a1a" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Flex justify="space-between" align="center" mb={4} wrap="wrap" gap={3}>
-													<Box>
-														<Text fontWeight="bold" fontSize="lg" color="white">Named Events</Text>
-														<Text fontSize="sm" color="#9C9C9C">Category / Event Name / Total Events / Unique Users</Text>
-													</Box>
-													<HStack spacing={2} flexWrap="wrap">
-														{["all", "Event Interactions", "CTA Clicks", "Form Events"].map((cat) => (
-															<Button
-																key={cat}
-																size="xs"
-																onClick={() => { setNamedEventsCategory(cat); setNamedEventsPage(1) }}
-																bg={namedEventsCategory === cat ? "#F79432" : "#2a2a2a"}
-																color={namedEventsCategory === cat ? "black" : "#9C9C9C"}
-																_hover={{ bg: namedEventsCategory === cat ? "#E68422" : "#333" }}
-																borderRadius="full"
-																px={3}
-															>
-																{cat === "all" ? "All" : cat}
-															</Button>
+									{/* Traffic sources */}
+									{analyticsData.trafficSources.referrers.length > 0 && (
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5} mb={8}>
+											<Text fontSize="lg" fontWeight="bold" color="white" mb={1}>Where visitors came from</Text>
+											<Text fontSize="xs" color="#65676B" mb={4}>
+												{formatNumber(analyticsData.trafficSources.directTraffic.pageViews)} arrived directly ({analyticsData.trafficSources.directTraffic.percentage.toFixed(0)}%) &mdash; typed the link, or followed one from an email or a message.
+											</Text>
+											<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+												<Table variant="simple" size="sm">
+													<Thead>
+														<Tr>
+															<Th>Source</Th>
+															<Th>Type</Th>
+															<Th isNumeric>Visits</Th>
+															<Th isNumeric>People</Th>
+															<Th isNumeric>Share</Th>
+														</Tr>
+													</Thead>
+													<Tbody>
+														{analyticsData.trafficSources.referrers.map((ref, idx) => (
+															<Tr key={idx} _hover={{ bg: "#262626" }}>
+																<Td><Text fontSize="sm" isTruncated maxW="300px">{ref.domain}</Text></Td>
+																<Td>
+																	<Badge colorScheme={ref.category === "search_engine" ? "blue" : ref.category === "social_media" ? "purple" : ref.category === "email" ? "orange" : "gray"} size="sm">
+																		{ref.category.replace(/_/g, " ")}
+																	</Badge>
+																</Td>
+																<Td isNumeric>{formatNumber(ref.pageViews)}</Td>
+																<Td isNumeric>{formatNumber(ref.uniqueSessions)}</Td>
+																<Td isNumeric>{ref.percentage.toFixed(1)}%</Td>
+															</Tr>
 														))}
-														{filteredRows.length > 0 && (
-															<Button size="xs" onClick={exportNamedEventsCSV} bg="#2a2a2a" color="#9C9C9C" _hover={{ bg: "#333", color: "white" }} borderRadius="full" px={3}>
-																Export CSV
-															</Button>
-														)}
-													</HStack>
-												</Flex>
-												{filteredRows.length > 0 ? (
-													<>
-														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-															<Table variant="simple" size="sm">
-																<Thead><Tr>
-																	<Th>Category</Th>
-																	<Th>Event Name</Th>
-																	<Th isNumeric>Total Events</Th>
-																	<Th isNumeric>Unique Users</Th>
-																</Tr></Thead>
-																<Tbody>
-																	{paginatedRows.map((row, idx) => (
-																		<Tr key={idx} _hover={{ bg: "#262626" }}>
-																			<Td><Badge colorScheme={row.category === "Event Interactions" ? "blue" : row.category === "CTA Clicks" ? "orange" : "green"}>{row.category}</Badge></Td>
-																			<Td><Text fontSize="sm">{row.eventName}</Text></Td>
-																			<Td isNumeric><Text fontWeight="semibold">{row.totalEvents.toLocaleString()}</Text></Td>
-																			<Td isNumeric><Badge colorScheme="teal">{row.uniqueUsers.toLocaleString()}</Badge></Td>
-																		</Tr>
-																	))}
-																</Tbody>
-															</Table>
-														</TableContainer>
-														{totalPages > 1 && (
-															<Flex justify="space-between" align="center" mt={4}>
-																<Text fontSize="sm" color="#9C9C9C">Page {safePage} of {totalPages} ({filteredRows.length} total)</Text>
-																<HStack spacing={2}>
-																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }} aria-label="Previous page" icon={<FiChevronLeft />} size="sm" onClick={() => setNamedEventsPage((p) => Math.max(1, p - 1))} isDisabled={safePage <= 1} />
-																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }} aria-label="Next page" icon={<FiChevronRight />} size="sm" onClick={() => setNamedEventsPage((p) => Math.min(totalPages, p + 1))} isDisabled={safePage >= totalPages} />
-																</HStack>
-															</Flex>
-														)}
-													</>
-												) : (
-													<Text color="#9C9C9C" fontSize="sm">No interactions recorded for this event yet.</Text>
-												)}
-											</Box>
-										)
-									})()}
+													</Tbody>
+												</Table>
+											</TableContainer>
+										</Box>
+									)}
+
+									{/* Devices */}
+									{analyticsData.devices.length > 0 && (
+										<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={5} mb={6}>
+											<Text fontSize="lg" fontWeight="bold" color="white" mb={4}>What they viewed it on</Text>
+											<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
+												<Table variant="simple" size="sm">
+													<Thead>
+														<Tr>
+															<Th>Device</Th>
+															<Th isNumeric>Visits</Th>
+															<Th isNumeric>People</Th>
+															<Th isNumeric>Share</Th>
+														</Tr>
+													</Thead>
+													<Tbody>
+														{analyticsData.devices.map((device, idx) => (
+															<Tr key={idx} _hover={{ bg: "#262626" }}>
+																<Td><Badge colorScheme="blue" textTransform="capitalize">{device.deviceType}</Badge></Td>
+																<Td isNumeric>{formatNumber(device.count)}</Td>
+																<Td isNumeric>{formatNumber(device.uniqueSessionsCount)}</Td>
+																<Td isNumeric>{device.percentage.toFixed(1)}%</Td>
+															</Tr>
+														))}
+													</Tbody>
+												</Table>
+											</TableContainer>
+										</Box>
+									)}
 								</TabPanel>
 								<TabPanel px={0}>
 									<Flex justify="space-between" align="center" mb={4} flexWrap="wrap" gap={3}>
@@ -1167,7 +1008,7 @@ export default function EventAnalyticsPage({ event }: { event: string }) {
 						</Tabs>
 					) : (
 						<Center py={20}>
-							<Text color="#65676B">No data available</Text>
+							<Text color="#9C9C9C">No analytics recorded for this event yet.</Text>
 						</Center>
 					)}
 				</Box>

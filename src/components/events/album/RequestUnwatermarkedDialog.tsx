@@ -30,11 +30,16 @@ import type { AlbumMedia } from "@/components/events/EventAlbums"
  * Steps depend on what we already know about the viewer:
  *
  *   verified viewer   -> choose photos -> Send request -> "Request received!"
- *   unverified viewer -> choose photos -> email (read-only) -> code -> Verify -> "Request received!"
+ *   unverified viewer -> choose photos -> email -> code -> Verify -> "Request received!"
  *
  * Everyone who came through today's album gate is verified, so the code step is effectively
- * only for guest cookies minted before that gate existed. The email is never a free-text field:
- * the server takes the address from the session/cookie, so typing one here would be theatre.
+ * only for guest cookies minted before that gate existed.
+ *
+ * The address IS editable. The cookie can carry an old or simply wrong one, and it is where the
+ * host's reply goes — a field showing the wrong address with no way to correct it is worse than
+ * no field, and on Safari a read-only input still raises a caret and a keyboard, so it read as
+ * broken. Changing it costs a code sent to the new address (the server insists, whether or not
+ * the viewer is otherwise verified), so it can only ever be an address the sender can read.
  */
 type Step = "PICK" | "EMAIL" | "CODE" | "DONE"
 
@@ -63,6 +68,8 @@ export function RequestUnwatermarkedDialog({
 	const [step, setStep] = useState<Step>("PICK")
 	const [selected, setSelected] = useState<string[]>([])
 	const [code, setCode] = useState("")
+	// Seeded from the cookie/session, editable — see the note above.
+	const [email, setEmail] = useState("")
 	const [submitting, setSubmitting] = useState(false)
 	const [resendIn, setResendIn] = useState(0)
 	// Opened from the lightbox's side panel the photo is already decided, so show it rather
@@ -75,12 +82,13 @@ export function RequestUnwatermarkedDialog({
 	useEffect(() => {
 		if (!isOpen) return
 		setCode("")
+		setEmail(viewerEmail || "")
 		setSubmitting(false)
 		setResendIn(0)
 		setSelected(preselectedUrl ? [preselectedUrl] : [])
 		setPicking(!preselectedUrl)
 		setStep("PICK")
-	}, [isOpen, preselectedUrl])
+	}, [isOpen, preselectedUrl, viewerEmail])
 
 	useEffect(() => {
 		if (resendIn <= 0) return
@@ -104,7 +112,8 @@ export function RequestUnwatermarkedDialog({
 		[toast],
 	)
 
-	// The one call that files the request. `code` is only sent on the unverified path.
+	// The one call that files the request. `code` is only sent on the unverified path; `email`
+	// always is, so the request is filed against exactly the address this dialog showed.
 	const send = useCallback(
 		async (withCode?: string) => {
 			if (selected.length === 0) return
@@ -113,6 +122,7 @@ export function RequestUnwatermarkedDialog({
 				await axios.post(`/api/events/${eventId}/albums/${albumId}/photo-request`, {
 					mediaUrls: selected,
 					...(withCode ? { code: withCode } : {}),
+					...(email.trim() ? { email: email.trim() } : {}),
 				})
 				setStep("DONE")
 			} catch (err: any) {
@@ -131,14 +141,15 @@ export function RequestUnwatermarkedDialog({
 				setSubmitting(false)
 			}
 		},
-		[albumId, eventId, fail, selected],
+		[albumId, email, eventId, fail, selected],
 	)
 
 	const sendCode = useCallback(async () => {
-		if (!viewerEmail) return
+		const address = email.trim()
+		if (!address) return
 		setSubmitting(true)
 		try {
-			await axios.post(`/api/events/${eventId}/albums/send-code`, { email: viewerEmail })
+			await axios.post(`/api/events/${eventId}/albums/send-code`, { email: address })
 			setCode("")
 			setResendIn(60)
 			setStep("CODE")
@@ -147,10 +158,14 @@ export function RequestUnwatermarkedDialog({
 		} finally {
 			setSubmitting(false)
 		}
-	}, [eventId, fail, viewerEmail])
+	}, [email, eventId, fail])
 
-	// Verified viewers file it straight away; everyone else gets the code round trip.
-	const confirm = () => (viewerVerified === true ? send() : setStep("EMAIL"))
+	const emailChanged = email.trim().toLowerCase() !== (viewerEmail || "").trim().toLowerCase()
+	const emailLooksValid = /^\S+@\S+\.\S+$/.test(email.trim())
+
+	// Verified viewers file it straight away — unless they've pointed the request at another
+	// address, which the server will insist on a code for either way.
+	const confirm = () => (viewerVerified === true && !emailChanged ? send() : setStep("EMAIL"))
 
 	const count = selected.length
 	const photoWord = count === 1 ? "photo" : "photos"
@@ -240,6 +255,21 @@ export function RequestUnwatermarkedDialog({
 									</Text>
 								</>
 							)}
+
+							{/* Where the reply goes, and the way to correct it. Without this the
+							    address is only visible on the code step, which a verified viewer
+							    never sees — so a wrong one could never be fixed. */}
+							{(email || viewerEmail) && (
+								<Flex mt={4} align="center" justify="space-between" gap={3} wrap="wrap">
+									<Text color="#8a8a8a" fontSize="xs">
+										We&apos;ll reply to{" "}
+										<Box as="span" color="#dddddd">{email || viewerEmail}</Box>
+									</Text>
+									<Button variant="link" size="sm" color="#F79432" fontWeight="600" onClick={() => setStep("EMAIL")}>
+										Use a different email
+									</Button>
+								</Flex>
+							)}
 						</>
 					)}
 
@@ -248,11 +278,17 @@ export function RequestUnwatermarkedDialog({
 							<Text color="#bbbbbb" fontSize="sm" mb={1}>
 								We&apos;ll send a verification code to
 							</Text>
-							{/* Read-only on purpose: the server files the request against the address
-							    already on the session/cookie, so an editable field would only mislead. */}
+							{/* Editable: this address is where the host's reply goes, and the one on the
+							    cookie can be old or simply wrong. Changing it costs a code sent to the
+							    new address, so it stays an address the sender can actually read. */}
 							<Input
-								value={viewerEmail || ""}
-								isReadOnly
+								type="email"
+								value={email}
+								onChange={(e) => setEmail(e.target.value)}
+								placeholder="you@example.com"
+								autoComplete="email"
+								inputMode="email"
+								_placeholder={{ color: "#555" }}
 								bg="#1E1E1E"
 								borderColor="#343536"
 								borderRadius="10px"
@@ -260,7 +296,9 @@ export function RequestUnwatermarkedDialog({
 								mb={3}
 							/>
 							<Text fontSize="xs" color="#777">
-								This confirms the request is really coming from you.
+								{emailChanged
+									? "The code goes to this address, and so does the host's reply."
+									: "This confirms the request is really coming from you."}
 							</Text>
 						</>
 					)}
@@ -268,7 +306,7 @@ export function RequestUnwatermarkedDialog({
 					{step === "CODE" && (
 						<>
 							<Text color="#bbbbbb" fontSize="sm" mb={1}>Enter the 6-digit code we sent to</Text>
-							<Text color="white" fontSize="sm" fontWeight="600" mb={4}>{viewerEmail}</Text>
+							<Text color="white" fontSize="sm" fontWeight="600" mb={4}>{email}</Text>
 							<form
 								id="photo-request-code-form"
 								onSubmit={(e) => {
@@ -355,7 +393,7 @@ export function RequestUnwatermarkedDialog({
 							isLoading={submitting}
 							onClick={confirm}
 						>
-							{viewerVerified === true
+							{viewerVerified === true && !emailChanged
 								? count > 1
 									? `Request ${count} photos`
 									: "Send request"
@@ -377,6 +415,7 @@ export function RequestUnwatermarkedDialog({
 							py={3}
 							lineHeight="1.3"
 							isLoading={submitting}
+							isDisabled={!emailLooksValid}
 							onClick={sendCode}
 						>
 							Send Verification Code

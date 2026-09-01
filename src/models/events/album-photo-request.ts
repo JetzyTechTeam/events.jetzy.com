@@ -30,6 +30,13 @@ export interface IAlbumPhotoRequest {
 	 * on everything written before multi-select existed — so it is a display hint, never a key.
 	 */
 	batchId?: string
+	/**
+	 * This row's 1-based place in its batch ("2 of 3"). Written alongside `batchId`, so the
+	 * host's table doesn't have to re-derive an order from timestamps that are all the same
+	 * second. Absent wherever `batchId` is — and on rows written before it existed, where the
+	 * table falls back to the order the rows come back in.
+	 */
+	batchIndex?: number
 	/** Optional: a NextAuth session _id can come from EventUsers while the guest gate maps to `users`. */
 	userId?: Schema.Types.ObjectId
 	/** Stable identity across both paths — this is the dedupe key, like AlbumAccess.viewerEmail. */
@@ -74,6 +81,10 @@ const albumPhotoRequestSchema = new Schema<IAlbumPhotoRequest>(
 		},
 		batchId: {
 			type: String,
+			required: false,
+		},
+		batchIndex: {
+			type: Number,
 			required: false,
 		},
 		userId: {
