@@ -55,7 +55,7 @@ import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
 import { Badge, Button, Image, Switch, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, InputGroup, InputLeftElement, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
-import { ShareIcon, QrCodeIcon as QrCodeIconOutline, UserPlusIcon } from "@heroicons/react/24/outline"
+import { ShareIcon, QrCodeIcon as QrCodeIconOutline } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
 import Pagination from "@/components/misc/Pagination"
 import { useQuery } from "@tanstack/react-query"
@@ -1245,15 +1245,9 @@ export default function HostedEvents({ event }: Props) {
 									<button onClick={() => sharer.share()} aria-label="Share event" className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2.5 whitespace-nowrap rounded-full transition-all hover:bg-[#444]">
 										<ShareIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white inline-block" />
 									</button>
-									{session && (
-										<button
-											onClick={onInviteModalOpen}
-											className="bg-[#333333] border-[#474747] font-bold text-gray-700 p-2.5 whitespace-nowrap rounded-full transition-all hover:bg-[#444]"
-											title="Invite Friends"
-										>
-											<UserPlusIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white inline-block" />
-										</button>
-									)}
+									{/* The Invite Friends button was removed from this row (2026-09-02).
+									    The modal below and its `onInviteModalOpen` handler are kept intact,
+									    so restoring it is putting this button back — nothing else. */}
 
 									{/* Hidden once the event has ended (host/admin keep it for reference). */}
 									{(!isEnded || canManage) && (
