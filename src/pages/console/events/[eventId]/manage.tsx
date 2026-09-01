@@ -917,15 +917,20 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			<ConsoleLayout
 				stickyHeader
 				page={
-					<span className="flex flex-col mt-3">
-						<span className={`${roboto.className} mb-3`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
+					<span className="flex flex-col mt-3 min-w-0">
+						<span className={`${roboto.className} mb-2`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
 							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}>My Events &rsaquo; </span>
 							<span className="text-[#F79432] font-normal">{stripHtml(event.name)}</span>
 						</span>
-						<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "100%", letterSpacing: "-0.03em", color: "#FFFFFF" }}>
-							{stripHtml(event.name)}
+						{/* Title and badge are flex siblings, not inline text: as an inline span the
+						    badge broke across two lines ("PENDING" / "APPROVAL") the moment the name
+						    filled the row. `whiteSpace: nowrap` keeps it one chip whatever the width. */}
+						<span className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+							<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "1.15", letterSpacing: "-0.03em", color: "#FFFFFF", minWidth: 0, overflowWrap: "anywhere" }}>
+								{stripHtml(event.name)}
+							</span>
 							{isPendingApproval && (
-								<Box as="span" ml={3} px="10px" py="3px" borderRadius="md" fontSize="13px" fontWeight="bold" letterSpacing="0.03em" bg="#3A2A00" color="#F79432" border="1px solid #F79432" verticalAlign="middle">
+								<Box as="span" px="10px" py="3px" borderRadius="md" fontSize="12px" fontWeight="bold" letterSpacing="0.03em" whiteSpace="nowrap" bg="#3A2A00" color="#F79432" border="1px solid #F79432">
 									PENDING APPROVAL
 								</Box>
 							)}
@@ -933,16 +938,23 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					</span> as any
 				}
 				component={
-					<div className="flex flex-wrap gap-2 items-center self-end">
-						{tabIndex === 0 && <AutosaveStatusPill state={autosaveState} />}
-						{isAdmin && isPendingApproval && (
-							<Button bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
-								Approve Event
-							</Button>
+					/* Six equal-weight buttons wrapped onto a ragged second row and gave a destructive
+					   Delete the same presence as the primary Save. The row now carries only what is
+					   used while editing — Approve (when it applies), Preview, Update Event — and the
+					   rest sit behind a "More" menu. The autosave pill moves above the row so it stops
+					   competing with the buttons for the same line. */
+					<div className="flex flex-col items-end gap-2 self-end min-w-0">
+						{tabIndex === 0 && (
+							<div className="flex justify-end">
+								<AutosaveStatusPill state={autosaveState} />
+							</div>
 						)}
-						{isAdmin && (
-							<Button bg="#1877F2" color="white" _hover={{ bg: "#1565D8" }} _active={{ bg: "#1565D8" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)} fontWeight="bold">
-								View Analytics
+						{/* Wraps on a phone, one row from `sm` up. Not `xs:` — that breakpoint is 300px
+						    here, which would force four buttons onto one line on every handset. */}
+						<div className="flex flex-wrap sm:flex-nowrap gap-2 items-center justify-end">
+						{isAdmin && isPendingApproval && (
+							<Button size={{ base: "sm", md: "md" }} flexShrink={0} bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
+								Approve Event
 							</Button>
 						)}
 						{/* Preview as a guest. Opens the REAL event page with the host's own privileges
@@ -958,6 +970,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							hasArrow
 						>
 							<Button
+								size={{ base: "sm", md: "md" }}
+								flexShrink={0}
 								bg="#3E3E3E"
 								color="white"
 								_hover={{ bg: "#323232" }}
@@ -969,18 +983,41 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								Preview
 							</Button>
 						</Tooltip>
-						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
+						<Button size={{ base: "sm", md: "md" }} flexShrink={0} bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
 							{tabIndex === 0 && isFormDirty && (
 								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
 							)}
 							Update Event
 						</Button>
-						<Button bg="#3E3E3E" color="white" _hover={{ bg: "#323232" }} _active={{ bg: "#323232" }} fontWeight="bold" isLoading={isCloning} onClick={handleCloneEvent}>
-							Clone
-						</Button>
-						<Button bg="#EC5E5E" color="white" _hover={{ bg: "#d94c4c" }} _active={{ bg: "#d94c4c" }} fontWeight="bold" onClick={onDeleteOpen}>
-							Delete Event
-						</Button>
+						{/* Analytics, Clone and Delete are occasional, and Delete is destructive — none
+						    of them belong beside the button the host presses every few minutes. */}
+						<Menu placement="bottom-end">
+							<MenuButton
+								as={IconButton}
+								size={{ base: "sm", md: "md" }}
+								flexShrink={0}
+								aria-label="More event actions"
+								icon={<EllipsisHorizontalIcon className="w-5 h-5" />}
+								bg="#3E3E3E"
+								color="white"
+								_hover={{ bg: "#323232" }}
+								_active={{ bg: "#323232" }}
+							/>
+							<MenuList bg="#1D1F24" border="1px solid #444" color="white" minW="200px">
+								{isAdmin && (
+									<MenuItem bg="transparent" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)}>
+										View Analytics
+									</MenuItem>
+								)}
+								<MenuItem bg="transparent" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} isDisabled={isCloning} onClick={handleCloneEvent}>
+									{isCloning ? "Cloning…" : "Clone Event"}
+								</MenuItem>
+								<MenuItem bg="transparent" color="#EC5E5E" _hover={{ bg: "#3A2222" }} _focus={{ bg: "#3A2222" }} onClick={onDeleteOpen}>
+									Delete Event
+								</MenuItem>
+							</MenuList>
+						</Menu>
+						</div>
 					</div>
 				}
 			>
