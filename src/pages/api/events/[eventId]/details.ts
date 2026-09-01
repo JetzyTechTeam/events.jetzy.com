@@ -38,6 +38,23 @@ const schema = zod.object({
 	showOnMobile: zod.boolean().optional(),
 	capacity: zod.number().int().min(0).optional(),
 	privacy: zod.enum(["public", "private"]).optional(),
+	// Votes are NOT accepted from the client — they are preserved server-side by option id.
+	datePoll: zod
+		.object({
+			isActive: zod.boolean(),
+			question: zod.string().max(300).optional(),
+			options: zod
+				.array(
+					zod.object({
+						id: zod.string().min(1),
+						date: zod.string().min(1),
+						time: zod.string().optional(),
+						label: zod.string().max(200).optional(),
+					}),
+				)
+				.default([]),
+		})
+		.optional(),
 })
 
 /**
@@ -59,7 +76,6 @@ const schema = zod.object({
  *  - `slug` — changing it retires the old one and rewrites every link; that belongs with the
  *    slug field's own history handling.
  *  - `status` — publishing a draft is a workflow rather than an edit.
- *  - `datePoll` — mutually exclusive with fixed dates and holds votes.
  *  - `showParticipants` — no UI in the manage form and `update.ts` never writes it, so accepting
  *    it here would be new behaviour rather than parity.
  */
@@ -90,7 +106,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
-			.select("_id ownerId images videos privacy")
+			.select("_id ownerId images videos privacy datePoll")
 			.lean()
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
@@ -104,7 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			location, venueName, entrance, latitude, longitude, placeId,
 			timezone, startsOn, endsOn, hasStartTime, hasEndTime,
 			interests, requireApproval, locationDisclosedAfterBooking, showOnMobile,
-			capacity, privacy,
+			capacity, privacy, datePoll,
 		} = validation.data
 
 		const set: any = {}
@@ -167,6 +183,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 		if (hasStartTime !== undefined) set.hasStartTime = hasStartTime
 		if (hasEndTime !== undefined) set.hasEndTime = hasEndTime
+
+		// The date poll.
+		//
+		// **Votes are preserved by option id.** The client never sends them: an option that
+		// survives an edit keeps the votes it already collected, and only an option the host
+		// actually removed loses them. `update.ts` rewrites the whole subtree from the form,
+		// which is why this endpoint refused polls until now.
+		//
+		// Disabling is also gentler here than in `update.ts`, which writes
+		// `{isActive:false, question:"", options:[]}` and destroys the votes outright. From the
+		// event page a poll is one toggle away, and one click should not be able to delete what
+		// guests voted for — so the options and their votes are kept and only `isActive` moves.
+		if (datePoll !== undefined) {
+			const storedOptions: any[] = ((event as any).datePoll?.options || []) as any[]
+			const votesById = new Map<string, string[]>(storedOptions.map((o: any) => [o.id, o.votes || []]))
+
+			if (datePoll.isActive && datePoll.options.length === 0) {
+				return sendResponse(res, null, "Add at least one date option, or turn the poll off.", false, ResCode.BAD_REQUEST)
+			}
+
+			if (datePoll.isActive) {
+				set.datePoll = {
+					isActive: true,
+					question: datePoll.question || "",
+					options: datePoll.options.map((o) => ({
+						id: o.id,
+						date: o.date,
+						time: o.time || "",
+						label: o.label || "",
+						votes: votesById.get(o.id) || [],
+					})),
+				}
+				// A poll and fixed dates are mutually exclusive — the poll IS the date. Clearing
+				// them here means the client can't leave the two disagreeing.
+				unset.startsOn = ""
+				unset.endsOn = ""
+				delete set.startsOn
+				delete set.endsOn
+			} else {
+				// Kept, votes and all, so re-enabling restores the poll as it was.
+				set["datePoll.isActive"] = false
+			}
+		}
 
 		// Media is three fields that only make sense together: `images` and `videos` are two
 		// separate arrays and cannot express order between them, which is what `mediaOrder`

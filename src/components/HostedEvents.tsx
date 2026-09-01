@@ -271,6 +271,15 @@ export default function HostedEvents({ event }: Props) {
 	const [draftShowOnMobile, setDraftShowOnMobile] = useState(false)
 	const [draftCapacity, setDraftCapacity] = useState("")
 	const [draftPrivacy, setDraftPrivacy] = useState<"public" | "private">("public")
+	// Poll options are drafted WITHOUT votes — the server preserves those by option id, so the
+	// client never has to carry (or risk dropping) what guests voted for.
+	type DraftPollOption = { id: string; date: string; time?: string; label?: string }
+	const [draftPollActive, setDraftPollActive] = useState(false)
+	const [draftPollQuestion, setDraftPollQuestion] = useState("")
+	const [draftPollOptions, setDraftPollOptions] = useState<DraftPollOption[]>([])
+	const [newPollDate, setNewPollDate] = useState("")
+	const [newPollTime, setNewPollTime] = useState("")
+	const [newPollLabel, setNewPollLabel] = useState("")
 	// Ticket drafts mirror the manage form's: a working list plus the one being edited.
 	const [draftTickets, setDraftTickets] = useState<TicketData[]>([])
 	const [ticketEditIndex, setTicketEditIndex] = useState<number | null>(null)
@@ -329,6 +338,19 @@ export default function HostedEvents({ event }: Props) {
 		setDraftShowOnMobile(!!(shownEvent as any)?.showOnMobile)
 		setDraftCapacity(shownEvent?.capacity != null ? String(shownEvent.capacity) : "")
 		setDraftPrivacy(shownEvent?.privacy === "private" ? "private" : "public")
+		setDraftPollActive(!!shownEvent?.datePoll?.isActive)
+		setDraftPollQuestion(shownEvent?.datePoll?.question || "")
+		setDraftPollOptions(
+			((shownEvent?.datePoll?.options || []) as any[]).map((o: any) => ({
+				id: o.id,
+				date: o.date,
+				time: o.time || "",
+				label: o.label || "",
+			})),
+		)
+		setNewPollDate("")
+		setNewPollTime("")
+		setNewPollLabel("")
 		// Same mapping the manage form makes: stored `_id` becomes the client `id`, which is what
 		// keeps a ticket's identity (and its Stripe price) across an edit.
 		setDraftTickets(
@@ -508,7 +530,7 @@ export default function HostedEvents({ event }: Props) {
 					date ? dayjs.tz(`${date} ${time || "00:00"}`, "YYYY-MM-DD HH:mm", zone).utc().toISOString() : ""
 				// Only when this event isn't running a poll — a poll and fixed dates are mutually
 				// exclusive, and the poll is edited in Manage Event.
-				if (!isDatePollActive) {
+				if (!draftPollActive) {
 					payload.startsOn = toInstant(draftStartDate, draftStartTime)
 					payload.endsOn = toInstant(draftEndDate, draftEndTime)
 					payload.hasStartTime = !!draftStartTime
@@ -525,6 +547,11 @@ export default function HostedEvents({ event }: Props) {
 			payload.showOnMobile = draftShowOnMobile
 			payload.capacity = Number(draftCapacity) || 0
 			payload.privacy = draftPrivacy
+			payload.datePoll = {
+				isActive: draftPollActive,
+				question: draftPollQuestion,
+				options: draftPollOptions,
+			}
 
 			await axios.patch(`/api/events/${clonedEvent?._id}/details`, payload)
 			setEditingSection(null)
@@ -1103,9 +1130,9 @@ export default function HostedEvents({ event }: Props) {
 											{/* A poll and fixed dates are mutually exclusive, and the poll (with
 											    its votes) is edited in Manage Event — so the dates are read-only
 											    here rather than silently ignored on save. */}
-											{isDatePollActive ? (
+											{draftPollActive ? (
 												<Text fontSize="xs" color="orange.400" mb={4}>
-													This event is running a date poll, so its dates are set by the poll. Edit it in Manage Event.
+													The date poll below decides this event&apos;s dates, so the fixed dates are off.
 												</Text>
 											) : (
 												<Flex direction="column" gap={3} mb={4}>
@@ -1346,6 +1373,127 @@ export default function HostedEvents({ event }: Props) {
 													Draft / published status is in Manage Event.
 												</Text>
 											</Flex>
+										</Box>
+
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={4}>
+											<Flex align="center" justify="space-between" gap={4} mb={draftPollActive ? 4 : 0}>
+												<Box>
+													<Heading size="md" color="white">Date Poll</Heading>
+													<Text fontSize="12px" color="#868686" mt={1}>
+														Let attendees vote on a date instead of fixing one.
+													</Text>
+												</Box>
+												<Switch
+													colorScheme="orange"
+													isChecked={draftPollActive}
+													onChange={(e) => {
+														const next = e.target.checked
+														setDraftPollActive(next)
+														// A poll and fixed dates are mutually exclusive — the poll IS the
+														// date. Clearing them here is what manage does on the same toggle.
+														if (next) {
+															setDraftStartDate("")
+															setDraftStartTime("")
+															setDraftEndDate("")
+															setDraftEndTime("")
+														}
+													}}
+												/>
+											</Flex>
+
+											{draftPollActive && (
+												<>
+													<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Question (optional)</Text>
+													<Input
+														value={draftPollQuestion}
+														onChange={(e) => setDraftPollQuestion(e.target.value)}
+														placeholder="e.g. Which date suits you best?"
+														maxLength={300}
+														className={roboto.className}
+														bg="#090C10"
+														color="white"
+														fontSize="14px"
+														h="48px"
+														border="1px solid #343536"
+														_focus={{ borderColor: "#343536", boxShadow: "none" }}
+														mb={4}
+													/>
+
+													{draftPollOptions.map((opt, idx) => (
+														<Flex key={opt.id} align="center" justify="space-between" bg="#2B2B2B" rounded="md" px="3" py="2" mb="2" border="1px solid #464646">
+															<Box minW={0}>
+																<Text fontSize="sm" fontWeight="bold" color="white">{opt.date} {opt.time}</Text>
+																{opt.label && <Text fontSize="xs" color="gray.400">{opt.label}</Text>}
+															</Box>
+															<button
+																type="button"
+																onClick={() => setDraftPollOptions((prev) => prev.filter((_, i) => i !== idx))}
+																className="text-red-400 text-xs px-2 py-1 rounded hover:bg-[#3A3A3A] flex-shrink-0"
+															>
+																Remove
+															</button>
+														</Flex>
+													))}
+
+													{draftPollOptions.length === 0 && (
+														<Text fontSize="xs" color="#8a8a8a" mb={2}>
+															No dates yet — add at least one, or turn the poll off.
+														</Text>
+													)}
+
+													{/* Added inline rather than behind a modal: a modal to type one date
+													    is a lot of ceremony inside an editor the host is already in. */}
+													<Flex gap={2} mt={3} wrap="wrap" align="center">
+														<Box position="relative" flex="1" minW="140px">
+															<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<DatePicker key={`poll-date-${draftPollOptions.length}`} className={dtFieldCls} onChange={(d: string) => setNewPollDate(d)} defaultDate={newPollDate} placeholder="Date" />
+														</Box>
+														<Box position="relative" flex="1" minW="120px">
+															<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
+															<TimePicker key={`poll-time-${draftPollOptions.length}`} className={dtFieldCls} onChange={(t: string) => setNewPollTime(t)} defaultValue={newPollTime} placeholder="Time" />
+														</Box>
+														<Input
+															value={newPollLabel}
+															onChange={(e) => setNewPollLabel(e.target.value)}
+															placeholder="Label (optional)"
+															className={roboto.className}
+															bg="#090C10"
+															color="white"
+															fontSize="14px"
+															h="48px"
+															border="1px solid #343536"
+															_focus={{ borderColor: "#343536", boxShadow: "none" }}
+															flex="1"
+															minW="140px"
+														/>
+														<button
+															type="button"
+															onClick={() => {
+																if (!newPollDate) {
+																	toast({ title: "Pick a date first", status: "warning", duration: 2500, isClosable: true })
+																	return
+																}
+																// A fresh id: the server keys votes off it, so a new option
+																// correctly starts with none.
+																setDraftPollOptions((prev) => [
+																	...prev,
+																	{ id: uniqueId(10), date: newPollDate, time: newPollTime, label: newPollLabel },
+																])
+																setNewPollDate("")
+																setNewPollTime("")
+																setNewPollLabel("")
+															}}
+															className="border border-dashed border-[#666] px-4 h-[48px] text-sm rounded-md hover:bg-[#1C1F24] flex-shrink-0"
+														>
+															+ Add date
+														</button>
+													</Flex>
+
+													<Text fontSize="xs" color="#8a8a8a" mt={3}>
+														Votes already cast are kept — only a date you remove loses its votes.
+													</Text>
+												</>
+											)}
 										</Box>
 
 										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={4}>
