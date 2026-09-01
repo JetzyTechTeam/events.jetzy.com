@@ -1488,20 +1488,49 @@ export default function HostedEvents({ event }: Props) {
 					)}
 					{clonedEvent && isEnded && canManage && (
 						<div className={isDatePollActive ? "mt-8" : "max-w-4xl mx-auto mt-8"}>
-							<button
-								type="button"
-								onClick={() => setEndedTicketsOpen((v) => !v)}
-								aria-expanded={endedTicketsOpen}
-								className="flex w-full items-center justify-between gap-2 rounded-2xl border border-[#434343] bg-[#5656561e] px-4 py-3 text-left"
-							>
-								<span className="text-sm sm:text-base font-semibold">Tickets</span>
-								{endedTicketsOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
-							</button>
+							{/* An ended event's tickets are still editable — prices and names get
+							    corrected after the fact, and the host shouldn't have to go to
+							    Manage Event for that. The Edit control is a SIBLING of the collapse
+							    toggle, never inside it: a button within a button is invalid and
+							    swallows the click. */}
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => setEndedTicketsOpen((v) => !v)}
+									aria-expanded={endedTicketsOpen}
+									className="flex flex-1 items-center justify-between gap-2 rounded-2xl border border-[#434343] bg-[#5656561e] px-4 py-3 text-left"
+								>
+									<span className="text-sm sm:text-base font-semibold">Tickets</span>
+									{endedTicketsOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
+								</button>
+								{editingSection !== "tickets" && (
+									<button
+										type="button"
+										onClick={() => {
+											if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
+											// Opening the editor opens the panel with it — editing a list
+											// the host can't see would be its own small trap.
+											setEndedTicketsOpen(true)
+											startEventEdit("tickets")
+										}}
+										className="border border-[#F79432] text-[#F79432] py-1 px-3 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors flex-shrink-0"
+									>
+										Edit tickets
+									</button>
+								)}
+							</div>
 							{/* The component carries its own `mt-8`, which would leave a gap between
 							    the toggle and the panel it opens. */}
 							{endedTicketsOpen && (
 								<div className="[&>div]:!mt-2">
-									<EventTicketsComponent event={clonedEvent} />
+									{editingSection === "tickets" ? (
+										<TicketsInlineEditor />
+									) : (
+										<EventTicketsComponent
+											key={(shownEvent?.tickets || []).map((t: any) => `${t._id || t.id}:${t.price}:${t.name}`).join("|")}
+											event={shownEvent as IEvent}
+										/>
+									)}
 								</div>
 							)}
 						</div>
