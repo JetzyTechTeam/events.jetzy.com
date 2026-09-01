@@ -81,8 +81,15 @@ import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-ic
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 
-/** Which block of the event page is currently in edit mode. */
-type EditSection = "media" | "header" | "description" | "options" | "interests" | "tickets"
+/**
+ * Which block of the event page is in edit mode.
+ *
+ * Two, by decision: "details" is everything about the event itself — banner, benefits, title,
+ * schedule, location, description, options and interests, opened by the one Edit beside the
+ * Description heading — and "tickets" is its own, because tickets carry money and save through
+ * a different endpoint.
+ */
+type EditSection = "details" | "tickets"
 
 // Same field classes the manage form uses, so the pickers render identically here.
 const fieldBase = "w-full h-[48px] rounded-md bg-[#090C10] text-white text-[14px] border border-[#343536] focus:outline-none"
@@ -435,11 +442,11 @@ export default function HostedEvents({ event }: Props) {
 	const saveEventEdits = async (section: EditSection) => {
 		const name = draftName.trim()
 
-		if (section === "header" && !name) {
+		if (section === "details" && !name) {
 			toast({ title: "The event needs a name", status: "warning", duration: 3000, isClosable: true })
 			return
 		}
-		if (section === "media") {
+		if (section === "details") {
 			if (draftImages.length === 0 && draftVideos.length === 0) {
 				toast({ title: "Keep at least one photo or video", status: "warning", duration: 3000, isClosable: true })
 				return
@@ -475,7 +482,7 @@ export default function HostedEvents({ event }: Props) {
 			const payload: any = {}
 			const live: any = {}
 
-			if (section === "media") {
+			if (section === "details") {
 				// `images` and `videos` are two separate arrays that cannot express order between
 				// them; `mediaOrder` is what carries the host's arrangement across both. All three
 				// go together — the endpoint rejects them apart, and rejects an order that isn't
@@ -500,7 +507,7 @@ export default function HostedEvents({ event }: Props) {
 				setLiveBenefits(draftBenefits)
 			}
 
-			if (section === "header") {
+			{
 				payload.name = name
 				payload.location = draftLocation
 				payload.venueName = draftVenueName
@@ -540,17 +547,13 @@ export default function HostedEvents({ event }: Props) {
 				})
 			}
 
-			if (section === "description") {
-				payload.desc = draftDesc
-				setLiveDesc(draftDesc)
-			}
+			payload.desc = draftDesc
+			setLiveDesc(draftDesc)
 
-			if (section === "interests") {
-				payload.interests = draftInterests
-				live.interests = draftInterests
-			}
+			payload.interests = draftInterests
+			live.interests = draftInterests
 
-			if (section === "options") {
+			{
 				payload.requireApproval = draftRequireApproval
 				payload.locationDisclosedAfterBooking = draftLocationDisclosed
 				payload.showOnMobile = draftShowOnMobile
@@ -1016,14 +1019,7 @@ export default function HostedEvents({ event }: Props) {
 					<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 						{/* Banner Media (images + videos combined) */}
 						<div className="relative p-3">
-							{/* The banner has no heading of its own, so its Edit sits above it. */}
-							{canManage && (
-								<div className="flex items-center justify-end gap-2 mb-2">
-									{editingSection !== "media" && <Text fontSize="xs" color="#8a8a8a">Banner &amp; benefits</Text>}
-									<SectionEditControls section="media" label="Edit banner" />
-								</div>
-							)}
-							{editingSection === "media" ? (
+							{editingSection === "details" ? (
 								<div className="rounded-xl border border-[#2a2a2a] bg-[#181818] p-4">
 									{/* Same component, same props, same handler names as the manage form's
 									    Event Media box — including that deleting an IMAGE is immediate. */}
@@ -1114,7 +1110,7 @@ export default function HostedEvents({ event }: Props) {
 							    produced ragged centred text under a centred heading. */}
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
 								<div className="text-left w-full sm:w-auto min-w-0">
-									{editingSection === "header" ? (
+									{editingSection === "details" ? (
 										// Same field as the manage form's Event title, down to the 100-char
 										// cap and the counter. The server accepts up to 300, but a title that
 										// only one of the two screens will let you type is worse than a
@@ -1139,19 +1135,11 @@ export default function HostedEvents({ event }: Props) {
 												{draftName?.length || 0}/100
 											</InputLeftElement>
 										</InputGroup>
-										<Flex justify="flex-end" mt={2}>
-											<SectionEditControls section="header" />
-										</Flex>
 										</>
 									) : (
-										<div className="flex items-start justify-between gap-2">
-											<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
-											{/* Title, schedule and location are one section: they are the "when and
-											    where" a host fixes together. */}
-											<SectionEditControls section="header" label="Edit details" />
-										</div>
+										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
 									)}
-									{editingSection === "header" && (
+									{editingSection === "details" && (
 										<Box mt={4} mb={2} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4}>
 											{/* Time zone — same control and same class as the manage form. */}
 											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>Time zone</Text>
@@ -1321,11 +1309,11 @@ export default function HostedEvents({ event }: Props) {
 								{isDatePollActive && (
 									<DatePollTeaser event={clonedEvent} onOpenPoll={onPollModalOpen} />
 								)}
-								{editingSection === "description" ? (
+								{editingSection === "details" ? (
 									<>
 										<div className="flex items-center justify-between gap-2 mb-2">
 											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-											<SectionEditControls section="description" />
+											<SectionEditControls section="details" label="Edit" />
 										</div>
 										{/* The same editor as the manage form, so both screens read and write
 										    the same HTML. A plain textarea here would have flattened markup a
@@ -1333,6 +1321,50 @@ export default function HostedEvents({ event }: Props) {
 										    sanitises and renders that HTML for guests. */}
 										<RichTextEditor value={draftDesc} onChange={setDraftDesc} placeholder="Add Description" />
 										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{stripHtml(draftDesc || "").length}/500</p>
+
+										{/* Options and Interests live inside this one editor rather than
+										    carrying Edit buttons of their own — there are two on the page,
+										    this and Tickets, and everything about the event itself saves
+										    together here. */}
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={5}>
+											<Heading size="md" color="white" mb={4}>Event Options</Heading>
+											<Flex direction="column" gap={4}>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Require Approval</Text>
+														<Text fontSize="12px" color="#868686" maxW="420px" lineHeight="140%">
+															Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.
+														</Text>
+													</Box>
+													<Switch colorScheme="orange" isChecked={draftRequireApproval} onChange={(e) => setDraftRequireApproval(e.target.checked)} />
+												</Flex>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Disclose Location After Booking</Text>
+														<Text fontSize="12px" color="#868686">Attendees see location only in booking email</Text>
+													</Box>
+													<Switch colorScheme="orange" isChecked={draftLocationDisclosed} onChange={(e) => setDraftLocationDisclosed(e.target.checked)} />
+												</Flex>
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Show on Mobile</Text>
+														<Text fontSize="12px" color="#868686">Display this event in the Jetzy mobile app</Text>
+													</Box>
+													<Switch colorScheme="orange" isChecked={draftShowOnMobile} onChange={(e) => setDraftShowOnMobile(e.target.checked)} />
+												</Flex>
+												{/* Privacy, status and capacity stay in Manage Event — each has a
+												    side effect beyond this page (admin re-approval, publishing a
+												    draft, the capacity tracker). */}
+												<Text fontSize="xs" color="#8a8a8a">
+													Privacy, draft/published and capacity are in Manage Event.
+												</Text>
+											</Flex>
+										</Box>
+
+										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={4}>
+											{/* The same selector the manage form uses, `bare` and all. */}
+											<InterestsSelector bare selected={draftInterests} onChange={setDraftInterests} />
+										</Box>
 									</>
 								) : isEnded ? (
 									<>
@@ -1348,7 +1380,7 @@ export default function HostedEvents({ event }: Props) {
 												<h3 className="text-sm sm:text-base font-semibold">Description</h3>
 												{endedDescOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
 											</button>
-											<SectionEditControls section="description" />
+											<SectionEditControls section="details" label="Edit" />
 										</div>
 										{endedDescOpen && <EventDescription description={shownDesc} />}
 									</>
@@ -1356,7 +1388,7 @@ export default function HostedEvents({ event }: Props) {
 									<>
 										<div className="flex items-center justify-between gap-2">
 											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-											<SectionEditControls section="description" />
+											<SectionEditControls section="details" label="Edit" />
 										</div>
 										<EventDescription description={shownDesc} />
 									</>
@@ -1436,79 +1468,6 @@ export default function HostedEvents({ event }: Props) {
 
 					{/* Tickets are hidden once the event has ended, except for host/admin — and for
 					    them it collapses, since nothing is on sale any more. */}
-					{/* Host-only sections. They have no guest-facing equivalent, so unlike the blocks
-					    above they render only for an admin or the owner. */}
-					{canManage && (
-						<div className="max-w-4xl mx-auto mt-8 flex flex-col gap-4">
-							<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-								<Flex align="center" justify="space-between" gap={2} mb={4}>
-									<Heading size="md" color="white">Event Options</Heading>
-									<SectionEditControls section="options" />
-								</Flex>
-								{editingSection === "options" ? (
-									<Flex direction="column" gap={4}>
-										<Flex align="center" justify="space-between" gap={4}>
-											<Box>
-												<Text color="white" fontWeight={500}>Require Approval</Text>
-												<Text fontSize="12px" color="#868686" maxW="420px" lineHeight="140%">
-													Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.
-												</Text>
-											</Box>
-											<Switch colorScheme="orange" isChecked={draftRequireApproval} onChange={(e) => setDraftRequireApproval(e.target.checked)} />
-										</Flex>
-										<Flex align="center" justify="space-between" gap={4}>
-											<Box>
-												<Text color="white" fontWeight={500}>Disclose Location After Booking</Text>
-												<Text fontSize="12px" color="#868686">Attendees see location only in booking email</Text>
-											</Box>
-											<Switch colorScheme="orange" isChecked={draftLocationDisclosed} onChange={(e) => setDraftLocationDisclosed(e.target.checked)} />
-										</Flex>
-										<Flex align="center" justify="space-between" gap={4}>
-											<Box>
-												<Text color="white" fontWeight={500}>Show on Mobile</Text>
-												<Text fontSize="12px" color="#868686">Display this event in the Jetzy mobile app</Text>
-											</Box>
-											<Switch colorScheme="orange" isChecked={draftShowOnMobile} onChange={(e) => setDraftShowOnMobile(e.target.checked)} />
-										</Flex>
-										{/* Privacy, status and capacity stay in Manage Event — each has a
-										    side effect beyond this page (admin re-approval, publishing a
-										    draft, the capacity tracker). */}
-										<Text fontSize="xs" color="#8a8a8a">
-											Privacy, draft/published and capacity are in Manage Event.
-										</Text>
-									</Flex>
-								) : (
-									<Flex direction="column" gap={2}>
-										<Text color="#bbbbbb" fontSize="sm">
-											Require approval: <Text as="span" color="white">{shownEvent?.requireApproval ? "On" : "Off"}</Text>
-										</Text>
-										<Text color="#bbbbbb" fontSize="sm">
-											Disclose location after booking: <Text as="span" color="white">{shownEvent?.locationDisclosedAfterBooking ? "On" : "Off"}</Text>
-										</Text>
-										<Text color="#bbbbbb" fontSize="sm">
-											Show on mobile: <Text as="span" color="white">{(shownEvent as any)?.showOnMobile ? "On" : "Off"}</Text>
-										</Text>
-									</Flex>
-								)}
-							</Box>
-
-							<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-								<Flex align="center" justify="space-between" gap={2} mb={4}>
-									<Heading size="md" color="white">Interests</Heading>
-									<SectionEditControls section="interests" />
-								</Flex>
-								{editingSection === "interests" ? (
-									/* The same selector the manage form uses, `bare` and all. */
-									<InterestsSelector bare selected={draftInterests} onChange={setDraftInterests} />
-								) : (
-									<Text color="#bbbbbb" fontSize="sm">
-										{((shownEvent?.interests ?? []) as any[]).length} selected
-									</Text>
-								)}
-							</Box>
-						</div>
-					)}
-
 					{clonedEvent && !isEnded && (
 						editingSection === "tickets" ? (
 							<TicketsInlineEditor />
