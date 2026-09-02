@@ -595,15 +595,20 @@ through our checkout code — still reaches them.
   someone's billing, so it isn't. Only `cancelled` is accepted — accepting `active` would let
   their side hand out a membership nobody was billed for.
 
-**Concierge is withheld from the ticket form** until the SelectMember integration has been
-watched working end to end. `HOST_SELECTABLE_MEMBERSHIP_KEYS` in `memberships.ts`;
-`NEXT_PUBLIC_ENABLE_CONCIERGE_TICKETS=true` releases it (a `NEXT_PUBLIC_` var, so it is baked
-in at build time and needs a redeploy). This is a **visibility gate, not a kill switch** — a
-ticket that already sells Concierge keeps selling it, checkout still charges for it, and every
-subscription already created keeps renewing. `TicketMembershipToggles` still renders a
-withheld key when a ticket already has it, so the host can see and remove it rather than
-carrying invisible state; `toggle()` rebuilds from the full `MEMBERSHIP_KEYS` so editing an
-existing ticket can't silently strip it.
+**Concierge is live in the ticket form.** The `HOST_SELECTABLE_MEMBERSHIP_KEYS` /
+`NEXT_PUBLIC_ENABLE_CONCIERGE_TICKETS` visibility gate is **gone** — it existed only to hold the
+product back until someone had watched the flow work, and a switch kept "in case" is machinery
+that rots. `c8fe3cf` has it if it is ever wanted back. It was never a kill switch: checkout
+always charged for Concierge, subscriptions always renewed, the SelectMember mirror was always
+live. Only the checkbox was hidden.
+
+`TicketMembershipToggles` copy is **derived from what is ticked**, via `membershipLabelList` —
+it used to read "For premium members only" / "+ Jetzy Premium subscription", which becomes a
+misstatement to the host the moment a Concierge ticket is possible. `toggle()` rebuilds from
+the full `MEMBERSHIP_KEYS` so the stored order stays canonical. Concierge is labelled
+**"(billed monthly)"** because the Billed control appears whenever Premium is ticked, and on a
+both-products ticket "Annual" would otherwise read as applying to both; the annual warning names
+Concierge's first month separately for the same reason.
 
 **Other knock-ons:**
 - `user.stripeCustomerId` moved to the **root** (a billing identity, not a membership).

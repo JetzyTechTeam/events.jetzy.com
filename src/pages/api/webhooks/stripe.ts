@@ -40,6 +40,7 @@ const mirrorToSelectMember = async (
 	}
 	await syncSelectMembership({
 		email: recipient.email,
+		key,
 		status,
 		externalSubscriptionId: subscription?.id,
 		...(subscription?.start_date ? { startedAt: new Date(subscription.start_date * 1000) } : {}),
@@ -488,13 +489,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					)
 					: null
 				const key = renewedSubscription ? subscriptionMembershipKey(renewedSubscription) : null
-				if (renewedSubscription && !key) {
-					console.error("[webhooks/stripe] invoice.paid for an unrecognised product, ignoring:", renewedSubscription.id)
+				// No key means either an unrecognised product or — since `subscription_cycle`
+				// implies one exists — an invoice we couldn't tie back to a subscription at all.
+				// Both must stop here: `sendMembershipRenewed` defaults an absent label to Jetzy
+				// Premium, so carrying on would send a Concierge member a Premium receipt.
+				if (!key || !renewedSubscription) {
+					console.error(
+						"[webhooks/stripe] invoice.paid with no identifiable membership, ignoring:",
+						renewedSubscription?.id || invoice.id,
+					)
 					break
 				}
 
 				// Push the new period end outward so their site's expiry stays in step.
-				if (key && renewedSubscription) await mirrorToSelectMember(key, customerId, "active", renewedSubscription)
+				await mirrorToSelectMember(key, customerId, "active", renewedSubscription)
 
 				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 				if (!recipient) break
@@ -505,7 +513,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					amount: (invoice.amount_paid ?? 0) / 100,
 					interval: line?.price?.recurring?.interval || "month",
 					nextBillingDate: invoice.period_end ? new Date(invoice.period_end * 1000) : undefined,
-					...(key ? { label: MEMBERSHIPS[key].label } : {}),
+					label: MEMBERSHIPS[key].label,
 				})
 				break
 			}

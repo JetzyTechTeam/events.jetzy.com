@@ -151,6 +151,7 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 	if (MEMBERSHIPS[key].selectMemberPlan && email) {
 		await syncSelectMembership({
 			email,
+			key,
 			status: "active",
 			externalSubscriptionId: subscription.id,
 			startedAt: new Date(),

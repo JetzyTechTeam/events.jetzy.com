@@ -200,9 +200,9 @@ export const resolveBundleMode = (tickets: BundleTicketLike[] | null | undefined
  */
 export const bundleApprovalNotice = (keys: MembershipKey[], interval?: string | null): string => {
 	const annual = interval === "year"
-	// Premium alone is the only combination reachable while Concierge is withheld from the
-	// ticket form, so it gets the exact approved wording. Anything else has the membership
-	// named instead, so a Concierge ticket can't claim "the first month's premium".
+	// Premium alone keeps the exact approved wording, which is what the vast majority of
+	// bundled tickets are. Anything else has the membership named instead, so a Concierge
+	// ticket — or one selling both — can't claim "the first month's premium".
 	const period =
 		keys.length === 1 && keys[0] === "premium"
 			? annual ? "the first year's premium" : "the first month's premium"
