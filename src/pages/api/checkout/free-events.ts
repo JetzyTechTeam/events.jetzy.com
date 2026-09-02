@@ -181,9 +181,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (stillOwed.length > 0) {
 			console.warn("[checkout/free-events] Rejected a ticket still owing a membership:", { eventId, owed: stillOwed })
+			// `needsCheckout` is a routing verdict, not just a message. A free ticket that sells
+			// a membership is a $0 registration for a member and a purchase for everyone else,
+			// and the client decides which from a lookup of the typed address that can be stale
+			// or still in flight — so it retries through Stripe on this flag rather than showing
+			// the buyer an instruction they have no way to act on.
 			return sendResponse(
 				res,
-				null,
+				{ needsCheckout: true, owed: stillOwed },
 				`This ticket includes ${membershipLabelList(stillOwed)} — please complete checkout.`,
 				false,
 				400,

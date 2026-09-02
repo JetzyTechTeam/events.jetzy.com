@@ -342,46 +342,79 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		// order down the free path, which issues a booking with no charge and no subscription —
 		// the buyer got the ticket and quietly lost the membership they were promised. The
 		// server enforces the same rule in `api/checkout/free-events`.
+		//
+		// A FREE ticket that sells a membership makes this decision genuinely two-sided: the
+		// same ticket is a $0 registration for an existing member and a membership purchase for
+		// everybody else, and which one it is depends on a lookup of the typed address that may
+		// not have answered yet (`heldByEmail === null` reads as "charge nothing" here). So
+		// neither side of the branch is trusted to be final — each falls through to the other
+		// once, on the server's own verdict, rather than dead-ending on a message the buyer can
+		// do nothing about.
 		if ((pricing.dueToday ?? pricing.total) === 0) {
-			const eventId = (tickets[0] as any)?.eventId || eventData?._id
-			const customAnswersArray = Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
-			try {
-				const response = await fetch('/api/checkout/free-events', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						tickets: JSON.stringify(tickets),
-						user: JSON.stringify(formData),
-						eventId,
-						// Sent so the server can reproduce the same $0 and record WHY it was free.
-						referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
-						customAnswers: JSON.stringify(customAnswersArray),
-						acceptedTerms: acceptedTerms,
-					}),
-				})
-				const result = await response.json()
-				if (result.status) {
-					setFreeBookingRef(result.data?.bookingRef)
-					if (result.data?.pendingApproval) {
-						setPendingApproval(true)
-					} else {
-						setFreeRegistrationSuccess(true)
-						// The reload refreshes remaining capacity for a buyer who is staying on the
-						// page. For one who came from the app it would destroy the return link
-						// before they could tap it, and they are not staying anyway.
-						if (!cameFromApp()) setTimeout(() => window.location.reload(), 2500)
-					}
-				} else {
-					Error("Registration Failed", result.message || "Something went wrong. Please try again.")
-				}
-			} catch (err) {
-				console.error("Free ticket registration error:", err)
-				Error("Error", "Something went wrong. Please try again.")
-			}
+			await submitFreeOrder(true)
 			return
 		}
 
-		dispatch(
+		await submitStripeOrder(true)
+	}
+
+	/**
+	 * The free path. `mayFallBack` allows exactly one hop to Stripe when the server says this
+	 * order actually owes a membership — the client's membership lookup was stale or had not
+	 * answered yet. It is false on the hop back, so the two can never ping-pong.
+	 */
+	const submitFreeOrder = async (mayFallBack: boolean) => {
+		const eventId = (tickets[0] as any)?.eventId || eventData?._id
+		const customAnswersArray = Object.entries(customAnswers).map(([qId, answer]) => ({ questionId: qId, answer }))
+		try {
+			const response = await fetch('/api/checkout/free-events', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					tickets: JSON.stringify(tickets),
+					user: JSON.stringify(formData),
+					eventId,
+					// Sent so the server can reproduce the same $0 and record WHY it was free.
+					referralCode: formData.referralCode?.trim()?.toUpperCase() || undefined,
+					customAnswers: JSON.stringify(customAnswersArray),
+					acceptedTerms: acceptedTerms,
+				}),
+			})
+			const result = await response.json()
+			if (result.status) {
+				setFreeBookingRef(result.data?.bookingRef)
+				if (result.data?.pendingApproval) {
+					setPendingApproval(true)
+				} else {
+					setFreeRegistrationSuccess(true)
+					// The reload refreshes remaining capacity for a buyer who is staying on the
+					// page. For one who came from the app it would destroy the return link
+					// before they could tap it, and they are not staying anyway.
+					if (!cameFromApp()) setTimeout(() => window.location.reload(), 2500)
+				}
+				return
+			}
+			// `needsCheckout` is the server saying this order still owes a membership. Sending
+			// the buyer to Stripe is exactly what that message asks for, so do it rather than
+			// printing it — the reason it happened is invisible to them.
+			if (mayFallBack && result.data?.needsCheckout) {
+				await submitStripeOrder(false)
+				return
+			}
+			Error("Registration Failed", result.message || "Something went wrong. Please try again.")
+		} catch (err) {
+			console.error("Free ticket registration error:", err)
+			Error("Error", "Something went wrong. Please try again.")
+		}
+	}
+
+	/**
+	 * The Stripe path. `mayFallBack` allows one hop to the free path when the server finds
+	 * there is nothing left to charge — a $0 ticket whose memberships the buyer turns out to
+	 * already hold. Stripe is never asked to open a $0 session for it.
+	 */
+	const submitStripeOrder = async (mayFallBack: boolean) => {
+		const res: any = await dispatch(
 			CreateCheckoutSessionThunk({
 				data: {
 					tickets: JSON.stringify(tickets),
@@ -396,19 +429,23 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 					fromApp: cameFromApp(),
 				} as any,
 			}),
-		).then((res: any) => {
-			if (res.payload?.status) {
-				// Check if event is at capacity
-				if (res.payload?.data?.atCapacity) {
-					setWaitingListData(res.payload.data)
-					setShowWaitingList(true)
-				} else {
-					// redirect user to payment page
-					dispatch(toggleCheckoutForm(false))
-					window.location.href = res?.payload?.data?.url
-				}
-			}
-		})
+		)
+		if (!res.payload?.status) return
+		// Nothing chargeable after the server's own membership check: the ticket is free and
+		// every membership on it is already held.
+		if (res.payload?.data?.freeOrder) {
+			if (mayFallBack) await submitFreeOrder(false)
+			return
+		}
+		// Check if event is at capacity
+		if (res.payload?.data?.atCapacity) {
+			setWaitingListData(res.payload.data)
+			setShowWaitingList(true)
+			return
+		}
+		// redirect user to payment page
+		dispatch(toggleCheckoutForm(false))
+		window.location.href = res?.payload?.data?.url
 	}
 
 	// Handle joining waiting list

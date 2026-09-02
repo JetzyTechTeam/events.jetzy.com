@@ -265,8 +265,17 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	// "not payable" would silently drop the booking.
 	const isSubscriptionSettled =
 		!isPaidNow && !!subscriptionId && (session.status === "complete" || invoice?.status === "paid" || session.payment_status === "no_payment_required")
+	// The same thing without a subscription: a completed session that Stripe decided owed
+	// nothing. `api/checkout` refuses to open one of these (it routes the order to the free
+	// path instead), but a session already in flight when that landed — or any future order
+	// discounted to exactly $0 — would otherwise complete for the buyer and be dropped here
+	// with no booking, no email and no log line, because the webhook discards this reason.
+	// A completed session is the buyer having finished checkout; nothing owed is a verdict
+	// Stripe reached, not a payment that failed.
+	const isSettledWithoutCharge =
+		!isPaidNow && !isSubscriptionSettled && session.status === "complete" && session.payment_status === "no_payment_required"
 
-	if (!isPaidNow && !isAuthorized && !isSubscriptionSettled) {
+	if (!isPaidNow && !isAuthorized && !isSubscriptionSettled && !isSettledWithoutCharge) {
 		return { created: false, booking: null, event: null, requiresApproval, session, reason: "not-payable" }
 	}
 
@@ -354,7 +363,11 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	let booking: IBookings | null = null
 	try {
 		booking = await Bookings.create({
-			status: isPaidNow ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
+			// PENDING means "awaiting the host", which is only true of an authorized hold. A
+			// session Stripe settled for nothing owed is finished, not waiting on anybody, so
+			// it confirms like a paid one — leaving it PENDING would park it in the Approvals
+			// tab of an event that never asked for approval.
+			status: isPaidNow || isSettledWithoutCharge ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
 			eventId: metadata.eventId,
 			bookingRef,
 			// Present only when the buyer was logged in at checkout. Bookings made before this
@@ -405,12 +418,18 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					}
 					: {}),
 				captureMethod: isAuthorized ? "manual" : "automatic",
-				status: isAuthorized ? "authorized" : "captured",
+				// No `status` when nothing was charged: `bookingMoneyState` reads a missing one
+				// as "free", and "captured" against $0 would tell the guest money was taken and
+				// is being kept. This is the same shape `api/checkout/free-events` writes, for
+				// the same reason.
+				...(isSettledWithoutCharge ? {} : { status: isAuthorized ? "authorized" as const : "captured" as const }),
 				amount: chargedAmount,
 				currency: session.currency || "usd",
 				...(isAuthorized
 					? { authorizedAt: now, authExpiresAt: resolveAuthExpiry(pi, now) }
-					: { capturedAt: now }),
+					: isSettledWithoutCharge
+						? {}
+						: { capturedAt: now }),
 			},
 		})
 	} catch (error: any) {

@@ -75,7 +75,7 @@ import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
 import { useSession } from "next-auth/react";
-import { bundleFreeTicketMessage, ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle";
+import { ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle";
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
@@ -247,14 +247,6 @@ const CreateEventPage = () => {
     const hasDates = !!(values.startDate || values.endDate)
     if (pollActive && hasDates) {
       Error("Validation Error", "Remove either the date poll or the start/end dates before saving.");
-      return;
-    }
-
-    // A bundled ticket may require approval — the card is held for ticket + first membership
-    // period and the subscription starts on approval. It still needs a real price to hold.
-    const bundleFree = values.tickets?.find((t) => ticketMemberships(t as any).length > 0 && !(Number(t.price) > 0));
-    if (bundleFree) {
-      Error("Validation Error", `"${bundleFree.title}": ${bundleFreeTicketMessage(ticketMemberships(bundleFree as any))}`);
       return;
     }
 

@@ -7,7 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { resolveTickets, ticketsById, validateTicketBundles } from "@/lib/event-tickets"
+import { resolveTickets } from "@/lib/event-tickets"
 import { buildUniqueSlug, nextSlugHistory, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -208,11 +208,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// price only when the price actually changed, and treats requireApproval / memberships /
 		// membershipInterval as preserve-on-omit. Two copies of that would be two chances to
 		// orphan a booking or double-charge a buyer.
-		const bundleError = validateTicketBundles(ticketsById(event.tickets as any), tickets as any)
-		if (bundleError) {
-			return sendResponse(res, null, bundleError, false, ResCode.BAD_REQUEST)
-		}
-
 		const resolvedTickets = await resolveTickets(event.tickets as any, tickets as any)
 
 		// Date poll: votes are never taken from the client and never wiped by a save.
