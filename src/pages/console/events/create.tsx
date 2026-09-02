@@ -1091,7 +1091,7 @@ const CreateEventPage = () => {
                                 ? `Inherits the event setting (${values.requireApproval ? "On" : "Off"})`
                                 : !tempTicket.requireApproval
                                   ? "Guests book this ticket instantly."
-                                  : Number(tempTicket.price) > 0
+                                  : Number(tempTicket.price) > 0 || ticketMemberships(tempTicket as any).length > 0
                                     ? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
                                     : "Guests request a spot; you approve or decline."}
                             </Text>
