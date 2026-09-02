@@ -377,7 +377,11 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 						<p className="text-gray-400 text-sm mb-6">
 							{showMemberCard
 								? "Change your plan or cancel any time."
-								: "Upgrade anytime. Cancel anytime."}
+								/* Not "Upgrade anytime. Cancel anytime." any more: the card below states
+								   cancelling once, as its own sentence and with a link to how it is done,
+								   and a headline saying it again in passing is the vaguer of the two. The
+								   member line stays — that card has no such sentence, it has a button. */
+								: "Upgrade anytime."}
 						</p>
 						{/* The post-login resume case: they clicked Subscribe, signed in, and turned out
 						    to already be a member. Saying so is the whole point — otherwise the click

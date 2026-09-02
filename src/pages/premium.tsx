@@ -522,7 +522,7 @@ export default function PremiumPage() {
 			<div className="max-w-4xl mx-auto text-center mb-12">
 				<Image className="h-14 w-auto mx-auto mb-8" src={Logo} alt="Jetzy" />
 				<h1 className="text-3xl md:text-4xl font-bold mb-3">Choose your Jetzy plan</h1>
-				<p className="text-gray-400">Upgrade anytime. Cancel anytime.</p>
+				<p className="text-gray-400">Upgrade anytime.</p>
 			</div>
 
 			<div className="max-w-3xl mx-auto">
