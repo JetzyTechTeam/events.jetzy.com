@@ -510,18 +510,18 @@ const PlanComparison: React.FC<Props> = ({
 								    It used to be three words glued to the end of the billing line — "…from
 								    Oct 2, 2026. Cancel any time." — which reads as part of the charge rather
 								    than as a right the buyer has, and pointed at nothing. Wording is the
-								    CEO's (2026-09-02) and matches the ticket checkout modal. Said ONCE on
-								    this card: `trialDisclosure` no longer repeats it under the invite field.
+								    CEO's (2026-09-03). Said ONCE on this card: `trialDisclosure` no longer
+								    repeats it under the invite field.
 								    Opens in a new tab because this card renders mid-purchase on three
 								    surfaces, and navigating away discards the form. */}
-								<p className="text-xs mt-2">
+								<p className="text-sm mt-2">
 									<a
 										href={ROUTES.manageMembership}
 										target="_blank"
 										rel="noreferrer"
 										className="text-[#F79432] underline"
 									>
-										Click here to manage/cancel membership
+										Cancel anytime by clicking here
 									</a>
 								</p>
 								{/* The annual option, sold rather than merely listed.

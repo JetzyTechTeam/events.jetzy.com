@@ -747,8 +747,8 @@ annual selected the alternate is monthly and the plain "or $20/month · 50% Off"
 
 **Cancelling has its own line, and it is the link.** It used to be three words on the end of the
 billing line ("…from Oct 2, 2026. Cancel any time."), which reads as part of the charge and
-pointed at nothing. The card now renders **"Click here to manage/cancel membership"** under the
-price in the buying state (CEO's wording, matching the ticket checkout modal) — link to `ROUTES.manageMembership`, `target="_blank"` because this card is shown
+pointed at nothing. The card now renders **"Cancel anytime by clicking here"** under the
+price in the buying state (CEO's wording, 2026-09-03) — link to `ROUTES.manageMembership`, `target="_blank"` because this card is shown
 mid-purchase on three surfaces and navigating away discards the form. Said ONCE: `trialDisclosure`
 in `src/lib/invite-trial.ts` no longer appends "Cancel any time." to the invite-field line. A
 member sees no such line — they have "Manage in Stripe".
