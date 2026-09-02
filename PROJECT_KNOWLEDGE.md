@@ -719,6 +719,41 @@ cache entry and one formatter.
 matches selectmember.jetzy.com by decision (CEO, 2026-08-18) and is kept in one named constant
 so it can be changed or removed in a single edit.
 
+**An accepted invite code prices the card at $0** (CEO, 2026-09-02). The `trial` prop
+(`{ months, label, chargesFrom }`) is set by all three callers — `/premium`, `/subscribe`,
+`PremiumPaywallModal` — from the same debounced invite check that writes `inviteAccepted`, and
+when it is present the headline becomes **$0**, the struck-through figure becomes the **real**
+rate being waived ($20 / $200, not `COMPARE_AT_MULTIPLIER`), the green badge becomes the offer
+label ("1 Month Free"), and a new line states **"Then $20/Month from Oct 2, 2026. Cancel any
+time."** Before this the card still read "$20 /Month" with a code applied — it disagreed with
+what checkout was about to charge, and the free month appeared only in a small line under the
+field that buyers scrolled past.
+
+- **`trialApplied` requires a known `amount`.** With no rate loaded there is no "then $X from
+  date" to write, and $0 with nothing after it would be the entire disclosure.
+- **The callers clear `trial` at the top of every run of the invite effect**, so a code being
+  retyped or re-checked never leaves a stale $0 on screen, and the `"Invite code applied."`
+  fallback (which carries no months) sets it to null.
+- **The line at the price does not replace the green line under the field.** That one confirms
+  the code was accepted; this one prices it, where the price is actually read.
+- The alternate-interval sale block ("$200/Year — Save Even More · 50% Off + 2 Additional
+  Months Free") stays visible with a code applied, by decision.
+
+**The switch button says what the switch is worth**: `Get 2 more free months by switching to
+yearly`. The number comes from **`annualMonthsFreeOnSale`** — the prices on sale, $20/month
+against $200/year — and deliberately **not** from `annualMonthsFree`, which is computed against
+the member's own rate and would read "0" for a legacy $10/month member. The two months are a
+property of what annual costs, not of what a given member pays (CEO, 2026-09-02). Still derived,
+never hardcoded; the `Switch to {label}` fallback is unreachable in practice, since with no
+annual price there is no switch target and the button does not render. The trial paragraph below
+it keeps the member's own figures, because it names exact amounts. And the trial panel's annual paragraph now
+answers the question that button raises directly — *"Switch to yearly and your free trial stays
+active until {date} — you'll then be charged US$200/year instead of US$240. That's 2 months
+free."* It replaces the earlier "Want to save even more?" wording (CEO, 2026-09-02). The
+**cardless** trial branch is untouched: Stripe simply ends that trial, so no "you'll then be
+charged" sentence may appear there. The claim that the trial survives is only true because
+`STRIPE_PORTAL_SWITCH_CONFIG_ID` carries `trial_update_behavior: "continue_trial"`.
+
 ### Billing portal is scoped — no plan switching (`STRIPE_PORTAL_CONFIG_ID`)
 
 `/api/subscriptions/portal` used to create sessions with no `configuration`, falling through to

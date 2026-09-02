@@ -151,11 +151,19 @@ export default function SubscribePage() {
 	const [inviteAccepted, setInviteAccepted] = React.useState<string | null>(null)
 	const [inviteError, setInviteError] = React.useState<string | null>(null)
 	const [inviteChecking, setInviteChecking] = React.useState(false)
+	/**
+	 * The same offer, structured, for the plan card — which prices it ($0 today, then the rate on
+	 * the date it converts). The string above confirms the code; this says what it costs.
+	 */
+	const [trialOffer, setTrialOffer] = React.useState<{ months: number; label: string; chargesFrom: string | null } | null>(null)
 	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
 
 	React.useEffect(() => {
 		if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		const code = inviteCode.trim()
+		// Cleared on every run, before anything is resolved: while a code is being retyped or
+		// re-checked the card must show the ordinary price, never a stale $0.
+		setTrialOffer(null)
 		if (!code) {
 			setInviteAccepted(null)
 			setInviteError(null)
@@ -178,6 +186,11 @@ export default function SubscribePage() {
 			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
 			setInviteError(null)
 			setInviteAccepted(trialDisclosure(resolved.offer, preview?.label || null, trialEndsOn(resolved.offer)))
+			setTrialOffer({
+				months: resolved.offer.months,
+				label: resolved.offer.label,
+				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
+			})
 			return
 		}
 
@@ -202,9 +215,21 @@ export default function SubscribePage() {
 						)
 						: "Invite code applied.",
 				)
+				// Only the path that named the months: the bare "applied" fallback carries none, and
+				// the card must not show $0 for an offer it can't state the end of.
+				setTrialOffer(
+					data?.data?.label
+						? {
+							months: Number(data.data.months) || 0,
+							label: data.data.label,
+							chargesFrom: data?.data?.chargesFrom || null,
+						}
+						: null,
+				)
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
+				setTrialOffer(null)
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
 			} finally {
 				setInviteChecking(false)
@@ -316,6 +341,7 @@ export default function SubscribePage() {
 					inviteAccepted={inviteAccepted}
 					inviteError={inviteError}
 					inviteChecking={inviteChecking}
+					trial={trialOffer}
 					premiumDisabled={premiumLoading}
 					premiumPending={subscribeMutation.isPending}
 					onChooseFree={goToApp}
