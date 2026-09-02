@@ -739,6 +739,20 @@ field that buyers scrolled past.
 - The alternate-interval sale block ("$200/Year — Save Even More · 50% Off + 2 Additional
   Months Free") stays visible with a code applied, by decision.
 
+**The annual pitch is the CEO's copy** (2026-09-02) — "Save Even More with Annual Membership /
+Get 2 additional months FREE when you choose an annual membership. / $200/year — 12 months for the
+price of 10!" Every figure is derived: the months free from `annualMonthsFreeOnSale`, and "the
+price of 10" from twelve minus it. It renders only while monthly is the selected interval; with
+annual selected the alternate is monthly and the plain "or $20/month · 50% Off" fallback shows.
+
+**Cancelling is its own sentence, with a link.** It used to be three words on the end of the
+billing line ("…from Oct 2, 2026. Cancel any time."), which reads as part of the charge and
+pointed at nothing. The card now renders `Cancel anytime. How to cancel` under the price in the
+buying state — link to `ROUTES.manageMembership`, `target="_blank"` because this card is shown
+mid-purchase on three surfaces and navigating away discards the form. Said ONCE: `trialDisclosure`
+in `src/lib/invite-trial.ts` no longer appends "Cancel any time." to the invite-field line. A
+member sees no such line — they have "Manage in Stripe".
+
 **The switch button says what the switch is worth**: `Get 2 more free months by switching to
 yearly`. The number comes from **`annualMonthsFreeOnSale`** — the prices on sale, $20/month
 against $200/year — and deliberately **not** from `annualMonthsFree`, which is computed against

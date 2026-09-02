@@ -88,10 +88,16 @@ export const resolveTrialCode = (rawCode?: string | null, interval?: string | nu
 	return { ok: true, code, offer }
 }
 
-/** "2 months free, then $20/month from 18 Oct 2026" — the recurring terms, before purchase. */
+/**
+ * "2 months free, then $20/month from 18 Oct 2026" — the recurring terms, before purchase.
+ *
+ * It used to end "Cancel any time." as well. The plan card now says that once, as its own
+ * sentence and with a link to how it is done (CEO, 2026-09-02) — repeating it here put the same
+ * three words twice on one card, in the second-smallest text on it, pointing at nothing.
+ */
 export const trialDisclosure = (offer: TrialOffer, priceLabel: string | null, startsCharging: Date): string => {
 	const date = startsCharging.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-	return priceLabel ? `${offer.label}, then ${priceLabel} from ${date}. Cancel any time.` : `${offer.label}. Cancel any time.`
+	return priceLabel ? `${offer.label}, then ${priceLabel} from ${date}.` : `${offer.label}.`
 }
 
 /**

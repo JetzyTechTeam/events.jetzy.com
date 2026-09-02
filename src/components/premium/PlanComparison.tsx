@@ -2,6 +2,7 @@ import React from "react"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import Spinner from "@/components/misc/Spinner"
 import { trialEndsOn } from "@/lib/invite-trial"
+import { ROUTES } from "@/configs/routes"
 
 /**
  * What Jetzy Premium gets you.
@@ -502,9 +503,27 @@ const PlanComparison: React.FC<Props> = ({
 								{trialApplied && (
 									<p className="text-sm text-gray-300 mt-1">
 										Then {money(amount)}/{PERIOD_LABELS[interval] || interval}
-										{trialChargesOn ? ` from ${trialChargesOn}` : ""}. Cancel any time.
+										{trialChargesOn ? ` from ${trialChargesOn}` : ""}.
 									</p>
 								)}
+								{/* Cancelling is its own sentence, and it says where.
+								    It used to be three words glued to the end of the billing line — "…from
+								    Oct 2, 2026. Cancel any time." — which reads as part of the charge rather
+								    than as a right the buyer has, and pointed at nothing. Said ONCE on this
+								    card: `trialDisclosure` no longer repeats it under the invite field.
+								    Opens in a new tab because this card renders mid-purchase on three
+								    surfaces, and navigating away discards the form. */}
+								<p className="text-sm text-gray-400 mt-2">
+									Cancel anytime.{" "}
+									<a
+										href={ROUTES.manageMembership}
+										target="_blank"
+										rel="noreferrer"
+										className="text-[#F79432] underline"
+									>
+										How to cancel
+									</a>
+								</p>
 								{/* The annual option, sold rather than merely listed.
 								    "or $200/year — 50% Off" stated the price and left the buyer to work
 								    out that twelve months at the monthly rate would be $240. Saying what
@@ -513,13 +532,19 @@ const PlanComparison: React.FC<Props> = ({
 								    annual is already the selected plan and the alternate is monthly. */}
 								{alternate?.amount != null &&
 									(alternate.interval === "year" && annualMonthsFreeOnSale > 0 ? (
-										<div className="mt-1 text-sm">
-											<p className="text-gray-300">
-												{money(alternate.amount)}/{PERIOD_LABELS[alternate.interval] || alternate.interval} — Save Even More
+										/* Wording supplied by the CEO (2026-09-02) and reproduced as given; only the
+										   figures are substituted, and all three are derived — the months free from
+										   the two live prices, and "the price of 10" from twelve minus that. A
+										   hardcoded "2 months" or "price of 10" is a claim about Stripe's prices
+										   that stops being true the moment either one moves. */
+										<div className="mt-3 text-sm">
+											<p className="font-semibold text-white">Save Even More with Annual Membership</p>
+											<p className="text-gray-300 mt-1">
+												Get {annualMonthsFreeOnSale} additional month{annualMonthsFreeOnSale === 1 ? "" : "s"} FREE when you
+												choose an annual membership.
 											</p>
-											<p className="font-semibold text-green-500">
-												{DISCOUNT_BADGE} + {annualMonthsFreeOnSale} Additional Month
-												{annualMonthsFreeOnSale === 1 ? "" : "s"} Free
+											<p className="font-semibold mt-1" style={{ color: "#F5C518" }}>
+												{money(alternate.amount)}/year — 12 months for the price of {12 - annualMonthsFreeOnSale}!
 											</p>
 										</div>
 									) : (
