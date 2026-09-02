@@ -1,6 +1,8 @@
 import React from "react"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import Spinner from "@/components/misc/Spinner"
+import { trialEndsOn } from "@/lib/invite-trial"
+import { ROUTES } from "@/configs/routes"
 
 /**
  * What Jetzy Premium gets you.
@@ -154,6 +156,19 @@ type Props = {
 	/** Why it was refused. Shown under the field. */
 	inviteError?: string | null
 	inviteChecking?: boolean
+	/**
+	 * The accepted trial behind that code, FOR THE INTERVAL CURRENTLY SELECTED.
+	 *
+	 * When it is set the card leads with $0 rather than the rate, because $0 is what the buyer is
+	 * about to be charged — leaving "$20 /Month" as the headline made the card disagree with
+	 * checkout, and the free month only appeared in a small line under the field that people
+	 * scrolled past.
+	 *
+	 * Null while none applies, while one is still being checked, and while one was refused: the
+	 * card must never show $0 for a code the server has not accepted. `chargesFrom` is when the
+	 * first real invoice lands; without it the date is computed from `months`.
+	 */
+	trial?: { months: number; label: string; chargesFrom?: string | null } | null
 	/** Disables the Premium CTA (in-flight mutation, or status still loading). */
 	premiumDisabled?: boolean
 	/** Shows a spinner in place of the Premium CTA label. */
@@ -202,6 +217,7 @@ const PlanComparison: React.FC<Props> = ({
 	inviteAccepted,
 	inviteError,
 	inviteChecking = false,
+	trial,
 	billingPending = false,
 	premiumDisabled = false,
 	premiumPending = false,
@@ -235,6 +251,17 @@ const PlanComparison: React.FC<Props> = ({
 	const monthlyOption = options.find((p) => p.interval === "month")
 	const annualOption = options.find((p) => p.interval === "year")
 	const annualMonthsFreeOnSale = monthsFreeOnAnnual(monthlyOption?.amount, annualOption?.amount)
+
+	// ---- An accepted invite code, priced ----
+	//
+	// `amount != null` is part of the condition, not an afterthought: with no known rate there is
+	// no "then $20/Month from ..." to write, and a bare $0 with nothing after it would be the whole
+	// disclosure. Better to show the ordinary price than to say free and not say for how long.
+	const trialApplied = !isPremium && !!trial && trial.months > 0 && amount != null
+	const trialChargesOn = renewalDate(
+		trial?.chargesFrom ||
+			(trial ? trialEndsOn({ months: trial.months, intervals: [], label: trial.label }).toISOString() : null),
+	)
 
 	// A member is not buying. Everything below the current-plan block is the member state.
 	const memberInterval = currentPlan?.interval || null
@@ -270,6 +297,25 @@ const PlanComparison: React.FC<Props> = ({
 	// Only when we can state it in full. A half-priced sentence with a missing figure in it is
 	// worse than no sentence.
 	const showAnnualPitch = showSwitch && annualAmount != null && annualCompareAt != null && annualMonthsFree > 0
+
+	// What the switch is WORTH, rather than what it costs. "Switch to $200/year" stated a price to
+	// a member already paying one and gave them no reason to press it.
+	//
+	// Computed off `annualMonthsFreeOnSale` — the prices ON SALE ($20/month against $200/year) —
+	// and NOT off `annualMonthsFree`, which is the member's own rate. That is deliberate and it is
+	// what makes the button read "Get 2 more free months" for everyone: the two months are a
+	// property of what annual costs, not of what any one member happens to pay. The paragraph in
+	// the trial panel still uses the member's own figures, because it names exact amounts and a
+	// legacy $10/month member must not be quoted a saving against today's $20.
+	//
+	// Still derived, never written down: a hardcoded "2" is a claim about Stripe's prices that
+	// stops being true the moment either moves. The fallback is unreachable in practice — with no
+	// annual price there is no switch target and the button doesn't render at all — but it is
+	// there so the button can never promise "0 more free months".
+	const switchLabel =
+		switchTarget?.interval === "year" && annualMonthsFreeOnSale > 0
+			? `Get ${annualMonthsFreeOnSale} more free month${annualMonthsFreeOnSale === 1 ? "" : "s"} by switching to yearly`
+			: `Switch to ${switchTarget?.label}`
 
 	// Members never see the comparison — see `hideFreePlan`.
 	const showFreePlan = !hideFreePlan && !isPremium
@@ -341,9 +387,9 @@ const PlanComparison: React.FC<Props> = ({
 										    next to it rather than left to be discovered. */}
 										{showAnnualPitch && (
 											<p className="mt-2 font-normal">
-												Want to save even more? Switch to an annual subscription anytime without losing your free trial
-												and get {annualMonthsFree} month{annualMonthsFree === 1 ? "" : "s"} free—just {usd(annualAmount)}
-												/year instead of {usd(annualCompareAt)}.
+												Switch to yearly and your free trial stays active until {trialEndsOnLabel} — you&apos;ll then be
+												charged {usd(annualAmount)}/year instead of {usd(annualCompareAt)}. That&apos;s {annualMonthsFree}{" "}
+												month{annualMonthsFree === 1 ? "" : "s"} free.
 											</p>
 										)}
 									</>
@@ -428,18 +474,55 @@ const PlanComparison: React.FC<Props> = ({
 							</div>
 						) : (
 							<div className="mb-6">
-								{/* Compare-at. Marketing copy — see COMPARE_AT_MULTIPLIER. */}
+								{/* Compare-at.
+								    Ordinarily marketing copy — see COMPARE_AT_MULTIPLIER. With a trial code
+								    applied it becomes the REAL rate ($20, $200), struck through, because that
+								    is the figure the code is actually waiving; $40 struck above $0 would be
+								    crediting the code with a discount nobody was ever charged. */}
 								{amount != null && (
-									<p className="text-lg text-gray-500 line-through">{money(amount * COMPARE_AT_MULTIPLIER)}</p>
+									<p className="text-lg text-gray-500 line-through">
+										{money(trialApplied ? amount : amount * COMPARE_AT_MULTIPLIER)}
+									</p>
 								)}
 								<p className="text-3xl font-bold flex items-baseline gap-2 flex-wrap">
-									<span style={{ color: "#F5C518" }}>{formattedPrice || "—"}</span>
+									<span style={{ color: "#F5C518" }}>{trialApplied ? money(0) : formattedPrice || "—"}</span>
 									<span className="text-sm text-gray-400 font-normal">
 										/{PERIOD_LABELS[interval] || interval}
 									</span>
 									{amount != null && (
-										<span className="text-sm font-semibold text-green-500">{DISCOUNT_BADGE}</span>
+										<span className="text-sm font-semibold text-green-500 capitalize">
+											{trialApplied ? trial!.label : DISCOUNT_BADGE}
+										</span>
 									)}
+								</p>
+								{/* The terms, where the price is read.
+								    $0 is only half the deal, and the card-network requirement is that the
+								    amount and the date are disclosed BEFORE purchase. This does not replace
+								    the green line under the invite field — that one confirms the code was
+								    accepted; this one prices it. */}
+								{trialApplied && (
+									<p className="text-sm text-gray-300 mt-1">
+										Then {money(amount)}/{PERIOD_LABELS[interval] || interval}
+										{trialChargesOn ? ` from ${trialChargesOn}` : ""}.
+									</p>
+								)}
+								{/* Cancelling has its own line, and it is the link.
+								    It used to be three words glued to the end of the billing line — "…from
+								    Oct 2, 2026. Cancel any time." — which reads as part of the charge rather
+								    than as a right the buyer has, and pointed at nothing. Wording is the
+								    CEO's (2026-09-02) and matches the ticket checkout modal. Said ONCE on
+								    this card: `trialDisclosure` no longer repeats it under the invite field.
+								    Opens in a new tab because this card renders mid-purchase on three
+								    surfaces, and navigating away discards the form. */}
+								<p className="text-xs mt-2">
+									<a
+										href={ROUTES.manageMembership}
+										target="_blank"
+										rel="noreferrer"
+										className="text-[#F79432] underline"
+									>
+										Click here to manage/cancel membership
+									</a>
 								</p>
 								{/* The annual option, sold rather than merely listed.
 								    "or $200/year — 50% Off" stated the price and left the buyer to work
@@ -449,13 +532,19 @@ const PlanComparison: React.FC<Props> = ({
 								    annual is already the selected plan and the alternate is monthly. */}
 								{alternate?.amount != null &&
 									(alternate.interval === "year" && annualMonthsFreeOnSale > 0 ? (
-										<div className="mt-1 text-sm">
-											<p className="text-gray-300">
-												{money(alternate.amount)}/{PERIOD_LABELS[alternate.interval] || alternate.interval} — Save Even More
+										/* Wording supplied by the CEO (2026-09-02) and reproduced as given; only the
+										   figures are substituted, and all three are derived — the months free from
+										   the two live prices, and "the price of 10" from twelve minus that. A
+										   hardcoded "2 months" or "price of 10" is a claim about Stripe's prices
+										   that stops being true the moment either one moves. */
+										<div className="mt-3 text-sm">
+											<p className="font-semibold text-white">Save Even More with Annual Membership</p>
+											<p className="text-gray-300 mt-1">
+												Get {annualMonthsFreeOnSale} additional month{annualMonthsFreeOnSale === 1 ? "" : "s"} FREE when you
+												choose an annual membership.
 											</p>
-											<p className="font-semibold text-green-500">
-												{DISCOUNT_BADGE} + {annualMonthsFreeOnSale} Additional Month
-												{annualMonthsFreeOnSale === 1 ? "" : "s"} Free
+											<p className="font-semibold mt-1" style={{ color: "#F5C518" }}>
+												{money(alternate.amount)}/year — 12 months for the price of {12 - annualMonthsFreeOnSale}!
 											</p>
 										</div>
 									) : (
@@ -526,9 +615,9 @@ const PlanComparison: React.FC<Props> = ({
 							<button
 								onClick={onSwitchInterval}
 								disabled={billingPending}
-								className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:opacity-90 transition-colors disabled:opacity-50"
+								className="bg-jetzy text-black font-bold text-sm leading-snug px-6 py-3 rounded-full hover:opacity-90 transition-colors disabled:opacity-50"
 							>
-								{billingPending ? <Spinner /> : `Switch to ${switchTarget?.label}`}
+								{billingPending ? <Spinner /> : switchLabel}
 							</button>
 						)}
 						{/* A trial with no card on file ENDS. Saying so and offering nothing would leave

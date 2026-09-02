@@ -1,7 +1,7 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
-import { resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
+import { resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, sameAppliedTrial } from "@/lib/invite-trial"
 import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
@@ -151,11 +151,27 @@ export default function SubscribePage() {
 	const [inviteAccepted, setInviteAccepted] = React.useState<string | null>(null)
 	const [inviteError, setInviteError] = React.useState<string | null>(null)
 	const [inviteChecking, setInviteChecking] = React.useState(false)
+	/**
+	 * The same offer, structured, for the plan card — which prices it ($0 today, then the rate on
+	 * the date it converts). The string above confirms the code; this says what it costs.
+	 */
+	const [trialOffer, setTrialOffer] = React.useState<AppliedTrial | null>(null)
+	/**
+	 * Writes it only when it actually differs — see `sameAppliedTrial`. Every resolution builds a
+	 * fresh object, and an equal-but-new object is still a state change to React.
+	 */
+	const applyTrial = React.useCallback(
+		(next: AppliedTrial | null) => setTrialOffer((prev) => (sameAppliedTrial(prev, next) ? prev : next)),
+		[],
+	)
 	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
 
 	React.useEffect(() => {
 		if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		const code = inviteCode.trim()
+		// Cleared on every run, before anything is resolved: while a code is being retyped or
+		// re-checked the card must show the ordinary price, never a stale $0.
+		applyTrial(null)
 		if (!code) {
 			setInviteAccepted(null)
 			setInviteError(null)
@@ -178,6 +194,11 @@ export default function SubscribePage() {
 			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
 			setInviteError(null)
 			setInviteAccepted(trialDisclosure(resolved.offer, preview?.label || null, trialEndsOn(resolved.offer)))
+			applyTrial({
+				months: resolved.offer.months,
+				label: resolved.offer.label,
+				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
+			})
 			return
 		}
 
@@ -202,9 +223,21 @@ export default function SubscribePage() {
 						)
 						: "Invite code applied.",
 				)
+				// Only the path that named the months: the bare "applied" fallback carries none, and
+				// the card must not show $0 for an offer it can't state the end of.
+				applyTrial(
+					data?.data?.label
+						? {
+							months: Number(data.data.months) || 0,
+							label: data.data.label,
+							chargesFrom: data?.data?.chargesFrom || null,
+						}
+						: null,
+				)
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
+				applyTrial(null)
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
 			} finally {
 				setInviteChecking(false)
@@ -214,7 +247,7 @@ export default function SubscribePage() {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
 		// Re-checked when the interval changes: a monthly-only code stops applying on annual.
-	}, [inviteCode, selectedInterval, isSignedIn, prices])
+	}, [inviteCode, selectedInterval, isSignedIn, prices, applyTrial])
 
 	/**
 	 * Email + 6-digit code, in place of sending a signed-out visitor to `/login`.
@@ -293,7 +326,8 @@ export default function SubscribePage() {
 				<p className="text-gray-400">Upgrade anytime. Cancel anytime.</p>
 			</div>
 
-			<div className="max-w-3xl mx-auto">
+			{/* `4xl` so the cancellation link fits on one line — see the paywall modal. */}
+			<div className="max-w-4xl mx-auto">
 				{/* Shared with the paywall modal, so a buyer sees the same comparison whichever
 				    door they came through. */}
 				<PlanComparison
@@ -316,6 +350,7 @@ export default function SubscribePage() {
 					inviteAccepted={inviteAccepted}
 					inviteError={inviteError}
 					inviteChecking={inviteChecking}
+					trial={trialOffer}
 					premiumDisabled={premiumLoading}
 					premiumPending={subscribeMutation.isPending}
 					onChooseFree={goToApp}

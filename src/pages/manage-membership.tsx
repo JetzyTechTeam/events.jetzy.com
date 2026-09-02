@@ -1,8 +1,11 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import Navbar from "@Jetzy/components/misc/Navbar"
+import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
 import { ROUTES, homeRouteForRole } from "@Jetzy/configs/routes"
-import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
+import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
+import { useQueryClient } from "@tanstack/react-query"
+import axios from "axios"
 import { useSession } from "next-auth/react"
 import Image from "next/image"
 import Link from "next/link"
@@ -20,11 +23,17 @@ import React from "react"
  * reading this link from a checkout form or an email rather than from inside the app.
  *
  * Four states, all handled:
- *   - not signed in      → bounce through /login and come straight back
+ *   - not signed in      → email + 6-digit code, right here (see below)
  *   - member             → straight out to Stripe's portal, which lists EVERY subscription
  *                          on their Stripe Customer with its own cancel button
  *   - back from Stripe   → a terminus with working links; see the redirect-loop note below
  *   - signed in, no plan → say so plainly, and offer the way to subscribe
+ *
+ * NOBODY IS SENT TO /login FROM HERE (CEO, 2026-09-02). This page is reached from a cancellation
+ * link, and a membership can be acquired as a side effect of buying a ticket — so the person who
+ * needs to cancel may never have consciously created an account and has no password to type. They
+ * prove the address with the same `EmailVerifyDialog` the Premium pages use; NextAuth creates the
+ * record from the magic token if there isn't one.
  *
  * Gated on `hasBillingAccount`, NOT on Jetzy Premium specifically. Gating on Premium told a
  * Full Concierge member they had "nothing to manage" while their card was being charged every
@@ -46,18 +55,45 @@ export default function ManageMembershipPage() {
 	// always wins the race. This flag is what breaks it.
 	const returnedFromPortal = router.query.from === "portal"
 
+	const queryClient = useQueryClient()
+
 	const [error, setError] = React.useState<string | null>(null)
 	const [isOpening, setIsOpening] = React.useState(false)
+	// Open on arrival for a signed-out visitor: they came here to do one thing, and a dialog
+	// they have to find a button for is just the login redirect with extra steps.
+	const [verifyOpen, setVerifyOpen] = React.useState(true)
 	// The portal is opened at most once per visit — without this, a re-render mid-redirect
 	// would fire a second billingPortal session.
 	const hasOpenedRef = React.useRef(false)
 
-	// Not signed in: use the standard callback round-trip, so login (or signup, which
-	// forwards the same param) returns here rather than dumping them on the home page.
-	React.useEffect(() => {
-		if (!router.isReady || status !== "unauthenticated") return
-		router.replace(`${ROUTES.login}?_cb=${encodeURIComponent(ROUTES.manageMembership)}`)
-	}, [router, status])
+	// Signed in but with nothing to manage. Held locally as well as derived, because the
+	// post-verification path answers this from `/api/subscriptions/me` directly rather than
+	// waiting for the session to propagate into `usePremiumStatus`.
+	const [verifiedNoBilling, setVerifiedNoBilling] = React.useState(false)
+
+	// Shared by the effect below and by the code dialog, so there is one implementation of
+	// "send them to Stripe" and the two can't drift.
+	const openPortal = React.useCallback(async () => {
+		setIsOpening(true)
+		try {
+			const response = await fetch("/api/subscriptions/portal", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				// Carries the marker back, so returning doesn't relaunch the portal.
+				body: JSON.stringify({ returnTo: `${ROUTES.manageMembership}?from=portal` }),
+			})
+			const result = await response.json()
+			if (result?.status && result?.data?.url) {
+				window.location.href = result.data.url
+				return
+			}
+			setError(result?.message || "We couldn't open the billing portal. Please try again.")
+		} catch {
+			setError("We couldn't open the billing portal. Please try again.")
+		} finally {
+			setIsOpening(false)
+		}
+	}, [])
 
 	// Signed in and billable: hand straight over to Stripe. No intermediate click — the
 	// visitor already asked to manage their membership by coming here.
@@ -65,34 +101,40 @@ export default function ManageMembershipPage() {
 		if (!router.isReady || returnedFromPortal) return
 		if (status !== "authenticated" || premiumLoading || !hasBillingAccount || hasOpenedRef.current) return
 		hasOpenedRef.current = true
+		openPortal()
+	}, [router.isReady, returnedFromPortal, status, hasBillingAccount, premiumLoading, openPortal])
+
+	/**
+	 * The address is proved — carry on without waiting for `useSession` to catch up.
+	 *
+	 * `signIn` has already set the cookie, so this request is authenticated; asking the server
+	 * directly is what lets the portal open on the same click rather than a render or two later,
+	 * and it decides between "straight to Stripe" and "nothing here" from one answer.
+	 */
+	const handleVerified = React.useCallback(async () => {
+		setVerifyOpen(false)
 		setIsOpening(true)
-
-		const run = async () => {
-			try {
-				const response = await fetch("/api/subscriptions/portal", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					// Carries the marker back, so returning doesn't relaunch the portal.
-					body: JSON.stringify({ returnTo: `${ROUTES.manageMembership}?from=portal` }),
-				})
-				const result = await response.json()
-				if (result?.status && result?.data?.url) {
-					window.location.href = result.data.url
-					return
-				}
-				setError(result?.message || "We couldn't open the billing portal. Please try again.")
-			} catch {
-				setError("We couldn't open the billing portal. Please try again.")
-			} finally {
-				setIsOpening(false)
+		queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
+		try {
+			const { data } = await axios.get("/api/subscriptions/me")
+			if (data?.data?.hasBillingAccount) {
+				// Set BEFORE navigating: the session is about to flip to authenticated, and the
+				// effect above would otherwise open a second portal session.
+				hasOpenedRef.current = true
+				await openPortal()
+				return
 			}
+			setVerifiedNoBilling(true)
+		} catch {
+			setError("We couldn't check this account. Please try again.")
+		} finally {
+			setIsOpening(false)
 		}
-		run()
-	}, [router.isReady, returnedFromPortal, status, hasBillingAccount, premiumLoading])
+	}, [openPortal, queryClient])
 
-	const noMembership = status === "authenticated" && !premiumLoading && !hasBillingAccount
-	const isWorking =
-		!returnedFromPortal && !error && (status === "loading" || status === "unauthenticated" || premiumLoading || isOpening)
+	const signedOut = status === "unauthenticated"
+	const noMembership = (status === "authenticated" && !premiumLoading && !hasBillingAccount) || verifiedNoBilling
+	const isWorking = !returnedFromPortal && !error && !signedOut && (status === "loading" || premiumLoading || isOpening)
 
 	return (
 		<div className="min-h-screen bg-[#0A0B0F] text-white flex flex-col">
@@ -115,9 +157,27 @@ export default function ManageMembershipPage() {
 						<div className="flex justify-center my-6">
 							<Spinner />
 						</div>
-						<p className="text-gray-400 text-sm">
-							{status === "unauthenticated" ? "Taking you to sign in…" : "Opening your billing portal…"}
+						<p className="text-gray-400 text-sm">Opening your billing portal…</p>
+					</>
+				)}
+
+				{/* Signed out. The dialog is already up; this is what sits behind it, and what
+				    they land on if they close it — a way back in, never a dead end. */}
+				{signedOut && !error && (
+					<>
+						<p className="text-gray-300 text-sm mt-4">
+							Sign in with your email to manage or cancel your membership. We&apos;ll send you a 6-digit
+							code — no password needed.
 						</p>
+						{!verifyOpen && (
+							<button
+								type="button"
+								onClick={() => setVerifyOpen(true)}
+								className="mt-6 bg-[#F5C518] text-black font-bold px-6 py-3 rounded-xl"
+							>
+								Sign in
+							</button>
+						)}
 					</>
 				)}
 
@@ -148,7 +208,7 @@ export default function ManageMembershipPage() {
 					</>
 				)}
 
-				{!isWorking && !error && !returnedFromPortal && noMembership && (
+				{!isWorking && !error && !returnedFromPortal && !signedOut && noMembership && (
 					<>
 						<p className="text-gray-300 text-sm mt-4">
 							This account doesn&apos;t have an active membership, so there&apos;s nothing to manage.
@@ -185,6 +245,15 @@ export default function ManageMembershipPage() {
 						</button>
 					</>
 				)}
+
+				{/* No event and no referral code: this is the ordinary "email me a sign-in code",
+				    keyed to the address alone. */}
+				<EmailVerifyDialog
+					open={signedOut && verifyOpen}
+					description="We'll email you a 6-digit code to manage your membership. No password needed."
+					onClose={() => setVerifyOpen(false)}
+					onVerified={handleVerified}
+				/>
 
 				{/* The catch-all way out. Hidden in the two states that already offer their own
 				    "Back to Jetzy", so the page never shows the same link twice. */}

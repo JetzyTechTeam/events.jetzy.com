@@ -25,6 +25,7 @@ export default function EmailVerifyDialog({
 	eventId,
 	referralCode,
 	months,
+	description,
 	onClose,
 	onVerified,
 }: {
@@ -37,6 +38,14 @@ export default function EmailVerifyDialog({
 	referralCode?: string
 	/** Free months, so the dialog can say what is being claimed. Absent at the normal price. */
 	months?: number
+	/**
+	 * What the code is FOR, when it isn't buying a membership.
+	 *
+	 * Manage membership opens this dialog too, and telling somebody who came to cancel that they
+	 * are continuing to Jetzy Premium is the wrong sentence. Ignored when `months` is set — that
+	 * variant names the offer being claimed, which is more specific than either.
+	 */
+	description?: string
 	onClose: () => void
 	/** Fired once the session exists. The page takes it from here. */
 	onVerified: () => void
@@ -133,7 +142,7 @@ export default function EmailVerifyDialog({
 									of Jetzy Premium. No password needed.
 								</>
 							) : (
-								<>We&apos;ll email you a 6-digit code to continue to Jetzy Premium. No password needed.</>
+								<>{description || "We'll email you a 6-digit code to continue to Jetzy Premium. No password needed."}</>
 							)}
 						</p>
 						<label htmlFor="premium-verify-email" className="mt-5 block text-xs text-gray-400">

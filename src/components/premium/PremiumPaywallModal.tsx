@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { Error as ErrorToast } from "@/lib/_toaster"
-import { resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
+import { resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, sameAppliedTrial } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumPlan"
 import PlanComparison from "@/components/premium/PlanComparison"
@@ -110,11 +110,27 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	const [inviteAccepted, setInviteAccepted] = useState<string | null>(null)
 	const [inviteError, setInviteError] = useState<string | null>(null)
 	const [inviteChecking, setInviteChecking] = useState(false)
+	/**
+	 * The same offer, structured, for the plan card — which prices it ($0 today, then the rate on
+	 * the date it converts). The string above confirms the code; this says what it costs.
+	 */
+	const [trialOffer, setTrialOffer] = useState<AppliedTrial | null>(null)
+	/**
+	 * Writes it only when it actually differs — see `sameAppliedTrial`. Every resolution builds a
+	 * fresh object, and an equal-but-new object is still a state change to React.
+	 */
+	const applyTrial = useCallback(
+		(next: AppliedTrial | null) => setTrialOffer((prev) => (sameAppliedTrial(prev, next) ? prev : next)),
+		[],
+	)
 	const inviteTimer = useRef<NodeJS.Timeout | null>(null)
 
 	useEffect(() => {
 		if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		const code = inviteCode.trim()
+		// Cleared on every run, before anything is resolved: while a code is being retyped or
+		// re-checked the card must show the ordinary price, never a stale $0.
+		applyTrial(null)
 		if (!code) {
 			setInviteAccepted(null)
 			setInviteError(null)
@@ -137,6 +153,11 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
 			setInviteError(null)
 			setInviteAccepted(trialDisclosure(resolved.offer, preview?.label || null, trialEndsOn(resolved.offer)))
+			applyTrial({
+				months: resolved.offer.months,
+				label: resolved.offer.label,
+				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
+			})
 			return
 		}
 
@@ -161,9 +182,21 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 						)
 						: "Invite code applied.",
 				)
+				// Only the path that named the months: the bare "applied" fallback carries none, and
+				// the card must not show $0 for an offer it can't state the end of.
+				applyTrial(
+					data?.data?.label
+						? {
+							months: Number(data.data.months) || 0,
+							label: data.data.label,
+							chargesFrom: data?.data?.chargesFrom || null,
+						}
+						: null,
+				)
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
+				applyTrial(null)
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
 			} finally {
 				setInviteChecking(false)
@@ -172,7 +205,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		return () => {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
-	}, [inviteCode, selectedInterval, isSignedIn, prices])
+	}, [inviteCode, selectedInterval, isSignedIn, prices, applyTrial])
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
@@ -327,8 +360,10 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 	return (
 		<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-			{/* Wide enough for two cards side by side; they stack below `sm`. */}
-			<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden max-w-3xl">
+			{/* Wide enough for two cards side by side; they stack below `sm`.
+			    `4xl`, not `3xl`: at the narrower width the Premium column left
+			    "Click here to manage/cancel membership" wrapping onto two lines. */}
+			<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden max-w-4xl">
 				<button
 					onClick={handleClose}
 					className="absolute top-2 right-2 bg-black text-white w-8 h-8 rounded-full flex items-center justify-center z-10"
@@ -380,6 +415,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 						inviteAccepted={inviteAccepted}
 						inviteError={inviteError}
 						inviteChecking={inviteChecking}
+						trial={trialOffer}
 						premiumPending={subscribeMutation.isPending}
 						onChooseFree={handleClose}
 						onChoosePremium={handleSubscribeClick}

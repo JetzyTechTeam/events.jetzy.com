@@ -88,11 +88,35 @@ export const resolveTrialCode = (rawCode?: string | null, interval?: string | nu
 	return { ok: true, code, offer }
 }
 
-/** "2 months free, then $20/month from 18 Oct 2026" — the recurring terms, before purchase. */
+/**
+ * "2 months free, then $20/month from 18 Oct 2026" — the recurring terms, before purchase.
+ *
+ * It used to end "Cancel any time." as well. The plan card now says that once, as its own
+ * sentence and with a link to how it is done (CEO, 2026-09-02) — repeating it here put the same
+ * three words twice on one card, in the second-smallest text on it, pointing at nothing.
+ */
 export const trialDisclosure = (offer: TrialOffer, priceLabel: string | null, startsCharging: Date): string => {
 	const date = startsCharging.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-	return priceLabel ? `${offer.label}, then ${priceLabel} from ${date}. Cancel any time.` : `${offer.label}. Cancel any time.`
+	return priceLabel ? `${offer.label}, then ${priceLabel} from ${date}.` : `${offer.label}.`
 }
+
+/**
+ * An accepted offer, as the plan card needs it: enough to show $0 today and say what is charged
+ * when, without the card having to parse the sentence under the invite field.
+ */
+export type AppliedTrial = { months: number; label: string; chargesFrom: string | null }
+
+/**
+ * Are these the same offer?
+ *
+ * Used to hold the STATE IDENTITY steady. Every resolution builds a fresh object, and React only
+ * bails out of a state write when the value is `Object.is`-equal — so writing an equal-but-new
+ * object on each run of the debounced invite effect renders, and if anything that effect depends
+ * on is itself rebuilt per render, that render runs the effect again. That loop shipped once: a
+ * permanent "Checking…" and a request to `/api/subscriptions/invite-code` every 600ms.
+ */
+export const sameAppliedTrial = (a: AppliedTrial | null, b: AppliedTrial | null): boolean =>
+	a === b || (!!a && !!b && a.months === b.months && a.label === b.label && a.chargesFrom === b.chargesFrom)
 
 /** When the first real invoice lands. */
 export const trialEndsOn = (offer: TrialOffer, from: Date = new Date()): Date => {
