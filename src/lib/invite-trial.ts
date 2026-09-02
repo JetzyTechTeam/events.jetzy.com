@@ -94,6 +94,24 @@ export const trialDisclosure = (offer: TrialOffer, priceLabel: string | null, st
 	return priceLabel ? `${offer.label}, then ${priceLabel} from ${date}. Cancel any time.` : `${offer.label}. Cancel any time.`
 }
 
+/**
+ * An accepted offer, as the plan card needs it: enough to show $0 today and say what is charged
+ * when, without the card having to parse the sentence under the invite field.
+ */
+export type AppliedTrial = { months: number; label: string; chargesFrom: string | null }
+
+/**
+ * Are these the same offer?
+ *
+ * Used to hold the STATE IDENTITY steady. Every resolution builds a fresh object, and React only
+ * bails out of a state write when the value is `Object.is`-equal — so writing an equal-but-new
+ * object on each run of the debounced invite effect renders, and if anything that effect depends
+ * on is itself rebuilt per render, that render runs the effect again. That loop shipped once: a
+ * permanent "Checking…" and a request to `/api/subscriptions/invite-code` every 600ms.
+ */
+export const sameAppliedTrial = (a: AppliedTrial | null, b: AppliedTrial | null): boolean =>
+	a === b || (!!a && !!b && a.months === b.months && a.label === b.label && a.chargesFrom === b.chargesFrom)
+
 /** When the first real invoice lands. */
 export const trialEndsOn = (offer: TrialOffer, from: Date = new Date()): Date => {
 	const end = new Date(from)

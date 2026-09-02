@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
@@ -138,7 +139,22 @@ export function useMembershipPlan(key: MembershipKey, enabled = true) {
 		staleTime: 5 * 60_000,
 	})
 
-	return { ...toPlan(key, query.data), plan: query.data, isLoading: query.isLoading }
+	/**
+	 * Memoised on the query data, NOT rebuilt per render.
+	 *
+	 * `toPlan` maps `prices` into a fresh array, and callers put that array in the dependency list
+	 * of the debounced invite-code effect. An identity that changed on every render made the effect
+	 * re-run on every render: harmless while it only ever set the same string back (React bails out
+	 * of an equal state write), but the moment it also set an OBJECT the write was never equal, so
+	 * each run caused a render, and each render caused another run — a permanent "Checking…" and a
+	 * request to `/api/subscriptions/invite-code` every 600ms.
+	 */
+	const plan = useMemo(() => toPlan(key, query.data), [key, query.data])
+
+	return useMemo(
+		() => ({ ...plan, plan: query.data, isLoading: query.isLoading }),
+		[plan, query.data, query.isLoading],
+	)
 }
 
 /**

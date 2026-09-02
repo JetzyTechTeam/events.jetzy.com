@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { Error as ErrorToast } from "@/lib/_toaster"
-import { resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
+import { resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, sameAppliedTrial } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumPlan"
 import PlanComparison from "@/components/premium/PlanComparison"
@@ -114,7 +114,15 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	 * The same offer, structured, for the plan card — which prices it ($0 today, then the rate on
 	 * the date it converts). The string above confirms the code; this says what it costs.
 	 */
-	const [trialOffer, setTrialOffer] = useState<{ months: number; label: string; chargesFrom: string | null } | null>(null)
+	const [trialOffer, setTrialOffer] = useState<AppliedTrial | null>(null)
+	/**
+	 * Writes it only when it actually differs — see `sameAppliedTrial`. Every resolution builds a
+	 * fresh object, and an equal-but-new object is still a state change to React.
+	 */
+	const applyTrial = useCallback(
+		(next: AppliedTrial | null) => setTrialOffer((prev) => (sameAppliedTrial(prev, next) ? prev : next)),
+		[],
+	)
 	const inviteTimer = useRef<NodeJS.Timeout | null>(null)
 
 	useEffect(() => {
@@ -122,7 +130,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		const code = inviteCode.trim()
 		// Cleared on every run, before anything is resolved: while a code is being retyped or
 		// re-checked the card must show the ordinary price, never a stale $0.
-		setTrialOffer(null)
+		applyTrial(null)
 		if (!code) {
 			setInviteAccepted(null)
 			setInviteError(null)
@@ -145,7 +153,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
 			setInviteError(null)
 			setInviteAccepted(trialDisclosure(resolved.offer, preview?.label || null, trialEndsOn(resolved.offer)))
-			setTrialOffer({
+			applyTrial({
 				months: resolved.offer.months,
 				label: resolved.offer.label,
 				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
@@ -176,7 +184,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 				)
 				// Only the path that named the months: the bare "applied" fallback carries none, and
 				// the card must not show $0 for an offer it can't state the end of.
-				setTrialOffer(
+				applyTrial(
 					data?.data?.label
 						? {
 							months: Number(data.data.months) || 0,
@@ -188,7 +196,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
-				setTrialOffer(null)
+				applyTrial(null)
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
 			} finally {
 				setInviteChecking(false)
@@ -197,7 +205,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		return () => {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
-	}, [inviteCode, selectedInterval, isSignedIn, prices])
+	}, [inviteCode, selectedInterval, isSignedIn, prices, applyTrial])
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {

@@ -1,7 +1,7 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
-import { DEFAULT_INVITE_CODE, normalizeTrialCode, resolveTrialCode, trialDisclosure, trialEndsOn } from "@/lib/invite-trial"
+import { DEFAULT_INVITE_CODE, normalizeTrialCode, resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, sameAppliedTrial } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
@@ -91,7 +91,15 @@ export default function PremiumPage() {
 	 * The same offer, structured, for the plan card — which prices it ($0 today, then the rate on
 	 * the date it converts). `inviteAccepted` confirms the code; this says what it costs.
 	 */
-	const [trialOffer, setTrialOffer] = React.useState<{ months: number; label: string; chargesFrom: string | null } | null>(null)
+	const [trialOffer, setTrialOffer] = React.useState<AppliedTrial | null>(null)
+	/**
+	 * Writes it only when it actually differs — see `sameAppliedTrial`. Every resolution builds a
+	 * fresh object, and an equal-but-new object is still a state change to React.
+	 */
+	const applyTrial = React.useCallback(
+		(next: AppliedTrial | null) => setTrialOffer((prev) => (sameAppliedTrial(prev, next) ? prev : next)),
+		[],
+	)
 	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
 
 	/**
@@ -167,7 +175,7 @@ export default function PremiumPage() {
 
 		// Cleared on every run, before anything is resolved: while a code is being retyped or
 		// re-checked the card must show the ordinary price, never a stale $0.
-		setTrialOffer(null)
+		applyTrial(null)
 
 		if (!code) {
 			setInviteAccepted(null)
@@ -197,10 +205,10 @@ export default function PremiumPage() {
 					const offer = { months, intervals: [], label: `${months} month${months === 1 ? "" : "s"} free` }
 					setInviteError(null)
 					setInviteAccepted(trialDisclosure(offer, selectedPrice?.label || null, trialEndsOn(offer)))
-					setTrialOffer({ months, label: offer.label, chargesFrom: trialEndsOn(offer).toISOString() })
+					applyTrial({ months, label: offer.label, chargesFrom: trialEndsOn(offer).toISOString() })
 				} catch (error: any) {
 					setInviteAccepted(null)
-					setTrialOffer(null)
+					applyTrial(null)
 					setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
 				} finally {
 					setInviteChecking(false)
@@ -221,7 +229,7 @@ export default function PremiumPage() {
 			}
 			setInviteError(null)
 			setInviteAccepted(trialDisclosure(resolved.offer, selectedPrice?.label || null, trialEndsOn(resolved.offer)))
-			setTrialOffer({
+			applyTrial({
 				months: resolved.offer.months,
 				label: resolved.offer.label,
 				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
@@ -248,7 +256,7 @@ export default function PremiumPage() {
 				)
 				// Only the path that named the months: the bare "applied" fallback carries none, and
 				// the card must not show $0 for an offer it can't state the end of.
-				setTrialOffer(
+				applyTrial(
 					data?.data?.label
 						? {
 							months: Number(data.data.months) || 0,
@@ -260,7 +268,7 @@ export default function PremiumPage() {
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
-				setTrialOffer(null)
+				applyTrial(null)
 				// Ours and refused — most often a member who has had Premium before. Clear it and
 				// let them buy at the normal price, rather than accusing them of a bad code.
 				if (codeIsOurs.current) {
@@ -278,7 +286,7 @@ export default function PremiumPage() {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
 		// Re-run on interval too: the amount that follows the free months changes with it.
-	}, [inviteCode, selectedInterval, isAuthenticated, selectedPrice?.label, referralEventId])
+	}, [inviteCode, selectedInterval, isAuthenticated, selectedPrice?.label, referralEventId, applyTrial])
 
 	// ---- Checkout ----
 	const startCheckout = React.useCallback(
