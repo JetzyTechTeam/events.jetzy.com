@@ -1,5 +1,5 @@
 import Stripe from "stripe"
-import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
+import { ticketMemberships } from "@/lib/premium-bundle"
 import { sanitizeMembershipKeys } from "@/lib/memberships"
 
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
@@ -27,25 +27,6 @@ const resolveMemberships = (ticket: any, existing: any): string[] => {
 	if (ticket.memberships !== undefined) return sanitizeMembershipKeys(ticket.memberships)
 	if (ticket.includesPremium !== undefined) return ticket.includesPremium ? (["premium"] as const).slice() : []
 	return ticketMemberships(existing)
-}
-
-/**
- * Rejects a ticket that sells a membership for nothing, against the RESOLVED memberships
- * (incoming value, else stored) and before anything is written or any Stripe price is minted.
- * Returns the message to send back, or null when the set is fine.
- *
- * A bundled ticket MAY require approval — it is held as a `mode: "payment"` authorization and
- * the subscriptions are created at approval time — but a subscription needs a real charge to
- * start against.
- */
-export function validateTicketBundles(existingById: Map<string, any>, tickets: IncomingTicket[]): string | null {
-	for (const ticket of tickets) {
-		const existing = existingById.get(ticket.id?.toString())
-		const willSell = resolveMemberships(ticket, existing)
-		if (willSell.length === 0) continue
-		if (!(ticket.price > 0)) return bundleFreeTicketMessage(willSell as any)
-	}
-	return null
 }
 
 export const ticketsById = (tickets: any[] | undefined) => {

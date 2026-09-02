@@ -1,7 +1,7 @@
 import React from "react"
 import { Box, Checkbox, Flex, FormControl, FormLabel, Text } from "@chakra-ui/react"
 import { HOST_SELECTABLE_MEMBERSHIP_KEYS, MEMBERSHIPS, MEMBERSHIP_KEYS, type MembershipKey } from "@/lib/memberships"
-import { bundleApprovalNotice, bundleFreeTicketMessage } from "@/lib/premium-bundle"
+import { bundleApprovalNotice, bundleFreeTicketNotice } from "@/lib/premium-bundle"
 
 /**
  * "Which memberships does this ticket sell?" — the host-side control.
@@ -54,11 +54,12 @@ const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApp
 					Non-members pay this ticket price + Jetzy Premium subscription (renews monthly). Existing members
 					pay the ticket price only.
 				</Text>
-				{/* Persistent guidance, deliberately separate from the red validation error below:
-				    one tells the host the rule up front, the other fires when they've broken it. */}
+				{/* A free ticket is allowed here. The membership is charged in its own right, so a
+				    $0 ticket simply means the non-member pays for the membership alone. The specific
+				    consequence is spelled out below, only once the price is actually 0. */}
 				<Text fontSize="12px" color="#868686" mt={2} maxW="320px" lineHeight="140%">
-					Note: Tickets including Jetzy Premium must have a price. Free tickets cannot initiate premium
-					subscriptions.
+					Note: The ticket may be free. Non-members are still taken to checkout to pay for the
+					membership.
 				</Text>
 			</Box>
 
@@ -125,9 +126,12 @@ const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApp
 				</Text>
 			)}
 
+			{/* Informational, not an error — a $0 bundled ticket saves and sells fine. It says what
+			    that combination actually does, because "free ticket" and "charged for a membership"
+			    read as a contradiction until you know the membership is the thing being sold. */}
 			{selected.length > 0 && !(Number(price) > 0) && (
-				<Text fontSize="12px" color="#FC8181" mt={2} maxW="320px" lineHeight="140%">
-					{bundleFreeTicketMessage(selected)}
+				<Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
+					{bundleFreeTicketNotice(selected)}
 				</Text>
 			)}
 		</FormControl>

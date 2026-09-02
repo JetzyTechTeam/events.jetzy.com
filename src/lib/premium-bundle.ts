@@ -214,11 +214,19 @@ export const bundleApprovalNotice = (keys: MembershipKey[], interval?: string | 
 /** @deprecated Premium-only wording. Use `bundleApprovalNotice`. */
 export const BUNDLE_APPROVAL_NOTICE = bundleApprovalNotice(["premium"])
 
-/** A bundled ticket must cost something — there is no free path that can start a subscription. */
-export const bundleFreeTicketMessage = (keys: MembershipKey[]): string =>
-	`A ticket that includes ${membershipLabelList(keys) || "a membership"} must have a price — a free registration can't start a subscription.`
-
-export const BUNDLE_FREE_TICKET_MESSAGE = bundleFreeTicketMessage(MEMBERSHIP_KEYS)
+/**
+ * A bundled ticket MAY be free. The membership is what is being sold, and it is charged in its
+ * own right — so a $0 ticket sends a non-member to Stripe to pay for the membership alone, and
+ * lets an existing member register instantly with nothing to collect.
+ *
+ * This used to be a hard rejection (`bundleFreeTicketMessage`) on the assumption that a
+ * subscription needs a ticket charge to start against. It doesn't: the order carries the first
+ * membership period as its own line item, and `setup_future_usage` saves the card for renewals.
+ * The message survives as HOST GUIDANCE so the host knows what a $0 bundled ticket does, rather
+ * than as an error that stops them saving it.
+ */
+export const bundleFreeTicketNotice = (keys: MembershipKey[]): string =>
+	`This ticket is free, so non-members will be charged for ${membershipLabelList(keys) || "the membership"} only. Members already holding it register instantly at no charge.`
 
 /**
  * How many membership-bundled tickets one person may buy for a single event.

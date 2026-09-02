@@ -660,6 +660,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const chargesMembership = membershipLines.length > 0
 
+		// Nothing for Stripe to do. A ticket may now be free AND sell a membership — the
+		// membership is the thing being sold and carries its own line item — so this order is
+		// only chargeable while something actually costs money: a priced ticket, or a
+		// membership period that is not being given away.
+		//
+		// The case that gets here is a $0 bundled ticket bought by someone who already holds
+		// every membership on it. The client routes that to the free path already, but its
+		// verdict comes from a lookup of the typed address that can be stale, while the check
+		// above asks STRIPE. Opening the session anyway would create a $0 payment-mode session
+		// with `payment_intent_data` on it and no PaymentIntent behind it, which fulfilment
+		// then discards as "not-payable" — a completed checkout with no booking and no log.
+		const chargeableMembershipLines = membershipLines.filter((line) => !line.trialMonths)
+		if (chargePricing.total === 0 && chargeableMembershipLines.length === 0) {
+			console.warn("[checkout/index] Nothing chargeable; routing to the free path:", { bookingRef, held: bundlePlan.alreadyHeld })
+			return sendResponse(res, { freeOrder: true }, "This order is free.", true, ResCode.OK)
+		}
+
 		// create a checkout session
 		const session = await stripe.checkout.sessions.create({
 			client_reference_id: reference,

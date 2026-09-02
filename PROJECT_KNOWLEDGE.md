@@ -367,10 +367,10 @@ comes off, so getting it wrong either double-bills a subscriber or gives away a 
 **Approval and bundling are compatible.** A bundled ticket is sold as a `mode: "payment"`
 session either way, so `capture_method: "manual"` applies normally and the subscriptions are
 created at approval. (The old "mutually exclusive" rule existed only because the immediate
-flow used subscription mode, which has no manual capture.) A bundled ticket must still cost
-> $0 — enforced in both event forms, in `create.ts` zod `superRefine`, and in `update.ts`
-against the *resolved* memberships (incoming value else stored) so a stale form can't sneak a
-free bundled ticket through.
+flow used subscription mode, which has no manual capture.) A bundled ticket may now cost
+**$0** — see "A bundled ticket may be free" below. The five host-side rejections that enforced
+`price > 0` (both event forms, `create.ts` zod `superRefine`, and `validateTicketBundles`
+behind `update.ts` and the inline tickets endpoint) have been removed.
 
 **The typed email owns the membership — not the session.** `subscriberId` in
 `checkout/index.ts` is `userDoc?._id || buyerId`. It shipped as `buyerId || userDoc?._id`,
@@ -844,15 +844,80 @@ preview** — it has no email field. Its running total now applies the member ra
 show discounted per-ticket prices above an undiscounted total) and is labelled "confirmed at
 checkout" so the modal correcting it reads as expected.
 
+
+### A bundled ticket may be free
+
+The rule that a ticket selling a membership must cost more than $0 has been reversed. The
+membership is the product; the ticket price is independent of it. A $0 bundled ticket means:
+
+- **non-member** → Stripe, paying for the membership alone, ticket at $0;
+- **existing member** → instant free registration, because there is nothing to collect.
+
+The old justification — "a subscription needs a real charge to start against" — did not hold.
+The subscription starts against the card saved by `setup_future_usage`, which rides on the
+membership's own line item, not on the ticket's.
+
+**What was removed.** `validateTicketBundles` (deleted from
+[src/lib/event-tickets.ts](src/lib/event-tickets.ts) along with its call sites in
+[update.ts](src/pages/api/events/[eventId]/update.ts) and
+[tickets/index.ts](src/pages/api/events/[eventId]/tickets/index.ts)), the `superRefine` in
+[api/events/create.ts](src/pages/api/events/create.ts), and the submit guards in both console
+forms. `bundleFreeTicketMessage` / `BUNDLE_FREE_TICKET_MESSAGE` are gone; **`bundleFreeTicketNotice`**
+replaces them, and `TicketMembershipToggles` renders it in amber as guidance rather than in red
+as an error — the host is being told what a free bundled ticket does, not stopped from saving one.
+
+**The $0.50 floor is untouched.** `isBelowStripeMinimum` is `> 0 && < 0.5`, so exactly $0 always
+passed it; $0.01–$0.49 is still refused everywhere it was before.
+
+**The branch became two-sided, so neither side is trusted to be final.** Which path a free
+bundled ticket takes depends on whether the buyer already holds the membership, and the client
+knows that only from `heldByEmail` — a debounced lookup of the address typed in the form, whose
+`null` (not answered yet) reads as "charge nothing". `EventCheckoutModel` therefore splits into
+`submitFreeOrder(mayFallBack)` and `submitStripeOrder(mayFallBack)`, each hopping to the other
+**once** on the server's own verdict rather than dead-ending on a message the buyer cannot act on:
+
+- free → Stripe on **`data.needsCheckout`**, now attached to the existing `stillOwed` 400 in
+  [free-events.ts](src/pages/api/checkout/free-events.ts);
+- Stripe → free on **`data.freeOrder`**, a new short-circuit in
+  [api/checkout/index.ts](src/pages/api/checkout/index.ts) when `chargePricing.total === 0` and
+  no membership line is chargeable. It fires when the server's `hasActiveMembershipSubscription`
+  check — which asks Stripe, not Mongo — finds the buyer already holds what the client thought
+  was owed.
+
+`mayFallBack` is false on the hop back, so the two can never ping-pong.
+
+**Why `api/checkout` must refuse to open a $0 session.** It would carry `payment_intent_data`
+with no PaymentIntent behind it. `fulfillCheckoutSessionById` classified that as `"not-payable"`,
+and the webhook discards the reason — a checkout the buyer completed, with no booking, no email
+and no log line.
+
+**Belt and braces at fulfilment: `isSettledWithoutCharge`.** `isSubscriptionSettled` was gated on
+`!!subscriptionId`, which a payment-mode bundle never has. A `complete` session with
+`payment_status: "no_payment_required"` now fulfils — as **CONFIRMED**, since PENDING means
+"awaiting the host" and only a hold is, and with **no `payment.status`**, so `bookingMoneyState`
+reads it as `free` instead of telling the guest $0 was charged and kept. That is the shape
+`free-events.ts` already writes for the same situation.
+
+**Verified against Stripe in test mode:** a `unit_amount: 0` price used as a line item beside a
+$20 `price_data` membership line is accepted in `mode: "payment"`, with and without
+`capture_method: "manual"`; `amount_total` comes back as the membership alone. The free ticket
+therefore still appears on the Stripe page rather than being hidden from the buyer.
+
+Buyer-facing disclosure needed no change: `buildTicketPricing` already produces `total: 0`, the
+recurring line and `dueToday: 20`, and the ticket card already renders "$0.00" above
+"+ Jetzy Premium $20/month — confirmed at checkout".
+
 ### `free-events.ts` is a real checkout path, not a shortcut
 
 Two things changed together here:
 
-- **Free-vs-Stripe is decided on the DISCOUNTED total** (`pricing.total === 0`), not the ticket
-  prices. An order discounted to exactly $0 has nothing for Stripe to do — and an approval
-  order asking Stripe to authorize $0 with `capture_method: "manual"` is rejected outright,
-  which surfaced as an opaque failure at the very end of checkout. `isBelowStripeMinimum`
-  deliberately treats $0 as free, so it never caught this.
+- **Free-vs-Stripe is decided on what is DUE** (`pricing.dueToday ?? pricing.total`), not the
+  ticket prices. An order discounted to exactly $0 has nothing for Stripe to do — and an
+  approval order asking Stripe to authorize $0 with `capture_method: "manual"` is rejected
+  outright, which surfaced as an opaque failure at the very end of checkout.
+  `isBelowStripeMinimum` deliberately treats $0 as free, so it never caught this. `dueToday`
+  rather than `total`, because a membership's first period is due even when the ticket is not.
+  Since a bundled ticket may be free, **neither side of the branch is final** — see below.
 - **The endpoint no longer trusts the request body.** It issues a booking with no payment step,
   so a client-supplied price was a client-supplied authorization: a crafted POST booked a paid
   ticket for free. `resolveOrder` rebuilds names, prices and the subtotal from the event

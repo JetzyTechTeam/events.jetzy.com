@@ -5,7 +5,7 @@ import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
-import { resolveTickets, ticketsById, validateTicketBundles } from "@/lib/event-tickets"
+import { resolveTickets } from "@/lib/event-tickets"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { Types } from "mongoose"
 import zod from "zod"
@@ -84,13 +84,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const { tickets } = validation.data
-
-		// Checked against the RESOLVED memberships and before any Stripe price is minted: a
-		// subscription needs a real charge to start against.
-		const bundleError = validateTicketBundles(ticketsById((event as any).tickets), tickets as any)
-		if (bundleError) {
-			return sendResponse(res, null, bundleError, false, ResCode.BAD_REQUEST)
-		}
 
 		const resolvedTickets = await resolveTickets((event as any).tickets, tickets as any)
 

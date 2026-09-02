@@ -140,7 +140,7 @@ export default function TicketEditorModal({
 										? `Inherits the event setting (${eventRequireApproval ? "On" : "Off"})`
 										: !ticket.requireApproval
 											? "Guests book this ticket instantly."
-											: Number(ticket.price) > 0
+											: Number(ticket.price) > 0 || ticketMemberships(ticket as any).length > 0
 												? "The card is authorized at checkout and only charged when you approve. Holds expire after 7 days."
 												: "Guests request a spot; you approve or decline."}
 								</Text>

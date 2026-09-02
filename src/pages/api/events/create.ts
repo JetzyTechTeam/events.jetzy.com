@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { bundleFreeTicketMessage, ticketMemberships } from "@/lib/premium-bundle"
+import { ticketMemberships } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -89,16 +89,6 @@ const schema = zod.object({
 			membershipInterval: zod.enum(["month", "year"]).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
-		}).superRefine((ticket, ctx) => {
-			// A bundled ticket MAY require approval. It is sold as a `mode: "payment"` session
-			// holding ticket + the first membership period, and the subscriptions are created
-			// afterwards — see `api/bookings/approve.ts`.
-			//
-			// A subscription still needs a real charge to start against.
-			const sells = ticketMemberships(ticket as any)
-			if (sells.length > 0 && !(ticket.price > 0)) {
-				ctx.addIssue({ code: zod.ZodIssueCode.custom, message: bundleFreeTicketMessage(sells), path: ["price"] })
-			}
 		}),
 	),
 	isPaid: zod.boolean(),
