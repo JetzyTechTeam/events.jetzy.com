@@ -595,6 +595,29 @@ through our checkout code — still reaches them.
   someone's billing, so it isn't. Only `cancelled` is accepted — accepting `active` would let
   their side hand out a membership nobody was billed for.
 
+**We share a Stripe account AND the Concierge product with selectmember.jetzy.com** (confirmed
+2026-09-03). Stripe delivers an account's events to every registered endpoint, so a Concierge
+sold on THEIR site arrives at our webhook indistinguishable by product id from one of ours.
+**`billedByJetzy(subscription, key)` in `webhooks/stripe.ts` is the discriminator** —
+`metadata.membershipKey`, which `startMembershipSubscription` has stamped since Concierge
+shipped and which their checkout does not set. It gates the four lifecycle **emails** and
+`mirrorToSelectMember`, so we no longer send Jetzy-branded renewal/cancellation notices beside
+theirs for one purchase, nor PATCH a plan and `externalSubscriptionId` onto a record they own.
+It deliberately does **NOT** gate the membership write or `findActiveSubscriptionForProduct` —
+the person really does hold Concierge, and seeing their subscription is what stops us selling a
+second one with a bundled ticket. **Premium is left on the old behaviour on purpose**:
+subscriptions predating the metadata exist (hence the product-id fallback in
+`subscriptionMembershipKey`), so gating it would silence a legacy member's renewal email.
+Whether they also sell Premium on this product is an open question with their dev.
+
+Two knock-ons already existed and were the precedent for this: `membership_purchases` tags
+their sales `source: "external"`, and the welcome email was already gated on
+`metadata.purpose === "premium_subscription"`.
+
+**Known gap:** the inbound cancel webhook uses `findActiveSubscriptionForProduct`, which returns
+the first match — if one person somehow holds both a Jetzy-billed and a SelectMember-billed
+Concierge, it could cancel either. The double-sell guard makes that unlikely, not impossible.
+
 **Concierge is live in the ticket form.** The `HOST_SELECTABLE_MEMBERSHIP_KEYS` /
 `NEXT_PUBLIC_ENABLE_CONCIERGE_TICKETS` visibility gate is **gone** — it existed only to hold the
 product back until someone had watched the flow work, and a switch kept "in case" is machinery
