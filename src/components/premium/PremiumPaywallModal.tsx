@@ -360,8 +360,10 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 	return (
 		<div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-			{/* Wide enough for two cards side by side; they stack below `sm`. */}
-			<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden max-w-3xl">
+			{/* Wide enough for two cards side by side; they stack below `sm`.
+			    `4xl`, not `3xl`: at the narrower width the Premium column left
+			    "Click here to manage/cancel membership" wrapping onto two lines. */}
+			<div className="bg-[#1E1E1E] rounded-2xl shadow-2xl w-full relative max-h-[90vh] flex flex-col overflow-hidden max-w-4xl">
 				<button
 					onClick={handleClose}
 					className="absolute top-2 right-2 bg-black text-white w-8 h-8 rounded-full flex items-center justify-center z-10"

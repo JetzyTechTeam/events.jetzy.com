@@ -514,7 +514,7 @@ const PlanComparison: React.FC<Props> = ({
 								    this card: `trialDisclosure` no longer repeats it under the invite field.
 								    Opens in a new tab because this card renders mid-purchase on three
 								    surfaces, and navigating away discards the form. */}
-								<p className="text-sm mt-2">
+								<p className="text-xs mt-2">
 									<a
 										href={ROUTES.manageMembership}
 										target="_blank"

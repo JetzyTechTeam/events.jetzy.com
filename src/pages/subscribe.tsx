@@ -326,7 +326,8 @@ export default function SubscribePage() {
 				<p className="text-gray-400">Upgrade anytime. Cancel anytime.</p>
 			</div>
 
-			<div className="max-w-3xl mx-auto">
+			{/* `4xl` so the cancellation link fits on one line — see the paywall modal. */}
+			<div className="max-w-4xl mx-auto">
 				{/* Shared with the paywall modal, so a buyer sees the same comparison whichever
 				    door they came through. */}
 				<PlanComparison

@@ -525,7 +525,8 @@ export default function PremiumPage() {
 				<p className="text-gray-400">Upgrade anytime. Cancel anytime.</p>
 			</div>
 
-			<div className="max-w-3xl mx-auto">
+			{/* `4xl` so the cancellation link fits on one line — see the paywall modal. */}
+			<div className="max-w-4xl mx-auto">
 				{/* The same card the paywall modal and /subscribe render, so the offer reads
 				    identically whichever door someone came through. */}
 				<PlanComparison
