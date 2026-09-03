@@ -240,6 +240,9 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			"invoice.payment_intent",
 			"invoice.payment_intent.latest_charge",
 			"setup_intent",
+			// So a subscription Stripe created for us (the trial session above) can be linked to
+			// the booking and its `trial_end` read for the receipt, rather than re-derived.
+			"subscription",
 		],
 	})
 	if (!session) return { created: false, booking: null, event: null, requiresApproval: false, session: null, reason: "no-session" }
@@ -265,6 +268,10 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		(invoice && typeof invoice.payment_intent === "string" ? invoice.payment_intent : invoicePi?.id)
 
 	const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id
+	// When Stripe created the subscription, its `trial_end` is the authority on when the buyer is
+	// first billed — the same date the checkout page quoted them.
+	const expandedSubscription = (typeof session.subscription === "string" ? null : session.subscription) as Stripe.Subscription | null
+	const trialEndsFromSession = expandedSubscription?.trial_end ? new Date(expandedSubscription.trial_end * 1000) : undefined
 
 	// The card, from whichever intent this session actually had. A paid or held order carries a
 	// PaymentIntent; a free ticket giving away free months carries only a SetupIntent, and that
@@ -572,8 +579,42 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id
 		const paymentMethodId = savedPaymentMethodId
 
+		// STRIPE MAY HAVE ALREADY CREATED IT. A free ticket giving away a single membership is
+		// sold through a `mode: "subscription"` session with a trial, because that is the only
+		// shape whose page shows the buyer a priced summary rather than a bare card form. The
+		// subscription then exists before we get here, and calling `startMembershipSubscription`
+		// would sign them up a SECOND time on the same customer.
+		//
+		// `hasActiveMembershipSubscription` inside that function would usually catch it, but it
+		// is a network round trip against a subscription created seconds ago — this is the
+		// deterministic guard, and the session itself is the evidence.
+		const sessionSubscriptionId =
+			typeof session.subscription === "string" ? session.subscription : session.subscription?.id
+
 		for (const line of membershipLines) {
 			const row = booking.payment?.memberships?.find((m) => m.key === line.key)
+
+			// Link what Stripe made, rather than making another. Only ever one membership on such
+			// a session (that is the condition `api/checkout` requires before choosing this
+			// shape), so the single line is unambiguously the one it belongs to.
+			if (sessionSubscriptionId) {
+				if (row) {
+					row.status = "active"
+					row.subscriptionId = sessionSubscriptionId
+					row.lastError = undefined
+				}
+				// Disclosed on the receipt exactly as a self-created one is: `amount` is what
+				// moved (nothing), so the RENEWAL price is what has to be stated.
+				recurringCharges.push({
+					label: MEMBERSHIPS[line.key].receiptLabel,
+					amount: line.trialMonths ? Number(line.renewalAmount) || 0 : line.amount,
+					interval: line.interval,
+					...(line.trialMonths ? { trialMonths: line.trialMonths } : {}),
+					...(trialEndsFromSession ? { firstRenewalAt: trialEndsFromSession } : {}),
+				})
+				continue
+			}
+
 			try {
 				const result = await startMembershipSubscription({
 					key: line.key,

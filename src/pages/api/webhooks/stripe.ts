@@ -232,7 +232,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							const { recordMembershipPurchase } = await import("@/models/events/membership-purchases")
 							const recorded = await recordMembershipPurchase({
 								key,
-								source: sessionMetadata.purpose === "premium_subscription" ? "subscribe" : "external",
+								// "ticket+membership" is our own bundled order — a free ticket giving
+								// away a single membership is sold as a trial subscription session so
+								// its Stripe page shows a priced summary, and Stripe creates the
+								// subscription. Without this arm those sales report as "external",
+								// i.e. as somebody else's, and the campaign that produced them
+								// cannot be traced. Anything else unrecognised is still external:
+								// selectmember.jetzy.com sells Premium on this same account.
+								source:
+									sessionMetadata.purpose === "premium_subscription"
+										? "subscribe"
+										: sessionMetadata.purpose === "ticket+membership"
+											? "ticket"
+											: "external",
 								email: recipient?.email || checkoutSession.customer_details?.email || undefined,
 								name: recipient?.firstName,
 								userId,
@@ -247,7 +259,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								// A host's referral code, shared as a Premium link. Recorded with its
 								// event so the sale can be traced back to the campaign that produced it.
 								...(sessionMetadata.referralCode ? { referralCode: sessionMetadata.referralCode } : {}),
-								...(sessionMetadata.referralEventId ? { eventId: sessionMetadata.referralEventId } : {}),
+								...(sessionMetadata.referralEventId
+									? { eventId: sessionMetadata.referralEventId }
+									// A bundled order carries its own event, under the ordinary key.
+									: sessionMetadata.eventId
+										? { eventId: sessionMetadata.eventId }
+										: {}),
+								...(sessionMetadata.bookingRef ? { bookingRef: sessionMetadata.bookingRef } : {}),
 								...(subscription.trial_end
 									? { trialEndsAt: new Date(subscription.trial_end * 1000) }
 									: {}),

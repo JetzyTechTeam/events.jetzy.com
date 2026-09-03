@@ -718,6 +718,79 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					return `${MEMBERSHIPS[line.key].label} ${rate.toLocaleString("en-US", { style: "currency", currency: line.currency || "usd" })}/${line.interval}`
 				})
 				.join(" and ")
+			// PREFERRED SHAPE: `mode: "subscription"` with a trial.
+			//
+			// Setup mode's page is a bare "Save payment information" form — Stripe rejects
+			// `line_items` there outright ("You can not pass `line_items` in `setup` mode"), so
+			// there is no order summary, no price, and no product name anywhere on it. Everything
+			// has to live in `custom_text` beside the button, which is the one slot the API
+			// exposes. Subscription mode renders the summary panel from the line items and adds
+			// Stripe's own native trial wording, which is what a buyer expects to see.
+			//
+			// Only used where it is SAFE, because it hands subscription creation to Stripe:
+			//   - exactly ONE membership. A Checkout Session creates at most one subscription,
+			//     and one carrying both products would mean cancelling either cancels both.
+			//   - no `selectMemberPlan` on it (i.e. Premium, not Concierge). Our own
+			//     `startMembershipSubscription` mirrors a Concierge sale to selectmember.jetzy.com;
+			//     a subscription Stripe creates skips that, and their side would never hear of it.
+			//   - not an approval order. A membership must not begin before the host approves,
+			//     and here Stripe would start it the moment the buyer submits.
+			// Anything else falls through to setup mode below, which is still correct — just plainer.
+			const soleTrialLine = trialOnlyMembershipLines.length === 1 ? trialOnlyMembershipLines[0] : null
+			const canSellAsSubscription =
+				!!soleTrialLine &&
+				!requiresApproval &&
+				!MEMBERSHIPS[soleTrialLine.key].selectMemberPlan &&
+				// The ticket must be GENUINELY free, not discounted to zero.
+				//
+				// `nothingToCharge` is satisfied by a 100%-off referral code on a priced ticket
+				// too, and the line items below are the ticket's real Stripe prices — the discount
+				// lives in `discountConfig`, which a subscription session here does not carry.
+				// Including them would bill the buyer the full ticket price on the first invoice
+				// for an order the checkout modal showed as $0. Those orders take the setup branch,
+				// which charges nothing at all.
+				chargePricing.subtotal === 0
+
+			if (soleTrialLine && canSellAsSubscription) {
+				const subSession = await stripe.checkout.sessions.create({
+					client_reference_id: reference,
+					payment_method_types: ["card"],
+					mode: "subscription",
+					customer: membershipExtras.customer as string,
+					// The membership at its real recurring price, so the panel reads
+					// "Jetzy Premium $20.00/month" rather than nothing — plus the free ticket as a
+					// $0 one-time line, which is the only way it appears on the page at all.
+					// Verified against Stripe: a $0 line beside a recurring one is accepted here.
+					line_items: [{ price: soleTrialLine.priceId, quantity: 1 }, ...prices],
+					success_url: successUrl,
+					cancel_url: cancelUrl,
+					metadata,
+					subscription_data: {
+						// Stripe bills nothing until this date and then charges the normal price,
+						// which is exactly the offer. Same calendar-month arithmetic as
+						// `startMembershipSubscription`, so the date the buyer reads on this page
+						// is the date they are really charged.
+						trial_end: Math.floor(trialEndsAt.getTime() / 1000),
+						// `membershipKey` is what `subscriptionMembershipKey` and `billedByJetzy`
+						// read. Our own creator stamps it; a subscription Stripe creates would carry
+						// nothing, so the lifecycle emails and the SelectMember ownership check
+						// would not recognise this as ours.
+						metadata: {
+							membershipKey: soleTrialLine.key,
+							userId: String(metadata.membershipUserId || ""),
+							bookingRef,
+							eventId: String(event._id),
+						},
+					},
+				}).catch((stripeError: any) => {
+					console.error("[checkout/index] Stripe subscription session creation failed:", stripeError.message)
+					throw new Error(`Stripe error: ${stripeError.message}`)
+				})
+
+				console.log("[checkout/index] Trial subscription session created (free ticket + gifted membership):", subSession.id)
+				return sendResponse(res, { ...subSession, requiresApproval }, "Checkout created successfully!", true, ResCode.OK)
+			}
+
 			const setupSession = await stripe.checkout.sessions.create({
 				client_reference_id: reference,
 				payment_method_types: ["card"],
