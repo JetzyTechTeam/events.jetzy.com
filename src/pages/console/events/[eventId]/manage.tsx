@@ -2,7 +2,7 @@
 import { stripHtml } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { ReferralCodesManager } from "@/components/console/ReferralCodesManager"
-import { ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle"
+import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles"
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList"
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place"
@@ -425,6 +425,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					// Carried through so the Monthly/Annual control shows what the ticket actually
 					// sells. Dropping it left the toggle reading "Monthly" on an annual ticket.
 					membershipInterval: t.membershipInterval,
+					// Same reason as the interval: dropping it would show "no free months" on a
+					// ticket that gives them, and the next save would write that back.
+					membershipFreeMonths: t.membershipFreeMonths,
 					includesPremium: ticketMemberships(t as any).includes("premium"),
 				})))
 			}
@@ -483,6 +486,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				requireApproval: ticket.requireApproval,
 				memberships: ticketMemberships(ticket),
 				membershipInterval: ticket.membershipInterval,
+				membershipFreeMonths: ticket.membershipFreeMonths,
 				includesPremium: ticketMemberships(ticket).includes("premium"),
 			})),
 			privacy: event.privacy,

@@ -1,7 +1,14 @@
 import React from "react"
-import { Box, Checkbox, Flex, FormControl, FormLabel, Text } from "@chakra-ui/react"
+import { Box, Checkbox, Flex, FormControl, FormLabel, Input, Text } from "@chakra-ui/react"
 import { MEMBERSHIPS, MEMBERSHIP_KEYS, membershipLabelList, type MembershipKey } from "@/lib/memberships"
-import { bundleApprovalNotice, bundleFreeTicketNotice } from "@/lib/premium-bundle"
+import {
+	MAX_MEMBERSHIP_FREE_MONTHS,
+	bundleApprovalNotice,
+	bundleFreeTicketNotice,
+	bundleFreeTrialTicketNotice,
+	freeMonthsLabel,
+} from "@/lib/premium-bundle"
+import { blurOnWheel } from "@/lib/number-input"
 
 /**
  * "Which memberships does this ticket sell?" — the host-side control.
@@ -24,15 +31,29 @@ type Props = {
 	/** Billing interval sold with this ticket. Undefined means monthly. */
 	interval?: string
 	onIntervalChange?: (next: string) => void
+	/** Free months given with no code typed. Undefined/0 means none. */
+	freeMonths?: number
+	onFreeMonthsChange?: (next: number) => void
 }
 
-const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApproval, price, interval, onIntervalChange }) => {
+const TicketMembershipToggles: React.FC<Props> = ({
+	value,
+	onChange,
+	requiresApproval,
+	price,
+	interval,
+	onIntervalChange,
+	freeMonths,
+	onFreeMonthsChange,
+}) => {
 	const chosenInterval = interval === "year" ? "year" : "month"
 	// Only Jetzy Premium has an annual price; Full Concierge is monthly only, and a ticket set
 	// to annual resolves it at its own default. So the choice is only meaningful — and only
 	// offered — when Premium is on the ticket.
 	const showInterval = !!onIntervalChange && (value || []).includes("premium")
 	const selected = value || []
+	const chosenFreeMonths = Math.min(Math.max(Math.floor(Number(freeMonths) || 0), 0), MAX_MEMBERSHIP_FREE_MONTHS)
+	const showFreeMonths = !!onFreeMonthsChange && selected.length > 0
 	const toggle = (key: MembershipKey, checked: boolean) =>
 		// Rebuilt from MEMBERSHIP_KEYS rather than from the ticked order, so what is stored is
 		// always canonical whichever order the host clicked them in.
@@ -125,6 +146,41 @@ const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApp
 				</Box>
 			)}
 
+			{/* Free months given to EVERY buyer of this ticket, with no code typed. The other
+			    source of the same gift is a referral code, and the larger of the two wins — said
+			    here so a host running both doesn't expect them to add up. */}
+			{showFreeMonths && (
+				<Box mt={3}>
+					<FormLabel mb={1} fontSize="13px">
+						Free months included
+					</FormLabel>
+					<Input
+						type="number"
+						min={0}
+						max={MAX_MEMBERSHIP_FREE_MONTHS}
+						step={1}
+						// Same guard the price and capacity inputs use: a scroll over a focused
+						// number field silently changes it, and here that changes what buyers pay.
+						onWheel={blurOnWheel}
+						value={chosenFreeMonths === 0 ? "" : String(chosenFreeMonths)}
+						placeholder="0"
+						maxW="120px"
+						bg="#1C1E21"
+						borderColor="#343536"
+						color="white"
+						onChange={(e) => {
+							const next = Math.floor(Number(e.target.value))
+							onFreeMonthsChange?.(Number.isFinite(next) && next > 0 ? Math.min(next, MAX_MEMBERSHIP_FREE_MONTHS) : 0)
+						}}
+					/>
+					<Text fontSize="12px" color="#868686" mt={2} maxW="320px" lineHeight="140%">
+						{chosenFreeMonths > 0
+							? `Every buyer gets ${freeMonthsLabel(chosenFreeMonths)} of ${sellingLabel} free — no code needed — then it renews at the normal rate. A referral code that also gives free months doesn't add to this; whichever offer is larger applies.`
+							: `Leave blank to charge for ${sellingLabel} from the start.`}
+					</Text>
+				</Box>
+			)}
+
 			{selected.length > 0 && requiresApproval && (
 				<Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
 					{bundleApprovalNotice(selected, chosenInterval)}
@@ -136,7 +192,10 @@ const TicketMembershipToggles: React.FC<Props> = ({ value, onChange, requiresApp
 			    read as a contradiction until you know the membership is the thing being sold. */}
 			{selected.length > 0 && !(Number(price) > 0) && (
 				<Text fontSize="12px" color="#F5C518" mt={2} maxW="320px" lineHeight="140%">
-					{bundleFreeTicketNotice(selected)}
+					{/* With free months on a $0 ticket nothing is charged at checkout at all, so
+					    "non-members will be charged for the membership only" would be false. The
+					    buyer is still sent to Stripe — for a card, not for money. */}
+					{chosenFreeMonths > 0 ? bundleFreeTrialTicketNotice(selected, chosenFreeMonths) : bundleFreeTicketNotice(selected)}
 				</Text>
 			)}
 		</FormControl>

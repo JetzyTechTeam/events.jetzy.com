@@ -25,6 +25,12 @@ export type TicketData = {
    * `ticketMembershipInterval()`.
    */
   membershipInterval?: string
+  /**
+   * Free months of the bundled membership given with NO code typed. Undefined means none. A
+   * referral code granting free months is the other source of the same gift; the larger of the
+   * two wins. Read it with `ticketMembershipFreeMonths()`.
+   */
+  membershipFreeMonths?: number
   /** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
   includesPremium?: boolean
 }

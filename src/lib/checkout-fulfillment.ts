@@ -227,8 +227,20 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	//
 	// `latest_charge` is expanded so the hold deadline can be read from the charge rather than
 	// assumed — see `resolveAuthExpiry`.
+	//
+	// `setup_intent` matters for the third session shape: a FREE ticket whose membership is also
+	// free for a while. Nothing is charged, so there is no PaymentIntent at all — the card the
+	// subscriptions will bill at the end of the free months hangs off the SetupIntent instead,
+	// and without it those subscriptions would be created with no payment method and cancelled
+	// by Stripe when the trial ended.
 	const session = await stripe.checkout.sessions.retrieve(sessionId, {
-		expand: ["payment_intent", "payment_intent.latest_charge", "invoice.payment_intent", "invoice.payment_intent.latest_charge"],
+		expand: [
+			"payment_intent",
+			"payment_intent.latest_charge",
+			"invoice.payment_intent",
+			"invoice.payment_intent.latest_charge",
+			"setup_intent",
+		],
 	})
 	if (!session) return { created: false, booking: null, event: null, requiresApproval: false, session: null, reason: "no-session" }
 
@@ -254,6 +266,14 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 
 	const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id
 
+	// The card, from whichever intent this session actually had. A paid or held order carries a
+	// PaymentIntent; a free ticket giving away free months carries only a SetupIntent, and that
+	// is the whole reason it was sent to Stripe at all.
+	const setupIntent = (typeof session.setup_intent === "string" ? null : session.setup_intent) as Stripe.SetupIntent | null
+	const savedPaymentMethodId =
+		(typeof pi?.payment_method === "string" ? pi?.payment_method : pi?.payment_method?.id) ||
+		(typeof setupIntent?.payment_method === "string" ? setupIntent?.payment_method : setupIntent?.payment_method?.id)
+
 	const isPaidNow = session.payment_status === "paid"
 	// Manual capture leaves the session "unpaid" while the PaymentIntent sits in
 	// `requires_capture`. That is a successfully authorized approval order, not a failure.
@@ -274,6 +294,14 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	// Stripe reached, not a payment that failed.
 	const isSettledWithoutCharge =
 		!isPaidNow && !isSubscriptionSettled && session.status === "complete" && session.payment_status === "no_payment_required"
+
+	// A setup-mode session takes no money by design — it exists to collect the card that the
+	// gifted membership will be billed on once its free months run out. `payment_status` is
+	// `no_payment_required` there too, so `isSettledWithoutCharge` already covers it; this
+	// name exists so the branches below can tell "nothing was owed" from "nothing was ever
+	// going to be charged", which is the difference between a confirmed booking and one that
+	// still needs the host.
+	const isSetupSession = session.mode === "setup"
 
 	if (!isPaidNow && !isAuthorized && !isSubscriptionSettled && !isSettledWithoutCharge) {
 		return { created: false, booking: null, event: null, requiresApproval, session, reason: "not-payable" }
@@ -363,11 +391,16 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	let booking: IBookings | null = null
 	try {
 		booking = await Bookings.create({
-			// PENDING means "awaiting the host", which is only true of an authorized hold. A
-			// session Stripe settled for nothing owed is finished, not waiting on anybody, so
-			// it confirms like a paid one — leaving it PENDING would park it in the Approvals
-			// tab of an event that never asked for approval.
-			status: isPaidNow || isSettledWithoutCharge ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
+			// PENDING means "awaiting the host". A session Stripe settled for nothing owed is
+			// finished, not waiting on anybody, so it confirms like a paid one — leaving it
+			// PENDING would park it in the Approvals tab of an event that never asked for
+			// approval.
+			//
+			// `!requiresApproval` is the exception, and it is only reachable on a setup session:
+			// a free ticket giving away free months has no money to hold, so there is no
+			// authorization to read the host's decision off. Confirming it would let the guest
+			// past a door the host asked to keep shut.
+			status: (isPaidNow || isSettledWithoutCharge) && !requiresApproval ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
 			eventId: metadata.eventId,
 			bookingRef,
 			// Present only when the buyer was logged in at checkout. Bookings made before this
@@ -417,6 +450,11 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 						})),
 					}
 					: {}),
+				// Stored only for the setup session, where it is the ONLY record of the card:
+				// `approve.ts` reads the payment method off the PaymentIntent it just captured,
+				// and this order never had one. Harmless elsewhere, but written only where it is
+				// needed so no booking carries a duplicate of something Stripe already holds.
+				...(isSetupSession && savedPaymentMethodId ? { paymentMethodId: savedPaymentMethodId } : {}),
 				captureMethod: isAuthorized ? "manual" : "automatic",
 				// No `status` when nothing was charged: `bookingMoneyState` reads a missing one
 				// as "free", and "captured" against $0 would tell the guest money was taken and
@@ -532,7 +570,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	const recurringCharges: RecurringCharge[] = legacyRecurring ? [legacyRecurring] : []
 	if (membershipLines.length > 0) {
 		const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id
-		const paymentMethodId = typeof pi?.payment_method === "string" ? pi?.payment_method : pi?.payment_method?.id
+		const paymentMethodId = savedPaymentMethodId
 
 		for (const line of membershipLines) {
 			const row = booking.payment?.memberships?.find((m) => m.key === line.key)

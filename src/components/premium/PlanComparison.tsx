@@ -263,6 +263,15 @@ const PlanComparison: React.FC<Props> = ({
 			(trial ? trialEndsOn({ months: trial.months, intervals: [], label: trial.label }).toISOString() : null),
 	)
 
+	// The button says what the click actually starts.
+	//
+	// DERIVED from the trial being applied, never written down: this same card gives one free
+	// month by default, two on `/premium`'s campaign code, whatever a referral link carries, and
+	// NONE to somebody who has had Premium before. A hardcoded "Start 1-month free trial" would
+	// be wrong on three of those four, and wrong in the direction that promises something the
+	// buyer doesn't get. With no trial applied it falls back to the caller's ordinary label.
+	const resolvedPremiumCta = trialApplied ? `Start ${trial!.months}-month free trial` : premiumCtaLabel
+
 	// A member is not buying. Everything below the current-plan block is the member state.
 	const memberInterval = currentPlan?.interval || null
 	const memberRenewal = renewalDate(currentPlan?.renewsAt)
@@ -663,7 +672,7 @@ const PlanComparison: React.FC<Props> = ({
 						onClick={onChoosePremium}
 						className="bg-jetzy text-black font-bold px-6 py-3 rounded-full hover:opacity-90 transition-colors disabled:opacity-50"
 					>
-						{premiumPending ? <Spinner /> : premiumCtaLabel}
+						{premiumPending ? <Spinner /> : resolvedPremiumCta}
 					</button>
 				)}
 			</div>

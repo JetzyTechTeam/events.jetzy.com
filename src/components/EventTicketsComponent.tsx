@@ -12,7 +12,7 @@ import { CheckmarkSVG } from "@/assets/icons";
 import { eventHasAnyApprovalTicket, eventRequiresApprovalForAllTickets, selectionRequiresApproval, ticketApprovalFlag } from "@/lib/ticket-approval";
 import { eventPath } from "@/lib/event-slug";
 import { buildTicketPricing } from "@/lib/ticket-pricing";
-import { membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle";
+import { freeMonthsLabel, membershipQuantityInSelection, premiumOrderCapMessage, PREMIUM_TICKET_MAX_PER_ORDER, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle";
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships";
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan";
 import {
@@ -118,6 +118,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         // Monthly or annual. Display and selection state only — `api/checkout` re-reads it
         // from the event record before deciding what the card is charged.
         membershipInterval: ticket.membershipInterval,
+        // Free months the host put on this ticket, given with no code typed. Display and
+        // selection state only, re-read server-side for the same reason as the interval.
+        membershipFreeMonths: ticket.membershipFreeMonths,
       };
     });
 
@@ -260,6 +263,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
         // Must survive into redux too, or the checkout modal quotes the monthly figure on a
         // ticket the server will charge annually.
         membershipInterval: ticket.membershipInterval,
+        // Same rule again: without this the modal offers no free months on a ticket that
+        // gives them, and the buyer reads a price the server is not going to charge.
+        membershipFreeMonths: ticket.membershipFreeMonths,
       }))
       .filter((ticket) => ticket.isSelected);
 
@@ -299,6 +305,9 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   // Priced at the SELECTED TICKET's interval, not the product default, so an annual bundle
   // reads "$200/year" beside the order total rather than the monthly figure.
   const selectionInterval = selectionMembershipInterval(tickets as any);
+  // Free months the host gave on the selected ticket. A referral code can beat this at
+  // checkout, never reduce it, so the figure shown here is the floor of what the buyer gets.
+  const selectionFreeMonths = selectionMembershipFreeMonths(tickets as any);
   const selectionPricing = buildTicketPricing({
     subtotal: selectionSubtotal,
     recurring: selectionAddedKeys
@@ -306,7 +315,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
       .filter((plan): plan is NonNullable<typeof plan> => !!plan)
       .map((plan) => ({ plan, price: planPriceForInterval(plan, selectionInterval) }))
       .filter(({ price }) => price.amount != null)
-      .map(({ plan, price }) => ({ label: MEMBERSHIPS[plan.key].receiptLabel, amount: price.amount as number, interval: price.interval })),
+      .map(({ plan, price }) => ({
+        label: MEMBERSHIPS[plan.key].receiptLabel,
+        amount: price.amount as number,
+        interval: price.interval,
+        // A trialled line is excluded from `dueToday` by `recurringTotal` but still renders —
+        // it is a charge the buyer is agreeing to, just not today's.
+        ...(selectionFreeMonths > 0 ? { trialMonths: selectionFreeMonths } : {}),
+      })),
   });
 
   const anyTicketNeedsApproval = eventHasAnyApprovalTicket(event as any);
@@ -530,10 +546,14 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                 // "$20/month" beside an annual ticket that charges $200/year — the figure at the
                 // point of sale has to be the one the card is charged.
                 const price = plan ? planPriceForInterval(plan, selectionInterval) : null;
+                // Free months lead, because they are what changes the decision: "$20/month"
+                // and "free for a month, then $20/month" are different offers and the second
+                // one has to be legible before the buyer commits, not only in the modal.
+                const freeLead = selectionFreeMonths > 0 ? `first ${freeMonthsLabel(selectionFreeMonths)} free, then ` : "";
                 return (
                   <p key={key} className="text-xs mt-0.5" style={{ color: "#F5C518" }}>
                     {price?.label
-                      ? `+ ${plan?.name} ${price.label} — confirmed at checkout`
+                      ? `+ ${plan?.name} — ${freeLead}${price.label}, confirmed at checkout`
                       : `+ ${plan?.name || key} membership — confirmed at checkout`}
                   </p>
                 );

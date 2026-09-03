@@ -75,7 +75,7 @@ import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
 import { useSession } from "next-auth/react";
-import { ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle";
+import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle";
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
@@ -1139,6 +1139,8 @@ const CreateEventPage = () => {
                         price={Number(tempTicket.price)}
                         interval={ticketMembershipInterval(tempTicket as any)}
                         onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
+                        freeMonths={ticketMembershipFreeMonths(tempTicket as any)}
+                        onFreeMonthsChange={(membershipFreeMonths) => setTempTicket({ ...tempTicket, membershipFreeMonths } as any)}
                       />
                     </ModalBody>
 

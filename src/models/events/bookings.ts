@@ -52,6 +52,16 @@ const bookingPaymentSchema = new Schema(
 		provider: { type: String, default: "stripe" },
 		checkoutSessionId: { type: String, index: true },
 		paymentIntentId: { type: String, index: true },
+		/**
+		 * The card to bill the memberships on, when there is no PaymentIntent to read it off.
+		 *
+		 * Only written by the setup-mode session — a FREE ticket whose membership is also free
+		 * for a while. Every other order has a PaymentIntent and `approve.ts` takes the payment
+		 * method from that; here no money ever moved, so the SetupIntent is the only record of
+		 * the card, and without it an approved booking would create a subscription Stripe
+		 * cancels the moment the free months run out.
+		 */
+		paymentMethodId: { type: String, required: false },
 		// ---- Memberships this purchase sold ----
 		//
 		// Every subscription is created AFTER the money moves — immediately for a straight

@@ -49,15 +49,64 @@ export const TRIAL_CODES: Record<string, TrialOffer> = {
 }
 
 /**
- * The campaign code `/premium` prefills for every visitor.
+ * The campaign code `/premium` prefills for every visitor. **Empty: it prefills nothing.**
  *
- * A public landing page we email people is a campaign in itself — expecting the recipient to type
- * a code they were shown in the same email is a step that loses people for no reason. Change this
- * one constant when the campaign changes; leave it as `""` to prefill nothing.
+ * It held `jetzy-me` (two months) while `/premium` was the only door with an offer behind it.
+ * Now that `DEFAULT_TRIAL_MONTHS` gives every first-time member a free month with no code typed,
+ * `/premium` runs on that same standing offer as the other doors, so every surface promises the
+ * same thing (product decision, 2026-09-04).
  *
- * It must exist in `TRIAL_CODES` above, or the field prefills something the server will refuse.
+ * `jetzy-me` is NOT retired — it stays in `TRIAL_CODES` and still grants its two months to
+ * anyone who types it or arrives on `?code=jetzy-me`, which is what keeps the links already in
+ * people's inboxes working. It is simply no longer filled in for visitors who never had it.
+ *
+ * Set this to a code to run a campaign on the page again. It must exist in `TRIAL_CODES` above,
+ * or the field prefills something the server will refuse.
  */
-export const DEFAULT_INVITE_CODE = "jetzy-me"
+export const DEFAULT_INVITE_CODE = ""
+
+/**
+ * Free months given to a first-time member who types NO code at all. `0` turns it off.
+ *
+ * Deliberately NOT a row in `TRIAL_CODES`. Those are campaign codes: redeemed by name, reported
+ * on by name, and refused LOUDLY when they don't apply, because somebody typed them and is
+ * waiting to hear whether they worked. This one is nobody's code — it is the ordinary terms of
+ * starting a membership, so it is applied silently and its refusal is silent too.
+ *
+ * This is now what EVERY buying surface offers by default — `/premium`, `/subscribe` and the
+ * paywall modal alike — since `DEFAULT_INVITE_CODE` was emptied. A code the visitor actually
+ * types (or arrives with on `?code=`) still wins when it is worth more; the two never stack.
+ */
+export const DEFAULT_TRIAL_MONTHS = 1
+
+/**
+ * The standing offer, or `null` when there isn't one.
+ *
+ * Both intervals: the card names the real amount and date either way, so "1 month free, then
+ * $200/year from 3 Oct" is as honest on annual as on monthly — and an offer that vanished when
+ * the buyer switched plans would read as the page breaking.
+ */
+export const DEFAULT_TRIAL_OFFER: TrialOffer | null =
+	DEFAULT_TRIAL_MONTHS > 0
+		? {
+			months: DEFAULT_TRIAL_MONTHS,
+			intervals: ["month", "year"],
+			label: `${DEFAULT_TRIAL_MONTHS} month${DEFAULT_TRIAL_MONTHS === 1 ? "" : "s"} free`,
+		}
+		: null
+
+/**
+ * The standing offer for a given interval, or `null` if it doesn't apply there.
+ *
+ * A convenience so the three buying surfaces resolve it exactly one way. Note this is a
+ * PREVIEW when nobody is signed in: the first-timer rule can only be applied server-side, and
+ * `/api/subscriptions/checkout` re-checks it before anything is charged.
+ */
+export const defaultTrialOffer = (interval?: string | null): TrialOffer | null => {
+	if (!DEFAULT_TRIAL_OFFER) return null
+	if (interval && !DEFAULT_TRIAL_OFFER.intervals.includes(interval)) return null
+	return DEFAULT_TRIAL_OFFER
+}
 
 /** Codes are matched case- and whitespace-insensitively: people type them from a screenshot. */
 export const normalizeTrialCode = (code?: string | null): string => (code || "").trim().toLowerCase()

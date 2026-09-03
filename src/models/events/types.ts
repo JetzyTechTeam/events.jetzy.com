@@ -20,6 +20,11 @@ export interface IEventTicket {
 	 * monthly. Resolve with `ticketMembershipInterval()`, never directly.
 	 */
 	membershipInterval?: string
+	/**
+	 * Free months of the bundled membership this ticket gives, with no code typed. Undefined
+	 * means none. Resolve with `ticketMembershipFreeMonths()`, never directly.
+	 */
+	membershipFreeMonths?: number
 	/** @deprecated Superseded by `memberships`; still the fallback for tickets saved before it. */
 	includesPremium?: boolean
 	_id: Types.ObjectId
@@ -195,6 +200,8 @@ export interface IBookingPayment {
 	provider?: string
 	checkoutSessionId?: string
 	paymentIntentId?: string
+	/** Card saved by a setup-mode session, when no PaymentIntent exists to read one off. */
+	paymentMethodId?: string
 	/**
 	 * Memberships sold with this booking, one entry per product. The authority — read this,
 	 * not the `premium*` fields below.

@@ -2717,3 +2717,141 @@ funnel stages read 0 there, correctly: nothing had been written yet when the che
 `analytics?.trends?.views`** for its own sparkline, so removing the aggregation would have broken a
 page that isn't part of this work. `ClickHeatmap.tsx` is still used by
 `/console/analytics/journey` (the platform-wide page) and was not deleted.
+
+## Free membership months with no code typed (2026-09-03)
+
+Free months of Jetzy Premium or Full Concierge could only be obtained by TYPING something: a
+host's referral code at event checkout, or an invite code from `TRIAL_CODES` at `/premium` /
+`/subscribe`. The CEO wanted them given by default in both places. Two independent changes,
+landing on the same `trialMonths` plumbing that already existed end to end — the only thing that
+widened is where the number comes from.
+
+### Part A — the host puts free months on a ticket
+
+`eventTicketsSchema.membershipFreeMonths`, `{ type: Number, required: false }`, **no default**.
+`undefined` means none, which is what every ticket saved before today means, so nothing about a
+live ticket changed and there is no migration. Range 0-12: the same ceiling as
+`ReferralCodes.freeMembershipMonths`, because the two are alternative sources of one gift and a
+host who can give twelve through a code should not be able to give more — or fewer — by typing it
+on the ticket. **Preserve-on-omit in `lib/event-tickets.ts`**, exactly like `membershipInterval`:
+an autosave built from a stale form must not quietly withdraw a gift a live ticket advertises.
+
+Three new exports in `lib/premium-bundle.ts` — `ticketMembershipFreeMonths`,
+`selectionMembershipFreeMonths`, `resolveFreeMonthsForKey`. Never read the field directly.
+
+**Best offer wins; they never stack.** `max(ticketMonths, referralMonths)`. A referral code
+carrying zero months cannot take the host's gift away, and a host running a campaign on a ticket
+that already gives a month does not end up giving three. `resolveFreeMonthsForKey` is the ONE
+place that rule lives, and `api/checkout` and `EventCheckoutModel` both call it — so the sentence
+the buyer reads and the trial their subscription is created with are the same number by
+construction, not by two implementations happening to agree.
+
+**The ticket's months apply to every membership it sells; a referral code's stay Premium-only.**
+The host ticked those boxes on that ticket knowing what it sold. A code is not that decision.
+Full Concierge is SelectMember's product on their terms, and a host giving away free months of it
+bills nothing to them and nothing to us — flagged, and accepted.
+
+The months are read from the **stored** ticket in `api/checkout`, never from the request body,
+for the same reason the interval is: otherwise a crafted POST awards itself a free year.
+
+Host control lives in `TicketMembershipToggles` and has to be wired at all four surfaces that
+already carry `membershipInterval` — `console/events/create.tsx`, `TicketEditorModal`,
+manage.tsx's **two** hydration seeds, and HostedEvents' conditional-spread save. Missing one does
+not fail; it silently resets the field on the next save through that screen.
+
+### A free ticket that also gives free months is a `mode: "setup"` session
+
+This is the fourth Checkout Session shape in the codebase and the only genuinely new mechanic.
+
+Nothing is charged — but a card still has to be collected. `startMembershipSubscription` sets
+`trial_settings.end_behavior.missing_payment_method: "cancel"` whenever it has no payment method,
+so a subscription created with no card is **cancelled by Stripe** when the free months run out
+rather than renewing. The host gave away the first period, not the membership. "After the month
+it will be charged" is only true if a card exists by then.
+
+A `$0` payment-mode session cannot do it: Stripe creates no PaymentIntent behind one and marks it
+`no_payment_required`, which `checkout-fulfillment.ts` discards as `"not-payable"` — a completed
+checkout with no booking, no email and no log. Setup mode is the shape that collects a card
+without taking money. It accepts no `line_items`, so the $0 ticket cannot be shown on the Stripe
+page at all; `custom_text.submit` is what tells the buyer why they are entering card details.
+
+`api/checkout`'s `freeOrder` short-circuit therefore splits in two:
+
+- nothing chargeable **and** at least one trialled membership line → setup session;
+- nothing chargeable and no membership lines at all (the buyer already holds everything) →
+  `freeOrder: true`, unchanged.
+
+**`api/checkout/free-events.ts` no longer creates any membership.** `stillOwed` is now simply
+`bundlePlan.toCharge`: anything still to be created — free months or not — is bounced back with
+`needsCheckout` so a card is collected. The old cardless-gift path (`trialLines`,
+`grantedRecurring`, the `payment.memberships` write) is **deleted rather than left dead**. Its
+referral increment is gated on `discountsDidWork` alone, since no gift is handed out here to
+count. This does change existing behaviour for a referral gift on a $0 ticket — those buyers now
+enter a card — and that is the point: previously their membership quietly expired.
+
+`checkout-fulfillment.ts` gained three things: `setup_intent` in the expand list, a
+`savedPaymentMethodId` that falls back from the PaymentIntent to the SetupIntent, and
+`booking.payment.paymentMethodId` (new schema field) written on setup sessions only. `approve.ts`
+reads it — a $0 approval order has no PaymentIntent to take a card off, and without it an
+approved booking would create exactly the cardless subscription this path exists to avoid.
+
+One bug caught while writing it: the booking status line was
+`isPaidNow || isSettledWithoutCharge ? CONFIRMED : PENDING`. A setup session satisfies
+`isSettledWithoutCharge`, so an approval-gated free ticket would have confirmed itself and walked
+the guest straight past the host's door. It is now `&& !requiresApproval`.
+
+`EventCheckoutModel` routes on `dueToday === 0 && chargedKeys.length === 0` — the honest question
+is "does anything still have to be set up", not "is there money". The two one-hop fallbacks
+(`needsCheckout` / `freeOrder`) are untouched and still cover a stale `heldByEmail`.
+
+### Part B — a standing free month on `/subscribe` and the paywall modal
+
+`DEFAULT_TRIAL_MONTHS = 1` and `DEFAULT_TRIAL_OFFER` / `defaultTrialOffer(interval)` in
+`lib/invite-trial.ts`. Both intervals — the card names the real amount and date either way, so
+"1 month free, then $200/year from 3 Oct" is as honest on annual as on monthly, and an offer that
+vanished when the buyer switched plans would read as the page breaking.
+
+**Deliberately not a `TRIAL_CODES` row.** Those are campaign codes: redeemed by name, reported on
+by name, and refused LOUDLY, because somebody typed them and is waiting to hear whether they
+worked. This one is nobody's code — it is the ordinary terms of starting a membership — so it is
+applied silently and its refusal is silent too. The first-timer rule (`hasEverHadMembership`) is
+the same as for a code; a returning ex-member simply sees the ordinary price with no message,
+because a red error against a field they never touched reads as a broken page rather than as an
+offer that did not apply.
+
+**`/premium` no longer prefills a code** (2026-09-04). It held `jetzy-me` — two months — for as
+long as it was the only door with an offer behind it; now that every first-time member gets a free
+month with no code typed, it runs on the same standing offer as `/subscribe` and the paywall
+modal, so all three promise the same thing. `jetzy-me` is NOT retired: it stays in `TRIAL_CODES`
+and still grants its two months to anyone who types it or arrives on `?code=jetzy-me`, which is
+what keeps the links already sitting in inboxes working. Setting `DEFAULT_INVITE_CODE` again is
+how a campaign goes back on the page. A typed code that is worth more still wins; the two never
+stack.
+
+The plan card's CTA follows from this rather than being written down: it reads
+`Start {N}-month free trial` with N taken from the offer actually resolved — 1 by default, 2 for
+someone arriving on the `jetzy-me` link, whatever a host's referral link carries — and falls back
+to `premiumCtaLabel` ("Get Premium") for a returning member who gets no trial at all. One card
+serves four offers, so a hardcoded "1-month" would be wrong on three of them, in the direction
+that promises what the buyer does not get.
+
+Server: `api/subscriptions/checkout.ts` gained a third arm on the existing if/else chain.
+`trialCodeApplied` stays unset — there is no code to report — and `metadata.defaultTrialMonths`
+records it instead, so `/console/analytics/growth` can tell "started with a free month because
+that is what we offer" from "redeemed a campaign code". `api/subscriptions/invite-code.ts` now
+answers an **empty** code with the standing offer through the same
+`{valid, months, label, code: "", chargesFrom}` shape, adding `quiet: true` on refusal so the
+callers know not to paint it red.
+
+Client: the identical empty-code early return in `premium.tsx`, `subscribe.tsx` and
+`PremiumPaywallModal.tsx` is replaced by the offer — resolved locally while signed out (a
+PREVIEW; the server re-checks the first-timer rule at checkout) and from `invite-code` while
+signed in. Only a TYPED code may fail loudly. `PlanComparison` needed no change at all: its
+`trial` prop already drives the `$0` headline, the struck-through real rate, the badge and the
+"Then $20/Month from &lt;date&gt;" line.
+
+**`membership-subscriptions.ts` `source` now falls back to `"ticket"`**, not to "gift whenever
+there are trial months". Free months are an ordinary part of a ticket sale now — a host can put
+them on the ticket so every buyer gets them — and reporting all of those as giveaways would have
+said the whole product was being handed out. The campaign behind any trial stays attributable
+through `referralCode` / `inviteCode` on the same row.

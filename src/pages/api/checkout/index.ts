@@ -13,9 +13,11 @@ import {
 	premiumOrderCapMessage,
 	PREMIUM_TICKET_MAX_PER_ORDER,
 	resolveBundlePlan,
+	resolveFreeMonthsForKey,
 	selectionMemberships,
 	ticketIncludesMembership,
 	ticketMemberships,
+	ticketMembershipFreeMonths,
 	ticketMembershipInterval,
 	type BundlePlan,
 } from "@/lib/premium-bundle"
@@ -584,6 +586,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					.map((t: any) => storedTicketFor(t.id))
 					.find((t: any) => t && ticketIncludesMembership(t))
 				const bundleInterval = ticketMembershipInterval(bundledTicket as any)
+				// Free months the HOST put on the ticket. Read from the EVENT record for exactly
+				// the same reason as the interval: a crafted body must not be able to award itself
+				// a free year of a membership the host never gave away.
+				const ticketFreeMonths = ticketMembershipFreeMonths(bundledTicket as any)
 
 				for (const key of stillOwed) {
 					// A recurring price can't be a line item in payment mode, hence the inline
@@ -602,13 +608,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					if (price.unit_amount == null) {
 						throw new Error(`${MEMBERSHIPS[key].label} price has no unit_amount and can't be charged`)
 					}
-					// A referral code can hand out free months of Jetzy Premium. The line then costs
-					// NOTHING today — it is left out of `line_items` below — but still carries the
-					// real `priceId` and `interval`, because that is what the subscription is
-					// created at when the trial ends, and what has to be disclosed now.
+					// Free months come from two places now — the ticket itself, set by the host and
+					// given with no code typed, and a referral code the buyer entered. The larger
+					// wins; they never stack. The line then costs NOTHING today — it is left out of
+					// `line_items` below — but still carries the real `priceId` and `interval`,
+					// because that is what the subscription is created at when the trial ends, and
+					// what has to be disclosed now.
 					//
-					// Premium only, by decision: Full Concierge is sold on someone else's terms.
-					const freeMonths = key === "premium" ? referralCodeData?.freeMembershipMonths || 0 : 0
+					// A referral code stays Premium-only; the ticket's own months apply to whatever
+					// that ticket sells. `resolveFreeMonthsForKey` is the one place that rule lives,
+					// shared with `free-events.ts` and the checkout modal.
+					const freeMonths = resolveFreeMonthsForKey(key, ticketFreeMonths, referralCodeData?.freeMembershipMonths || 0)
 
 					membershipLines.push({
 						key,
@@ -660,19 +670,73 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const chargesMembership = membershipLines.length > 0
 
-		// Nothing for Stripe to do. A ticket may now be free AND sell a membership — the
-		// membership is the thing being sold and carries its own line item — so this order is
-		// only chargeable while something actually costs money: a priced ticket, or a
-		// membership period that is not being given away.
+		// Is there anything for Stripe to CHARGE? A ticket may be free AND sell a membership —
+		// the membership is the thing being sold and carries its own line item — so this order
+		// only costs money while something is not being given away: a priced ticket, or a
+		// membership period with no free months on it.
 		//
-		// The case that gets here is a $0 bundled ticket bought by someone who already holds
-		// every membership on it. The client routes that to the free path already, but its
-		// verdict comes from a lookup of the typed address that can be stale, while the check
-		// above asks STRIPE. Opening the session anyway would create a $0 payment-mode session
-		// with `payment_intent_data` on it and no PaymentIntent behind it, which fulfilment
-		// then discards as "not-payable" — a completed checkout with no booking and no log.
+		// Opening an ordinary session anyway would create a $0 payment-mode session with
+		// `payment_intent_data` on it and no PaymentIntent behind it, which fulfilment then
+		// discards as "not-payable" — a completed checkout with no booking and no log. The two
+		// branches below are the two ways an order can reach $0, and they need different things.
 		const chargeableMembershipLines = membershipLines.filter((line) => !line.trialMonths)
-		if (chargePricing.total === 0 && chargeableMembershipLines.length === 0) {
+		const trialOnlyMembershipLines = membershipLines.filter((line) => line.trialMonths)
+		const nothingToCharge = chargePricing.total === 0 && chargeableMembershipLines.length === 0
+
+		// A free ticket whose membership is ALSO free for a while: nothing is charged today, but a
+		// card still has to be collected.
+		//
+		// `startMembershipSubscription` sets `trial_settings.end_behavior.missing_payment_method:
+		// "cancel"` whenever it has no payment method, so a subscription created off the free path
+		// would be CANCELLED by Stripe at the end of the free months instead of converting. The
+		// host gave away the first period, not the membership, so the card has to exist by then.
+		//
+		// `mode: "setup"` is the only session shape that collects one without taking money: a
+		// $0 payment-mode session creates no PaymentIntent at all (Stripe marks it
+		// `no_payment_required`) and fulfilment discards it as "not-payable". Setup mode accepts
+		// no `line_items`, so the $0 ticket cannot be shown on the Stripe page — `custom_text` is
+		// what explains why a card is being asked for.
+		if (nothingToCharge && trialOnlyMembershipLines.length > 0) {
+			const trialKeys = trialOnlyMembershipLines.map((line) => line.key)
+			const trialMonths = Math.max(...trialOnlyMembershipLines.map((line) => Number(line.trialMonths) || 0))
+			const setupSession = await stripe.checkout.sessions.create({
+				client_reference_id: reference,
+				payment_method_types: ["card"],
+				mode: "setup",
+				// Always present: `membershipExtras` is only populated alongside these lines.
+				customer: membershipExtras.customer as string,
+				success_url: successUrl,
+				cancel_url: cancelUrl,
+				metadata,
+				// `checkout.session.completed` carries the session's metadata, but the expiry and
+				// recovery handlers work from the intent — same duplication as `payment_intent_data`.
+				setup_intent_data: {
+					metadata: {
+						bookingRef,
+						eventId: String(event._id),
+						requiresApproval: requiresApproval ? "true" : "false",
+					},
+				},
+				custom_text: {
+					submit: {
+						message: `Your ticket is free, and so ${trialMonths === 1 ? "is" : "are"} your first ${
+							trialMonths === 1 ? "month" : `${trialMonths} months`
+						} of ${membershipLabelList(trialKeys)}. Nothing is charged today — we save your card so your membership continues afterwards instead of stopping. Cancel any time.`,
+					},
+				},
+			}).catch((stripeError: any) => {
+				console.error("[checkout/index] Stripe setup session creation failed:", stripeError.message)
+				throw new Error(`Stripe error: ${stripeError.message}`)
+			})
+
+			console.log("[checkout/index] Setup session created (free ticket + gifted membership):", setupSession.id)
+			return sendResponse(res, { ...setupSession, requiresApproval }, "Checkout created successfully!", true, ResCode.OK)
+		}
+
+		// Nothing for Stripe to do at all — the buyer already holds every membership on a free
+		// ticket. The client routes that to the free path already, but its verdict comes from a
+		// lookup of the typed address that can be stale, while the check above asks STRIPE.
+		if (nothingToCharge) {
 			console.warn("[checkout/index] Nothing chargeable; routing to the free path:", { bookingRef, held: bundlePlan.alreadyHeld })
 			return sendResponse(res, { freeOrder: true }, "This order is free.", true, ResCode.OK)
 		}

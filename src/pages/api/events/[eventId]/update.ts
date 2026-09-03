@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import { resolveTickets } from "@/lib/event-tickets"
+import { MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { buildUniqueSlug, nextSlugHistory, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -77,6 +78,10 @@ const schema = zod.object({
 			// UNCHANGED on update — same preserve-on-omit rule as `requireApproval` and
 			// `memberships`, so a stale autosave can't silently move an annual ticket to monthly.
 			membershipInterval: zod.enum(["month", "year"]).optional(),
+			// Free months of the bundled membership. Optional, and omitting it means UNCHANGED —
+			// same preserve-on-omit rule as the three above, so a stale autosave can't quietly
+			// withdraw a gift the host is already advertising on a live ticket.
+			membershipFreeMonths: zod.number().int().min(0).max(MAX_MEMBERSHIP_FREE_MONTHS).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
 		}),
