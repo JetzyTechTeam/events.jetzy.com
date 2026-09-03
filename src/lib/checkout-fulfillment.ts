@@ -302,13 +302,26 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	const isSettledWithoutCharge =
 		!isPaidNow && !isSubscriptionSettled && session.status === "complete" && session.payment_status === "no_payment_required"
 
-	// A setup-mode session takes no money by design — it exists to collect the card that the
-	// gifted membership will be billed on once its free months run out. `payment_status` is
-	// `no_payment_required` there too, so `isSettledWithoutCharge` already covers it; this
-	// name exists so the branches below can tell "nothing was owed" from "nothing was ever
-	// going to be charged", which is the difference between a confirmed booking and one that
-	// still needs the host.
+	// A setup-mode session takes no money by design — it exists solely to collect the card the
+	// gifted membership will be billed on once its free months run out. Used below for one thing
+	// only: it is the single shape where the card lives nowhere but the SetupIntent, so it is the
+	// only one that has to write `paymentMethodId` onto the booking for `approve.ts` to find.
 	const isSetupSession = session.mode === "setup"
+
+	// Did any money actually move?
+	//
+	// THE test for "was this free", replacing scattered checks against one settle flag or another.
+	// Four shapes now reach this function having charged nothing: a setup session, a $0 session
+	// Stripe settled, and — since a free ticket giving away one membership is sold as a trial
+	// subscription so its Stripe page shows a priced summary — a subscription session whose first
+	// invoice is $0. That last one satisfies `isSubscriptionSettled`, NOT
+	// `isSettledWithoutCharge`, so keying off the latter alone marked it captured and left the
+	// booking PENDING: parked in the Approvals tab of an event that never asked for approval, and
+	// telling the guest money had been taken and kept.
+	//
+	// A hold is excluded deliberately — nothing has been captured there either, but it is money in
+	// play and `bookingMoneyState` has to keep reading it as a hold.
+	const noMoneyMoved = !isPaidNow && !isAuthorized
 
 	if (!isPaidNow && !isAuthorized && !isSubscriptionSettled && !isSettledWithoutCharge) {
 		return { created: false, booking: null, event: null, requiresApproval, session, reason: "not-payable" }
@@ -403,11 +416,11 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 			// PENDING would park it in the Approvals tab of an event that never asked for
 			// approval.
 			//
-			// `!requiresApproval` is the exception, and it is only reachable on a setup session:
-			// a free ticket giving away free months has no money to hold, so there is no
-			// authorization to read the host's decision off. Confirming it would let the guest
-			// past a door the host asked to keep shut.
-			status: (isPaidNow || isSettledWithoutCharge) && !requiresApproval ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
+			// `!requiresApproval` is the exception, and it is only reachable on an order that
+			// charged nothing: a free ticket giving away free months has no money to hold, so
+			// there is no authorization to read the host's decision off. Confirming it would let
+			// the guest past a door the host asked to keep shut.
+			status: (isPaidNow || noMoneyMoved) && !requiresApproval ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
 			eventId: metadata.eventId,
 			bookingRef,
 			// Present only when the buyer was logged in at checkout. Bookings made before this
@@ -467,12 +480,12 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				// as "free", and "captured" against $0 would tell the guest money was taken and
 				// is being kept. This is the same shape `api/checkout/free-events` writes, for
 				// the same reason.
-				...(isSettledWithoutCharge ? {} : { status: isAuthorized ? "authorized" as const : "captured" as const }),
+				...(noMoneyMoved ? {} : { status: isAuthorized ? "authorized" as const : "captured" as const }),
 				amount: chargedAmount,
 				currency: session.currency || "usd",
 				...(isAuthorized
 					? { authorizedAt: now, authExpiresAt: resolveAuthExpiry(pi, now) }
-					: isSettledWithoutCharge
+					: noMoneyMoved
 						? {}
 						: { capturedAt: now }),
 			},

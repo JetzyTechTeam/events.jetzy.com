@@ -417,8 +417,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// `needsCheckout` is the server saying this order still owes a membership. Sending
 			// the buyer to Stripe is exactly what that message asks for, so do it rather than
 			// printing it — the reason it happened is invisible to them.
-			if (mayFallBack && result.data?.needsCheckout) {
-				await submitStripeOrder(false)
+			if (result.data?.needsCheckout) {
+				if (mayFallBack) {
+					await submitStripeOrder(false)
+					return
+				}
+				// Arrived here from Stripe's own `freeOrder` verdict, so the two disagree. Say so
+				// rather than printing "please complete checkout" to somebody who just tried to.
+				console.error("[checkout] Both paths refused the order:", result.data)
+				Error("Registration Failed", "We couldn't complete this registration. Please refresh and try again.")
 				return
 			}
 			Error("Registration Failed", result.message || "Something went wrong. Please try again.")
@@ -454,7 +461,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		// Nothing chargeable after the server's own membership check: the ticket is free and
 		// every membership on it is already held.
 		if (res.payload?.data?.freeOrder) {
-			if (mayFallBack) await submitFreeOrder(false)
+			if (mayFallBack) {
+				await submitFreeOrder(false)
+				return
+			}
+			// Both endpoints have now refused the order, each pointing at the other. It can only
+			// happen when the two disagree about whether a membership is still owed — the free
+			// path reads our own records, this one asks Stripe — and the buyer must not be left
+			// pressing a button that does nothing.
+			console.error("[checkout] Both paths refused the order:", res.payload?.data)
+			Error("Registration Failed", "We couldn't complete this registration. Please refresh and try again.")
 			return
 		}
 		// Check if event is at capacity
