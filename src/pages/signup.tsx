@@ -150,7 +150,7 @@ export default function SignupPage() {
 											    the server grants from, so the two can't promise different things. */}
 											{!inviteCodeError && signupTrialOffer(values?.refCode) && (
 												<span className="block mt-1 text-sm" style={{ color: "#22C55E" }}>
-													✓ {signupTrialOffer(values?.refCode)?.label} of Jetzy Premium — added once you confirm your email. No card needed.
+													✓ {signupTrialOffer(values?.refCode)?.label} of Jetzy Premium — added once you confirm your email.
 												</span>
 											)}
 										</div>

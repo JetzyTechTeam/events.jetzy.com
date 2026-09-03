@@ -36,7 +36,7 @@ export default function PostSignupPage() {
 							🎁 {trialMonths} month{trialMonths === 1 ? "" : "s"} of Jetzy Premium are waiting
 						</p>
 						<p className="mt-1 text-sm text-gray-300">
-							Your invite code adds them the moment you verify your email. No card needed and nothing to
+							Your invite code adds them the moment you verify your email. Nothing to
 							cancel — the membership simply ends after {trialMonths === 1 ? "the month" : `the ${trialMonths} months`}{" "}
 							unless you choose to keep it.
 						</p>

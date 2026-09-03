@@ -70,6 +70,7 @@ export default function ListingCardPreview({
 			datePoll: { isActive: pollActive },
 			benefits: values.benefits,
 			privacy: values.privacy,
+			premiumEvent: values.premiumEvent,
 		} as EventCardItem
 	}, [values, images, videos, mediaOrder, eventId])
 

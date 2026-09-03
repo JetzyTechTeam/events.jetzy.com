@@ -86,6 +86,8 @@ const schema = zod.object({
 	timezone: zod.string().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
+	// Curation tag only — badge + filter. Not the deprecated `premium` below.
+	premiumEvent: zod.boolean().optional(),
 	// DEPRECATED — the "Premium Event" concept was retired. Still accepted so an older client
 	// posting them doesn't fail validation, but both are ignored.
 	premium: zod.boolean().optional(),
@@ -131,7 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, mediaOrder, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		const { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, mediaOrder, tickets, isPaid, desc, timezone, privacy, feedbackFormUrl, benefits, locationDisclosedAfterBooking, showOnMobile, premiumEvent, datePoll, status, interests } = params
 
 		// construct datetime for start and end dates
 		const extractedTimeZone = timezone?.split(') ')[1] || 'UTC'
@@ -292,6 +294,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				benefits,
 				locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 				showOnMobile: showOnMobile ?? false,
+				// Preserve-on-omit, like mediaOrder above — the mobile app and the admin portal
+				// write this collection and know nothing about the flag; a payload without it
+				// must not clear the host's tag.
+				...(premiumEvent !== undefined ? { premiumEvent } : {}),
 				status: status ?? 'published',
 				interests: interests ?? [],
 				// Built above, with the stored votes re-attached by option id.

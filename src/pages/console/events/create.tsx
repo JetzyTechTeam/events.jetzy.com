@@ -110,6 +110,7 @@ const initialValues = {
   benefits: "",
   locationDisclosedAfterBooking: false,
   showOnMobile: true,
+  premiumEvent: false,
   datePoll: {
     isActive: false,
     question: "",
@@ -762,9 +763,27 @@ const CreateEventPage = () => {
                 <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
                   <Heading size="md" color="white" mb={4}>Event Options</Heading>
 
-                  {/* The "Premium Event" toggle and its member-discount % were removed with the
-                      member-discount model. Jetzy Premium is now SOLD per ticket — see the
-                      "Includes Jetzy Premium" option on each ticket. */}
+                  {/* The OLD "Premium Event" toggle and its member-discount % stay removed —
+                      Jetzy Premium is SOLD per ticket now, see "Includes Jetzy Premium" on each
+                      ticket. The toggle below is a different thing entirely: `premiumEvent` is a
+                      curation tag that badges and filters the event and touches no pricing. */}
+                  <Flex align="center" justifyContent="space-between" mb={4}>
+                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+                      <Text fontSize="22px" lineHeight="24px" color="#F5C518">★</Text>
+                      <Box>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Premium Event</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" mt={1} maxW="360px">
+                          Shows a Premium badge on the listing and the event page, and makes the event findable under the Premium filter. Changes no pricing or membership.
+                        </Text>
+                      </Box>
+                    </Flex>
+                    <Switch
+                      name="premiumEvent"
+                      isChecked={!!values.premiumEvent}
+                      colorScheme="orange"
+                      onChange={() => setFieldValue("premiumEvent", !values.premiumEvent)}
+                    />
+                  </Flex>
 
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
