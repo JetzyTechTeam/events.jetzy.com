@@ -36,6 +36,8 @@ const schema = zod.object({
 	requireApproval: zod.boolean().optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
+	// Curation tag — badge + filter only. Not the deprecated `premium` field.
+	premiumEvent: zod.boolean().optional(),
 	capacity: zod.number().int().min(0).optional(),
 	privacy: zod.enum(["public", "private"]).optional(),
 	// Votes are NOT accepted from the client — they are preserved server-side by option id.
@@ -119,7 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			name, desc, benefits, images, videos, mediaOrder,
 			location, venueName, entrance, latitude, longitude, placeId,
 			timezone, startsOn, endsOn, hasStartTime, hasEndTime,
-			interests, requireApproval, locationDisclosedAfterBooking, showOnMobile,
+			interests, requireApproval, locationDisclosedAfterBooking, showOnMobile, premiumEvent,
 			capacity, privacy, datePoll,
 		} = validation.data
 
@@ -140,6 +142,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (requireApproval !== undefined) set.requireApproval = requireApproval
 		if (locationDisclosedAfterBooking !== undefined) set.locationDisclosedAfterBooking = locationDisclosedAfterBooking
 		if (showOnMobile !== undefined) set.showOnMobile = showOnMobile
+		if (premiumEvent !== undefined) set.premiumEvent = premiumEvent
 		if (capacity !== undefined) set.capacity = capacity
 
 		// Only written when actually sent — `update.ts` writes `privacy` unconditionally, so an
@@ -284,7 +287,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const updated = await Events.findByIdAndUpdate(eventId, updateDoc, { new: true })
-			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime interests requireApproval locationDisclosedAfterBooking showOnMobile capacity privacy adminApprovalStatus")
+			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime interests requireApproval locationDisclosedAfterBooking showOnMobile premiumEvent capacity privacy adminApprovalStatus")
 			.lean()
 
 		return sendResponse(res, updated, "Event updated", true, ResCode.OK)
