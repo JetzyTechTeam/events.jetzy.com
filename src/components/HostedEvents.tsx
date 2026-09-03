@@ -270,6 +270,7 @@ export default function HostedEvents({ event }: Props) {
 	const [draftRequireApproval, setDraftRequireApproval] = useState(false)
 	const [draftLocationDisclosed, setDraftLocationDisclosed] = useState(false)
 	const [draftShowOnMobile, setDraftShowOnMobile] = useState(false)
+	const [draftPremiumEvent, setDraftPremiumEvent] = useState(false)
 	const [draftCapacity, setDraftCapacity] = useState("")
 	const [draftPrivacy, setDraftPrivacy] = useState<"public" | "private">("public")
 	// Poll options are drafted WITHOUT votes — the server preserves those by option id, so the
@@ -337,6 +338,7 @@ export default function HostedEvents({ event }: Props) {
 		setDraftRequireApproval(!!shownEvent?.requireApproval)
 		setDraftLocationDisclosed(!!shownEvent?.locationDisclosedAfterBooking)
 		setDraftShowOnMobile(!!(shownEvent as any)?.showOnMobile)
+		setDraftPremiumEvent(!!(shownEvent as any)?.premiumEvent)
 		setDraftCapacity(shownEvent?.capacity != null ? String(shownEvent.capacity) : "")
 		setDraftPrivacy(shownEvent?.privacy === "private" ? "private" : "public")
 		setDraftPollActive(!!shownEvent?.datePoll?.isActive)
@@ -546,6 +548,7 @@ export default function HostedEvents({ event }: Props) {
 			payload.requireApproval = draftRequireApproval
 			payload.locationDisclosedAfterBooking = draftLocationDisclosed
 			payload.showOnMobile = draftShowOnMobile
+			payload.premiumEvent = draftPremiumEvent
 			payload.capacity = Number(draftCapacity) || 0
 			payload.privacy = draftPrivacy
 			payload.datePoll = {
@@ -1368,6 +1371,18 @@ export default function HostedEvents({ event }: Props) {
 														<Text fontSize="12px" color="#868686">Display this event in the Jetzy mobile app</Text>
 													</Box>
 													<Switch colorScheme="orange" isChecked={draftShowOnMobile} onChange={(e) => setDraftShowOnMobile(e.target.checked)} />
+												</Flex>
+												{/* Same toggle as both event forms — a curation tag that badges and
+												    filters the event. Nothing to do with the retired member-discount
+												    "Premium Event", or with the per-ticket Jetzy Premium bundle. */}
+												<Flex align="center" justify="space-between" gap={4}>
+													<Box>
+														<Text color="white" fontWeight={500}>Premium Event</Text>
+														<Text fontSize="12px" color="#868686" maxW="420px" lineHeight="140%">
+															Shows a Premium badge on the listing and this page, and makes the event findable under the Premium filter. Changes no pricing or membership.
+														</Text>
+													</Box>
+													<Switch colorScheme="orange" isChecked={draftPremiumEvent} onChange={(e) => setDraftPremiumEvent(e.target.checked)} />
 												</Flex>
 												{/* Draft/published is a workflow, not an edit — publishing from the
 												    public page would be a surprising place to do it. */}
