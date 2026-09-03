@@ -1,4 +1,4 @@
-import EventListing, { type PrivacyFilter } from "@/components/misc/EventsListing";
+import EventListing, { type PrivacyFilter, type PremiumFilter } from "@/components/misc/EventsListing";
 import type { EventStatus } from "@/utils/eventSort";
 import { IEvent } from "@/models/events/types";
 import { GetServerSideProps } from "next";
@@ -34,6 +34,8 @@ export default function Home(props: Props) {
   // Admin-only. Private events are invisible to everyone else, so for them this chip would
   // filter a set that is already fixed — the server ignores the param in that case too.
   const [privacy, setPrivacy] = React.useState<PrivacyFilter>("");
+  // Everyone, not just admins — `premiumEvent` is a curation tag, not a visibility rule.
+  const [premium, setPremium] = React.useState<PremiumFilter>("");
 
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
@@ -42,12 +44,12 @@ export default function Home(props: Props) {
   // The SSR payload is unfiltered and unsearched, so it may only stand in for the
   // unfiltered, unsearched first page. Using it under an active chip would paint every
   // event for a moment before the real query resolved.
-  const isDefaultView = !search && !status && !privacy;
+  const isDefaultView = !search && !status && !privacy && !premium;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["events", page, search, status, privacy],
+    queryKey: ["events", page, search, status, privacy, premium],
     queryFn: async () => {
-      const url = `/api/events?page=${page}${search ? `&search=${encodeURIComponent(search)}` : ""}${status ? `&status=${status}` : ""}${privacy ? `&privacy=${privacy}` : ""}`;
+      const url = `/api/events?page=${page}${search ? `&search=${encodeURIComponent(search)}` : ""}${status ? `&status=${status}` : ""}${privacy ? `&privacy=${privacy}` : ""}${premium ? `&premium=${premium}` : ""}`;
       const response = await axios.get(url);
       return response.data;
     },
@@ -83,6 +85,8 @@ export default function Home(props: Props) {
       showPrivacyFilter={isAdmin}
       privacy={privacy}
       onPrivacyChange={(next) => { setPrivacy(next); setPage(1); }}
+      premium={premium}
+      onPremiumChange={(next) => { setPremium(next); setPage(1); }}
     />
   );
 }

@@ -257,7 +257,7 @@ export default function JetzyQRSignup() {
                                         they submit, from the same table the server grants from. */}
                                     {signupTrialOffer(inviteCode) && (
                                         <p className="mt-2 text-center text-sm font-semibold text-green-600">
-                                            ✓ {signupTrialOffer(inviteCode)?.label} of Jetzy Premium, added to your new account. No card needed.
+                                            ✓ {signupTrialOffer(inviteCode)?.label} of Jetzy Premium, added to your new account.
                                         </p>
                                     )}
                                 </div>

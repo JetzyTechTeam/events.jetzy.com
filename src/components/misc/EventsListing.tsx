@@ -74,9 +74,19 @@ type EventListProps = {
   showPrivacyFilter?: boolean;
   privacy?: PrivacyFilter;
   onPrivacyChange?: (privacy: PrivacyFilter) => void;
+  /**
+   * Premium chips. "" = All, "premium" = premium events only.
+   *
+   * Shown to EVERYONE, unlike the privacy chips: `premiumEvent` is a curation tag, not a
+   * visibility rule, so filtering by it reveals nothing a visitor couldn't already see.
+   */
+  premium?: PremiumFilter;
+  onPremiumChange?: (premium: PremiumFilter) => void;
 };
 
 export type PrivacyFilter = "" | "public" | "private";
+
+export type PremiumFilter = "" | "premium";
 
 // Chips for the public list. Deliberately different from the console, where "Upcoming" means
 // live-or-future: here LIVE is its own chip, so the four statuses are mutually exclusive and
@@ -98,6 +108,13 @@ const PRIVACY_FILTERS: { key: PrivacyFilter; label: string }[] = [
   { key: "private", label: "Private" },
 ];
 
+// Only "premium only" is offered. There is no "not premium" chip, so events predating the flag
+// (which carry no value at all) never need matching by exclusion the way `privacy` does.
+const PREMIUM_FILTERS: { key: PremiumFilter; label: string }[] = [
+  { key: "", label: "All" },
+  { key: "premium", label: "Premium" },
+];
+
 const EventList: React.FC<EventListProps> = ({
   items,
   pagination,
@@ -109,6 +126,8 @@ const EventList: React.FC<EventListProps> = ({
   showPrivacyFilter = false,
   privacy = "",
   onPrivacyChange,
+  premium = "",
+  onPremiumChange,
 }) => {
   const router = useRouter();
 
@@ -304,23 +323,49 @@ const EventList: React.FC<EventListProps> = ({
           );
         })}
 
-        {/* Admin only, pushed to the right. `ml-auto` rather than a second row: when the
-            status chips wrap on a phone these follow them instead of stranding an empty
-            gutter. The orange active state marks them as a different axis from the status
-            chips beside them — an event is filtered by both at once, not by one or the other. */}
-        {showPrivacyFilter && (
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-xs text-[#6B6B6B] uppercase tracking-wide">Visibility</span>
-            {PRIVACY_FILTERS.map(({ key, label }) => {
-              const active = privacy === key;
+        {/* The secondary axes, pushed to the right. `ml-auto` lives on this WRAPPER, not on
+            either group: Visibility is admin-only, so hanging it there would strand the Premium
+            chips mid-row for everyone else. `ml-auto` rather than a second row so that when the
+            status chips wrap on a phone these follow them instead of leaving an empty gutter.
+            Each axis has its own active colour — white status, orange visibility, gold premium —
+            because an event is filtered by all of them at once, not by one or the other. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 ml-auto">
+          {showPrivacyFilter && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#6B6B6B] uppercase tracking-wide">Visibility</span>
+              {PRIVACY_FILTERS.map(({ key, label }) => {
+                const active = privacy === key;
+                return (
+                  <button
+                    key={key || "all"}
+                    type="button"
+                    onClick={() => onPrivacyChange?.(key)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-[#F79432] text-black"
+                        : "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Every visitor, not just admins — see the `premium` prop's note. */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#6B6B6B] uppercase tracking-wide">Premium</span>
+            {PREMIUM_FILTERS.map(({ key, label }) => {
+              const active = premium === key;
               return (
                 <button
                   key={key || "all"}
                   type="button"
-                  onClick={() => onPrivacyChange?.(key)}
+                  onClick={() => onPremiumChange?.(key)}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                     active
-                      ? "bg-[#F79432] text-black"
+                      ? "bg-[#F5C518] text-black"
                       : "bg-[#1E1E1E] text-[#A7A7A7] border border-[#444444] hover:bg-[#2A2A2A]"
                   }`}
                 >
@@ -329,7 +374,7 @@ const EventList: React.FC<EventListProps> = ({
               );
             })}
           </div>
-        )}
+        </div>
       </div>
 
       <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>

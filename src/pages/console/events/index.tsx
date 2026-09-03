@@ -24,6 +24,8 @@ import { toast } from "react-toastify"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
 import PremiumBadge from "@/components/premium/PremiumBadge"
+// The EVENT tag. Unrelated to PremiumBadge above, which marks a premium SUBSCRIBER.
+import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 
 type Pagination = {
 	total: number
@@ -33,7 +35,7 @@ type Pagination = {
 	totalPages: number
 }
 
-type FilterKey = "all" | "public" | "private" | "upcoming" | "ended" | "tbd" | "pending"
+type FilterKey = "all" | "public" | "private" | "premium" | "upcoming" | "ended" | "tbd" | "pending"
 
 type Props = {
 	events: string
@@ -52,6 +54,9 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 	{ key: "all", label: "All" },
 	{ key: "public", label: "Public" },
 	{ key: "private", label: "Private" },
+	// One mutually-exclusive axis on this page, so Premium is another chip here rather than a
+	// second group (the public listing, which already has two axes, gets its own group instead).
+	{ key: "premium", label: "Premium" },
 	{ key: "upcoming", label: "Upcoming" },
 	{ key: "ended", label: "Ended" },
 	{ key: "tbd", label: "TBD" },
@@ -385,6 +390,14 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 				{/* ACTIONS */}
 				<div className="shrink-0 flex flex-col gap-2 w-full sm:w-[180px]">
+					{/* Right edge of the row rather than the badge cluster beside the title — that
+					    cluster is status/DRAFT/PENDING/PRIVATE, and this is a tag on the event, not
+					    a state of it. */}
+					{(event as any).premiumEvent && (
+						<div className="flex justify-end">
+							<PremiumEventBadge />
+						</div>
+					)}
 					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>
@@ -468,7 +481,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const allEvents = sortEvents(Array.from(allEventsMap.values()))
 
 	// Apply status filter chip (server-side) before pagination
-	const allowedFilters = ["all", "public", "private", "upcoming", "ended", "tbd", "pending"]
+	const allowedFilters = ["all", "public", "private", "premium", "upcoming", "ended", "tbd", "pending"]
 	const rawFilter = (context.query.filter as string) || "all"
 	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
 
@@ -484,6 +497,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 				return e.privacy !== "private"
 			case "private":
 				return e.privacy === "private"
+			// Absent on every event predating the flag, which is simply not premium.
+			case "premium":
+				return !!e.premiumEvent
 			case "upcoming":
 				return e.timeStatus === "live" || e.timeStatus === "future"
 			case "ended":

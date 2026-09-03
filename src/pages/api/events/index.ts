@@ -39,6 +39,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			if (requestedPrivacy === "private") filter.privacy = "private"
 			else if (requestedPrivacy === "public") filter.privacy = { $ne: "private" }
 		}
+		// Premium chips — read for EVERYONE, unlike `privacy` above: the flag is a curation tag,
+		// so narrowing by it can only ever shrink what this caller was already allowed to see.
+		// A stored field, so it belongs in the Mongo query rather than the in-memory status pass
+		// further down. Only "premium only" is offered, so legacy documents without the field
+		// need no matching-by-exclusion.
+		if ((req.query.premium as string)?.trim() === "premium") filter.premiumEvent = true
 		if (search) {
 			const searchRegex = escapeRegExp(search)
 			const orClauses: any[] = [

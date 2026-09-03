@@ -74,6 +74,8 @@ export type CreateEventFormData = {
 	benefits?: string
 	locationDisclosedAfterBooking?: boolean
 	showOnMobile?: boolean
+	/** Curation tag — badges the event as Premium. See IEvent.premiumEvent. */
+	premiumEvent?: boolean
 	datePoll?: {
 		isActive: boolean
 		question?: string

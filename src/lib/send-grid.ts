@@ -2624,8 +2624,8 @@ export const sendVerificationEmail = async ({
           🎁 ${trialMonths} month${trialMonths === 1 ? "" : "s"} of Jetzy Premium are waiting
         </p>
         <p style="margin: 0; color: #7a5c00; font-size: 14px; line-height: 1.6;">
-          Your invite code adds them to your account as soon as you verify this email. No card needed, and
-          nothing is charged — it simply ends after ${trialMonths === 1 ? "the month" : `the ${trialMonths} months`} unless you choose to continue.
+          Your invite code adds them to your account as soon as you verify this email. Nothing is charged
+          — it simply ends after ${trialMonths === 1 ? "the month" : `the ${trialMonths} months`} unless you choose to continue.
         </p>
       </div>`
         : ""}
@@ -2663,7 +2663,7 @@ export const sendVerificationEmail = async ({
       html: wrapHtml(html),
       text: `Hi ${firstName || "there"},\n\nVerify your email and finish creating your Jetzy account:\n${verifyUrl}\n${
         trialMonths && trialMonths > 0
-          ? `\n${trialMonths} month${trialMonths === 1 ? "" : "s"} of Jetzy Premium are added to your account as soon as you verify. No card needed.\n`
+          ? `\n${trialMonths} month${trialMonths === 1 ? "" : "s"} of Jetzy Premium are added to your account as soon as you verify.\n`
           : ""
       }\nIf you didn't request this, ignore this email.`,
     })

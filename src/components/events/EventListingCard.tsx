@@ -15,6 +15,7 @@ import { EventStatus, STATUS_LABEL, getEventStatus } from "@/utils/eventSort"
 import { getEventZone } from "@/utils/eventTime"
 import { stripHtml } from "@/utils/text"
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
+import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -45,6 +46,7 @@ export interface EventCardItem {
 	datePoll?: { isActive?: boolean }
 	benefits?: string
 	privacy?: string
+	premiumEvent?: boolean
 	ownerId?: any
 	createdAt?: any
 }
@@ -140,6 +142,14 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 			onClick={open}
 		>
 			<Box p="2" position="relative" flexShrink={0}>
+				{/* Premium tag — top-LEFT, the one free corner: status/PRIVATE own the top-right and
+				    the benefits chips own the bottom. Not admin-gated; every visitor sees it. */}
+				{event.premiumEvent && (
+					<Box position="absolute" top="4" left="4" zIndex="3">
+						<PremiumEventBadge />
+					</Box>
+				)}
+
 				{/* Status badge (live / upcoming / tbd / ended) */}
 				<Flex position="absolute" top="4" right="4" zIndex="3" gap="1.5" align="center">
 					{isAdmin && isPrivate && (

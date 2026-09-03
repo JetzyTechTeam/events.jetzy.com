@@ -9,6 +9,7 @@ import { goBackOrTo } from "@/lib/navigation"
 import { applyMediaOrder, eventMedia, type EventMedia } from "@/lib/event-media"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
+import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
 import { ticketMemberships } from "@/lib/premium-bundle"
@@ -1042,9 +1043,16 @@ export default function HostedEvents({ event }: Props) {
 								}
 							})()}
 
-							{/* Benefits Overlay */}
-							{shownBenefits && shownBenefits.trim() !== "" && (
+							{/* Premium tag + Benefits overlay share ONE top-left column — two absolutes
+							    at the same corner would sit on top of each other. The tag leads,
+							    benefits follow underneath. */}
+							{(!!clonedEvent?.premiumEvent || (shownBenefits && shownBenefits.trim() !== "")) && (
 								<div className="absolute top-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
+									{!!clonedEvent?.premiumEvent && (
+										<div>
+											<PremiumEventBadge className="px-4 py-2 text-sm shadow-xl" />
+										</div>
+									)}
 									{shownBenefits
 										.split(",")
 										.map((b) => b.trim())

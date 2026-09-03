@@ -97,6 +97,8 @@ const schema = zod.object({
 	benefits: zod.string().max(23).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional().default(true),
+	// Curation tag only — badge + filter. Not the deprecated `premium` below.
+	premiumEvent: zod.boolean().optional(),
 	// DEPRECATED — the "Premium Event" concept was retired. Still accepted so an older mobile
 	// client posting them doesn't fail validation, but both are ignored.
 	premium: zod.boolean().optional(),
@@ -130,7 +132,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!data.success) return sendResponse(res, data.error.errors, "Your request could not be complete, please check your input and try again.", false, ResCode.BAD_REQUEST)
 
 		// Desctructure the request body
-		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, mediaOrder, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, datePoll, status, interests } = params
+		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, mediaOrder, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premiumEvent, datePoll, status, interests } = params
 
 		// Resolve the event URL. A host-supplied slug is validated and made unique; a blank
 		// one is derived from the event name, falling back to a random id when the name has
@@ -263,6 +265,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 			showOnMobile: showOnMobile ?? true,
+			premiumEvent: premiumEvent ?? false,
 			status: status ?? 'published',
 			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0

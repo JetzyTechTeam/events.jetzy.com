@@ -1304,6 +1304,23 @@ Canonical order everywhere: **live → future → tbd → past**. Single source 
 Consumers: `api/events/index.ts` (public list), `console/events/index.tsx` getServerSideProps (My Events — writes `timeStatus` per event, `isEnded = timeStatus==="past"`; filter chips map upcoming→live|future, ended→past, tbd→tbd), `EventsListing.tsx` client re-sort (bucket rank first, then distance within bucket when location granted).
 Per-card status badge (LIVE green / UPCOMING orange / TBD gray / ENDED gray) on both public `EventCard` and My Events `ListingCard`. NOTE: event lifecycle `status` (draft/published) is separate from `timeStatus` — do not conflate.
 
+## Feature: Premium Event tag (`premiumEvent`, 2026-09-03)
+A host toggle in **Event Options** on both event forms that badges and filters an event. **It is a curation tag and nothing else** — no pricing, no membership, no hosting gate.
+
+- **Not the deprecated `premium` field.** That one was the retired member-discount concept and stays dead (kept only so the shared collection and the mobile app are undisturbed). Two separate fields on purpose; the comments beside both say so. Nor is it `@/components/premium/PremiumBadge`, which marks a premium *subscriber*.
+- Schema `premiumEvent: { type: Boolean, default: false }` (`src/models/events/index.ts`), `IEvent.premiumEvent?`, `CreateEventFormData.premiumEvent?`.
+- `create.ts` writes `premiumEvent ?? false`. **`update.ts` is preserve-on-omit** (`...(premiumEvent !== undefined ? …)`) like `mediaOrder` — the mobile app and the admin portal write this collection and must not clear a host's tag by not knowing about it. `details.ts` (the inline on-page editor) deliberately does **not** accept it; if that changes, it must also go into that route's `.select()` projection.
+- Autosave needs nothing — `buildEventPayload` spreads `...values`.
+- Badge component: **`src/components/events/PremiumEventBadge.tsx`**, one definition for every surface. Plain markup, not Chakra, so it drops into the Tailwind pages. **Shown to everyone**, unlike the PRIVATE badge, which is admin-only.
+  - Public/dashboard card (`EventListingCard`): absolute **top-left** — status + PRIVATE own the top-right, benefits own the bottom.
+  - My Events row (`console/events/index.tsx` → `ListingCard`): **right edge**, above Manage Event, not in the badge cluster by the title (that cluster is *state*: status/DRAFT/PENDING/PRIVATE).
+  - Event detail banner (`HostedEvents.tsx`): **shares one top-left column with the benefits chips** — two absolutes at the same corner would overlap. The wrapper renders when either exists.
+  - `ListingCardPreview` passes it through, so the host's "In the events list" preview shows it too.
+- Filters:
+  - Public list — **its own chip group, visible to everyone** (gold active state; white = status, orange = visibility, gold = premium). `ml-auto` sits on the WRAPPER holding both right-hand groups, because the Visibility group is admin-only and would otherwise strand Premium mid-row. Param `?premium=premium`, applied in the **Mongo query** in `api/events/index.ts` **outside** the `isAdmin` branch — it can only narrow what the caller could already see.
+  - My Events — one more chip on that page's single mutually-exclusive axis: `FilterKey`, `FILTERS`, `allowedFilters` and the `switch` must all agree or the chip silently falls through to `all`.
+- Only "premium only" is offered, so events predating the flag need no match-by-exclusion (unlike `privacy`).
+
 ## Feature: Location Disclosure
 `locationDisclosedAfterBooking` boolean on IEvent
 Location hidden until booking confirmed when true

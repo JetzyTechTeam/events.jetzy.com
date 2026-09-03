@@ -96,6 +96,8 @@ export interface IEvent extends IBaseModelProps {
 	privacy: 'public' | 'private';
 	adminApprovalStatus?: 'pending' | 'approved';
 	showOnMobile?: boolean;
+	/** Curation tag: badges the event as Premium and backs the Premium filter. Not `premium` below — that one is dead and affects nothing. */
+	premiumEvent?: boolean;
 	/** Arrival instructions shown in confirmation emails only, never on the event page. */
 	entrance?: string;
 	/** @deprecated The member-discount model was retired; membership is sold per ticket via `IEventTicket.includesPremium`. */

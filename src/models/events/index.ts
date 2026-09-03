@@ -293,6 +293,14 @@ const eventsSchema = new Schema<IEvent>(
 			type: Boolean,
 			default: true,
 		},
+		// A curation / marketing tag only: it puts a PREMIUM badge on the cards and the banner and
+		// backs the Premium filter chips. It changes nothing about pricing, membership or who may
+		// host — that is the retired `premium` field below, which stays dead. Two separate fields
+		// on purpose: `premium` is still read by the mobile app's documents and must not be reused.
+		premiumEvent: {
+			type: Boolean,
+			default: false,
+		},
 		// DEPRECATED — the "Premium Event" concept was retired. It used to gate who could HOST
 		// and carry a member discount; membership is now SOLD per ticket via
 		// `eventTicketsSchema.includesPremium` instead of discounting one. Nothing reads or
