@@ -1296,6 +1296,18 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																	.map((m) => renewalPhrase(m))
 																	.join(" and ")} until you cancel. You can cancel any time from your account.`}
 														</p>
+														{/* A $0 order that still sends the buyer to Stripe needs saying before they
+															    get there. Stripe puts them on a page headed "Save payment information"
+															    with no amount anywhere on it, and arriving at a card form after being
+															    told the total is zero reads as a mistake — or as a charge about to
+															    happen — unless they were told why. */}
+														{(pricing.dueToday ?? pricing.total) === 0 && giftedChargedKeys.length > 0 && (
+															<p className="text-xs mt-2" style={{ color: "#F5C518" }}>
+																Nothing is charged now, but we&apos;ll ask for a card on the next screen — without one your{" "}
+																{pricing.recurring.length > 1 ? "memberships would stop" : "membership would stop"} at the end of
+																the free {appliedFreeMonths === 1 ? "month" : "months"} instead of continuing.
+															</p>
+														)}
 													</>
 												)}
 											</div>

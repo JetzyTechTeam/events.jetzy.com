@@ -699,6 +699,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (nothingToCharge && trialOnlyMembershipLines.length > 0) {
 			const trialKeys = trialOnlyMembershipLines.map((line) => line.key)
 			const trialMonths = Math.max(...trialOnlyMembershipLines.map((line) => Number(line.trialMonths) || 0))
+			// Setup mode shows the buyer a bare "Save payment information" form: no line items, no
+			// order summary, no price anywhere on the page. Everything they are agreeing to has to
+			// be in this text, so it states the same three things the ticket card and the checkout
+			// modal already did — what is free, until when, and what is charged after.
+			//
+			// Calendar months, matching `trialEndsOn` and the `trial_end` the subscription is
+			// actually created with, so the date here is the date they are really billed on.
+			const trialEndsAt = new Date()
+			trialEndsAt.setMonth(trialEndsAt.getMonth() + trialMonths)
+			const freeUntil = trialEndsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+			// One "then" per membership, at the rate each actually renews at — a ticket selling two
+			// must not quote one price for both.
+			const renewalTerms = trialOnlyMembershipLines
+				.map((line) => {
+					const rate = Number(line.renewalAmount)
+					if (!Number.isFinite(rate) || rate <= 0) return MEMBERSHIPS[line.key].label
+					return `${MEMBERSHIPS[line.key].label} ${rate.toLocaleString("en-US", { style: "currency", currency: line.currency || "usd" })}/${line.interval}`
+				})
+				.join(" and ")
 			const setupSession = await stripe.checkout.sessions.create({
 				client_reference_id: reference,
 				payment_method_types: ["card"],
@@ -719,9 +738,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				},
 				custom_text: {
 					submit: {
-						message: `Your ticket is free, and so ${trialMonths === 1 ? "is" : "are"} your first ${
-							trialMonths === 1 ? "month" : `${trialMonths} months`
-						} of ${membershipLabelList(trialKeys)}. Nothing is charged today — we save your card so your membership continues afterwards instead of stopping. Cancel any time.`,
+						message: `${membershipLabelList(trialKeys)} free until ${freeUntil} — then ${renewalTerms}. Your ticket is free and nothing is charged today; we save your card so your membership continues afterwards instead of stopping. Cancel any time.`,
+					},
+					// Repeated below the button because the page has nowhere else to put it. On a
+					// form headed "Save payment information" with no amount on it, one line the
+					// buyer might scroll past is not a disclosure of a recurring charge.
+					after_submit: {
+						message: `No charge today. Your first payment is ${freeUntil}${requiresApproval ? ", and only if the host approves your request" : ""}.`,
 					},
 				},
 			}).catch((stripeError: any) => {
