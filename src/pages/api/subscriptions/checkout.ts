@@ -137,6 +137,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const successUrl = `${baseUrl}${returnTo}?premium_session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${baseUrl}${returnTo}?premium_cancelled=1`
 
+		// Which open-vs-bought funnel row this purchase closes, if any — see
+		// `src/models/events/premium-page-view.ts`. Only `/premium` and `/subscribe` are tracked;
+		// a checkout started elsewhere (the paywall modal) simply carries none of this and the
+		// webhook leaves the funnel alone.
+		const funnelPage = returnTo === "/premium" ? "premium" : returnTo === "/subscribe" ? "subscribe" : undefined
+		const funnelAnonId = typeof req.body?.anonId === "string" ? req.body.anonId.trim() : ""
+		// The RAW code as the visitor had it, not `trialCodeApplied`/`referralCodeApplied` — those
+		// are normalized and only set once a code is accepted, but the funnel row was written the
+		// moment the page loaded with this exact string, accepted or not.
+		const funnelCode = rawInviteCode.trim()
+
 		const checkoutSession = await stripe.checkout.sessions.create({
 			customer: stripeCustomerId,
 			client_reference_id: userId,
@@ -155,6 +166,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// belongs to: the webhook needs both to count the redemption against the right row,
 				// now that one code string can exist on several events.
 				...(referralCodeApplied ? { referralCode: referralCodeApplied, referralEventId } : {}),
+				// So the webhook can close the loop on the open-vs-bought funnel row this purchase
+				// came from — the webhook never sees the browser or its anonId otherwise.
+				...(funnelPage && funnelAnonId
+					? {
+							premiumPage: funnelPage,
+							premiumAnonId: funnelAnonId,
+							...(funnelCode ? { premiumCode: funnelCode } : {}),
+						}
+					: {}),
 			},
 			// Stamped so every webhook branch can identify the product without matching price
 			// ids — the same marker `startMembershipSubscription` sets on the ones we create.

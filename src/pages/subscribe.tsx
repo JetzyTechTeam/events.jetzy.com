@@ -7,6 +7,8 @@ import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
 import Navbar from "@Jetzy/components/misc/Navbar"
+import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
+import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -35,6 +37,7 @@ export default function SubscribePage() {
 	const queryClient = useQueryClient()
 
 	const isSignedIn = status === "authenticated"
+	const { anonId, sessionId } = useAnalytics()
 
 	const [isAutoLoggingIn, setIsAutoLoggingIn] = React.useState(false)
 	const [hasAttemptedMagicLink, setHasAttemptedMagicLink] = React.useState(false)
@@ -46,6 +49,14 @@ export default function SubscribePage() {
 			sessionStorage.setItem(EVENT_ID_STORAGE_KEY, eventId)
 		}
 	}, [eventId])
+
+	// Open-vs-bought funnel: the landing. No referral-link concept here — that's `/premium` only
+	// — so this is always a plain visit. `anonId` loads asynchronously, so wait for it rather
+	// than tracking on mount; `trackPremiumView` dedupes per tab regardless.
+	React.useEffect(() => {
+		if (!router.isReady || !anonId) return
+		trackPremiumView({ anonId, sessionId, page: "subscribe", stage: "landed" })
+	}, [router.isReady, anonId, sessionId])
 
 	const resolvedEventId =
 		(typeof eventId === "string" && eventId) ||
@@ -260,10 +271,20 @@ export default function SubscribePage() {
 
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
+			// checkout_started, before the request — a beacon so it isn't dropped by the imminent
+			// navigation to Stripe.
+			trackPremiumView({
+				anonId,
+				sessionId,
+				page: "subscribe",
+				stage: "checkout_started",
+				code: inviteCode.trim() || undefined,
+			})
 			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
 			// request can't subscribe anyone at an arbitrary price on the account.
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo: "/subscribe",
+				anonId: anonId || undefined,
 				...(selectedInterval ? { interval: selectedInterval } : {}),
 				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
 			})

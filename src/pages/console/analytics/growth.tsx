@@ -30,7 +30,7 @@ import {
 	TabPanel,
 	useToast,
 } from "@chakra-ui/react"
-import { FiUsers, FiTag, FiGift, FiCreditCard, FiTrendingUp } from "react-icons/fi"
+import { FiUsers, FiTag, FiGift, FiCreditCard, FiTrendingUp, FiEye, FiShoppingCart } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
@@ -67,6 +67,9 @@ type MembershipRow = {
 	bookingRef: string
 	boughtAt: string | null
 }
+
+type FunnelStage = { opens: number; checkoutStarted: number; purchased: number }
+type ReferralLinkRow = { code: string; eventId: string; event: string; opens: number; checkoutStarted: number; purchased: number }
 
 type SignupTrialRow = {
 	_id: string
@@ -194,6 +197,37 @@ export default function GrowthAnalytics() {
 		}
 	}, [sgParams, sgPage, toast])
 
+	// ---- page funnel tab: opened vs. bought ----
+	const EMPTY_STAGE: FunnelStage = { opens: 0, checkoutStarted: 0, purchased: 0 }
+	const [pfLoading, setPfLoading] = React.useState(true)
+	const [pfByPage, setPfByPage] = React.useState<{ premium: FunnelStage; subscribe: FunnelStage }>({ premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
+	const [pfReferralByPage, setPfReferralByPage] = React.useState<{ premium: FunnelStage; subscribe: FunnelStage }>({ premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
+	const [pfLinks, setPfLinks] = React.useState<ReferralLinkRow[]>([])
+
+	React.useEffect(() => {
+		let cancelled = false
+		setPfLoading(true)
+		fetch(`/api/analytics/premium-funnel?${dateParams().toString()}`)
+			.then((r) => r.json())
+			.then((data) => {
+				if (cancelled) return
+				setPfByPage(data?.data?.byPage || { premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
+				setPfReferralByPage(data?.data?.referralByPage || { premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
+				setPfLinks(data?.data?.byReferralLink || [])
+			})
+			.catch(() => toast({ title: "Couldn't load the page funnel report", status: "error", duration: 3000 }))
+			.finally(() => !cancelled && setPfLoading(false))
+		return () => {
+			cancelled = true
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [dateFrom, dateTo, toast])
+
+	const pfTotalOpens = pfByPage.premium.opens + pfByPage.subscribe.opens
+	const pfTotalCheckout = pfByPage.premium.checkoutStarted + pfByPage.subscribe.checkoutStarted
+	const pfTotalPurchased = pfByPage.premium.purchased + pfByPage.subscribe.purchased
+	const pfConversion = (stage: FunnelStage) => (stage.opens > 0 ? `${((stage.purchased / stage.opens) * 100).toFixed(1)}%` : "—")
+
 	const totalMembers = Object.values(bySource).reduce((sum, n) => sum + n, 0)
 	const inviteRedemptions = inviteCodes.reduce((sum, c) => sum + c.redemptions, 0)
 	const totalPages = Math.max(1, Math.ceil(memTotal / limit))
@@ -217,6 +251,7 @@ export default function GrowthAnalytics() {
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Referral codes</Tab>
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Jetzy Premium</Tab>
 							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Signup invite codes</Tab>
+							<Tab color="#9C9C9C" _selected={{ bg: "#F79432", color: "black" }}>Page funnel</Tab>
 						</TabList>
 
 						<TabPanels>
@@ -472,6 +507,118 @@ export default function GrowthAnalytics() {
 												</HStack>
 											</Flex>
 										</>
+									)}
+								</Box>
+							</TabPanel>
+
+							{/* ------------------------------- Page funnel ------------------------------- */}
+							<TabPanel px={0}>
+								{/* Reads `premium_page_views`, written on every /premium and /subscribe load and
+								    checkout attempt, closed out by the Stripe webhook when a sale confirms. Rows
+								    from before this shipped don't exist — same as every other funnel here. */}
+								<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
+									<MetricsCard dark title="Opened the page" value={pfTotalOpens.toLocaleString()} icon={FiEye} iconColor="#60A5FA" subtitle="/premium + /subscribe" />
+									<MetricsCard dark title="Started checkout" value={pfTotalCheckout.toLocaleString()} icon={FiShoppingCart} iconColor="#60A5FA" />
+									<MetricsCard dark title="Purchased" value={pfTotalPurchased.toLocaleString()} icon={FiCreditCard} iconColor="#60A5FA" />
+									<MetricsCard
+										dark
+										title="Opened via a referral link"
+										value={(pfReferralByPage.premium.opens + pfReferralByPage.subscribe.opens).toLocaleString()}
+										icon={FiGift}
+										iconColor="#60A5FA"
+										subtitle={`${(pfReferralByPage.premium.purchased + pfReferralByPage.subscribe.purchased).toLocaleString()} bought`}
+									/>
+								</SimpleGrid>
+
+								<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4} mb={6}>
+									<Text color="white" fontWeight={700} mb={3}>By page</Text>
+									{pfLoading ? (
+										<Center py={10}><Spinner color="#F79432" /></Center>
+									) : (
+										<TableContainer>
+											<Table size="sm" variant="simple">
+												<Thead>
+													<Tr>
+														<Th color="#9C9C9C">Page</Th>
+														<Th color="#9C9C9C" isNumeric>Opened</Th>
+														<Th color="#9C9C9C" isNumeric>Started checkout</Th>
+														<Th color="#9C9C9C" isNumeric>Purchased</Th>
+														<Th color="#9C9C9C" isNumeric>Conversion</Th>
+													</Tr>
+												</Thead>
+												<Tbody>
+													<Tr>
+														<Td color="white">/premium</Td>
+														<Td color="#D6D6D6" isNumeric>{pfByPage.premium.opens.toLocaleString()}</Td>
+														<Td color="#D6D6D6" isNumeric>{pfByPage.premium.checkoutStarted.toLocaleString()}</Td>
+														<Td color="#D6D6D6" isNumeric>{pfByPage.premium.purchased.toLocaleString()}</Td>
+														<Td color="#F5C518" isNumeric>{pfConversion(pfByPage.premium)}</Td>
+													</Tr>
+													<Tr>
+														<Td color="white">/subscribe</Td>
+														<Td color="#D6D6D6" isNumeric>{pfByPage.subscribe.opens.toLocaleString()}</Td>
+														<Td color="#D6D6D6" isNumeric>{pfByPage.subscribe.checkoutStarted.toLocaleString()}</Td>
+														<Td color="#D6D6D6" isNumeric>{pfByPage.subscribe.purchased.toLocaleString()}</Td>
+														<Td color="#F5C518" isNumeric>{pfConversion(pfByPage.subscribe)}</Td>
+													</Tr>
+												</Tbody>
+											</Table>
+										</TableContainer>
+									)}
+								</Box>
+
+								<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
+									<Flex justify="space-between" align="center" mb={3} gap={3} wrap="wrap">
+										<Text color="white" fontWeight={700}>Referral share links</Text>
+										<Button
+											size="sm"
+											bg="#F79432"
+											color="black"
+											_hover={{ bg: "#E68422" }}
+											onClick={() => {
+												const p = dateParams()
+												p.set("format", "csv")
+												window.location.href = `/api/analytics/premium-funnel?${p.toString()}`
+											}}
+										>
+											Export CSV
+										</Button>
+									</Flex>
+									<Text color="#9C9C9C" fontSize="sm" mb={3}>
+										Each row is one host&apos;s <Text as="span" fontFamily="mono" color="#F5C518">/premium?code=&amp;event=</Text> link
+										— opened, started checkout, and actually bought the membership it grants.
+									</Text>
+									{pfLoading ? (
+										<Center py={10}><Spinner color="#F79432" /></Center>
+									) : pfLinks.length === 0 ? (
+										<Text color="#9C9C9C" py={6}>No referral share link has been opened in this period.</Text>
+									) : (
+										<TableContainer>
+											<Table size="sm" variant="simple">
+												<Thead>
+													<Tr>
+														<Th color="#9C9C9C">Code</Th>
+														<Th color="#9C9C9C">Event</Th>
+														<Th color="#9C9C9C" isNumeric>Opened</Th>
+														<Th color="#9C9C9C" isNumeric>Started checkout</Th>
+														<Th color="#9C9C9C" isNumeric>Purchased</Th>
+														<Th color="#9C9C9C" isNumeric>Conversion</Th>
+													</Tr>
+												</Thead>
+												<Tbody>
+													{pfLinks.map((r) => (
+														<Tr key={`${r.eventId}-${r.code}`}>
+															<Td color="#F5C518" fontFamily="mono" fontSize="xs">{r.code || "—"}</Td>
+															<Td color="#D6D6D6" fontSize="xs">{r.event || "—"}</Td>
+															<Td color="#D6D6D6" isNumeric>{r.opens.toLocaleString()}</Td>
+															<Td color="#D6D6D6" isNumeric>{r.checkoutStarted.toLocaleString()}</Td>
+															<Td color="#D6D6D6" isNumeric>{r.purchased.toLocaleString()}</Td>
+															<Td color="#F5C518" isNumeric>{pfConversion(r)}</Td>
+														</Tr>
+													))}
+												</Tbody>
+											</Table>
+										</TableContainer>
 									)}
 								</Box>
 							</TabPanel>

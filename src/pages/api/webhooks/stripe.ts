@@ -231,6 +231,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							}
 						}
 
+						// Close the loop on the open-vs-bought funnel row this purchase came from.
+						// `premiumPage`/`premiumAnonId` are stamped by `/api/subscriptions/checkout` only
+						// for a session started on `/premium` or `/subscribe` — a selectmember.jetzy.com
+						// sale, or one started from the paywall modal, carries neither and is skipped.
+						if (
+							sessionMetadata.premiumAnonId &&
+							(sessionMetadata.premiumPage === "premium" || sessionMetadata.premiumPage === "subscribe")
+						) {
+							try {
+								const { PremiumPageView } = await import("@/models/events/premium-page-view")
+								const code = sessionMetadata.premiumCode || ""
+								const matchFilter = {
+									page: sessionMetadata.premiumPage as "premium" | "subscribe",
+									code,
+									anonId: sessionMetadata.premiumAnonId as string,
+								}
+								await PremiumPageView.updateOne(
+									matchFilter,
+									{
+										$min: { purchasedAt: new Date() },
+										$setOnInsert: {
+											...matchFilter,
+											...(sessionMetadata.referralEventId ? { eventId: sessionMetadata.referralEventId } : {}),
+										},
+									},
+									{ upsert: true },
+								)
+							} catch (funnelError) {
+								console.error("[webhooks/stripe] Failed to record the premium funnel purchase:", funnelError)
+							}
+						}
+
 						if (sessionMetadata.purpose === "premium_subscription") {
 							const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 							const price = subscription.items.data[0]?.price

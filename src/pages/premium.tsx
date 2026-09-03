@@ -6,6 +6,8 @@ import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePrem
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
 import Navbar from "@Jetzy/components/misc/Navbar"
+import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
+import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
@@ -61,6 +63,7 @@ export default function PremiumPage() {
 	const { status } = useSession()
 	const queryClient = useQueryClient()
 	const isAuthenticated = status === "authenticated"
+	const { anonId, sessionId } = useAnalytics()
 
 	const [inviteCode, setInviteCode] = React.useState("")
 	const [inviteAccepted, setInviteAccepted] = React.useState<string | null>(null)
@@ -152,6 +155,26 @@ export default function PremiumPage() {
 		// Only on first read — after that the field belongs to the buyer.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.isReady])
+
+	// ---- Open-vs-bought funnel: the landing ----
+	//
+	// A code + event in the URL means this visit came from a host's referral share link, not just
+	// someone who typed a code in — that distinction is what the Growth report's Page Funnel tab
+	// breaks out per link. `anonId` loads asynchronously (see AnalyticsContext), so this waits for
+	// it rather than tracking on the URL-ready effect above; `trackPremiumView` dedupes per tab.
+	React.useEffect(() => {
+		if (!router.isReady || !anonId) return
+		const eventFromUrl = asEventId(router.query.event)
+		const codeFromUrl = normalizeTrialCode(typeof router.query.code === "string" ? router.query.code : "")
+		trackPremiumView({
+			anonId,
+			sessionId,
+			page: "premium",
+			stage: "landed",
+			code: codeFromUrl || undefined,
+			eventId: eventFromUrl || undefined,
+		})
+	}, [router.isReady, anonId, sessionId, router.query.event, router.query.code])
 
 	// Default the toggle to the product's own default price rather than guessing a string.
 	React.useEffect(() => {
@@ -302,8 +325,21 @@ export default function PremiumPage() {
 					sessionStorage.removeItem(STASH_EVENT_KEY)
 				}
 			}
+			// checkout_started, before the request — a beacon so it isn't dropped by the imminent
+			// navigation to Stripe. `code` mirrors exactly what the request body sends as
+			// `inviteCode` (see `funnelCode` server-side), so the webhook's `purchasedAt` write
+			// lands on this same funnel row regardless of whether it came with an event.
+			trackPremiumView({
+				anonId,
+				sessionId,
+				page: "premium",
+				stage: "checkout_started",
+				code: code || undefined,
+				eventId: code && referralEventId ? referralEventId : undefined,
+			})
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo: SELF,
+				anonId: anonId || undefined,
 				...(selectedInterval ? { interval: selectedInterval } : {}),
 				...(code ? { inviteCode: code } : {}),
 				// Present only for a shared referral code — the server reads the months from that
@@ -312,7 +348,7 @@ export default function PremiumPage() {
 			})
 			return data?.data as { url: string }
 		},
-		[selectedInterval, referralEventId],
+		[selectedInterval, referralEventId, anonId, sessionId],
 	)
 
 	const subscribeMutation = useMutation({

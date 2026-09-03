@@ -1749,6 +1749,49 @@ own `ownerId` events, so the embed cannot be widened by passing someone else's i
 Code column — a host wants that before they want any single code's list. The per-code **Buyers**
 button is unchanged. Both export CSV over the full filtered set.
 
+## Premium page funnel: opened vs. bought (2026-09-03)
+
+`/console/analytics/growth` gained a fourth tab, **Page funnel** — how many people opened
+`/premium`, `/subscribe`, or a host's referral share link (`/premium?code=&event=`), how many
+started checkout, and how many actually bought. None of that existed before: generic pageviews
+covered `/premium`/`/subscribe` but only by `router.pathname`, which drops the query string, so a
+referral link's `?code=&event=` was invisible and there was no "opened but didn't buy" number
+anywhere.
+
+**New collection `premium_page_views`** (`src/models/events/premium-page-view.ts`), same shape as
+the album funnel (`event-album-views`): anonymous, keyed on the analytics `anonId`, one row per
+**(page, code, anonId)** so a plain visit and a referral-link visit by the same person are two
+rows, and stage timestamps write with `$min` so the earliest moment wins. `views` counts return
+visits. Index built by `scripts/create-premium-view-index.ts` (`autoIndex: false`, run once per
+database — same rule as every other analytics collection here).
+
+Three stages, two different writers:
+
+- **`landed`** and **`checkout_started`** — written client-side by `POST
+  /api/analytics/premium-view` (mirrors `albums/[albumId]/view.ts`: zod-validated, rate-limited,
+  never fails loudly). `src/lib/premium-view-tracking.ts` (`trackPremiumView`) is the one call
+  site both pages use, so they can't drift. `checkout_started` fires via `navigator.sendBeacon`
+  (like the session-end dwell flush in `AnalyticsContext`) because it happens immediately before
+  `window.location.href` leaves for Stripe — an ordinary fetch can be aborted mid-navigation.
+- **`purchased`** — written by the Stripe webhook, which never sees the browser. `code` mirrors
+  exactly what checkout sent as `inviteCode` (not the normalized `trialCodeApplied` /
+  `referralCodeApplied`), so the row the webhook updates is the same one the browser wrote.
+
+**The webhook needs the browser's `anonId` to close the loop**, so `/api/subscriptions/checkout`
+now takes an optional `anonId` in the body and, when `returnTo` is exactly `/premium` or
+`/subscribe`, stamps `premiumPage` / `premiumAnonId` / `premiumCode` into the Checkout Session
+metadata. A session started from the paywall modal (`returnTo` is whatever page it was opened on)
+carries none of this and the webhook's funnel write is skipped — that surface isn't part of this
+report. In `webhooks/stripe.ts`, right after `recordMembershipPurchase` in the subscription
+branch, a `PremiumPageView.updateOne(..., { upsert: true })` sets `purchasedAt`.
+
+`GET /api/analytics/premium-funnel` (admin only, same reasoning as `/api/analytics/memberships`):
+totals by page, the same totals restricted to rows carrying an `eventId` (referral-link traffic),
+and a per-`(code, eventId)` breakdown with opens/checkout-started/purchased and event name — CSV
+export on the last one.
+
+**No backfill**, same rule as every funnel in this app: rows from before this shipped don't exist.
+
 ## The invite-code field moved up the Premium card (2026-08-19)
 
 It was below the benefit list, in the same grey as the rest of the form, so buyers holding a code
