@@ -207,20 +207,37 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 					</Box>
 				)}
 
-				{/* Benefits Overlay */}
+				{/* Benefits overlay — bottom-left, over a scrim so it reads on any photo. Horizontal
+				    chips instead of a stacked column, which crowded the status badges above. */}
 				{event.benefits && event.benefits.trim() !== "" && (
-					<Flex position="absolute" top="12" left="4" direction="column" gap="1" maxW="80%" zIndex="2">
-						{event.benefits
-							.split(",")
-							.map((b) => b.trim())
-							.filter((b) => b !== "")
-							.slice(0, 2)
-							.map((benefit, index) => (
-								<Box key={index} bg="#F79432" backdropFilter="blur(4px)" px="2" py="0.5" rounded="md" color="black" fontSize="xs" fontWeight="bold" border="1px" borderColor="whiteAlpha.300">
-									{benefit}
-								</Box>
-							))}
-					</Flex>
+					<>
+						<Box position="absolute" left="0" right="0" bottom="0" h="16" bgGradient="linear(to-t, blackAlpha.700, transparent)" zIndex="1" pointerEvents="none" />
+						<Flex position="absolute" bottom="2" left="2" right="2" gap="1.5" flexWrap="wrap" zIndex="2">
+							{event.benefits
+								.split(",")
+								.map((b) => b.trim())
+								.filter((b) => b !== "")
+								.slice(0, 3)
+								.map((benefit, index) => (
+									<Box
+										key={index}
+										bg="blackAlpha.700"
+										backdropFilter="blur(4px)"
+										px="2.5"
+										py="1"
+										rounded="full"
+										color="white"
+										fontSize="xs"
+										fontWeight="semibold"
+										border="1px solid"
+										borderColor="whiteAlpha.400"
+										noOfLines={1}
+									>
+										{benefit}
+									</Box>
+								))}
+						</Flex>
+					</>
 				)}
 			</Box>
 
