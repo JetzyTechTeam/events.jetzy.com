@@ -2,7 +2,7 @@ import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import { findMembershipRecord, getUserStripeCustomerId, hasEverHadMembership } from "@/lib/premium"
-import { resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
+import { defaultTrialOffer, resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -33,8 +33,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const code = typeof req.body?.code === "string" ? req.body.code : ""
 		const interval = req.body?.interval === "year" || req.body?.interval === "month" ? req.body.interval : undefined
 
+		// No code typed. That is not a mistake to report — it is the ordinary case, and there is
+		// a standing offer behind it. Answered through the SAME response shape as a code so the
+		// three buying surfaces read one thing, with `code: ""` saying where it came from.
+		//
+		// The first-timer check below still applies. Its refusal is silent here (`quiet: true`):
+		// the caller never typed anything, so painting an error against an untouched field would
+		// read as the page being broken rather than as an offer not applying.
 		if (!code.trim()) {
-			return sendResponse(res, { valid: false }, "Enter a code.", false, ResCode.BAD_REQUEST)
+			const standing = defaultTrialOffer(interval)
+			if (!standing) {
+				return sendResponse(res, { valid: false, quiet: true }, "No offer applies.", false, ResCode.BAD_REQUEST)
+			}
+			const userId = (session.user as any)?._id || (session.user as any)?.id
+			const record = await findMembershipRecord(userId, (session.user as any)?.email)
+			const customerId = getUserStripeCustomerId(record?.doc)
+			if (customerId && (await hasEverHadMembership(customerId, "premium"))) {
+				return sendResponse(
+					res,
+					{ valid: false, quiet: true, reason: "existing-member" },
+					"This offer is for new members.",
+					false,
+					ResCode.BAD_REQUEST,
+				)
+			}
+			return sendResponse(
+				res,
+				{
+					valid: true,
+					months: standing.months,
+					label: standing.label,
+					code: "",
+					chargesFrom: trialEndsOn(standing).toISOString(),
+				},
+				"Offer applied.",
+				true,
+				ResCode.OK,
+			)
 		}
 
 		// Two kinds of code reach this endpoint, and the event is what tells them apart.

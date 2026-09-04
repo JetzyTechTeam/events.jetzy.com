@@ -76,24 +76,6 @@ export const MEMBERSHIPS: Record<MembershipKey, MembershipDefinition> = {
 	},
 }
 
-/**
- * Which memberships a host may put on a NEW ticket.
- *
- * Full Concierge is built end to end but has not been verified against SelectMember's staging
- * API yet, so it is withheld from the ticket form until it has been. This is a visibility
- * gate, NOT a kill switch: a ticket that already sells Concierge keeps selling it, checkout
- * still charges for it, and every subscription already created keeps renewing. The only thing
- * it prevents is a host creating a new one before anyone has watched the flow work.
- *
- * Flip `NEXT_PUBLIC_ENABLE_CONCIERGE_TICKETS=true` to release it. It is `NEXT_PUBLIC_` because
- * the ticket form reads it in the browser, which means the value is baked in at build time —
- * changing it needs a redeploy, not just an env edit.
- */
-export const isMembershipSelectableByHost = (key: MembershipKey): boolean =>
-	key !== "concierge" || process.env.NEXT_PUBLIC_ENABLE_CONCIERGE_TICKETS === "true"
-
-export const HOST_SELECTABLE_MEMBERSHIP_KEYS: MembershipKey[] = MEMBERSHIP_KEYS.filter(isMembershipSelectableByHost)
-
 export const isMembershipKey = (value: unknown): value is MembershipKey =>
 	typeof value === "string" && Object.prototype.hasOwnProperty.call(MEMBERSHIPS, value)
 

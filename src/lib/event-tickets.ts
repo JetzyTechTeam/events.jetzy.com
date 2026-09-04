@@ -1,5 +1,5 @@
 import Stripe from "stripe"
-import { ticketMemberships } from "@/lib/premium-bundle"
+import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { sanitizeMembershipKeys } from "@/lib/memberships"
 
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
@@ -14,6 +14,7 @@ export type IncomingTicket = {
 	requireApproval?: boolean
 	memberships?: string[]
 	membershipInterval?: "month" | "year"
+	membershipFreeMonths?: number
 	/** @deprecated legacy mirror of `memberships` */
 	includesPremium?: boolean
 }
@@ -83,6 +84,17 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 						? existing.membershipInterval
 						: undefined
 
+			// Preserve-on-omit like the two above, then clamped through the shared resolver so a
+			// hand-crafted 999 can't be stored and later quoted to a buyer as their free period.
+			// `0` is stored as 0 rather than dropped: a host clearing the field is saying "no
+			// months", which must overwrite the value that was there.
+			const resolvedMembershipFreeMonths =
+				ticket.membershipFreeMonths !== undefined
+					? ticketMembershipFreeMonths({ membershipFreeMonths: ticket.membershipFreeMonths })
+					: existing?.membershipFreeMonths !== undefined
+						? ticketMembershipFreeMonths(existing)
+						: undefined
+
 			return {
 				...(existing ? { _id: existing._id } : {}),
 				name: ticket.title,
@@ -92,6 +104,7 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
 				memberships: resolvedMemberships,
 				...(resolvedMembershipInterval !== undefined ? { membershipInterval: resolvedMembershipInterval } : {}),
+				...(resolvedMembershipFreeMonths !== undefined ? { membershipFreeMonths: resolvedMembershipFreeMonths } : {}),
 				// Written alongside the array purely so the mobile app and any older reader still
 				// see a bundled Premium ticket. The array is the authority.
 				includesPremium: resolvedMemberships.includes("premium"),

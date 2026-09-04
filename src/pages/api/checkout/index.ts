@@ -13,9 +13,11 @@ import {
 	premiumOrderCapMessage,
 	PREMIUM_TICKET_MAX_PER_ORDER,
 	resolveBundlePlan,
+	resolveFreeMonthsForKey,
 	selectionMemberships,
 	ticketIncludesMembership,
 	ticketMemberships,
+	ticketMembershipFreeMonths,
 	ticketMembershipInterval,
 	type BundlePlan,
 } from "@/lib/premium-bundle"
@@ -584,6 +586,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					.map((t: any) => storedTicketFor(t.id))
 					.find((t: any) => t && ticketIncludesMembership(t))
 				const bundleInterval = ticketMembershipInterval(bundledTicket as any)
+				// Free months the HOST put on the ticket. Read from the EVENT record for exactly
+				// the same reason as the interval: a crafted body must not be able to award itself
+				// a free year of a membership the host never gave away.
+				const ticketFreeMonths = ticketMembershipFreeMonths(bundledTicket as any)
 
 				for (const key of stillOwed) {
 					// A recurring price can't be a line item in payment mode, hence the inline
@@ -602,13 +608,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					if (price.unit_amount == null) {
 						throw new Error(`${MEMBERSHIPS[key].label} price has no unit_amount and can't be charged`)
 					}
-					// A referral code can hand out free months of Jetzy Premium. The line then costs
-					// NOTHING today — it is left out of `line_items` below — but still carries the
-					// real `priceId` and `interval`, because that is what the subscription is
-					// created at when the trial ends, and what has to be disclosed now.
+					// Free months come from two places now — the ticket itself, set by the host and
+					// given with no code typed, and a referral code the buyer entered. The larger
+					// wins; they never stack. The line then costs NOTHING today — it is left out of
+					// `line_items` below — but still carries the real `priceId` and `interval`,
+					// because that is what the subscription is created at when the trial ends, and
+					// what has to be disclosed now.
 					//
-					// Premium only, by decision: Full Concierge is sold on someone else's terms.
-					const freeMonths = key === "premium" ? referralCodeData?.freeMembershipMonths || 0 : 0
+					// A referral code stays Premium-only; the ticket's own months apply to whatever
+					// that ticket sells. `resolveFreeMonthsForKey` is the one place that rule lives,
+					// shared with `free-events.ts` and the checkout modal.
+					const freeMonths = resolveFreeMonthsForKey(key, ticketFreeMonths, referralCodeData?.freeMembershipMonths || 0)
 
 					membershipLines.push({
 						key,
@@ -660,19 +670,169 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const chargesMembership = membershipLines.length > 0
 
-		// Nothing for Stripe to do. A ticket may now be free AND sell a membership — the
-		// membership is the thing being sold and carries its own line item — so this order is
-		// only chargeable while something actually costs money: a priced ticket, or a
-		// membership period that is not being given away.
+		// Is there anything for Stripe to CHARGE? A ticket may be free AND sell a membership —
+		// the membership is the thing being sold and carries its own line item — so this order
+		// only costs money while something is not being given away: a priced ticket, or a
+		// membership period with no free months on it.
 		//
-		// The case that gets here is a $0 bundled ticket bought by someone who already holds
-		// every membership on it. The client routes that to the free path already, but its
-		// verdict comes from a lookup of the typed address that can be stale, while the check
-		// above asks STRIPE. Opening the session anyway would create a $0 payment-mode session
-		// with `payment_intent_data` on it and no PaymentIntent behind it, which fulfilment
-		// then discards as "not-payable" — a completed checkout with no booking and no log.
+		// Opening an ordinary session anyway would create a $0 payment-mode session with
+		// `payment_intent_data` on it and no PaymentIntent behind it, which fulfilment then
+		// discards as "not-payable" — a completed checkout with no booking and no log. The two
+		// branches below are the two ways an order can reach $0, and they need different things.
 		const chargeableMembershipLines = membershipLines.filter((line) => !line.trialMonths)
-		if (chargePricing.total === 0 && chargeableMembershipLines.length === 0) {
+		const trialOnlyMembershipLines = membershipLines.filter((line) => line.trialMonths)
+		const nothingToCharge = chargePricing.total === 0 && chargeableMembershipLines.length === 0
+
+		// A free ticket whose membership is ALSO free for a while: nothing is charged today, but a
+		// card still has to be collected.
+		//
+		// `startMembershipSubscription` sets `trial_settings.end_behavior.missing_payment_method:
+		// "cancel"` whenever it has no payment method, so a subscription created off the free path
+		// would be CANCELLED by Stripe at the end of the free months instead of converting. The
+		// host gave away the first period, not the membership, so the card has to exist by then.
+		//
+		// `mode: "setup"` is the only session shape that collects one without taking money: a
+		// $0 payment-mode session creates no PaymentIntent at all (Stripe marks it
+		// `no_payment_required`) and fulfilment discards it as "not-payable". Setup mode accepts
+		// no `line_items`, so the $0 ticket cannot be shown on the Stripe page — `custom_text` is
+		// what explains why a card is being asked for.
+		if (nothingToCharge && trialOnlyMembershipLines.length > 0) {
+			const trialKeys = trialOnlyMembershipLines.map((line) => line.key)
+			const trialMonths = Math.max(...trialOnlyMembershipLines.map((line) => Number(line.trialMonths) || 0))
+			// Setup mode shows the buyer a bare "Save payment information" form: no line items, no
+			// order summary, no price anywhere on the page. Everything they are agreeing to has to
+			// be in this text, so it states the same three things the ticket card and the checkout
+			// modal already did — what is free, until when, and what is charged after.
+			//
+			// Calendar months, matching `trialEndsOn` and the `trial_end` the subscription is
+			// actually created with, so the date here is the date they are really billed on.
+			const trialEndsAt = new Date()
+			trialEndsAt.setMonth(trialEndsAt.getMonth() + trialMonths)
+			const freeUntil = trialEndsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+			// One "then" per membership, at the rate each actually renews at — a ticket selling two
+			// must not quote one price for both.
+			const renewalTerms = trialOnlyMembershipLines
+				.map((line) => {
+					const rate = Number(line.renewalAmount)
+					if (!Number.isFinite(rate) || rate <= 0) return MEMBERSHIPS[line.key].label
+					return `${MEMBERSHIPS[line.key].label} ${rate.toLocaleString("en-US", { style: "currency", currency: line.currency || "usd" })}/${line.interval}`
+				})
+				.join(" and ")
+			// PREFERRED SHAPE: `mode: "subscription"` with a trial.
+			//
+			// Setup mode's page is a bare "Save payment information" form — Stripe rejects
+			// `line_items` there outright ("You can not pass `line_items` in `setup` mode"), so
+			// there is no order summary, no price, and no product name anywhere on it. Everything
+			// has to live in `custom_text` beside the button, which is the one slot the API
+			// exposes. Subscription mode renders the summary panel from the line items and adds
+			// Stripe's own native trial wording, which is what a buyer expects to see.
+			//
+			// Only used where it is SAFE, because it hands subscription creation to Stripe:
+			//   - exactly ONE membership. A Checkout Session creates at most one subscription,
+			//     and one carrying both products would mean cancelling either cancels both.
+			//   - no `selectMemberPlan` on it (i.e. Premium, not Concierge). Our own
+			//     `startMembershipSubscription` mirrors a Concierge sale to selectmember.jetzy.com;
+			//     a subscription Stripe creates skips that, and their side would never hear of it.
+			//   - not an approval order. A membership must not begin before the host approves,
+			//     and here Stripe would start it the moment the buyer submits.
+			// Anything else falls through to setup mode below, which is still correct — just plainer.
+			const soleTrialLine = trialOnlyMembershipLines.length === 1 ? trialOnlyMembershipLines[0] : null
+			const canSellAsSubscription =
+				!!soleTrialLine &&
+				!requiresApproval &&
+				!MEMBERSHIPS[soleTrialLine.key].selectMemberPlan &&
+				// The ticket must be GENUINELY free, not discounted to zero.
+				//
+				// `nothingToCharge` is satisfied by a 100%-off referral code on a priced ticket
+				// too, and the line items below are the ticket's real Stripe prices — the discount
+				// lives in `discountConfig`, which a subscription session here does not carry.
+				// Including them would bill the buyer the full ticket price on the first invoice
+				// for an order the checkout modal showed as $0. Those orders take the setup branch,
+				// which charges nothing at all.
+				chargePricing.subtotal === 0
+
+			if (soleTrialLine && canSellAsSubscription) {
+				const subSession = await stripe.checkout.sessions.create({
+					client_reference_id: reference,
+					payment_method_types: ["card"],
+					mode: "subscription",
+					customer: membershipExtras.customer as string,
+					// The membership at its real recurring price, so the panel reads
+					// "Jetzy Premium $20.00/month" rather than nothing — plus the free ticket as a
+					// $0 one-time line, which is the only way it appears on the page at all.
+					// Verified against Stripe: a $0 line beside a recurring one is accepted here.
+					line_items: [{ price: soleTrialLine.priceId, quantity: 1 }, ...prices],
+					success_url: successUrl,
+					cancel_url: cancelUrl,
+					metadata,
+					subscription_data: {
+						// Stripe bills nothing until this date and then charges the normal price,
+						// which is exactly the offer. Same calendar-month arithmetic as
+						// `startMembershipSubscription`, so the date the buyer reads on this page
+						// is the date they are really charged.
+						trial_end: Math.floor(trialEndsAt.getTime() / 1000),
+						// `membershipKey` is what `subscriptionMembershipKey` and `billedByJetzy`
+						// read. Our own creator stamps it; a subscription Stripe creates would carry
+						// nothing, so the lifecycle emails and the SelectMember ownership check
+						// would not recognise this as ours.
+						metadata: {
+							membershipKey: soleTrialLine.key,
+							userId: String(metadata.membershipUserId || ""),
+							bookingRef,
+							eventId: String(event._id),
+						},
+					},
+				}).catch((stripeError: any) => {
+					console.error("[checkout/index] Stripe subscription session creation failed:", stripeError.message)
+					throw new Error(`Stripe error: ${stripeError.message}`)
+				})
+
+				console.log("[checkout/index] Trial subscription session created (free ticket + gifted membership):", subSession.id)
+				return sendResponse(res, { ...subSession, requiresApproval }, "Checkout created successfully!", true, ResCode.OK)
+			}
+
+			const setupSession = await stripe.checkout.sessions.create({
+				client_reference_id: reference,
+				payment_method_types: ["card"],
+				mode: "setup",
+				// Always present: `membershipExtras` is only populated alongside these lines.
+				customer: membershipExtras.customer as string,
+				success_url: successUrl,
+				cancel_url: cancelUrl,
+				metadata,
+				// `checkout.session.completed` carries the session's metadata, but the expiry and
+				// recovery handlers work from the intent — same duplication as `payment_intent_data`.
+				setup_intent_data: {
+					metadata: {
+						bookingRef,
+						eventId: String(event._id),
+						requiresApproval: requiresApproval ? "true" : "false",
+					},
+				},
+				custom_text: {
+					submit: {
+						message: `${membershipLabelList(trialKeys)} free until ${freeUntil} — then ${renewalTerms}. Your ticket is free and nothing is charged today; we save your card so your membership continues afterwards instead of stopping. Cancel any time.`,
+					},
+					// Repeated below the button because the page has nowhere else to put it. On a
+					// form headed "Save payment information" with no amount on it, one line the
+					// buyer might scroll past is not a disclosure of a recurring charge.
+					after_submit: {
+						message: `No charge today. Your first payment is ${freeUntil}${requiresApproval ? ", and only if the host approves your request" : ""}.`,
+					},
+				},
+			}).catch((stripeError: any) => {
+				console.error("[checkout/index] Stripe setup session creation failed:", stripeError.message)
+				throw new Error(`Stripe error: ${stripeError.message}`)
+			})
+
+			console.log("[checkout/index] Setup session created (free ticket + gifted membership):", setupSession.id)
+			return sendResponse(res, { ...setupSession, requiresApproval }, "Checkout created successfully!", true, ResCode.OK)
+		}
+
+		// Nothing for Stripe to do at all — the buyer already holds every membership on a free
+		// ticket. The client routes that to the free path already, but its verdict comes from a
+		// lookup of the typed address that can be stale, while the check above asks STRIPE.
+		if (nothingToCharge) {
 			console.warn("[checkout/index] Nothing chargeable; routing to the free path:", { bookingRef, held: bundlePlan.alreadyHeld })
 			return sendResponse(res, { freeOrder: true }, "This order is free.", true, ResCode.OK)
 		}

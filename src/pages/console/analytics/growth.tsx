@@ -69,6 +69,8 @@ type MembershipRow = {
 }
 
 type FunnelStage = { opens: number; checkoutStarted: number; purchased: number }
+/** `modal` is the navbar's "Buy Jetzy Premium" dialog — a door onto the same purchase, no URL. */
+type FunnelPages = { premium: FunnelStage; subscribe: FunnelStage; modal: FunnelStage }
 type ReferralLinkRow = { code: string; eventId: string; event: string; opens: number; checkoutStarted: number; purchased: number }
 
 type SignupTrialRow = {
@@ -199,9 +201,14 @@ export default function GrowthAnalytics() {
 
 	// ---- page funnel tab: opened vs. bought ----
 	const EMPTY_STAGE: FunnelStage = { opens: 0, checkoutStarted: 0, purchased: 0 }
+	const EMPTY_PAGES: FunnelPages = { premium: EMPTY_STAGE, subscribe: EMPTY_STAGE, modal: EMPTY_STAGE }
 	const [pfLoading, setPfLoading] = React.useState(true)
-	const [pfByPage, setPfByPage] = React.useState<{ premium: FunnelStage; subscribe: FunnelStage }>({ premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
-	const [pfReferralByPage, setPfReferralByPage] = React.useState<{ premium: FunnelStage; subscribe: FunnelStage }>({ premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
+	const [pfByPage, setPfByPage] = React.useState<FunnelPages>(EMPTY_PAGES)
+	// Opens that did NOT come from a host's share link. The share-link rows are a SUBSET of the
+	// page totals — a referral link is `/premium` — so showing both without this column reported
+	// the same visitors twice with no way to tell which was which.
+	const [pfDirectByPage, setPfDirectByPage] = React.useState<FunnelPages>(EMPTY_PAGES)
+	const [pfReferralByPage, setPfReferralByPage] = React.useState<FunnelPages>(EMPTY_PAGES)
 	const [pfLinks, setPfLinks] = React.useState<ReferralLinkRow[]>([])
 
 	React.useEffect(() => {
@@ -211,8 +218,9 @@ export default function GrowthAnalytics() {
 			.then((r) => r.json())
 			.then((data) => {
 				if (cancelled) return
-				setPfByPage(data?.data?.byPage || { premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
-				setPfReferralByPage(data?.data?.referralByPage || { premium: EMPTY_STAGE, subscribe: EMPTY_STAGE })
+				setPfByPage(data?.data?.byPage || EMPTY_PAGES)
+				setPfDirectByPage(data?.data?.directByPage || EMPTY_PAGES)
+				setPfReferralByPage(data?.data?.referralByPage || EMPTY_PAGES)
 				setPfLinks(data?.data?.byReferralLink || [])
 			})
 			.catch(() => toast({ title: "Couldn't load the page funnel report", status: "error", duration: 3000 }))
@@ -223,9 +231,12 @@ export default function GrowthAnalytics() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [dateFrom, dateTo, toast])
 
-	const pfTotalOpens = pfByPage.premium.opens + pfByPage.subscribe.opens
-	const pfTotalCheckout = pfByPage.premium.checkoutStarted + pfByPage.subscribe.checkoutStarted
-	const pfTotalPurchased = pfByPage.premium.purchased + pfByPage.subscribe.purchased
+	const pfSum = (pick: (s: FunnelStage) => number) => pick(pfByPage.premium) + pick(pfByPage.subscribe) + pick(pfByPage.modal)
+	const pfTotalOpens = pfSum((s) => s.opens)
+	const pfTotalCheckout = pfSum((s) => s.checkoutStarted)
+	const pfTotalPurchased = pfSum((s) => s.purchased)
+	const pfReferralOpens = pfReferralByPage.premium.opens + pfReferralByPage.subscribe.opens + pfReferralByPage.modal.opens
+	const pfReferralPurchased = pfReferralByPage.premium.purchased + pfReferralByPage.subscribe.purchased + pfReferralByPage.modal.purchased
 	const pfConversion = (stage: FunnelStage) => (stage.opens > 0 ? `${((stage.purchased / stage.opens) * 100).toFixed(1)}%` : "—")
 
 	const totalMembers = Object.values(bySource).reduce((sum, n) => sum + n, 0)
@@ -517,21 +528,28 @@ export default function GrowthAnalytics() {
 								    checkout attempt, closed out by the Stripe webhook when a sale confirms. Rows
 								    from before this shipped don't exist — same as every other funnel here. */}
 								<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-									<MetricsCard dark title="Opened the page" value={pfTotalOpens.toLocaleString()} icon={FiEye} iconColor="#60A5FA" subtitle="/premium + /subscribe" />
+									<MetricsCard dark title="Opened the offer" value={pfTotalOpens.toLocaleString()} icon={FiEye} iconColor="#60A5FA" subtitle="/premium + /subscribe + Buy Premium button" />
 									<MetricsCard dark title="Started checkout" value={pfTotalCheckout.toLocaleString()} icon={FiShoppingCart} iconColor="#60A5FA" />
 									<MetricsCard dark title="Purchased" value={pfTotalPurchased.toLocaleString()} icon={FiCreditCard} iconColor="#60A5FA" />
 									<MetricsCard
 										dark
 										title="Opened via a referral link"
-										value={(pfReferralByPage.premium.opens + pfReferralByPage.subscribe.opens).toLocaleString()}
+										value={pfReferralOpens.toLocaleString()}
 										icon={FiGift}
 										iconColor="#60A5FA"
-										subtitle={`${(pfReferralByPage.premium.purchased + pfReferralByPage.subscribe.purchased).toLocaleString()} bought`}
+										subtitle={`${pfReferralPurchased.toLocaleString()} bought — included in the total on the left`}
 									/>
 								</SimpleGrid>
 
 								<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4} mb={6}>
-									<Text color="white" fontWeight={700} mb={3}>By page</Text>
+									<Text color="white" fontWeight={700} mb={1}>By door</Text>
+									{/* A referral share link IS `/premium`, so its opens are part of that row's total.
+									    Split out here, or the same visitor is counted once in this table and again in
+									    the share-link table below with nothing saying they are the same person. */}
+									<Text color="#9C9C9C" fontSize="sm" mb={3}>
+										Direct + Via referral link = Opened. The share-link table below breaks the last column down by code.
+										The <Text as="span" color="#D6D6D6">Buy Jetzy Premium</Text> button had no funnel row until this report gained one, so it counts from then on — not from the first click ever made on it.
+									</Text>
 									{pfLoading ? (
 										<Center py={10}><Spinner color="#F79432" /></Center>
 									) : (
@@ -539,28 +557,31 @@ export default function GrowthAnalytics() {
 											<Table size="sm" variant="simple">
 												<Thead>
 													<Tr>
-														<Th color="#9C9C9C">Page</Th>
+														<Th color="#9C9C9C">Door</Th>
 														<Th color="#9C9C9C" isNumeric>Opened</Th>
+														<Th color="#9C9C9C" isNumeric>Direct</Th>
+														<Th color="#9C9C9C" isNumeric>Via referral link</Th>
 														<Th color="#9C9C9C" isNumeric>Started checkout</Th>
 														<Th color="#9C9C9C" isNumeric>Purchased</Th>
 														<Th color="#9C9C9C" isNumeric>Conversion</Th>
 													</Tr>
 												</Thead>
 												<Tbody>
-													<Tr>
-														<Td color="white">/premium</Td>
-														<Td color="#D6D6D6" isNumeric>{pfByPage.premium.opens.toLocaleString()}</Td>
-														<Td color="#D6D6D6" isNumeric>{pfByPage.premium.checkoutStarted.toLocaleString()}</Td>
-														<Td color="#D6D6D6" isNumeric>{pfByPage.premium.purchased.toLocaleString()}</Td>
-														<Td color="#F5C518" isNumeric>{pfConversion(pfByPage.premium)}</Td>
-													</Tr>
-													<Tr>
-														<Td color="white">/subscribe</Td>
-														<Td color="#D6D6D6" isNumeric>{pfByPage.subscribe.opens.toLocaleString()}</Td>
-														<Td color="#D6D6D6" isNumeric>{pfByPage.subscribe.checkoutStarted.toLocaleString()}</Td>
-														<Td color="#D6D6D6" isNumeric>{pfByPage.subscribe.purchased.toLocaleString()}</Td>
-														<Td color="#F5C518" isNumeric>{pfConversion(pfByPage.subscribe)}</Td>
-													</Tr>
+													{([
+														{ key: "premium" as const, label: "/premium" },
+														{ key: "subscribe" as const, label: "/subscribe" },
+														{ key: "modal" as const, label: "Buy Jetzy Premium button" },
+													]).map(({ key, label }) => (
+														<Tr key={key}>
+															<Td color="white">{label}</Td>
+															<Td color="#D6D6D6" isNumeric>{pfByPage[key].opens.toLocaleString()}</Td>
+															<Td color="#D6D6D6" isNumeric>{pfDirectByPage[key].opens.toLocaleString()}</Td>
+															<Td color="#D6D6D6" isNumeric>{pfReferralByPage[key].opens.toLocaleString()}</Td>
+															<Td color="#D6D6D6" isNumeric>{pfByPage[key].checkoutStarted.toLocaleString()}</Td>
+															<Td color="#D6D6D6" isNumeric>{pfByPage[key].purchased.toLocaleString()}</Td>
+															<Td color="#F5C518" isNumeric>{pfConversion(pfByPage[key])}</Td>
+														</Tr>
+													))}
 												</Tbody>
 											</Table>
 										</TableContainer>

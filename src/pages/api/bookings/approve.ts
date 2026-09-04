@@ -216,10 +216,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// approved those requests while silently dropping the gift they were promised.
 		let customerId = typeof capturedPi?.customer === "string" ? capturedPi.customer : capturedPi?.customer?.id
 		const paymentMethodId =
-			typeof capturedPi?.payment_method === "string" ? capturedPi.payment_method : capturedPi?.payment_method?.id
+			(typeof capturedPi?.payment_method === "string" ? capturedPi.payment_method : capturedPi?.payment_method?.id) ||
+			// No hold, but a card all the same: a free ticket giving away free months is sold
+			// through a setup-mode session, whose only job was to collect one. Without this the
+			// membership would be created with no payment method and cancelled by Stripe at the
+			// end of the free months — the exact outcome that session exists to prevent.
+			booking.payment?.paymentMethodId
 		// No hold, so Stripe never handed us a Customer — resolve the one the membership belongs
-		// to. There is no card either: `startMembershipSubscription` then tells Stripe to cancel at
-		// trial end rather than raise an invoice nobody can pay.
+		// to. There may be no card either (a gift settled through the free path), in which case
+		// `startMembershipSubscription` tells Stripe to cancel at trial end rather than raise an
+		// invoice nobody can pay.
 		if (!customerId) {
 			try {
 				const { resolveStripeCustomerForUser } = await import("@/lib/premium")

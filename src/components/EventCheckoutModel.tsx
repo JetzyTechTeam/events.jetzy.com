@@ -6,7 +6,7 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { membershipQuantityInSelection, premiumAllowanceMessage, selectionMemberships, selectionMembershipInterval } from "@/lib/premium-bundle"
+import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval } from "@/lib/premium-bundle"
 import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
 import { ROUTES } from "@/configs/routes"
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
@@ -138,14 +138,26 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// The interval the SELECTED TICKET sells at, not the product default — an annual ticket
 	// must disclose $200/year here, because that is what `api/checkout` will charge.
 	const bundleInterval = selectionMembershipInterval(tickets as any)
-	// Free months apply to Jetzy Premium only — Full Concierge is sold on someone else's terms —
-	// and only when this order is actually buying Premium. A code carrying months is otherwise
-	// worth nothing here: the selected ticket may not sell membership at all, or the buyer may
-	// already hold it, and promising free months in either case describes a gift nobody gets.
-	const appliedFreeMonths = referralCodeValid === true && chargedKeys.includes("premium") ? referralFreeMonths : 0
+	// Free months have two sources: the host's own offer on the ticket, which every buyer gets
+	// with no code typed, and a referral code the buyer entered. `resolveFreeMonthsForKey` is
+	// the single rule — best offer wins, they never stack, and a code's months stay Premium-only
+	// while the ticket's apply to whatever it sells. The SAME function decides what
+	// `api/checkout` charges, so this preview cannot promise something checkout won't honour.
+	const ticketFreeMonths = selectionMembershipFreeMonths(tickets as any)
+	const appliedReferralFreeMonths = referralCodeValid === true ? referralFreeMonths : 0
+	// Worth nothing on a key this order isn't actually buying: the ticket may sell no membership
+	// at all, or the buyer may already hold it, and promising free months in either case
+	// describes a gift nobody gets.
+	const freeMonthsFor = (key: MembershipKey) =>
+		chargedKeys.includes(key) ? resolveFreeMonthsForKey(key, ticketFreeMonths, appliedReferralFreeMonths) : 0
+	// The largest offer on this order, for the sentences that speak about the order as a whole.
+	const appliedFreeMonths = Math.max(0, ...chargedKeys.map(freeMonthsFor))
+	// The memberships actually being GIVEN AWAY, so a sentence about the gift can't name one
+	// the buyer is paying full price for.
+	const giftedChargedKeys = chargedKeys.filter((key) => freeMonthsFor(key) > 0)
 	// Memberships still being PAID for today. A gifted one is charged nothing now, so it is
 	// neither part of the hold nor part of "due today" — saying otherwise overstates both.
-	const paidChargedKeys = chargedKeys.filter((key) => !(key === "premium" && appliedFreeMonths > 0))
+	const paidChargedKeys = chargedKeys.filter((key) => freeMonthsFor(key) === 0)
 	const recurringPreview = chargedKeys
 		.map((key) => membershipPlans.find((plan) => plan.key === key))
 		.filter((plan): plan is NonNullable<typeof plan> => !!plan)
@@ -156,8 +168,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			amount: price.amount as number,
 			interval: price.interval,
 			// `amount` stays the real recurring price so it can be disclosed; `trialMonths` is
-			// what keeps it out of `dueToday`.
-			...(appliedFreeMonths > 0 && plan.key === "premium" ? { trialMonths: appliedFreeMonths } : {}),
+			// what keeps it out of `dueToday`. Per key, because a ticket selling both products
+			// may give free months on one and charge for the other.
+			...(freeMonthsFor(plan.key) > 0 ? { trialMonths: freeMonthsFor(plan.key) } : {}),
 		}))
 	// "$20/month", or "$20/month after 2 free months" when a referral code gave them away.
 	const renewalPhrase = (m: { amount: number; interval: string; trialMonths?: number }) => {
@@ -350,7 +363,14 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		// neither side of the branch is trusted to be final — each falls through to the other
 		// once, on the server's own verdict, rather than dead-ending on a message the buyer can
 		// do nothing about.
-		if ((pricing.dueToday ?? pricing.total) === 0) {
+		//
+		// `chargedKeys` is checked as well as the money, because an order can owe nothing today
+		// and still need Stripe: a free ticket giving free months has to collect a CARD, or the
+		// membership is cancelled when those months run out instead of renewing. The free path
+		// refuses that order anyway, so this only saves the buyer a pointless round trip — but it
+		// is also the honest rule, which is "does anything still have to be set up", not "is
+		// there money".
+		if ((pricing.dueToday ?? pricing.total) === 0 && chargedKeys.length === 0) {
 			await submitFreeOrder(true)
 			return
 		}
@@ -397,8 +417,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// `needsCheckout` is the server saying this order still owes a membership. Sending
 			// the buyer to Stripe is exactly what that message asks for, so do it rather than
 			// printing it — the reason it happened is invisible to them.
-			if (mayFallBack && result.data?.needsCheckout) {
-				await submitStripeOrder(false)
+			if (result.data?.needsCheckout) {
+				if (mayFallBack) {
+					await submitStripeOrder(false)
+					return
+				}
+				// Arrived here from Stripe's own `freeOrder` verdict, so the two disagree. Say so
+				// rather than printing "please complete checkout" to somebody who just tried to.
+				console.error("[checkout] Both paths refused the order:", result.data)
+				Error("Registration Failed", "We couldn't complete this registration. Please refresh and try again.")
 				return
 			}
 			Error("Registration Failed", result.message || "Something went wrong. Please try again.")
@@ -434,7 +461,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		// Nothing chargeable after the server's own membership check: the ticket is free and
 		// every membership on it is already held.
 		if (res.payload?.data?.freeOrder) {
-			if (mayFallBack) await submitFreeOrder(false)
+			if (mayFallBack) {
+				await submitFreeOrder(false)
+				return
+			}
+			// Both endpoints have now refused the order, each pointing at the other. It can only
+			// happen when the two disagree about whether a membership is still owed — the free
+			// path reads our own records, this one asks Stripe — and the buyer must not be left
+			// pressing a button that does nothing.
+			console.error("[checkout] Both paths refused the order:", res.payload?.data)
+			Error("Registration Failed", "We couldn't complete this registration. Please refresh and try again.")
 			return
 		}
 		// Check if event is at capacity
@@ -798,11 +834,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													    The period follows the TICKET's interval — an annual bundle holds a
 													    full year, which is a materially larger authorization to disclose. */}
 													{selectionTotal <= 0
-														? "Your registration is subject to host approval."
+														? giftedChargedKeys.length > 0
+															? `Your registration is subject to host approval. Nothing is charged now — your ${membershipLabelList(giftedChargedKeys)} is free for ${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} — but we'll ask for a card so it continues afterwards rather than stopping.`
+															: "Your registration is subject to host approval."
 														: paidChargedKeys.length > 0
 															? `Your card will be authorized for ${(pricing.dueToday ?? pricing.total).toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket and first ${bundleInterval === "year" ? "year" : "month"} of ${membershipLabelList(paidChargedKeys)}. You are only charged and subscribed if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
-															: chargedKeys.length > 0
-																? `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket only — your ${membershipLabelList(chargedKeys)} is free for ${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} and starts if the host approves. You are only charged if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
+															: giftedChargedKeys.length > 0
+																? `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now to cover your ticket only — your ${membershipLabelList(giftedChargedKeys)} is free for ${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} and starts if the host approves. You are only charged if approved; otherwise, the hold is automatically released within ${AUTH_HOLD_DAYS} days.`
 																: `Your card will be authorized for ${pricing.total.toLocaleString("en-US", { style: "currency", currency: "usd" })} now but only charged if the host approves. The hold is automatically released if declined or if the host doesn't respond within ${AUTH_HOLD_DAYS} days.`}
 												</p>
 											</div>
@@ -854,9 +892,11 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													{`✓ ${
 														[
 															referralCodeDiscount > 0 ? `You'll get ${referralCodeDiscount}% off your order` : "",
-															// `appliedFreeMonths`, not the raw code value — see above.
-															appliedFreeMonths > 0
-																? `${appliedFreeMonths} ${appliedFreeMonths === 1 ? "month" : "months"} of Jetzy Premium free`
+															// Only what the CODE adds. The ticket may already give free months, and
+															// crediting the code with those would tell the buyer a code they didn't
+															// need had earned them something.
+															appliedReferralFreeMonths > ticketFreeMonths && chargedKeys.includes("premium")
+																? `${appliedReferralFreeMonths} ${appliedReferralFreeMonths === 1 ? "month" : "months"} of Jetzy Premium free`
 																: "",
 														]
 															.filter(Boolean)
@@ -950,8 +990,9 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																// disclosed "$20/month, renews monthly" against a $200/year charge.
 																const price = plan ? planPriceForInterval(plan, bundleInterval) : null
 																const interval = price?.interval || plan?.interval || "month"
-																// Premium only — the code never touches Full Concierge.
-																const freeMonths = key === "premium" ? appliedFreeMonths : 0
+																// Per key: the ticket's own months apply to whatever it sells, a code's
+																// only to Premium, and the larger wins.
+																const freeMonths = freeMonthsFor(key)
 																const trialChargesFrom = trialEndsOn({ months: freeMonths, intervals: [], label: "" }).toLocaleDateString(
 																	"en-US",
 																	{ month: "short", day: "numeric", year: "numeric" },
@@ -1271,6 +1312,18 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 																	.map((m) => renewalPhrase(m))
 																	.join(" and ")} until you cancel. You can cancel any time from your account.`}
 														</p>
+														{/* A $0 order that still sends the buyer to Stripe needs saying before they
+															    get there. Stripe puts them on a page headed "Save payment information"
+															    with no amount anywhere on it, and arriving at a card form after being
+															    told the total is zero reads as a mistake — or as a charge about to
+															    happen — unless they were told why. */}
+														{(pricing.dueToday ?? pricing.total) === 0 && giftedChargedKeys.length > 0 && (
+															<p className="text-xs mt-2" style={{ color: "#F5C518" }}>
+																Nothing is charged now, but we&apos;ll ask for a card on the next screen — without one your{" "}
+																{pricing.recurring.length > 1 ? "memberships would stop" : "membership would stop"} at the end of
+																the free {appliedFreeMonths === 1 ? "month" : "months"} instead of continuing.
+															</p>
+														)}
 													</>
 												)}
 											</div>

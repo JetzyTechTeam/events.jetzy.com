@@ -6,7 +6,12 @@
  * dedupe + transport logic and can't drift.
  */
 
-export type PremiumViewPage = "premium" | "subscribe"
+/**
+ * Where the visit happened. `"modal"` is the "Buy Jetzy Premium" dialog, which is opened from
+ * the navbar on any page — it is not a URL, but it is a door onto the same purchase and was the
+ * only one with no funnel row at all, so every click on that button was invisible.
+ */
+export type PremiumViewPage = "premium" | "subscribe" | "modal"
 export type PremiumViewStage = "landed" | "checkout_started"
 
 type TrackParams = {

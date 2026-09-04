@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
-import { ticketMemberships } from "@/lib/premium-bundle"
+import { ticketMemberships, ticketMembershipFreeMonths, MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import zod from "zod"
@@ -87,6 +87,10 @@ const schema = zod.object({
 			// Billing interval the bundled membership is sold at. Omitted means monthly, which is
 			// what every ticket saved before annual existed resolves to.
 			membershipInterval: zod.enum(["month", "year"]).optional(),
+			// Free months of the bundled membership, given with no code typed. Same 0-12 range as
+			// a referral code's `freeMembershipMonths` — the two are alternative sources of the
+			// same gift and must not have different ceilings.
+			membershipFreeMonths: zod.number().int().min(0).max(MAX_MEMBERSHIP_FREE_MONTHS).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
 		}),
@@ -260,6 +264,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				memberships: ticketMemberships(ticket as any),
 				// Only persisted when the host picked one — unset resolves to monthly.
 				...((ticket as any).membershipInterval ? { membershipInterval: (ticket as any).membershipInterval } : {}),
+				// Only persisted when the host actually gave months — unset resolves to none.
+				// Through the resolver rather than raw, so the stored value is already clamped.
+				...(ticketMembershipFreeMonths(ticket as any) > 0
+					? { membershipFreeMonths: ticketMembershipFreeMonths(ticket as any) }
+					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
 			})),
 			benefits,

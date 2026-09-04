@@ -9,7 +9,7 @@ import {
 	hasEverHadMembership,
 	resolveStripeCustomerForUser,
 } from "@/lib/premium"
-import { resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
+import { defaultTrialOffer, resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -91,6 +91,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let trialCodeApplied: string | undefined
 		/** Set instead of `trialCodeApplied` when the months came from a host's referral code. */
 		let referralCodeApplied: string | undefined
+		/** Months from the STANDING offer — no code was typed, so there is none to report. */
+		let defaultTrialMonths = 0
 
 		if (rawInviteCode.trim() && referralEventId) {
 			const { resolveReferralTrial } = await import("@/lib/referral-trial")
@@ -131,6 +133,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			trialEnd = Math.floor(trialEndsOn(resolved.offer).getTime() / 1000)
 			trialCodeApplied = resolved.code
 			console.log(`[subscriptions/checkout] trial code ${resolved.code} applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`)
+		} else {
+			// ---- No code typed: the STANDING offer ----
+			//
+			// Free months are the ordinary terms of starting now, not a campaign, so nobody has
+			// to hold a code to get them. The first-timer rule is the same as above — someone who
+			// subscribed, cancelled and came back is not new — but it is applied SILENTLY here.
+			// They never asked for an offer, so a refusal is not something to put in front of
+			// them; they simply pay the ordinary price the plan card already showed them.
+			const standing = defaultTrialOffer(price.recurring?.interval)
+			if (standing && !(await hasEverHadMembership(stripeCustomerId, "premium"))) {
+				trialEnd = Math.floor(trialEndsOn(standing).getTime() / 1000)
+				defaultTrialMonths = standing.months
+				console.log(`[subscriptions/checkout] standing ${standing.months}-month trial applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`)
+			}
 		}
 
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
@@ -138,10 +154,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const cancelUrl = `${baseUrl}${returnTo}?premium_cancelled=1`
 
 		// Which open-vs-bought funnel row this purchase closes, if any — see
-		// `src/models/events/premium-page-view.ts`. Only `/premium` and `/subscribe` are tracked;
-		// a checkout started elsewhere (the paywall modal) simply carries none of this and the
-		// webhook leaves the funnel alone.
-		const funnelPage = returnTo === "/premium" ? "premium" : returnTo === "/subscribe" ? "subscribe" : undefined
+		// `src/models/events/premium-page-view.ts`.
+		//
+		// The paywall dialog says so explicitly, because it has no URL of its own: `returnTo` is
+		// whatever page the navbar button was pressed on. Anything else falls back to the path, so
+		// a request that names no page still lands on the right row. A checkout started somewhere
+		// with neither carries none of this and the webhook leaves the funnel alone.
+		const declaredPage = typeof req.body?.page === "string" ? req.body.page.trim() : ""
+		const funnelPage =
+			declaredPage === "premium" || declaredPage === "subscribe" || declaredPage === "modal"
+				? declaredPage
+				: returnTo === "/premium"
+					? "premium"
+					: returnTo === "/subscribe"
+						? "subscribe"
+						: undefined
 		const funnelAnonId = typeof req.body?.anonId === "string" ? req.body.anonId.trim() : ""
 		// The RAW code as the visitor had it, not `trialCodeApplied`/`referralCodeApplied` — those
 		// are normalized and only set once a code is accepted, but the funnel row was written the
@@ -162,6 +189,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				userId,
 				purpose: "premium_subscription",
 				...(trialCodeApplied ? { inviteCode: trialCodeApplied } : {}),
+				// No `inviteCode` for the standing offer — there was no code. Recorded on its own
+				// key so the growth report can tell "started with a free month because that is
+				// what we offer" apart from "redeemed a campaign code", which are different
+				// questions with the same subscription object behind them.
+				...(defaultTrialMonths > 0 ? { defaultTrialMonths: String(defaultTrialMonths) } : {}),
 				// A referral code is recorded separately from an invite code, and with the event it
 				// belongs to: the webhook needs both to count the redemption against the right row,
 				// now that one code string can exist on several events.

@@ -227,8 +227,23 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	//
 	// `latest_charge` is expanded so the hold deadline can be read from the charge rather than
 	// assumed — see `resolveAuthExpiry`.
+	//
+	// `setup_intent` matters for the third session shape: a FREE ticket whose membership is also
+	// free for a while. Nothing is charged, so there is no PaymentIntent at all — the card the
+	// subscriptions will bill at the end of the free months hangs off the SetupIntent instead,
+	// and without it those subscriptions would be created with no payment method and cancelled
+	// by Stripe when the trial ended.
 	const session = await stripe.checkout.sessions.retrieve(sessionId, {
-		expand: ["payment_intent", "payment_intent.latest_charge", "invoice.payment_intent", "invoice.payment_intent.latest_charge"],
+		expand: [
+			"payment_intent",
+			"payment_intent.latest_charge",
+			"invoice.payment_intent",
+			"invoice.payment_intent.latest_charge",
+			"setup_intent",
+			// So a subscription Stripe created for us (the trial session above) can be linked to
+			// the booking and its `trial_end` read for the receipt, rather than re-derived.
+			"subscription",
+		],
 	})
 	if (!session) return { created: false, booking: null, event: null, requiresApproval: false, session: null, reason: "no-session" }
 
@@ -253,6 +268,18 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		(invoice && typeof invoice.payment_intent === "string" ? invoice.payment_intent : invoicePi?.id)
 
 	const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id
+	// When Stripe created the subscription, its `trial_end` is the authority on when the buyer is
+	// first billed — the same date the checkout page quoted them.
+	const expandedSubscription = (typeof session.subscription === "string" ? null : session.subscription) as Stripe.Subscription | null
+	const trialEndsFromSession = expandedSubscription?.trial_end ? new Date(expandedSubscription.trial_end * 1000) : undefined
+
+	// The card, from whichever intent this session actually had. A paid or held order carries a
+	// PaymentIntent; a free ticket giving away free months carries only a SetupIntent, and that
+	// is the whole reason it was sent to Stripe at all.
+	const setupIntent = (typeof session.setup_intent === "string" ? null : session.setup_intent) as Stripe.SetupIntent | null
+	const savedPaymentMethodId =
+		(typeof pi?.payment_method === "string" ? pi?.payment_method : pi?.payment_method?.id) ||
+		(typeof setupIntent?.payment_method === "string" ? setupIntent?.payment_method : setupIntent?.payment_method?.id)
 
 	const isPaidNow = session.payment_status === "paid"
 	// Manual capture leaves the session "unpaid" while the PaymentIntent sits in
@@ -274,6 +301,27 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	// Stripe reached, not a payment that failed.
 	const isSettledWithoutCharge =
 		!isPaidNow && !isSubscriptionSettled && session.status === "complete" && session.payment_status === "no_payment_required"
+
+	// A setup-mode session takes no money by design — it exists solely to collect the card the
+	// gifted membership will be billed on once its free months run out. Used below for one thing
+	// only: it is the single shape where the card lives nowhere but the SetupIntent, so it is the
+	// only one that has to write `paymentMethodId` onto the booking for `approve.ts` to find.
+	const isSetupSession = session.mode === "setup"
+
+	// Did any money actually move?
+	//
+	// THE test for "was this free", replacing scattered checks against one settle flag or another.
+	// Four shapes now reach this function having charged nothing: a setup session, a $0 session
+	// Stripe settled, and — since a free ticket giving away one membership is sold as a trial
+	// subscription so its Stripe page shows a priced summary — a subscription session whose first
+	// invoice is $0. That last one satisfies `isSubscriptionSettled`, NOT
+	// `isSettledWithoutCharge`, so keying off the latter alone marked it captured and left the
+	// booking PENDING: parked in the Approvals tab of an event that never asked for approval, and
+	// telling the guest money had been taken and kept.
+	//
+	// A hold is excluded deliberately — nothing has been captured there either, but it is money in
+	// play and `bookingMoneyState` has to keep reading it as a hold.
+	const noMoneyMoved = !isPaidNow && !isAuthorized
 
 	if (!isPaidNow && !isAuthorized && !isSubscriptionSettled && !isSettledWithoutCharge) {
 		return { created: false, booking: null, event: null, requiresApproval, session, reason: "not-payable" }
@@ -363,11 +411,16 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	let booking: IBookings | null = null
 	try {
 		booking = await Bookings.create({
-			// PENDING means "awaiting the host", which is only true of an authorized hold. A
-			// session Stripe settled for nothing owed is finished, not waiting on anybody, so
-			// it confirms like a paid one — leaving it PENDING would park it in the Approvals
-			// tab of an event that never asked for approval.
-			status: isPaidNow || isSettledWithoutCharge ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
+			// PENDING means "awaiting the host". A session Stripe settled for nothing owed is
+			// finished, not waiting on anybody, so it confirms like a paid one — leaving it
+			// PENDING would park it in the Approvals tab of an event that never asked for
+			// approval.
+			//
+			// `!requiresApproval` is the exception, and it is only reachable on an order that
+			// charged nothing: a free ticket giving away free months has no money to hold, so
+			// there is no authorization to read the host's decision off. Confirming it would let
+			// the guest past a door the host asked to keep shut.
+			status: (isPaidNow || noMoneyMoved) && !requiresApproval ? BookingStatus.CONFIRMED : BookingStatus.PENDING,
 			eventId: metadata.eventId,
 			bookingRef,
 			// Present only when the buyer was logged in at checkout. Bookings made before this
@@ -417,17 +470,22 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 						})),
 					}
 					: {}),
+				// Stored only for the setup session, where it is the ONLY record of the card:
+				// `approve.ts` reads the payment method off the PaymentIntent it just captured,
+				// and this order never had one. Harmless elsewhere, but written only where it is
+				// needed so no booking carries a duplicate of something Stripe already holds.
+				...(isSetupSession && savedPaymentMethodId ? { paymentMethodId: savedPaymentMethodId } : {}),
 				captureMethod: isAuthorized ? "manual" : "automatic",
 				// No `status` when nothing was charged: `bookingMoneyState` reads a missing one
 				// as "free", and "captured" against $0 would tell the guest money was taken and
 				// is being kept. This is the same shape `api/checkout/free-events` writes, for
 				// the same reason.
-				...(isSettledWithoutCharge ? {} : { status: isAuthorized ? "authorized" as const : "captured" as const }),
+				...(noMoneyMoved ? {} : { status: isAuthorized ? "authorized" as const : "captured" as const }),
 				amount: chargedAmount,
 				currency: session.currency || "usd",
 				...(isAuthorized
 					? { authorizedAt: now, authExpiresAt: resolveAuthExpiry(pi, now) }
-					: isSettledWithoutCharge
+					: noMoneyMoved
 						? {}
 						: { capturedAt: now }),
 			},
@@ -532,10 +590,44 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	const recurringCharges: RecurringCharge[] = legacyRecurring ? [legacyRecurring] : []
 	if (membershipLines.length > 0) {
 		const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id
-		const paymentMethodId = typeof pi?.payment_method === "string" ? pi?.payment_method : pi?.payment_method?.id
+		const paymentMethodId = savedPaymentMethodId
+
+		// STRIPE MAY HAVE ALREADY CREATED IT. A free ticket giving away a single membership is
+		// sold through a `mode: "subscription"` session with a trial, because that is the only
+		// shape whose page shows the buyer a priced summary rather than a bare card form. The
+		// subscription then exists before we get here, and calling `startMembershipSubscription`
+		// would sign them up a SECOND time on the same customer.
+		//
+		// `hasActiveMembershipSubscription` inside that function would usually catch it, but it
+		// is a network round trip against a subscription created seconds ago — this is the
+		// deterministic guard, and the session itself is the evidence.
+		const sessionSubscriptionId =
+			typeof session.subscription === "string" ? session.subscription : session.subscription?.id
 
 		for (const line of membershipLines) {
 			const row = booking.payment?.memberships?.find((m) => m.key === line.key)
+
+			// Link what Stripe made, rather than making another. Only ever one membership on such
+			// a session (that is the condition `api/checkout` requires before choosing this
+			// shape), so the single line is unambiguously the one it belongs to.
+			if (sessionSubscriptionId) {
+				if (row) {
+					row.status = "active"
+					row.subscriptionId = sessionSubscriptionId
+					row.lastError = undefined
+				}
+				// Disclosed on the receipt exactly as a self-created one is: `amount` is what
+				// moved (nothing), so the RENEWAL price is what has to be stated.
+				recurringCharges.push({
+					label: MEMBERSHIPS[line.key].receiptLabel,
+					amount: line.trialMonths ? Number(line.renewalAmount) || 0 : line.amount,
+					interval: line.interval,
+					...(line.trialMonths ? { trialMonths: line.trialMonths } : {}),
+					...(trialEndsFromSession ? { firstRenewalAt: trialEndsFromSession } : {}),
+				})
+				continue
+			}
+
 			try {
 				const result = await startMembershipSubscription({
 					key: line.key,

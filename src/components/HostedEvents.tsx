@@ -12,7 +12,7 @@ import BenefitsField from "@/components/events/BenefitsField"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
-import { ticketMemberships } from "@/lib/premium-bundle"
+import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList"
 
 /**
@@ -361,10 +361,15 @@ export default function HostedEvents({ event }: Props) {
 				id: ticket._id?.toString() || uniqueId(10),
 				title: stripHtml(ticket.name),
 				price: Number(ticket.price),
-				description: stripHtml(ticket.desc),
+				// RAW, never stripHtml(). The description is written in the rich-text editor and
+				// stored as HTML; seeding the form with the tags removed showed the host one
+				// run-on paragraph and, on the next save, wrote that flattened text back over
+				// their markup. `title` is a plain input, so stripping there is still right.
+				description: ticket.desc || "",
 				requireApproval: ticket.requireApproval,
 				memberships: ticketMemberships(ticket),
 				membershipInterval: ticket.membershipInterval,
+				membershipFreeMonths: ticket.membershipFreeMonths,
 				includesPremium: ticketMemberships(ticket).includes("premium"),
 			})) as TicketData[],
 		)
@@ -481,6 +486,7 @@ export default function HostedEvents({ event }: Props) {
 						...(t.requireApproval !== undefined ? { requireApproval: t.requireApproval } : {}),
 						...((t as any).memberships !== undefined ? { memberships: (t as any).memberships } : {}),
 						...((t as any).membershipInterval !== undefined ? { membershipInterval: (t as any).membershipInterval } : {}),
+						...((t as any).membershipFreeMonths !== undefined ? { membershipFreeMonths: Number((t as any).membershipFreeMonths) || 0 } : {}),
 					})),
 				})
 				setEditingSection(null)

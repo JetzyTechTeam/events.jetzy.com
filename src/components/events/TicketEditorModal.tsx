@@ -20,7 +20,7 @@ import {
 
 import RichTextEditor from "@/components/misc/RichTextEditor"
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles"
-import { ticketMemberships, ticketMembershipInterval } from "@/lib/premium-bundle"
+import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { blurOnWheel } from "@/lib/number-input"
 import type { TicketData } from "@/components/events/TicketCard"
@@ -169,6 +169,8 @@ export default function TicketEditorModal({
 						price={Number(ticket.price)}
 						interval={ticketMembershipInterval(ticket as any)}
 						onIntervalChange={(membershipInterval) => onTicketChange({ ...ticket, membershipInterval } as any)}
+						freeMonths={ticketMembershipFreeMonths(ticket as any)}
+						onFreeMonthsChange={(membershipFreeMonths) => onTicketChange({ ...ticket, membershipFreeMonths } as any)}
 					/>
 				</ModalBody>
 				<ModalFooter>

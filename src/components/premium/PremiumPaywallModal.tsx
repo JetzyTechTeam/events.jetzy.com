@@ -5,12 +5,14 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/router"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { Error as ErrorToast } from "@/lib/_toaster"
-import { resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, sameAppliedTrial } from "@/lib/invite-trial"
+import { defaultTrialOffer, resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, type TrialOffer, sameAppliedTrial } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumPlan"
 import PlanComparison from "@/components/premium/PlanComparison"
 import EmailVerifyDialog from "@/components/premium/EmailVerifyDialog"
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn"
+import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
+import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -53,6 +55,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	const queryClient = useQueryClient()
 	const { isPremium } = usePremiumStatus()
 	const isSignedIn = sessionStatus === "authenticated"
+	const { anonId, sessionId } = useAnalytics()
 
 	// "You already have this" is a RESULT worth showing, not an error to swallow.
 	//
@@ -131,32 +134,41 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		// Cleared on every run, before anything is resolved: while a code is being retyped or
 		// re-checked the card must show the ordinary price, never a stale $0.
 		applyTrial(null)
-		if (!code) {
-			setInviteAccepted(null)
-			setInviteError(null)
-			setInviteChecking(false)
-			return
-		}
 
 		// Signed out there is no account to check against, so the code is resolved in the browser
 		// from the same shared table the server enforces. It is a PREVIEW of the offer, never a
 		// promise about an account we don't know yet — after sign-in the server re-checks it, and a
 		// refusal is reported then. Without this the field would simply 401 and read as invalid.
 		if (!isSignedIn) {
-			const resolved = resolveTrialCode(code, selectedInterval)
 			setInviteChecking(false)
-			if (!resolved.ok) {
+			setInviteError(null)
+			// With NO code typed the standing offer applies: free months are the ordinary terms of
+			// starting a membership, not something the buyer has to hold a code for. A typed code
+			// is resolved exactly as before, and only a TYPED one may fail loudly — a red message
+			// against a field nobody touched reads as the page being broken, not as an offer that
+			// didn't apply.
+			let offer: TrialOffer | null = null
+			if (code) {
+				const resolved = resolveTrialCode(code, selectedInterval)
+				if (!resolved.ok) {
+					setInviteAccepted(null)
+					setInviteError(resolved.message)
+					return
+				}
+				offer = resolved.offer
+			} else {
+				offer = defaultTrialOffer(selectedInterval)
+			}
+			if (!offer) {
 				setInviteAccepted(null)
-				setInviteError(resolved.message)
 				return
 			}
 			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
-			setInviteError(null)
-			setInviteAccepted(trialDisclosure(resolved.offer, preview?.label || null, trialEndsOn(resolved.offer)))
+			setInviteAccepted(trialDisclosure(offer, preview?.label || null, trialEndsOn(offer)))
 			applyTrial({
-				months: resolved.offer.months,
-				label: resolved.offer.label,
-				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
+				months: offer.months,
+				label: offer.label,
+				chargesFrom: trialEndsOn(offer).toISOString(),
 			})
 			return
 		}
@@ -197,7 +209,10 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			} catch (error: any) {
 				setInviteAccepted(null)
 				applyTrial(null)
-				setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+				// Silent when nothing was typed. The server refuses the standing offer to anyone
+				// who has had Premium before, and that is not a failure the visitor caused or can
+				// act on — they simply pay the ordinary price the card already shows.
+				setInviteError(code ? error?.response?.data?.message || "That code couldn't be applied." : null)
 			} finally {
 				setInviteChecking(false)
 			}
@@ -207,12 +222,38 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		}
 	}, [inviteCode, selectedInterval, isSignedIn, prices, applyTrial])
 
+	// ---- Open-vs-bought funnel: the dialog counts as its own door ----
+	//
+	// This is the "Buy Jetzy Premium" button, and until now a click on it recorded nothing at all:
+	// the funnel only knew about `/premium` and `/subscribe`, so the most prominent way into the
+	// purchase was missing from the report entirely. Rows are written under `page: "modal"`.
+	// `anonId` loads asynchronously (see AnalyticsContext) so this waits for it; `trackPremiumView`
+	// dedupes per tab, and the dialog is opened and closed repeatedly on one page.
+	useEffect(() => {
+		if (!isOpen || !anonId) return
+		trackPremiumView({ anonId, sessionId, page: "modal", stage: "landed" })
+	}, [isOpen, anonId, sessionId])
+
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
+			// checkout_started, before the request — a beacon, so the imminent navigation to Stripe
+			// can't drop it. The code mirrors what the request body sends as `inviteCode`, so the
+			// webhook's `purchasedAt` write lands on this same row.
+			trackPremiumView({
+				anonId,
+				sessionId,
+				page: "modal",
+				stage: "checkout_started",
+				code: inviteCode.trim() || undefined,
+			})
 			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
 			// request can't subscribe anyone at an arbitrary price on the account.
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo,
+				// `page` explicitly: this dialog has no URL of its own, and `returnTo` is whichever
+				// page the navbar button happened to be pressed on.
+				page: "modal",
+				anonId: anonId || undefined,
 				...(selectedInterval ? { interval: selectedInterval } : {}),
 				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
 			})

@@ -6,6 +6,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { resolveTickets } from "@/lib/event-tickets"
+import { MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { Types } from "mongoose"
 import zod from "zod"
@@ -27,6 +28,7 @@ const schema = zod.object({
 			requireApproval: zod.boolean().optional(),
 			memberships: zod.array(zod.string()).optional(),
 			membershipInterval: zod.enum(["month", "year"]).optional(),
+			membershipFreeMonths: zod.number().int().min(0).max(MAX_MEMBERSHIP_FREE_MONTHS).optional(),
 			/** @deprecated Superseded by `memberships`; still accepted from older clients. */
 			includesPremium: zod.boolean().optional(),
 		}),

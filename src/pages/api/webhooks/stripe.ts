@@ -7,7 +7,7 @@ import {
 	setUserMembershipStatus,
 	subscriptionMembershipKey,
 } from "@/lib/premium"
-import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
+import { MEMBERSHIPS, isMembershipKey, type MembershipKey } from "@/lib/memberships"
 import { syncSelectMembership } from "@/lib/select-member"
 import {
 	sendMembershipCancelled,
@@ -18,6 +18,33 @@ import {
 } from "@/lib/send-grid"
 import { NextApiRequest, NextApiResponse } from "next"
 import Stripe from "stripe"
+
+/**
+ * Did WE sell this subscription, or did selectmember.jetzy.com?
+ *
+ * events.jetzy.com and selectmember.jetzy.com bill against the SAME Stripe account and the
+ * SAME Full Concierge product. Stripe delivers an account's events to every registered
+ * endpoint, so a Concierge sold on their site arrives here looking exactly like one of ours —
+ * `subscriptionMembershipKey` resolves it by product id and every branch below would then act
+ * on a membership that is none of our business: Jetzy-branded renewal and cancellation emails
+ * landing beside theirs for one purchase, and a mirror PATCH re-asserting a plan and an
+ * `externalSubscriptionId` on a record they own.
+ *
+ * `metadata.membershipKey` is the marker, and it is reliable for Concierge specifically:
+ * `startMembershipSubscription` is the ONLY way we have ever created one, and it has stamped
+ * that key since the product shipped. Premium is deliberately left on the old behaviour —
+ * subscriptions predating the metadata exist (it is why `subscriptionMembershipKey` keeps a
+ * product-id fallback at all), and silencing a legacy member's renewal email to fix a problem
+ * we have not confirmed for that product would trade a real regression for a speculative one.
+ *
+ * This gates NOTIFICATIONS and the MIRROR only. The membership record is still written for
+ * their sales: the person genuinely does hold Concierge, and `findActiveSubscriptionForProduct`
+ * seeing it is what stops us selling them a second one with a bundled ticket.
+ */
+const billedByJetzy = (subscription: Stripe.Subscription, key: MembershipKey): boolean => {
+	if (isMembershipKey((subscription.metadata as any)?.membershipKey)) return true
+	return key !== "concierge"
+}
 
 /**
  * Mirror a membership state change to selectmember.jetzy.com, when the product is theirs.
@@ -33,6 +60,12 @@ const mirrorToSelectMember = async (
 	subscription?: Stripe.Subscription,
 ) => {
 	if (!MEMBERSHIPS[key].selectMemberPlan) return
+	// Never tell them about a sale of their own. They set the state we would be echoing, and an
+	// `active` payload rewrites the plan and dates on a record we have no authority over.
+	if (subscription && !billedByJetzy(subscription, key)) {
+		console.log("[webhooks/stripe] Subscription sold by SelectMember — not mirroring back:", subscription.id)
+		return
+	}
 	const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 	if (!recipient?.email) {
 		console.error("[webhooks/stripe] No email to mirror to SelectMember for customer:", customerId)
@@ -40,6 +73,7 @@ const mirrorToSelectMember = async (
 	}
 	await syncSelectMembership({
 		email: recipient.email,
+		key,
 		status,
 		externalSubscriptionId: subscription?.id,
 		...(subscription?.start_date ? { startedAt: new Date(subscription.start_date * 1000) } : {}),
@@ -198,7 +232,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 							const { recordMembershipPurchase } = await import("@/models/events/membership-purchases")
 							const recorded = await recordMembershipPurchase({
 								key,
-								source: sessionMetadata.purpose === "premium_subscription" ? "subscribe" : "external",
+								// "ticket+membership" is our own bundled order — a free ticket giving
+								// away a single membership is sold as a trial subscription session so
+								// its Stripe page shows a priced summary, and Stripe creates the
+								// subscription. Without this arm those sales report as "external",
+								// i.e. as somebody else's, and the campaign that produced them
+								// cannot be traced. Anything else unrecognised is still external:
+								// selectmember.jetzy.com sells Premium on this same account.
+								source:
+									sessionMetadata.purpose === "premium_subscription"
+										? "subscribe"
+										: sessionMetadata.purpose === "ticket+membership"
+											? "ticket"
+											: "external",
 								email: recipient?.email || checkoutSession.customer_details?.email || undefined,
 								name: recipient?.firstName,
 								userId,
@@ -213,7 +259,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								// A host's referral code, shared as a Premium link. Recorded with its
 								// event so the sale can be traced back to the campaign that produced it.
 								...(sessionMetadata.referralCode ? { referralCode: sessionMetadata.referralCode } : {}),
-								...(sessionMetadata.referralEventId ? { eventId: sessionMetadata.referralEventId } : {}),
+								...(sessionMetadata.referralEventId
+									? { eventId: sessionMetadata.referralEventId }
+									// A bundled order carries its own event, under the ordinary key.
+									: sessionMetadata.eventId
+										? { eventId: sessionMetadata.eventId }
+										: {}),
+								...(sessionMetadata.bookingRef ? { bookingRef: sessionMetadata.bookingRef } : {}),
 								...(subscription.trial_end
 									? { trialEndsAt: new Date(subscription.trial_end * 1000) }
 									: {}),
@@ -232,18 +284,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						}
 
 						// Close the loop on the open-vs-bought funnel row this purchase came from.
-						// `premiumPage`/`premiumAnonId` are stamped by `/api/subscriptions/checkout` only
-						// for a session started on `/premium` or `/subscribe` — a selectmember.jetzy.com
-						// sale, or one started from the paywall modal, carries neither and is skipped.
-						if (
-							sessionMetadata.premiumAnonId &&
-							(sessionMetadata.premiumPage === "premium" || sessionMetadata.premiumPage === "subscribe")
-						) {
+						// `premiumPage`/`premiumAnonId` are stamped by `/api/subscriptions/checkout` for a
+						// session started on `/premium`, `/subscribe` or the "Buy Jetzy Premium" dialog —
+						// a selectmember.jetzy.com sale carries neither and is skipped.
+						const funnelPages = ["premium", "subscribe", "modal"]
+						if (sessionMetadata.premiumAnonId && funnelPages.includes(sessionMetadata.premiumPage as string)) {
 							try {
 								const { PremiumPageView } = await import("@/models/events/premium-page-view")
 								const code = sessionMetadata.premiumCode || ""
 								const matchFilter = {
-									page: sessionMetadata.premiumPage as "premium" | "subscribe",
+									page: sessionMetadata.premiumPage as "premium" | "subscribe" | "modal",
 									code,
 									anonId: sessionMetadata.premiumAnonId as string,
 								}
@@ -419,7 +469,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const previousItems = (event.data as any)?.previous_attributes?.items?.data
 				const previousPriceId = previousItems?.[0]?.price?.id
 				const newPrice = subscription.items.data[0]?.price
-				if (previousPriceId && newPrice?.id && previousPriceId !== newPrice.id && newPrice.unit_amount != null) {
+				if (
+					previousPriceId &&
+					newPrice?.id &&
+					previousPriceId !== newPrice.id &&
+					newPrice.unit_amount != null &&
+					billedByJetzy(subscription, key)
+				) {
 					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 					if (recipient?.email) {
 						// The old rate is fetched rather than guessed: "you now pay $200/year" on
@@ -447,7 +503,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					}
 				}
 
-				if (!wasCancelling && subscription.cancel_at_period_end) {
+				if (!wasCancelling && subscription.cancel_at_period_end && billedByJetzy(subscription, key)) {
 					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 					if (recipient) {
 						await sendMembershipCancelled({
@@ -490,7 +546,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 				await mirrorToSelectMember(key, customerId, "cancelled", subscription)
 
-				if (recipient) {
+				if (recipient && billedByJetzy(subscription, key)) {
 					await sendMembershipCancelled({
 						...recipient,
 						alreadyEnded: true,
@@ -520,13 +576,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					)
 					: null
 				const key = renewedSubscription ? subscriptionMembershipKey(renewedSubscription) : null
-				if (renewedSubscription && !key) {
-					console.error("[webhooks/stripe] invoice.paid for an unrecognised product, ignoring:", renewedSubscription.id)
+				// No key means either an unrecognised product or — since `subscription_cycle`
+				// implies one exists — an invoice we couldn't tie back to a subscription at all.
+				// Both must stop here: `sendMembershipRenewed` defaults an absent label to Jetzy
+				// Premium, so carrying on would send a Concierge member a Premium receipt.
+				if (!key || !renewedSubscription) {
+					console.error(
+						"[webhooks/stripe] invoice.paid with no identifiable membership, ignoring:",
+						renewedSubscription?.id || invoice.id,
+					)
 					break
 				}
 
 				// Push the new period end outward so their site's expiry stays in step.
-				if (key && renewedSubscription) await mirrorToSelectMember(key, customerId, "active", renewedSubscription)
+				await mirrorToSelectMember(key, customerId, "active", renewedSubscription)
+
+				if (!billedByJetzy(renewedSubscription, key)) break
 
 				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 				if (!recipient) break
@@ -537,7 +602,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					amount: (invoice.amount_paid ?? 0) / 100,
 					interval: line?.price?.recurring?.interval || "month",
 					nextBillingDate: invoice.period_end ? new Date(invoice.period_end * 1000) : undefined,
-					...(key ? { label: MEMBERSHIPS[key].label } : {}),
+					label: MEMBERSHIPS[key].label,
 				})
 				break
 			}
@@ -561,6 +626,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// Tell their site the member is behind, so benefits can be gated there while
 				// Stripe retries — rather than staying "active" right up to the day it dies.
 				await mirrorToSelectMember(key, customerId, "past_due", failedSubscription)
+
+				if (!billedByJetzy(failedSubscription, key)) break
 
 				const recipient = await findEmailRecipientByStripeCustomerId(customerId)
 				if (!recipient) break

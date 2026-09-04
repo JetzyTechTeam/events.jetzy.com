@@ -94,7 +94,17 @@ const CheckoutSuccessPage: React.FC = () => {
 
 					// Only a genuinely failed payment is an error. An approval hold leaves the
 					// session "unpaid" on purpose.
-					if (session.payment_status !== "paid" && !isApproval) {
+					//
+					// So does an order that owed NOTHING: a free ticket whose membership is also
+					// free for a while is sold through a `mode: "setup"` session, which exists to
+					// save a card and never charges, and Stripe settles it as
+					// `no_payment_required`. Without this the buyer was shown "Your payment was
+					// not successful" on top of a completed booking and an active membership —
+					// and the `return` below then skipped the rest of the confirmation. Same
+					// condition as `isSettledWithoutCharge` in `checkout-fulfillment.ts`, which is
+					// what decided the booking was good in the first place.
+					const settledWithoutCharge = session.status === "complete" && session.payment_status === "no_payment_required"
+					if (session.payment_status !== "paid" && !isApproval && !settledWithoutCharge) {
 						Error("Payment Error", "Your payment was not successful. Please try again.")
 						return
 					}

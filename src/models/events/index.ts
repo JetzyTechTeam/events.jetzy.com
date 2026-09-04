@@ -57,6 +57,21 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 			type: String,
 			required: false,
 		},
+		// How many months of the bundled membership the HOST gives away on this ticket.
+		//
+		// The buyer gets these with no code typed at all — a referral code granting free months
+		// is the other source of the same gift, and the larger of the two wins
+		// (`resolveFreeMonthsForKey`). After them the membership renews at its normal rate.
+		//
+		// No default, same reasoning as `membershipInterval` above: `undefined` means NONE,
+		// which is what every ticket saved before this field existed means, so the behaviour of
+		// every live ticket is unchanged and no migration is needed. Resolve with
+		// `ticketMembershipFreeMonths()` from `src/lib/premium-bundle.ts`, which clamps to
+		// `MAX_MEMBERSHIP_FREE_MONTHS`; never read this field directly.
+		membershipFreeMonths: {
+			type: Number,
+			required: false,
+		},
 		// DEPRECATED — superseded by `memberships`. Read only as the fallback above; never
 		// written for new tickets. Kept so live documents and the mobile app are undisturbed,
 		// same treatment as `premium` / `privateAccessCode`.

@@ -275,7 +275,14 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 	return (
 		<>
-			<div className={`flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
+			<div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
+				{/* Premium tag — the row card's own top-RIGHT corner (CEO, 2026-09-04): right of
+					    the event name and above Manage Event on desktop, and on mobile it lands in
+					    the empty space beside the date block rather than across the thumbnail.
+					    Anchored to a real corner, so it cannot float loose the way a rotated pill did.
+					    `rounded-tr-xl` on the clipping square follows the card's own radius; the card
+					    itself needs no `overflow-hidden` because the ribbon crops itself. */}
+				{(event as any).premiumEvent && <PremiumEventBadge variant="ribbon" side="right" className="rounded-tr-xl" />}
 				{/* Date and thumbnail share one row on mobile rather than stacking into a very
 				    tall card. `sm:contents` dissolves this wrapper from 640px up, so the desktop
 				    layout is exactly the three-column flex it has always been — no duplicated
@@ -295,7 +302,8 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							// Letterbox on black and show the whole banner rather than cropping it,
 							// matching the listing, dashboard and booking cards. Hosts upload at
 							// whatever aspect they like, and object-cover was slicing the artwork.
-							const boxClass = `w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-black overflow-hidden shrink-0 ${props.isEnded ? 'opacity-60' : ''}`
+							// `relative` so the Premium ribbon can anchor to the artwork's own corner.
+							const boxClass = `relative w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-black overflow-hidden shrink-0 ${props.isEnded ? 'opacity-60' : ''}`
 							return isValidUrl ? (
 								<div className={boxClass}>
 									{lead.type === "video" ? (
@@ -310,7 +318,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 									)}
 								</div>
 							) : (
-								<div className={`w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
+								<div className={`relative overflow-hidden w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
 									<span className="text-3xl">🖼️</span>
 									<span className="text-xs text-gray-500">No image</span>
 								</div>

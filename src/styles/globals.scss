@@ -79,15 +79,29 @@ select option:checked {
     background-color: #2A2D31 !important;
 }
 
-/* Rich text content rendered from Quill editor */
-.rich-content h1 { font-size: 1.5em; font-weight: bold; margin-bottom: 0.5em; }
-.rich-content h2 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.5em; }
-.rich-content h3 { font-size: 1.1em; font-weight: bold; margin-bottom: 0.4em; }
-.rich-content p { margin-bottom: 0.5em; line-height: 1.6; }
-.rich-content ul { list-style: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
-.rich-content ol { list-style: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
-.rich-content li { margin-bottom: 0.25em; line-height: 1.6; }
-.rich-content blockquote { border-left: 3px solid #F79432; padding-left: 0.75em; color: #9ca3af; margin: 0.5em 0; }
+/* Rich text content rendered from Quill editor.
+
+   MIRRORS `.ql-editor`, deliberately. Quill gives every block element `margin: 0` and separates
+   paragraphs only by the blank lines the host actually typed (an empty `<p><br></p>`). Rendering
+   the same HTML with a `margin-bottom` on top of those blank paragraphs produced a double gap,
+   which is why empty paragraphs used to be stripped out at render — and that is what silently
+   deleted the spacing a host had deliberately put between paragraphs, and dropped a link onto the
+   end of the paragraph above it.
+
+   Keep the blank paragraphs and drop the margins instead: what the host sees in the editor is
+   then exactly what a guest sees. `line-height` matches the editor's 1.7 for the same reason. */
+.rich-content h1 { font-size: 1.5em; font-weight: bold; margin: 0; line-height: 1.7; }
+.rich-content h2 { font-size: 1.25em; font-weight: bold; margin: 0; line-height: 1.7; }
+.rich-content h3 { font-size: 1.1em; font-weight: bold; margin: 0; line-height: 1.7; }
+.rich-content p { margin: 0; line-height: 1.7; }
+/* An empty paragraph is one blank line, exactly as it is in the editor — `<br>` alone would
+   collapse to nothing in some of the flex/grid contexts these descriptions render inside. */
+.rich-content p.rc-blank,
+.rich-content p:has(> br:only-child) { min-height: 1.7em; }
+.rich-content ul { list-style: disc; padding-left: 1.5em; margin: 0; }
+.rich-content ol { list-style: decimal; padding-left: 1.5em; margin: 0; }
+.rich-content li { margin: 0; line-height: 1.7; }
+.rich-content blockquote { border-left: 3px solid #F79432; padding-left: 0.75em; color: #9ca3af; margin: 0; }
 .rich-content a { color: #F79432; text-decoration: underline; }
 .rich-content strong { font-weight: bold; }
 .rich-content em { font-style: italic; }

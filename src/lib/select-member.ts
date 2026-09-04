@@ -28,7 +28,7 @@
  * sent as `x-api-key` when set, so the shared-secret upgrade needs no code change here.
  */
 
-import { MEMBERSHIPS } from "@/lib/memberships"
+import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 
 const SELECT_MEMBER_BASE = (process.env.NEXT_PUBLIC_SELECT_MEMBER_URL || "https://selectmember.jetzy.com").replace(/\/$/, "")
 
@@ -44,6 +44,13 @@ export type SelectMemberStatus = "active" | "cancelled" | "expired" | "past_due"
 
 type SyncArgs = {
 	email: string
+	/**
+	 * Which membership this is. Both callers already resolve the product before deciding to
+	 * mirror at all — passing it through means the plan string on the wire comes from the same
+	 * registry entry that gated the call, rather than from a constant that happens to agree
+	 * today and would quietly mislabel a second SelectMember-owned product tomorrow.
+	 */
+	key: MembershipKey
 	status: SelectMemberStatus
 	/** The Stripe subscription id. Their side stores it so the two systems can be reconciled. */
 	externalSubscriptionId?: string
@@ -82,10 +89,19 @@ const request = async (path: string, init: RequestInit): Promise<{ ok: boolean; 
  * Returns true on success and false on any failure, so callers can log the gap without
  * having to reason about which errors are retryable — none of them are, here.
  */
-export async function syncSelectMembership({ email, status, externalSubscriptionId, startedAt, expiresAt }: SyncArgs): Promise<boolean> {
+export async function syncSelectMembership({ email, key, status, externalSubscriptionId, startedAt, expiresAt }: SyncArgs): Promise<boolean> {
 	const trimmed = typeof email === "string" ? email.trim() : ""
 	if (!trimmed) {
 		console.error("[select-member] syncSelectMembership called with no email")
+		return false
+	}
+
+	const plan = MEMBERSHIPS[key]?.selectMemberPlan
+	if (!plan) {
+		// A product we own outright has nothing to mirror. Both callers check this before
+		// calling, so reaching here means the two disagree — say so rather than PATCHing their
+		// site with a membership that is none of their business.
+		console.error("[select-member] syncSelectMembership called for a product SelectMember does not own:", key)
 		return false
 	}
 
@@ -99,7 +115,7 @@ export async function syncSelectMembership({ email, status, externalSubscription
 	// minimum their contract asks for — re-asserting a plan while cancelling it invites
 	// their side to resurrect a row we're trying to close.
 	if (status === "active") {
-		payload.plan = MEMBERSHIPS.concierge.selectMemberPlan
+		payload.plan = plan
 		if (externalSubscriptionId) payload.externalSubscriptionId = externalSubscriptionId
 		if (startedAt) payload.startedAt = startedAt.toISOString()
 		if (expiresAt) payload.expiresAt = expiresAt.toISOString()

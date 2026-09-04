@@ -72,6 +72,32 @@ function decodeHTMLEntities(text: string): string {
     .trim()
 }
 
+/**
+ * A ticket description, as one safe fragment of email HTML.
+ *
+ * Descriptions are written in the rich-text editor and stored as Quill HTML. Running them through
+ * `stripHtml` alone dropped every block boundary — `<p>A</p><p>B</p>` became "AB" — so the
+ * paragraphs and the blank lines a host put between them arrived in the confirmation email as one
+ * run-on line, with a link welded onto the end of the sentence before it.
+ *
+ * Block ends become newlines first, then the text is re-escaped and the newlines become `<br>`.
+ * The host's markup is never re-emitted as markup, so nothing they typed can style or script the
+ * email — and unlike the plain `decodeHTMLEntities` path, an entity-encoded tag can't come back to
+ * life either.
+ */
+function ticketDescriptionHtml(desc: string): string {
+  if (!desc) return ""
+  const withBreaks = desc.replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6]|\/blockquote)\s*\/?\s*>/gi, "\n")
+  return decodeHTMLEntities(withBreaks)
+    .replace(/[ \t]+/g, " ")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n/g, "<br>")
+    .trim()
+}
+
 type TicketEmailData = {
   event: IEvent
   firstName: string
@@ -1183,7 +1209,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticketDescriptionHtml(ticket.desc)}</p>` : ''}
               </div>
             `,
           )
@@ -1262,7 +1288,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticketDescriptionHtml(ticket.desc)}</p>` : ''}
               </div>
             `,
           )
@@ -1343,7 +1369,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticketDescriptionHtml(ticket.desc)}</p>` : ''}
               </div>
             `,
           )
@@ -1424,7 +1450,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticketDescriptionHtml(ticket.desc)}</p>` : ''}
               </div>
             `,
           )
@@ -1505,7 +1531,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticketDescriptionHtml(ticket.desc)}</p>` : ''}
               </div>
             `,
           )
@@ -1586,7 +1612,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
                 <p style="margin: 8px 0;"><strong>Quantity: </strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket: </strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal: </strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticketDescriptionHtml(ticket.desc)}</p>` : ''}
               </div>
             `,
           )
@@ -1951,7 +1977,7 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
                 <p style="margin: 8px 0;"><strong>Quantity:</strong> ${ticket.quantity} ${ticket.quantity === 1 ? 'ticket' : 'tickets'}</p>
                 <p style="margin: 8px 0;"><strong>Price per ticket:</strong> $${ticket.price.toFixed(2)}</p>
                 <p style="margin: 8px 0;"><strong>Subtotal:</strong> $${(ticket.price * ticket.quantity).toFixed(2)}</p>
-                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${decodeHTMLEntities(stripHtml(ticket.desc))}</p>` : ''}
+                ${ticket.desc ? `<p style="margin: 8px 0; color: #666;"><strong>Description: </strong> ${ticketDescriptionHtml(ticket.desc)}</p>` : ''}
               </div>
             `,
           )

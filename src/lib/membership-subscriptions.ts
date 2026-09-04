@@ -151,6 +151,7 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 	if (MEMBERSHIPS[key].selectMemberPlan && email) {
 		await syncSelectMembership({
 			email,
+			key,
 			status: "active",
 			externalSubscriptionId: subscription.id,
 			startedAt: new Date(),
@@ -161,15 +162,21 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 	// The sale, for reporting. Best-effort and deliberately last: the subscription exists and
 	// the buyer is a member whether or not this row is written.
 	//
-	// `source` distinguishes a membership somebody PAID for with their ticket from one a
-	// referral code gave away — the same subscription object in Stripe, and a question the CEO
-	// asks about every campaign.
+	// `source` distinguishes a membership somebody PAID for with their ticket from one that was
+	// given away — the same subscription object in Stripe, and a question the CEO asks about
+	// every campaign.
+	//
+	// The fallback is `"ticket"`, NOT "gift on any trial". Free months are now an ordinary part
+	// of a ticket sale — a host can put them on the ticket, so every buyer gets them with no
+	// code — and reporting all of those as giveaways would say the whole product was handed out.
+	// A caller that really is gifting says so; the campaign behind a trial is separately
+	// attributable through `referralCode` / `inviteCode` below.
 	try {
 		const { recordMembershipPurchase } = await import("@/models/events/membership-purchases")
 		const soldPrice = subscription.items.data[0]?.price
 		await recordMembershipPurchase({
 			key,
-			source: args.source || (args.trialMonths && args.trialMonths > 0 ? "gift" : "ticket"),
+			source: args.source || "ticket",
 			email,
 			userId: subscriberId ? String(subscriberId) : undefined,
 			stripeCustomerId: customerId,

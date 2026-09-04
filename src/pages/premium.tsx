@@ -1,7 +1,7 @@
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { Success, Error as ErrorToast, Info as InfoToast } from "@Jetzy/lib/_toaster"
-import { DEFAULT_INVITE_CODE, normalizeTrialCode, resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, sameAppliedTrial } from "@/lib/invite-trial"
+import { DEFAULT_INVITE_CODE, defaultTrialOffer, normalizeTrialCode, resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, type TrialOffer, sameAppliedTrial } from "@/lib/invite-trial"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
@@ -117,10 +117,13 @@ export default function PremiumPage() {
 	 * Did the buyer put this code in the field, or did we?
 	 *
 	 * It decides what happens when the server refuses it. A code someone typed, or one that came
-	 * in on their emailed link, was a deliberate act and deserves an explanation. The one we
-	 * prefill for everybody is a convenience, and a red error against a field they never touched
-	 * — "this code is for new members", to a returning member who only wants to resubscribe —
-	 * reads as something being broken.
+	 * in on their emailed link, was a deliberate act and deserves an explanation. Anything else —
+	 * a campaign code we prefilled, or the standing offer nobody asked for — is a convenience,
+	 * and a red error against a field they never touched ("this code is for new members", to a
+	 * returning member who only wants to resubscribe) reads as something being broken.
+	 *
+	 * Starts `true` and stays true while the field is empty, which since `DEFAULT_INVITE_CODE`
+	 * was emptied is the ordinary case.
 	 */
 	const codeIsOurs = React.useRef(true)
 
@@ -138,8 +141,11 @@ export default function PremiumPage() {
 		const eventFromUrl = asEventId(router.query.event)
 		const eventStashed = typeof window !== "undefined" ? sessionStorage.getItem(STASH_EVENT_KEY) : null
 		setReferralEventId(eventFromUrl || asEventId(eventStashed) || "")
-		// Their link, then whatever survived the trip to Stripe, then the running campaign. The
-		// last one is why nobody has to type anything: the page is itself the campaign.
+		// Their link, then whatever survived the trip to Stripe, then the running campaign if
+		// there is one. `DEFAULT_INVITE_CODE` is empty today: every first-time member gets
+		// `DEFAULT_TRIAL_MONTHS` free with no code at all, so the field starts blank and the
+		// offer still applies. The branch stays because setting that constant is how a campaign
+		// is put back on this page.
 		if (fromUrl) {
 			codeIsOurs.current = false
 			setInviteCode((current) => current || fromUrl)
@@ -200,17 +206,11 @@ export default function PremiumPage() {
 		// re-checked the card must show the ordinary price, never a stale $0.
 		applyTrial(null)
 
-		if (!code) {
-			setInviteAccepted(null)
-			setInviteError(null)
-			setInviteChecking(false)
-			return
-		}
 
 		// A shared referral code lives in Mongo, so even the logged-out preview has to ask — but it
 		// asks the PUBLIC validate route, which takes no session. The offer is still shown before
 		// anyone is asked who they are.
-		if (!isAuthenticated && referralEventId) {
+		if (code && !isAuthenticated && referralEventId) {
 			setInviteChecking(true)
 			inviteTimer.current = setTimeout(async () => {
 				try {
@@ -243,19 +243,37 @@ export default function PremiumPage() {
 		}
 
 		if (!isAuthenticated) {
-			const resolved = resolveTrialCode(code, selectedInterval)
 			setInviteChecking(false)
-			if (!resolved.ok) {
+			setInviteError(null)
+			// With NO code typed the standing offer applies — free months are the ordinary terms
+			// of starting, not something the visitor has to hold a code for. On this page that is
+			// mostly reached by clearing the prefilled campaign code, which is worth more; the two
+			// never stack and the larger simply wins.
+			//
+			// Only a TYPED code may fail loudly. That is the same rule `codeIsOurs` encodes for
+			// the prefill: an error against something the visitor didn't enter reads as a broken
+			// page rather than as an offer not applying.
+			let offer: TrialOffer | null = null
+			if (code) {
+				const resolved = resolveTrialCode(code, selectedInterval)
+				if (!resolved.ok) {
+					setInviteAccepted(null)
+					setInviteError(resolved.message)
+					return
+				}
+				offer = resolved.offer
+			} else {
+				offer = defaultTrialOffer(selectedInterval)
+			}
+			if (!offer) {
 				setInviteAccepted(null)
-				setInviteError(resolved.message)
 				return
 			}
-			setInviteError(null)
-			setInviteAccepted(trialDisclosure(resolved.offer, selectedPrice?.label || null, trialEndsOn(resolved.offer)))
+			setInviteAccepted(trialDisclosure(offer, selectedPrice?.label || null, trialEndsOn(offer)))
 			applyTrial({
-				months: resolved.offer.months,
-				label: resolved.offer.label,
-				chargesFrom: trialEndsOn(resolved.offer).toISOString(),
+				months: offer.months,
+				label: offer.label,
+				chargesFrom: trialEndsOn(offer).toISOString(),
 			})
 			return
 		}
@@ -294,7 +312,10 @@ export default function PremiumPage() {
 				applyTrial(null)
 				// Ours and refused — most often a member who has had Premium before. Clear it and
 				// let them buy at the normal price, rather than accusing them of a bad code.
-				if (codeIsOurs.current) {
+				//
+				// `!code` covers the standing offer, which nobody typed at all: the same refusal
+				// arrives for a returning member, and there is nothing there to accuse.
+				if (!code || codeIsOurs.current) {
 					setInviteCode("")
 					setInviteError(null)
 				} else {

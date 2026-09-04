@@ -5,10 +5,10 @@ import { uniqueId } from "@/lib/utils"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
-import { buildTicketPricing, type RecurringCharge } from "@/lib/ticket-pricing"
+import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { resolveBundlePlan, selectionMemberships } from "@/lib/premium-bundle"
 import { heldMemberships } from "@/lib/premium-eligibility"
-import { membershipLabelList, type MembershipKey } from "@/lib/memberships"
+import { membershipLabelList } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
 import { incrementReferralUsage } from "@/lib/checkout-fulfillment"
 import { ensureDbConnected } from "@/configs/database"
@@ -166,18 +166,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			.filter(Boolean)
 		const bundlePlan = resolveBundlePlan(freeSelection, await heldMemberships(user.email, selectionMemberships(freeSelection)))
 
-		// Validated up here rather than below, because whether this order may take the free path
-		// at all now depends on the code: one granting free membership months settles what would
-		// otherwise be an unpaid membership.
+		// Validated before the booking is written: a code that has expired or run out of uses
+		// must fail the whole request rather than be silently ignored on an order it was
+		// supposed to discount.
 		const referralResult = await validateReferralCodeForEvent(eventId, req.body?.referralCode)
 		if (!referralResult.ok) {
 			return sendResponse(res, null, referralResult.message, false, 400)
 		}
 		const referralCodeData = referralResult.data
-		// Premium only — Full Concierge is sold on selectmember.jetzy.com's terms, not ours.
-		const freeMembershipMonths = referralCodeData?.freeMembershipMonths || 0
-		const trialKeys: MembershipKey[] = freeMembershipMonths > 0 ? bundlePlan.toCharge.filter((key) => key === "premium") : []
-		const stillOwed = bundlePlan.toCharge.filter((key) => !trialKeys.includes(key))
+
+		// A membership that still has to be CREATED cannot be settled here, even when its first
+		// months are free.
+		//
+		// This endpoint issues a booking with no payment step, so it can only ever produce a
+		// subscription with no card — and `startMembershipSubscription` then sets
+		// `trial_settings.end_behavior.missing_payment_method: "cancel"`, meaning Stripe ENDS the
+		// membership when the free months run out instead of billing it. A host who gives the
+		// first month away is giving away the first month, not the membership.
+		//
+		// So anything still owed — free months or not — is bounced to `api/checkout`, which
+		// opens a payment session when there is something to charge and a `mode: "setup"` session
+		// when there isn't. `bundlePlan.toCharge` is already only what the buyer does NOT hold,
+		// so an existing member still registers here instantly with nothing to collect.
+		const stillOwed = bundlePlan.toCharge
 
 		if (stillOwed.length > 0) {
 			console.warn("[checkout/free-events] Rejected a ticket still owing a membership:", { eventId, owed: stillOwed })
@@ -214,41 +225,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const discountAmount = Math.round((subtotal - pricing.total + Number.EPSILON) * 100) / 100
 
-		// What the gifted membership will cost once the free months run out, resolved BEFORE the
-		// booking is written.
-		//
-		// An approval-pending order has to carry the offer with it: `bookings/approve.ts` never
-		// sees this request, and a code edited — or a plan price changed — while the request sits
-		// pending must not move the buyer onto terms they were never quoted. Same rule the paid
-		// path follows by storing `priceId` on the booking.
-		//
-		// Best-effort: if the price can't be read the ticket is still free and still issued, and
-		// the missing gift is logged rather than failing the registration.
-		type TrialLine = { key: MembershipKey; priceId: string; interval: string; renewalAmount: number }
-		const trialLines: TrialLine[] = []
-		if (trialKeys.length > 0) {
-			try {
-				const { findMembershipPriceForInterval, getMembershipPrice } = await import("@/lib/premium")
-				const { ticketMembershipInterval } = await import("@/lib/premium-bundle")
-				// The interval the TICKET sells at, not the product default — an annual ticket
-				// gifting months must still renew annually afterwards.
-				const bundledTicket = freeSelection.find((t: any) => selectionMemberships([t]).length > 0)
-				const ticketInterval = ticketMembershipInterval(bundledTicket as any)
-				for (const key of trialKeys) {
-					const price =
-						(ticketInterval !== "month" ? await findMembershipPriceForInterval(key, ticketInterval) : null) ||
-						(await getMembershipPrice(key))
-					trialLines.push({
-						key,
-						priceId: price.id,
-						interval: price.recurring?.interval || "month",
-						renewalAmount: (price.unit_amount ?? 0) / 100,
-					})
-				}
-			} catch (priceError: any) {
-				console.error("[checkout/free-events] Couldn't resolve the gifted membership price:", priceError?.message || priceError)
-			}
-		}
+		// NOTE: no membership is created on this path any more, and none may be. Every bundled
+		// order that still owes one was bounced to `api/checkout` above, precisely so a card is
+		// collected — see the comment on `stillOwed`. What reaches here either sells no
+		// membership at all, or sells one the buyer already holds.
 
 		// Two very different orders reach this endpoint: tickets that were always $0, and a
 		// priced order discounted all the way down to $0. Only the second one actually used a
@@ -288,26 +268,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			...(referralCodeData ? { referralCode: referralCodeData.code } : {}),
 			discountAmount,
 			...(discountsDidWork && referralCodeData ? { referralDiscountPercentage: referralCodeData.discountPercentage } : {}),
-			// Memberships this code gave away. `amount: 0` because nothing was charged — money
-			// that moved is what that field means — with `renewalAmount` carrying the price the
-			// receipt has to state. `status: "pending"` until the subscription exists, which is
-			// now for a confirmed booking and at approval for a pending one. No `payment.status`:
-			// no money is in play, and `bookingMoneyState` must keep reading this as free.
-			...(trialLines.length > 0
-				? {
-					payment: {
-						memberships: trialLines.map((line) => ({
-							key: line.key,
-							status: "pending",
-							amount: 0,
-							priceId: line.priceId,
-							interval: line.interval,
-							trialMonths: freeMembershipMonths,
-							renewalAmount: line.renewalAmount,
-						})),
-					},
-				}
-				: {}),
+			// No `payment` sub-doc at all: no money is in play and no membership is created from
+			// here, so `bookingMoneyState` reads this as free — which it is.
 			customAnswers: customAnswers.map((a) => ({
 				questionId: a.questionId,
 				answer: a.answer,
@@ -359,85 +321,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Confirmed only. An approval-pending booking must NOT burn a referral use — that
 		// latch belongs to `bookings/approve.ts`, same as the Stripe path. Nor may a code burn
-		// a use against $0 tickets, where it discounted nothing.
-		// A code that gave away membership months has been used, even against a $0 ticket where
-		// it discounted nothing — otherwise `maxUses` would never limit the gifts.
-		if (discountsDidWork || trialLines.length > 0) await incrementReferralUsage(referralCodeData?.code, String(eventId))
-
-		// A referral code granting free membership months, on an order that reached $0.
-		//
-		// No card exists on this path — nothing was charged — so the subscription is created
-		// without a payment method and `startMembershipSubscription` tells Stripe to CANCEL at
-		// trial end rather than raise an invoice nobody can pay. The membership is a gift that
-		// expires, which is the honest shape of it.
-		//
-		// Confirmed bookings only: an approval-pending one carries the offer on its booking and
-		// is granted by `bookings/approve.ts`, on the same principle as the referral latch above.
-		//
-		// Best-effort throughout. The booking is already issued and a membership failure must
-		// never take it back — the same rule the paid path follows.
-		const grantedRecurring: RecurringCharge[] = []
-		if (trialLines.length > 0 && booking.status === BookingStatus.CONFIRMED) {
-			try {
-				const { resolveStripeCustomerForUser } = await import("@/lib/premium")
-				const { startMembershipSubscription } = await import("@/lib/membership-subscriptions")
-				const { MEMBERSHIPS } = await import("@/lib/memberships")
-
-				const subscriberId = checkoutUserId || bookerUserId
-
-				if (subscriberId) {
-					const customerId = await resolveStripeCustomerForUser(String(subscriberId), user.email)
-					for (const line of trialLines) {
-						const row = booking.payment?.memberships?.find((m: any) => m.key === line.key)
-						try {
-							const result = await startMembershipSubscription({
-								key: line.key,
-								priceId: line.priceId,
-								interval: line.interval,
-								customerId,
-								email: user.email,
-								subscriberId: String(subscriberId),
-								trialMonths: freeMembershipMonths,
-								metadata: { bookingRef: booking.bookingRef, eventId: String(eventId), referralCode: referralCodeData?.code || "" },
-							})
-							if (row) {
-								row.status = "active"
-								if (result.subscriptionId) row.subscriptionId = result.subscriptionId
-								row.lastError = undefined
-							}
-							// Only disclose what this booking actually started. Someone who already
-							// held the membership was given nothing new to renew.
-							if (result.created) {
-								grantedRecurring.push({
-									label: MEMBERSHIPS[line.key].receiptLabel,
-									// The renewal price, never the $0 charged today — the buyer has
-									// agreed to a recurring charge and the receipt must name it.
-									amount: line.renewalAmount,
-									interval: line.interval,
-									trialMonths: freeMembershipMonths,
-									firstRenewalAt: result.firstRenewalAt,
-								})
-							}
-						} catch (subscriptionError: any) {
-							console.error(`[checkout/free-events] Couldn't start gifted ${line.key}:`, subscriptionError?.message || subscriptionError)
-							if (row) {
-								row.status = "failed"
-								row.lastError = String(subscriptionError?.message || subscriptionError)
-							}
-						}
-					}
-					try {
-						await (booking as any).save()
-					} catch (saveError) {
-						console.error("[checkout/free-events] Couldn't record the gifted membership on the booking:", saveError)
-					}
-				} else {
-					console.error("[checkout/free-events] No user to attach the free membership to:", user.email)
-				}
-			} catch (trialError: any) {
-				console.error("[checkout/free-events] Free membership trial failed:", trialError?.message || trialError)
-			}
-		}
+		// a use against $0 tickets, where it discounted nothing: no membership is granted from
+		// here any more, so a discount that actually reduced something is the only thing left
+		// that counts as the code having been used.
+		if (discountsDidWork) await incrementReferralUsage(referralCodeData?.code, String(eventId))
 
 		// Add the attendee as an event member — `checkoutUserId` covers guests too (their
 		// Users account is created above), `bookerUserId` is the fallback for older sessions.
@@ -470,18 +357,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				orderNumber: bookingRef,
 				qrCodeImageUrl,
 				// Shows Subtotal/Total explicitly rather than nothing at all — and itemises the
-				// discounts when the order was priced but discounted down to $0. A gifted
-				// membership is rebuilt in as a recurring line: it costs nothing today (so
-				// `dueToday` stays $0) but it is a charge the buyer has agreed to.
-				pricing:
-					grantedRecurring.length > 0
-						? buildTicketPricing({
-							subtotal,
-							referralCode: referralCodeData?.code,
-							referralPercentage: referralCodeData?.discountPercentage,
-							recurring: grantedRecurring,
-						})
-						: pricing,
+				// discounts when the order was priced but discounted down to $0. There is never a
+				// recurring line here: nothing this endpoint issues starts a membership.
+				pricing,
 			})
 		} catch (emailError) {
 			console.error("Failed to send free ticket confirmation email:", emailError)

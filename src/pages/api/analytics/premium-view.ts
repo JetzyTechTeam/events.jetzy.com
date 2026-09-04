@@ -10,7 +10,7 @@ import zod from "zod"
 const schema = zod.object({
 	anonId: zod.string().min(1).max(64),
 	sessionId: zod.string().max(64).optional(),
-	page: zod.enum(["premium", "subscribe"]),
+	page: zod.enum(["premium", "subscribe", "modal"]),
 	stage: zod.enum(["landed", "checkout_started"]),
 	code: zod.string().max(64).optional(),
 	eventId: zod.string().max(24).optional(),
