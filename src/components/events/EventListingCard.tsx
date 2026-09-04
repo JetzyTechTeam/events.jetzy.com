@@ -142,15 +142,7 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 			onClick={open}
 		>
 			<Box p="2" position="relative" flexShrink={0}>
-				{/* Premium tag — top-LEFT, the one free corner: status/PRIVATE own the top-right and
-				    the benefits chips own the bottom. Not admin-gated; every visitor sees it. */}
-				{event.premiumEvent && (
-					<Box position="absolute" top="4" left="4" zIndex="3">
-						<PremiumEventBadge />
-					</Box>
-				)}
-
-				{/* Status badge (live / upcoming / tbd / ended) */}
+					{/* Status badge (live / upcoming / tbd / ended) */}
 				<Flex position="absolute" top="4" right="4" zIndex="3" gap="1.5" align="center">
 					{isAdmin && isPrivate && (
 						<Box bg="#7C1D1D" border="1px solid" borderColor="red.400" px="2" py="0.5" rounded="md" fontSize="xs" fontWeight="bold" color="white">
@@ -177,6 +169,10 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 				    show the whole image — same treatment as the event detail page hero. */}
 				{lead ? (
 					<Box position="relative" w="100%" h="200px" rounded="lg" overflow="hidden" bg="black">
+						{/* Premium ribbon — top-LEFT corner of the artwork, the one free corner:
+						    status/PRIVATE own the top-right and the benefits chips own the bottom.
+						    Not admin-gated; every visitor sees it. */}
+						{event.premiumEvent && <PremiumEventBadge variant="ribbon" />}
 						{lead.type === "video" ? (
 							<>
 								{/* First frame only — `#t=0.1` is the media-fragment poster trick used
@@ -211,7 +207,8 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 						)}
 					</Box>
 				) : (
-					<Box w="100%" h="200px" rounded="lg" bg="#2A2D35" display="flex" alignItems="center" justifyContent="center" flexDirection="column" gap="2">
+					<Box position="relative" overflow="hidden" w="100%" h="200px" rounded="lg" bg="#2A2D35" display="flex" alignItems="center" justifyContent="center" flexDirection="column" gap="2">
+						{event.premiumEvent && <PremiumEventBadge variant="ribbon" />}
 						<Text fontSize="3xl">🖼️</Text>
 						<Text fontSize="sm" color="gray.500">No image</Text>
 					</Box>

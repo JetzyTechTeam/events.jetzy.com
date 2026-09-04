@@ -295,9 +295,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							// Letterbox on black and show the whole banner rather than cropping it,
 							// matching the listing, dashboard and booking cards. Hosts upload at
 							// whatever aspect they like, and object-cover was slicing the artwork.
-							const boxClass = `w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-black overflow-hidden shrink-0 ${props.isEnded ? 'opacity-60' : ''}`
+							// `relative` so the Premium ribbon can anchor to the artwork's own corner.
+							const boxClass = `relative w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-black overflow-hidden shrink-0 ${props.isEnded ? 'opacity-60' : ''}`
 							return isValidUrl ? (
 								<div className={boxClass}>
+									{/* Same diagonal corner ribbon as the public listing card, so a host
+									    sees their event tagged the way a visitor does. */}
+									{(event as any).premiumEvent && <PremiumEventBadge variant="ribbon" />}
 									{lead.type === "video" ? (
 										// First frame only, via the `#t=0.1` poster trick — a list never autoplays.
 										<video src={`${lead.url}#t=0.1`} muted playsInline preload="metadata" className="w-full h-full object-contain" />
@@ -310,7 +314,8 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 									)}
 								</div>
 							) : (
-								<div className={`w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
+								<div className={`relative overflow-hidden w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
+									{(event as any).premiumEvent && <PremiumEventBadge variant="ribbon" />}
 									<span className="text-3xl">🖼️</span>
 									<span className="text-xs text-gray-500">No image</span>
 								</div>
@@ -390,15 +395,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 				{/* ACTIONS */}
 				<div className="shrink-0 flex flex-col gap-2 w-full sm:w-[180px]">
-					{/* Right edge of the row rather than the badge cluster beside the title — that
-					    cluster is status/DRAFT/PENDING/PRIVATE, and this is a tag on the event, not
-					    a state of it. */}
-					{(event as any).premiumEvent && (
-						<div className="flex justify-end">
-							<PremiumEventBadge />
-						</div>
-					)}
-					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
+						<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>
 				</div>
