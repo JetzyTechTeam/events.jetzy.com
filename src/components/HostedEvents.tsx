@@ -361,7 +361,11 @@ export default function HostedEvents({ event }: Props) {
 				id: ticket._id?.toString() || uniqueId(10),
 				title: stripHtml(ticket.name),
 				price: Number(ticket.price),
-				description: stripHtml(ticket.desc),
+				// RAW, never stripHtml(). The description is written in the rich-text editor and
+				// stored as HTML; seeding the form with the tags removed showed the host one
+				// run-on paragraph and, on the next save, wrote that flattened text back over
+				// their markup. `title` is a plain input, so stripping there is still right.
+				description: ticket.desc || "",
 				requireApproval: ticket.requireApproval,
 				memberships: ticketMemberships(ticket),
 				membershipInterval: ticket.membershipInterval,

@@ -482,7 +482,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				id: ticket._id?.toString() || uniqueId(10),
 				title: stripHtml(ticket.name),
 				price: Number(ticket.price),
-				description: stripHtml(ticket.desc),
+				// RAW, never stripHtml(). The description is written in the rich-text editor and
+				// stored as HTML; seeding the form with the tags removed showed the host one
+				// run-on paragraph and, on the next save, wrote that flattened text back over
+				// their markup. `title` is a plain input, so stripping there is still right.
+				description: ticket.desc || "",
 				requireApproval: ticket.requireApproval,
 				memberships: ticketMemberships(ticket),
 				membershipInterval: ticket.membershipInterval,
@@ -695,7 +699,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					// Per-ticket approval is deliberately excluded: it only affects new
 					// bookings, not someone who already has a place.
 					const currentTickets = JSON.stringify(values.tickets.map(t => ({ title: t.title, price: t.price, description: t.description })))
-					const oldTickets = JSON.stringify((event.tickets || []).map((t: any) => ({ title: stripHtml(t.name), price: Number(t.price), description: stripHtml(t.desc) })))
+					// Mirrors how initialValues seeds each field — `description` is seeded raw now, so
+					// comparing against a stripped copy would report a change on every save.
+					const oldTickets = JSON.stringify((event.tickets || []).map((t: any) => ({ title: stripHtml(t.name), price: Number(t.price), description: t.desc || "" })))
 					if (currentTickets !== oldTickets) changes.push("Ticketing options have been revised")
 
 					// Whether the address is visible to them, seeded as `|| false`.
