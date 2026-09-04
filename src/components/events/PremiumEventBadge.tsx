@@ -23,8 +23,24 @@ export default function PremiumEventBadge({
 	 * `pill` is the original horizontal tag, still used where there is no artwork to sit on —
 	 * the event detail banner, which shares that corner with the benefits chips.
 	 */
-	variant?: "pill" | "ribbon"
+	variant?: "pill" | "ribbon" | "slant"
 }) {
+	if (variant === "slant") {
+		return (
+			// The My Events row has no corner to hang a ribbon on — the tag belongs in the actions
+			// column, above Manage Event (CEO, 2026-09-04) — so the diagonal is the tag itself.
+			//
+			// A shallow angle on purpose. The corner ribbon's 45deg would give this band a bounding
+			// box roughly four times its own height, pushing every row in the list taller for one
+			// label; ~12deg reads as deliberately angled and costs a few pixels.
+			<span
+				className={`inline-flex -rotate-12 items-center gap-1 whitespace-nowrap rounded-md bg-[#F5C518] px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-black shadow-lg ${className}`}
+			>
+				<span aria-hidden>★</span> Premium
+			</span>
+		)
+	}
+
 	if (variant === "ribbon") {
 		return (
 			// Two nested spans, and the geometry matters.

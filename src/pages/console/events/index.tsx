@@ -395,7 +395,16 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 				{/* ACTIONS */}
 				<div className="shrink-0 flex flex-col gap-2 w-full sm:w-[180px]">
-						<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
+					{/* Right of the title and above Manage Event, angled (CEO, 2026-09-04). Not the
+						    badge cluster beside the title — that cluster is status/DRAFT/PENDING/PRIVATE,
+						    state rather than tag. `py-1.5` gives the rotation room so it cannot clip into
+						    the row above or the button below. */}
+					{(event as any).premiumEvent && (
+						<div className="flex justify-end py-1.5">
+							<PremiumEventBadge variant="slant" />
+						</div>
+					)}
+					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>
 				</div>
