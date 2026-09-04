@@ -284,18 +284,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 						}
 
 						// Close the loop on the open-vs-bought funnel row this purchase came from.
-						// `premiumPage`/`premiumAnonId` are stamped by `/api/subscriptions/checkout` only
-						// for a session started on `/premium` or `/subscribe` — a selectmember.jetzy.com
-						// sale, or one started from the paywall modal, carries neither and is skipped.
-						if (
-							sessionMetadata.premiumAnonId &&
-							(sessionMetadata.premiumPage === "premium" || sessionMetadata.premiumPage === "subscribe")
-						) {
+						// `premiumPage`/`premiumAnonId` are stamped by `/api/subscriptions/checkout` for a
+						// session started on `/premium`, `/subscribe` or the "Buy Jetzy Premium" dialog —
+						// a selectmember.jetzy.com sale carries neither and is skipped.
+						const funnelPages = ["premium", "subscribe", "modal"]
+						if (sessionMetadata.premiumAnonId && funnelPages.includes(sessionMetadata.premiumPage as string)) {
 							try {
 								const { PremiumPageView } = await import("@/models/events/premium-page-view")
 								const code = sessionMetadata.premiumCode || ""
 								const matchFilter = {
-									page: sessionMetadata.premiumPage as "premium" | "subscribe",
+									page: sessionMetadata.premiumPage as "premium" | "subscribe" | "modal",
 									code,
 									anonId: sessionMetadata.premiumAnonId as string,
 								}

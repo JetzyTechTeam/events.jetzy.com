@@ -11,6 +11,8 @@ import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumP
 import PlanComparison from "@/components/premium/PlanComparison"
 import EmailVerifyDialog from "@/components/premium/EmailVerifyDialog"
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn"
+import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
+import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -53,6 +55,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	const queryClient = useQueryClient()
 	const { isPremium } = usePremiumStatus()
 	const isSignedIn = sessionStatus === "authenticated"
+	const { anonId, sessionId } = useAnalytics()
 
 	// "You already have this" is a RESULT worth showing, not an error to swallow.
 	//
@@ -219,12 +222,38 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		}
 	}, [inviteCode, selectedInterval, isSignedIn, prices, applyTrial])
 
+	// ---- Open-vs-bought funnel: the dialog counts as its own door ----
+	//
+	// This is the "Buy Jetzy Premium" button, and until now a click on it recorded nothing at all:
+	// the funnel only knew about `/premium` and `/subscribe`, so the most prominent way into the
+	// purchase was missing from the report entirely. Rows are written under `page: "modal"`.
+	// `anonId` loads asynchronously (see AnalyticsContext) so this waits for it; `trackPremiumView`
+	// dedupes per tab, and the dialog is opened and closed repeatedly on one page.
+	useEffect(() => {
+		if (!isOpen || !anonId) return
+		trackPremiumView({ anonId, sessionId, page: "modal", stage: "landed" })
+	}, [isOpen, anonId, sessionId])
+
 	const subscribeMutation = useMutation({
 		mutationFn: async () => {
+			// checkout_started, before the request — a beacon, so the imminent navigation to Stripe
+			// can't drop it. The code mirrors what the request body sends as `inviteCode`, so the
+			// webhook's `purchasedAt` write lands on this same row.
+			trackPremiumView({
+				anonId,
+				sessionId,
+				page: "modal",
+				stage: "checkout_started",
+				code: inviteCode.trim() || undefined,
+			})
 			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
 			// request can't subscribe anyone at an arbitrary price on the account.
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo,
+				// `page` explicitly: this dialog has no URL of its own, and `returnTo` is whichever
+				// page the navbar button happened to be pressed on.
+				page: "modal",
+				anonId: anonId || undefined,
 				...(selectedInterval ? { interval: selectedInterval } : {}),
 				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
 			})

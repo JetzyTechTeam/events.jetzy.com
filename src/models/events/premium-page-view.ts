@@ -26,7 +26,8 @@ export interface IPremiumPageView {
 	/** localStorage `analytics_anon_id`. */
 	anonId: string
 	sessionId?: string
-	page: "premium" | "subscribe"
+	/** `"modal"` is the navbar's "Buy Jetzy Premium" dialog rather than a page of its own. */
+	page: "premium" | "subscribe" | "modal"
 	/** Invite/referral code present when this visit started, "" for a plain visit. */
 	code: string
 	/** Only set alongside a code that came from a host's referral share link. */
@@ -56,7 +57,7 @@ const premiumPageViewSchema = new Schema<IPremiumPageView>(
 		page: {
 			type: String,
 			required: true,
-			enum: ["premium", "subscribe"],
+			enum: ["premium", "subscribe", "modal"],
 		},
 		code: {
 			type: String,

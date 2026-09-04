@@ -154,10 +154,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const cancelUrl = `${baseUrl}${returnTo}?premium_cancelled=1`
 
 		// Which open-vs-bought funnel row this purchase closes, if any — see
-		// `src/models/events/premium-page-view.ts`. Only `/premium` and `/subscribe` are tracked;
-		// a checkout started elsewhere (the paywall modal) simply carries none of this and the
-		// webhook leaves the funnel alone.
-		const funnelPage = returnTo === "/premium" ? "premium" : returnTo === "/subscribe" ? "subscribe" : undefined
+		// `src/models/events/premium-page-view.ts`.
+		//
+		// The paywall dialog says so explicitly, because it has no URL of its own: `returnTo` is
+		// whatever page the navbar button was pressed on. Anything else falls back to the path, so
+		// a request that names no page still lands on the right row. A checkout started somewhere
+		// with neither carries none of this and the webhook leaves the funnel alone.
+		const declaredPage = typeof req.body?.page === "string" ? req.body.page.trim() : ""
+		const funnelPage =
+			declaredPage === "premium" || declaredPage === "subscribe" || declaredPage === "modal"
+				? declaredPage
+				: returnTo === "/premium"
+					? "premium"
+					: returnTo === "/subscribe"
+						? "subscribe"
+						: undefined
 		const funnelAnonId = typeof req.body?.anonId === "string" ? req.body.anonId.trim() : ""
 		// The RAW code as the visitor had it, not `trialCodeApplied`/`referralCodeApplied` — those
 		// are normalized and only set once a code is accepted, but the funnel row was written the

@@ -6,6 +6,8 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { buildDateFilter, escapeCsv } from "@/lib/qrSignups"
 
+type FunnelStage = { opens: number; checkoutStarted: number; purchased: number }
+
 /**
  * Opened vs. bought, for `/premium`, `/subscribe`, and a host's referral share link
  * (`/premium?code=&event=`).
@@ -54,7 +56,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const [byPage, referralByPage, byReferralLink] = await Promise.all([
 			PremiumPageView.aggregate(stageCounts()),
 			// Same shape, restricted to rows that carry an event — i.e. a visit or purchase that
-			// came from a host's referral share link rather than the plain page.
+			// came from a host's referral share link rather than the plain page. These rows are a
+			// SUBSET of `byPage`, not a separate population: a referral link IS `/premium`, so the
+			// two tables were reporting the same visitors twice with no way to tell. `direct` below
+			// is what the report needs — the opens that were NOT a share link.
 			PremiumPageView.aggregate(stageCounts({ eventId: { $exists: true, $ne: null } })),
 			PremiumPageView.aggregate([
 				{ $match: { ...baseMatch, eventId: { $exists: true, $ne: null } } },
@@ -77,7 +82,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const r = byId.get(page)
 				return { opens: r?.opens || 0, checkoutStarted: r?.checkoutStarted || 0, purchased: r?.purchased || 0 }
 			}
-			return { premium: pick("premium"), subscribe: pick("subscribe") }
+			// `modal` is the navbar's "Buy Jetzy Premium" dialog. It has no URL, so it was not in
+			// this report at all and every click on that button was uncounted.
+			return { premium: pick("premium"), subscribe: pick("subscribe"), modal: pick("modal") }
+		}
+
+		const shapedByPage = shapeStage(byPage)
+		const shapedReferral = shapeStage(referralByPage)
+
+		// Total minus share-link, per page, so the two tables in the report describe disjoint sets
+		// of visitors and the columns add up.
+		const subtract = (total: FunnelStage, part: FunnelStage): FunnelStage => ({
+			opens: Math.max(0, total.opens - part.opens),
+			checkoutStarted: Math.max(0, total.checkoutStarted - part.checkoutStarted),
+			purchased: Math.max(0, total.purchased - part.purchased),
+		})
+		const directByPage = {
+			premium: subtract(shapedByPage.premium, shapedReferral.premium),
+			subscribe: subtract(shapedByPage.subscribe, shapedReferral.subscribe),
+			modal: subtract(shapedByPage.modal, shapedReferral.modal),
 		}
 
 		const eventIds = byReferralLink.map((r: any) => r._id.eventId).filter(Boolean)
@@ -107,8 +130,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(
 			res,
 			{
-				byPage: shapeStage(byPage),
-				referralByPage: shapeStage(referralByPage),
+				byPage: shapedByPage,
+				directByPage,
+				referralByPage: shapedReferral,
 				byReferralLink: linkRows,
 			},
 			"Premium funnel report retrieved",
