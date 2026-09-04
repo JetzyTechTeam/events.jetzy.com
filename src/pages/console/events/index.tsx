@@ -275,7 +275,14 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 	return (
 		<>
-			<div className={`flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
+			<div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
+				{/* Premium tag — the row card's own top-RIGHT corner (CEO, 2026-09-04): right of
+					    the event name and above Manage Event on desktop, and on mobile it lands in
+					    the empty space beside the date block rather than across the thumbnail.
+					    Anchored to a real corner, so it cannot float loose the way a rotated pill did.
+					    `rounded-tr-xl` on the clipping square follows the card's own radius; the card
+					    itself needs no `overflow-hidden` because the ribbon crops itself. */}
+				{(event as any).premiumEvent && <PremiumEventBadge variant="ribbon" side="right" className="rounded-tr-xl" />}
 				{/* Date and thumbnail share one row on mobile rather than stacking into a very
 				    tall card. `sm:contents` dissolves this wrapper from 640px up, so the desktop
 				    layout is exactly the three-column flex it has always been — no duplicated
@@ -299,9 +306,6 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							const boxClass = `relative w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-black overflow-hidden shrink-0 ${props.isEnded ? 'opacity-60' : ''}`
 							return isValidUrl ? (
 								<div className={boxClass}>
-									{/* Same diagonal corner ribbon as the public listing card, so a host
-									    sees their event tagged the way a visitor does. */}
-									{(event as any).premiumEvent && <PremiumEventBadge variant="ribbon" />}
 									{lead.type === "video" ? (
 										// First frame only, via the `#t=0.1` poster trick — a list never autoplays.
 										<video src={`${lead.url}#t=0.1`} muted playsInline preload="metadata" className="w-full h-full object-contain" />
@@ -315,7 +319,6 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								</div>
 							) : (
 								<div className={`relative overflow-hidden w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-[#2A2D35] flex flex-col items-center justify-center gap-0.5 ${props.isEnded ? 'opacity-60' : ''}`}>
-									{(event as any).premiumEvent && <PremiumEventBadge variant="ribbon" />}
 									<span className="text-3xl">🖼️</span>
 									<span className="text-xs text-gray-500">No image</span>
 								</div>
@@ -395,15 +398,6 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 				{/* ACTIONS */}
 				<div className="shrink-0 flex flex-col gap-2 w-full sm:w-[180px]">
-					{/* Right of the title and above Manage Event, angled (CEO, 2026-09-04). Not the
-						    badge cluster beside the title — that cluster is status/DRAFT/PENDING/PRIVATE,
-						    state rather than tag. `py-1.5` gives the rotation room so it cannot clip into
-						    the row above or the button below. */}
-					{(event as any).premiumEvent && (
-						<div className="flex justify-end py-1.5">
-							<PremiumEventBadge variant="slant" />
-						</div>
-					)}
 					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>

@@ -13,6 +13,7 @@ import React from "react"
 export default function PremiumEventBadge({
 	className = "",
 	variant = "pill",
+	side = "left",
 }: {
 	className?: string
 	/**
@@ -23,24 +24,14 @@ export default function PremiumEventBadge({
 	 * `pill` is the original horizontal tag, still used where there is no artwork to sit on —
 	 * the event detail banner, which shares that corner with the benefits chips.
 	 */
-	variant?: "pill" | "ribbon" | "slant"
+	variant?: "pill" | "ribbon"
+	/**
+	 * Which corner the ribbon hangs on. The listing card uses the artwork's top-LEFT (its
+	 * top-right is taken by the status badge); the My Events row hangs it on the top-RIGHT of the
+	 * row card itself, which is right of the title and above Manage Event.
+	 */
+	side?: "left" | "right"
 }) {
-	if (variant === "slant") {
-		return (
-			// The My Events row has no corner to hang a ribbon on — the tag belongs in the actions
-			// column, above Manage Event (CEO, 2026-09-04) — so the diagonal is the tag itself.
-			//
-			// A shallow angle on purpose. The corner ribbon's 45deg would give this band a bounding
-			// box roughly four times its own height, pushing every row in the list taller for one
-			// label; ~12deg reads as deliberately angled and costs a few pixels.
-			<span
-				className={`inline-flex -rotate-12 items-center gap-1 whitespace-nowrap rounded-md bg-[#F5C518] px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-black shadow-lg ${className}`}
-			>
-				<span aria-hidden>★</span> Premium
-			</span>
-		)
-	}
-
 	if (variant === "ribbon") {
 		return (
 			// Two nested spans, and the geometry matters.
@@ -57,9 +48,18 @@ export default function PremiumEventBadge({
 			// and the `sm:` set is the same ratios at the larger size.
 			<span
 				aria-label="Premium event"
-				className={`pointer-events-none absolute left-0 top-0 z-[3] block h-[70px] w-[70px] overflow-hidden sm:h-[92px] sm:w-[92px] ${className}`}
+				className={`pointer-events-none absolute top-0 z-[3] block h-[70px] w-[70px] overflow-hidden sm:h-[92px] sm:w-[92px] ${
+					side === "right" ? "right-0" : "left-0"
+				} ${className}`}
 			>
-				<span className="absolute left-[-22px] top-[14px] w-[104px] -rotate-45 bg-[#F5C518] py-[2px] text-center text-[9px] font-extrabold uppercase leading-tight tracking-wider text-black shadow-md sm:left-[-28px] sm:top-[19px] sm:w-[136px] sm:py-[3px] sm:text-[11px]">
+				<span
+					className={`absolute top-[14px] w-[104px] bg-[#F5C518] py-[2px] text-center text-[9px] font-extrabold uppercase leading-tight tracking-wider text-black shadow-md sm:top-[19px] sm:w-[136px] sm:py-[3px] sm:text-[11px] ${
+						// Mirrored, so the text reads left-to-right DOWNWARD on the right corner and
+						// upward on the left one — a ribbon rotated the wrong way for its corner
+						// reads bottom-to-top, which is what the thumbnail version looked like.
+						side === "right" ? "right-[-22px] rotate-45 sm:right-[-28px]" : "left-[-22px] -rotate-45 sm:left-[-28px]"
+					}`}
+				>
 					<span aria-hidden>★</span> Premium
 				</span>
 			</span>
