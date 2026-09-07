@@ -7,15 +7,16 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
+import { zodIssuesToMessage } from "@/lib/zod-error"
 
 // Validation schema for creating referral code
 const createReferralCodeSchema = zod.object({
-	code: zod.string().min(3).max(50).regex(/^\S+$/, "Code cannot contain spaces"),
-	discountPercentage: zod.number().min(0).max(100),
+	code: zod.string().min(3, "Code must be at least 3 characters").max(50, "Code must be 50 characters or fewer").regex(/^\S+$/, "Code cannot contain spaces"),
+	discountPercentage: zod.number().min(0, "Discount percentage cannot be negative").max(100, "Discount percentage cannot exceed 100"),
 	// Free months of Jetzy Premium on a ticket that already sells it. Whole months only —
 	// Stripe's trial is a date, and half a month has no meaning on a receipt.
-	freeMembershipMonths: zod.number().int().min(0).max(12).optional(),
-	maxUses: zod.number().positive().optional().nullable(),
+	freeMembershipMonths: zod.number().int("Free months must be a whole number").min(0, "Free months cannot be negative").max(12, "Free months cannot exceed 12").optional(),
+	maxUses: zod.number().positive("Maximum uses must be greater than 0").optional().nullable(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -61,7 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Validate request body
 			const validation = createReferralCodeSchema.safeParse(body)
 			if (!validation.success) {
-				return sendResponse(res, validation.error.errors, "Invalid referral code data", false, ResCode.BAD_REQUEST)
+				return sendResponse(res, validation.error.errors, zodIssuesToMessage(validation.error.errors), false, ResCode.BAD_REQUEST)
 			}
 
 			const { code, discountPercentage, freeMembershipMonths, maxUses } = validation.data
