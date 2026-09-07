@@ -8,14 +8,15 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
+import { zodIssuesToMessage } from "@/lib/zod-error"
 
 // Validation schema for updating referral code
 const updateReferralCodeSchema = zod.object({
 	isActive: zod.boolean().optional(),
-	discountPercentage: zod.number().min(0).max(100).optional(),
-	freeMembershipMonths: zod.number().int().min(0).max(12).optional(),
+	discountPercentage: zod.number().min(0, "Discount percentage cannot be negative").max(100, "Discount percentage cannot exceed 100").optional(),
+	freeMembershipMonths: zod.number().int("Free months must be a whole number").min(0, "Free months cannot be negative").max(12, "Free months cannot exceed 12").optional(),
 	commissionPercentage: zod.number().min(0).max(100).optional(),
-	maxUses: zod.number().positive().optional().nullable(),
+	maxUses: zod.number().positive("Maximum uses must be greater than 0").optional().nullable(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -71,7 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Validate request body
 			const validation = updateReferralCodeSchema.safeParse(body)
 			if (!validation.success) {
-				return sendResponse(res, validation.error.errors, "Invalid update data", false, ResCode.BAD_REQUEST)
+				return sendResponse(res, validation.error.errors, zodIssuesToMessage(validation.error.errors), false, ResCode.BAD_REQUEST)
 			}
 
 			const updateData: any = {}
