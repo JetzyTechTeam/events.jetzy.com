@@ -154,6 +154,13 @@ export const eventUsersSchema = new Schema(
       type: Date,
       required: false,
     },
+    // Why `grantSignupTrial` did NOT grant a membership for this signup (see src/lib/signup-trial.ts).
+    // Absent means no trial code was typed, or the grant succeeded. Diagnostic only — never shown
+    // to the user, surfaced to admins on the growth report.
+    signupTrialReason: {
+      type: String,
+      required: false,
+    },
     // The user's Stripe Customer — a BILLING IDENTITY, not a membership. One customer holds
     // every subscription this person has. It used to live inside `premiumSubscription`; that
     // copy is still read as a fallback (`getUserStripeCustomerId`) so no backfill is needed.

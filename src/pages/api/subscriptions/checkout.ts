@@ -93,6 +93,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let referralCodeApplied: string | undefined
 		/** Months from the STANDING offer — no code was typed, so there is none to report. */
 		let defaultTrialMonths = 0
+		/**
+		 * The month count for WHICHEVER of the three branches below applied — set alongside
+		 * `trialCodeApplied`/`referralCodeApplied`/`defaultTrialMonths`, which answer "which
+		 * campaign"; this answers "how many months" uniformly, so the webhook can record a real
+		 * `trialMonths` on the sale regardless of which branch produced the trial.
+		 */
+		let trialMonths = 0
 
 		if (rawInviteCode.trim() && referralEventId) {
 			const { resolveReferralTrial } = await import("@/lib/referral-trial")
@@ -111,6 +118,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 			trialEnd = Math.floor(trialEndsOn({ months: referral.months, intervals: [], label: "" }).getTime() / 1000)
 			referralCodeApplied = referral.code
+			trialMonths = referral.months
 			console.log(
 				`[subscriptions/checkout] referral code ${referral.code} (event ${referral.eventId}) applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`,
 			)
@@ -132,6 +140,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// date a person recognises.
 			trialEnd = Math.floor(trialEndsOn(resolved.offer).getTime() / 1000)
 			trialCodeApplied = resolved.code
+			trialMonths = resolved.offer.months
 			console.log(`[subscriptions/checkout] trial code ${resolved.code} applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`)
 		} else {
 			// ---- No code typed: the STANDING offer ----
@@ -145,6 +154,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			if (standing && !(await hasEverHadMembership(stripeCustomerId, "premium"))) {
 				trialEnd = Math.floor(trialEndsOn(standing).getTime() / 1000)
 				defaultTrialMonths = standing.months
+				trialMonths = standing.months
 				console.log(`[subscriptions/checkout] standing ${standing.months}-month trial applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`)
 			}
 		}
@@ -189,6 +199,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				userId,
 				purpose: "premium_subscription",
 				...(trialCodeApplied ? { inviteCode: trialCodeApplied } : {}),
+				// The month count for whichever branch applied, read back by the webhook so the sale
+				// record carries a real `trialMonths` alongside `trialEndsAt` — see the comment above
+				// `let trialMonths`.
+				...(trialMonths > 0 ? { trialMonths: String(trialMonths) } : {}),
 				// No `inviteCode` for the standing offer — there was no code. Recorded on its own
 				// key so the growth report can tell "started with a free month because that is
 				// what we offer" apart from "redeemed a campaign code", which are different

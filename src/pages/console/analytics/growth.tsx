@@ -82,6 +82,8 @@ type SignupTrialRow = {
 	signedUpAt: string | null
 	verified: boolean
 	granted: boolean
+	/** Why `grantSignupTrial` refused, when known. Empty when granted or the reason predates this field. */
+	reason: string
 	grantedAt: string | null
 	trialMonths: number
 	trialEndsAt: string | null
@@ -388,7 +390,9 @@ export default function GrowthAnalytics() {
 																</Td>
 																<Td color="#D6D6D6">{r.amount != null ? `${money(r.amount)}/${r.interval || "month"}` : r.interval || "—"}</Td>
 																<Td color="#F5C518" fontFamily="mono" fontSize="xs">{r.inviteCode || r.referralCode || "—"}</Td>
-																<Td color="#9C9C9C" fontSize="xs">{r.trialMonths ? `${day(r.trialEndsAt)} (${r.trialMonths} mo)` : "—"}</Td>
+																<Td color="#9C9C9C" fontSize="xs">
+																	{r.trialEndsAt ? `${day(r.trialEndsAt)}${r.trialMonths ? ` (${r.trialMonths} mo)` : ""}` : "—"}
+																</Td>
 																<Td color="#9C9C9C" fontSize="xs">
 																	{r.event || "—"}
 																	{r.bookingRef ? <Text fontSize="xs" fontFamily="mono">{r.bookingRef}</Text> : null}
@@ -497,8 +501,13 @@ export default function GrowthAnalytics() {
 																	<Badge colorScheme={r.verified ? "green" : "gray"}>{r.verified ? "yes" : "not yet"}</Badge>
 																</Td>
 																<Td>
-																	{/* Granted, or still sitting behind an unopened email. */}
-																	<Badge colorScheme={r.granted ? "purple" : "orange"}>
+																	{/* Granted, or still sitting behind an unopened email — or one of
+																	    `grantSignupTrial`'s silent refusals, named in the tooltip when known. */}
+																	<Badge
+																		colorScheme={r.granted ? "purple" : "orange"}
+																		title={!r.granted && r.reason ? `Not redeemed: ${r.reason}` : undefined}
+																		cursor={!r.granted && r.reason ? "help" : undefined}
+																	>
 																		{r.granted ? `${r.trialMonths || 0} mo granted` : "not redeemed"}
 																	</Badge>
 																</Td>

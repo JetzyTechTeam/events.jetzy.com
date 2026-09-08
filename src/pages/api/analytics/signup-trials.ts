@@ -94,8 +94,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					signedUpAt: d.createdAt ? new Date(d.createdAt).toISOString() : null,
 					verified,
 					// The membership itself. Absent means the code was typed but never redeemed —
-					// usually an unopened verification email.
+					// usually an unopened verification email, or one of `grantSignupTrial`'s silent
+					// refusals — see `reason`.
 					granted: !!grant,
+					reason: !grant ? String(d.signupTrialReason || "") : "",
 					grantedAt: grant?.createdAt ? new Date(grant.createdAt).toISOString() : null,
 					trialMonths: grant?.trialMonths || 0,
 					trialEndsAt: grant?.trialEndsAt ? new Date(grant.trialEndsAt).toISOString() : null,
@@ -107,7 +109,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (format === "csv") {
 			const docs = await EventUsers.find(match)
-				.select("email firstName lastName refCode signupSource emailVerified createdAt")
+				.select("email firstName lastName refCode signupSource emailVerified signupTrialReason createdAt")
 				.sort({ createdAt: -1 })
 				.limit(50000)
 				.lean()
@@ -131,7 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const [docs, total, byCodeRaw] = await Promise.all([
 			EventUsers.find(match)
-				.select("email firstName lastName refCode signupSource emailVerified createdAt")
+				.select("email firstName lastName refCode signupSource emailVerified signupTrialReason createdAt")
 				.sort({ createdAt: -1 })
 				.skip((pageNum - 1) * limitNum)
 				.limit(limitNum)

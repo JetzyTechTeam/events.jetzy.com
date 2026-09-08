@@ -45,6 +45,8 @@ export type StartMembershipArgs = {
 	paymentMethodId?: string
 	/** The address that owns the membership — the checkout email, not the session. */
 	email?: string
+	/** Buyer's display name, for the sale record only — never used for billing or matching. */
+	name?: string
 	/** Jetzy user id, when known, so the record is written even if the customer lookup misses. */
 	subscriberId?: string
 	/**
@@ -178,6 +180,7 @@ export async function startMembershipSubscription(args: StartMembershipArgs): Pr
 			key,
 			source: args.source || "ticket",
 			email,
+			name: args.name,
 			userId: subscriberId ? String(subscriberId) : undefined,
 			stripeCustomerId: customerId,
 			stripeSubscriptionId: subscription.id,
