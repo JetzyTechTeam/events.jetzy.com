@@ -111,7 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return res.status(200).send(lines.join("\n"))
 		}
 
-		const [docs, total, bySource, byInvite] = await Promise.all([
+		const [docs, total, bySource, byInvite, byReferralLink] = await Promise.all([
 			MembershipPurchases.find(match).sort({ createdAt: -1 }).skip((pageNum - 1) * limitNum).limit(limitNum).lean(),
 			MembershipPurchases.countDocuments(match),
 			MembershipPurchases.aggregate([{ $match: match }, { $group: { _id: "$source", count: { $sum: 1 } } }]),
@@ -122,7 +122,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				{ $sort: { count: -1 } },
 				{ $limit: 50 },
 			]),
+			// A HOST's own referral code, shared as a standalone Premium link (no ticket) —
+			// `resolveReferralTrial` / "A referral code shared as a Premium link". Distinct from
+			// `inviteCode` (the hardcoded TRIAL_CODES table) and from a referral code that rode in
+			// on a bundled ticket (those are `source: "ticket"|"gift"`, not `"subscribe"`, and are
+			// already covered by the booking-based referral report). Grouped by code + event since
+			// one code string can exist on several events.
+			MembershipPurchases.aggregate([
+				{
+					$match: {
+						$and: [
+							...and,
+							{ source: "subscribe" },
+							{ referralCode: { $exists: true, $nin: [null, ""] } },
+							{ eventId: { $exists: true, $ne: null } },
+						],
+					},
+				},
+				{ $group: { _id: { code: "$referralCode", eventId: "$eventId" }, count: { $sum: 1 }, members: { $addToSet: "$email" } } },
+				{ $sort: { count: -1 } },
+				{ $limit: 50 },
+			]),
 		])
+
+		const referralLinkEventIds = byReferralLink.map((row: any) => row._id.eventId).filter(Boolean)
+		const referralLinkEvents = referralLinkEventIds.length
+			? await Events.find({ _id: { $in: referralLinkEventIds } }).select("name").lean()
+			: []
+		const referralLinkEventName = new Map(referralLinkEvents.map((e: any) => [String(e._id), e.name]))
 
 		return sendResponse(
 			res,
@@ -134,6 +161,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				bySource: bySource.reduce((acc: Record<string, number>, row: any) => ({ ...acc, [row._id || "unknown"]: row.count }), {}),
 				inviteCodes: byInvite.map((row: any) => ({
 					code: row._id,
+					redemptions: row.count,
+					members: (row.members || []).filter(Boolean).length,
+				})),
+				referralLinkRedemptions: byReferralLink.map((row: any) => ({
+					code: row._id.code,
+					eventId: String(row._id.eventId),
+					event: referralLinkEventName.get(String(row._id.eventId)) || "",
 					redemptions: row.count,
 					members: (row.members || []).filter(Boolean).length,
 				})),
