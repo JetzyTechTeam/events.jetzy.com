@@ -119,6 +119,9 @@ export default function GrowthAnalytics() {
 	const [memTotal, setMemTotal] = React.useState(0)
 	const [bySource, setBySource] = React.useState<Record<string, number>>({})
 	const [inviteCodes, setInviteCodes] = React.useState<Array<{ code: string; redemptions: number; members: number }>>([])
+	// A host's own referral code, shared as a standalone Premium link (no ticket) — separate from
+	// the hardcoded `inviteCodes` above, which only covers the TRIAL_CODES table.
+	const [referralLinkRedemptions, setReferralLinkRedemptions] = React.useState<Array<{ code: string; eventId: string; event: string; redemptions: number; members: number }>>([])
 	const [source, setSource] = React.useState("")
 	const [hasInviteCode, setHasInviteCode] = React.useState("")
 	const [search, setSearch] = React.useState("")
@@ -155,6 +158,7 @@ export default function GrowthAnalytics() {
 				setMemTotal(data?.data?.total || 0)
 				setBySource(data?.data?.bySource || {})
 				setInviteCodes(data?.data?.inviteCodes || [])
+				setReferralLinkRedemptions(data?.data?.referralLinkRedemptions || [])
 			})
 			.catch(() => toast({ title: "Couldn't load the membership report", status: "error", duration: 3000 }))
 			.finally(() => !cancelled && setMemLoading(false))
@@ -243,6 +247,7 @@ export default function GrowthAnalytics() {
 
 	const totalMembers = Object.values(bySource).reduce((sum, n) => sum + n, 0)
 	const inviteRedemptions = inviteCodes.reduce((sum, c) => sum + c.redemptions, 0)
+	const referralLinkTotal = referralLinkRedemptions.reduce((sum, c) => sum + c.redemptions, 0)
 	const totalPages = Math.max(1, Math.ceil(memTotal / limit))
 	const sgTotalPages = Math.max(1, Math.ceil(sgTotal / limit))
 
@@ -278,7 +283,7 @@ export default function GrowthAnalytics() {
 
 							{/* -------------------------------- Memberships -------------------------------- */}
 							<TabPanel px={0}>
-								<SimpleGrid columns={{ base: 1, sm: 2, lg: 5 }} spacing={4} mb={6}>
+								<SimpleGrid columns={{ base: 1, sm: 2, lg: 6 }} spacing={4} mb={6}>
 									<MetricsCard dark title="Memberships sold" value={totalMembers.toLocaleString()} icon={FiUsers} iconColor="#F5C518" />
 									<MetricsCard dark title="Bought directly" value={(bySource.subscribe || 0).toLocaleString()} icon={FiCreditCard} iconColor="#F5C518" subtitle="/subscribe or the paywall" />
 									<MetricsCard dark title="With a ticket" value={(bySource.ticket || 0).toLocaleString()} icon={FiTag} iconColor="#F5C518" />
@@ -291,6 +296,7 @@ export default function GrowthAnalytics() {
 										subtitle={`${bySource.signup || 0} at signup · ${bySource.gift || 0} with a ticket`}
 									/>
 									<MetricsCard dark title="Invite codes redeemed" value={inviteRedemptions.toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle={`${inviteCodes.length} code${inviteCodes.length === 1 ? "" : "s"}`} />
+									<MetricsCard dark title="Referral-link redemptions" value={referralLinkTotal.toLocaleString()} icon={FiGift} iconColor="#F5C518" subtitle={`${referralLinkRedemptions.length} code${referralLinkRedemptions.length === 1 ? "" : "s"}`} />
 								</SimpleGrid>
 
 								{inviteCodes.length > 0 && (
@@ -300,6 +306,25 @@ export default function GrowthAnalytics() {
 											{inviteCodes.map((c) => (
 												<Box key={c.code} bg="#101010" border="1px solid #2a2a2a" borderRadius="md" px={4} py={3}>
 													<Text color="#F5C518" fontFamily="mono" fontWeight={700}>{c.code}</Text>
+													<Text color="#9C9C9C" fontSize="xs">{c.redemptions} redemption{c.redemptions === 1 ? "" : "s"} · {c.members} member{c.members === 1 ? "" : "s"}</Text>
+												</Box>
+											))}
+										</HStack>
+									</Box>
+								)}
+
+								{/* A host's own referral code, shared as a standalone Premium link (no ticket) —
+								    kept separate from "Invite codes" above, which is only the hardcoded
+								    TRIAL_CODES table. Grouped by code + event since one code string can exist
+								    on several events. */}
+								{referralLinkRedemptions.length > 0 && (
+									<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4} mb={6}>
+										<Text color="white" fontWeight={700} mb={3}>Referral-link redemptions</Text>
+										<HStack spacing={3} wrap="wrap">
+											{referralLinkRedemptions.map((c) => (
+												<Box key={`${c.code}-${c.eventId}`} bg="#101010" border="1px solid #2a2a2a" borderRadius="md" px={4} py={3}>
+													<Text color="#F5C518" fontFamily="mono" fontWeight={700}>{c.code}</Text>
+													<Text color="#9C9C9C" fontSize="xs">{c.event || c.eventId}</Text>
 													<Text color="#9C9C9C" fontSize="xs">{c.redemptions} redemption{c.redemptions === 1 ? "" : "s"} · {c.members} member{c.members === 1 ? "" : "s"}</Text>
 												</Box>
 											))}
