@@ -37,11 +37,13 @@ export type SignupTrialResult = {
 export async function grantSignupTrial({
 	email,
 	firstName,
+	lastName,
 	userId,
 	code,
 }: {
 	email: string
 	firstName?: string
+	lastName?: string
 	/** The account the membership belongs to. */
 	userId: string
 	code?: string | null
@@ -92,6 +94,7 @@ export async function grantSignupTrial({
 			// Deliberately NO `paymentMethodId`: nothing was collected, and that absence is what
 			// makes Stripe cancel at the end rather than bill.
 			email: clean,
+			name: [firstName, lastName].filter(Boolean).join(" ").trim() || undefined,
 			subscriberId: userId,
 			trialMonths: resolved.offer.months,
 			source: "signup",

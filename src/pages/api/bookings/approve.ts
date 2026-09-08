@@ -265,6 +265,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					customerId: customerId || "",
 					paymentMethodId,
 					email: booking.customerEmail,
+					name: booking.customerName || undefined,
 					subscriberId: (booking as any).bookerUserId ? String((booking as any).bookerUserId) : undefined,
 					metadata: { bookingRef, eventId: String(booking.eventId), approvedAt: new Date().toISOString() },
 				})

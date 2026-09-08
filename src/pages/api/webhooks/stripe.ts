@@ -269,6 +269,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								...(subscription.trial_end
 									? { trialEndsAt: new Date(subscription.trial_end * 1000) }
 									: {}),
+								...(sessionMetadata.trialMonths ? { trialMonths: Number(sessionMetadata.trialMonths) } : {}),
 							})
 
 							// Count the redemption against the code — ONCE.

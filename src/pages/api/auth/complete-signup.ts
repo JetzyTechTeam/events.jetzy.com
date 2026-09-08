@@ -51,12 +51,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Best-effort, and deliberately before the referral call below so a backend outage can't
 		// swallow it.
 		if (user.refCode && isSignupTrialCode(user.refCode)) {
-			await grantSignupTrial({
+			const grant = await grantSignupTrial({
 				email: user.email,
 				firstName: user.firstName,
+				lastName: user.lastName,
 				userId: String(user._id),
 				code: user.refCode,
 			})
+			// Diagnostic only — never shown to the buyer, surfaced to admins on the growth report
+			// so "verified but not redeemed" has a reason instead of being a mystery.
+			if (!grant.granted && grant.reason) {
+				await EventUsers.updateOne({ _id: user._id }, { $set: { signupTrialReason: grant.reason } }).catch(() => {})
+			}
 		} else if (user.refCode) {
 			try {
 				const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://test.jetzy.com"

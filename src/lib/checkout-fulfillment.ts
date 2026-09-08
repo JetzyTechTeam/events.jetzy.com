@@ -638,6 +638,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 					customerId: customerId || "",
 					paymentMethodId,
 					email: metadata.email,
+					name: `${metadata.firstName || ""} ${metadata.lastName || ""}`.trim() || undefined,
 					subscriberId: metadata.membershipUserId,
 					metadata: { bookingRef, eventId: String(metadata.eventId) },
 				})
