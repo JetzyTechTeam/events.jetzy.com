@@ -1,7 +1,7 @@
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
-import { findMembershipPriceForInterval, findMembershipRecord, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
+import { findMembershipPriceForInterval, findMembershipRecord, getMembershipPrice, getStripeClient, getUserStripeCustomerId, subscriptionMembershipKey } from "@/lib/premium"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -127,9 +127,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// and Stripe performs it.
 				const currentPrice = subscription.items.data[0]?.price
 				const currentInterval = currentPrice?.recurring?.interval
-				const canSwitchUp = currentInterval === "month"
-				if (key === "premium" && !canSwitchUp) {
+				// Interval alone is not enough: the switch configuration is scoped to the
+				// product's DEFAULT monthly price plus the annual price (see premiumSwitchPrices
+				// in scripts/create-portal-config.ts), and Premium still carries a legacy
+				// $10/month price that predates it. A subscriber on that price has
+				// currentInterval === "month" but their price is not in the configuration's
+				// products list, so Stripe rejects subscription_update_confirm outright — that
+				// is what surfaced as "Couldn't open the billing portal" for those members.
+				const defaultMonthlyPrice = key === "premium" ? await getMembershipPrice("premium").catch(() => null) : null
+				const canSwitchUp = currentInterval === "month" && !!defaultMonthlyPrice && currentPrice?.id === defaultMonthlyPrice.id
+				if (key === "premium" && currentInterval !== "month") {
 					console.warn(`[subscriptions/portal] flow=switch refused: ${subscriptionId} is already ${currentInterval}ly — opening the ordinary portal`)
+				} else if (key === "premium" && currentInterval === "month" && !canSwitchUp) {
+					console.warn(
+						`[subscriptions/portal] flow=switch refused: ${subscriptionId} is on legacy price ${currentPrice?.id}, not the scoped default ${defaultMonthlyPrice?.id} — opening the ordinary portal`,
+					)
 				}
 				const targetPrice = key === "premium" && canSwitchUp ? await findMembershipPriceForInterval("premium", "year") : null
 
