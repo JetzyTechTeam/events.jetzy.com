@@ -19,6 +19,9 @@ export const ROUTES = {
 		bookings: {
 			index: "/console/bookings",
 		},
+
+		// Admin-only: every /support submission, with the asker's name/email/message.
+		support: "/console/support",
 	},
 
 	// ----------------- Public Routes -----------------
@@ -35,6 +38,8 @@ export const ROUTES = {
 	// logged-out visitors by routing through login and back, so it can be linked from
 	// anywhere — including mid-checkout, before the buyer has an account.
 	manageMembership: "/manage-membership",
+	// Where any logged-in user emails us — Event / Premium / General support.
+	support: "/support",
 }
 
 /**

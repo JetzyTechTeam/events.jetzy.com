@@ -239,6 +239,9 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
                 >
                   Share Profile
                 </MenuItem>
+                <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} onClick={() => router.push(ROUTES.support)}>
+                  Support
+                </MenuItem>
                 {/* The ONLY way to stop a Jetzy Premium subscription. A bundled ticket can
                     start one as a side effect of a purchase, so this must always be reachable
                     for a member — see api/subscriptions/portal.ts. */}

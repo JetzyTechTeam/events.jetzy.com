@@ -9,6 +9,7 @@ export enum Pages {
 	Manage = 'Manage Event',
 	CreateEvent = 'Create Event',
 	Analytics = "Analytics",
+	SupportRequests = "Support Requests",
 }
 
 export enum Roles {
