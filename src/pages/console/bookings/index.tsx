@@ -1,6 +1,7 @@
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
+import { Bookings } from "@/models/events/bookings"
 import { ensureDbConnected } from "@/configs/database"
 import { escapeRegExp } from "@/utils/text"
 import { IBookings, IEvent } from "@/models/events/types"
@@ -151,12 +152,23 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}
 
 
+	//booking counts for the events on this page
+	const bookingCounts = await Bookings.aggregate([
+		{ $match: { eventId: { $in: events.map((e) => e._id) } } },
+		{ $group: { _id: "$eventId", count: { $sum: 1 } } },
+	])
+	const bookingCountMap: Record<string, number> = {}
+	bookingCounts.forEach((row: any) => {
+		bookingCountMap[row._id.toString()] = row.count
+	})
+
 	//serialize _id and Dates
 	const serializedEvents = events.map((e) => ({
 		...e,
 		_id: e._id.toString(),
 		startsOn: e.startsOn?.toISOString() ?? null,
 		endsOn: e.endsOn?.toISOString() ?? null,
+		bookingsCount: bookingCountMap[e._id.toString()] ?? 0,
 	}));
 
 

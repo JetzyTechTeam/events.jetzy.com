@@ -5,7 +5,7 @@ import { Pagination } from "@/pages/console/events/index.old"
 import { useState ,useEffect} from "react"
 
 type Props = {
-    events: IEvent[]
+    events: (IEvent & { bookingsCount?: number })[]
     pagination:Pagination
     search?: string
 }
@@ -58,6 +58,7 @@ const BookingTableEvents:React.FC<Props> = ({events , pagination, search} ) => {
                 <Th>Event</Th>
                 <Th>Starts On</Th>
                 <Th>End On</Th>
+                <Th>Total Bookings</Th>
                 <Th>Actions</Th>
             </Tr>
         </Thead>
@@ -67,6 +68,7 @@ const BookingTableEvents:React.FC<Props> = ({events , pagination, search} ) => {
                 <Td>{event.name}</Td>
                 <Td>{event.startsOn ? new Date(event.startsOn).toLocaleString() : "TBD"}</Td>
                 <Td>{event.endsOn ? new Date(event.endsOn).toLocaleString() : "TBD"}</Td>
+                <Td>{event.bookingsCount ?? 0}</Td>
                 <Td>
                     <Button
                     onClick={() => router.push(`/console/bookings/${event._id}`)}
