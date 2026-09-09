@@ -85,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			status: "open",
 		})
 
-		sendSupportRequestReceived({ email, name, category, eventName }).catch((e) =>
+		sendSupportRequestReceived({ email, name, category, eventName, message }).catch((e) =>
 			console.error("support request confirmation failed", e),
 		)
 		sendSupportRequestNotice({ name, email, category, eventName, eventSlug, message }).catch((e) =>

@@ -3787,14 +3787,17 @@ export const sendSupportRequestReceived = async ({
 	name,
 	category,
 	eventName,
+	message,
 }: {
 	email: string
 	name: string
 	category: string
 	eventName?: string
+	message: string
 }) => {
 	const categoryLabel = SUPPORT_CATEGORY_LABELS[category] || "General"
 	const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
+	const cleanMessage = stripHtml(decodeHTMLEntities(message))
 	try {
 		await sgMail.send({
 			to: email,
@@ -3812,6 +3815,8 @@ export const sendSupportRequestReceived = async ({
             We received your ${categoryLabel.toLowerCase()} support request${cleanEventName ? ` about "${cleanEventName}"` : ""}. We'll get back to you at this email address soon.
           </p>
 
+          <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; white-space: pre-wrap; color: #333; font-size: 14px; line-height: 1.6;">${cleanMessage}</div>
+
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin-top: 25px;">
             Thank you,<br />Jetzy Team
           </p>
@@ -3824,6 +3829,9 @@ export const sendSupportRequestReceived = async ({
 			text: `Hi ${name},
 
 We received your ${categoryLabel.toLowerCase()} support request${cleanEventName ? ` about "${cleanEventName}"` : ""}. We'll get back to you at this email address soon.
+
+Your message:
+${cleanMessage}
 
 Thank you,
 Jetzy Team`,
