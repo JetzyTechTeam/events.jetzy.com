@@ -73,6 +73,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: "Analytics", href: "/console/analytics" },
 		{ name: "Jetzy User Signup", href: "/jetzyqrsignup" },
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
+		{ name: "Support", href: ROUTES.support },
 	]
 
 	const filteredNavigation = isAdmin
@@ -83,6 +84,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 				{ name: "My Events", href: ROUTES.dashboard.events.index },
 				{ name: "Create Event", href: ROUTES.dashboard.events.create },
 				{ name: Pages.Bookings, href: ROUTES.dashboard.bookings.index },
+				{ name: "Support", href: ROUTES.support },
 				{ name: "Share Profile", href: profileHref },
 			]
 			: [{ name: "Share Profile", href: profileHref }]

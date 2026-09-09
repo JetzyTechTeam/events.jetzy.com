@@ -1,6 +1,7 @@
 import { IEvent } from "@/models/events/types"
 // Aliased: several functions below declare a local `eventUrl`, which would shadow the import.
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
+import { ADMIN_SUPPORT_EMAIL } from "@/lib/support"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
 import { mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
@@ -3768,5 +3769,130 @@ export const sendMembershipCancelled = async ({
 		console.log(`✅ Membership cancellation email sent to: ${email} (alreadyEnded=${alreadyEnded}, onTrial=${onTrial})`)
 	} catch (error) {
 		console.error("❌ Failed to send membership cancellation email:", error)
+	}
+}
+
+const SUPPORT_CATEGORY_LABELS: Record<string, string> = {
+	event: "Event",
+	premium: "Premium / Membership",
+	general: "General",
+}
+
+/**
+ * Confirms that we received a /support submission. Deliberately promises follow-up, not a
+ * timeline — nothing here is fulfilled automatically, a person answers by email.
+ */
+export const sendSupportRequestReceived = async ({
+	email,
+	name,
+	category,
+	eventName,
+}: {
+	email: string
+	name: string
+	category: string
+	eventName?: string
+}) => {
+	const categoryLabel = SUPPORT_CATEGORY_LABELS[category] || "General"
+	const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: "We received your support request",
+			html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 25px;">
+            <img src="https://events.jetzy.com/favicon.ico" width="40" height="40" style="vertical-align: middle; margin-bottom: 10px;" />
+            <h1 style="color: #333; font-size: 24px; margin: 0;">Request received</h1>
+          </div>
+
+          <p style="color: #333; font-size: 16px; line-height: 1.6;">Hi ${name},</p>
+          <p style="color: #333; font-size: 16px; line-height: 1.6;">
+            We received your ${categoryLabel.toLowerCase()} support request${cleanEventName ? ` about "${cleanEventName}"` : ""}. We'll get back to you at this email address soon.
+          </p>
+
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-top: 25px;">
+            Thank you,<br />Jetzy Team
+          </p>
+
+          <p style="font-size: 12px; color: #ccc; text-align: center; border-top: 1px solid #eee; margin-top: 30px; padding-top: 15px;">
+            &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
+          </p>
+        </div>
+      `),
+			text: `Hi ${name},
+
+We received your ${categoryLabel.toLowerCase()} support request${cleanEventName ? ` about "${cleanEventName}"` : ""}. We'll get back to you at this email address soon.
+
+Thank you,
+Jetzy Team`,
+		})
+		console.log(`✅ Support request confirmation sent to: ${email}`)
+	} catch (error) {
+		console.error("❌ Failed to send support request confirmation:", error)
+		// Best-effort: the request is already recorded, and failing the call would tell the
+		// visitor their request didn't land when it did.
+	}
+}
+
+/**
+ * Tells ADMIN_SUPPORT_EMAIL that somebody submitted a support request. `replyTo` is set to the
+ * asker's address so the admin can answer by hitting Reply — this is a mail channel, not a
+ * ticket queue with its own UI.
+ */
+export const sendSupportRequestNotice = async ({
+	name,
+	email,
+	category,
+	eventName,
+	eventSlug,
+	message,
+}: {
+	name: string
+	email: string
+	category: string
+	eventName?: string
+	eventSlug?: string
+	message: string
+}) => {
+	const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+	if (!senderEmail) {
+		console.error("SENDGRID_EMAIL_SENDER not set — cannot send support request notice")
+		return
+	}
+	const categoryLabel = SUPPORT_CATEGORY_LABELS[category] || "General"
+	const cleanEventName = eventName ? stripHtml(decodeHTMLEntities(eventName)) : ""
+	const baseUrl = process.env.NEXT_PUBLIC_URL || ""
+	const eventLink = eventSlug ? buildEventUrl(baseUrl, eventSlug) : ""
+	const cleanMessage = stripHtml(decodeHTMLEntities(message))
+	try {
+		await sgMail.send({
+			to: ADMIN_SUPPORT_EMAIL,
+			// Still the verified sender — only the RECIPIENT is different. Changing `from` would
+			// break sender verification.
+			from: mailFrom(senderEmail),
+			replyTo: email,
+			subject: `[Support: ${categoryLabel}] ${name}${cleanEventName ? ` — ${cleanEventName}` : ""}`,
+			html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #333;">New support request — ${categoryLabel}</h2>
+          <p style="color: #333; font-size: 14px;"><strong>From:</strong> ${name} (${email})</p>
+          ${cleanEventName ? `<p style="color: #333; font-size: 14px;"><strong>Event:</strong> ${cleanEventName}${eventLink ? ` — <a href="${eventLink}">${eventLink}</a>` : ""}</p>` : ""}
+          <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0; white-space: pre-wrap; color: #333; font-size: 14px; line-height: 1.6;">${cleanMessage}</div>
+          <p style="color: #999; font-size: 12px;">Reply to this email to respond directly to ${name}.</p>
+        </div>
+      `),
+			text: `New support request — ${categoryLabel}
+
+From: ${name} (${email})
+${cleanEventName ? `Event: ${cleanEventName}${eventLink ? ` — ${eventLink}` : ""}\n` : ""}
+${cleanMessage}
+
+Reply to this email to respond directly to ${name}.`,
+		})
+		console.log(`✅ Support request notice sent to: ${ADMIN_SUPPORT_EMAIL}`)
+	} catch (error) {
+		console.error("❌ Failed to send support request notice:", error)
 	}
 }

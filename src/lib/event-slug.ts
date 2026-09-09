@@ -44,7 +44,7 @@ export const RESERVED_SLUGS = new Set([
 	// Membership pages. A real file at a top-level path wins over `/[slug].tsx`, so an event
 	// holding one of these slugs would be permanently unreachable — with nothing on the host's
 	// screen to explain why.
-	"premium", "subscribe", "manage-membership", "my-bookings",
+	"premium", "subscribe", "manage-membership", "my-bookings", "support",
 	// first-segment directories under src/pages
 	"api", "auth", "console", "events", "interests", "plugins", "profile",
 	// public/ assets
