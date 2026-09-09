@@ -19,6 +19,9 @@ export const ROUTES = {
 		bookings: {
 			index: "/console/bookings",
 		},
+
+		// Admin-only: every /support submission, with the asker's name/email/message.
+		support: "/console/support",
 	},
 
 	// ----------------- Public Routes -----------------

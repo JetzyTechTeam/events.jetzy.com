@@ -74,6 +74,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: "Jetzy User Signup", href: "/jetzyqrsignup" },
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
 		{ name: "Support", href: ROUTES.support },
+		{ name: "Support Requests", href: ROUTES.dashboard.support },
 	]
 
 	const filteredNavigation = isAdmin
