@@ -14,7 +14,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
-		const { name, email, acceptedTerms, cb, refCode } = req.body || {}
+		const { name, email, acceptedTerms, cb, refCode, dateOfBirth, location, latitude, longitude, placeId } =
+			req.body || {}
 		// Optional. Stored now; the Jetzy backend is told once the account has a password,
 		// because /v1/accounts/create needs one — see complete-signup.ts.
 		const cleanRefCode = typeof refCode === "string" && refCode.trim() ? refCode.trim() : undefined
@@ -33,6 +34,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!acceptedTerms) {
 			return sendResponse(res, null, "You must accept the Terms and Conditions.", false, ResCode.BAD_REQUEST)
 		}
+
+		const cleanLocation = typeof location === "string" ? location.trim() : ""
+		if (!cleanLocation) {
+			return sendResponse(res, null, "Location is required.", false, ResCode.BAD_REQUEST)
+		}
+
+		const parsedDob = typeof dateOfBirth === "string" || typeof dateOfBirth === "number" ? new Date(dateOfBirth) : null
+		if (!parsedDob || Number.isNaN(parsedDob.getTime()) || parsedDob > new Date()) {
+			return sendResponse(res, null, "A valid date of birth is required.", false, ResCode.BAD_REQUEST)
+		}
+
+		const cleanLatitude = typeof latitude === "number" && Number.isFinite(latitude) ? latitude : undefined
+		const cleanLongitude = typeof longitude === "number" && Number.isFinite(longitude) ? longitude : undefined
+		const cleanPlaceId = typeof placeId === "string" && placeId.trim() ? placeId.trim() : undefined
 
 		const existingInUsers = await Users.findOne({ email: cleanEmail })
 		const existingInEventUsers = await EventUsers.findOne({ email: cleanEmail })
@@ -59,6 +74,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			emailVerified: false,
 			verifyToken: token,
 			signupSource: "signup",
+			dateOfBirth: parsedDob,
+			location: cleanLocation,
+			...(cleanLatitude !== undefined && { latitude: cleanLatitude }),
+			...(cleanLongitude !== undefined && { longitude: cleanLongitude }),
+			...(cleanPlaceId && { placeId: cleanPlaceId }),
 			...(cleanRefCode && { refCode: cleanRefCode }),
 		})
 

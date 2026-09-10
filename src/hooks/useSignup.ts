@@ -138,6 +138,11 @@ export const useSignup = (options?: { disableAutoRedirect?: boolean }) => {
                     // has a password — see api/auth/complete-signup.ts.
                     refCode: values.refCode?.trim() || undefined,
                     cb: cb || undefined,
+                    dateOfBirth: values.dateOfBirth,
+                    location: values.location?.trim(),
+                    ...(values.latitude !== undefined && { latitude: values.latitude }),
+                    ...(values.longitude !== undefined && { longitude: values.longitude }),
+                    ...(values.placeId && { placeId: values.placeId }),
                 }),
             })
             const json = await res.json().catch(() => ({}))

@@ -15,6 +15,7 @@ import { VerifyReferralCodeApi } from "@Jetzy/services/auth/authapis"
 import { isSignupTrialCode, signupTrialOffer } from "@/lib/invite-trial"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
+import { usePlacesWidget } from "react-google-autocomplete"
 
 export default function SignupPage() {
 	const { handleGoogleLogin, handleAppleLogin, handleStartSignup, _cb } = useSignup()
@@ -31,6 +32,8 @@ export default function SignupPage() {
 		email: "",
 		acceptedTerms: false,
 		refCode: "",
+		dateOfBirth: "",
+		location: "",
 	}
 
 	const handleSubmit = async (values: StartSignupFormData) => {
@@ -80,7 +83,26 @@ export default function SignupPage() {
 
 			<div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm bg-[#1E1E1E] p-5 rounded-lg">
 						<Formik initialValues={formData} onSubmit={handleSubmit} validationSchema={startSignupValidation}>
-							{({ values, handleChange }) => (
+							{({ values, handleChange, setFieldValue }) => {
+								const { ref: locationRef } = usePlacesWidget<HTMLInputElement>({
+									apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+									onPlaceSelected: (place) => {
+										const address = place.formatted_address || place.name || ""
+										const lat = place.geometry?.location?.lat() ?? undefined
+										const lng = place.geometry?.location?.lng() ?? undefined
+										const placeId = place.place_id || ""
+
+										setFieldValue("location", address)
+										setFieldValue("latitude", lat)
+										setFieldValue("longitude", lng)
+										setFieldValue("placeId", placeId)
+									},
+									options: {
+										fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
+									},
+								})
+
+								return (
 								<Form className="space-y-6">
 									<div>
 										<label htmlFor="name" className="block text-sm font-medium leading-6">
@@ -123,6 +145,50 @@ export default function SignupPage() {
 													Email already registered. Please use login link below with this email.
 												</span>
 											)}
+										</div>
+									</div>
+
+									<div>
+										<label htmlFor="dateOfBirth" className="block text-sm font-medium leading-6">
+											Date of birth
+										</label>
+										<div className="mt-2">
+											<Field
+												id="dateOfBirth"
+												name="dateOfBirth"
+												value={values?.dateOfBirth}
+												onChange={handleChange}
+												type="date"
+												max={new Date().toISOString().split("T")[0]}
+												autoComplete="bday"
+												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											/>
+											<ErrorMessage name="dateOfBirth" component="span" className="text-red-500 block mt-1" />
+										</div>
+									</div>
+
+									<div>
+										<label htmlFor="location" className="block text-sm font-medium leading-6">
+											Location
+										</label>
+										<div className="mt-2">
+											<Field
+												id="location"
+												name="location"
+												innerRef={locationRef}
+												value={values?.location}
+												onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+													setFieldValue("latitude", undefined)
+													setFieldValue("longitude", undefined)
+													setFieldValue("placeId", undefined)
+													handleChange(e)
+												}}
+												type="text"
+												autoComplete="off"
+												placeholder="Enter your location"
+												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+											/>
+											<ErrorMessage name="location" component="span" className="text-red-500 block mt-1" />
 										</div>
 									</div>
 
@@ -185,7 +251,8 @@ export default function SignupPage() {
 										</button>
 									</div>
 								</Form>
-							)}
+								)
+							}}
 						</Formik>
 
 						<div className="mt-6">

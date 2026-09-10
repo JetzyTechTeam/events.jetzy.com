@@ -25,6 +25,12 @@ export type StartSignupFormData = {
 	acceptedTerms: boolean
 	/** Optional invite code, same field /jetzyqrsignup collects. Blank means "no referrer". */
 	refCode?: string
+	/** "YYYY-MM-DD" from a native date input. Mandatory. */
+	dateOfBirth: string
+	location: string
+	latitude?: number
+	longitude?: number
+	placeId?: string
 }
 
 export type SignInFormData = {

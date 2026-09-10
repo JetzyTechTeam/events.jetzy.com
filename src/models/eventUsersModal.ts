@@ -54,6 +54,12 @@ export const eventUsersSchema = new Schema(
       type: Date,
       required: false,
     },
+    // Date of birth, captured at signup ("age" per CEO ask). Optional at the schema level —
+    // SSO signups (firebase-auth) never collect it — mandatory-ness is enforced in start-signup.ts.
+    dateOfBirth: {
+      type: Date,
+      required: false,
+    },
     // Location fields for events proximity matching
     location: {
       type: String,

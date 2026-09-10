@@ -16,6 +16,11 @@ export const loginValidatorScheme = yup.object().shape({
 export const startSignupValidation = yup.object().shape({
   name: yup.string().trim().required("Name is required."),
   email: yup.string().email("Email must be a valid email address.").required("Email is required"),
+  dateOfBirth: yup
+    .string()
+    .required("Date of birth is required.")
+    .test("not-future", "Date of birth cannot be in the future.", (v) => !v || new Date(v) <= new Date()),
+  location: yup.string().trim().required("Location is required."),
   acceptedTerms: yup
     .boolean()
     .oneOf([true], "You must accept the terms and conditions.")
