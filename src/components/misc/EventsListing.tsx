@@ -224,15 +224,7 @@ const EventList: React.FC<EventListProps> = ({
   }, [items, locationState, userLocation]);
 
   return (
-    <Container
-      maxW="container.lg"
-      display={"flex"}
-      flexDir={"column"}
-      gap={2}
-      justifyContent={"flex-start"}
-      py={10}
-      className="min-h-screen w-full"
-    >
+    <Box className="min-h-screen w-full">
       <Modal isOpen={locationState === "ASKING" || locationState === "LOADING"} onClose={handleSkipLocation} isCentered closeOnOverlayClick={false}>
         <ModalOverlay backdropFilter="blur(5px)" bg="blackAlpha.700" />
         <ModalContent bg="#14161B" color="white" mx="4">
@@ -252,6 +244,15 @@ const EventList: React.FC<EventListProps> = ({
       </Modal>
 
       <Navbar />
+      <Container
+        maxW="1600px"
+        px={{ base: 4, md: 6, xl: 10 }}
+        display={"flex"}
+        flexDir={"column"}
+        gap={2}
+        justifyContent={"flex-start"}
+        py={10}
+      >
       <Box mb="6">
         <Heading>Discover Events</Heading>
         <Text pt="3">
@@ -377,7 +378,7 @@ const EventList: React.FC<EventListProps> = ({
         </div>
       </div>
 
-      <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing="8" flex={1}>
+      <SimpleGrid columns={{ base: 1, sm: 2, lg: 3, xl: 4, "2xl": 5 }} spacing="6" flex={1}>
         {sortedItems.length === 0 && (
           <Box>
             <Text fontSize="xl" color="gray.500">
@@ -400,7 +401,8 @@ const EventList: React.FC<EventListProps> = ({
         pageNo={pagination.page}
         onPageChange={(page) => onPageChange?.(page)}
       />
-    </Container>
+      </Container>
+    </Box>
   );
 };
 

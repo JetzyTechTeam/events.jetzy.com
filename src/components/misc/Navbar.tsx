@@ -65,8 +65,8 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
   usePremiumSubscriptionReturn(!handlesPremiumReturn);
 
   return (
-    <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={2}>
-      <Flex align="center" gap={4} minW={0}>
+    <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={{ base: 4, md: 6, xl: 10 }}>
+      <Flex align="center" gap={4} minW={0} maxW="1600px" mx="auto" w="100%">
         <Heading
           size="md"
           cursor="pointer"
@@ -143,6 +143,18 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
               </Button>
             )}
 
+            {/* Inline now, same as the other links above — was dropdown-only. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              color="gray.300"
+              _hover={{ bg: "whiteAlpha.200", color: "white" }}
+              display={{ base: "none", md: "flex" }}
+              onClick={() => router.push(ROUTES.support)}
+            >
+              Support
+            </Button>
+
             {/* Buy Jetzy Premium — only shown to non-members, sits right next to the profile menu */}
             {!isPremium && !hideMembershipCta && (
               <Button
@@ -155,6 +167,21 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
                 display={{ base: "none", sm: "flex" }}
               >
                 Buy Jetzy Premium
+              </Button>
+            )}
+
+            {/* Members: the same dialog, inline now instead of dropdown-only. */}
+            {isPremium && !hideMembershipCta && (
+              <Button
+                size="sm"
+                bg="#F5C518"
+                color="black"
+                _hover={{ bg: "#E0B317" }}
+                onClick={openMembershipDialog}
+                leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
+                display={{ base: "none", sm: "flex" }}
+              >
+                {membershipLabel}
               </Button>
             )}
 
@@ -239,14 +266,16 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
                 >
                   Share Profile
                 </MenuItem>
-                <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} onClick={() => router.push(ROUTES.support)}>
+                {/* Desktop has this inline in the bar now; mobile still needs it here. */}
+                <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} display={{ base: "flex", md: "none" }} onClick={() => router.push(ROUTES.support)}>
                   Support
                 </MenuItem>
                 {/* The ONLY way to stop a Jetzy Premium subscription. A bundled ticket can
                     start one as a side effect of a purchase, so this must always be reachable
-                    for a member — see api/subscriptions/portal.ts. */}
+                    for a member — see api/subscriptions/portal.ts. Desktop has it inline now;
+                    mobile still needs it here. */}
                 {isPremium && (
-                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} onClick={openMembershipDialog}>
+                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} display={{ base: "flex", md: "none" }} onClick={openMembershipDialog}>
                     {membershipLabel}
                   </MenuItem>
                 )}
