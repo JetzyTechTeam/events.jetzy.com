@@ -65,8 +65,8 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
   usePremiumSubscriptionReturn(!handlesPremiumReturn);
 
   return (
-    <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={2}>
-      <Flex align="center" gap={4} minW={0}>
+    <Box py={4} boxShadow="sm" position="sticky" top="0" zIndex="100" bg="gray.900" px={{ base: 4, md: 6, xl: 10 }}>
+      <Flex align="center" gap={4} minW={0} maxW="1600px" mx="auto" w="100%">
         <Heading
           size="md"
           cursor="pointer"
