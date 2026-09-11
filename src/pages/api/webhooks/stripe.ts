@@ -350,6 +350,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					const { fulfillCheckoutSessionById } = await import("@/lib/checkout-fulfillment")
 					await fulfillCheckoutSessionById(checkoutSession.id)
 				}
+
+				// A Premium application's card-setup session (`mode: "setup"`, no subscription, no
+				// booking). Authoritative counterpart to `api/premium/applications/confirm.ts`'s fast
+				// path — same idempotent function, safe to call from both.
+				if (sessionMetadata.purpose === "premium_application" && sessionMetadata.applicationId) {
+					const { fulfillApplicationSetupSession } = await import("@/lib/premium-application")
+					await fulfillApplicationSetupSession(checkoutSession.id)
+				}
 				break
 			}
 

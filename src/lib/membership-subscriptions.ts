@@ -61,7 +61,7 @@ export type StartMembershipArgs = {
 	 * `gift` when months were given away, `ticket` otherwise — which is what every existing
 	 * caller means. Signup grants pass `signup` because no ticket was involved at all.
 	 */
-	source?: "ticket" | "gift" | "signup"
+	source?: "ticket" | "gift" | "signup" | "application"
 	/** The invite code redeemed, when one was. Recorded, never used to price anything. */
 	inviteCode?: string
 	metadata?: Record<string, string>

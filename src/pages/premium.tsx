@@ -9,6 +9,9 @@ import Navbar from "@Jetzy/components/misc/Navbar"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
+import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@Jetzy/hooks/usePremiumApplication"
+import PremiumApplicationQuestions from "@Jetzy/components/premium/PremiumApplicationQuestions"
+import PremiumApplicationReview from "@Jetzy/components/premium/PremiumApplicationReview"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
@@ -64,6 +67,16 @@ export default function PremiumPage() {
 	const queryClient = useQueryClient()
 	const isAuthenticated = status === "authenticated"
 	const { anonId, sessionId } = useAnalytics()
+
+	// ---- Application gate ----
+	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
+	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
+	// instantly — see `src/lib/premium-application.ts`. `myApplication` covers the repeat visit:
+	// a buyer mid-review sees the review screen instead of the plan card again.
+	const { data: appSettings } = usePremiumApplicationSettings()
+	const { data: myApplication } = useMyPremiumApplication(isAuthenticated)
+	const [showQuestions, setShowQuestions] = React.useState(false)
+	const [resumingCardSetup, setResumingCardSetup] = React.useState(false)
 
 	const [inviteCode, setInviteCode] = React.useState("")
 	const [inviteAccepted, setInviteAccepted] = React.useState<string | null>(null)
@@ -410,6 +423,11 @@ export default function PremiumPage() {
 	// ---- Get Premium ----
 	const handleChoosePremium = React.useCallback(() => {
 		if (isAuthenticated) {
+			if (applicationBlocksCheckout(myApplication)) return // review screen is already showing instead of this button
+			if (applicationRequiredForPurchase(appSettings, !!inviteCode.trim(), myApplication)) {
+				setShowQuestions(true)
+				return
+			}
 			subscribeMutation.mutate()
 			return
 		}
@@ -420,7 +438,7 @@ export default function PremiumPage() {
 		// The `/login?_cb=…&go=1` round trip it replaced still works — old links carry it and the
 		// effect below still honours it — but nothing sends anyone down it any more.
 		setVerifyOpen(true)
-	}, [isAuthenticated, subscribeMutation])
+	}, [isAuthenticated, subscribeMutation, myApplication, appSettings, inviteCode])
 
 	// ---- Back from login with intent ----
 	//
@@ -442,6 +460,12 @@ export default function PremiumPage() {
 
 		const code = normalizeTrialCode(typeof router.query.code === "string" ? router.query.code : "") || inviteCode.trim()
 		const sharedEventId = asEventId(router.query.event) || referralEventId
+
+		if (applicationRequiredForPurchase(appSettings, !!code, myApplication)) {
+			setAutoState("idle")
+			setShowQuestions(true)
+			return
+		}
 
 		;(async () => {
 			try {
@@ -486,11 +510,15 @@ export default function PremiumPage() {
 	 */
 	const handleVerified = React.useCallback(() => {
 		setVerifyOpen(false)
+		const code = inviteCode.trim()
+		if (applicationRequiredForPurchase(appSettings, !!code, myApplication)) {
+			setShowQuestions(true)
+			return
+		}
 		autoStarted.current = true
 		setAutoState("running")
 
 		;(async () => {
-			const code = inviteCode.trim()
 			try {
 				if (code) {
 					await axios.post("/api/subscriptions/invite-code", {
@@ -512,7 +540,39 @@ export default function PremiumPage() {
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied to this account.")
 			}
 		})()
-	}, [inviteCode, referralEventId, selectedInterval, startCheckout])
+	}, [inviteCode, referralEventId, selectedInterval, startCheckout, appSettings, myApplication])
+
+	/** Picks up an application whose card setup was interrupted (closed the Stripe tab, etc). */
+	const resumeCardSetup = React.useCallback(async () => {
+		if (!myApplication?._id) return
+		setResumingCardSetup(true)
+		try {
+			const { data } = await axios.post("/api/premium/applications/checkout", { applicationId: myApplication._id, returnTo: SELF })
+			if (data?.data?.url) window.location.href = data.data.url
+			else ErrorToast("Error", "Could not resume card setup. Please try again.")
+		} catch (error: any) {
+			ErrorToast("Error", error?.response?.data?.message || "Could not resume card setup. Please try again.")
+		} finally {
+			setResumingCardSetup(false)
+		}
+	}, [myApplication])
+
+	// ---- Back from Stripe (application card setup) ----
+	React.useEffect(() => {
+		const sessionId = router.query.application_session_id
+		if (!sessionId || typeof sessionId !== "string") return
+
+		axios
+			.get(`/api/premium/applications/confirm?session_id=${sessionId}`)
+			.then(() => {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				router.replace(SELF, undefined, { shallow: true })
+			})
+			.catch(() => {
+				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
+			})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.query.application_session_id])
 
 	// ---- Back from Stripe ----
 	React.useEffect(() => {
@@ -585,36 +645,50 @@ export default function PremiumPage() {
 			{/* `4xl` so the cancellation link fits on one line — see the paywall modal. */}
 			<div className="max-w-4xl mx-auto">
 				{/* The same card the paywall modal and /subscribe render, so the offer reads
-				    identically whichever door someone came through. */}
-				<PlanComparison
-					plan={plan}
-					planLoading={planLoading}
-					prices={prices}
-					selectedInterval={selectedInterval}
-					onIntervalChange={setSelectedInterval}
-					isPremium={isPremium}
-					currentPlan={currentPlan}
-					onSwitchInterval={() => portalMutation.mutate("switch")}
-					onManageBilling={() => portalMutation.mutate(undefined)}
-					billingPending={portalMutation.isPending}
-					inviteCode={inviteCode}
-					onInviteCodeChange={(next) => {
-						// From here on it is their code, so a refusal is explained rather than swallowed.
-						codeIsOurs.current = false
-						setInviteCode(next)
-					}}
-					inviteAccepted={inviteAccepted}
-					inviteError={inviteError}
-					inviteChecking={inviteChecking}
-					trial={trialOffer}
-					premiumPending={subscribeMutation.isPending}
-					// A shared link is one specific offer, not a menu — "Continue with Free" beside it
-					// invites the recipient to decline something they were given.
-					hideFreePlan={!!referralEventId}
-					// Browsing is the free plan here — there is no app to hand back to.
-					onChooseFree={() => router.push("/")}
-					onChoosePremium={handleChoosePremium}
-					subscribedCtaLabel="Browse events"
+				    identically whichever door someone came through. Swapped for the review screen
+				    once an application is in flight — nothing left to buy until it's decided. */}
+				{applicationBlocksCheckout(myApplication) ? (
+					<PremiumApplicationReview application={myApplication as any} onResumeCardSetup={resumeCardSetup} resuming={resumingCardSetup} />
+				) : (
+					<PlanComparison
+						plan={plan}
+						planLoading={planLoading}
+						prices={prices}
+						selectedInterval={selectedInterval}
+						onIntervalChange={setSelectedInterval}
+						isPremium={isPremium}
+						currentPlan={currentPlan}
+						onSwitchInterval={() => portalMutation.mutate("switch")}
+						onManageBilling={() => portalMutation.mutate(undefined)}
+						billingPending={portalMutation.isPending}
+						inviteCode={inviteCode}
+						onInviteCodeChange={(next) => {
+							// From here on it is their code, so a refusal is explained rather than swallowed.
+							codeIsOurs.current = false
+							setInviteCode(next)
+						}}
+						inviteAccepted={inviteAccepted}
+						inviteError={inviteError}
+						inviteChecking={inviteChecking}
+						trial={trialOffer}
+						premiumPending={subscribeMutation.isPending}
+						// A shared link is one specific offer, not a menu — "Continue with Free" beside it
+						// invites the recipient to decline something they were given.
+						hideFreePlan={!!referralEventId}
+						// Browsing is the free plan here — there is no app to hand back to.
+						onChooseFree={() => router.push("/")}
+						onChoosePremium={handleChoosePremium}
+						subscribedCtaLabel="Browse events"
+					/>
+				)}
+
+				<PremiumApplicationQuestions
+					open={showQuestions}
+					onClose={() => setShowQuestions(false)}
+					onBack={() => setShowQuestions(false)}
+					questions={appSettings?.questions || []}
+					interval={selectedInterval}
+					returnTo={SELF}
 				/>
 
 				<EmailVerifyDialog

@@ -10,6 +10,9 @@ import Navbar from "@Jetzy/components/misc/Navbar"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
+import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@Jetzy/hooks/usePremiumApplication"
+import PremiumApplicationQuestions from "@Jetzy/components/premium/PremiumApplicationQuestions"
+import PremiumApplicationReview from "@Jetzy/components/premium/PremiumApplicationReview"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
@@ -112,6 +115,47 @@ export default function SubscribePage() {
 			})
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.query.premium_session_id])
+
+	// ---- Application gate ----
+	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
+	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
+	// instantly — see `src/lib/premium-application.ts`.
+	const { data: appSettings } = usePremiumApplicationSettings()
+	const { data: myApplication } = useMyPremiumApplication(status === "authenticated")
+	const [showQuestions, setShowQuestions] = React.useState(false)
+	const [resumingCardSetup, setResumingCardSetup] = React.useState(false)
+
+	const resumeCardSetup = React.useCallback(async () => {
+		if (!myApplication?._id) return
+		setResumingCardSetup(true)
+		try {
+			const { data } = await axios.post("/api/premium/applications/checkout", { applicationId: myApplication._id, returnTo: "/subscribe" })
+			if (data?.data?.url) window.location.href = data.data.url
+			else ErrorToast("Error", "Could not resume card setup. Please try again.")
+		} catch (error: any) {
+			ErrorToast("Error", error?.response?.data?.message || "Could not resume card setup. Please try again.")
+		} finally {
+			setResumingCardSetup(false)
+		}
+	}, [myApplication])
+
+	// Card-setup return — the application isn't an active membership yet, so this does NOT hand
+	// the mobile app its deep link the way the subscription success effect above does.
+	React.useEffect(() => {
+		const sessionId = router.query.application_session_id
+		if (!sessionId || typeof sessionId !== "string") return
+
+		axios
+			.get(`/api/premium/applications/confirm?session_id=${sessionId}`)
+			.then(() => {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				router.replace("/subscribe", undefined, { shallow: true })
+			})
+			.catch(() => {
+				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
+			})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.query.application_session_id])
 
 	const { isPremium, isLoading: premiumLoading } = usePremiumStatus()
 
@@ -332,6 +376,11 @@ export default function SubscribePage() {
 			setVerifyOpen(true)
 			return
 		}
+		if (applicationBlocksCheckout(myApplication)) return // review screen is already showing instead of this button
+		if (applicationRequiredForPurchase(appSettings, !!inviteCode.trim(), myApplication)) {
+			setShowQuestions(true)
+			return
+		}
 		subscribeMutation.mutate()
 	}
 
@@ -362,33 +411,47 @@ export default function SubscribePage() {
 			{/* `4xl` so the cancellation link fits on one line — see the paywall modal. */}
 			<div className="max-w-4xl mx-auto">
 				{/* Shared with the paywall modal, so a buyer sees the same comparison whichever
-				    door they came through. */}
-				<PlanComparison
-					plan={plan}
-					planLoading={planLoading}
-					// Monthly/Annual. The selector renders only when the product genuinely has more
-					// than one interval on sale, so this is inert until annual exists in Stripe.
-					prices={prices}
-					selectedInterval={selectedInterval}
-					onIntervalChange={setSelectedInterval}
-					isPremium={isPremium}
-					// Member state: their live plan, the switch, and the portal. `goToApp` stays on
-					// the third button so the mobile deep-link return is untouched.
-					currentPlan={currentPlan}
-					onSwitchInterval={() => portalMutation.mutate("switch")}
-					onManageBilling={() => portalMutation.mutate(undefined)}
-					billingPending={portalMutation.isPending}
-					inviteCode={inviteCode}
-					onInviteCodeChange={setInviteCode}
-					inviteAccepted={inviteAccepted}
-					inviteError={inviteError}
-					inviteChecking={inviteChecking}
-					trial={trialOffer}
-					premiumDisabled={premiumLoading}
-					premiumPending={subscribeMutation.isPending}
-					onChooseFree={goToApp}
-					onChoosePremium={handleChoosePremium}
-					subscribedCtaLabel="Continue"
+				    door they came through. Swapped for the review screen once an application is in
+				    flight — nothing left to buy until it's decided. */}
+				{applicationBlocksCheckout(myApplication) ? (
+					<PremiumApplicationReview application={myApplication as any} onResumeCardSetup={resumeCardSetup} resuming={resumingCardSetup} />
+				) : (
+					<PlanComparison
+						plan={plan}
+						planLoading={planLoading}
+						// Monthly/Annual. The selector renders only when the product genuinely has more
+						// than one interval on sale, so this is inert until annual exists in Stripe.
+						prices={prices}
+						selectedInterval={selectedInterval}
+						onIntervalChange={setSelectedInterval}
+						isPremium={isPremium}
+						// Member state: their live plan, the switch, and the portal. `goToApp` stays on
+						// the third button so the mobile deep-link return is untouched.
+						currentPlan={currentPlan}
+						onSwitchInterval={() => portalMutation.mutate("switch")}
+						onManageBilling={() => portalMutation.mutate(undefined)}
+						billingPending={portalMutation.isPending}
+						inviteCode={inviteCode}
+						onInviteCodeChange={setInviteCode}
+						inviteAccepted={inviteAccepted}
+						inviteError={inviteError}
+						inviteChecking={inviteChecking}
+						trial={trialOffer}
+						premiumDisabled={premiumLoading}
+						premiumPending={subscribeMutation.isPending}
+						onChooseFree={goToApp}
+						onChoosePremium={handleChoosePremium}
+						subscribedCtaLabel="Continue"
+					/>
+				)}
+
+				<PremiumApplicationQuestions
+					open={showQuestions}
+					onClose={() => setShowQuestions(false)}
+					onBack={() => setShowQuestions(false)}
+					questions={appSettings?.questions || []}
+					interval={selectedInterval}
+					returnTo="/subscribe"
 				/>
 
 				{/* No event and no referral code — this is the ordinary price, and the endpoints key
@@ -398,6 +461,10 @@ export default function SubscribePage() {
 					onClose={() => setVerifyOpen(false)}
 					onVerified={() => {
 						setVerifyOpen(false)
+						if (applicationRequiredForPurchase(appSettings, !!inviteCode.trim(), myApplication)) {
+							setShowQuestions(true)
+							return
+						}
 						subscribeMutation.mutate()
 					}}
 				/>

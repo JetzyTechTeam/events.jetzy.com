@@ -97,6 +97,7 @@ const SOURCE_LABELS: Record<string, string> = {
 	ticket: "With a ticket",
 	gift: "Free months from a code",
 	signup: "Invite code at signup",
+	application: "Approved application",
 	external: "Sold elsewhere",
 }
 
@@ -105,6 +106,7 @@ const SOURCE_COLORS: Record<string, string> = {
 	ticket: "blue",
 	gift: "yellow",
 	signup: "purple",
+	application: "orange",
 	external: "gray",
 }
 

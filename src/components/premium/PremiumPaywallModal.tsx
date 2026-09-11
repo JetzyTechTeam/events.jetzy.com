@@ -13,6 +13,9 @@ import EmailVerifyDialog from "@/components/premium/EmailVerifyDialog"
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
+import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@/hooks/usePremiumApplication"
+import PremiumApplicationQuestions from "@/components/premium/PremiumApplicationQuestions"
+import PremiumApplicationReview from "@/components/premium/PremiumApplicationReview"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -53,6 +56,28 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	const { status: sessionStatus } = useSession()
 	const router = useRouter()
 	const queryClient = useQueryClient()
+
+	// ---- Application gate ----
+	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
+	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
+	// instantly — see `src/lib/premium-application.ts`.
+	const { data: appSettings } = usePremiumApplicationSettings()
+	const { data: myApplication } = useMyPremiumApplication(sessionStatus === "authenticated")
+	const [showQuestions, setShowQuestions] = useState(false)
+	const [resumingCardSetup, setResumingCardSetup] = useState(false)
+	const resumeCardSetup = useCallback(async () => {
+		if (!myApplication?._id) return
+		setResumingCardSetup(true)
+		try {
+			const { data } = await axios.post("/api/premium/applications/checkout", { applicationId: myApplication._id, returnTo })
+			if (data?.data?.url) window.location.href = data.data.url
+			else ErrorToast("Error", "Could not resume card setup. Please try again.")
+		} catch (error: any) {
+			ErrorToast("Error", error?.response?.data?.message || "Could not resume card setup. Please try again.")
+		} finally {
+			setResumingCardSetup(false)
+		}
+	}, [myApplication, returnTo])
 	const { isPremium } = usePremiumStatus()
 	const isSignedIn = sessionStatus === "authenticated"
 	const { anonId, sessionId } = useAnalytics()
@@ -386,12 +411,21 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			setAlreadyMember(true)
 			return
 		}
+		if (applicationBlocksCheckout(myApplication)) return // review card is already showing instead of this button
+		if (applicationRequiredForPurchase(appSettings, !!inviteCode.trim(), myApplication)) {
+			setShowQuestions(true)
+			return
+		}
 		subscribeMutation.mutate()
 	}
 
 	// The session now exists. Straight to Stripe, which is what they pressed the button for.
 	const handleVerified = () => {
 		setVerifyOpen(false)
+		if (applicationRequiredForPurchase(appSettings, !!inviteCode.trim(), myApplication)) {
+			setShowQuestions(true)
+			return
+		}
 		subscribeMutation.mutate()
 	}
 
@@ -440,31 +474,44 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 						{!showMemberCard && message && <p className="text-gray-400 text-sm mb-6">{message}</p>}
 					</div>
 
-					<PlanComparison
-						plan={plan}
-						planLoading={planLoading}
-						prices={prices}
-						selectedInterval={selectedInterval}
-						onIntervalChange={setSelectedInterval}
-						isPremium={showMemberCard}
-						currentPlan={currentPlan}
-						onSwitchInterval={() => portalMutation.mutate("switch")}
-						onManageBilling={() => portalMutation.mutate(undefined)}
-						billingPending={portalMutation.isPending}
-						inviteCode={inviteCode}
-						onInviteCodeChange={setInviteCode}
-						inviteAccepted={inviteAccepted}
-						inviteError={inviteError}
-						inviteChecking={inviteChecking}
-						trial={trialOffer}
-						premiumPending={subscribeMutation.isPending}
-						onChooseFree={handleClose}
-						onChoosePremium={handleSubscribeClick}
-						freeCtaLabel={showMemberCard ? "Close" : "Continue with Free"}
-						subscribedCtaLabel="Close"
-					/>
+					{applicationBlocksCheckout(myApplication) ? (
+						<PremiumApplicationReview application={myApplication as any} onResumeCardSetup={resumeCardSetup} resuming={resumingCardSetup} />
+					) : (
+						<PlanComparison
+							plan={plan}
+							planLoading={planLoading}
+							prices={prices}
+							selectedInterval={selectedInterval}
+							onIntervalChange={setSelectedInterval}
+							isPremium={showMemberCard}
+							currentPlan={currentPlan}
+							onSwitchInterval={() => portalMutation.mutate("switch")}
+							onManageBilling={() => portalMutation.mutate(undefined)}
+							billingPending={portalMutation.isPending}
+							inviteCode={inviteCode}
+							onInviteCodeChange={setInviteCode}
+							inviteAccepted={inviteAccepted}
+							inviteError={inviteError}
+							inviteChecking={inviteChecking}
+							trial={trialOffer}
+							premiumPending={subscribeMutation.isPending}
+							onChooseFree={handleClose}
+							onChoosePremium={handleSubscribeClick}
+							freeCtaLabel={showMemberCard ? "Close" : "Continue with Free"}
+							subscribedCtaLabel="Close"
+						/>
+					)}
 				</div>
 			</div>
+
+			<PremiumApplicationQuestions
+				open={showQuestions}
+				onClose={() => setShowQuestions(false)}
+				onBack={() => setShowQuestions(false)}
+				questions={appSettings?.questions || []}
+				interval={selectedInterval}
+				returnTo={returnTo}
+			/>
 
 			{/* Sits above the card, on top of this dialog's own overlay — it is `fixed` itself, so
 			    nesting is only about ownership. No event and no referral code: this is the ordinary

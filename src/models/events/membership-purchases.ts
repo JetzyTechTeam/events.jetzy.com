@@ -26,6 +26,8 @@ export type MembershipPurchaseSource =
 	| "gift"
 	/** Given away by an invite code typed at signup. No card was collected. */
 	| "signup"
+	/** Sold through the questions + card-setup + admin-review application gate, no invite code. */
+	| "application"
 	/** A subscription on this Stripe account that this app didn't sell (selectmember.jetzy.com). */
 	| "external"
 

@@ -3527,6 +3527,141 @@ export const sendMembershipStarted = async ({
 }
 
 /**
+ * Sent the moment a Premium APPLICATION's card is saved (setup succeeded) — confirms the
+ * submission and sets expectations. Nothing about the offer amount is stated here: the amount
+ * was already shown on the application screen and could in principle differ by the time an admin
+ * reviews it, so this is deliberately just "we got it, here's what happens next."
+ */
+export const sendPremiumApplicationReceived = async ({ email, name }: { email: string; name?: string }) => {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (baseUrl?.includes("localhost")) {
+		console.log("[LOCALHOST MODE] sendPremiumApplicationReceived skipped - would send to:", email)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
+	const first = name || email.split("@")[0]
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: "Your Jetzy Premium application is under review",
+			html: membershipShell(
+				`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0 0 15px 0;">Hi ${first},</p>
+        <h1 style="color:#1F2937;font-size:22px;line-height:1.4;margin:0 0 15px 0;">Thanks for applying to Jetzy Premium</h1>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:0 0 15px 0;">
+          We've received your application and your payment card. Our team reviews new applications within
+          <strong>24-48 hours</strong> — you won't be charged anything while you wait.
+        </p>
+        <div style="background-color:#FFFBEB;border:1px solid #F0D78C;border-radius:8px;padding:15px;margin:20px 0;">
+          <p style="color:#7A5C00;font-size:15px;line-height:1.6;margin:0;">
+            <strong>If approved, your first period is 100% free.</strong> We'll email you the moment a decision is made.
+          </p>
+        </div>
+      `,
+				"#F5C518",
+			),
+			text: `Hi ${first},\n\nThanks for applying to Jetzy Premium. We've received your application and your payment card — you won't be charged anything while we review it (24-48 hours). If approved, your first period is 100% free. We'll email you once a decision is made.\n\n— Team Jetzy`,
+		})
+	} catch (error) {
+		console.error("Failed to send premium application received email:", error)
+	}
+}
+
+/** Sent when an admin declines an application. Nothing was ever charged — the Stripe session was `mode: "setup"`. */
+export const sendPremiumApplicationRejected = async ({ email, name, reason }: { email: string; name?: string; reason?: string }) => {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (baseUrl?.includes("localhost")) {
+		console.log("[LOCALHOST MODE] sendPremiumApplicationRejected skipped - would send to:", email)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
+	const first = name || email.split("@")[0]
+	const reasonBlock = reason
+		? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:0 0 15px 0;"><strong>Note from our team:</strong> ${reason}</p>`
+		: ""
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: "An update on your Jetzy Premium application",
+			html: membershipShell(
+				`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0 0 15px 0;">Hi ${first},</p>
+        <h1 style="color:#1F2937;font-size:22px;line-height:1.4;margin:0 0 15px 0;">Your Jetzy Premium application</h1>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:0 0 15px 0;">
+          Thank you for your interest in Jetzy Premium. We're not able to approve your application at this time.
+        </p>
+        ${reasonBlock}
+        <div style="background-color:#e8f4fd;border-left:4px solid #2196f3;border-radius:8px;padding:15px;margin:20px 0;">
+          <p style="color:#0d47a1;font-size:15px;line-height:1.6;margin:0;"><strong>You have not been charged.</strong> The card you saved has been removed from our records.</p>
+        </div>
+      `,
+				"#9C9C9C",
+			),
+			text: `Hi ${first},\n\nThank you for your interest in Jetzy Premium. We're not able to approve your application at this time.${reason ? `\n\nNote from our team: ${reason}` : ""}\n\nYou have not been charged. The card you saved has been removed from our records.\n\n— Team Jetzy`,
+		})
+	} catch (error) {
+		console.error("Failed to send premium application rejected email:", error)
+	}
+}
+
+/** Ops visibility into the queue — the shared admin inbox, same as every other "something needs a human" notice. */
+export const sendPremiumApplicationAdminNotice = async ({
+	kind,
+	email,
+	name,
+	interval,
+}: {
+	kind: "submitted" | "approved" | "rejected"
+	email: string
+	name?: string
+	interval?: string
+}) => {
+	const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+	const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
+	if (!senderEmail || !adminEmail) {
+		console.error("SENDGRID_EMAIL_SENDER / ADMIN_NOTIFICATION_EMAIL not set — cannot send premium application admin notice")
+		return
+	}
+	const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
+	const subject =
+		kind === "submitted"
+			? `[Jetzy Premium] New application: ${name || email}`
+			: kind === "approved"
+				? `[Jetzy Premium] Application approved: ${name || email}`
+				: `[Jetzy Premium] Application rejected: ${name || email}`
+	const body =
+		kind === "submitted"
+			? `A new Jetzy Premium application is awaiting review.`
+			: kind === "approved"
+				? `A Jetzy Premium application was approved — the membership is now live.`
+				: `A Jetzy Premium application was rejected.`
+
+	try {
+		await sgMail.send({
+			to: adminEmail,
+			from: mailFrom(),
+			subject,
+			html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color:#333;">${subject}</h2>
+          <p style="color:#4B5563;line-height:1.6;">${body}</p>
+          <p style="color:#4B5563;line-height:1.6;">
+            Applicant: <strong>${name || "—"}</strong> (${email})<br/>
+            Plan: <strong>${interval || "month"}ly</strong>
+          </p>
+          ${kind === "submitted" ? `<p><a href="${baseUrl}/console/admin/premium-applications">Review in the console</a></p>` : ""}
+        </div>
+      `),
+			text: `${subject}\n\n${body}\n\nApplicant: ${name || "—"} (${email})\nPlan: ${interval || "month"}ly${kind === "submitted" ? `\n\nReview: ${baseUrl}/console/admin/premium-applications` : ""}`,
+		})
+	} catch (error) {
+		console.error("Failed to send premium application admin notice:", error)
+	}
+}
+
+/**
  * Sent when a member CHANGES PLAN — monthly to annual, in practice.
  *
  * A plan switch happens inside Stripe's billing portal, so nothing on this site ever confirms

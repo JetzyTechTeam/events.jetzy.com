@@ -71,6 +71,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 		{ name: Pages.Events, href: ROUTES.dashboard.events.index },
 		{ name: "Bookings", href: ROUTES.dashboard.bookings.index },
 		{ name: "Analytics", href: "/console/analytics" },
+		{ name: "Premium Applications", href: "/console/admin/premium-applications" },
 		{ name: "Jetzy User Signup", href: "/jetzyqrsignup" },
 		{ name: "Create Event", href: ROUTES.dashboard.events.create },
 		{ name: "Support", href: ROUTES.support },

@@ -1058,6 +1058,21 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 - Location safety: pending email never contains location; only the approval-confirmed email reveals it (always, regardless of `locationDisclosedAfterBooking`). Public page never shows a hidden location on-page.
 - **Gotcha:** [bookings.ts](src/models/events/bookings.ts) caches the compiled model (`dbconn.models["Bookings"] || …`). After a schema edit a hot-reloaded dev server keeps the old model and **silently drops every `payment` field with no error** — restart the dev server.
 
+### Jetzy Premium application gate — questions, card setup, admin review (IMPLEMENTED)
+
+Runs BEFORE checkout on the **standalone** Premium purchase (`/premium`, `/subscribe`, `PremiumPaywallModal`) when the buyer types **no invite code** — a ticket-bundled Premium purchase is untouched. Admin toggle, **default OFF**; flip it on at `/console/admin/premium-settings` once the question list is right.
+
+- **`src/models/premium-application-settings`** — singleton (`key:"default"`): `enabled`, `questions: ICustomQuestion[]` (same subdocument shape as an event's custom questions, [src/models/events/types.ts](src/models/events/types.ts)). Seeded on first read with LinkedIn / Instagram / Website ([src/lib/premium-application.ts](src/lib/premium-application.ts) `DEFAULT_APPLICATION_QUESTIONS`), all editable/removable, plus arbitrary admin-added ones.
+- **`src/models/premium-applications`** — one row per application: `status: awaiting_card → under_review → approved | rejected`, `answers[]`, `stripeCustomerId`, `paymentMethodId`, `trialMonths` (resolved and STORED at card-setup time, not re-derived at approval — same "price/terms locked in at the deal" rule as a referral-granted trial).
+- **Flow**: questions (`PremiumApplicationQuestions.tsx`) → `POST /api/premium/applications/start` (creates the row) → `POST /api/premium/applications/checkout` (Stripe `mode:"setup"` session — collects a card, **never charges**; the fourth session shape, same as the free-ticket-plus-free-months case in `api/checkout/index.ts`) → `GET /api/premium/applications/confirm` (fast path) + the webhook's `purpose==="premium_application"` branch (authoritative), both calling the same idempotent `fulfillApplicationSetupSession`.
+- **Approve** (`POST /api/premium/applications/[id]/approve`, admin only) calls `startMembershipSubscription` — the SAME call `bookings/approve.ts` makes — with the stored `paymentMethodId`/`trialMonths`. First period free, same as any other first-timer trial; welcome email is the existing `sendMembershipStarted`, no new copy needed. **Reject** (`.../reject`) detaches the saved card, never touches the subscription — nothing was ever charged.
+- **`GET/PUT /api/premium/applications/settings`** — GET is public (the buy-Premium pages need it before anyone is signed in); PUT is admin-only.
+- Repeat visits: `GET /api/premium/applications/mine` — while `awaiting_card`/`under_review`, `PremiumApplicationReview.tsx` REPLACES the plan card on all three doors. `rejected` is NOT sticky — a declined buyer sees the ordinary plan card again and can re-apply.
+- Admin UI: `/console/admin/premium-applications` (Pending/Processed queue, Approve/Decline) + `/console/admin/premium-settings` (toggle + question editor). New nav link in `ConsoleNavbar.tsx`.
+- `MembershipPurchaseSource` gained `"application"` ([membership-purchases.ts](src/models/events/membership-purchases.ts), [membership-subscriptions.ts](src/lib/membership-subscriptions.ts)) — shown on `/console/analytics/growth`'s Jetzy Premium tab as "Approved application".
+- Index script: `scripts/create-premium-application-index.ts` (run once per database — `autoIndex:false`).
+- **Known gap**: the old `?go=1`/`premiumSubscribe=1` post-login resume paths (pre-dating this feature, for links already in the wild) gate on `appSettings`/`myApplication` that may not have finished loading yet when those effects fire — low-traffic legacy paths, not the main door.
+
 ### Discussions/Comments
 `/api/events/discussions/create|get|list|update|delete|react|report|who-reacted|who-viewed`
 `/api/events/discussions/comments/create|get|delete|reply|react|report|who-reacted`
