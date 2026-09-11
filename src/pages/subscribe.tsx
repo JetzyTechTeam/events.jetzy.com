@@ -7,6 +7,7 @@ import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
 import Navbar from "@Jetzy/components/misc/Navbar"
+import { ROUTES } from "@/configs/routes"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
@@ -219,14 +220,39 @@ export default function SubscribePage() {
 		(next: AppliedTrial | null) => setTrialOffer((prev) => (sameAppliedTrial(prev, next) ? prev : next)),
 		[],
 	)
+	/**
+	 * The exact string that was refused, if any.
+	 *
+	 * A refused code must not ride along to Stripe — that request can only be rejected, leaving the
+	 * card looking untouched — and it must not count as "has an invite code" for the application
+	 * gate, or a typo would walk past the questionnaire.
+	 *
+	 * The refused STRING rather than a valid/invalid flag: a flag still reads false for the first
+	 * render after the buyer fixes the code, and dropping a good code is the more expensive
+	 * mistake — the buyer silently loses the months they were promised.
+	 */
+	const [refusedCode, setRefusedCode] = React.useState<string | null>(null)
+	/** A code that is both present and not known-bad. Everything downstream asks this, not the field. */
+	const usableCode = inviteCode.trim() && inviteCode.trim() !== refusedCode ? inviteCode.trim() : ""
+	/**
+	 * What this buyer gets with NO code — the standing free month, or nothing for a returning
+	 * member. The baseline the card falls back to while a code is typed, re-checked or refused,
+	 * instead of dropping to the full rate and reading as a price rise caused by a typo.
+	 */
+	const standingTrial = React.useRef<AppliedTrial | null>(null)
+	/** First resolution done. Latched — see `trialPending` on `PlanComparison`. */
+	const [trialResolved, setTrialResolved] = React.useState(false)
+	/** The interval a click asked for, held across the email-verification detour. */
+	const pendingInterval = React.useRef<string | undefined>(undefined)
 	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
 
 	React.useEffect(() => {
 		if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		const code = inviteCode.trim()
-		// Cleared on every run, before anything is resolved: while a code is being retyped or
-		// re-checked the card must show the ordinary price, never a stale $0.
-		applyTrial(null)
+		// Falls back to the standing offer rather than to nothing. This runs on every keystroke, and
+		// clearing it outright made the card jump to the full rate between characters — the buyer
+		// keeps their free month whatever they type, so showing it withdrawn was never true.
+		applyTrial(standingTrial.current)
 
 		// Signed out there is no account to check against, so the code is resolved in the browser
 		// from the same shared table the server enforces. It is a PREVIEW of the offer, never a
@@ -240,20 +266,43 @@ export default function SubscribePage() {
 			// is resolved exactly as before, and only a TYPED one may fail loudly — a red message
 			// against a field nobody touched reads as the page being broken, not as an offer that
 			// didn't apply.
+			const standingOffer = defaultTrialOffer(selectedInterval)
+			const standing: AppliedTrial | null = standingOffer
+				? {
+					months: standingOffer.months,
+					label: standingOffer.label,
+					chargesFrom: trialEndsOn(standingOffer).toISOString(),
+				}
+				: null
+			standingTrial.current = standing
+			setTrialResolved(true)
+
 			let offer: TrialOffer | null = null
 			if (code) {
 				const resolved = resolveTrialCode(code, selectedInterval)
 				if (!resolved.ok) {
+					// The code is gone; the standing offer isn't. Falling to the full rate here read as
+					// a price rise caused by a typo, and it stalled the purchase: the CTA lost its trial
+					// wording and checkout then refused the dead code.
 					setInviteAccepted(null)
-					setInviteError(resolved.message)
+					setRefusedCode(code)
+					setInviteError(
+						standing && resolved.reason === "unknown"
+							? "That invite code isn't valid — continuing without it."
+							: resolved.message,
+					)
+					applyTrial(standing)
 					return
 				}
 				offer = resolved.offer
-			} else {
-				offer = defaultTrialOffer(selectedInterval)
 			}
-			if (!offer) {
+			setRefusedCode(null)
+			// Nothing typed means nothing to confirm: the $0 headline and the "Then …" disclosure
+			// already state the offer, and a green line about a code nobody entered only reads as
+			// something the visitor has to work out.
+			if (!code || !offer) {
 				setInviteAccepted(null)
+				applyTrial(standing)
 				return
 			}
 			const preview = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
@@ -267,6 +316,8 @@ export default function SubscribePage() {
 		}
 
 		setInviteChecking(true)
+		// Only a typed code is worth waiting on. The empty field is the common case and debouncing
+		// it held the price behind a spinner for 600ms before the request even left.
 		inviteTimer.current = setTimeout(async () => {
 			try {
 				const { data } = await axios.post("/api/subscriptions/invite-code", { code, interval: selectedInterval })
@@ -278,38 +329,67 @@ export default function SubscribePage() {
 				// price of the interval they actually have selected — and it is rebuilt whenever
 				// they change it, because the answer changes with it.
 				const selectedPrice = prices.find((p) => p.interval === selectedInterval) || prices.find((p) => p.isDefault) || prices[0]
-				setInviteAccepted(
-					data?.data?.label
-						? trialDisclosure(
-							{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
-							selectedPrice?.label || null,
-							data?.data?.chargesFrom ? new Date(data.data.chargesFrom) : new Date(),
-						)
-						: "Invite code applied.",
-				)
 				// Only the path that named the months: the bare "applied" fallback carries none, and
 				// the card must not show $0 for an offer it can't state the end of.
-				applyTrial(
-					data?.data?.label
-						? {
-							months: Number(data.data.months) || 0,
-							label: data.data.label,
-							chargesFrom: data?.data?.chargesFrom || null,
-						}
+				const applied: AppliedTrial | null = data?.data?.label
+					? {
+						months: Number(data.data.months) || 0,
+						label: data.data.label,
+						chargesFrom: data?.data?.chargesFrom || null,
+					}
+					: null
+				// This WAS the standing offer — the server resolved it for an empty field. Remembering
+				// it is what lets a later refusal fall back to it without asking again.
+				if (!code) standingTrial.current = applied
+				setInviteAccepted(
+					code
+						? data?.data?.label
+							? trialDisclosure(
+								{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
+								selectedPrice?.label || null,
+								data?.data?.chargesFrom ? new Date(data.data.chargesFrom) : new Date(),
+							)
+							: "Invite code applied."
 						: null,
 				)
+				applyTrial(applied || standingTrial.current)
+				setRefusedCode(null)
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
-				applyTrial(null)
-				// Silent when nothing was typed. The server refuses the standing offer to anyone
-				// who has had Premium before, and that is not a failure the visitor caused or can
-				// act on — they simply pay the ordinary price the card already shows.
-				setInviteError(code ? error?.response?.data?.message || "That code couldn't be applied." : null)
+				if (!code) {
+					// Silent when nothing was typed. The server refuses the standing offer to anyone
+					// who has had Premium before, and that is not a failure the visitor caused or can
+					// act on — they simply pay the ordinary price the card already shows.
+					standingTrial.current = null
+					applyTrial(null)
+					setRefusedCode(null)
+					setInviteError(null)
+				} else {
+					setRefusedCode(code)
+					const message = error?.response?.data?.message || "That code couldn't be applied."
+					// Ask what this account gets with no code at all and fall back to that, so a
+					// refused code costs them the code and not the free month they already had.
+					let standing: AppliedTrial | null = null
+					try {
+						const { data } = await axios.post("/api/subscriptions/invite-code", { code: "", interval: selectedInterval })
+						standing = data?.data?.label
+							? {
+								months: Number(data.data.months) || 0,
+								label: data.data.label,
+								chargesFrom: data?.data?.chargesFrom || null,
+							}
+							: null
+					} catch {}
+					standingTrial.current = standing
+					applyTrial(standing)
+					setInviteError(standing ? `${message} Continuing without it.` : message)
+				}
 			} finally {
 				setInviteChecking(false)
+				setTrialResolved(true)
 			}
-		}, 600)
+		}, code ? 600 : 0)
 		return () => {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		}
@@ -326,7 +406,10 @@ export default function SubscribePage() {
 	const [verifyOpen, setVerifyOpen] = React.useState(false)
 
 	const subscribeMutation = useMutation({
-		mutationFn: async () => {
+		// The interval is passed in rather than read from state: the annual pitch selects annual and
+		// buys in one click, and `setSelectedInterval` has not landed by the time this is built.
+		mutationFn: async (intervalOverride?: string) => {
+			const interval = intervalOverride || selectedInterval
 			// checkout_started, before the request — a beacon so it isn't dropped by the imminent
 			// navigation to Stripe.
 			trackPremiumView({
@@ -334,15 +417,17 @@ export default function SubscribePage() {
 				sessionId,
 				page: "subscribe",
 				stage: "checkout_started",
-				code: inviteCode.trim() || undefined,
+				code: usableCode || undefined,
 			})
 			// The INTERVAL, never a price id — the server resolves the id itself, so a crafted
 			// request can't subscribe anyone at an arbitrary price on the account.
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo: "/subscribe",
 				anonId: anonId || undefined,
-				...(selectedInterval ? { interval: selectedInterval } : {}),
-				...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
+				...(interval ? { interval } : {}),
+				// A refused code is left behind. Sending it could only fail, and the card is already
+				// showing what this buyer actually gets without it.
+				...(usableCode ? { inviteCode: usableCode } : {}),
 			})
 			return data?.data as { url: string }
 		},
@@ -370,18 +455,35 @@ export default function SubscribePage() {
 		},
 	})
 
-	/** Signed in — straight to Stripe. Signed out — prove the address first, then the same. */
-	const handleChoosePremium = () => {
+	/**
+	 * Signed in — straight to Stripe. Signed out — prove the address first, then the same.
+	 *
+	 * `intervalOverride` carries the annual pitch's choice through the verification detour; without
+	 * it, verifying an email would drop the buyer back onto whatever the toggle says.
+	 */
+	const handleChoosePremium = (intervalOverride?: string) => {
+		pendingInterval.current = intervalOverride
 		if (status !== "authenticated") {
 			setVerifyOpen(true)
 			return
 		}
 		if (applicationBlocksCheckout(myApplication)) return // review screen is already showing instead of this button
-		if (applicationRequiredForPurchase(appSettings, !!inviteCode.trim(), myApplication)) {
+		// A refused code is not an invite code — counting it as one would let a typo past the
+		// questionnaire the gate exists to ask.
+		if (applicationRequiredForPurchase(appSettings, !!usableCode, myApplication)) {
 			setShowQuestions(true)
 			return
 		}
-		subscribeMutation.mutate()
+		subscribeMutation.mutate(intervalOverride)
+	}
+
+	/** Jetzy Basic is an account. Signed out that means signup; signed in, back to the app. */
+	const handleChooseFree = () => {
+		if (status !== "authenticated") {
+			router.push(ROUTES.create)
+			return
+		}
+		goToApp()
 	}
 
 	if (isAutoLoggingIn || status === "loading") {
@@ -437,10 +539,12 @@ export default function SubscribePage() {
 						inviteError={inviteError}
 						inviteChecking={inviteChecking}
 						trial={trialOffer}
+						trialPending={!isPremium && !trialResolved}
 						premiumDisabled={premiumLoading}
 						premiumPending={subscribeMutation.isPending}
-						onChooseFree={goToApp}
-						onChoosePremium={handleChoosePremium}
+						onChooseFree={handleChooseFree}
+						onChoosePremium={() => handleChoosePremium()}
+						onChoosePremiumAtInterval={(interval) => handleChoosePremium(interval)}
 						subscribedCtaLabel="Continue"
 					/>
 				)}
@@ -461,11 +565,11 @@ export default function SubscribePage() {
 					onClose={() => setVerifyOpen(false)}
 					onVerified={() => {
 						setVerifyOpen(false)
-						if (applicationRequiredForPurchase(appSettings, !!inviteCode.trim(), myApplication)) {
+						if (applicationRequiredForPurchase(appSettings, !!usableCode, myApplication)) {
 							setShowQuestions(true)
 							return
 						}
-						subscribeMutation.mutate()
+						subscribeMutation.mutate(pendingInterval.current)
 					}}
 				/>
 			</div>
