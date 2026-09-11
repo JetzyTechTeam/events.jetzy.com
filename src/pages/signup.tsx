@@ -168,7 +168,7 @@ export default function SignupPage() {
 												type="date"
 												max={new Date().toISOString().split("T")[0]}
 												autoComplete="bday"
-												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3"
+												className="bg-[#1E1E1E] dark-autofill text-white block w-full rounded-md border-0 py-1.5 shadow-sm ring-1 ring-inset ring-app placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-app sm:text-sm sm:leading-6 p-3 [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:cursor-pointer"
 											/>
 											<ErrorMessage name="dateOfBirth" component="span" className="text-red-500 block mt-1" />
 										</div>
