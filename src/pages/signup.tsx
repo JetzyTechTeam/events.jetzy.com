@@ -2,7 +2,7 @@ import { ROUTES } from "@Jetzy/configs/routes"
 import { useSignup } from "@Jetzy/hooks/useSignup"
 import { startSignupValidation } from "@Jetzy/lib/validator/authValidtor"
 import { StartSignupFormData } from "@Jetzy/types"
-import { ErrorMessage, Field, Form, Formik } from "formik"
+import { ErrorMessage, Field, Form, Formik, FormikProps } from "formik"
 import { GetServerSideProps } from "next"
 import Image from "next/image"
 import Link from "next/link"
@@ -26,6 +26,27 @@ export default function SignupPage() {
 	// Checked against the Jetzy backend before we let the form through, so a mistyped code is
 	// caught here rather than silently losing the referrer their credit.
 	const [inviteCodeError, setInviteCodeError] = React.useState<string | null>(null)
+
+	// Imperative handle onto Formik so the Places callback (a plain event handler, not a hook)
+	// can push the selected address into form state — usePlacesWidget must stay a top-level hook.
+	const formikRef = React.useRef<FormikProps<StartSignupFormData>>(null)
+	const { ref: locationRef } = usePlacesWidget<HTMLInputElement>({
+		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+		onPlaceSelected: (place) => {
+			const address = place.formatted_address || place.name || ""
+			const lat = place.geometry?.location?.lat() ?? undefined
+			const lng = place.geometry?.location?.lng() ?? undefined
+			const placeId = place.place_id || ""
+
+			formikRef.current?.setFieldValue("location", address)
+			formikRef.current?.setFieldValue("latitude", lat)
+			formikRef.current?.setFieldValue("longitude", lng)
+			formikRef.current?.setFieldValue("placeId", placeId)
+		},
+		options: {
+			fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
+		},
+	})
 
 	const formData: StartSignupFormData = {
 		name: "",
@@ -82,27 +103,13 @@ export default function SignupPage() {
 			</div>
 
 			<div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm bg-[#1E1E1E] p-5 rounded-lg">
-						<Formik initialValues={formData} onSubmit={handleSubmit} validationSchema={startSignupValidation}>
-							{({ values, handleChange, setFieldValue }) => {
-								const { ref: locationRef } = usePlacesWidget<HTMLInputElement>({
-									apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-									onPlaceSelected: (place) => {
-										const address = place.formatted_address || place.name || ""
-										const lat = place.geometry?.location?.lat() ?? undefined
-										const lng = place.geometry?.location?.lng() ?? undefined
-										const placeId = place.place_id || ""
-
-										setFieldValue("location", address)
-										setFieldValue("latitude", lat)
-										setFieldValue("longitude", lng)
-										setFieldValue("placeId", placeId)
-									},
-									options: {
-										fields: ["formatted_address", "geometry", "place_id", "name", "address_components"],
-									},
-								})
-
-								return (
+						<Formik
+							innerRef={formikRef}
+							initialValues={formData}
+							onSubmit={handleSubmit}
+							validationSchema={startSignupValidation}
+						>
+							{({ values, handleChange, setFieldValue }) => (
 								<Form className="space-y-6">
 									<div>
 										<label htmlFor="name" className="block text-sm font-medium leading-6">
@@ -251,8 +258,7 @@ export default function SignupPage() {
 										</button>
 									</div>
 								</Form>
-								)
-							}}
+							)}
 						</Formik>
 
 						<div className="mt-6">
