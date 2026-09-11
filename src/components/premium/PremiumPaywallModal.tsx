@@ -41,6 +41,15 @@ const PURCHASE_MARKER = "jetzy_premium_modal_purchase"
  */
 const PURCHASE_CONTEXT = "jetzy_premium_modal_context"
 
+/**
+ * "This document is the one that sent the buyer to Stripe."
+ *
+ * Module scope, so it dies with the page. Every return is a fresh document and reads it as false —
+ * which is exactly the distinction needed, because `window.location.href` leaves asynchronously and
+ * the return effect can run once more before the browser actually goes.
+ */
+let startedCheckoutHere = false
+
 type Props = {
 	isOpen: boolean
 	onClose: () => void
@@ -389,6 +398,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			if (data?.url) {
 				// Set before navigating away — this is the only record that survives the trip that
 				// the purchase began here rather than on a page that sells memberships itself.
+				startedCheckoutHere = true
 				try {
 					sessionStorage.setItem(PURCHASE_MARKER, "1")
 					sessionStorage.setItem(
@@ -448,51 +458,80 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	//
 	// Read synchronously off `router.query`, before `usePremiumSubscriptionReturn` strips the
 	// param — that happens in a `.finally()` after a network round trip, so this always wins.
+	/**
+	 * Takes the marker, once. Returns what the buyer had entered, or `null` if this arrival has
+	 * nothing to do with a checkout this dialog started.
+	 */
+	const consumePurchaseMarker = useCallback((): { code?: string; interval?: string } | null | false => {
+		try {
+			if (sessionStorage.getItem(PURCHASE_MARKER) !== "1") return false
+			const raw = sessionStorage.getItem(PURCHASE_CONTEXT)
+			sessionStorage.removeItem(PURCHASE_MARKER)
+			sessionStorage.removeItem(PURCHASE_CONTEXT)
+			return raw ? JSON.parse(raw) : null
+		} catch {
+			return false
+		}
+	}, [])
+
+	/** Reopen on the plan card with the form as they left it. Nothing was bought. */
+	const reopenAfterAbandon = useCallback((context: { code?: string; interval?: string } | null) => {
+		if (context?.code) setInviteCode(context.code)
+		if (context?.interval) setSelectedInterval(context.interval)
+		setReopenedAfterCancel(true)
+	}, [])
+
 	useEffect(() => {
 		if (!router.isReady || typeof window === "undefined") return
 
 		const sessionId = typeof router.query.premium_session_id === "string" ? router.query.premium_session_id : null
-		const cancelled = router.query.premium_cancelled === "1"
 
-		// Neither return — clear the marker rather than consuming it, or one left behind would open
-		// this dialog on some later arrival for a purchase made somewhere else. Safe to do
-		// unconditionally: the marker is written immediately before a full page navigation, so there
-		// is no render between setting it and leaving.
-		if (!sessionId && !cancelled) {
-			try {
-				sessionStorage.removeItem(PURCHASE_MARKER)
-				sessionStorage.removeItem(PURCHASE_CONTEXT)
-			} catch {}
-			return
-		}
+		// Still in the document that sent them to Stripe.
+		//
+		// `window.location.href` doesn't tear the page down synchronously, so this effect can run
+		// once more after the marker is written and before the browser actually leaves. Consuming it
+		// there would take away the very thing the return needs to find. A new document — which every
+		// return is, except a bfcache restore, handled separately below — resets the flag.
+		if (startedCheckoutHere && !sessionId) return
 
-		let marked = false
-		let context: { code?: string; interval?: string } | null = null
-		try {
-			marked = sessionStorage.getItem(PURCHASE_MARKER) === "1"
-			if (marked) {
-				const raw = sessionStorage.getItem(PURCHASE_CONTEXT)
-				context = raw ? JSON.parse(raw) : null
-				sessionStorage.removeItem(PURCHASE_MARKER)
-				sessionStorage.removeItem(PURCHASE_CONTEXT)
-			}
-		} catch {}
-		if (!marked) return
+		const context = consumePurchaseMarker()
+		if (context === false) return
 
 		if (sessionId) {
 			setJustSubscribed(true)
 			return
 		}
 
-		// Came back without buying. Reopen on the plan card, with the form as they left it, and take
-		// the param off the URL so a refresh doesn't reopen it a second time.
-		if (context?.code) setInviteCode(context.code)
-		if (context?.interval) setSelectedInterval(context.interval)
-		setReopenedAfterCancel(true)
-		const { premium_cancelled: _cancelled, ...rest } = router.query
-		router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+		// Came back without buying. This is deliberately NOT gated on `?premium_cancelled=1`: that
+		// param only arrives via Stripe's own back arrow, and the browser's back button — which is
+		// how most people leave a checkout they have changed their mind about — returns to the bare
+		// URL with no sign of where they have been. The marker is the signal; it is consumed on the
+		// first arrival either way, so it cannot linger and open this dialog on some later visit.
+		reopenAfterAbandon(context)
+		if (router.query.premium_cancelled === "1") {
+			const { premium_cancelled: _cancelled, ...rest } = router.query
+			router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.isReady, router.query.premium_session_id, router.query.premium_cancelled])
+
+	/**
+	 * The back button again, when the browser serves the page from its cache.
+	 *
+	 * A bfcache restore runs no effects and keeps the JavaScript context alive, so the guard above
+	 * still reads `startedCheckoutHere === true` and the effect above may not re-run at all. This is
+	 * the only signal that the buyer is back.
+	 */
+	useEffect(() => {
+		const onPageShow = (event: PageTransitionEvent) => {
+			if (!event.persisted) return
+			const context = consumePurchaseMarker()
+			if (context === false) return
+			reopenAfterAbandon(context)
+		}
+		window.addEventListener("pageshow", onPageShow)
+		return () => window.removeEventListener("pageshow", onPageShow)
+	}, [consumePurchaseMarker, reopenAfterAbandon])
 
 	// Confirms the session and refreshes the cached membership — but ONLY on our own purchase,
 	// so a page that already owns the return (`/premium`, `/subscribe`, the ticket page) is not
