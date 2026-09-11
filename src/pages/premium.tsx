@@ -5,6 +5,7 @@ import { DEFAULT_INVITE_CODE, defaultTrialOffer, normalizeTrialCode, resolveTria
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import { ROUTES } from "@/configs/routes"
 import Navbar from "@Jetzy/components/misc/Navbar"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
@@ -103,6 +104,30 @@ export default function PremiumPage() {
 		(next: AppliedTrial | null) => setTrialOffer((prev) => (sameAppliedTrial(prev, next) ? prev : next)),
 		[],
 	)
+	/**
+	 * The exact string that was refused, if any.
+	 *
+	 * A refused code must not ride along to Stripe — that request can only be rejected, leaving the
+	 * card looking untouched — and it must not count as "has an invite code" for the application
+	 * gate, or a typo would walk past the questionnaire.
+	 *
+	 * The refused STRING rather than a valid/invalid flag: a flag still reads false for the first
+	 * render after the buyer fixes the code, and dropping a good code is the more expensive
+	 * mistake — the buyer silently loses the months they were promised.
+	 */
+	const [refusedCode, setRefusedCode] = React.useState<string | null>(null)
+	/** A code that is both present and not known-bad. Everything downstream asks this, not the field. */
+	const usableCode = inviteCode.trim() && inviteCode.trim() !== refusedCode ? inviteCode.trim() : ""
+	/**
+	 * What this buyer gets with NO code — the standing free month, or nothing for a returning
+	 * member. The baseline the card falls back to while a code is typed, re-checked or refused,
+	 * instead of dropping to the full rate and reading as a price rise caused by a typo.
+	 */
+	const standingTrial = React.useRef<AppliedTrial | null>(null)
+	/** First resolution done. Latched — see `trialPending` on `PlanComparison`. */
+	const [trialResolved, setTrialResolved] = React.useState(false)
+	/** The interval a click asked for, held across the email-verification detour. */
+	const pendingInterval = React.useRef<string | undefined>(undefined)
 	const inviteTimer = React.useRef<NodeJS.Timeout | null>(null)
 
 	/**
@@ -202,9 +227,23 @@ export default function PremiumPage() {
 		if (inviteTimer.current) clearTimeout(inviteTimer.current)
 		const code = inviteCode.trim()
 
-		// Cleared on every run, before anything is resolved: while a code is being retyped or
-		// re-checked the card must show the ordinary price, never a stale $0.
-		applyTrial(null)
+		// Signed out, the standing offer is knowable in the browser — resolve it up front so every
+		// branch below, the shared-link one included, has something to fall back to when a code is
+		// refused. Signed in it is whatever the server last returned for an empty field.
+		if (!isAuthenticated) {
+			const standingOffer = defaultTrialOffer(selectedInterval)
+			standingTrial.current = standingOffer
+				? {
+					months: standingOffer.months,
+					label: standingOffer.label,
+					chargesFrom: trialEndsOn(standingOffer).toISOString(),
+				}
+				: null
+		}
+		// Falls back to the standing offer rather than to nothing. This runs on every keystroke, and
+		// clearing it outright made the card jump to the full rate between characters — the buyer
+		// keeps their free month whatever they type, so showing it withdrawn was never true.
+		applyTrial(standingTrial.current)
 
 
 		// A shared referral code lives in Mongo, so even the logged-out preview has to ask — but it
@@ -222,19 +261,25 @@ export default function PremiumPage() {
 					setOfferMonths(months || undefined)
 					if (!months) {
 						setInviteAccepted(null)
+						setRefusedCode(code)
 						setInviteError("This code doesn't include free months of Jetzy Premium.")
 						return
 					}
 					const offer = { months, intervals: [], label: `${months} month${months === 1 ? "" : "s"} free` }
+					setRefusedCode(null)
 					setInviteError(null)
 					setInviteAccepted(trialDisclosure(offer, selectedPrice?.label || null, trialEndsOn(offer)))
 					applyTrial({ months, label: offer.label, chargesFrom: trialEndsOn(offer).toISOString() })
 				} catch (error: any) {
 					setInviteAccepted(null)
-					applyTrial(null)
+					setRefusedCode(code)
+					// The shared code is gone; the standing offer isn't. Same rule as everywhere else
+					// on this card — a refused code costs the buyer the code, never the offer.
+					applyTrial(standingTrial.current)
 					setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
 				} finally {
 					setInviteChecking(false)
+					setTrialResolved(true)
 				}
 			}, 400)
 			return () => {
@@ -253,20 +298,32 @@ export default function PremiumPage() {
 			// Only a TYPED code may fail loudly. That is the same rule `codeIsOurs` encodes for
 			// the prefill: an error against something the visitor didn't enter reads as a broken
 			// page rather than as an offer not applying.
+			const standing = standingTrial.current
+			setTrialResolved(true)
+
 			let offer: TrialOffer | null = null
 			if (code) {
 				const resolved = resolveTrialCode(code, selectedInterval)
 				if (!resolved.ok) {
 					setInviteAccepted(null)
-					setInviteError(resolved.message)
+					setRefusedCode(code)
+					setInviteError(
+						standing && resolved.reason === "unknown"
+							? "That invite code isn't valid — continuing without it."
+							: resolved.message,
+					)
+					applyTrial(standing)
 					return
 				}
 				offer = resolved.offer
-			} else {
-				offer = defaultTrialOffer(selectedInterval)
 			}
-			if (!offer) {
+			setRefusedCode(null)
+			// Nothing typed means nothing to confirm: the $0 headline and the "Then …" disclosure
+			// already state the offer, and a green line about a code nobody entered only reads as
+			// something the visitor has to work out.
+			if (!code || !offer) {
 				setInviteAccepted(null)
+				applyTrial(standing)
 				return
 			}
 			setInviteAccepted(trialDisclosure(offer, selectedPrice?.label || null, trialEndsOn(offer)))
@@ -286,45 +343,70 @@ export default function PremiumPage() {
 					interval: selectedInterval,
 					...(referralEventId ? { event: referralEventId } : {}),
 				})
-				setInviteAccepted(
-					data?.data?.label
-						? trialDisclosure(
-							{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
-							selectedPrice?.label || null,
-							data?.data?.chargesFrom ? new Date(data.data.chargesFrom) : new Date(),
-						)
-						: "Invite code applied.",
-				)
 				// Only the path that named the months: the bare "applied" fallback carries none, and
 				// the card must not show $0 for an offer it can't state the end of.
-				applyTrial(
-					data?.data?.label
-						? {
-							months: Number(data.data.months) || 0,
-							label: data.data.label,
-							chargesFrom: data?.data?.chargesFrom || null,
-						}
+				const applied: AppliedTrial | null = data?.data?.label
+					? {
+						months: Number(data.data.months) || 0,
+						label: data.data.label,
+						chargesFrom: data?.data?.chargesFrom || null,
+					}
+					: null
+				// This WAS the standing offer — the server resolved it for an empty field. Remembering
+				// it is what lets a later refusal fall back to it without asking again.
+				if (!code) standingTrial.current = applied
+				setInviteAccepted(
+					code
+						? data?.data?.label
+							? trialDisclosure(
+								{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
+								selectedPrice?.label || null,
+								data?.data?.chargesFrom ? new Date(data.data.chargesFrom) : new Date(),
+							)
+							: "Invite code applied."
 						: null,
 				)
+				applyTrial(applied || standingTrial.current)
+				setRefusedCode(null)
 				setInviteError(null)
 			} catch (error: any) {
 				setInviteAccepted(null)
-				applyTrial(null)
 				// Ours and refused — most often a member who has had Premium before. Clear it and
 				// let them buy at the normal price, rather than accusing them of a bad code.
 				//
 				// `!code` covers the standing offer, which nobody typed at all: the same refusal
 				// arrives for a returning member, and there is nothing there to accuse.
 				if (!code || codeIsOurs.current) {
+					standingTrial.current = null
+					applyTrial(null)
+					setRefusedCode(null)
 					setInviteCode("")
 					setInviteError(null)
 				} else {
-					setInviteError(error?.response?.data?.message || "That code couldn't be applied.")
+					setRefusedCode(code)
+					const message = error?.response?.data?.message || "That code couldn't be applied."
+					// Ask what this account gets with no code at all and fall back to that, so a
+					// refused code costs them the code and not the free month they already had.
+					let standing: AppliedTrial | null = null
+					try {
+						const { data } = await axios.post("/api/subscriptions/invite-code", { code: "", interval: selectedInterval })
+						standing = data?.data?.label
+							? {
+								months: Number(data.data.months) || 0,
+								label: data.data.label,
+								chargesFrom: data?.data?.chargesFrom || null,
+							}
+							: null
+					} catch {}
+					standingTrial.current = standing
+					applyTrial(standing)
+					setInviteError(standing ? `${message} Continuing without it.` : message)
 				}
 			} finally {
 				setInviteChecking(false)
+				setTrialResolved(true)
 			}
-		}, 600)
+		}, code ? 600 : 0)
 
 		return () => {
 			if (inviteTimer.current) clearTimeout(inviteTimer.current)
@@ -334,7 +416,10 @@ export default function PremiumPage() {
 
 	// ---- Checkout ----
 	const startCheckout = React.useCallback(
-		async (code?: string) => {
+		// `intervalOverride` because the annual pitch selects annual and buys in one click, and
+		// `setSelectedInterval` has not landed by the time this request is built.
+		async (code?: string, intervalOverride?: string) => {
+			const interval = intervalOverride || selectedInterval
 			if (typeof window !== "undefined") {
 				// Stripe's success_url is built server-side from a bare path, so anything we want
 				// back afterwards has to be stashed rather than appended.
@@ -361,7 +446,7 @@ export default function PremiumPage() {
 			const { data } = await axios.post("/api/subscriptions/checkout", {
 				returnTo: SELF,
 				anonId: anonId || undefined,
-				...(selectedInterval ? { interval: selectedInterval } : {}),
+				...(interval ? { interval } : {}),
 				...(code ? { inviteCode: code } : {}),
 				// Present only for a shared referral code — the server reads the months from that
 				// event's record rather than the hardcoded table.
@@ -373,7 +458,9 @@ export default function PremiumPage() {
 	)
 
 	const subscribeMutation = useMutation({
-		mutationFn: () => startCheckout(inviteCode.trim() || undefined),
+		// A refused code is left behind — sending it could only fail, and the card is already showing
+		// what this buyer gets without it.
+		mutationFn: (intervalOverride?: string) => startCheckout(usableCode || undefined, intervalOverride),
 		onSuccess: (data) => {
 			if (data?.url) window.location.href = data.url
 			else ErrorToast("Error", "Could not start checkout. Please try again.")
@@ -408,9 +495,10 @@ export default function PremiumPage() {
 	})
 
 	// ---- Get Premium ----
-	const handleChoosePremium = React.useCallback(() => {
+	const handleChoosePremium = React.useCallback((intervalOverride?: string) => {
+		pendingInterval.current = intervalOverride
 		if (isAuthenticated) {
-			subscribeMutation.mutate()
+			subscribeMutation.mutate(intervalOverride)
 			return
 		}
 		// Everything stays on this page: prove the email with a code, and the account is created
@@ -490,16 +578,18 @@ export default function PremiumPage() {
 		setAutoState("running")
 
 		;(async () => {
-			const code = inviteCode.trim()
+			// The code as last resolved, not as typed: a refused one is dropped here rather than sent
+			// to a checkout that can only reject it and leave the card looking untouched.
+			const code = usableCode
 			try {
 				if (code) {
 					await axios.post("/api/subscriptions/invite-code", {
 						code,
-						interval: selectedInterval,
+						interval: pendingInterval.current || selectedInterval,
 						...(referralEventId ? { event: referralEventId } : {}),
 					})
 				}
-				const data = await startCheckout(code || undefined)
+				const data = await startCheckout(code || undefined, pendingInterval.current)
 				if (data?.url) {
 					window.location.href = data.url
 					return
@@ -512,7 +602,7 @@ export default function PremiumPage() {
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied to this account.")
 			}
 		})()
-	}, [inviteCode, referralEventId, selectedInterval, startCheckout])
+	}, [usableCode, referralEventId, selectedInterval, startCheckout])
 
 	// ---- Back from Stripe ----
 	React.useEffect(() => {
@@ -607,13 +697,16 @@ export default function PremiumPage() {
 					inviteError={inviteError}
 					inviteChecking={inviteChecking}
 					trial={trialOffer}
+					trialPending={!isPremium && !trialResolved}
 					premiumPending={subscribeMutation.isPending}
 					// A shared link is one specific offer, not a menu — "Continue with Free" beside it
 					// invites the recipient to decline something they were given.
 					hideFreePlan={!!referralEventId}
-					// Browsing is the free plan here — there is no app to hand back to.
-					onChooseFree={() => router.push("/")}
-					onChoosePremium={handleChoosePremium}
+					// Browsing is the free plan here — there is no app to hand back to. Signed out it
+					// means starting an account, which is what Jetzy Basic actually is.
+					onChooseFree={() => router.push(isAuthenticated ? ROUTES.home : ROUTES.create)}
+					onChoosePremium={() => handleChoosePremium()}
+					onChoosePremiumAtInterval={(interval) => handleChoosePremium(interval)}
 					subscribedCtaLabel="Browse events"
 				/>
 

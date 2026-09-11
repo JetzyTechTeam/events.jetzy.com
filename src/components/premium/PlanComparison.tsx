@@ -169,6 +169,19 @@ type Props = {
 	 * first real invoice lands; without it the date is computed from `months`.
 	 */
 	trial?: { months: number; label: string; chargesFrom?: string | null } | null
+	/**
+	 * The trial hasn't been resolved for the first time yet.
+	 *
+	 * Holds the price behind the same spinner `planLoading` uses. Without it the card painted the
+	 * full rate the instant the price query resolved and swapped to $0 once the trial landed a
+	 * moment later — for a signed-in buyer, a debounce plus a round trip later. A price that
+	 * changes while it is being read is worse than one that arrives late.
+	 *
+	 * Callers latch it after the FIRST resolution only: re-gating on every keystroke would hide
+	 * the price behind a spinner while someone types a code, and `inviteChecking` already says so
+	 * under the field.
+	 */
+	trialPending?: boolean
 	/** Disables the Premium CTA (in-flight mutation, or status still loading). */
 	premiumDisabled?: boolean
 	/** Shows a spinner in place of the Premium CTA label. */
@@ -188,6 +201,15 @@ type Props = {
 	 */
 	hideFreePlan?: boolean
 	onChoosePremium: () => void
+	/**
+	 * Buy at a named interval, from the annual pitch — which was three lines of copy selling annual
+	 * with no way to act on it, leaving the buyer to find the toggle above and then the CTA below.
+	 *
+	 * The INTERVAL is passed rather than read from `selectedInterval` on the caller's side: that is
+	 * state, and it has not updated by the time this handler's checkout request is built. Omit the
+	 * prop and the block stays plain text.
+	 */
+	onChoosePremiumAtInterval?: (interval: string) => void
 	freeCtaLabel?: string
 	premiumCtaLabel?: string
 	subscribedCtaLabel?: string
@@ -218,11 +240,13 @@ const PlanComparison: React.FC<Props> = ({
 	inviteError,
 	inviteChecking = false,
 	trial,
+	trialPending = false,
 	billingPending = false,
 	premiumDisabled = false,
 	premiumPending = false,
 	onChooseFree,
 	onChoosePremium,
+	onChoosePremiumAtInterval,
 	hideFreePlan = false,
 	freeCtaLabel = "Continue with Free",
 	premiumCtaLabel = "Get Premium",
@@ -476,8 +500,10 @@ const PlanComparison: React.FC<Props> = ({
 						)}
 
 						{/* Never a placeholder figure — the price is a disclosure, so it's a spinner until
-						    the real number is known. */}
-						{planLoading ? (
+						    the real number is known. That includes whether a trial applies: the rate and
+						    $0 are different disclosures, and showing one then the other reads as the price
+						    changing while it is being looked at. */}
+						{planLoading || trialPending ? (
 							<div className="mb-6">
 								<Spinner />
 							</div>
@@ -510,7 +536,14 @@ const PlanComparison: React.FC<Props> = ({
 								    the green line under the invite field — that one confirms the code was
 								    accepted; this one prices it. */}
 								{trialApplied && (
-									<p className="text-sm text-gray-300 mt-1">
+									<p
+										className="mt-2 rounded-lg px-3 py-2 text-sm font-semibold"
+										style={{
+											background: "rgba(245,197,24,0.10)",
+											border: "1px solid rgba(245,197,24,0.45)",
+											color: "#F5C518",
+										}}
+									>
 										Then {money(amount)}/{PERIOD_LABELS[interval] || interval}
 										{trialChargesOn ? ` from ${trialChargesOn}` : ""}.
 									</p>
@@ -545,16 +578,47 @@ const PlanComparison: React.FC<Props> = ({
 										   figures are substituted, and all three are derived — the months free from
 										   the two live prices, and "the price of 10" from twelve minus that. A
 										   hardcoded "2 months" or "price of 10" is a claim about Stripe's prices
-										   that stops being true the moment either one moves. */
+										   that stops being true the moment either one moves.
+
+										   Clickable when the caller can act on it: it is the pitch for annual, and
+										   it used to be the one thing on this card that sold something and did
+										   nothing when pressed. The interval is passed to BOTH handlers — the
+										   toggle moves so the card agrees with what Stripe is about to charge, and
+										   checkout is told outright rather than reading state that hasn't updated. */
 										<div className="mt-3 text-sm">
-											<p className="font-semibold text-white">Save Even More with Annual Membership</p>
-											<p className="text-gray-300 mt-1">
-												Get {annualMonthsFreeOnSale} additional month{annualMonthsFreeOnSale === 1 ? "" : "s"} FREE when you
-												choose an annual membership.
-											</p>
-											<p className="font-semibold mt-1" style={{ color: "#F5C518" }}>
-												{money(alternate.amount)}/year — 12 months for the price of {12 - annualMonthsFreeOnSale}!
-											</p>
+											{(() => {
+												const pitch = (
+													<>
+														<p className="font-semibold text-white">Save Even More with Annual Membership</p>
+														<p className="text-gray-300 mt-1">
+															Get {annualMonthsFreeOnSale} additional month
+															{annualMonthsFreeOnSale === 1 ? "" : "s"} FREE when you choose an annual membership.
+														</p>
+														<p
+															className={`font-semibold mt-1 ${onChoosePremiumAtInterval ? "underline" : ""}`}
+															style={{ color: "#F5C518" }}
+														>
+															{money(alternate.amount)}/year — 12 months for the price of{" "}
+															{12 - annualMonthsFreeOnSale}!
+														</p>
+													</>
+												)
+												return onChoosePremiumAtInterval ? (
+													<button
+														type="button"
+														disabled={premiumDisabled || premiumPending}
+														onClick={() => {
+															onIntervalChange?.(alternate.interval)
+															onChoosePremiumAtInterval(alternate.interval)
+														}}
+														className="w-full text-left rounded-xl border-2 border-[#2b2b2b] hover:border-jetzy px-3 py-2 transition-colors disabled:opacity-50"
+													>
+														{pitch}
+													</button>
+												) : (
+													pitch
+												)
+											})()}
 										</div>
 									) : (
 										<p className="text-sm text-gray-400 mt-1 flex items-baseline gap-2">

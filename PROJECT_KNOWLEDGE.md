@@ -2855,3 +2855,63 @@ there are trial months". Free months are an ordinary part of a ticket sale now �
 them on the ticket so every buyer gets them — and reporting all of those as giveaways would have
 said the whole product was being handed out. The campaign behind any trial stays attributable
 through `referralCode` / `inviteCode` on the same row.
+
+---
+
+## The plan card commits to one price, and a typo can't take the offer away (2026-09-12)
+
+Seven reported faults on `PlanComparison`, fixed in the component and in all three of its doors
+(`premium.tsx`, `subscribe.tsx`, `PremiumPaywallModal.tsx`) — each owns its own copy of the
+invite-code effect and its own checkout mutation, so any of these landing in only one of them
+means the doors disagree about what the same buyer is offered.
+
+**The card no longer paints `$20` and then `$0`.** New `trialPending` prop, ORed into the existing
+`planLoading` spinner guard on the price block. The price query resolved while `trial` was still
+`null`, so `trialApplied` was false for at least one painted frame — and for a signed-in buyer for
+the 600ms debounce plus a round trip. Callers latch `trialResolved` after the FIRST resolution only:
+re-gating per keystroke would hide the price behind a spinner while somebody types, which
+`inviteChecking` already reports under the field. The debounce is now `code ? 600 : 0` — the empty
+field is the common case and there is nothing to wait for.
+
+**A refused code costs the buyer the code, never the offer, and never the button.** `standingTrial`
+(a ref, per caller) holds what this buyer gets with NO code; every effect run falls back to it
+instead of to `null`, and so does every refusal. Signed out it is `defaultTrialOffer`; signed in it
+is whatever `invite-code` last returned for an empty field, re-asked once on a refusal. Before
+this, one mistyped character read as the price going up, and the purchase then stalled: the CTA
+lost its trial wording and checkout refused the dead code, so verifying an email appeared to do
+nothing.
+
+**`usableCode` is the refused STRING, not a valid/invalid flag.** `inviteCode.trim() !== refusedCode`.
+A flag still reads false for the first render after the buyer fixes the code, and silently dropping
+a GOOD code is the more expensive mistake — they lose months they were promised. `usableCode` is
+what reaches Stripe and what `applicationRequiredForPurchase` is asked about; counting a typo as
+"has an invite code" would walk it past the questionnaire.
+
+**The green line under the invite field is gone until a code is typed.** It is `inviteAccepted`,
+and it confirms a CODE; with none entered there is nothing to confirm. The `$0` headline, the badge
+and the "Then …" line all read `trial`, so the standing free month is untouched — this is a
+disclosure that moved, not an offer that was withdrawn.
+
+**"Then $20/Month from &lt;date&gt;." is now the yellow disclosure panel** every other membership
+term on this site uses, not `text-gray-300`. Same sentence — it is the card-network disclosure.
+
+**The annual pitch is a button.** New `onChoosePremiumAtInterval?: (interval)`; omit it and the
+block stays plain text. It calls `onIntervalChange` AND the new handler, because the toggle has to
+agree with what Stripe is about to charge. **The interval is passed, never read from
+`selectedInterval`** — that is caller state and has not updated when the request is built, so every
+caller's checkout takes an `intervalOverride`, and a `pendingInterval` ref carries it across the
+email-verification detour.
+
+**Jetzy Basic goes to `/signup` for a signed-out visitor** (`ROUTES.create`), on all three doors.
+It is an account, not a state of not having one. Signed in each door keeps what it did: home, the
+app deep link, close.
+
+**An abandoned checkout reopens the dialog on the PLAN card.** `PremiumPaywallModal` used to throw
+`PURCHASE_MARKER` away on anything that wasn't `premium_session_id`, which is exactly the
+`?premium_cancelled=1` return — so somebody who stepped into Stripe and changed their mind landed
+back with no card in sight. It now consumes the marker, restores `{code, interval}` from the new
+`PURCHASE_CONTEXT` key, and `router.replace`s the param away so a refresh doesn't reopen it.
+`showMemberCard` deliberately does NOT include it (nothing was bought) and
+`usePremiumSubscriptionReturn` is untouched (a cancel is not a purchase and must not confirm a
+session or fire a toast). The no-param branch still clears the marker — that is the guard against a
+stale one opening the dialog on an unrelated later arrival.
