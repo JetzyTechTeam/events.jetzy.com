@@ -276,13 +276,6 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 	return (
 		<>
 			<div className={`relative flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl p-4 ${props.isEnded ? 'bg-[#2A1E1E] border border-[#444444]' : 'bg-[#1E1E1E]'}`}>
-				{/* Premium tag — the row card's own top-RIGHT corner (CEO, 2026-09-04): right of
-					    the event name and above Manage Event on desktop, and on mobile it lands in
-					    the empty space beside the date block rather than across the thumbnail.
-					    Anchored to a real corner, so it cannot float loose the way a rotated pill did.
-					    `rounded-tr-xl` on the clipping square follows the card's own radius; the card
-					    itself needs no `overflow-hidden` because the ribbon crops itself. */}
-				{(event as any).premiumEvent && <PremiumEventBadge variant="ribbon" side="right" className="rounded-tr-xl" />}
 				{/* Date and thumbnail share one row on mobile rather than stacking into a very
 				    tall card. `sm:contents` dissolves this wrapper from 640px up, so the desktop
 				    layout is exactly the three-column flex it has always been — no duplicated
@@ -398,9 +391,8 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 
 				{/* ACTIONS */}
 				<div className="shrink-0 flex flex-col gap-2 w-full sm:w-[180px]">
-					{/* Right edge of the row rather than the badge cluster beside the title — that
-					    cluster is status/DRAFT/PENDING/PRIVATE, and this is a tag on the event, not
-					    a state of it. */}
+					{/* Premium tag — one badge only: the pill above Manage Event. The diagonal corner
+					    ribbon was removed (2026-09-14) because the card showed the same tag twice. */}
 					{(event as any).premiumEvent && (
 						<div className="flex justify-end">
 							<PremiumEventBadge />
