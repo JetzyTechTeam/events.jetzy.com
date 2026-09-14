@@ -91,7 +91,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 			]
 			: [{ name: "Share Profile", href: profileHref }]
 
-	// Admin-only tools live under one "Admin" menu on desktop. Nine inline links didn't fit the
+	// Admin-only tools live under one "Manage" menu on desktop. Nine inline links didn't fit the
 	// row: the long labels wrapped onto two lines and the bar lost its alignment. Same links, same
 	// targets — the mobile panel still lists everything flat.
 	const ADMIN_MENU_NAMES = ["Premium Applications", "Support Requests", "Jetzy User Signup"]
@@ -147,7 +147,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 														"inline-flex items-center gap-1 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium focus:outline-none",
 													)}
 												>
-													Admin
+													Manage
 													<ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
 												</Menu.Button>
 												<Transition
@@ -159,14 +159,14 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 													leaveFrom="transform opacity-100 scale-100"
 													leaveTo="transform opacity-0 scale-95"
 												>
-													<Menu.Items className="absolute left-0 z-50 mt-2 w-56 origin-top-left rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+													<Menu.Items className="absolute left-0 z-50 mt-2 w-56 origin-top-left rounded-md border border-gray-700 bg-gray-800 p-1 shadow-xl focus:outline-none">
 														{adminMenuItems.map((item) => (
 															<Menu.Item key={item.name}>
 																{({ active }) =>
 																	item.name === "Jetzy User Signup" ? (
 																		<button
 																			onClick={() => setIsSignupQROpen(true)}
-																			className={classNames(active ? "bg-gray-100" : "", "block w-full px-4 py-2 text-left text-sm text-gray-700")}
+																			className={classNames(active ? "bg-gray-700 text-white" : "text-gray-300", "block w-full rounded-md px-3 py-2 text-left text-sm font-medium")}
 																		>
 																			{item.name}
 																		</button>
@@ -174,9 +174,8 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 																		<Link
 																			href={item.href}
 																			className={classNames(
-																				active ? "bg-gray-100" : "",
-																				pathname === item.href ? "font-semibold text-black" : "text-gray-700",
-																				"block px-4 py-2 text-sm",
+																				pathname === item.href ? "bg-gray-900 text-white" : active ? "bg-gray-700 text-white" : "text-gray-300",
+																				"block rounded-md px-3 py-2 text-sm font-medium",
 																			)}
 																			aria-current={pathname === item.href ? "page" : undefined}
 																		>
@@ -232,19 +231,19 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 											leaveFrom="transform opacity-100 scale-100"
 											leaveTo="transform opacity-0 scale-95"
 										>
-											<Menu.Items className="absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+											<Menu.Items className="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-md border border-gray-700 bg-gray-800 p-1 shadow-xl focus:outline-none">
 												<Menu.Item>
 													{({ active }) => (
-														<div className="border-b border-gray-100 pb-1">
-															<p className="text-[10px] font-bold text-gray-400 px-4 pt-2 uppercase tracking-wider">Signed in as</p>
-															<p className="text-xs text-black px-4 font-semibold truncate">{user.name}</p>
-															<p className="text-[10px] text-gray-500 px-4 pb-2 truncate">{user.email}</p>
+														<div className="mb-1 border-b border-gray-700 pb-1">
+															<p className="text-[10px] font-bold text-gray-500 px-3 pt-2 uppercase tracking-wider">Signed in as</p>
+															<p className="text-xs text-white px-3 font-semibold truncate">{user.name}</p>
+															<p className="text-[10px] text-gray-400 px-3 pb-2 truncate">{user.email}</p>
 														</div>
 													)}
 												</Menu.Item>
 												<Menu.Item>
 													{({ active }) => (
-														<Link href={profileHref} className={classNames(active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}>
+														<Link href={profileHref} className={classNames(active ? "bg-gray-700 text-white" : "text-gray-300", "block rounded-md px-3 py-2 text-sm font-medium")}>
 															Share Profile
 														</Link>
 													)}
@@ -256,7 +255,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 														{({ active }) => (
 															<a
 																onClick={openMembershipDialog}
-																className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-gray-700")}
+																className={classNames("cursor-pointer", active ? "bg-gray-700 text-white" : "text-gray-300", "block rounded-md px-3 py-2 text-sm font-medium")}
 															>
 																{membershipLabel}
 															</a>
@@ -268,7 +267,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 														<a
 															onClick={logout}
 															data-analytics-ignore=""
-															className={classNames("cursor-pointer", active ? "bg-gray-100" : "", "block px-4 py-2 text-sm text-red-600 font-medium")}
+															className={classNames("cursor-pointer", active ? "bg-gray-700" : "", "block rounded-md px-3 py-2 text-sm text-red-400 font-medium")}
 														>
 															Logout
 														</a>
