@@ -54,7 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		if (search?.trim()) {
 			const rx = new RegExp(escapeRegex(search.trim()), "i")
-			and.push({ $or: [{ email: rx }, { name: rx }, { inviteCode: rx }, { referralCode: rx }, { bookingRef: rx }] })
+			and.push({ $or: [{ email: rx }, { name: rx }, { inviteCode: rx }, { referralCode: rx }, { mobileReferralCode: rx }, { bookingRef: rx }] })
 		}
 
 		const match = and.length ? { $and: and } : {}
@@ -77,6 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				currency: d.currency || "usd",
 				inviteCode: d.inviteCode || "",
 				referralCode: d.referralCode || "",
+				mobileReferralCode: d.mobileReferralCode || "",
 				trialMonths: d.trialMonths || 0,
 				trialEndsAt: d.trialEndsAt ? new Date(d.trialEndsAt).toISOString() : null,
 				event: d.eventId ? eventName.get(String(d.eventId)) || "" : "",
@@ -92,14 +93,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const rows = await shape(docs)
 			const headers = [
 				"Bought", "Membership", "Source", "Name", "Email", "Interval", "Amount", "Invite Code",
-				"Referral Code", "Free Months", "First Charge", "Event", "Booking Ref", "Subscription",
+				"Referral Code", "Mobile Referral Code", "Free Months", "First Charge", "Event", "Booking Ref", "Subscription",
 			]
 			const lines = [
 				headers.join(","),
 				...rows.map((r) =>
 					[
 						r.boughtAt || "", r.membership, r.source, r.name, r.email, r.interval, r.amount ?? "",
-						r.inviteCode, r.referralCode, r.trialMonths || "", r.trialEndsAt || "", r.event,
+						r.inviteCode, r.referralCode, r.mobileReferralCode, r.trialMonths || "", r.trialEndsAt || "", r.event,
 						r.bookingRef, r.stripeSubscriptionId,
 					]
 						.map(escapeCsv)
@@ -111,7 +112,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return res.status(200).send(lines.join("\n"))
 		}
 
-		const [docs, total, bySource, byInvite, byReferralLink] = await Promise.all([
+		const [docs, total, bySource, byInvite, byReferralLink, byMobileReferral] = await Promise.all([
 			MembershipPurchases.find(match).sort({ createdAt: -1 }).skip((pageNum - 1) * limitNum).limit(limitNum).lean(),
 			MembershipPurchases.countDocuments(match),
 			MembershipPurchases.aggregate([{ $match: match }, { $group: { _id: "$source", count: { $sum: 1 } } }]),
@@ -143,6 +144,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				{ $sort: { count: -1 } },
 				{ $limit: 50 },
 			]),
+			// A member's MOBILE referral code typed on the Premium card — `lib/mobile-referral.ts`.
+			MembershipPurchases.aggregate([
+				{ $match: { $and: [...and, { mobileReferralCode: { $exists: true, $nin: [null, ""] } }] } },
+				{ $group: { _id: "$mobileReferralCode", count: { $sum: 1 }, members: { $addToSet: "$email" } } },
+				{ $sort: { count: -1 } },
+				{ $limit: 50 },
+			]),
 		])
 
 		const referralLinkEventIds = byReferralLink.map((row: any) => row._id.eventId).filter(Boolean)
@@ -168,6 +176,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					code: row._id.code,
 					eventId: String(row._id.eventId),
 					event: referralLinkEventName.get(String(row._id.eventId)) || "",
+					redemptions: row.count,
+					members: (row.members || []).filter(Boolean).length,
+				})),
+				mobileReferralCodes: byMobileReferral.map((row: any) => ({
+					code: row._id,
 					redemptions: row.count,
 					members: (row.members || []).filter(Boolean).length,
 				})),

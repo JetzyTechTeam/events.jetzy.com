@@ -26,6 +26,8 @@ export type MembershipPurchaseSource =
 	| "gift"
 	/** Given away by an invite code typed at signup. No card was collected. */
 	| "signup"
+	/** Bought at `/subscribe`, `/premium` or the paywall with a member's MOBILE referral code. */
+	| "mobile_referral"
 	/** A subscription on this Stripe account that this app didn't sell (selectmember.jetzy.com). */
 	| "external"
 
@@ -59,6 +61,12 @@ const membershipPurchaseSchema = new Schema(
 		inviteCode: { type: String, required: false, index: true },
 		/** Event referral code, when the membership rode in on a discounted or gifted ticket. */
 		referralCode: { type: String, required: false, index: true },
+		/**
+		 * A Jetzy MOBILE referral code (a member's personal app code), validated against the Jetzy
+		 * backend at checkout. Stored as typed (trimmed) — the backend owns its casing. Kept apart
+		 * from `referralCode`, which is an EVENT code and is counted against that event's limit.
+		 */
+		mobileReferralCode: { type: String, required: false, index: true },
 		/** Free months granted at the sale, from either kind of code. */
 		trialMonths: { type: Number, required: false },
 		/** When the first real charge is due — the end of any trial. */
@@ -92,6 +100,7 @@ export type RecordMembershipPurchase = {
 	currency?: string
 	inviteCode?: string
 	referralCode?: string
+	mobileReferralCode?: string
 	trialMonths?: number
 	trialEndsAt?: Date
 	eventId?: string
@@ -121,6 +130,7 @@ export async function recordMembershipPurchase(input: RecordMembershipPurchase):
 			...(input.currency ? { currency: input.currency } : {}),
 			...(input.inviteCode ? { inviteCode: input.inviteCode.trim().toLowerCase() } : {}),
 			...(input.referralCode ? { referralCode: input.referralCode.trim().toUpperCase() } : {}),
+			...(input.mobileReferralCode ? { mobileReferralCode: input.mobileReferralCode.trim() } : {}),
 			...(input.trialMonths ? { trialMonths: input.trialMonths } : {}),
 			...(input.trialEndsAt ? { trialEndsAt: input.trialEndsAt } : {}),
 			...(input.eventId && Types.ObjectId.isValid(input.eventId) ? { eventId: new Types.ObjectId(input.eventId) } : {}),

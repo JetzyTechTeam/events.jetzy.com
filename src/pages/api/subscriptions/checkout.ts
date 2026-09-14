@@ -10,6 +10,7 @@ import {
 	resolveStripeCustomerForUser,
 } from "@/lib/premium"
 import { defaultTrialOffer, resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
+import { MOBILE_REFERRAL_UNAVAILABLE_CHECKOUT, checkMobileReferralCode, normalizeMobileReferralCode } from "@/lib/mobile-referral"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -100,6 +101,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		 * `trialMonths` on the sale regardless of which branch produced the trial.
 		 */
 		let trialMonths = 0
+		/**
+		 * A member's MOBILE referral code (see `lib/mobile-referral.ts`). Checked only when the code is
+		 * neither a host's shared link nor one of our invite codes. A valid one grants nothing extra —
+		 * the buyer falls through to the standing offer below, exactly as with an empty field — and is
+		 * stamped into metadata so the webhook records it on the sale.
+		 */
+		let mobileReferralCodeApplied: string | undefined
+		if (rawInviteCode.trim() && !referralEventId) {
+			const asInvite = resolveTrialCode(rawInviteCode, price.recurring?.interval)
+			if (!asInvite.ok && asInvite.reason === "unknown") {
+				const check = await checkMobileReferralCode(rawInviteCode)
+				if (check === "unavailable") {
+					return sendResponse(res, { inviteCode: true }, MOBILE_REFERRAL_UNAVAILABLE_CHECKOUT, false, ResCode.BAD_REQUEST)
+				}
+				if (check === "valid") mobileReferralCodeApplied = normalizeMobileReferralCode(rawInviteCode)
+				// "invalid" falls through to the invite-code branch, which refuses it as before.
+			}
+		}
 
 		if (rawInviteCode.trim() && referralEventId) {
 			const { resolveReferralTrial } = await import("@/lib/referral-trial")
@@ -122,7 +141,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.log(
 				`[subscriptions/checkout] referral code ${referral.code} (event ${referral.eventId}) applied for ${userId} until ${new Date(trialEnd * 1000).toISOString()}`,
 			)
-		} else if (rawInviteCode.trim()) {
+		} else if (rawInviteCode.trim() && !mobileReferralCodeApplied) {
 			const resolved = resolveTrialCode(rawInviteCode, price.recurring?.interval)
 			if (!resolved.ok) {
 				return sendResponse(res, { inviteCode: true }, resolved.message, false, ResCode.BAD_REQUEST)
@@ -212,6 +231,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// belongs to: the webhook needs both to count the redemption against the right row,
 				// now that one code string can exist on several events.
 				...(referralCodeApplied ? { referralCode: referralCodeApplied, referralEventId } : {}),
+				// A mobile referral code — its own key, never `referralCode`, which the webhook reads
+				// as a host's event code and counts against that event's `maxUses`.
+				...(mobileReferralCodeApplied ? { mobileReferralCode: mobileReferralCodeApplied } : {}),
 				// So the webhook can close the loop on the open-vs-bought funnel row this purchase
 				// came from — the webhook never sees the browser or its anonId otherwise.
 				...(funnelPage && funnelAnonId

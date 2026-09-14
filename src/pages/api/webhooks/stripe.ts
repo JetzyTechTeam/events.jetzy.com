@@ -239,9 +239,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								// i.e. as somebody else's, and the campaign that produced them
 								// cannot be traced. Anything else unrecognised is still external:
 								// selectmember.jetzy.com sells Premium on this same account.
+								// A direct purchase made with a member's mobile referral code gets its own
+								// source, so the report can tell the codes' members apart from everyone else.
 								source:
 									sessionMetadata.purpose === "premium_subscription"
-										? "subscribe"
+										? sessionMetadata.mobileReferralCode
+											? "mobile_referral"
+											: "subscribe"
 										: sessionMetadata.purpose === "ticket+membership"
 											? "ticket"
 											: "external",
@@ -259,6 +263,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								// A host's referral code, shared as a Premium link. Recorded with its
 								// event so the sale can be traced back to the campaign that produced it.
 								...(sessionMetadata.referralCode ? { referralCode: sessionMetadata.referralCode } : {}),
+								...(sessionMetadata.mobileReferralCode ? { mobileReferralCode: sessionMetadata.mobileReferralCode } : {}),
 								...(sessionMetadata.referralEventId
 									? { eventId: sessionMetadata.referralEventId }
 									// A bundled order carries its own event, under the ordinary key.
