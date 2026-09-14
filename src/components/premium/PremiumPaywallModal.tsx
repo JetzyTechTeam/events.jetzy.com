@@ -6,6 +6,7 @@ import { useRouter } from "next/router"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { Error as ErrorToast } from "@/lib/_toaster"
 import { defaultTrialOffer, resolveTrialCode, trialDisclosure, trialEndsOn, type AppliedTrial, type TrialOffer, sameAppliedTrial } from "@/lib/invite-trial"
+import { MOBILE_REFERRAL_ACCEPTED, MOBILE_REFERRAL_UNAVAILABLE, checkMobileReferralCode } from "@/lib/mobile-referral"
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@/hooks/usePremiumStatus"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@/hooks/usePremiumPlan"
 import PlanComparison from "@/components/premium/PlanComparison"
@@ -260,13 +261,38 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 					// a price rise caused by a typo, and it stalled the whole purchase: the CTA lost its
 					// trial wording and checkout then refused the dead code.
 					setInviteAccepted(null)
-					setRefusedCode(code)
-					setInviteError(
-						standing && resolved.reason === "unknown"
-							? "That invite code isn't valid — continuing without it."
-							: resolved.message,
-					)
 					applyTrial(standing)
+					// Not one of our invite codes — it may be a member's mobile referral code. A valid
+					// one keeps the standing offer and nothing more (`lib/mobile-referral.ts`).
+					if (resolved.reason === "unknown") {
+						let cancelled = false
+						setInviteChecking(true)
+						inviteTimer.current = setTimeout(async () => {
+							const check = await checkMobileReferralCode(code)
+							if (cancelled) return
+							setInviteChecking(false)
+							if (check === "valid") {
+								setRefusedCode(null)
+								setInviteError(null)
+								setInviteAccepted(MOBILE_REFERRAL_ACCEPTED)
+								return
+							}
+							setRefusedCode(code)
+							setInviteError(
+								check === "unavailable"
+									? MOBILE_REFERRAL_UNAVAILABLE
+									: standing
+										? "That invite code isn't valid — continuing without it."
+										: resolved.message,
+							)
+						}, 600)
+						return () => {
+							cancelled = true
+							if (inviteTimer.current) clearTimeout(inviteTimer.current)
+						}
+					}
+					setRefusedCode(code)
+					setInviteError(resolved.message)
 					return
 				}
 				offer = resolved.offer
@@ -323,7 +349,9 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 				if (!code) standingTrial.current = applied
 				setInviteAccepted(
 					code
-						? data?.data?.label
+						? data?.data?.kind === "mobile_referral"
+							? MOBILE_REFERRAL_ACCEPTED
+							: data?.data?.label
 							? trialDisclosure(
 								{ months: Number(data.data.months) || 0, intervals: [], label: data.data.label },
 								selectedPrice?.label || null,

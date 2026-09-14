@@ -3,6 +3,7 @@ import { ResCode } from "@/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import { findMembershipRecord, getUserStripeCustomerId, hasEverHadMembership } from "@/lib/premium"
 import { defaultTrialOffer, resolveTrialCode, trialEndsOn } from "@/lib/invite-trial"
+import { MOBILE_REFERRAL_ACCEPTED, checkMobileReferralCode, normalizeMobileReferralCode } from "@/lib/mobile-referral"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
@@ -95,6 +96,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			label = `${months} month${months === 1 ? "" : "s"} free`
 		} else {
 			const resolved = resolveTrialCode(code, interval)
+			if (!resolved.ok && resolved.reason === "unknown") {
+				// Not one of our invite codes — it may be a member's MOBILE referral code. A valid one
+				// grants nothing beyond what an empty field would (see `lib/mobile-referral.ts`), so it
+				// is answered with the standing offer, silently refused for a returning member. The
+				// code is accepted either way: it counts for the application gate and the report.
+				const check = await checkMobileReferralCode(code)
+				if (check === "unavailable") {
+					return sendResponse(res, { valid: false, reason: "referral-unavailable" }, "We couldn't check that referral code right now.", false, ResCode.BAD_REQUEST)
+				}
+				if (check === "valid") {
+					const referralCode = normalizeMobileReferralCode(code)
+					const standing = defaultTrialOffer(interval)
+					const userId = (session.user as any)?._id || (session.user as any)?.id
+					const record = await findMembershipRecord(userId, (session.user as any)?.email)
+					const customerId = getUserStripeCustomerId(record?.doc)
+					const getsStanding = !!standing && !(customerId && (await hasEverHadMembership(customerId, "premium")))
+					return sendResponse(
+						res,
+						{
+							valid: true,
+							kind: "mobile_referral",
+							code: referralCode,
+							...(getsStanding && standing
+								? { months: standing.months, label: standing.label, chargesFrom: trialEndsOn(standing).toISOString() }
+								: {}),
+						},
+						MOBILE_REFERRAL_ACCEPTED,
+						true,
+						ResCode.OK,
+					)
+				}
+			}
 			if (!resolved.ok) {
 				return sendResponse(res, { valid: false, reason: resolved.reason }, resolved.message, false, ResCode.BAD_REQUEST)
 			}

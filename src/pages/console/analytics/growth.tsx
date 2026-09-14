@@ -61,6 +61,7 @@ type MembershipRow = {
 	amount: number | null
 	inviteCode: string
 	referralCode: string
+	mobileReferralCode: string
 	trialMonths: number
 	trialEndsAt: string | null
 	event: string
@@ -98,6 +99,7 @@ const SOURCE_LABELS: Record<string, string> = {
 	gift: "Free months from a code",
 	signup: "Invite code at signup",
 	application: "Approved application",
+	mobile_referral: "Mobile referral code",
 	external: "Sold elsewhere",
 }
 
@@ -107,6 +109,7 @@ const SOURCE_COLORS: Record<string, string> = {
 	gift: "yellow",
 	signup: "purple",
 	application: "orange",
+	mobile_referral: "teal",
 	external: "gray",
 }
 
@@ -124,6 +127,8 @@ export default function GrowthAnalytics() {
 	// A host's own referral code, shared as a standalone Premium link (no ticket) — separate from
 	// the hardcoded `inviteCodes` above, which only covers the TRIAL_CODES table.
 	const [referralLinkRedemptions, setReferralLinkRedemptions] = React.useState<Array<{ code: string; eventId: string; event: string; redemptions: number; members: number }>>([])
+	// A member's MOBILE referral code typed on the Premium card (`lib/mobile-referral.ts`).
+	const [mobileReferralCodes, setMobileReferralCodes] = React.useState<Array<{ code: string; redemptions: number; members: number }>>([])
 	const [source, setSource] = React.useState("")
 	const [hasInviteCode, setHasInviteCode] = React.useState("")
 	const [search, setSearch] = React.useState("")
@@ -161,6 +166,7 @@ export default function GrowthAnalytics() {
 				setBySource(data?.data?.bySource || {})
 				setInviteCodes(data?.data?.inviteCodes || [])
 				setReferralLinkRedemptions(data?.data?.referralLinkRedemptions || [])
+				setMobileReferralCodes(data?.data?.mobileReferralCodes || [])
 			})
 			.catch(() => toast({ title: "Couldn't load the membership report", status: "error", duration: 3000 }))
 			.finally(() => !cancelled && setMemLoading(false))
@@ -334,6 +340,20 @@ export default function GrowthAnalytics() {
 									</Box>
 								)}
 
+								{mobileReferralCodes.length > 0 && (
+									<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4} mb={6}>
+										<Text color="white" fontWeight={700} mb={3}>Mobile referral codes</Text>
+										<HStack spacing={3} wrap="wrap">
+											{mobileReferralCodes.map((c) => (
+												<Box key={c.code} bg="#101010" border="1px solid #2a2a2a" borderRadius="md" px={4} py={3}>
+													<Text color="#F5C518" fontFamily="mono" fontWeight={700}>{c.code}</Text>
+													<Text color="#9C9C9C" fontSize="xs">{c.redemptions} purchase{c.redemptions === 1 ? "" : "s"} · {c.members} member{c.members === 1 ? "" : "s"}</Text>
+												</Box>
+											))}
+										</HStack>
+									</Box>
+								)}
+
 								<Box bg="#1a1a1a" border="1px solid #2a2a2a" borderRadius="lg" p={4}>
 									<Flex justify="space-between" align="center" mb={3} gap={3} wrap="wrap">
 										<HStack spacing={2} wrap="wrap">
@@ -343,6 +363,7 @@ export default function GrowthAnalytics() {
 												<option value="ticket">With a ticket</option>
 												<option value="gift">Free months from a code</option>
 											<option value="signup">Invite code at signup</option>
+												<option value="mobile_referral">Mobile referral code</option>
 												<option value="external">Sold elsewhere</option>
 											</Select>
 											<Select size="sm" bg="#101010" color="white" borderColor="#2a2a2a" w="190px" value={hasInviteCode} onChange={(e) => { setHasInviteCode(e.target.value); setPage(1) }}>
@@ -416,7 +437,7 @@ export default function GrowthAnalytics() {
 																	<Badge colorScheme={SOURCE_COLORS[r.source] || "gray"}>{SOURCE_LABELS[r.source] || r.source}</Badge>
 																</Td>
 																<Td color="#D6D6D6">{r.amount != null ? `${money(r.amount)}/${r.interval || "month"}` : r.interval || "—"}</Td>
-																<Td color="#F5C518" fontFamily="mono" fontSize="xs">{r.inviteCode || r.referralCode || "—"}</Td>
+																<Td color="#F5C518" fontFamily="mono" fontSize="xs">{r.inviteCode || r.referralCode || r.mobileReferralCode || "—"}</Td>
 																<Td color="#9C9C9C" fontSize="xs">
 																	{r.trialEndsAt ? `${day(r.trialEndsAt)}${r.trialMonths ? ` (${r.trialMonths} mo)` : ""}` : "—"}
 																</Td>

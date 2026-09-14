@@ -1532,6 +1532,18 @@ stop someone finishing their own signup.
 
 ---
 
+## Mobile referral code on the Premium card (2026-09-14)
+
+- **Where:** `/subscribe`, `/premium`, `PremiumPaywallModal` only. Signup is unchanged.
+- **What counts:** a code that is NOT in `TRIAL_CODES` and has no `event` param is checked against the Jetzy backend `GET /api/v1/referral/verify/{code}` via `checkMobileReferralCode` in `src/lib/mobile-referral.ts` → `valid | invalid | unavailable` (4xx = invalid, 5xx/timeout = unavailable; bad code verified to return 400).
+- **What it grants: nothing extra.** A valid code keeps the standing offer (`DEFAULT_TRIAL_MONTHS`), silently withheld from returning members, same as an empty field. It counts as a code for `applicationRequiredForPurchase` (skips the application gate).
+- **Card:** signed out → checked in the browser (600ms debounce); signed in → `/api/subscriptions/invite-code` returns `{ valid: true, kind: "mobile_referral", code, months?, label?, chargesFrom? }`. Shows "Referral code applied.". Invalid → existing "isn't valid — continuing without it"; unavailable → "couldn't check … continuing without it" (code dropped, standing offer kept).
+- **Checkout:** `/api/subscriptions/checkout` re-verifies; `unavailable` → 400, `invalid` → existing invite-code 400. Valid → metadata `mobileReferralCode` (never `referralCode`, which the webhook counts against an event's `maxUses`).
+- **Recorded:** webhook writes `membership_purchases.mobileReferralCode` with `source: "mobile_referral"`. `/api/analytics/memberships` searches it, exports it (CSV column "Mobile Referral Code"), and returns `mobileReferralCodes[]` per-code totals; growth page Jetzy Premium tab shows them + source filter.
+- The referrer is **not** credited on the Jetzy backend — analytics only, by decision.
+
+---
+
 ## Free months of Jetzy Premium from a code (2026-08-18)
 
 Two different codes can now hand out free membership months. They share the mechanism — a Stripe
