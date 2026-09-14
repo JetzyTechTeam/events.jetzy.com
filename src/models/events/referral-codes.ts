@@ -41,6 +41,17 @@ const referralCodeSchema = new Schema<IReferralCode>(
 			min: 0,
 			max: 12,
 		},
+		// The tickets of this event the code works on, as ticket `_id` strings.
+		//
+		// NO DEFAULT. Absent (every code created before this existed, and every code the mobile
+		// app / admin portal writes) or empty means ALL tickets. A non-empty list whose ids no
+		// longer exist on the event means NO tickets — a stale list must never widen back to
+		// "all". Always read through `src/lib/referral-ticket-scope.ts`.
+		ticketIds: {
+			type: [String],
+			required: false,
+			default: undefined,
+		},
 		commissionPercentage: {
 			type: Number,
 			default: 10,

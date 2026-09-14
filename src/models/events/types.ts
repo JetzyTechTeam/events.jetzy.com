@@ -292,6 +292,11 @@ export interface IReferralCode extends IBaseModelProps {
 	discountPercentage: number
 	/** Free months of Jetzy Premium on a ticket that already bundles it. 0 = none. */
 	freeMembershipMonths?: number
+	/**
+	 * The event tickets (`_id` strings) this code works on. Absent or empty = every ticket.
+	 * Read through `src/lib/referral-ticket-scope.ts`, never directly.
+	 */
+	ticketIds?: string[]
 	commissionPercentage: number
 	isActive: boolean
 	usageCount: number

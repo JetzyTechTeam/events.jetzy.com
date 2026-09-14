@@ -1,8 +1,9 @@
 "use client"
-import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch } from "@chakra-ui/react"
+import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch, Checkbox, Radio, RadioGroup, Stack } from "@chakra-ui/react"
 import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2, FiShare2 } from "react-icons/fi"
 import { useState, useEffect } from "react"
 import { premiumShareLink, shareableReason } from "@/lib/referral-share"
+import { liveScopedTicketIds, referralAppliesToAllTickets } from "@/lib/referral-ticket-scope"
 import axios from "axios"
 import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 
@@ -15,14 +16,24 @@ interface ReferralCode {
 	isActive: boolean
 	usageCount: number
 	maxUses?: number | null
+	/** Absent or empty = every ticket. See `src/lib/referral-ticket-scope.ts`. */
+	ticketIds?: string[]
 	createdAt: string
+}
+
+export interface ReferralTicketOption {
+	_id: string
+	name: string
+	price: number
 }
 
 interface ReferralCodesManagerProps {
 	eventId: string
+	/** The event's tickets, so a code can be limited to some of them. */
+	tickets?: ReferralTicketOption[]
 }
 
-export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
+export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesManagerProps) {
 	const [codes, setCodes] = useState<ReferralCode[]>([])
 	const [loading, setLoading] = useState(true)
 	const [creating, setCreating] = useState(false)
@@ -41,7 +52,29 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		freeMembershipMonths: 0,
 		maxUses: null as number | null,
 		isActive: true,
+		// "all" = works on every ticket (stored as no `ticketIds`); "specific" = only `ticketIds`.
+		ticketScope: "all" as "all" | "specific",
+		ticketIds: [] as string[],
 	})
+
+	// What the Tickets column says for a code. A scoped code whose tickets have all been deleted
+	// works on NOTHING — it never falls back to every ticket — so it's called out in red.
+	const ticketScopeLabel = (code: ReferralCode): { text: string; broken?: boolean } => {
+		if (referralAppliesToAllTickets(code)) return { text: "All tickets" }
+		const live = liveScopedTicketIds(code, tickets)
+		if (live.length === 0) return { text: "No tickets (deleted)", broken: true }
+		const names = live.map((id) => tickets.find((t) => t._id === id)?.name || "Ticket")
+		return { text: names.join(", ") }
+	}
+
+	const toggleTicket = (ticketId: string) =>
+		setFormData((prev) => ({
+			...prev,
+			ticketIds: prev.ticketIds.includes(ticketId) ? prev.ticketIds.filter((id) => id !== ticketId) : [...prev.ticketIds, ticketId],
+		}))
+
+	/** `[]` = every ticket — sent explicitly so an edit can widen a scoped code back to all. */
+	const submittedTicketIds = () => (formData.ticketScope === "specific" ? formData.ticketIds : [])
 
 	// Stats Modal State
 	const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure()
@@ -99,6 +132,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 				discountPercentage: formData.discountPercentage,
 				freeMembershipMonths: formData.freeMembershipMonths || 0,
 				maxUses: formData.maxUses || null,
+				ticketIds: submittedTicketIds(),
 			})
 
 			if (response.data.status) {
@@ -127,7 +161,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 		}
 	}
 
-	const handleUpdate = async (codeId: string, updates: { isActive?: boolean; discountPercentage?: number; freeMembershipMonths?: number; maxUses?: number | null }) => {
+	const handleUpdate = async (codeId: string, updates: { isActive?: boolean; discountPercentage?: number; freeMembershipMonths?: number; maxUses?: number | null; ticketIds?: string[] }) => {
 		try {
 			setUpdating(codeId)
 			const response = await axios.patch(`/api/events/${eventId}/referral-codes/${codeId}`, updates)
@@ -225,6 +259,8 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			freeMembershipMonths: 0,
 			maxUses: null,
 			isActive: true,
+			ticketScope: "all",
+			ticketIds: [],
 		})
 		setEditingCode(null)
 	}
@@ -239,6 +275,9 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			freeMembershipMonths: code.freeMembershipMonths || 0,
 			maxUses: code.maxUses ?? null,
 			isActive: code.isActive,
+			ticketScope: referralAppliesToAllTickets(code) ? "all" : "specific",
+			// Only ids still on the event — a deleted ticket can't be re-ticked, so it isn't shown.
+			ticketIds: liveScopedTicketIds(code, tickets),
 		})
 		onOpen()
 	}
@@ -249,6 +288,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 			discountPercentage: formData.discountPercentage,
 			freeMembershipMonths: formData.freeMembershipMonths || 0,
 			maxUses: formData.maxUses || null,
+			ticketIds: submittedTicketIds(),
 		})
 		onClose()
 		resetForm()
@@ -373,6 +413,7 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 								<Th>Code</Th>
 								<Th>Discount</Th>
 								<Th>Free Premium</Th>
+								<Th>Tickets</Th>
 								<Th>Status</Th>
 								<Th>Usage</Th>
 								<Th>Max Uses</Th>
@@ -396,6 +437,16 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 									</Td>
 									<Td>{code.discountPercentage}%</Td>
 									<Td>{code.freeMembershipMonths ? `${code.freeMembershipMonths} ${code.freeMembershipMonths === 1 ? "month" : "months"}` : "—"}</Td>
+									<Td maxW="220px">
+										{(() => {
+											const scope = ticketScopeLabel(code)
+											return (
+												<Text fontSize="sm" color={scope.broken ? "red.300" : undefined} noOfLines={2} title={scope.text}>
+													{scope.text}
+												</Text>
+											)
+										})()}
+									</Td>
 									<Td>
 										<Switch
 											isChecked={code.isActive}
@@ -554,6 +605,41 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 							</FormControl>
 
 							<FormControl mb={4}>
+								<FormLabel>Applies To</FormLabel>
+								<RadioGroup
+									value={formData.ticketScope}
+									onChange={(value) => setFormData({ ...formData, ticketScope: value as "all" | "specific" })}
+								>
+									<Stack direction="row" spacing={6}>
+										<Radio value="all" colorScheme="orange">All tickets</Radio>
+										<Radio value="specific" colorScheme="orange" isDisabled={tickets.length === 0}>Specific tickets</Radio>
+									</Stack>
+								</RadioGroup>
+								{formData.ticketScope === "specific" && (
+									<Stack mt={3} spacing={2} bg="#101010" border="1px solid #434343" borderRadius="md" p={3} maxH="200px" overflowY="auto">
+										{tickets.map((ticket) => (
+											<Checkbox
+												key={ticket._id}
+												colorScheme="orange"
+												isChecked={formData.ticketIds.includes(ticket._id)}
+												onChange={() => toggleTicket(ticket._id)}
+											>
+												{ticket.name}{" "}
+												<Text as="span" color="gray.400" fontSize="sm">
+													{ticket.price > 0 ? `$${ticket.price.toFixed(2)}` : "Free"}
+												</Text>
+											</Checkbox>
+										))}
+									</Stack>
+								)}
+								<Text fontSize="xs" color="gray.400" mt={1}>
+									{formData.ticketScope === "specific"
+										? "The discount and free months only apply to the tickets ticked here. Other tickets in the same order pay full price, and the code is refused if none of these are in the order."
+										: "The code works on every ticket of this event, including ones you add later."}
+								</Text>
+							</FormControl>
+
+							<FormControl mb={4}>
 								<FormLabel>Maximum Uses (Optional)</FormLabel>
 								<NumberInput
 									value={formData.maxUses || ""}
@@ -600,7 +686,8 @@ export function ReferralCodesManager({ eventId }: ReferralCodesManagerProps) {
 								formData.discountPercentage < 0 ||
 								formData.discountPercentage > 100 ||
 								formData.freeMembershipMonths < 0 ||
-								formData.freeMembershipMonths > 12
+								formData.freeMembershipMonths > 12 ||
+								(formData.ticketScope === "specific" && formData.ticketIds.length === 0)
 							}
 						>
 							{editingCode ? "Save changes" : "Create"}

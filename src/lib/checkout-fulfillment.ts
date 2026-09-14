@@ -53,6 +53,8 @@ type SessionMetadata = {
 	tickets?: string
 	referralCode?: string
 	referralDiscountPercentage?: string
+	/** What the referral percentage was taken off — only the tickets the code is scoped to. */
+	referralSubtotal?: string
 	premiumMemberDiscount?: string
 	premiumMemberDiscountPercentage?: string
 	/** Ticket-only figures, stamped at session creation — see the totals block below. */
@@ -361,8 +363,13 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	const premiumPercent = premiumMemberDiscountApplied && metadata.premiumMemberDiscountPercentage ? parseFloat(metadata.premiumMemberDiscountPercentage) : 0
 	const combinedDiscountFraction = 1 - (1 - premiumPercent / 100) * (1 - referralPercent / 100)
 	const effectiveDiscountPercentage = Math.round(combinedDiscountFraction * 10000) / 100
+	// A referral code scoped to some of the tickets discounts only those, so the discount is
+	// taken off `referralSubtotal`. Absent on sessions created before scoping existed, which
+	// always discounted the whole order.
+	const metaReferralSubtotal = metadata.referralSubtotal !== undefined ? parseFloat(metadata.referralSubtotal) : NaN
+	const referralSubtotal = Number.isFinite(metaReferralSubtotal) ? Math.min(subtotal, metaReferralSubtotal) : subtotal
 	const discountAmount = combinedDiscountFraction > 0
-		? Math.round((subtotal * combinedDiscountFraction + Number.EPSILON) * 100) / 100
+		? Math.round(((Number.isFinite(metaReferralSubtotal) ? referralSubtotal * (referralPercent / 100) : subtotal * combinedDiscountFraction) + Number.EPSILON) * 100) / 100
 		: 0
 
 	// ---- Memberships sold with this ticket ----
@@ -723,6 +730,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				subtotal,
 				referralCode: metadata.referralCode,
 				referralPercentage: referralPercent,
+				referralSubtotal,
 				premiumPercentage: premiumPercent,
 				total,
 				...(recurringCharges.length > 0 ? { recurring: recurringCharges } : {}),

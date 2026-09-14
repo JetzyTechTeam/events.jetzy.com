@@ -6,7 +6,8 @@ import Spinner from "./misc/Spinner"
 import { sendGAEvent } from "@next/third-parties/google"
 import { AUTH_HOLD_DAYS, selectionRequiresApproval } from "@/lib/ticket-approval"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
-import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval } from "@/lib/premium-bundle"
+import { membershipQuantityInSelection, premiumAllowanceMessage, resolveFreeMonthsForKey, selectionMemberships, selectionMembershipFreeMonths, selectionMembershipInterval, ticketMemberships } from "@/lib/premium-bundle"
+import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralAppliesToAllTickets, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import { MEMBERSHIPS, membershipLabelList, sanitizeMembershipKeys, type MembershipKey } from "@/lib/memberships"
 import { ROUTES } from "@/configs/routes"
 import { planPriceForInterval, useMembershipPlans } from "@/hooks/usePremiumPlan"
@@ -91,6 +92,22 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// either, both, or neither, and one that gives only free months would otherwise preview as
 	// "0% off" — a code that appears to do nothing.
 	const [referralFreeMonths, setReferralFreeMonths] = useState<number>(0)
+	// The tickets the code is scoped to (undefined = every ticket), and the server's reason when
+	// it refused the code — "doesn't apply to the tickets you selected" is not "invalid".
+	const [referralTicketIds, setReferralTicketIds] = useState<string[] | undefined>(undefined)
+	const [referralError, setReferralError] = useState<string>("")
+	const selectedTicketIds = tickets.map((t) => String((t as any).id ?? ""))
+	const selectedTicketIdsKey = selectedTicketIds.join(",")
+	const referralScope = { ticketIds: referralTicketIds }
+	// Only the tickets the code covers are discounted — the same split `api/checkout` charges.
+	const referralSubtotal = referralEligibleSubtotal(
+		referralScope,
+		tickets.map((t) => ({ id: String((t as any).id ?? ""), price: (t as any).price ?? 0, quantity: (t as any).quantity ?? 1 })),
+	)
+	const referralIsScoped = !referralAppliesToAllTickets(referralScope)
+	const referralTicketNames = referralIsScoped
+		? tickets.filter((t) => referralCoversTicket(referralScope, (t as any).id)).map((t) => (t as any).name).filter(Boolean)
+		: []
 
 	// Jetzy Premium membership sold with the ticket.
 	//
@@ -148,8 +165,13 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 	// Worth nothing on a key this order isn't actually buying: the ticket may sell no membership
 	// at all, or the buyer may already hold it, and promising free months in either case
 	// describes a gift nobody gets.
+	// A scoped code only gives its months through a covered ticket that sells this membership.
+	const referralCoversKey = (key: MembershipKey) =>
+		tickets.some((t) => ticketMemberships(t as any).includes(key) && referralCoversTicket(referralScope, (t as any).id))
 	const freeMonthsFor = (key: MembershipKey) =>
-		chargedKeys.includes(key) ? resolveFreeMonthsForKey(key, ticketFreeMonths, appliedReferralFreeMonths) : 0
+		chargedKeys.includes(key)
+			? resolveFreeMonthsForKey(key, ticketFreeMonths, referralCoversKey(key) ? appliedReferralFreeMonths : 0)
+			: 0
 	// The largest offer on this order, for the sentences that speak about the order as a whole.
 	const appliedFreeMonths = Math.max(0, ...chargedKeys.map(freeMonthsFor))
 	// The memberships actually being GIVEN AWAY, so a sentence about the gift can't name one
@@ -181,6 +203,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		subtotal: selectionTotal,
 		referralCode: appliedReferralPercentage > 0 ? formData.referralCode?.trim().toUpperCase() : undefined,
 		referralPercentage: appliedReferralPercentage,
+		referralSubtotal,
 		...(recurringPreview.length > 0 ? { recurring: recurringPreview } : {}),
 	})
 	const [validatingReferralCode, setValidatingReferralCode] = useState(false)
@@ -205,6 +228,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 			// Reset validation state when code changes
 			setReferralCodeValid(null)
 			setReferralCodeDiscount(null)
+			setReferralTicketIds(undefined)
+			setReferralError("")
 		}
 		if (name === "email") {
 			// Drop the previous verdicts immediately so neither the total nor the allowance
@@ -220,6 +245,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		if (!code || code.trim() === "") {
 			setReferralCodeValid(null)
 			setReferralCodeDiscount(null)
+			setReferralTicketIds(undefined)
+			setReferralError("")
 			return
 		}
 
@@ -239,6 +266,8 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				body: JSON.stringify({
 					eventId,
 					code: code.toUpperCase().trim(),
+					// So a code scoped to other tickets is refused here, not at checkout.
+					ticketIds: selectedTicketIds,
 				}),
 			})
 
@@ -247,15 +276,21 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				setReferralCodeValid(true)
 				setReferralCodeDiscount(result.data.discountPercentage)
 				setReferralFreeMonths(Number(result.data.freeMembershipMonths) || 0)
+				setReferralTicketIds(Array.isArray(result.data.ticketIds) && result.data.ticketIds.length > 0 ? result.data.ticketIds.map(String) : undefined)
+				setReferralError("")
 			} else {
 				setReferralCodeValid(false)
 				setReferralCodeDiscount(null)
 				setReferralFreeMonths(0)
+				setReferralTicketIds(undefined)
+				setReferralError(result?.message === REFERRAL_NOT_FOR_SELECTION_MESSAGE ? result.message : "")
 			}
 		} catch (error) {
 			console.error("Error validating referral code:", error)
 			setReferralCodeValid(false)
 			setReferralCodeDiscount(null)
+			setReferralTicketIds(undefined)
+			setReferralError("")
 		} finally {
 			setValidatingReferralCode(false)
 		}
@@ -556,6 +591,16 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [showCheckout, sessionEmail])
+
+	// A code scoped to particular tickets can become (in)eligible when the selection changes, so
+	// re-ask the server rather than keep a verdict about a different set of tickets.
+	const referralSelectionRef = useRef(selectedTicketIdsKey)
+	useEffect(() => {
+		if (referralSelectionRef.current === selectedTicketIdsKey) return
+		referralSelectionRef.current = selectedTicketIdsKey
+		if (formData.referralCode.trim()) handleValidateReferralCode(formData.referralCode)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [selectedTicketIdsKey])
 
 	// Which memberships is the address in the form already attached to?
 	// Preview only — `api/checkout` resolves it again server-side before charging.
@@ -891,11 +936,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 												<p className="text-sm text-green-500 mt-1.5 font-medium">
 													{`✓ ${
 														[
-															referralCodeDiscount > 0 ? `You'll get ${referralCodeDiscount}% off your order` : "",
+															referralCodeDiscount > 0
+																? referralIsScoped && referralTicketNames.length > 0
+																	? `You'll get ${referralCodeDiscount}% off ${referralTicketNames.join(", ")}`
+																	: `You'll get ${referralCodeDiscount}% off your order`
+																: "",
 															// Only what the CODE adds. The ticket may already give free months, and
 															// crediting the code with those would tell the buyer a code they didn't
 															// need had earned them something.
-															appliedReferralFreeMonths > ticketFreeMonths && chargedKeys.includes("premium")
+															appliedReferralFreeMonths > ticketFreeMonths && chargedKeys.includes("premium") && referralCoversKey("premium")
 																? `${appliedReferralFreeMonths} ${appliedReferralFreeMonths === 1 ? "month" : "months"} of Jetzy Premium free`
 																: "",
 														]
@@ -904,7 +953,7 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 													}`}
 												</p>
 											)}
-											{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">Invalid or inactive referral code</p>}
+											{referralCodeValid === false && <p className="text-sm text-red-500 mt-1.5">{referralError || "Invalid or inactive referral code"}</p>}
 										</div>
 										<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 											<input

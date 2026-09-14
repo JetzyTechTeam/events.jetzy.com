@@ -8,6 +8,7 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
 import { zodIssuesToMessage } from "@/lib/zod-error"
+import { resolveReferralTicketIds } from "@/lib/referral-ticket-scope"
 
 // Validation schema for creating referral code
 const createReferralCodeSchema = zod.object({
@@ -17,6 +18,8 @@ const createReferralCodeSchema = zod.object({
 	// Stripe's trial is a date, and half a month has no meaning on a receipt.
 	freeMembershipMonths: zod.number().int("Free months must be a whole number").min(0, "Free months cannot be negative").max(12, "Free months cannot exceed 12").optional(),
 	maxUses: zod.number().positive("Maximum uses must be greater than 0").optional().nullable(),
+	// The tickets this code works on. Omitted or empty = every ticket.
+	ticketIds: zod.array(zod.string()).max(200).optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -67,6 +70,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 			const { code, discountPercentage, freeMembershipMonths, maxUses } = validation.data
 
+			const scope = resolveReferralTicketIds(event, validation.data.ticketIds)
+			if (!scope.ok) {
+				return sendResponse(res, null, scope.message, false, ResCode.BAD_REQUEST)
+			}
+			// `undefined` = all tickets, stored as an absent field (not `[]`).
+			const ticketIdsUpdate = scope.ticketIds ? { ticketIds: scope.ticketIds } : {}
+
 			// ONE lookup, in whatever state the row is in.
 			//
 			// Two separate traps live here, and both produced the same useless "Referral code
@@ -111,6 +121,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					isDeleted: false,
 					usageCount: 0,
 					createdBy: (session.user as any)?._id || undefined,
+					// A revived code is a new offer — it must not inherit the old code's ticket scope.
+					ticketIds: scope.ticketIds,
 				})
 				await existingCode.save()
 				console.log("[referral-codes/index] Revived a deleted code:", { code: upperCode, eventId })
@@ -127,6 +139,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				isActive: true,
 				usageCount: 0,
 				createdBy: (session.user as any)?._id || undefined,
+				...ticketIdsUpdate,
 			})
 
 			return sendResponse(res, referralCode, "Referral code created successfully", true, ResCode.OK)

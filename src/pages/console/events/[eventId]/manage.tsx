@@ -1896,7 +1896,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								{/* Performance lives behind the row's Analytics button, not under the table:
 								    the tab's job is managing codes, and a permanent report below it pushed
 								    that work off the screen. */}
-								<ReferralCodesManager eventId={event._id} />
+								<ReferralCodesManager
+									eventId={event._id}
+									tickets={(event.tickets || []).map((t: any) => ({ _id: String(t._id), name: stripHtml(t.name || ""), price: Number(t.price) || 0 }))}
+								/>
 							</div>
 						</TabPanel>
 						<TabPanel>

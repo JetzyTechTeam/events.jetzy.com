@@ -10,6 +10,7 @@ import { resolveBundlePlan, selectionMemberships } from "@/lib/premium-bundle"
 import { heldMemberships } from "@/lib/premium-eligibility"
 import { membershipLabelList } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
+import { referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import { incrementReferralUsage } from "@/lib/checkout-fulfillment"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
@@ -41,7 +42,7 @@ type BodyParams = {
 	customAnswers?: Array<{ questionId: string; answer: any }>
 }
 
-type ResolvedTicketRow = { name: string; price: number; quantity: number; desc: string }
+type ResolvedTicketRow = { id: string; name: string; price: number; quantity: number; desc: string }
 
 /**
  * Re-resolve the order against the EVENT RECORD, never trusting the request body.
@@ -67,7 +68,7 @@ const resolveOrder = (event: any, tickets: BodyParams["tickets"]): { rows: Resol
 
 		const price = Number(stored.price) || 0
 		subtotal += price * quantity
-		rows.push({ name: stored.name, price, quantity, desc: stored.desc || "" })
+		rows.push({ id: String(stored._id), name: stored.name, price, quantity, desc: stored.desc || "" })
 	}
 
 	return { rows, subtotal: Math.round((subtotal + Number.EPSILON) * 100) / 100 }
@@ -169,11 +170,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Validated before the booking is written: a code that has expired or run out of uses
 		// must fail the whole request rather than be silently ignored on an order it was
 		// supposed to discount.
-		const referralResult = await validateReferralCodeForEvent(eventId, req.body?.referralCode)
+		//
+		// Checked against the STORED ticket ids, so a code scoped to other tickets is refused.
+		const referralResult = await validateReferralCodeForEvent(
+			eventId,
+			req.body?.referralCode,
+			orderRows.map((row) => row.id),
+		)
 		if (!referralResult.ok) {
 			return sendResponse(res, null, referralResult.message, false, 400)
 		}
 		const referralCodeData = referralResult.data
+		// Only the tickets the code is scoped to are discounted.
+		const referralSubtotal = referralCodeData ? referralEligibleSubtotal(referralCodeData, orderRows) : 0
 
 		// A membership that still has to be CREATED cannot be settled here, even when its first
 		// months are free.
@@ -214,6 +223,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			subtotal,
 			referralCode: referralCodeData?.code,
 			referralPercentage: referralCodeData?.discountPercentage,
+			referralSubtotal,
 		})
 
 		// The free path issues a CONFIRMED (or approval-pending) booking without charging
@@ -234,7 +244,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// priced order discounted all the way down to $0. Only the second one actually used a
 		// discount. On a $0 ticket a referral code and a member rate reduce nothing, so they
 		// must not be recorded as applied — and must not burn one of the code's `maxUses`.
-		const discountsDidWork = subtotal > 0
+		// With a scoped code, only a priced ELIGIBLE ticket counts — a paid ticket the code
+		// doesn't cover would never reach this endpoint anyway (it isn't free).
+		const discountsDidWork = referralCodeData ? referralSubtotal > 0 : subtotal > 0
 
 		// Capture logged-in user (if any) so they can later cancel even when booking email differs
 		const session = await getServerSession(req, res, authOptions)

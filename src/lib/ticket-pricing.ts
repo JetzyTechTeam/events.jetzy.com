@@ -94,6 +94,12 @@ export type BuildPricingInput = {
 	subtotal: number
 	referralCode?: string | null
 	referralPercentage?: number | null
+	/**
+	 * The part of `subtotal` the referral percentage is taken off — only the tickets the code
+	 * is scoped to (`src/lib/referral-ticket-scope.ts`). Defaults to the whole subtotal, which
+	 * is what an unscoped code and every booking made before scoping mean.
+	 */
+	referralSubtotal?: number | null
 	premiumPercentage?: number | null
 	/**
 	 * The amount actually charged. When supplied it wins over the computed figure, so the
@@ -118,6 +124,7 @@ export function buildTicketPricing({
 	subtotal,
 	referralCode,
 	referralPercentage,
+	referralSubtotal,
 	premiumPercentage,
 	total,
 	combinedDiscountAmount,
@@ -136,7 +143,10 @@ export function buildTicketPricing({
 	if (premiumPct > 0 || referralPct > 0) {
 		// Premium first, referral on what's left — the order the old Stripe coupon encoded.
 		const premiumAmount = round2(base * (premiumPct / 100))
-		const referralAmount = round2(base * (1 - premiumPct / 100) * (referralPct / 100))
+		// A scoped code discounts only its tickets; never more than the order itself.
+		const referralBase =
+			referralSubtotal !== undefined && referralSubtotal !== null ? Math.min(base, Math.max(0, Number(referralSubtotal) || 0)) : base
+		const referralAmount = round2(referralBase * (1 - premiumPct / 100) * (referralPct / 100))
 
 		if (premiumAmount > 0) {
 			lines.push({ label: `Jetzy Premium member discount (${premiumPct}%)`, amount: premiumAmount })

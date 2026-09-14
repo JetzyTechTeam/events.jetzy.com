@@ -1376,6 +1376,17 @@ Admin OR owner access
 Tracks discountPercentage, commissionPercentage, usageCount, maxUses
 Stats endpoint available
 
+### Referral codes scoped to tickets (2026-09-15)
+- CEO ask: a host picks, per code, which tickets of the event it works on. "Applies to" in the create/edit modal of `ReferralCodesManager` (All tickets / Specific tickets + checkboxes); a **Tickets** column in the table. `manage.tsx` passes `tickets`.
+- Schema `ReferralCodes.ticketIds: [String]` (ticket `_id` strings), `default: undefined`. **Absent or empty = every ticket** — every legacy code and every mobile/admin-portal code. No migration, no index.
+- **A stale list never widens.** If every scoped ticket was deleted, the code covers NOTHING; the table shows "No tickets (deleted)" in red.
+- **All logic in `src/lib/referral-ticket-scope.ts`** (pure): `referralAppliesToAllTickets`, `referralCoversTicket`, `selectionHasEligibleTicket`, `referralEligibleSubtotal`, `resolveReferralTicketIds` (server: dedupe + filter to live ids, refuse a non-empty list resolving to none), `liveScopedTicketIds`, `REFERRAL_NOT_FOR_SELECTION_MESSAGE`.
+- APIs: POST `referral-codes` accepts `ticketIds` (revive replaces the old scope); PATCH `[codeId]` — omitted = unchanged, `[]` = `$unset` (all tickets). `validate.ts` takes optional `ticketIds` and returns the code's `ticketIds`.
+- **Mixed cart: only eligible tickets are discounted.** `buildTicketPricing` gained `referralSubtotal` (defaults to the whole subtotal). A selection with no eligible ticket is **refused** ("This code doesn't apply to the tickets you selected"), in `validateReferralCodeForEvent(eventId, code, selectedTicketIds)`, the modal and both checkout endpoints.
+- `api/checkout`: eligibility decided from the STORED ticket matched by price id, never the body. The Stripe coupon's `applies_to.products` lists only eligible tickets' products whenever the code is scoped (every ticket price is minted with its own `product_data`, so products are per-ticket). `metadata.referralSubtotal` stamped; `checkout-fulfillment.ts` records `discountAmount` from it (falls back to the subtotal for older sessions).
+- **Free months from a code follow the scope** — granted only when a covered selected ticket sells that membership (checkout + modal).
+- Standalone `/premium?code=&event=` share link is unaffected — there is no ticket.
+
 ## Feature: Invite Code on QR Signup (user-level referral, NOT event referral codes)
 - UI: `jetzyqrsignup.tsx` — optional invite-code input, first field. Non-empty code live-verified via `VerifyReferralCodeApi` (`src/services/auth/authapis.ts`) → `GET external:/v1/referral/verify/{code}` (200 = valid; main Jetzy backend, same host as SSO). Invalid → inline error, blocks submit. Empty → skipped.
 - `refCode` flows: page → `handleEmailSignup` spread → `/api/create` → stored on EventUsers (`refCode` field in `eventUsersModal.ts`) + forwarded to main backend `/v1/accounts/create` (see Auth API section). `SignUpFormData.refCode?` in `src/types/form.ts`.

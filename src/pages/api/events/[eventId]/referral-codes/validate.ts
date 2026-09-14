@@ -3,6 +3,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { ReferralCodes } from "@/models/events/referral-codes"
 import { Types } from "mongoose"
+import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, selectionHasEligibleTicket } from "@/lib/referral-ticket-scope"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
@@ -39,11 +40,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Referral code has reached maximum uses", false, ResCode.BAD_REQUEST)
 		}
 
+		// Scoped to particular tickets? Refuse when none of the selected ones qualify, with the
+		// same message checkout would give. `ticketIds` in the body is optional — an older
+		// client that doesn't send it still gets the preview, and checkout re-checks anyway.
+		const scopedTicketIds =
+			Array.isArray(referralCode.ticketIds) && referralCode.ticketIds.length > 0 ? referralCode.ticketIds.map(String) : undefined
+		if (Array.isArray(req.body?.ticketIds) && !selectionHasEligibleTicket({ ticketIds: scopedTicketIds }, req.body.ticketIds)) {
+			return sendResponse(res, null, REFERRAL_NOT_FOR_SELECTION_MESSAGE, false, ResCode.BAD_REQUEST)
+		}
+
 		// Return valid referral code data (without sensitive info)
 		return sendResponse(
 			res,
 			{
 				code: referralCode.code,
+				// Absent = every ticket. The modal uses it to discount only the eligible tickets.
+				...(scopedTicketIds ? { ticketIds: scopedTicketIds } : {}),
 				discountPercentage: referralCode.discountPercentage,
 				// So the checkout modal can say what the code is worth BEFORE the buyer commits.
 				// A code that gives free membership months but no percentage would otherwise

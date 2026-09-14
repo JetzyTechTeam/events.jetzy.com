@@ -1,4 +1,5 @@
 import { Types } from "mongoose"
+import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, selectionHasEligibleTicket } from "@/lib/referral-ticket-scope"
 
 /**
  * Server-side referral-code validation, shared by every checkout path.
@@ -11,13 +12,26 @@ import { Types } from "mongoose"
  * Returns a result rather than writing a response, so callers keep their own status codes.
  */
 
+export type ReferralCodeData = {
+	code: string
+	discountPercentage: number
+	freeMembershipMonths: number
+	/** Absent = every ticket. See `src/lib/referral-ticket-scope.ts`. */
+	ticketIds?: string[]
+}
+
 export type ReferralValidationResult =
-	| { ok: true; data: { code: string; discountPercentage: number; freeMembershipMonths: number } | null }
+	| { ok: true; data: ReferralCodeData | null }
 	| { ok: false; message: string }
 
 export async function validateReferralCodeForEvent(
 	eventId: string | undefined,
 	rawCode: string | undefined | null,
+	/**
+	 * The tickets in the order. When supplied, a code scoped to other tickets is refused — a
+	 * silent 0% would read to the buyer as a broken code.
+	 */
+	selectedTicketIds?: Array<string | undefined | null>,
 ): Promise<ReferralValidationResult> {
 	const code = typeof rawCode === "string" ? rawCode.trim().toUpperCase() : ""
 
@@ -46,6 +60,12 @@ export async function validateReferralCodeForEvent(
 		return { ok: false, message: "Referral code has reached maximum uses" }
 	}
 
+	const ticketIds = Array.isArray(codeRecord.ticketIds) && codeRecord.ticketIds.length > 0 ? codeRecord.ticketIds.map(String) : undefined
+
+	if (selectedTicketIds && !selectionHasEligibleTicket({ ticketIds }, selectedTicketIds)) {
+		return { ok: false, message: REFERRAL_NOT_FOR_SELECTION_MESSAGE }
+	}
+
 	return {
 		ok: true,
 		data: {
@@ -53,6 +73,7 @@ export async function validateReferralCodeForEvent(
 			discountPercentage: codeRecord.discountPercentage,
 			// Absent on every code created before this existed, which is the same as none.
 			freeMembershipMonths: codeRecord.freeMembershipMonths || 0,
+			...(ticketIds ? { ticketIds } : {}),
 		},
 	}
 }
