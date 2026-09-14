@@ -2943,3 +2943,27 @@ back with no card in sight. It now consumes the marker, restores `{code, interva
 `usePremiumSubscriptionReturn` is untouched (a cancel is not a purchase and must not confirm a
 session or fire a toast). The no-param branch still clears the marker — that is the guard against a
 stale one opening the dialog on an unrelated later arrival.
+
+## Profile completion, synced with the mobile app (2026-09-15)
+
+**Why.** `/signup` collected date of birth and location into local `EventUsers` only — the Jetzy backend, and so the mobile app, never saw them. Mobile asks for photo, name, DOB and gender through `/v1/accounts` when missing. The portal now asks for the same fields (plus location) from every signed-in user and writes them where mobile reads them.
+
+| | Endpoint | Notes |
+|---|---|---|
+| Read | `GET /v1/accounts` | `dob` ISO; `location` `{country,city,region}` and/or `{longitude,latitude}`; `image` defaults to `/default-avatars/…` |
+| Save | `PUT /v1/accounts` | partial: `firstName` (full name), `lastName:""`, `dob` `MM/dd/yyyy`, `gender` (`Male`/`Female`/`Non-binary`), `image`, `location {country,city,region}` |
+| Coordinates | `POST /v1/onboarding/sync_location` | `{location:{type:"Point",coordinates:[lng,lat]}}`, sent AFTER the PUT |
+| Photo | `POST /uploader/multiple` via `uploadFile(file,{folder:"photos"})` | then url on the PUT |
+
+**Files.**
+- `src/lib/jetzy-profile.ts` — pure rules: `profileMissingFields`, `isDefaultAvatar`, `hasLocation`, `toBackendDob`, `dobParts`, `placeToProfileLocation`, `isUngatedPath`.
+- `src/lib/jetzy-profile-server.ts` — backend calls + `EventUsers` mirror + `flushPendingProfile`.
+- `src/pages/api/profile/index.ts` — `GET` → `{complete, missing, profile, source}`; `PUT` validated with zod.
+- `src/components/profile/ProfileCompletionModal.tsx` — two steps (photo/name/DOB → gender/location), non-dismissible, logout link.
+- `src/components/profile/ProfileGate.tsx` — mounted in `_app.tsx`; react-query keyed by user id.
+- `src/pages/auth/verify-signup.tsx` — after password + sign-in, shows the modal before following `_cb`.
+- `EventUsers` gained `gender`, `locationCity`, `locationRegion`, `locationCountry`, `profileSyncPending` (no default).
+
+**No token.** Save goes to `EventUsers` with `profileSyncPending: true`; NextAuth `authorize` (credentials + firebase) pushes it on the next login with a token. `Users` docs are never written (it is the backend's collection).
+
+**Fails open** on any read failure. **Ungated paths:** `/login`, `/signup`, `/auth/*`, `/post-signup`, `/terms`, `/privacy`, `/manage-membership`, `/jetzyqrsignup`.

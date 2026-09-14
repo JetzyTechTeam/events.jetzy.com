@@ -54,10 +54,27 @@ export const eventUsersSchema = new Schema(
       type: Date,
       required: false,
     },
-    // Date of birth, captured at signup ("age" per CEO ask). Optional at the schema level —
-    // SSO signups (firebase-auth) never collect it — mandatory-ness is enforced in start-signup.ts.
+    // Date of birth. No longer collected at /signup — the profile-completion gate asks for it and
+    // writes it to the Jetzy backend (PUT /v1/accounts); this is the local mirror. Older signups
+    // captured it on the form.
     dateOfBirth: {
       type: Date,
+      required: false,
+    },
+    // Local mirror of the backend profile's gender (Male | Female | Non-binary).
+    gender: {
+      type: String,
+      required: false,
+    },
+    // Structured half of the profile location, mirrored so a profile saved without a backend
+    // token can still be pushed later with the { country, city, region } shape PUT /accounts takes.
+    locationCity: { type: String, required: false },
+    locationRegion: { type: String, required: false },
+    locationCountry: { type: String, required: false },
+    // Set when the profile was saved while the session had no backend accessToken; the next
+    // login that gets one pushes it (flushPendingProfile). NO default — absent means nothing owed.
+    profileSyncPending: {
+      type: Boolean,
       required: false,
     },
     // Location fields for events proximity matching

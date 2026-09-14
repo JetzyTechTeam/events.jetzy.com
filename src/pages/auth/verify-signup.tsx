@@ -11,6 +11,10 @@ import { ROUTES } from "@Jetzy/configs/routes"
 import { completeSignupValidation } from "@Jetzy/lib/validator/authValidtor"
 import Logo from "@Jetzy/assets/logo/logo.png"
 import Spinner from "@Jetzy/components/misc/Spinner"
+import dynamic from "next/dynamic"
+import { fetchProfileStatus, type ProfileStatus } from "@/components/profile/ProfileGate"
+
+const ProfileCompletionModal = dynamic(() => import("@/components/profile/ProfileCompletionModal"), { ssr: false })
 
 type ValidationState =
 	| { kind: "loading" }
@@ -24,6 +28,10 @@ export default function VerifySignupPage() {
 	const [submitError, setSubmitError] = React.useState<string | null>(null)
 	const [showPassword, setShowPassword] = React.useState(false)
 	const [showConfirm, setShowConfirm] = React.useState(false)
+	// After the password is set and they're signed in, the same profile the mobile app requires
+	// is asked for here — before they land anywhere. The global ProfileGate skips /auth/* so this
+	// page owns it and there is never a second modal.
+	const [profileStep, setProfileStep] = React.useState<ProfileStatus | null>(null)
 
 	const [resendEmail, setResendEmail] = React.useState("")
 	const [resending, setResending] = React.useState(false)
@@ -87,6 +95,12 @@ export default function VerifySignupPage() {
 				return
 			}
 
+			const profile = await fetchProfileStatus()
+			if (!profile.complete) {
+				setProfileStep(profile)
+				return
+			}
+
 			router.push(cb || ROUTES.home)
 		} catch (err: any) {
 			setSubmitError(err?.message || "Network error.")
@@ -127,6 +141,14 @@ export default function VerifySignupPage() {
 			</div>
 
 			<div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm bg-[#1E1E1E] p-5 rounded-lg">
+				{profileStep && (
+					<ProfileCompletionModal
+						isOpen
+						initialProfile={profileStep.profile}
+						onCompleted={() => router.push(cb || ROUTES.home)}
+					/>
+				)}
+
 				{state.kind === "loading" && (
 					<div className="flex justify-center py-8">
 						<Spinner />
