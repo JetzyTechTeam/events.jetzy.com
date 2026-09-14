@@ -1541,6 +1541,7 @@ stop someone finishing their own signup.
 - **Checkout:** `/api/subscriptions/checkout` re-verifies; `unavailable` → 400, `invalid` → existing invite-code 400. Valid → metadata `mobileReferralCode` (never `referralCode`, which the webhook counts against an event's `maxUses`).
 - **Recorded:** webhook writes `membership_purchases.mobileReferralCode` with `source: "mobile_referral"`. `/api/analytics/memberships` searches it, exports it (CSV column "Mobile Referral Code"), and returns `mobileReferralCodes[]` per-code totals; growth page Jetzy Premium tab shows them + source filter.
 - The referrer is **not** credited on the Jetzy backend — analytics only, by decision.
+- **Application gate is enforced in `/api/subscriptions/checkout`** (same day): gate ON + no code accepted by that route → 403 `{ applicationRequired: true }`; an open application (`awaiting_card`/`under_review`) → 400 `{ applicationInProgress: true }`. Codes that skip the gate: `jetzy-me`, `1m-off`, host referral link, valid mobile referral code. Cards react by opening the questions / refreshing `premium-application-mine`.
 
 ---
 

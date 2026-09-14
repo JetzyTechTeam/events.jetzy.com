@@ -479,6 +479,15 @@ export default function SubscribePage() {
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
 				return
 			}
+			// The server enforces the application gate — no code it accepted means the questions.
+			if (error?.response?.data?.data?.applicationRequired) {
+				setShowQuestions(true)
+				return
+			}
+			if (error?.response?.data?.data?.applicationInProgress) {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				return
+			}
 			ErrorToast("Error", error?.response?.data?.message || "Could not start checkout. Please try again.")
 		},
 	})

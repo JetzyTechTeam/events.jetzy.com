@@ -478,6 +478,15 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 				setAlreadyMember(true)
 				return
 			}
+			// The server enforces the application gate — no code it accepted means the questions.
+			if (error?.response?.data?.data?.applicationRequired) {
+				setShowQuestions(true)
+				return
+			}
+			if (error?.response?.data?.data?.applicationInProgress) {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				return
+			}
 			const message = error?.response?.data?.message || "Could not start checkout. Please try again."
 			ErrorToast("Error", message)
 		},

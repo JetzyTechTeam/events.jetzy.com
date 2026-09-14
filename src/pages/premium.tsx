@@ -498,6 +498,27 @@ export default function PremiumPage() {
 		[selectedInterval, referralEventId, anonId, sessionId],
 	)
 
+	/**
+	 * The server enforces the application gate. True when it refused this checkout for that reason
+	 * and the page has moved the buyer on — to the questions, or to their open application.
+	 */
+	const handleApplicationRefusal = React.useCallback(
+		(error: any): boolean => {
+			if (error?.response?.data?.data?.applicationRequired) {
+				setAutoState("idle")
+				setShowQuestions(true)
+				return true
+			}
+			if (error?.response?.data?.data?.applicationInProgress) {
+				setAutoState("idle")
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				return true
+			}
+			return false
+		},
+		[queryClient],
+	)
+
 	const subscribeMutation = useMutation({
 		// A refused code is left behind — sending it could only fail, and the card is already showing
 		// what this buyer gets without it.
@@ -519,6 +540,7 @@ export default function PremiumPage() {
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
 				return
 			}
+			if (handleApplicationRefusal(error)) return
 			ErrorToast("Error", error?.response?.data?.message || "Could not start checkout. Please try again.")
 		},
 	})
@@ -531,6 +553,8 @@ export default function PremiumPage() {
 			else ErrorToast("Error", "Could not start checkout. Please try again.")
 		},
 		onError: (error: any) => {
+			// Dropping the code with the questions switched on is exactly the case the gate exists for.
+			if (handleApplicationRefusal(error)) return
 			ErrorToast("Error", error?.response?.data?.message || "Could not start checkout. Please try again.")
 		},
 	})
@@ -604,6 +628,10 @@ export default function PremiumPage() {
 				setAutoState("blocked")
 				ErrorToast("Error", "Could not start checkout. Please try again.")
 			} catch (error: any) {
+				if (handleApplicationRefusal(error)) {
+					router.replace(SELF, undefined, { shallow: true })
+					return
+				}
 				// Stop here. They are one click from paying full price for something they were
 				// shown as free, so the decision goes back to them with the reason attached.
 				setAutoState("blocked")
@@ -655,12 +683,13 @@ export default function PremiumPage() {
 				setAutoState("blocked")
 				ErrorToast("Error", "Could not start checkout. Please try again.")
 			} catch (error: any) {
+				if (handleApplicationRefusal(error)) return
 				setAutoState("blocked")
 				setInviteAccepted(null)
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied to this account.")
 			}
 		})()
-	}, [usableCode, referralEventId, selectedInterval, startCheckout, appSettings, myApplication])
+	}, [usableCode, referralEventId, selectedInterval, startCheckout, appSettings, myApplication, handleApplicationRefusal])
 
 	/** Picks up an application whose card setup was interrupted (closed the Stripe tab, etc). */
 	const resumeCardSetup = React.useCallback(async () => {
