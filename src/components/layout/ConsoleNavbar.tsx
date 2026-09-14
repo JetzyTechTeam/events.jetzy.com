@@ -1,6 +1,6 @@
 import React, { Fragment, useState } from "react"
 import { Disclosure, Menu, Transition } from "@headlessui/react"
-import { Bars3Icon, BellIcon, XMarkIcon } from "@heroicons/react/24/outline"
+import { Bars3Icon, BellIcon, ChevronDownIcon, XMarkIcon } from "@heroicons/react/24/outline"
 import { classNames } from "@Jetzy/lib/utils"
 import { ConsoleNavbarProps, Pages, Roles } from "@Jetzy/types"
 import Logo from "@Jetzy/assets/logo/logo.png"
@@ -91,6 +91,17 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 			]
 			: [{ name: "Share Profile", href: profileHref }]
 
+	// Admin-only tools live under one "Admin" menu on desktop. Nine inline links didn't fit the
+	// row: the long labels wrapped onto two lines and the bar lost its alignment. Same links, same
+	// targets — the mobile panel still lists everything flat.
+	const ADMIN_MENU_NAMES = ["Premium Applications", "Support Requests", "Jetzy User Signup"]
+	const inlineNavigation = filteredNavigation.filter((item) => !ADMIN_MENU_NAMES.includes(item.name))
+	const adminMenuItems = ADMIN_MENU_NAMES.map((name) => filteredNavigation.find((item) => item.name === name)).filter(
+		(item): item is { name: string; href: string } => !!item,
+	)
+	const adminMenuActive = adminMenuItems.some((item) => pathname === item.href)
+	const isActive = (item: { name: string; href: string }) => pathname === item.href || item.name === page
+
 	return (
 		<>
 		<Disclosure as="nav" className="bg-gray-800">
@@ -102,17 +113,14 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 								<div className="flex-shrink-0">
 									<Link href="/"><Image className="h-10 w-10 cursor-pointer" src={Logo} alt="Jetzy Events" /></Link>
 								</div>
-								<div className="hidden md:block">
-									<div className="ml-10 flex items-baseline space-x-4">
-										{filteredNavigation.map((item) =>
+								<div className="hidden lg:block">
+									<div className="ml-8 flex items-center gap-1">
+										{inlineNavigation.map((item) =>
 											item.name === "Jetzy User Signup" ? (
 												<button
 													key={item.name}
 													onClick={() => setIsSignupQROpen(true)}
-													className={classNames(
-														"text-gray-300 hover:bg-gray-700 hover:text-white",
-														"rounded-md px-3 py-2 text-sm font-medium",
-													)}
+													className="whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white"
 												>
 													{item.name}
 												</button>
@@ -121,19 +129,71 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 													key={item.name}
 													href={item.href}
 													className={classNames(
-														pathname === item.href || item.name === page ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
-														"rounded-md px-3 py-2 text-sm font-medium",
+														isActive(item) ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+														"whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium",
 													)}
-													aria-current={pathname === item.href || item.name === page ? "page" : undefined}
+													aria-current={isActive(item) ? "page" : undefined}
 												>
 													{item.name}
 												</Link>
 											)
 										)}
+
+										{adminMenuItems.length > 0 && (
+											<Menu as="div" className="relative">
+												<Menu.Button
+													className={classNames(
+														adminMenuActive ? "bg-gray-900 text-white" : "text-gray-300 hover:bg-gray-700 hover:text-white",
+														"inline-flex items-center gap-1 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium focus:outline-none",
+													)}
+												>
+													Admin
+													<ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
+												</Menu.Button>
+												<Transition
+													as={Fragment}
+													enter="transition ease-out duration-100"
+													enterFrom="transform opacity-0 scale-95"
+													enterTo="transform opacity-100 scale-100"
+													leave="transition ease-in duration-75"
+													leaveFrom="transform opacity-100 scale-100"
+													leaveTo="transform opacity-0 scale-95"
+												>
+													<Menu.Items className="absolute left-0 z-50 mt-2 w-56 origin-top-left rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+														{adminMenuItems.map((item) => (
+															<Menu.Item key={item.name}>
+																{({ active }) =>
+																	item.name === "Jetzy User Signup" ? (
+																		<button
+																			onClick={() => setIsSignupQROpen(true)}
+																			className={classNames(active ? "bg-gray-100" : "", "block w-full px-4 py-2 text-left text-sm text-gray-700")}
+																		>
+																			{item.name}
+																		</button>
+																	) : (
+																		<Link
+																			href={item.href}
+																			className={classNames(
+																				active ? "bg-gray-100" : "",
+																				pathname === item.href ? "font-semibold text-black" : "text-gray-700",
+																				"block px-4 py-2 text-sm",
+																			)}
+																			aria-current={pathname === item.href ? "page" : undefined}
+																		>
+																			{item.name}
+																		</Link>
+																	)
+																}
+															</Menu.Item>
+														))}
+													</Menu.Items>
+												</Transition>
+											</Menu>
+										)}
 									</div>
 								</div>
 							</div>
-							<div className="hidden md:block">
+							<div className="hidden lg:block">
 								<div className="ml-4 flex items-center md:ml-6">
 									<button
 										type="button"
@@ -219,7 +279,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 									</Menu>
 								</div>
 							</div>
-							<div className="-mr-2 flex md:hidden">
+							<div className="-mr-2 flex lg:hidden">
 								{/* Mobile menu button */}
 								<Disclosure.Button className="relative inline-flex items-center justify-center rounded-md bg-gray-800 p-2 text-gray-400 hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-800">
 									<span className="absolute -inset-0.5" />
@@ -230,7 +290,7 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 						</div>
 					</div>
 
-					<Disclosure.Panel className="md:hidden">
+					<Disclosure.Panel className="lg:hidden">
 						<div className="space-y-1 px-2 pb-3 pt-2 sm:px-3">
 							{filteredNavigation.map((item) =>
 								item.name === "Jetzy User Signup" ? (
