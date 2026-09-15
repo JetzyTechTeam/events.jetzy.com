@@ -1387,6 +1387,11 @@ Stats endpoint available
 - **Free months from a code follow the scope** — granted only when a covered selected ticket sells that membership (checkout + modal).
 - Standalone `/premium?code=&event=` share link is unaffected — there is no ticket.
 
+### Default referral codes on admin-created events (2026-09-15)
+- When an **admin / super admin** creates (`api/events/create.ts`) or clones (`[eventId]/clone.ts`) an event, `seedDefaultReferralCodes` (`src/lib/default-referral-codes.ts`) adds **`JETZY-ME`** (2 free months of Jetzy Premium) and **`1M-OFF`** (1 free month): 0% discount, all tickets, unlimited uses, active. Host-created events get none.
+- Upsert with `$setOnInsert` (idempotent) and best-effort — errors are logged, the event is still created. An 11000 means the per-event index migration (`scripts/migrate-referral-code-index.ts`) is missing on that database.
+- The free months only apply on tickets that sell Premium. These are event referral codes, unrelated to the `TRIAL_CODES` invite codes of the same names on `/subscribe`.
+
 ## Feature: Invite Code on QR Signup (user-level referral, NOT event referral codes)
 - UI: `jetzyqrsignup.tsx` — optional invite-code input, first field. Non-empty code live-verified via `VerifyReferralCodeApi` (`src/services/auth/authapis.ts`) → `GET external:/v1/referral/verify/{code}` (200 = valid; main Jetzy backend, same host as SSO). Invalid → inline error, blocks submit. Empty → skipped.
 - `refCode` flows: page → `handleEmailSignup` spread → `/api/create` → stored on EventUsers (`refCode` field in `eventUsersModal.ts`) + forwarded to main backend `/v1/accounts/create` (see Auth API section). `SignUpFormData.refCode?` in `src/types/form.ts`.

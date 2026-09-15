@@ -9,6 +9,7 @@ import { authOptions } from "../../auth/[...nextauth]"
 import Stripe from "stripe"
 import { ticketMemberships } from "@/lib/premium-bundle"
 import { buildUniqueSlug } from "@/lib/event-slug"
+import { seedDefaultReferralCodes } from "@/lib/default-referral-codes"
 
 // create stripe instance
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
@@ -110,6 +111,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Create event tracker for the clone
 		await newEvent.createEventTracker(source.capacity ?? 0)
+
+		// A clone by an admin is a new admin-created event: it starts with JETZY-ME and 1M-OFF.
+		if (isAdmin) await seedDefaultReferralCodes(newEvent._id, userId)
 
 		return sendResponse(res, newEvent, "Event cloned successfully.", true, ResCode.CREATED)
 	} catch (error: any) {

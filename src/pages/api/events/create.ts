@@ -11,6 +11,7 @@ import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import { ticketMemberships, ticketMembershipFreeMonths, MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
+import { isAdminRole, seedDefaultReferralCodes } from "@/lib/default-referral-codes"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -296,6 +297,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Create event tracker
 		await newEvent.createEventTracker(capacity)
+
+		// Admin-created events start with JETZY-ME and 1M-OFF. Best-effort — never fails the create.
+		if (isAdminRole((session.user as any)?.role)) {
+			await seedDefaultReferralCodes(newEvent._id, (session.user as any)?._id)
+		}
 
 		return sendResponse(res, newEvent, "Event created successfully.", true, ResCode.CREATED)
 	} catch (error: any) {
