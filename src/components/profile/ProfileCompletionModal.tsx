@@ -6,6 +6,7 @@ import { uploadFile } from "@/services/upload.service"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import Spinner from "@Jetzy/components/misc/Spinner"
+import { allowPlacesDropdown, suppressPlacesDropdown } from "@/lib/google-place"
 import {
 	GENDER_OPTIONS,
 	dobParts,
@@ -30,6 +31,63 @@ import {
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
 const daysIn = (year?: number, month?: number) => (month ? new Date(Date.UTC(year || 2000, month, 0)).getUTCDate() : 31)
+
+const fieldClass =
+	"w-full rounded-xl border border-[#343536] bg-[#090C10] px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-app"
+
+/**
+ * The Places input lives in its OWN component on purpose. `usePlacesWidget` attaches Google
+ * Autocomplete in a mount-only effect and silently gives up if the input doesn't exist yet. Called
+ * at the top of the modal, that effect ran while step 1 was showing (and before Chakra's portal had
+ * mounted), so the step-2 input never got suggestions and no place could ever be picked. Mounting
+ * the hook with the input guarantees the element is there when it looks.
+ */
+function ProfileLocationInput({
+	value,
+	onTextChange,
+	onPick,
+}: {
+	value: string
+	onTextChange: (text: string) => void
+	onPick: (location: ProfileLocation, text: string) => void
+}) {
+	const lastPicked = React.useRef(value)
+
+	const { ref: placesRef } = usePlacesWidget<HTMLInputElement>({
+		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+		onPlaceSelected: (place) => {
+			const loc = placeToProfileLocation(place)
+			const text = formatProfileLocation(loc) || place?.formatted_address || ""
+			lastPicked.current = text
+			onPick(loc, text)
+		},
+		options: {
+			types: ["(cities)"],
+			fields: ["address_components", "geometry", "name", "formatted_address"],
+		},
+	})
+
+	return (
+		<input
+			id="profile-location"
+			ref={placesRef}
+			type="text"
+			value={value}
+			onFocus={() => {
+				// An untouched saved location must not pop a fresh search on focus.
+				if (value && value === lastPicked.current) suppressPlacesDropdown()
+			}}
+			onChange={(e) => {
+				allowPlacesDropdown()
+				onTextChange(e.target.value)
+			}}
+			onBlur={() => allowPlacesDropdown()}
+			placeholder="Search your city"
+			autoComplete="off"
+			className={`mt-2 ${fieldClass}`}
+		/>
+	)
+}
 
 type Props = {
 	isOpen: boolean
@@ -79,20 +137,6 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 		if (day && day > daysIn(year, month)) setDay(undefined)
 	}, [day, month, year])
 
-	const { ref: placesRef } = usePlacesWidget<HTMLInputElement>({
-		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-		onPlaceSelected: (place) => {
-			const loc = placeToProfileLocation(place)
-			setLocation(loc)
-			setLocationText(formatProfileLocation(loc) || place?.formatted_address || "")
-			setError(null)
-		},
-		options: {
-			types: ["(cities)"],
-			fields: ["address_components", "geometry", "name", "formatted_address"],
-		},
-	})
-
 	const years = React.useMemo(() => {
 		const now = new Date().getFullYear()
 		return Array.from({ length: 100 }, (_, i) => now - i)
@@ -129,7 +173,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 
 	const handleComplete = async () => {
 		if (!gender) return setError("Please select how you identify.")
-		if (!hasLocation(location)) return setError("Please choose your location from the list.")
+		if (!hasLocation(location)) return setError("Please pick your city from the suggestions.")
 		if (!month || !day || !year) return setStep(1)
 		setError(null)
 		setSaving(true)
@@ -169,33 +213,52 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 	}
 
 	const selectClass =
-		"w-full appearance-none rounded-xl bg-[#F4F4F5] px-3 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-app"
+		"w-full appearance-none rounded-xl border border-[#343536] bg-[#090C10] px-3 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-app [&>option]:bg-[#1E1E1E]"
 
 	return (
-		<Modal isOpen={isOpen} onClose={() => {}} closeOnOverlayClick={false} closeOnEsc={false} isCentered size="md" scrollBehavior="inside">
+		<Modal
+			isOpen={isOpen}
+			onClose={() => {}}
+			closeOnOverlayClick={false}
+			closeOnEsc={false}
+			// Google's suggestion list is appended to <body>, outside the modal. A focus trap pulls
+			// focus back from it and the list closes before the click lands.
+			trapFocus={false}
+			isCentered
+			size="md"
+			scrollBehavior="inside"
+		>
 			<ModalOverlay bg="blackAlpha.700" />
-			<ModalContent mx={4} borderRadius="2xl" bg="white" color="gray.900">
+			<ModalContent mx={4} borderRadius="2xl" bg="#1E1E1E" color="white" border="1px solid #434343">
 				{/* Google's suggestion list renders on <body>, under Chakra's modal layer by default. */}
-				<style>{`.pac-container{z-index:2000 !important;}`}</style>
+				<style>{`
+					.pac-container{z-index:2000 !important;background:#1E1E1E;border:1px solid #434343;border-radius:12px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:inherit}
+					.pac-container:after{display:none}
+					.pac-item{color:#9CA3AF;border-top:1px solid #2A2A2A;padding:8px 12px;cursor:pointer}
+					.pac-item:first-child{border-top:none}
+					.pac-item:hover,.pac-item-selected{background:#2A2A2A}
+					.pac-item-query{color:#fff}
+					.pac-matched{color:#F79432}
+				`}</style>
 				<div className="p-6">
-					<h2 className="text-xl font-bold text-gray-900">Complete your profile</h2>
-					<p className="mt-2 text-xs text-gray-500">Step {step} of 2</p>
+					<h2 className="text-xl font-bold text-white">Complete your profile</h2>
+					<p className="mt-2 text-xs text-gray-400">Step {step} of 2</p>
 					<div className="mt-2 flex gap-2">
 						<div className="h-1.5 flex-1 rounded-full bg-app" />
-						<div className={`h-1.5 flex-1 rounded-full ${step === 2 ? "bg-app" : "bg-gray-200"}`} />
+						<div className={`h-1.5 flex-1 rounded-full ${step === 2 ? "bg-app" : "bg-[#343536]"}`} />
 					</div>
 
 					{step === 1 && (
 						<>
-							<p className="mt-4 text-sm text-gray-500">Add a photo, your name, and date of birth so others can recognize you.</p>
+							<p className="mt-4 text-sm text-gray-400">Add a photo, your name, and date of birth so others can recognize you.</p>
 
-							<p className="mt-5 text-sm font-semibold text-gray-900">Profile photo</p>
+							<p className="mt-5 text-sm font-semibold text-white">Profile photo</p>
 							<div className="mt-3 flex justify-center">
 								<button
 									type="button"
 									onClick={() => fileRef.current?.click()}
 									disabled={uploading}
-									className="relative h-32 w-32 overflow-hidden rounded-full border-2 border-dashed border-gray-300 bg-gray-50"
+									className="relative h-32 w-32 overflow-hidden rounded-full border-2 border-dashed border-[#434343] bg-[#090C10]"
 								>
 									{image ? (
 										// eslint-disable-next-line @next/next/no-img-element
@@ -204,7 +267,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 										<span className="text-sm font-medium text-app">Add photo</span>
 									)}
 									{uploading && (
-										<span className="absolute inset-0 flex items-center justify-center bg-white/70">
+										<span className="absolute inset-0 flex items-center justify-center bg-black/60">
 											<Spinner />
 										</span>
 									)}
@@ -217,7 +280,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 								</button>
 							)}
 
-							<label htmlFor="profile-full-name" className="mt-5 block text-sm font-semibold text-gray-900">
+							<label htmlFor="profile-full-name" className="mt-5 block text-sm font-semibold text-white">
 								Full name
 							</label>
 							<input
@@ -228,10 +291,10 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 								onChange={(e) => setFullName(e.target.value)}
 								placeholder="Enter your full name"
 								autoComplete="name"
-								className="mt-2 w-full rounded-xl bg-[#F4F4F5] px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-app"
+								className={`mt-2 ${fieldClass}`}
 							/>
 
-							<p className="mt-5 text-sm font-semibold text-gray-900">Date of birth</p>
+							<p className="mt-5 text-sm font-semibold text-white">Date of birth</p>
 							<div className="mt-2 grid grid-cols-3 gap-2">
 								<select aria-label="Month" value={month ?? ""} onChange={(e) => setMonth(e.target.value ? +e.target.value : undefined)} className={selectClass}>
 									<option value="">Month</option>
@@ -263,8 +326,8 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 
 					{step === 2 && (
 						<>
-							<h3 className="mt-5 text-2xl font-bold text-gray-900">How do you identify?</h3>
-							<p className="mt-1 text-sm text-gray-500">Select your gender identity to help us personalize your experience.</p>
+							<h3 className="mt-5 text-2xl font-bold text-white">How do you identify?</h3>
+							<p className="mt-1 text-sm text-gray-400">Select your gender identity to help us personalize your experience.</p>
 							<div className="mt-4 space-y-3" role="radiogroup">
 								{GENDER_OPTIONS.map((option) => (
 									<button
@@ -277,43 +340,43 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 											setError(null)
 										}}
 										className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left text-base font-medium ${
-											gender === option ? "bg-app/10 ring-2 ring-app" : "bg-[#F4F4F5]"
+											gender === option ? "border border-app bg-app/10 ring-1 ring-app" : "border border-[#343536] bg-[#090C10] hover:bg-white/5"
 										}`}
 									>
 										{option}
-										<span className={`h-5 w-5 rounded-full border-2 ${gender === option ? "border-app bg-app" : "border-gray-700"}`} />
+										<span className={`h-5 w-5 rounded-full border-2 ${gender === option ? "border-app bg-app" : "border-gray-500"}`} />
 									</button>
 								))}
 							</div>
 
-							<label htmlFor="profile-location" className="mt-5 block text-sm font-semibold text-gray-900">
+							<label htmlFor="profile-location" className="mt-5 block text-sm font-semibold text-white">
 								Location
 							</label>
-							<input
-								id="profile-location"
-								ref={placesRef}
-								type="text"
+							<ProfileLocationInput
 								value={locationText}
-								onChange={(e) => {
+								onTextChange={(text) => {
 									// Typed text is not a place — only a picked suggestion counts.
-									setLocationText(e.target.value)
+									setLocationText(text)
 									setLocation({})
 								}}
-								placeholder="Search your city"
-								autoComplete="off"
-								className="mt-2 w-full rounded-xl bg-[#F4F4F5] px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-app"
+								onPick={(loc, text) => {
+									setLocation(loc)
+									setLocationText(text)
+									setError(null)
+								}}
 							/>
+							<p className="mt-1 text-xs text-gray-500">Start typing and pick your city from the suggestions.</p>
 						</>
 					)}
 
-					{error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+					{error && <p className="mt-4 text-sm text-red-400">{error}</p>}
 
 					{step === 1 ? (
 						<button
 							type="button"
 							onClick={goNext}
 							disabled={uploading}
-							className="mt-6 w-full rounded-xl bg-app py-3 text-base font-semibold text-white disabled:opacity-60"
+							className="mt-6 w-full rounded-xl bg-app py-3 text-base font-semibold text-black hover:bg-app/80 disabled:opacity-60"
 						>
 							Next
 						</button>
@@ -326,7 +389,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 									setStep(1)
 								}}
 								disabled={saving}
-								className="rounded-xl border border-gray-800 py-3 text-base font-medium text-gray-900"
+								className="rounded-xl border border-[#434343] py-3 text-base font-medium text-white hover:bg-white/5"
 							>
 								Back
 							</button>
@@ -334,14 +397,14 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 								type="button"
 								onClick={handleComplete}
 								disabled={saving}
-								className="flex items-center justify-center rounded-xl bg-app py-3 text-base font-semibold text-white disabled:opacity-60"
+								className="flex items-center justify-center rounded-xl bg-app py-3 text-base font-semibold text-black hover:bg-app/80 disabled:opacity-60"
 							>
 								{saving ? <Spinner /> : "Complete"}
 							</button>
 						</div>
 					)}
 
-					<button type="button" onClick={logout} data-analytics-ignore="" className="mx-auto mt-4 block text-xs text-gray-400 hover:text-gray-600">
+					<button type="button" onClick={logout} data-analytics-ignore="" className="mx-auto mt-4 block text-xs text-gray-500 hover:text-gray-300">
 						Log out
 					</button>
 				</div>
