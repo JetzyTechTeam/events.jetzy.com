@@ -2,6 +2,11 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 3 (2026-09-16).** Adds **§6b — Full Concierge is live** (tickets selling it must be
+sellable, how to show its price) and **§7a — the two routing replies** from the checkout endpoints
+(`needsCheckout`, `freeOrder`). Nothing in §1–§6a changed. Written because the app was refusing
+Concierge tickets with "offers a membership that isn't available yet" — no server returns that.
+
 **Revision 2 (2026-09-04).** Revision 1 covered ticket creation plus the membership block
 (`memberships`, `membershipInterval`). This revision adds **free months of that membership, given
 with no code typed** (`membershipFreeMonths`), and **corrects a rule from revision 1 that is now
@@ -378,6 +383,94 @@ field itself, which has its own independent cap (`MAX_MEMBERSHIP_FREE_MONTHS = 1
 
 ---
 
+## 6b. NEW (Revision 3) — Full Concierge is live: don't block it
+
+**Concierge has been sold with tickets on the web since 2026-09-03.** There is no "coming soon"
+state anywhere on the server — hosts can tick it, `/api/checkout` charges it, the subscription is
+created, renewals and cancellation emails run. A ticket whose `memberships` contains `"concierge"`
+is an ordinary sellable ticket.
+
+If the app shows **"Ticket … offers a membership that isn't available yet"**, that message comes
+from the app itself. Remove the check that produces it.
+
+### Rules
+
+1. **Accept both keys.** Valid values of `memberships` are `[]`, `["premium"]`, `["concierge"]` and
+   `["premium", "concierge"]`. Read them with `ticketMemberships()` from §6.
+2. **An unknown key is ignored, not fatal.** If a future key appears that the app doesn't
+   recognise, drop that key and keep selling the ticket — the server does the same
+   (`sanitizeMembershipKeys`). Blocking the whole ticket over one unrecognised entry is what caused
+   this bug.
+3. **Get the price from the server, don't hardcode it.** Concierge's rate is set in Stripe and
+   differs between environments:
+
+   ```
+   GET /api/subscriptions/plan?membership=concierge     // unauthenticated
+   GET /api/subscriptions/plan?membership=premium
+   ```
+
+   ```jsonc
+   "data": {
+     "membership": "concierge",
+     "name": "Full Concierge Membership",   // use this label
+     "unitAmount": 5950,                    // CENTS — the default price
+     "currency": "usd",
+     "interval": "month",
+     "prices": [                            // one per interval, cheapest first
+       { "id": "price_…", "unitAmount": 5950, "currency": "usd",
+         "interval": "month", "intervalCount": 1, "isDefault": true }
+     ]
+   }
+   ```
+
+   Pick the entry in `prices[]` whose `interval` matches the ticket's interval. If there isn't one
+   (Concierge has no `"year"`), use the default. The server charges the same way. For reference,
+   test mode is currently **$59.50/month**. Premium is $20/month and $200/year.
+4. **Use these names** in the disclosure:
+
+   | key | Buyer-facing label | Receipt line |
+   |---|---|---|
+   | `premium` | Jetzy Premium | Jetzy Premium membership |
+   | `concierge` | Full Concierge Membership | Full Concierge Membership |
+
+   (Don't append "membership" to the Concierge label — it already contains the word.)
+5. **Concierge is monthly only.** On a ticket with `membershipInterval: "year"`, Premium is quoted
+   and charged yearly and Concierge monthly. Show **one recurring line per membership** — one line
+   for two charges fails disclosure (§6 rule 4).
+6. **Free months:** the ticket's `membershipFreeMonths` covers Concierge too; a referral code's
+   months never do (§6a).
+7. **Already a member:** the server skips any membership the buyer already holds, looked up by the
+   **checkout email** against Stripe, and it asks separately for each membership. A Premium member
+   buying a Premium + Concierge ticket pays for Concierge only. The app can preview this, but the
+   server has the final say.
+8. **Limits are per membership** — 2 per order, 2 per email per event, counted separately for
+   Premium and Concierge (§6a "Cap").
+
+### Example — what the buyer should see
+
+```jsonc
+// ticket
+{ "name": "Full Access", "price": 120, "memberships": ["premium", "concierge"],
+  "membershipInterval": "year" }
+```
+
+```
+Full Access                         $120.00
+Jetzy Premium — first year          $200.00   then $200/year until you cancel
+Full Concierge Membership — month 1  $59.50   then $59.50/month until you cancel
+Due today                           $379.50
+```
+
+(Figures are test mode; take them from `/api/subscriptions/plan`.)
+
+### Test on staging
+
+Concierge test product `prod_UjabUJ9OXWhLPJ`. Cover: a Concierge-only ticket, Premium +
+Concierge, an annual ticket with both, a `$0` ticket with Concierge, and a buyer who already holds
+Premium buying Premium + Concierge.
+
+---
+
 ## 7. Selling: what the checkout expects — REVISION 1, with one addition
 
 Post the ticket **id** and quantity — the server rebuilds prices from the event record and
@@ -411,6 +504,33 @@ than guessing the session shapes from this doc; getting it wrong either fails to
 
 ---
 
+## 7a. NEW (Revision 3) — the two routing replies
+
+A ticket that sells a membership is a `$0` registration for someone who already holds it and a
+purchase for everyone else. The app picks the endpoint from its own guess (usually a lookup of the
+typed email), and that guess can be stale. Each endpoint therefore tells you when you picked the
+wrong one. Both replies use the usual envelope `{ message, status, code, data }`.
+
+| Endpoint you called | Reply | Meaning | Do this |
+|---|---|---|---|
+| `POST /api/checkout/free-events` | HTTP **400**, `status: false`, `data: { needsCheckout: true, owed: ["concierge"] }` | This buyer still owes a membership (listed in `owed`), so it isn't free for them. | Send the **same body** to `POST /api/checkout` and follow its Stripe redirect. |
+| `POST /api/checkout` | HTTP **200**, `status: true`, `data: { freeOrder: true }` (no Stripe `url`) | Stripe says the buyer already holds every membership on this ticket, and nothing else is charged. | Send the **same body** to `POST /api/checkout/free-events`. |
+
+Rules:
+
+- **Switch at most once.** If the second endpoint sends you back again, stop and show its
+  `message` — don't loop between the two.
+- **Check these flags before showing an error.** The `needsCheckout` reply is a 400 whose message
+  ("This ticket includes … — please complete checkout.") asks the buyer to do something they can't
+  do in the app. Don't show it on the first attempt.
+- **`freeOrder` has no `url`.** Code that opens `data.url` whenever the reply succeeds will open
+  nothing. Check `freeOrder` first.
+- A `$0` ticket with free membership months can come back from `/api/checkout` as a card-only
+  Stripe page (nothing charged, card saved for the renewal). It still has a `url` — follow it like
+  any other checkout.
+
+---
+
 ## 8. Checklist
 
 - [ ] Read `memberships` via the fallback in §6, not the raw field
@@ -429,6 +549,12 @@ than guessing the session shapes from this doc; getting it wrong either fails to
       offer if one applies, before the buyer commits
 - [ ] Preserve `_id`, and preserve omitted fields, on every edit
 - [ ] Mint a new Stripe price only when the price actually changed
+- [ ] **(Rev 3)** Sell tickets whose `memberships` includes `"concierge"` — no "not available yet"
+      block; ignore unknown keys rather than blocking the ticket (§6b)
+- [ ] **(Rev 3)** Quote membership prices from `/api/subscriptions/plan?membership=…`, one recurring
+      line per membership, Concierge always monthly (§6b)
+- [ ] **(Rev 3)** Handle `needsCheckout` / `freeOrder` by switching endpoint once, before showing
+      any error (§7a)
 
 ---
 
