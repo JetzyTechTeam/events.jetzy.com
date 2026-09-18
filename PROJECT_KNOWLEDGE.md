@@ -474,8 +474,10 @@ Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** �
 | | Test | Live |
 |---|---|---|
 | Premium product | `prod_Uxn2R9FQd5F3sp` | `prod_UzMR33CL777c3R` |
-| Premium $20/mo — product default | `price_1U16eYB7XccR5GE0AdABnPwO` | `price_1U16VVB7XccR5GE08PIyF8i7` |
-| Premium $200/yr | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | `price_1U3KGWB7XccR5GE0h8qqEOtm` |
+| Premium $10/mo — product default | `price_1TxrSKB7XccR5GE0D3uPXEF5` | `price_1TzNi9B7XccR5GE0JT9sMe3b` |
+| Premium $100/yr | `price_1UGhmtB7XccR5GE0n4uLaXjp` | `price_1UH2dpB7XccR5GE07ESXO7Qg` |
+| ~~Premium $20/mo~~ — retired 2026-09-18 | `price_1U16eYB7XccR5GE0AdABnPwO` | `price_1U16VVB7XccR5GE08PIyF8i7` |
+| ~~Premium $200/yr~~ — retired 2026-09-18 | `price_1U3KA0B7XccR5GE0ZRwK6yKH` | `price_1U3KGWB7XccR5GE0h8qqEOtm` |
 | Concierge product | `prod_UjabUJ9OXWhLPJ` | `prod_UlQTOgXS73TAEV` |
 | Concierge $59.50/mo | `price_1Tk7QPB7XccR5GE0ZxMClLxs` | — |
 
@@ -483,7 +485,8 @@ Recorded 2026-08-11. **Membership is resolved by PRODUCT id, never by price** �
 - **`default_price` must stay on the monthly price.** [api/subscriptions/plan.ts](src/pages/api/subscriptions/plan.ts) returns only `default_price`, and that figure is the recurring disclosure on every bundled ticket. Repointing it to annual would quote $200/yr on a $60 ticket.
 - Adding the annual **price** needed no code change here: product-scoped detection picked it up, and `startMembershipSubscription` already derives the trial as `dayjs().add(1, interval)`, so an annual subscription gets a one-year trial rather than a month. Offering annual in our own UI does need work — the plan endpoint must list prices instead of reading `default_price`.
 - The `productId` fallback in [memberships.ts](src/lib/memberships.ts) is a **test** id despite the comment claiming production. Inert only because production sets the env var.
-- Premium carries a legacy `$10/mo` price predating the $20 one — 16 subscriptions in test, **zero in live**. Nothing selects it; detection is by product so those members still read as Premium.
+- Premium carried a legacy `$10/mo` price predating the $20 one — 16 subscriptions in test, **zero in live**. **On 2026-09-18 it became the list price** (CEO), so the reprice reused it rather than creating a monthly price; annual was created fresh at $100 on the same product. Detection is by product, so no member's status changed in either direction.
+- **Repricing runbook, learned the hard way:** point/create the new prices → update EVERY billing-portal configuration that pins price ids (ours via `scripts/create-portal-config.ts --update <id> --switch`, SelectMember's on their side) → **archive the old prices last**. Archiving first leaves the switch flow pinned to prices Stripe will no longer accept, and the member gets a portal with nothing but Cancel. Configurations are per-mode, so test and live cut over independently and SelectMember needs warning before a live archive.
 
 **Known gap — SelectMember's Concierge Annual is a separate product** (`prod_Ujacr6ekzXDpo1`), and its price is misconfigured to bill $595 *monthly*. We never reference it, so it can't be sold through ticketing — but annual Concierge subscribers cannot be found by product lookup. The only signal is their `/status` API, and `heldMemberships` currently accepts any `status: "active"` **without checking `plan`**, which would also read a $4.95 hotels-only member as holding Full Concierge and hand it to them free. Blocked on their response contract; do not enable Concierge on ticket types until resolved.
 
@@ -661,8 +664,13 @@ because every bundled disclosure that doesn't specify an interval reads it.
 
 | | product | monthly (default) | annual |
 |---|---|---|---|
-| live | `prod_UzMR33CL777c3R` | `price_1U16VVB7XccR5GE08PIyF8i7` | `price_1U3KGWB7XccR5GE0h8qqEOtm` |
-| test | `prod_Uxn2R9FQd5F3sp` | `price_1U16eYB7XccR5GE0AdABnPwO` | `price_1U3KA0B7XccR5GE0ZRwK6yKH` |
+| live | `prod_UzMR33CL777c3R` | `price_1TzNi9B7XccR5GE0JT9sMe3b` ($10) | `price_1UH2dpB7XccR5GE07ESXO7Qg` ($100) |
+| test | `prod_Uxn2R9FQd5F3sp` | `price_1TxrSKB7XccR5GE0D3uPXEF5` ($10) | `price_1UGhmtB7XccR5GE0n4uLaXjp` ($100) |
+
+Repriced from $20/$200 on **2026-09-18**; the retired ids are in the price table above. The
+rule below still holds, restated: a price id cannot simply be swapped, because every portal
+configuration pinning it — ours and SelectMember's — has to list the new one BEFORE the old
+one is archived, or the plan-switch flow breaks for everybody.
 
 **Direct (`/subscribe`).** `/api/subscriptions/plan` returns `prices[]` alongside the
 unchanged top-level `unitAmount`/`interval`/`name`. **One price per interval, product default
@@ -742,16 +750,29 @@ states. The modal previously passed no `prices` at all, so annual was unreachabl
 most people use; it now shares `useMembershipPlan("premium")` with the page, which means one
 cache entry and one formatter.
 
-**The struck-through "$400" is marketing copy, not a price.** `COMPARE_AT_MULTIPLIER = 2` in
-`PlanComparison.tsx`; nothing in Stripe backs it and no member was ever billed at that rate. It
-matches selectmember.jetzy.com by decision (CEO, 2026-08-18) and is kept in one named constant
-so it can be changed or removed in a single edit.
+**The struck-through figure is a real former price (2026-09-18).** It used to be
+`COMPARE_AT_MULTIPLIER = 2` — a $400/$40 nobody was ever billed, matching
+selectmember.jetzy.com by CEO decision (2026-08-18). The reprice from $20/$200 to $10/$100 made
+the honest version of the same claim available, so `FORMER_PRICES = { month: 20, year: 200 }`
+now backs it and the saving is **computed** from the pair rather than asserted. A struck price
+is expected to be a genuine recent selling price, and this one is.
+
+**It expires by itself.** `LAUNCH_OFFER_ENDS` (2026-12-18) — past that date `formerPrice`
+returns null, the strike-through and the badge stop rendering, and the card states the price
+plainly. A "was" price that is months stale is precisely the claim this replaced. Extending the
+window is a CEO decision. `LAUNCH_DISCOUNT_LABEL` in `send-grid.ts` makes the same claim inside
+the CEO's verbatim welcome and win-back copy and does **not** expire on its own.
+
+**The alternate-interval line lost its badge.** "or $10/month — 50% Off" sat beside the annual
+card and implied monthly was the better buy, when twelve months of it is $120 against $100. It
+reads "or $10/month · was $20" — the saving measured against that interval's own former price,
+which is the only comparison that says anything true about it.
 
 **An accepted invite code prices the card at $0** (CEO, 2026-09-02). The `trial` prop
 (`{ months, label, chargesFrom }`) is set by all three callers — `/premium`, `/subscribe`,
 `PremiumPaywallModal` — from the same debounced invite check that writes `inviteAccepted`, and
 when it is present the headline becomes **$0**, the struck-through figure becomes the **real**
-rate being waived ($20 / $200, not `COMPARE_AT_MULTIPLIER`), the green badge becomes the offer
+rate being waived (the current $10 / $100, not the `FORMER_PRICES` compare-at), the green badge becomes the offer
 label ("1 Month Free"), and a new line states **"Then $20/Month from Oct 2, 2026. Cancel any
 time."** Before this the card still read "$20 /Month" with a code applied — it disagreed with
 what checkout was about to charge, and the free month appeared only in a small line under the
@@ -2529,7 +2550,7 @@ for somebody reading a cancellation notice who may not be signed in anywhere. Wi
 `NEXT_PUBLIC_URL` the whole win-back block is dropped rather than emitting a path an inbox can't
 follow.
 
-`LAUNCH_DISCOUNT_LABEL` ("50% off") is the same marketing claim `COMPARE_AT_MULTIPLIER` makes on the
+`LAUNCH_DISCOUNT_LABEL` ("50% off") is the same claim `FORMER_PRICES` makes on the
 plan card. Nothing in Stripe backs it and nobody has been billed the "regular" price.
 
 ## "It looks like I'm being charged" — the trialing member card (2026-08-26)

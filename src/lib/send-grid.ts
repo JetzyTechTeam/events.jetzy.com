@@ -3337,9 +3337,14 @@ type MembershipEmailData = {
 const DEFAULT_MEMBERSHIP_LABEL = "Jetzy Premium"
 
 /**
- * The rate is HALF the "regular price" we advertise — the same claim `COMPARE_AT_MULTIPLIER`
- * makes on the plan card, kept as one number here so the two can't drift. It is marketing copy:
- * nothing in Stripe holds a higher price and nobody has ever been billed one.
+ * The rate is HALF the "regular price" we advertise — the same claim `FORMER_PRICES` makes on
+ * the plan card, kept as one number here so the two can't drift.
+ *
+ * It stopped being pure marketing on 2026-09-18: Premium really did sell at $20/$200 until that
+ * day, so $10/$100 genuinely is half the former price. The card retires the claim automatically
+ * at `LAUNCH_OFFER_ENDS`; THIS ONE DOES NOT — it is inside the CEO's welcome and win-back copy,
+ * which is reproduced verbatim. When that window closes, this label and the sentences around it
+ * need a decision rather than a silent edit.
  */
 const LAUNCH_DISCOUNT_LABEL = "50% off"
 
