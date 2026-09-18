@@ -590,7 +590,7 @@ const PlanComparison: React.FC<Props> = ({
 								    Retires with the rest of the claim at LAUNCH_OFFER_ENDS. */}
 								{trialApplied && compareAt != null && compareAtBadge && (
 									<p className="text-sm text-gray-400 mt-2">
-										Launch price {money(amount)}/{PERIOD_LABELS[interval] || interval} —{" "}
+										Price {money(amount)}/{PERIOD_LABELS[interval] || interval} —{" "}
 										<span className="line-through">{money(compareAt)}</span>{" "}
 										<span className="font-semibold text-green-500">{compareAtBadge}</span>
 									</p>
