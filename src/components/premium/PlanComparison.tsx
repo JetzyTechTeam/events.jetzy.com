@@ -57,15 +57,40 @@ const PERIOD_LABELS: Record<string, string> = { month: "Month", year: "Year" }
 const amountOnly = (label: string | null) => (label ? label.split("/")[0] : null)
 
 /**
- * The struck-through "was" figure is MARKETING COPY, not a price anyone was ever charged.
+ * The struck-through "was" figure is a REAL FORMER PRICE, and that is the whole point.
  *
- * $400/yr and $40/mo are simply twice the real amounts. It exists because
- * selectmember.jetzy.com's card shows it and the CEO asked for the two to match; nothing in
- * Stripe backs it, and no member has ever been billed at that rate. Kept as one constant, said
- * plainly, so it can be changed or removed in a single edit rather than hunted through JSX.
+ * It used to be `COMPARE_AT_MULTIPLIER = 2` — $40/mo and $400/yr, simply twice the real amount,
+ * matching selectmember.jetzy.com because the CEO asked the two cards to agree. Nothing in
+ * Stripe backed it and nobody was ever billed at that rate.
+ *
+ * On 2026-09-18 Premium was repriced from $20/$200 to $10/$100, which means the honest version
+ * of the same claim is now available: these are prices we genuinely charged until that day, so
+ * "was $200, now $100, 50% off" is a statement of fact rather than decoration. A struck-through
+ * price is expected to be a genuine recent selling price, and this one is.
+ *
+ * WHICH IS WHY IT EXPIRES. "Was $200" stops being a recent price with time, and a stale
+ * compare-at is exactly the claim the honest version was adopted to avoid. After
+ * `LAUNCH_OFFER_ENDS` the strike-through and the badge simply stop rendering — no edit needed,
+ * and the card falls back to stating the price plainly.
+ *
+ * The saving is DERIVED from the two figures, never written down: change a price in Stripe and
+ * the percentage follows, or hardcode "50%" and it becomes a lie on the next reprice.
  */
-export const COMPARE_AT_MULTIPLIER = 2
-const DISCOUNT_BADGE = "50% Off"
+export const FORMER_PRICES: Record<string, number> = { month: 20, year: 200 }
+
+/** Launch window for the compare-at claim above. Extend only with the CEO's say-so. */
+export const LAUNCH_OFFER_ENDS = new Date("2026-12-18T00:00:00Z")
+
+/** The former price of ONE interval, or null when there is no honest claim left to make. */
+const formerPrice = (interval: string, amount: number | null | undefined): number | null => {
+	if (amount == null || Date.now() >= LAUNCH_OFFER_ENDS.getTime()) return null
+	const was = FORMER_PRICES[interval]
+	return was != null && was > amount ? was : null
+}
+
+/** "50% Off", worked out from the two prices rather than asserted. */
+const savingBadge = (was: number | null, amount: number | null | undefined): string | null =>
+	was == null || amount == null ? null : `${Math.round((1 - amount / was) * 100)}% Off`
 
 /** Whole dollars drop the cents, matching `priceLabel` in `usePremiumPlan`. */
 const money = (dollars: number | null): string | null =>
@@ -275,6 +300,12 @@ const PlanComparison: React.FC<Props> = ({
 	const monthlyOption = options.find((p) => p.interval === "month")
 	const annualOption = options.find((p) => p.interval === "year")
 	const annualMonthsFreeOnSale = monthsFreeOnAnnual(monthlyOption?.amount, annualOption?.amount)
+
+	// The "was" price for whichever interval is selected, and the saving it works out to. Both
+	// null once the launch window closes, and both are read in two places below — the headline
+	// and the alternate-interval line — so they are computed once here rather than twice in JSX.
+	const compareAt = formerPrice(interval, amount)
+	const compareAtBadge = savingBadge(compareAt, amount)
 
 	// ---- An accepted invite code, priced ----
 	//
@@ -509,14 +540,15 @@ const PlanComparison: React.FC<Props> = ({
 							</div>
 						) : (
 							<div className="mb-6">
-								{/* Compare-at.
-								    Ordinarily marketing copy — see COMPARE_AT_MULTIPLIER. With a trial code
-								    applied it becomes the REAL rate ($20, $200), struck through, because that
-								    is the figure the code is actually waiving; $40 struck above $0 would be
-								    crediting the code with a discount nobody was ever charged. */}
-								{amount != null && (
+								{/* Compare-at — see FORMER_PRICES. The former price ($20, $200) while the
+								    launch window runs, and nothing at all once it closes.
+								    With a trial code applied it becomes the CURRENT rate struck through,
+								    because that is the figure the code is actually waiving; striking $200
+								    above $0 would credit the code with $200 of value when it is waiving
+								    $100. Same rule as before, only the un-trialled figure changed. */}
+								{amount != null && (trialApplied || compareAt != null) && (
 									<p className="text-lg text-gray-500 line-through">
-										{money(trialApplied ? amount : amount * COMPARE_AT_MULTIPLIER)}
+										{money(trialApplied ? amount : compareAt)}
 									</p>
 								)}
 								<p className="text-3xl font-bold flex items-baseline gap-2 flex-wrap">
@@ -524,9 +556,9 @@ const PlanComparison: React.FC<Props> = ({
 									<span className="text-sm text-gray-400 font-normal">
 										/{PERIOD_LABELS[interval] || interval}
 									</span>
-									{amount != null && (
+									{amount != null && (trialApplied || compareAtBadge) && (
 										<span className="text-sm font-semibold text-green-500 capitalize">
-											{trialApplied ? trial!.label : DISCOUNT_BADGE}
+											{trialApplied ? trial!.label : compareAtBadge}
 										</span>
 									)}
 								</p>
@@ -546,6 +578,21 @@ const PlanComparison: React.FC<Props> = ({
 									>
 										Then {money(amount)}/{PERIOD_LABELS[interval] || interval}
 										{trialChargesOn ? ` from ${trialChargesOn}` : ""}.
+									</p>
+								)}
+								{/* The launch saving, on its own line DURING A TRIAL ONLY.
+								    The headline can't carry it: with a trial the struck figure has to be the
+								    rate being waived, or the free month gets credited with $200 of value when
+								    it is waiving $100. But nearly every first-time buyer sees the trial state,
+								    so folding the two together would mean the reprice was invisible to almost
+								    everyone it was made for. Said separately, both are true: the trial waives
+								    the current rate, and the current rate is half what it was.
+								    Retires with the rest of the claim at LAUNCH_OFFER_ENDS. */}
+								{trialApplied && compareAt != null && compareAtBadge && (
+									<p className="text-sm text-gray-400 mt-2">
+										Launch price {money(amount)}/{PERIOD_LABELS[interval] || interval} —{" "}
+										<span className="line-through">{money(compareAt)}</span>{" "}
+										<span className="font-semibold text-green-500">{compareAtBadge}</span>
 									</p>
 								)}
 								{/* Cancelling has its own line, and it is the link.
@@ -621,11 +668,21 @@ const PlanComparison: React.FC<Props> = ({
 											})()}
 										</div>
 									) : (
+										/* The other interval, stated plainly.
+										   It used to carry the discount badge — "or $10/month — 50% Off" —
+										   which beside the annual card implied monthly was the better deal
+										   when twelve months of it costs $120 against $100. The saving now
+										   reads against that interval's OWN former price, which is the only
+										   comparison that says anything true about it. */
 										<p className="text-sm text-gray-400 mt-1 flex items-baseline gap-2">
 											<span>
 												or {money(alternate.amount)}/{alternate.interval}
 											</span>
-											<span className="font-semibold text-green-500">{DISCOUNT_BADGE}</span>
+											{formerPrice(alternate.interval, alternate.amount) != null && (
+												<span className="text-gray-500">
+													was {money(formerPrice(alternate.interval, alternate.amount))}
+												</span>
+											)}
 										</p>
 									))}
 							</div>
