@@ -18,6 +18,8 @@ import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@/hooks/usePremiumApplication"
 import PremiumApplicationQuestions from "@/components/premium/PremiumApplicationQuestions"
 import PremiumApplicationReview from "@/components/premium/PremiumApplicationReview"
+import { usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
+import { useHoldProfileGate } from "@/components/profile/ProfileGate"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -152,6 +154,10 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	 * the member card — the one action a member who just subscribed monthly might want.
 	 */
 	const isVisible = isOpen || justSubscribed || alreadyMember || reopenedAfterCancel
+	// Profile is asked AFTER paying (CEO, 2026-09-22), so the page's own gate stands down while this
+	// dialog — or the post-purchase form it opens — is on screen.
+	const postPurchaseProfile = usePostPurchaseProfile()
+	useHoldProfileGate(isVisible || !!postPurchaseProfile.element)
 
 	// The shared hook, not a private query: it already formats every interval's label and shares
 	// its cache key, so opening this after the price has been fetched elsewhere on the page
@@ -561,6 +567,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 		if (sessionId) {
 			setJustSubscribed(true)
+			postPurchaseProfile.prompt()
 			return
 		}
 
@@ -622,7 +629,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 	// Stays mounted while `alreadyMember` or `justSubscribed` is set even if the parent thinks
 	// it's closed — those are the post-login and post-checkout cases described above.
-	if (!isVisible) return null
+	if (!isVisible) return postPurchaseProfile.element
 
 	const handleClose = () => {
 		setAlreadyMember(false)
@@ -767,6 +774,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			    nesting is only about ownership. No event and no referral code: this is the ordinary
 			    price, and the endpoints key the code to the address alone. */}
 			<EmailVerifyDialog open={verifyOpen} onClose={() => setVerifyOpen(false)} onVerified={handleVerified} />
+			{postPurchaseProfile.element}
 		</div>
 	)
 }

@@ -41,6 +41,34 @@ export const useProfileStatus = (userId: string | undefined, enabled: boolean) =
 	})
 
 /**
+ * Lets a surface stand the gate down while it is on screen — the Premium pop-up, which opens on
+ * ordinary (gated) pages. The profile is asked AFTER paying there (`usePostPurchaseProfile`), so the
+ * page's own gate must not jump in once the buyer signs in mid-purchase, nor stack a second form
+ * over the post-purchase one. A counter, not a flag: more than one holder can be mounted.
+ */
+let gateHolds = 0
+const gateListeners = new Set<() => void>()
+const emitGateHolds = () => gateListeners.forEach((listener) => listener())
+const subscribeGateHolds = (listener: () => void) => {
+	gateListeners.add(listener)
+	return () => {
+		gateListeners.delete(listener)
+	}
+}
+
+export const useHoldProfileGate = (active: boolean) => {
+	React.useEffect(() => {
+		if (!active) return
+		gateHolds += 1
+		emitGateHolds()
+		return () => {
+			gateHolds -= 1
+			emitGateHolds()
+		}
+	}, [active])
+}
+
+/**
  * Blocks every portal page for a signed-in person whose Jetzy profile is incomplete, until they
  * complete it. Mounted once in `_app.tsx`. See `isUngatedPath` for the pages it never blocks.
  */
@@ -53,7 +81,9 @@ export default function ProfileGate() {
 	const gated = status === "authenticated" && !isUngatedPath(pathname)
 	const { data } = useProfileStatus(userId, gated)
 
-	if (!gated || !data || data.complete) return null
+	const held = React.useSyncExternalStore(subscribeGateHolds, () => gateHolds > 0, () => false)
+
+	if (!gated || held || !data || data.complete) return null
 
 	return (
 		<ProfileCompletionModal

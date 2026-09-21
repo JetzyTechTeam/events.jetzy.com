@@ -6,6 +6,7 @@ import { issueAlbumCode } from "@/lib/album-verification"
 import { resolveReferralTrial } from "@/lib/referral-trial"
 import { sendPremiumVerificationCode } from "@/lib/send-grid"
 import { clientKey, isRateLimited } from "@/lib/rate-limit"
+import { hasJetzyAccount, sendBackendLoginCode } from "@/lib/backend-login-code"
 import zod from "zod"
 
 const schema = zod.object({
@@ -73,6 +74,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
+		// An address that already has a Jetzy account gets the BACKEND's login code instead of ours:
+		// verifying that one returns a real accessToken, so the session can read and save the
+		// profile the app uses (see `backend-login-code.ts`). Anything the backend refuses other than
+		// rate limiting falls back to our own code, exactly as before — nobody loses the door.
+		if (await hasJetzyAccount(email).catch(() => false)) {
+			const sent = await sendBackendLoginCode(email).catch(() => null)
+			if (sent?.ok) {
+				return sendResponse(res, { sent: true, via: "jetzy" }, "We've emailed you a code.", true, ResCode.OK)
+			}
+			if (sent && sent.status === 429) {
+				return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
+			}
+			console.warn(`[premium/send-code] backend login code unavailable (${sent?.status ?? "error"}), using our own code`)
+		}
+
 		const issued = await issueAlbumCode(event || null, email, "premium")
 		if (!issued) {
 			return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
@@ -81,7 +97,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		await sendPremiumVerificationCode({ email, code: issued.code })
 
 		// Never the code itself, and never whether the address already has an account.
-		return sendResponse(res, { sent: true }, "We've emailed you a code.", true, ResCode.OK)
+		return sendResponse(res, { sent: true, via: "portal" }, "We've emailed you a code.", true, ResCode.OK)
 	} catch (error: any) {
 		console.error("[premium/send-code] Error:", error?.message || error)
 		return sendResponse(res, null, "We couldn't send that code. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)

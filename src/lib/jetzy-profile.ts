@@ -100,8 +100,22 @@ export const formatProfileLocation = (loc?: ProfileLocation) =>
  * Pages where the gate never blocks. Auth pages (the person is mid-way into an account), the
  * verification page (it renders the form itself), legal pages, and membership management —
  * nobody may be stopped from cancelling a paid membership by a profile form.
+ *
+ * `/premium` and `/subscribe` too (CEO, 2026-09-22): buying comes first, and the profile is asked
+ * for straight AFTER a confirmed payment by `usePostPurchaseProfile`, not before it.
  */
-const UNGATED_PREFIXES = ["/login", "/signup", "/auth", "/post-signup", "/terms", "/privacy", "/manage-membership", "/jetzyqrsignup"]
+const UNGATED_PREFIXES = [
+	"/login",
+	"/signup",
+	"/auth",
+	"/post-signup",
+	"/terms",
+	"/privacy",
+	"/manage-membership",
+	"/jetzyqrsignup",
+	"/premium",
+	"/subscribe",
+]
 
 export const isUngatedPath = (pathname: string) =>
 	UNGATED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))

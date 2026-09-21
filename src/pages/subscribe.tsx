@@ -7,6 +7,7 @@ import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import { usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
 import Navbar from "@Jetzy/components/misc/Navbar"
 import { ROUTES } from "@/configs/routes"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
@@ -101,6 +102,9 @@ export default function SubscribePage() {
 	// hands us a session when it has one.
 
 	// Redirect back from Stripe after a successful subscription purchase.
+	// The profile is asked for BEFORE the hop back to the app (CEO, 2026-09-22); `goToApp` runs once
+	// it is complete, or at once if nothing is missing.
+	const postPurchaseProfile = usePostPurchaseProfile()
 	React.useEffect(() => {
 		const sessionId = router.query.premium_session_id
 		if (!sessionId || typeof sessionId !== "string") return
@@ -110,7 +114,7 @@ export default function SubscribePage() {
 			.then(() => {
 				Success("Welcome to Jetzy Premium!", "Your subscription is now active.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
-				goToApp()
+				postPurchaseProfile.prompt(goToApp)
 			})
 			.catch(() => {
 				ErrorToast("Error", "We couldn't confirm your subscription. Please contact support if this persists.")
@@ -594,6 +598,8 @@ export default function SubscribePage() {
 					interval={selectedInterval}
 					returnTo="/subscribe"
 				/>
+
+				{postPurchaseProfile.element}
 
 				{/* No event and no referral code — this is the ordinary price, and the endpoints key
 				    the code to the address alone. */}

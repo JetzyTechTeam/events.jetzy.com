@@ -6,6 +6,7 @@ import { MOBILE_REFERRAL_ACCEPTED, MOBILE_REFERRAL_UNAVAILABLE, checkMobileRefer
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import { usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
 import { ROUTES } from "@/configs/routes"
 import Navbar from "@Jetzy/components/misc/Navbar"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
@@ -724,6 +725,9 @@ export default function PremiumPage() {
 	}, [router.query.application_session_id])
 
 	// ---- Back from Stripe ----
+	// The profile is asked for here, right after a confirmed payment (CEO, 2026-09-22) — this page
+	// is ungated before purchase, so nobody is stopped from buying by the form.
+	const postPurchaseProfile = usePostPurchaseProfile()
 	React.useEffect(() => {
 		const sessionId = router.query.premium_session_id
 		if (!sessionId || typeof sessionId !== "string") return
@@ -737,6 +741,7 @@ export default function PremiumPage() {
 				Success("Welcome to Jetzy Premium!", "Your membership is now active.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
 				router.replace(SELF, undefined, { shallow: true })
+				postPurchaseProfile.prompt()
 			})
 			.catch(() => {
 				ErrorToast("Error", "We couldn't confirm your membership. Please contact support if this persists.")
@@ -851,6 +856,8 @@ export default function PremiumPage() {
 				onClose={() => setVerifyOpen(false)}
 				onVerified={handleVerified}
 			/>
+
+			{postPurchaseProfile.element}
 
 			{/* Only after a code was refused for THIS account. Buying without it is a real
 				    choice, so it gets a real button rather than being the silent default. */}

@@ -93,9 +93,11 @@ type Props = {
 	isOpen: boolean
 	initialProfile?: JetzyProfile
 	onCompleted: (profile?: JetzyProfile) => void
+	/** A line above the steps, e.g. after a purchase — "You're in", then why we're asking. */
+	intro?: string
 }
 
-export default function ProfileCompletionModal({ isOpen, initialProfile, onCompleted }: Props) {
+export default function ProfileCompletionModal({ isOpen, initialProfile, onCompleted, intro }: Props) {
 	const { update } = useSession()
 	const dispatch = useAppDispatch()
 
@@ -241,6 +243,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 					.pac-matched{color:#F79432}
 				`}</style>
 				<div className="p-6">
+					{intro && <p className="mb-3 rounded-lg bg-app/10 px-3 py-2 text-sm font-medium text-app">{intro}</p>}
 					<h2 className="text-xl font-bold text-white">Complete your profile</h2>
 					<p className="mt-2 text-xs text-gray-400">Step {step} of 2</p>
 					<div className="mt-2 flex gap-2">

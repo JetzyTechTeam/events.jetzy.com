@@ -5,6 +5,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { consumeAlbumCode, consumeFailureMessage } from "@/lib/album-verification"
 import { generateMagicToken } from "@/lib/magicLink"
 import { clientKey, isRateLimited } from "@/lib/rate-limit"
+import { verifyBackendLoginCode } from "@/lib/backend-login-code"
 import zod from "zod"
 
 const schema = zod.object({
@@ -13,6 +14,12 @@ const schema = zod.object({
 	event: zod.string().min(1).optional(),
 	/** The 6-digit code from the email. */
 	otp: zod.string().min(4).max(10),
+	/**
+	 * Which code was sent, as `send-code` reported it. "jetzy" = the backend's login code, checked
+	 * by the backend; anything else = ours. Safe to take from the client: each path verifies its
+	 * own code, so naming the wrong one just fails.
+	 */
+	via: zod.enum(["jetzy", "portal"]).optional(),
 })
 
 const RATE_LIMIT_MAX = 20
@@ -47,6 +54,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const email = validation.data.email.trim().toLowerCase()
+
+		if (validation.data.via === "jetzy") {
+			const verified = await verifyBackendLoginCode(email, validation.data.otp)
+			if (!verified.ok) {
+				const message =
+					verified.status === 423 || verified.status === 429
+						? "Too many attempts. Please try again later."
+						: verified.message || "That code didn't work. Check it and try again."
+				return sendResponse(res, { verified: false }, message, false, ResCode.BAD_REQUEST)
+			}
+			// Same contract as `verify-login-otp.ts`: the real accessToken rides inside the signed
+			// magic token, so NextAuth puts it straight into the session.
+			const magicToken = generateMagicToken({
+				email,
+				accessToken: verified.accessToken,
+				firstName: verified.firstName,
+				lastName: verified.lastName,
+			})
+			return sendResponse(res, { verified: true, magicToken }, "Email confirmed.", true, ResCode.OK)
+		}
 		const result = await consumeAlbumCode(validation.data.event || null, email, validation.data.otp.trim(), "premium")
 
 		if (!result.ok) {
