@@ -210,21 +210,24 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
                     )}
                     {isPremium && <PremiumBadge variant="dot" />}
                   </Box>
-                  <Text
-                    fontSize="sm"
-                    fontWeight="medium"
-                    color="gray.300"
-                    display={{ base: "none", md: "block" }}
-                    // One line, ellipsised. An email is the fallback when no name is set and is
-                    // both longer and unbreakable, so it needs this more than a name does.
-                    noOfLines={1}
-                    wordBreak="break-all"
-                    textAlign="left"
-                    minW={0}
-                    title={user?.name || user?.email || ""}
-                  >
-                    {user?.name || user?.email}
-                  </Text>
+                  {/* The breakpoint lives on a wrapper: `noOfLines` sets `display: -webkit-box`,
+                      which overrides a `display` prop on the same Text — so the label used to
+                      leak onto mobile as a clipped first letter beside the avatar. */}
+                  <Box display={{ base: "none", md: "block" }} minW={0}>
+                    <Text
+                      fontSize="sm"
+                      fontWeight="medium"
+                      color="gray.300"
+                      // One line, ellipsised. An email is the fallback when no name is set and is
+                      // both longer and unbreakable, so it needs this more than a name does.
+                      noOfLines={1}
+                      wordBreak="break-all"
+                      textAlign="left"
+                      title={user?.name || user?.email || ""}
+                    >
+                      {user?.name || user?.email}
+                    </Text>
+                  </Box>
                 </Flex>
               </MenuButton>
               <MenuList bg="#1a1a1a" color="white" borderColor="gray.700">
