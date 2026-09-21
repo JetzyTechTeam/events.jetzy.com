@@ -3363,12 +3363,37 @@ const membershipShell = (bodyHtml: string, accent: string) => wrapHtml(`
 const money = (n: number) => `$${n.toFixed(2)}`
 
 /** Sent on each RENEWAL — never on the first invoice, which the ticket receipt already covers. */
-export const sendMembershipRenewed = async ({ email, firstName, amount, interval, nextBillingDate, label }: MembershipEmailData) => {
+export const sendMembershipRenewed = async ({
+	email,
+	firstName,
+	amount,
+	interval,
+	nextBillingDate,
+	label,
+	previousAmount,
+}: MembershipEmailData & {
+	/**
+	 * What this member paid per period BEFORE we repriced them (2026-09-18, $20 -> $10).
+	 *
+	 * Set only on the FIRST renewal charged at the new rate — the webhook reads it off the
+	 * subscription's `repricedFrom` metadata and marks it announced afterwards. The reprice itself
+	 * sends nothing: the member is told once real money moves at the new price, never before, so
+	 * a cancellation or a failed card in between means they are told nothing about a price they
+	 * never paid.
+	 */
+	previousAmount?: number
+}) => {
 	const name = firstName || email.split("@")[0]
 	const product = label || DEFAULT_MEMBERSHIP_LABEL
 	const nextLine = nextBillingDate
 		? `Your next payment is due on ${dayjs(nextBillingDate).format("MMMM D, YYYY")}.`
 		: ""
+	// Only when the new rate is actually lower — a line announcing a price "change" that went up,
+	// or stayed the same, would be saying something nobody decided.
+	const repriceLine =
+		previousAmount != null && previousAmount > amount
+			? `Good news — we've lowered the price of ${product}. You were charged ${money(amount)} this ${interval} instead of ${money(previousAmount)}, and ${money(amount)} is your rate every ${interval} from now on.`
+			: ""
 
 	try {
 		await sgMail.send({
@@ -3380,9 +3405,14 @@ export const sendMembershipRenewed = async ({ email, firstName, amount, interval
         <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:15px 0;">
           Your ${product} membership has renewed. We've charged <strong>${money(amount)}</strong> for another ${interval}.
         </p>
+        ${
+					repriceLine
+						? `<div style="background-color:#ECFDF5;border:1px solid #6EE7B7;border-radius:8px;padding:15px;margin:20px 0;"><p style="color:#065F46;font-size:15px;line-height:1.6;margin:0;">${repriceLine}</p></div>`
+						: ""
+				}
         ${nextLine ? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:15px 0;">${nextLine}</p>` : ""}
       `, "#F5C518"),
-			text: `Hi ${name},\n\nYour ${product} membership has renewed. We've charged ${money(amount)} for another ${interval}.\n${nextLine}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
+			text: `Hi ${name},\n\nYour ${product} membership has renewed. We've charged ${money(amount)} for another ${interval}.\n${repriceLine ? `\n${repriceLine}\n` : ""}${nextLine}\n\nManage or cancel any time from Manage membership in your account menu.\n\n— Team Jetzy`,
 		})
 		console.log(`✅ Membership renewal email sent to: ${email}`)
 	} catch (error) {

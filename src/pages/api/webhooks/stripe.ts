@@ -483,11 +483,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				const previousItems = (event.data as any)?.previous_attributes?.items?.data
 				const previousPriceId = previousItems?.[0]?.price?.id
 				const newPrice = subscription.items.data[0]?.price
+				// A reprice we applied ourselves (scripts/reprice-premium-subscriptions.ts) is NOT
+				// announced here. Nothing has been charged at the new rate yet, and the member may
+				// cancel or their card may fail before anything is — they are told on the first
+				// renewal that actually charges the new price (see `invoice.paid`), never before.
+				const isOurReprice = !!previousPriceId && (subscription.metadata as any)?.repricedFrom === previousPriceId
 				if (
 					previousPriceId &&
 					newPrice?.id &&
 					previousPriceId !== newPrice.id &&
 					newPrice.unit_amount != null &&
+					!isOurReprice &&
 					billedByJetzy(subscription, key)
 				) {
 					const recipient = await findEmailRecipientByStripeCustomerId(customerId)
@@ -611,13 +617,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				if (!recipient) break
 
 				const line = invoice.lines?.data?.[0]
+				const amountPaid = (invoice.amount_paid ?? 0) / 100
+
+				// The FIRST renewal after we repriced this member ($20 → $10, 2026-09-18) says so.
+				// The reprice itself was silent on purpose: this is the moment real money moved at
+				// the new rate, so it is the first moment the claim is true. `repriceAnnounced` keeps
+				// it to one email; a $0 invoice announces nothing, since nothing was charged.
+				const repriceMeta = (renewedSubscription.metadata || {}) as Record<string, string | undefined>
+				let previousAmount: number | undefined
+				if (repriceMeta.repricedFrom && !repriceMeta.repriceAnnounced && amountPaid > 0) {
+					try {
+						const previous = await stripe.prices.retrieve(repriceMeta.repricedFrom)
+						if (previous.unit_amount != null) previousAmount = previous.unit_amount / 100
+					} catch (priceError: any) {
+						// Not worth withholding the receipt over — it just says less.
+						console.error("[webhooks/stripe] Couldn't read the pre-reprice price:", priceError?.message || priceError)
+					}
+				}
+
 				await sendMembershipRenewed({
 					...recipient,
-					amount: (invoice.amount_paid ?? 0) / 100,
+					amount: amountPaid,
 					interval: line?.price?.recurring?.interval || "month",
 					nextBillingDate: invoice.period_end ? new Date(invoice.period_end * 1000) : undefined,
 					label: MEMBERSHIPS[key].label,
+					...(previousAmount != null ? { previousAmount } : {}),
 				})
+
+				if (previousAmount != null) {
+					// Merged into the existing metadata by Stripe, so `repricedFrom` and
+					// `membershipKey` survive. Changes no items, so the resulting
+					// `customer.subscription.updated` sends nothing.
+					await stripe.subscriptions
+						.update(renewedSubscription.id, { metadata: { repriceAnnounced: new Date().toISOString() } })
+						.catch((markError: any) =>
+							console.error("[webhooks/stripe] Couldn't mark the reprice as announced:", markError?.message || markError),
+						)
+				}
 				break
 			}
 
