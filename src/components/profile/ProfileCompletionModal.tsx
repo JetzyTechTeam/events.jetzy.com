@@ -7,10 +7,10 @@ import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { allowPlacesDropdown, suppressPlacesDropdown } from "@/lib/google-place"
+import { countryCodeForName, listCountries } from "@/lib/countries"
 import {
 	GENDER_OPTIONS,
 	dobParts,
-	formatProfileLocation,
 	hasLocation,
 	isDefaultAvatar,
 	placeToProfileLocation,
@@ -36,45 +36,57 @@ const fieldClass =
 	"w-full rounded-xl border border-[#343536] bg-[#090C10] px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-app"
 
 /**
- * The Places input lives in its OWN component on purpose. `usePlacesWidget` attaches Google
- * Autocomplete in a mount-only effect and silently gives up if the input doesn't exist yet. Called
- * at the top of the modal, that effect ran while step 1 was showing (and before Chakra's portal had
- * mounted), so the step-2 input never got suggestions and no place could ever be picked. Mounting
- * the hook with the input guarantees the element is there when it looks.
+ * The city field, searched within the chosen country — the same Country + City pair the mobile app
+ * asks for. Google Places still does the searching because a picked city carries coordinates, which
+ * `sync_location` needs exactly as mobile sends them.
+ *
+ * Lives in its OWN component on purpose. `usePlacesWidget` attaches Google Autocomplete in a
+ * mount-only effect and silently gives up if the input doesn't exist yet. Called at the top of the
+ * modal, that effect ran while step 1 was showing (and before Chakra's portal had mounted), so the
+ * step-2 input never got suggestions. Mounting the hook with the input guarantees the element is
+ * there when it looks. The country restriction is updated in place by the hook's own effect, so
+ * changing country doesn't remount (and orphan) a second suggestion list.
  */
-function ProfileLocationInput({
+function ProfileCityInput({
 	value,
+	countryCode,
 	onTextChange,
 	onPick,
 }: {
 	value: string
+	countryCode?: string
 	onTextChange: (text: string) => void
-	onPick: (location: ProfileLocation, text: string) => void
+	onPick: (location: ProfileLocation) => void
 }) {
 	const lastPicked = React.useRef(value)
+	const componentRestrictions = React.useMemo(
+		() => (countryCode ? { country: countryCode.toLowerCase() } : undefined),
+		[countryCode]
+	)
 
 	const { ref: placesRef } = usePlacesWidget<HTMLInputElement>({
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
 		onPlaceSelected: (place) => {
 			const loc = placeToProfileLocation(place)
-			const text = formatProfileLocation(loc) || place?.formatted_address || ""
-			lastPicked.current = text
-			onPick(loc, text)
+			lastPicked.current = loc.city || ""
+			onPick(loc)
 		},
 		options: {
 			types: ["(cities)"],
 			fields: ["address_components", "geometry", "name", "formatted_address"],
+			componentRestrictions,
 		},
 	})
 
 	return (
 		<input
-			id="profile-location"
+			id="profile-city"
 			ref={placesRef}
 			type="text"
 			value={value}
+			disabled={!countryCode}
 			onFocus={() => {
-				// An untouched saved location must not pop a fresh search on focus.
+				// An untouched saved city must not pop a fresh search on focus.
 				if (value && value === lastPicked.current) suppressPlacesDropdown()
 			}}
 			onChange={(e) => {
@@ -82,9 +94,9 @@ function ProfileLocationInput({
 				onTextChange(e.target.value)
 			}}
 			onBlur={() => allowPlacesDropdown()}
-			placeholder="Search your city"
+			placeholder={countryCode ? "Search your city" : "Select a country first"}
 			autoComplete="off"
-			className={`mt-2 ${fieldClass}`}
+			className={`mt-2 ${fieldClass} disabled:cursor-not-allowed disabled:opacity-50`}
 		/>
 	)
 }
@@ -110,7 +122,9 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 	const [year, setYear] = React.useState<number | undefined>()
 	const [gender, setGender] = React.useState("")
 	const [location, setLocation] = React.useState<ProfileLocation>({})
-	const [locationText, setLocationText] = React.useState("")
+	const [cityText, setCityText] = React.useState("")
+	const [countryCode, setCountryCode] = React.useState("")
+	const countries = React.useMemo(() => listCountries(), [])
 	const [error, setError] = React.useState<string | null>(null)
 	const [saving, setSaving] = React.useState(false)
 	const fileRef = React.useRef<HTMLInputElement>(null)
@@ -130,7 +144,10 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 		if (p.gender && (GENDER_OPTIONS as readonly string[]).includes(p.gender)) setGender(p.gender)
 		if (hasLocation(p.location)) {
 			setLocation(p.location || {})
-			setLocationText(formatProfileLocation(p.location) || "Current location")
+			setCityText(p.location?.city || "")
+			// A stored name we don't recognise ("USA") leaves the picker unset; the saved location
+			// still stands until they choose a country.
+			setCountryCode(countryCodeForName(p.location?.country) || "")
 		}
 	}, [initialProfile])
 
@@ -175,7 +192,12 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 
 	const handleComplete = async () => {
 		if (!gender) return setError("Please select how you identify.")
-		if (!hasLocation(location)) return setError("Please pick your city from the suggestions.")
+		// Mobile may have synced bare coordinates with no names — that still counts, untouched.
+		const coordinatesOnly = !location.city && !location.country && hasLocation(location)
+		if (!coordinatesOnly) {
+			if (!location.country && !countryCode) return setError("Please select your country.")
+			if (!location.city) return setError("Please pick your city from the suggestions.")
+		}
 		if (!month || !day || !year) return setStep(1)
 		setError(null)
 		setSaving(true)
@@ -352,23 +374,55 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 								))}
 							</div>
 
-							<label htmlFor="profile-location" className="mt-5 block text-sm font-semibold text-white">
-								Location
+							<label htmlFor="profile-country" className="mt-5 block text-sm font-semibold text-white">
+								Country
 							</label>
-							<ProfileLocationInput
-								value={locationText}
+							<select
+								id="profile-country"
+								value={countryCode}
+								onChange={(e) => {
+									const code = e.target.value
+									setCountryCode(code)
+									// A city belongs to its country — a new country clears it.
+									setCityText("")
+									setLocation({ country: countries.find((c) => c.code === code)?.name })
+									setError(null)
+								}}
+								className={`mt-2 ${selectClass} ${countryCode ? "" : "text-gray-500"}`}
+							>
+								<option value="" disabled>
+									Select your country
+								</option>
+								{countries.map((c) => (
+									<option key={c.code} value={c.code}>
+										{c.name}
+									</option>
+								))}
+							</select>
+
+							<label htmlFor="profile-city" className="mt-4 block text-sm font-semibold text-white">
+								City
+							</label>
+							<ProfileCityInput
+								value={cityText}
+								countryCode={countryCode || undefined}
 								onTextChange={(text) => {
 									// Typed text is not a place — only a picked suggestion counts.
-									setLocationText(text)
-									setLocation({})
+									setCityText(text)
+									setLocation((prev) => ({ country: prev.country }))
 								}}
-								onPick={(loc, text) => {
-									setLocation(loc)
-									setLocationText(text)
+								onPick={(loc) => {
+									const countryName = countries.find((c) => c.code === countryCode)?.name
+									setLocation({ ...loc, country: loc.country || countryName })
+									setCityText(loc.city || "")
 									setError(null)
 								}}
 							/>
-							<p className="mt-1 text-xs text-gray-500">Start typing and pick your city from the suggestions.</p>
+							<p className="mt-1 text-xs text-gray-500">
+								{!location.city && !location.country && hasLocation(location)
+									? "Using the location from your Jetzy app. Pick a country and city to change it."
+									: "Start typing and pick your city from the suggestions."}
+							</p>
 						</>
 					)}
 

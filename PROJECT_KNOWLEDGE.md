@@ -3001,6 +3001,7 @@ stale one opening the dialog on an unrelated later arrival.
 - `src/lib/jetzy-profile-server.ts` — backend calls + `EventUsers` mirror + `flushPendingProfile`.
 - `src/pages/api/profile/index.ts` — `GET` → `{complete, missing, profile, source}`; `PUT` validated with zod.
 - `src/components/profile/ProfileCompletionModal.tsx` — two steps (photo/name/DOB → gender/location), non-dismissible, logout link.
+  - Location is **Country + City**, like the app's "Update Location" sheet (2026-09-22): a country `<select>` (`src/lib/countries.ts` — ISO codes named by `Intl.DisplayNames`, English to match the backend) then a Google Places `(cities)` search restricted to that country via `componentRestrictions`. Places is kept because the picked city carries the coordinates `sync_location` needs. Changing country clears the city. A stored country name we can't match leaves the picker unset but the saved location stands; coordinates-only (mobile synced, no names) still passes untouched.
 - `src/components/profile/ProfileGate.tsx` — mounted in `_app.tsx`; react-query keyed by user id.
 - `src/pages/auth/verify-signup.tsx` — after password + sign-in, shows the modal before following `_cb`.
 - `EventUsers` gained `gender`, `locationCity`, `locationRegion`, `locationCountry`, `profileSyncPending` (no default).
