@@ -97,7 +97,13 @@ export async function fulfillApplicationSetupSession(sessionId: string): Promise
 	try {
 		const { sendPremiumApplicationReceived, sendPremiumApplicationAdminNotice } = await import("@/lib/send-grid")
 		await sendPremiumApplicationReceived({ email: application.email, name: application.name })
-		await sendPremiumApplicationAdminNotice({ kind: "submitted", email: application.email, name: application.name, interval: application.interval })
+		// Titles from the CURRENT question list; a question since deleted falls back to its id.
+		const { questions } = await getApplicationSettings()
+		const answers = (application.answers || []).map((a: { questionId: string; answer: any }) => ({
+			title: questions.find((q) => q.id === a.questionId)?.title || a.questionId,
+			value: Array.isArray(a.answer) ? a.answer.join(", ") : typeof a.answer === "object" && a.answer !== null ? Object.values(a.answer).filter(Boolean).join(" — ") : String(a.answer ?? ""),
+		}))
+		await sendPremiumApplicationAdminNotice({ kind: "submitted", email: application.email, name: application.name, interval: application.interval, answers })
 	} catch (emailError) {
 		console.error("[premium-application] Fulfilled but could not send the review-started emails:", emailError)
 	}

@@ -7,6 +7,7 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { PremiumApplications } from "@/models/premium-applications"
 import { findMembershipRecord } from "@/lib/premium"
 import { getApplicationSettings, missingRequiredAnswers } from "@/lib/premium-application"
+import { validateApplicationAnswers } from "@/lib/profile-links"
 import zod from "zod"
 
 const schema = zod.object({
@@ -50,6 +51,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, { missing }, `Please answer: ${missing.join(", ")}`, false, ResCode.BAD_REQUEST)
 	}
 
+	// Format check, not just presence — a name typed into "Instagram Handle" used to be stored as-is.
+	// The NORMALISED values are what get saved, so the admin sees clickable links.
+	const { errors, values } = validateApplicationAnswers(settings.questions, answers)
+	const firstError = Object.entries(errors)[0]
+	if (firstError) {
+		const title = settings.questions.find((q) => q.id === firstError[0])?.title
+		return sendResponse(res, { errors }, title ? `${title}: ${firstError[1]}` : firstError[1], false, ResCode.BAD_REQUEST)
+	}
+
 	const existing = await PremiumApplications.findOne({
 		$or: [...(userId ? [{ userId }] : []), { email: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }],
 		status: { $in: ["awaiting_card", "under_review"] },
@@ -58,8 +68,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, { applicationId: existing._id, status: existing.status }, "You already have an application in progress.", true, ResCode.OK)
 	}
 
-	const answerRows = Object.entries(answers)
-		.filter(([, value]) => value !== undefined && value !== null && value !== "")
+	// `values` holds only answered, validated questions (normalised). Answers to ids that are no
+	// longer in the question list are dropped rather than stored.
+	const answerRows = Object.entries({ ...answers, ...values })
+		.filter(([id, value]) => settings.questions.some((q) => q.id === id) && value !== undefined && value !== null && value !== "")
 		.map(([questionId, answer]) => ({ questionId, answer }))
 
 	const application = await PremiumApplications.create({

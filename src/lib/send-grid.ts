@@ -3647,11 +3647,14 @@ export const sendPremiumApplicationAdminNotice = async ({
 	email,
 	name,
 	interval,
+	answers,
 }: {
 	kind: "submitted" | "approved" | "rejected"
 	email: string
 	name?: string
 	interval?: string
+	/** What the applicant entered — question title and value, so the admin can review from the email. */
+	answers?: { title: string; value: string }[]
 }) => {
 	const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
 	const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
@@ -3659,6 +3662,20 @@ export const sendPremiumApplicationAdminNotice = async ({
 		console.error("SENDGRID_EMAIL_SENDER / ADMIN_NOTIFICATION_EMAIL not set — cannot send premium application admin notice")
 		return
 	}
+	// Applicant-typed text goes into HTML; escape it. Only http(s) values become links.
+	const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+	const answersHtml =
+		answers && answers.length > 0
+			? `<p style="color:#4B5563;line-height:1.6;margin-bottom:4px;"><strong>Their answers</strong></p>` +
+				answers
+					.map(({ title, value }) =>
+						/^https?:\/\/\S+$/i.test(value)
+							? `<p style="margin:2px 0;color:#4B5563;">${esc(title)}: <a href="${esc(value)}">${esc(value)}</a></p>`
+							: `<p style="margin:2px 0;color:#4B5563;">${esc(title)}: ${esc(value)}</p>`,
+					)
+					.join("")
+			: ""
+	const answersText = answers && answers.length > 0 ? `\n\nTheir answers:\n${answers.map(({ title, value }) => `${title}: ${value}`).join("\n")}` : ""
 	const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
 	const subject =
 		kind === "submitted"
@@ -3686,10 +3703,11 @@ export const sendPremiumApplicationAdminNotice = async ({
             Applicant: <strong>${name || "—"}</strong> (${email})<br/>
             Plan: <strong>${interval || "month"}ly</strong>
           </p>
+          ${answersHtml}
           ${kind === "submitted" ? `<p><a href="${baseUrl}/console/admin/premium-applications">Review in the console</a></p>` : ""}
         </div>
       `),
-			text: `${subject}\n\n${body}\n\nApplicant: ${name || "—"} (${email})\nPlan: ${interval || "month"}ly${kind === "submitted" ? `\n\nReview: ${baseUrl}/console/admin/premium-applications` : ""}`,
+			text: `${subject}\n\n${body}\n\nApplicant: ${name || "—"} (${email})\nPlan: ${interval || "month"}ly${answersText}${kind === "submitted" ? `\n\nReview: ${baseUrl}/console/admin/premium-applications` : ""}`,
 		})
 	} catch (error) {
 		console.error("Failed to send premium application admin notice:", error)

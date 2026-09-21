@@ -38,6 +38,7 @@ import {
 	Stack,
 } from "@chakra-ui/react"
 import axios from "axios"
+import { displayProfileValue, isHttpUrl } from "@/lib/profile-links"
 
 /**
  * The admin approval queue for Jetzy Premium applications — the questions + card-setup step a
@@ -79,7 +80,15 @@ function ApplicationAnswers({ answers, questions }: { answers: Answer[]; questio
 				return (
 					<Text key={a.questionId} fontSize="sm" color="#D1D5DB">
 						<Text as="span" color="#9C9C9C">{title}: </Text>
-						{formatAnswer(a.answer)}
+						{/* Only a real http(s) URL becomes a link. Rows saved before validation existed can
+						    hold anything, and a `javascript:` value must never reach an `href`. */}
+						{typeof a.answer === "string" && isHttpUrl(a.answer) ? (
+							<Link href={a.answer} target="_blank" rel="noopener noreferrer" style={{ color: "#F5C518", textDecoration: "underline" }}>
+								{displayProfileValue(a.answer)}
+							</Link>
+						) : (
+							formatAnswer(a.answer)
+						)}
 					</Text>
 				)
 			})}
@@ -234,6 +243,7 @@ export default function PremiumApplicationsPage() {
 														<Th color="#9C9C9C">Applicant</Th>
 														<Th color="#9C9C9C">Plan</Th>
 														<Th color="#9C9C9C">Status</Th>
+														<Th color="#9C9C9C">Profiles</Th>
 														<Th color="#9C9C9C">Reviewed</Th>
 														<Th color="#9C9C9C">Note</Th>
 													</Tr>
@@ -249,7 +259,8 @@ export default function PremiumApplicationsPage() {
 															<Td>
 																<Badge colorScheme={application.status === "approved" ? "green" : "red"}>{application.status}</Badge>
 															</Td>
-															<Td color="#9C9C9C">{day(application.reviewedAt)}</Td>
+															<Td maxW="320px"><ApplicationAnswers answers={application.answers} questions={questions} /></Td>
+														<Td color="#9C9C9C">{day(application.reviewedAt)}</Td>
 															<Td color="#9C9C9C" fontSize="sm">{application.rejectionReason || "—"}</Td>
 														</Tr>
 													))}

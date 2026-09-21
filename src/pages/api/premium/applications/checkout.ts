@@ -5,7 +5,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { NextApiRequest, NextApiResponse } from "next"
 import { PremiumApplications } from "@/models/premium-applications"
-import { getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
+import { findMembershipPriceForInterval, getMembershipPrice, getStripeClient, resolveStripeCustomerForUser } from "@/lib/premium"
 import { resolveApplicationTrialMonths } from "@/lib/premium-application"
 import { Types } from "mongoose"
 
@@ -56,6 +56,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const successUrl = `${baseUrl}${returnTo}?application_session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${baseUrl}${returnTo}?application_cancelled=1`
 
+		// Stripe's setup-mode page has no plan summary (that panel is subscription-mode only), so the
+		// offer goes in the one place it does let us write text. Read from the live price, never typed.
+		let priceLine = ""
+		try {
+			const price =
+				application.interval === "year"
+					? (await findMembershipPriceForInterval("premium", "year")) || (await getMembershipPrice("premium"))
+					: await getMembershipPrice("premium")
+			if (price.unit_amount != null) {
+				const amount = (price.unit_amount / 100).toFixed(2)
+				priceLine = ` If approved, ${trialMonths > 0 ? `your first ${trialMonths === 1 ? "month is" : `${trialMonths} months are`} free, then ` : "you'll be billed "}$${amount}/${price.recurring?.interval || application.interval}. Cancel anytime.`
+			}
+		} catch (priceError) {
+			// The text is a courtesy; never fail the card setup over it.
+			console.error("[premium/applications/checkout] Could not resolve the price for the setup text:", priceError)
+		}
+
 		const checkoutSession = await stripe.checkout.sessions.create({
 			customer: stripeCustomerId,
 			mode: "setup",
@@ -65,9 +82,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			metadata: { applicationId: String(application._id), purpose: "premium_application" },
 			setup_intent_data: { metadata: { applicationId: String(application._id), purpose: "premium_application" } },
 			custom_text: {
-				submit: { message: "Your card is saved for review only — nothing is charged today." },
+				submit: { message: `Your card is saved for review only — nothing is charged today.${priceLine}` },
 				after_submit: {
-					message: `We'll review your application and email you within 24-48 hours. If approved, your first ${trialMonths > 0 ? "month is" : "period is"} 100% free.`,
+					message: `We'll review your application and email you within 24-48 hours.${trialMonths > 0 ? " If approved, your first month is 100% free." : ""}`,
 				},
 			},
 		})

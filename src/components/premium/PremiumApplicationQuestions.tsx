@@ -1,6 +1,10 @@
 import React from "react"
 import axios from "axios"
 import { Error as ErrorToast } from "@/lib/_toaster"
+import { validateApplicationAnswers } from "@/lib/profile-links"
+import type { ICustomQuestion } from "@/models/events/types"
+import { defaultTrialOffer } from "@/lib/invite-trial"
+import { planPriceForInterval, useMembershipPlan } from "@/hooks/usePremiumPlan"
 
 /**
  * Step 2 of the Premium application: the admin-configured questions (LinkedIn / Instagram /
@@ -142,8 +146,26 @@ export default function PremiumApplicationQuestions({
 	const [answers, setAnswers] = React.useState<Record<string, any>>({})
 	const [submitting, setSubmitting] = React.useState(false)
 	const [error, setError] = React.useState<string | null>(null)
+	const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+
+	// Shared cache with the plan card behind this dialog — no extra request. Only used to state the
+	// offer plainly before the buyer is sent to Stripe, whose setup-mode page shows no plan summary.
+	const membership = useMembershipPlan("premium", open)
+	const price = planPriceForInterval(membership, interval)
+	const trial = defaultTrialOffer(interval)
 
 	if (!open) return null
+
+	/** Same rules the server enforces. Run per field on blur so the mistake is shown where it was made. */
+	const checkField = (q: ApplicationQuestion) => {
+		const { errors } = validateApplicationAnswers([q] as ICustomQuestion[], answers)
+		setFieldErrors((prev) => {
+			const next = { ...prev }
+			if (errors[q.id]) next[q.id] = errors[q.id]
+			else delete next[q.id]
+			return next
+		})
+	}
 
 	const hasAnyProfile = questions.some((q) => q.type === "social_profile" || q.type === "website") && Object.values(answers).some((v) => v && String(v).trim())
 
@@ -157,10 +179,17 @@ export default function PremiumApplicationQuestions({
 			setError(`Please answer: ${missing.map((q) => q.title).join(", ")}`)
 			return
 		}
+		const { errors, values } = validateApplicationAnswers(questions as ICustomQuestion[], answers)
+		if (Object.keys(errors).length > 0) {
+			setFieldErrors(errors)
+			setError("Please fix the highlighted fields.")
+			return
+		}
+		setFieldErrors({})
 		setError(null)
 		setSubmitting(true)
 		try {
-			const startRes = await axios.post("/api/premium/applications/start", { interval: interval === "year" ? "year" : "month", answers })
+			const startRes = await axios.post("/api/premium/applications/start", { interval: interval === "year" ? "year" : "month", answers: { ...answers, ...values } })
 			const applicationId = startRes.data?.data?.applicationId
 			const checkoutRes = await axios.post("/api/premium/applications/checkout", { applicationId, returnTo })
 			const url = checkoutRes.data?.data?.url
@@ -207,7 +236,10 @@ export default function PremiumApplicationQuestions({
 								<label className="text-sm text-white font-medium">{q.title}</label>
 								<span className="text-xs text-gray-500">{q.isRequired ? "Required" : "Optional"}</span>
 							</div>
-							<QuestionField question={q} value={answers[q.id]} onChange={(v) => setAnswers((a) => ({ ...a, [q.id]: v }))} />
+							<div onBlur={() => checkField(q)}>
+								<QuestionField question={q} value={answers[q.id]} onChange={(v) => setAnswers((a) => ({ ...a, [q.id]: v }))} />
+							</div>
+							{fieldErrors[q.id] && <p className="text-xs text-red-400 mt-1">{fieldErrors[q.id]}</p>}
 						</div>
 					))}
 				</div>
@@ -219,6 +251,21 @@ export default function PremiumApplicationQuestions({
 				)}
 
 				{error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+
+				{/* Stripe's card-setup page has no plan summary, so the offer is stated here, from the
+				    live price — never a hardcoded figure. */}
+				<div className="bg-[#0F0F0F] border border-[#2b2b2b] rounded-lg p-3 mb-4 text-xs text-gray-400">
+					<div className="flex items-center justify-between">
+						<span>Due today</span>
+						<span className="text-white font-bold">$0.00</span>
+					</div>
+					{price?.label && (
+						<p className="mt-2">
+							If approved: {trial ? `${trial.label.toLowerCase()}, then ` : ""}
+							<span className="text-white">{price.label}</span>. Cancel anytime.
+						</p>
+					)}
+				</div>
 
 				<button
 					onClick={submit}
