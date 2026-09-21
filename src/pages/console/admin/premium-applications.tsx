@@ -264,17 +264,26 @@ export default function PremiumApplicationsPage() {
 				</Box>
 			</ConsoleLayout>
 
-			<Modal isOpen={isOpen} onClose={onClose}>
+			<Modal isOpen={isOpen} onClose={onClose} isCentered>
 				<ModalOverlay />
-				<ModalContent>
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
 					<ModalHeader>Decline {rejectTarget?.email}</ModalHeader>
 					<ModalCloseButton />
 					<ModalBody>
-						<Text mb={2} fontSize="sm" color="gray.600">Optional note included in the email they receive.</Text>
-						<Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reason (optional)" />
+						<Text mb={2} fontSize="sm" color="gray.400">Optional note included in the email they receive.</Text>
+						<Textarea
+							value={rejectReason}
+							onChange={(e) => setRejectReason(e.target.value)}
+							placeholder="Reason (optional)"
+							bg="#101010"
+							color="white"
+							borderColor="#434343"
+							_focus={{ borderColor: "#F79432", boxShadow: "none" }}
+							_placeholder={{ color: "#6B7280" }}
+						/>
 					</ModalBody>
 					<ModalFooter>
-						<Button variant="ghost" mr={3} onClick={onClose}>Cancel</Button>
+						<Button variant="ghost" color="white" _hover={{ bg: "#2a2a2a" }} mr={3} onClick={onClose}>Cancel</Button>
 						<Button colorScheme="red" isLoading={busyId === rejectTarget?._id} onClick={confirmReject}>Decline application</Button>
 					</ModalFooter>
 				</ModalContent>

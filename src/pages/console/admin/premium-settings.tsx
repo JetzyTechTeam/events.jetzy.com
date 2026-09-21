@@ -3,6 +3,7 @@ import { adminOnly } from "@Jetzy/lib/authSession"
 import { Pages } from "@Jetzy/types"
 import { GetServerSideProps } from "next"
 import Head from "next/head"
+import Link from "next/link"
 import React from "react"
 import {
 	Box,
@@ -69,6 +70,24 @@ const TYPE_LABELS: Record<QuestionType, string> = {
 	terms: "Terms agreement",
 	mobile: "Phone number",
 	website: "Website URL",
+}
+
+// The console is dark and Chakra's defaults are light: without explicit colours the modal is white
+// with inherited white text. Same palette as `ReferralCodesManager`'s modals.
+const fieldProps = {
+	bg: "#101010",
+	color: "white",
+	borderColor: "#434343",
+	_focus: { borderColor: "#F79432", boxShadow: "none" },
+	_placeholder: { color: "#6B7280" },
+}
+const selectProps = { ...fieldProps, sx: { option: { bg: "#101010", color: "white" } } }
+const iconBtnProps = {
+	size: "sm" as const,
+	variant: "ghost" as const,
+	color: "#D1D5DB",
+	_hover: { bg: "#2a2a2a", color: "white" },
+	_disabled: { opacity: 0.3, cursor: "not-allowed", _hover: { bg: "transparent", color: "#D1D5DB" } },
 }
 
 const emptyQuestion = (): Question => ({ id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, title: "", type: "text", isRequired: false })
@@ -153,6 +172,13 @@ export default function PremiumSettingsPage() {
 						<Center py={20}><Spinner color="#F79432" /></Center>
 					) : (
 						<Stack spacing={6}>
+							<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" justify="space-between" align="center" gap={4} wrap="wrap">
+								<Text fontSize="lg" fontWeight="bold">Premium Application Settings</Text>
+								<Link href="/console/admin/premium-applications">
+									<Button size="sm" variant="outline" colorScheme="orange">Back to applications</Button>
+								</Link>
+							</Flex>
+
 							<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" justify="space-between" align="center">
 								<Box>
 									<Text fontWeight="bold">Require an application to buy Premium</Text>
@@ -192,10 +218,10 @@ export default function PremiumSettingsPage() {
 													</Text>
 												</Box>
 												<Flex gap={1}>
-													<IconButton aria-label="Move up" icon={<FiArrowUp />} size="sm" variant="ghost" isDisabled={index === 0} onClick={() => move(index, -1)} />
-													<IconButton aria-label="Move down" icon={<FiArrowDown />} size="sm" variant="ghost" isDisabled={index === questions.length - 1} onClick={() => move(index, 1)} />
-													<IconButton aria-label="Edit" icon={<FiEdit2 />} size="sm" variant="ghost" onClick={() => openEdit(q, index)} />
-													<IconButton aria-label="Delete" icon={<FiTrash2 />} size="sm" variant="ghost" colorScheme="red" onClick={() => remove(index)} />
+													<IconButton {...iconBtnProps} aria-label="Move up" icon={<FiArrowUp />} isDisabled={index === 0} onClick={() => move(index, -1)} />
+													<IconButton {...iconBtnProps} aria-label="Move down" icon={<FiArrowDown />} isDisabled={index === questions.length - 1} onClick={() => move(index, 1)} />
+													<IconButton {...iconBtnProps} aria-label="Edit" icon={<FiEdit2 />} onClick={() => openEdit(q, index)} />
+													<IconButton {...iconBtnProps} aria-label="Delete" icon={<FiTrash2 />} color="#F87171" _hover={{ bg: "#2a2a2a", color: "#FCA5A5" }} onClick={() => remove(index)} />
 												</Flex>
 											</Flex>
 										))}
@@ -207,9 +233,9 @@ export default function PremiumSettingsPage() {
 				</Box>
 			</ConsoleLayout>
 
-			<Modal isOpen={isOpen} onClose={onClose} size="lg">
+			<Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
 				<ModalOverlay />
-				<ModalContent>
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
 					<ModalHeader>{editingIndex === null ? "Add question" : "Edit question"}</ModalHeader>
 					<ModalCloseButton />
 					<ModalBody>
@@ -217,11 +243,11 @@ export default function PremiumSettingsPage() {
 							<Stack spacing={4}>
 								<FormControl>
 									<FormLabel>Title</FormLabel>
-									<Input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} placeholder="e.g. LinkedIn Profile" />
+									<Input {...fieldProps} value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} placeholder="e.g. LinkedIn Profile" />
 								</FormControl>
 								<FormControl>
 									<FormLabel>Answer type</FormLabel>
-									<Select value={editing.type} onChange={(e) => setEditing({ ...editing, type: e.target.value as QuestionType })}>
+									<Select {...selectProps} value={editing.type} onChange={(e) => setEditing({ ...editing, type: e.target.value as QuestionType })}>
 										{Object.entries(TYPE_LABELS).map(([value, label]) => (
 											<option key={value} value={value}>{label}</option>
 										))}
@@ -231,7 +257,7 @@ export default function PremiumSettingsPage() {
 								{editing.type === "social_profile" && (
 									<FormControl>
 										<FormLabel>Platform (optional label, e.g. &quot;linkedin&quot;)</FormLabel>
-										<Input value={editing.platform || ""} onChange={(e) => setEditing({ ...editing, platform: e.target.value })} />
+										<Input {...fieldProps} value={editing.platform || ""} onChange={(e) => setEditing({ ...editing, platform: e.target.value })} placeholder="linkedin" />
 									</FormControl>
 								)}
 
@@ -240,6 +266,7 @@ export default function PremiumSettingsPage() {
 										<FormControl>
 											<FormLabel>Options (one per line)</FormLabel>
 											<Textarea
+												{...fieldProps}
 												value={(editing.options || []).join("\n")}
 												onChange={(e) => setEditing({ ...editing, options: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
 												rows={4}
@@ -247,7 +274,7 @@ export default function PremiumSettingsPage() {
 										</FormControl>
 										<FormControl>
 											<FormLabel>Selection</FormLabel>
-											<Select value={editing.selectionType || "single"} onChange={(e) => setEditing({ ...editing, selectionType: e.target.value as "single" | "multiple" })}>
+											<Select {...selectProps} value={editing.selectionType || "single"} onChange={(e) => setEditing({ ...editing, selectionType: e.target.value as "single" | "multiple" })}>
 												<option value="single">Pick one</option>
 												<option value="multiple">Pick multiple</option>
 											</Select>
@@ -258,7 +285,7 @@ export default function PremiumSettingsPage() {
 								{editing.type === "text" && (
 									<FormControl>
 										<FormLabel>Response length</FormLabel>
-										<Select value={editing.responseLength || "short"} onChange={(e) => setEditing({ ...editing, responseLength: e.target.value as "short" | "multi-line" })}>
+										<Select {...selectProps} value={editing.responseLength || "short"} onChange={(e) => setEditing({ ...editing, responseLength: e.target.value as "short" | "multi-line" })}>
 											<option value="short">Short</option>
 											<option value="multi-line">Multi-line</option>
 										</Select>
@@ -275,7 +302,7 @@ export default function PremiumSettingsPage() {
 									<>
 										<FormControl>
 											<FormLabel>Terms text or link</FormLabel>
-											<Textarea value={editing.termsContent || ""} onChange={(e) => setEditing({ ...editing, termsContent: e.target.value })} rows={3} />
+											<Textarea {...fieldProps} value={editing.termsContent || ""} onChange={(e) => setEditing({ ...editing, termsContent: e.target.value })} rows={3} />
 										</FormControl>
 										<Checkbox isChecked={!!editing.collectSignature} onChange={(e) => setEditing({ ...editing, collectSignature: e.target.checked })}>
 											Require typed signature
@@ -290,7 +317,7 @@ export default function PremiumSettingsPage() {
 						)}
 					</ModalBody>
 					<ModalFooter>
-						<Button variant="ghost" mr={3} onClick={onClose}>Cancel</Button>
+						<Button variant="ghost" color="white" _hover={{ bg: "#2a2a2a" }} mr={3} onClick={onClose}>Cancel</Button>
 						<Button colorScheme="orange" isLoading={saving} onClick={confirmEdit}>Save question</Button>
 					</ModalFooter>
 				</ModalContent>
