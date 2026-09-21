@@ -11,6 +11,8 @@ import { DEFAULT_EVENT_IMAGE } from "@/types/const"
 import { ticketMemberships, ticketMembershipFreeMonths, MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
+import { isAwaitingAdminReview } from "@/lib/event-approval"
+import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -296,6 +298,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Create event tracker
 		await newEvent.createEventTracker(capacity)
+
+		// A public event published straight away is now in the admin review queue — tell the
+		// host. A draft isn't submitted yet; update.ts sends this when it is published.
+		if (isAwaitingAdminReview(newEvent)) await notifyOwnerEventSubmitted(newEvent)
 
 		return sendResponse(res, newEvent, "Event created successfully.", true, ResCode.CREATED)
 	} catch (error: any) {

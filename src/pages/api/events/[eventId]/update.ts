@@ -11,6 +11,8 @@ import { resolveTickets } from "@/lib/event-tickets"
 import { MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { buildUniqueSlug, nextSlugHistory, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
+import { isAwaitingAdminReview } from "@/lib/event-approval"
+import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
 import zod from "zod"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -340,6 +342,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (eventTracker) {
 			eventTracker.eventCapacity = capacity
 			await eventTracker.save()
+		}
+
+		// Just entered the admin review queue — a draft published, or private made public.
+		// Only on the transition, so ordinary edits to a pending event don't re-send it.
+		if (!isAwaitingAdminReview(event) && isAwaitingAdminReview(newEvent)) {
+			await notifyOwnerEventSubmitted(newEvent)
 		}
 
 		return sendResponse(res, newEvent, "Event updated successfully.", true, ResCode.OK)
