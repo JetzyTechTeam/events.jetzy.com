@@ -30,3 +30,13 @@ export const isPendingAdminApproval = (event?: ApprovableEvent | null): boolean 
  */
 export const PENDING_APPROVAL_MESSAGE =
 	"This event is awaiting admin approval. You can invite guests and send blasts once it's approved."
+
+/**
+ * Pending AND published — i.e. actually sitting in the admin's review queue.
+ *
+ * A draft is created `pending` too (the create page autosaves a real record on first change),
+ * but nobody has submitted it yet. This is the state the host is told about by email, so the
+ * notification fires on the TRANSITION into it (`!before && after`), never on every save.
+ */
+export const isAwaitingAdminReview = (event?: (ApprovableEvent & { status?: string | null }) | null): boolean =>
+	isPendingAdminApproval(event) && event?.status !== "draft"

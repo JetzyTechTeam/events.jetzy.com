@@ -6,6 +6,7 @@ import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
+import { notifyOwnerEventApproved } from "@/lib/event-approval-notify"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -29,7 +30,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const event = await Events.findById(eventId)
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
-		const updatedEvent = await Events.findByIdAndUpdate(eventId, { adminApprovalStatus: "approved" }, { new: true })
+		// Conditional on `pending` so only ONE request performs the flip — that one emails the
+		// host. A double click, or approving an already-approved event, sends nothing.
+		const flipped = await Events.findOneAndUpdate(
+			{ _id: event._id, adminApprovalStatus: "pending" },
+			{ adminApprovalStatus: "approved" },
+			{ new: true },
+		)
+		const updatedEvent = flipped || await Events.findByIdAndUpdate(eventId, { adminApprovalStatus: "approved" }, { new: true })
+
+		if (flipped) await notifyOwnerEventApproved(flipped)
 
 		return sendResponse(res, updatedEvent, "Event approved successfully.", true, ResCode.OK)
 	} catch (error: any) {

@@ -2083,7 +2083,7 @@ export const sendHostCancellationNotice = async ({
           ? `Booking total was ${formatMoney(totalAmount)}, but there is no payment record against it — check Stripe if you need to confirm whether it was collected. Nothing has been refunded.`
           : "This was a free booking; no money was involved."
 
-  const manageUrl = `${(baseUrl || "").replace(/\/$/, "")}/console/events/${eventId}/manage`
+  const manageUrl = `${(baseUrl || "https://events.jetzy.com").replace(/\/$/, "")}/console/events/${eventId}/manage`
 
   try {
     await sgMail.send({
@@ -4042,5 +4042,158 @@ Reply to this email to respond directly to ${name}.`,
 		console.log(`✅ Support request notice sent to: ${ADMIN_SUPPORT_EMAIL}`)
 	} catch (error) {
 		console.error("❌ Failed to send support request notice:", error)
+	}
+}
+
+/**
+ * Host-facing emails for the admin moderation gate on PUBLIC events (`event-approval.ts`).
+ *
+ * A non-admin publishing a public event lands it in `adminApprovalStatus: "pending"`, where it
+ * is invisible on the public listing and invites/blasts are refused. Without these the host had
+ * no way of knowing that short of hitting one of those refusals. Sent to the event OWNER only —
+ * never to admins, who don't pass through the gate on their own events in any way that matters.
+ * Callers go through `src/lib/event-approval-notify.ts`, never directly.
+ */
+type EventReviewEmailData = {
+	email: string
+	firstName?: string
+	event: { _id: any; name: string; slug?: string }
+}
+
+export const sendEventSubmittedForReview = async ({ email, firstName, event }: EventReviewEmailData) => {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (baseUrl?.includes("localhost")) {
+		console.log("[LOCALHOST MODE] sendEventSubmittedForReview skipped - would send to:", email)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
+	const name = firstName || email.split("@")[0]
+	const eventName = decodeHTMLEntities(event.name)
+	const manageUrl = `${(baseUrl || "https://events.jetzy.com").replace(/\/$/, "")}/console/events/${String(event._id)}/manage`
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: `Your event "${eventName}" has been submitted for review`,
+			html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">Your Event Is Under Review</h1>
+          <p style="color: #333; line-height: 1.6;">Hi ${name},</p>
+          <p style="color: #333; line-height: 1.6;">
+            Thanks for creating <strong>${eventName}</strong> on Jetzy. Because it is a public event, our team
+            reviews it before it appears in the public events list.
+          </p>
+          <div style="background-color: #FFF7ED; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #F79432;">
+            <p style="color: #333; margin: 0 0 10px 0; line-height: 1.6;"><strong>While your event is under review:</strong></p>
+            <ul style="color: #333; margin: 0; padding-left: 20px; line-height: 1.6;">
+              <li>It won't be shown in the public events list.</li>
+              <li>Inviting guests and sending blasts are paused.</li>
+              <li>You can still edit it at any time.</li>
+            </ul>
+          </div>
+          <p style="color: #333; line-height: 1.6;">We'll email you as soon as it has been approved.</p>
+          <p style="text-align: center; margin: 25px 0;">
+            <a href="${manageUrl}" style="background-color: #F79432; color: #000; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Manage Event</a>
+          </p>
+          <p style="margin-top: 30px; text-align: center; color: #666;">Questions? Reply to this email or contact us at ${CONTACT_EMAIL}.</p>
+        </div>
+      `),
+			text: `Hi ${name},\n\nThanks for creating "${eventName}" on Jetzy. Because it is a public event, our team reviews it before it appears in the public events list.\n\nWhile your event is under review:\n- It won't be shown in the public events list.\n- Inviting guests and sending blasts are paused.\n- You can still edit it at any time.\n\nWe'll email you as soon as it has been approved.\n\nManage your event: ${manageUrl}\n\n— Team Jetzy`,
+		})
+	} catch (error) {
+		console.error("Failed to send event-submitted-for-review email:", error)
+	}
+}
+
+export const sendEventApprovedByAdmin = async ({ email, firstName, event }: EventReviewEmailData) => {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (baseUrl?.includes("localhost")) {
+		console.log("[LOCALHOST MODE] sendEventApprovedByAdmin skipped - would send to:", email)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
+	const name = firstName || email.split("@")[0]
+	const eventName = decodeHTMLEntities(event.name)
+	const eventUrl = buildEventUrl(baseUrl || "", event.slug || String(event._id))
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: `Your event "${eventName}" has been approved`,
+			html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #333; text-align: center;">Your Event Is Live!</h1>
+          <p style="color: #333; line-height: 1.6;">Hi ${name},</p>
+          <p style="color: #333; line-height: 1.6;">
+            Good news — <strong>${eventName}</strong> has been approved and is now visible in the public events list.
+          </p>
+          <div style="background-color: #E8F5E9; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4CAF50;">
+            <p style="color: #1B5E20; margin: 0; line-height: 1.6;">
+              You can now invite guests, send blasts and share your event link.
+            </p>
+          </div>
+          <p style="text-align: center; margin: 25px 0;">
+            <a href="${eventUrl}" style="background-color: #F79432; color: #000; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">View Your Event</a>
+          </p>
+          <p style="color: #666; font-size: 13px; line-height: 1.6; text-align: center; word-break: break-all;">${eventUrl}</p>
+          <p style="margin-top: 30px; text-align: center; color: #666;">Questions? Reply to this email or contact us at ${CONTACT_EMAIL}.</p>
+        </div>
+      `),
+			text: `Hi ${name},\n\nGood news — "${eventName}" has been approved and is now visible in the public events list.\n\nYou can now invite guests, send blasts and share your event link:\n${eventUrl}\n\n— Team Jetzy`,
+		})
+	} catch (error) {
+		console.error("Failed to send event-approved email:", error)
+	}
+}
+
+/**
+ * Tells ADMIN_SUPPORT_EMAIL that a host's public event is waiting for review — the
+ * counterpart of `sendEventSubmittedForReview`, sent at the same moment. Without it the queue
+ * is only discoverable by browsing the console. `replyTo` is the host, so answering the notice
+ * reaches them directly.
+ */
+export const sendEventReviewAdminNotice = async ({
+	event,
+	ownerEmail,
+	ownerName,
+}: {
+	event: { _id: any; name: string; slug?: string }
+	ownerEmail: string
+	ownerName?: string
+}) => {
+	const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
+	if (baseUrl.includes("localhost")) {
+		console.log("[LOCALHOST MODE] sendEventReviewAdminNotice skipped - would send to:", ADMIN_SUPPORT_EMAIL)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
+	const eventName = decodeHTMLEntities(event.name)
+	const manageUrl = `${baseUrl}/console/events/${String(event._id)}/manage`
+	const eventUrl = buildEventUrl(baseUrl, event.slug || String(event._id))
+	const subject = `[Event Review] "${eventName}" is awaiting approval`
+
+	try {
+		await sgMail.send({
+			to: ADMIN_SUPPORT_EMAIL,
+			from: mailFrom(),
+			replyTo: ownerEmail,
+			subject,
+			html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color:#333;">${subject}</h2>
+          <p style="color:#4B5563;line-height:1.6;">A host has submitted a public event. It stays out of the public events list, and invites and blasts are paused, until an admin approves it.</p>
+          <p style="color:#4B5563;line-height:1.6;">
+            Event: <strong>${eventName}</strong><br/>
+            Host: <strong>${ownerName || "—"}</strong> (${ownerEmail})<br/>
+            Page: <a href="${eventUrl}">${eventUrl}</a>
+          </p>
+          <p style="text-align:center;margin:25px 0;">
+            <a href="${manageUrl}" style="background-color:#F79432;color:#000;padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;">Review &amp; Approve</a>
+          </p>
+        </div>
+      `),
+			text: `${subject}\n\nA host has submitted a public event. It stays out of the public events list, and invites and blasts are paused, until an admin approves it.\n\nEvent: ${eventName}\nHost: ${ownerName || "—"} (${ownerEmail})\nPage: ${eventUrl}\n\nReview & approve: ${manageUrl}`,
+		})
+	} catch (error) {
+		console.error("Failed to send event review admin notice:", error)
 	}
 }

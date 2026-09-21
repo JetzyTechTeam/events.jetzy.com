@@ -68,6 +68,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			timezone: source.timezone,
 			isPaid: source.isPaid,
 			privacy: source.privacy,
+			// Same rule as create.ts. Left to the schema default ("approved"), a clone of a public
+			// event skipped admin review entirely — publishing it (update.ts) never re-triggers
+			// pending. The clone is a draft, so the host's "submitted for review" email goes out
+			// from update.ts when they publish it, not here.
+			adminApprovalStatus: source.privacy === "private" ? "approved" : "pending",
 			images: source.images,
 			videos: source.videos,
 			capacity: source.capacity,

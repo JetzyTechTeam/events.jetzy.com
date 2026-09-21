@@ -12,6 +12,8 @@ import { ticketMemberships, ticketMembershipFreeMonths, MAX_MEMBERSHIP_FREE_MONT
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { isAdminRole, seedDefaultReferralCodes } from "@/lib/default-referral-codes"
+import { isAwaitingAdminReview } from "@/lib/event-approval"
+import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
 import zod from "zod"
 import Stripe from "stripe"
 import dayjs from 'dayjs'
@@ -302,6 +304,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (isAdminRole((session.user as any)?.role)) {
 			await seedDefaultReferralCodes(newEvent._id, (session.user as any)?._id)
 		}
+
+		// A public event published straight away is now in the admin review queue — tell the
+		// host. A draft isn't submitted yet; update.ts sends this when it is published.
+		if (isAwaitingAdminReview(newEvent)) await notifyOwnerEventSubmitted(newEvent)
 
 		return sendResponse(res, newEvent, "Event created successfully.", true, ResCode.CREATED)
 	} catch (error: any) {

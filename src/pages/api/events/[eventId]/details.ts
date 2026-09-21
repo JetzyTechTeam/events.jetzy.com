@@ -7,6 +7,8 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
+import { isAwaitingAdminReview } from "@/lib/event-approval"
+import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
 
 const schema = zod.object({
 	name: zod.string().min(1).max(300).optional(),
@@ -108,7 +110,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
-			.select("_id ownerId images videos privacy datePoll")
+			.select("_id ownerId images videos privacy datePoll status adminApprovalStatus")
 			.lean()
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
@@ -287,8 +289,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const updated = await Events.findByIdAndUpdate(eventId, updateDoc, { new: true })
-			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime interests requireApproval locationDisclosedAfterBooking showOnMobile premiumEvent capacity privacy adminApprovalStatus")
+			.select("_id name desc benefits images videos mediaOrder location venueName entrance coordinates timezone startsOn endsOn hasStartTime hasEndTime interests requireApproval locationDisclosedAfterBooking showOnMobile premiumEvent capacity privacy adminApprovalStatus status slug ownerId")
 			.lean()
+
+		// Private → public from the inline editor puts a published event into the review queue.
+		if (updated && !isAwaitingAdminReview(event as any) && isAwaitingAdminReview(updated as any)) {
+			await notifyOwnerEventSubmitted(updated as any)
+		}
 
 		return sendResponse(res, updated, "Event updated", true, ResCode.OK)
 	} catch (error: any) {
