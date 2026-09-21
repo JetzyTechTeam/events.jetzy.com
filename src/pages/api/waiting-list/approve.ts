@@ -10,6 +10,8 @@ import { sendTicketConfirmation } from "@/lib/send-grid"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { BookingStatus } from "@/models/events/types"
 import mongoose from "mongoose"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -17,6 +19,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	await ensureDbConnected()
+
+	const session = await getServerSession(req, res, authOptions)
+	const userRole = (session?.user as any)?.role
+	const userId = (session?.user as any)?._id?.toString()
+	if (!userId) return sendResponse(res, null, "Not authenticated", false, ResCode.UNAUTHORIZED)
+	const isAdmin = userRole === "admin" || userRole === "super admin"
 
 	try {
 		const { waitingListId, eventName } = req.body
@@ -36,6 +44,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const event = await Events.findById(waitingListEntry.eventId)
 		if (!event) {
 			return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
+		}
+
+		// Ownership: admin OR owner of the event
+		if (!isAdmin && (event as any).ownerId?.toString() !== userId) {
+			return sendResponse(res, null, "Not authorized", false, ResCode.FORBIDDEN)
 		}
 
 		// Check event capacity before approving
