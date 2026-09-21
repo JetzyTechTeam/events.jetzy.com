@@ -18,7 +18,7 @@ import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@/hooks/usePremiumApplication"
 import PremiumApplicationQuestions from "@/components/premium/PremiumApplicationQuestions"
 import PremiumApplicationReview from "@/components/premium/PremiumApplicationReview"
-import { usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
+import { APPLICATION_INTRO, usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
 import { useHoldProfileGate } from "@/components/profile/ProfileGate"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
@@ -46,6 +46,33 @@ const PURCHASE_MARKER = "jetzy_premium_modal_purchase"
  * blank and they retype a code they already typed.
  */
 const PURCHASE_CONTEXT = "jetzy_premium_modal_context"
+
+/**
+ * Marks "the card-setup trip for a Premium APPLICATION was started from this dialog".
+ *
+ * That trip returns with `?application_session_id`, which only `/premium` and `/subscribe` used to
+ * handle — so from this dialog the buyer came back to a bare page, the dialog stayed shut, and the
+ * "application under review" screen was never seen. Its own marker, not `PURCHASE_MARKER`: nothing
+ * was bought, and the return must open the review screen, never the member card.
+ */
+const APPLICATION_MARKER = "jetzy_premium_modal_application"
+
+const markApplicationTrip = () => {
+	try {
+		sessionStorage.setItem(APPLICATION_MARKER, "1")
+	} catch {}
+}
+
+/** Takes the marker, once — the first mounted dialog to read it owns the return. */
+const consumeApplicationMarker = (): boolean => {
+	try {
+		if (sessionStorage.getItem(APPLICATION_MARKER) !== "1") return false
+		sessionStorage.removeItem(APPLICATION_MARKER)
+		return true
+	} catch {
+		return false
+	}
+}
 
 /**
  * "This document is the one that sent the buyer to Stripe."
@@ -92,8 +119,10 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		setResumingCardSetup(true)
 		try {
 			const { data } = await axios.post("/api/premium/applications/checkout", { applicationId: myApplication._id, returnTo })
-			if (data?.data?.url) window.location.href = data.data.url
-			else ErrorToast("Error", "Could not resume card setup. Please try again.")
+			if (data?.data?.url) {
+				markApplicationTrip()
+				window.location.href = data.data.url
+			} else ErrorToast("Error", "Could not resume card setup. Please try again.")
 		} catch (error: any) {
 			ErrorToast("Error", error?.response?.data?.message || "Could not resume card setup. Please try again.")
 		} finally {
@@ -145,6 +174,9 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	 */
 	const [reopenedAfterCancel, setReopenedAfterCancel] = useState(false)
 
+	/** Back from an application's card setup begun here. Reopens on the "under review" screen. */
+	const [justApplied, setJustApplied] = useState(false)
+
 	/**
 	 * The dialog is VISIBLE in three ways, and the queries below have to follow all three.
 	 *
@@ -153,11 +185,35 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	 * fetching nothing: no prices meant no annual option, which meant no "Switch to $200/year" on
 	 * the member card — the one action a member who just subscribed monthly might want.
 	 */
-	const isVisible = isOpen || justSubscribed || alreadyMember || reopenedAfterCancel
+	const isVisible = isOpen || justSubscribed || alreadyMember || reopenedAfterCancel || justApplied
 	// Profile is asked AFTER paying (CEO, 2026-09-22), so the page's own gate stands down while this
 	// dialog — or the post-purchase form it opens — is on screen.
 	const postPurchaseProfile = usePostPurchaseProfile()
 	useHoldProfileGate(isVisible || !!postPurchaseProfile.element)
+
+	// ---- Back from an application's card setup, begun in this dialog ----
+	// Confirm (idempotent — the webhook fulfils it too), reopen on the review screen, then ask for the
+	// profile over it. Completing the form leaves the buyer looking at "under review", not the page.
+	useEffect(() => {
+		if (!router.isReady) return
+		const applicationSessionId = router.query.application_session_id
+		if (typeof applicationSessionId !== "string" || !applicationSessionId) return
+		if (!consumeApplicationMarker()) return
+
+		setJustApplied(true)
+		axios
+			.get(`/api/premium/applications/confirm?session_id=${encodeURIComponent(applicationSessionId)}`)
+			.catch(() => {
+				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
+			})
+			.finally(() => {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
+				const { application_session_id: _applied, ...rest } = router.query
+				router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+			})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.isReady, router.query.application_session_id])
 
 	// The shared hook, not a private query: it already formats every interval's label and shares
 	// its cache key, so opening this after the price has been fetched elsewhere on the page
@@ -635,6 +691,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		setAlreadyMember(false)
 		setJustSubscribed(false)
 		setReopenedAfterCancel(false)
+		setJustApplied(false)
 		onClose()
 	}
 
@@ -768,6 +825,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 				questions={appSettings?.questions || []}
 				interval={selectedInterval}
 				returnTo={returnTo}
+				onBeforeRedirect={markApplicationTrip}
 			/>
 
 			{/* Sits above the card, on top of this dialog's own overlay — it is `fixed` itself, so

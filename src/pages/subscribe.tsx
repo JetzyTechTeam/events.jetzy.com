@@ -7,7 +7,7 @@ import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
-import { usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
+import { APPLICATION_INTRO, usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
 import Navbar from "@Jetzy/components/misc/Navbar"
 import { ROUTES } from "@/configs/routes"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
@@ -156,6 +156,9 @@ export default function SubscribePage() {
 			.then(() => {
 				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
 				router.replace("/subscribe", undefined, { shallow: true })
+				// Card saved, application under review — the page shows the review card; the profile is
+				// asked over it (CEO, 2026-09-22).
+				postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 			})
 			.catch(() => {
 				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")

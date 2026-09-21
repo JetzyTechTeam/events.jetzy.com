@@ -135,6 +135,7 @@ export default function PremiumApplicationQuestions({
 	questions,
 	interval,
 	returnTo,
+	onBeforeRedirect,
 }: {
 	open: boolean
 	onClose: () => void
@@ -142,6 +143,8 @@ export default function PremiumApplicationQuestions({
 	questions: ApplicationQuestion[]
 	interval?: string
 	returnTo: string
+	/** Runs just before leaving for Stripe — lets the Premium pop-up mark the trip as its own. */
+	onBeforeRedirect?: () => void
 }) {
 	const [answers, setAnswers] = React.useState<Record<string, any>>({})
 	const [submitting, setSubmitting] = React.useState(false)
@@ -194,6 +197,7 @@ export default function PremiumApplicationQuestions({
 			const checkoutRes = await axios.post("/api/premium/applications/checkout", { applicationId, returnTo })
 			const url = checkoutRes.data?.data?.url
 			if (url) {
+				onBeforeRedirect?.()
 				window.location.href = url
 			} else {
 				setError("Could not start card setup. Please try again.")

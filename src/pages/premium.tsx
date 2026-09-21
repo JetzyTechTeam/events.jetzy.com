@@ -6,7 +6,7 @@ import { MOBILE_REFERRAL_ACCEPTED, MOBILE_REFERRAL_UNAVAILABLE, checkMobileRefer
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
-import { usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
+import { APPLICATION_INTRO, usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
 import { ROUTES } from "@/configs/routes"
 import Navbar from "@Jetzy/components/misc/Navbar"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
@@ -707,6 +707,10 @@ export default function PremiumPage() {
 		}
 	}, [myApplication])
 
+	// The profile is asked for right after a confirmed payment or a completed application card setup
+	// (CEO, 2026-09-22) — this page is ungated before purchase, so nobody is stopped from buying.
+	const postPurchaseProfile = usePostPurchaseProfile()
+
 	// ---- Back from Stripe (application card setup) ----
 	React.useEffect(() => {
 		const sessionId = router.query.application_session_id
@@ -717,6 +721,9 @@ export default function PremiumPage() {
 			.then(() => {
 				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
 				router.replace(SELF, undefined, { shallow: true })
+				// Card saved, application under review — the page shows the review card; the profile is
+				// asked over it (CEO, 2026-09-22).
+				postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 			})
 			.catch(() => {
 				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
@@ -725,9 +732,6 @@ export default function PremiumPage() {
 	}, [router.query.application_session_id])
 
 	// ---- Back from Stripe ----
-	// The profile is asked for here, right after a confirmed payment (CEO, 2026-09-22) — this page
-	// is ungated before purchase, so nobody is stopped from buying by the form.
-	const postPurchaseProfile = usePostPurchaseProfile()
 	React.useEffect(() => {
 		const sessionId = router.query.premium_session_id
 		if (!sessionId || typeof sessionId !== "string") return
