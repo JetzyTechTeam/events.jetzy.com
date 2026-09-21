@@ -54,7 +54,7 @@ const backendFetch = async (token: string, path: string, init: RequestInit = {})
 }
 
 /**
- * `GET /accounts`, normalised. `location` arrives as `{ country, city, region }` (PUT /accounts)
+ * `GET /accounts`, normalised. `location` arrives as `{ country, city }` (PUT /accounts)
  * and/or `{ longitude, latitude }` (sync_location, what mobile writes) — both are kept.
  */
 export const fetchBackendProfile = async (token: string): Promise<JetzyProfile> => {
@@ -82,10 +82,12 @@ export const fetchBackendProfile = async (token: string): Promise<JetzyProfile> 
 /**
  * Writes the profile exactly the way mobile does.
  *
- * ORDER MATTERS: PUT /accounts first (it may replace `location` with `{country, city}`), then
- * sync_location, so the coordinates are the last thing written and can't be wiped. Coordinates
- * are NOT sent on the PUT — its docs show `[lat, lng]` while sync_location takes GeoJSON
- * `[lng, lat]`, and one writer is safer than two that disagree.
+ * Payloads match the mobile app exactly: the PUT's `location` carries `country` + `city` and
+ * nothing else, and sync_location takes GeoJSON `[lng, lat]`. Verified on test (2026-09-21): the
+ * backend MERGES the two into one object — `{ country, city, longitude, latitude }` — so neither
+ * call wipes the other, whatever the order. Coordinates are still never sent on the PUT: its docs
+ * show `[lat, lng]`, and one writer is safer than two that disagree. `region` stays local — the app
+ * never sends it, so neither do we.
  */
 export const pushProfileToBackend = async (token: string, input: ProfileInput) => {
 	await backendFetch(token, "/accounts", {
@@ -98,12 +100,11 @@ export const pushProfileToBackend = async (token: string, input: ProfileInput) =
 			image: input.image,
 			// Omitted entirely when there is no readable place (a location mobile synced as bare
 			// coordinates and the person didn't change) — an empty object must not replace it.
-			...(input.location.country || input.location.city || input.location.region
+			...(input.location.country || input.location.city
 				? {
 						location: {
 							...(input.location.country ? { country: input.location.country } : {}),
 							...(input.location.city ? { city: input.location.city } : {}),
-							...(input.location.region ? { region: input.location.region } : {}),
 						},
 					}
 				: {}),

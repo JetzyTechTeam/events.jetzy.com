@@ -2988,8 +2988,8 @@ stale one opening the dialog on an unrelated later arrival.
 | | Endpoint | Notes |
 |---|---|---|
 | Read | `GET /v1/accounts` | `dob` ISO; `location` `{country,city,region}` and/or `{longitude,latitude}`; `image` defaults to `/default-avatars/…` |
-| Save | `PUT /v1/accounts` | partial: `firstName` (full name), `lastName:""`, `dob` `MM/dd/yyyy`, `gender` (`Male`/`Female`/`Non-binary`), `image`, `location {country,city,region}` |
-| Coordinates | `POST /v1/onboarding/sync_location` | `{location:{type:"Point",coordinates:[lng,lat]}}`, sent AFTER the PUT |
+| Save | `PUT /v1/accounts` | partial: `firstName` (full name), `lastName:""`, `dob` `MM/dd/yyyy`, `gender` (`Male`/`Female`/`Non-binary`), `image`, `location {country,city}` — exactly the keys mobile sends |
+| Coordinates | `POST /v1/onboarding/sync_location` | `{location:{type:"Point",coordinates:[lng,lat]}}`, same as mobile. Verified on test: the backend MERGES both into `location {country, city, longitude, latitude}`, so order doesn't matter |
 | Photo | `POST /uploader/multiple` via `uploadFile(file,{folder:"photos"})` | then url on the PUT |
 
 **Files.**
