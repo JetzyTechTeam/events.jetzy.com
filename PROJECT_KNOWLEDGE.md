@@ -185,7 +185,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/events/admin/update-questions` | admin OR owner |
 | POST | `/api/events/admin/update-feedback-link` | admin OR owner |
 | POST | `/api/events/admin/send-thank-you` | admin OR owner |
-| GET | `/api/events/guests` | get guests |
+| GET | `/api/events/guests` | get guests (admin OR owner) |
 | GET | `/api/events/[eventId]/albums` | any identified viewer (session OR name+email guest cookie) |
 | POST | `/api/events/[eventId]/albums` | admin OR owner (create) |
 | PUT/DELETE | `/api/events/[eventId]/albums/[albumId]` | admin OR owner |
@@ -243,7 +243,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | POST | `/api/premium/check-email` | public — preview only, see "Jetzy Premium member discount" |
 
 ### Waiting List
-`/api/waiting-list/[eventId]`, `/api/waiting-list/add`, `/api/waiting-list/approve`, `/api/waiting-list/remove`
+`/api/waiting-list/[eventId]`, `/api/waiting-list/add`, `/api/waiting-list/approve`, `/api/waiting-list/remove` — `[eventId]`, `approve`, `remove` are admin OR owner (were unauthenticated until 2026-09-21); `add` is public
 
 ### Bookings
 `/api/bookings/mine` — **GET, session required.** The guest's own bookings for `/my-bookings`. Matches on `bookerUserId` OR case-insensitive `customerEmail` via `buildBookerMatchClauses`. Loads up to 500, joins events, then filters/sorts/paginates **in JS** so `getEventStatus` stays the single source of truth for upcoming-vs-past. Query: `filter` (`all|upcoming|past|pending|confirmed|cancelled`), `page`, `limit`, `search`. Projects out `payment.paymentIntentId` / `payment.checkoutSessionId`. Returns `{ items, pagination, counts }` with per-row `moneyState`, `moneyAmount`, `canCancel`, `cancelBlockedReason`, `eventStatus`, `ticketCount`.
@@ -1122,7 +1122,7 @@ Runs BEFORE checkout on the **standalone** Premium purchase (`/premium`, `/subsc
 | Event analytics | `src/pages/console/events/[eventId]/analytics.tsx` | admin only — Overview tab (existing metrics) + Journey tab (funnel/heatmap/dwell/top targets) |
 | Ticket mgmt | `src/pages/console/events/[eventId]/tickets.tsx` | — |
 | Bookings list | `src/pages/console/bookings/index.tsx` | admin=all, user=own events |
-| Booking detail | `src/pages/console/bookings/[eventId].tsx` | admin OR owner (strips ownerId from props) |
+| Booking detail | `src/pages/console/bookings/[eventId].tsx` | admin OR owner (strips ownerId from props). Tabs: Bookings / Waiting List / Approvals — same `EventWaitingList` + `ApprovalRequests` components as the event detail page |
 | Platform analytics | `src/pages/console/analytics.tsx` | admin only — dark themed (orange `#F79432` accent, `#1a1a1a` cards). Links to Journey page. |
 | Journey analytics | `src/pages/console/analytics/journey.tsx` | admin only — dark themed. Sessions / Guests vs Auth / Heatmap / Funnels tabs |
 | QR signup analytics | `src/pages/console/analytics/qr-signups.tsx` | admin only — dark themed. Metric cards + `/jetzyqrsignup` funnel + signups table (what each user entered: location, coords, placeId, invite code, provider) with date/search/provider/invite-code filters, pagination and CSV export. Linked from Platform + Journey analytics headers. |

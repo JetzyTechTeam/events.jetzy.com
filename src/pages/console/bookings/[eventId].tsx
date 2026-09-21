@@ -12,13 +12,22 @@ import { Booking } from ".";
 import { authorizedOnly } from "@/lib/authSession"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
-import { Text, Flex, Button } from "@chakra-ui/react";
+import { Text, Flex, Button, Tabs, TabList, Tab, TabPanels, TabPanel } from "@chakra-ui/react";
 import { useRouter } from "next/router"
 import { Types } from "mongoose";
+import { useState } from "react";
+import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
+import { EventWaitingList } from "@/components/events/EventWaitingList";
+import { ApprovalRequests } from "@/components/console/ApprovalRequests";
+import { eventHasAnyApprovalTicket } from "@/lib/ticket-approval";
+import { isPendingBooking } from "@/lib/booking-status";
 
 type Props = {
   bookings: Booking[];
-  event: { _id: string; name: string; startsOn: string | null; endsOn: string | null };
+  // `requireApproval`, `tickets` and `questions` are what ApprovalRequests needs: whether the
+  // tab exists at all, ticket names, and the guest's answers.
+  event: { _id: string; name: string; startsOn: string | null; endsOn: string | null; requireApproval?: boolean; tickets?: any[]; questions?: any[] };
   filters: { status?: string; search?: string; date?: string; amount?: string; minTickets?: string; checkedIn?: string };
   exportable: any[];
   checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }>;
@@ -27,6 +36,34 @@ type Props = {
 
 export default function BookingsEventPage({ bookings, event, filters, exportable, checkInMap, isAdmin }: Props) {
   const router = useRouter()
+  const [tabIndex, setTabIndex] = useState(0)
+  const hasApprovalTickets = eventHasAnyApprovalTicket(event as any)
+
+  // Same query key as ApprovalRequests, so the badge and the tab share one fetch and an
+  // approve/decline there updates the count here.
+  const { data: approvalBookings } = useQuery({
+    queryKey: ["event-bookings", event._id],
+    queryFn: async () => (await axios.post("/api/get-bookings", { eventId: event._id })).data || [],
+    enabled: hasApprovalTickets,
+  })
+  const pendingApprovalCount = (approvalBookings as any[] | undefined)?.filter((b) => isPendingBooking(b)).length ?? 0
+
+  // The Bookings table is server-rendered. Approving a request or a waiting-list entry
+  // creates or changes a booking, so reload the props when the host comes back to it.
+  const onTabChange = (index: number) => {
+    if (index === 0 && tabIndex !== 0) router.replace(router.asPath, undefined, { scroll: false })
+    setTabIndex(index)
+  }
+
+  const tabProps = {
+    fontWeight: 500,
+    fontSize: "16px",
+    color: "#FFFFFF",
+    borderTopRadius: "10px",
+    px: 5,
+    _selected: { bg: "#FFFFFF", color: "#0B0B0B", fontWeight: 700, borderColor: "#FFFFFF" },
+  }
+
   return (
     <ConsoleLayout page={Pages.Bookings}>
       <Flex align="center" justify="space-between" mb={4}>
@@ -47,21 +84,51 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
         Starts on ({event.startsOn ? new Date(event.startsOn).toLocaleDateString() : "TBD"}) - Ends on ({event.endsOn ? new Date(event.endsOn).toLocaleDateString() : "TBD"})
       </Text>
 
-      <BookingFilters eventId={event._id} initialFilters={filters} />
+      <Tabs variant="line" index={tabIndex} onChange={onTabChange} mt={6}>
+        <TabList borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden">
+          <Tab {...tabProps}>Bookings</Tab>
+          <Tab {...tabProps}>Waiting List</Tab>
+          {hasApprovalTickets && (
+            <Tab {...tabProps}>
+              Approvals
+              {pendingApprovalCount > 0 && (
+                <span className="ml-2 text-xs font-bold rounded-full px-2 py-0.5 bg-[#F79432] text-black">{pendingApprovalCount}</span>
+              )}
+            </Tab>
+          )}
+        </TabList>
+        <TabPanels>
+          <TabPanel px={0}>
+            <BookingFilters eventId={event._id} initialFilters={filters} />
 
-      <div className="overflow-auto mt-4 border rounded" style={{ maxHeight: "70vh" }}>
-        <BookingTableComponent
-          rows={bookings}
-          exportable={exportable}
-          checkInMap={checkInMap}
-          isAdmin={isAdmin}
-          // getServerSideProps already redirects anyone who is neither admin nor the
-          // event's owner, so everyone who reaches this page may manage these bookings.
-          canManage
-          onDeleteSuccess={() => router.replace(router.asPath)}
-          onCancelSuccess={() => router.replace(router.asPath)}
-        />
-      </div>
+            <div className="overflow-auto mt-4 border rounded" style={{ maxHeight: "70vh" }}>
+              <BookingTableComponent
+                rows={bookings}
+                exportable={exportable}
+                checkInMap={checkInMap}
+                isAdmin={isAdmin}
+                // getServerSideProps already redirects anyone who is neither admin nor the
+                // event's owner, so everyone who reaches this page may manage these bookings.
+                canManage
+                onDeleteSuccess={() => router.replace(router.asPath)}
+                onCancelSuccess={() => router.replace(router.asPath)}
+              />
+            </div>
+          </TabPanel>
+          <TabPanel px={0}>
+            <div className="bg-[#181818] rounded-xl p-3">
+              <EventWaitingList eventId={event._id} eventName={event.name} />
+            </div>
+          </TabPanel>
+          {hasApprovalTickets && (
+            <TabPanel px={0}>
+              <div className="bg-[#181818] rounded-xl p-3">
+                <ApprovalRequests eventId={event._id} event={event} />
+              </div>
+            </TabPanel>
+          )}
+        </TabPanels>
+      </Tabs>
     </ConsoleLayout>
   );
 }
@@ -86,6 +153,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     startsOn: 1,
     endsOn: 1,
     ownerId: 1,
+    requireApproval: 1,
+    tickets: 1,
+    questions: 1,
   }).lean();
 
   if (!eventDoc) return { notFound: true };
@@ -192,7 +262,8 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
           tickets: bookedTickets,
         },
         event: {
-          ...event,
+          // Explicit fields only — the doc now also carries tickets/questions, which hold
+          // ObjectIds that can't be serialized as props.
           name: event.name,
           _id: event._id.toString(),
           startsOn: event.startsOn?.toISOString() ?? null,
@@ -204,7 +275,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     })
   );
 
-  const { ownerId: _ownerId, ...eventForProps } = eventDoc as any
+  // Tickets and questions hold ObjectIds and Dates; round-trip them through JSON so Next
+  // accepts them as props.
+  const { ownerId: _ownerId, tickets: rawTickets, questions: rawQuestions, ...eventForProps } = eventDoc as any
 
   return {
     props: {
@@ -213,6 +286,9 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
         _id: eventDoc._id.toString(),
         startsOn: eventDoc.startsOn?.toISOString() ?? null,
         endsOn: eventDoc.endsOn?.toISOString() ?? null,
+        requireApproval: !!(eventDoc as any).requireApproval,
+        tickets: JSON.parse(JSON.stringify(rawTickets || [])),
+        questions: JSON.parse(JSON.stringify(rawQuestions || [])),
       },
       bookings: bookings.map((b: any) => ({
         ...b,
