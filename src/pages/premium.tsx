@@ -76,7 +76,8 @@ export default function PremiumPage() {
 	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
 	// instantly — see `src/lib/premium-application.ts`. `myApplication` covers the repeat visit:
 	// a buyer mid-review sees the review screen instead of the plan card again.
-	const { data: appSettings } = usePremiumApplicationSettings()
+	const applicationSettingsQuery = usePremiumApplicationSettings()
+	const appSettings = applicationSettingsQuery.data
 	const { data: myApplication } = useMyPremiumApplication(isAuthenticated)
 	const [showQuestions, setShowQuestions] = React.useState(false)
 	const [resumingCardSetup, setResumingCardSetup] = React.useState(false)
@@ -561,13 +562,16 @@ export default function PremiumPage() {
 	})
 
 	// ---- Get Premium ----
-	const handleChoosePremium = React.useCallback((intervalOverride?: string) => {
+	const handleChoosePremium = React.useCallback(async (intervalOverride?: string) => {
 		pendingInterval.current = intervalOverride
 		if (isAuthenticated) {
 			if (applicationBlocksCheckout(myApplication)) return // review screen is already showing instead of this button
+			// Re-fetched LIVE, not read from the cache: an admin toggling the gate must take effect on
+			// this exact click, not on a refresh or a lucky retry a minute later.
+			const { data: freshSettings } = await applicationSettingsQuery.refetch()
 			// A refused code is not an invite code — counting it as one would let a typo past the
 			// questionnaire the gate exists to ask.
-			if (applicationRequiredForPurchase(appSettings, !!usableCode, myApplication)) {
+			if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
 				setShowQuestions(true)
 				return
 			}
@@ -581,7 +585,7 @@ export default function PremiumPage() {
 		// The `/login?_cb=…&go=1` round trip it replaced still works — old links carry it and the
 		// effect below still honours it — but nothing sends anyone down it any more.
 		setVerifyOpen(true)
-	}, [isAuthenticated, subscribeMutation, myApplication, appSettings, usableCode])
+	}, [isAuthenticated, subscribeMutation, myApplication, applicationSettingsQuery, usableCode])
 
 	// ---- Back from login with intent ----
 	//
@@ -604,14 +608,15 @@ export default function PremiumPage() {
 		const code = normalizeTrialCode(typeof router.query.code === "string" ? router.query.code : "") || inviteCode.trim()
 		const sharedEventId = asEventId(router.query.event) || referralEventId
 
-		if (applicationRequiredForPurchase(appSettings, !!code, myApplication)) {
-			setAutoState("idle")
-			setShowQuestions(true)
-			return
-		}
-
 		;(async () => {
 			try {
+				// Live, not cached — same reasoning as `handleChoosePremium`.
+				const { data: freshSettings } = await applicationSettingsQuery.refetch()
+				if (applicationRequiredForPurchase(freshSettings, !!code, myApplication)) {
+					setAutoState("idle")
+					setShowQuestions(true)
+					return
+				}
 				if (code) {
 					// Throws when the account isn't eligible — which is the case this whole flow
 					// exists to handle honestly.
@@ -660,15 +665,18 @@ export default function PremiumPage() {
 		// The code as last resolved, not as typed: a refused one is dropped here rather than sent to
 		// a checkout that can only reject it and leave the card looking untouched.
 		const code = usableCode
-		if (applicationRequiredForPurchase(appSettings, !!code, myApplication)) {
-			setShowQuestions(true)
-			return
-		}
 		autoStarted.current = true
 		setAutoState("running")
 
 		;(async () => {
 			try {
+				// Live, not cached — same reasoning as `handleChoosePremium`.
+				const { data: freshSettings } = await applicationSettingsQuery.refetch()
+				if (applicationRequiredForPurchase(freshSettings, !!code, myApplication)) {
+					setAutoState("idle")
+					setShowQuestions(true)
+					return
+				}
 				if (code) {
 					await axios.post("/api/subscriptions/invite-code", {
 						code,
@@ -690,7 +698,7 @@ export default function PremiumPage() {
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied to this account.")
 			}
 		})()
-	}, [usableCode, referralEventId, selectedInterval, startCheckout, appSettings, myApplication, handleApplicationRefusal])
+	}, [usableCode, referralEventId, selectedInterval, startCheckout, applicationSettingsQuery, myApplication, handleApplicationRefusal])
 
 	/** Picks up an application whose card setup was interrupted (closed the Stripe tab, etc). */
 	const resumeCardSetup = React.useCallback(async () => {

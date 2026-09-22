@@ -126,7 +126,8 @@ export default function SubscribePage() {
 	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
 	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
 	// instantly — see `src/lib/premium-application.ts`.
-	const { data: appSettings } = usePremiumApplicationSettings()
+	const applicationSettingsQuery = usePremiumApplicationSettings()
+	const appSettings = applicationSettingsQuery.data
 	const { data: myApplication } = useMyPremiumApplication(status === "authenticated")
 	const [showQuestions, setShowQuestions] = React.useState(false)
 	const [resumingCardSetup, setResumingCardSetup] = React.useState(false)
@@ -505,16 +506,19 @@ export default function SubscribePage() {
 	 * `intervalOverride` carries the annual pitch's choice through the verification detour; without
 	 * it, verifying an email would drop the buyer back onto whatever the toggle says.
 	 */
-	const handleChoosePremium = (intervalOverride?: string) => {
+	const handleChoosePremium = async (intervalOverride?: string) => {
 		pendingInterval.current = intervalOverride
 		if (status !== "authenticated") {
 			setVerifyOpen(true)
 			return
 		}
 		if (applicationBlocksCheckout(myApplication)) return // review screen is already showing instead of this button
+		// Re-fetched LIVE, not read from the cache: an admin toggling the gate must take effect on
+		// this exact click, not on a refresh or a lucky retry a minute later.
+		const { data: freshSettings } = await applicationSettingsQuery.refetch()
 		// A refused code is not an invite code — counting it as one would let a typo past the
 		// questionnaire the gate exists to ask.
-		if (applicationRequiredForPurchase(appSettings, !!usableCode, myApplication)) {
+		if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
 			setShowQuestions(true)
 			return
 		}
@@ -609,9 +613,10 @@ export default function SubscribePage() {
 				<EmailVerifyDialog
 					open={verifyOpen}
 					onClose={() => setVerifyOpen(false)}
-					onVerified={() => {
+					onVerified={async () => {
 						setVerifyOpen(false)
-						if (applicationRequiredForPurchase(appSettings, !!usableCode, myApplication)) {
+						const { data: freshSettings } = await applicationSettingsQuery.refetch()
+						if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
 							setShowQuestions(true)
 							return
 						}

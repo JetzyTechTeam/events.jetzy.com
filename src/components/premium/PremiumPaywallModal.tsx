@@ -110,7 +110,8 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
 	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
 	// instantly — see `src/lib/premium-application.ts`.
-	const { data: appSettings } = usePremiumApplicationSettings()
+	const applicationSettingsQuery = usePremiumApplicationSettings()
+	const appSettings = applicationSettingsQuery.data
 	const { data: myApplication } = useMyPremiumApplication(sessionStatus === "authenticated")
 	const [showQuestions, setShowQuestions] = useState(false)
 	const [resumingCardSetup, setResumingCardSetup] = useState(false)
@@ -708,7 +709,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	//
 	// `intervalOverride` carries the annual pitch's choice through: without it, verifying an email
 	// would drop the buyer back onto whatever the toggle says, which is monthly.
-	const handleSubscribeClick = (intervalOverride?: string) => {
+	const handleSubscribeClick = async (intervalOverride?: string) => {
 		if (sessionStatus !== "authenticated") {
 			pendingInterval.current = intervalOverride
 			setVerifyOpen(true)
@@ -721,9 +722,12 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			return
 		}
 		if (applicationBlocksCheckout(myApplication)) return // review card is already showing instead of this button
+		// Re-fetched LIVE, not read from the cache: an admin toggling the gate must take effect on
+		// this exact click, not on a refresh or a lucky retry a minute later.
+		const { data: freshSettings } = await applicationSettingsQuery.refetch()
 		// A refused code is not an invite code — counting it as one would let a typo past the
 		// questionnaire the gate exists to ask.
-		if (applicationRequiredForPurchase(appSettings, !!usableCode, myApplication)) {
+		if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
 			pendingInterval.current = intervalOverride
 			setShowQuestions(true)
 			return
@@ -732,9 +736,10 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	}
 
 	// The session now exists. Straight to Stripe, which is what they pressed the button for.
-	const handleVerified = () => {
+	const handleVerified = async () => {
 		setVerifyOpen(false)
-		if (applicationRequiredForPurchase(appSettings, !!usableCode, myApplication)) {
+		const { data: freshSettings } = await applicationSettingsQuery.refetch()
+		if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
 			setShowQuestions(true)
 			return
 		}

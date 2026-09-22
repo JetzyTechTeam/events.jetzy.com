@@ -20,8 +20,10 @@ export type PremiumApplication = {
 export function usePremiumApplicationSettings() {
 	return useQuery({
 		queryKey: ["premium-application-settings"],
+		// A cheap, public read — no `staleTime`. Every buy click re-fetches it explicitly (via
+		// `.refetch()`) rather than trusting this cache, because an admin flipping the gate on must
+		// take effect on a buyer's very next click, not after they refresh or a minute passes.
 		queryFn: async () => (await axios.get("/api/premium/applications/settings")).data?.data as { enabled: boolean; questions: ApplicationQuestion[] },
-		staleTime: 60_000,
 	})
 }
 
