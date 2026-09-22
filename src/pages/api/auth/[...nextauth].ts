@@ -142,8 +142,11 @@ export const authOptions: NextAuthOptions = {
           // magic token — use it directly and skip the password-based external authorize.
           let accessToken = (magicTokenData as any)?.accessToken || null;
 
-          // Try to get external token with timeout
-          try {
+          // Try to get external token with timeout — only when the magic token didn't bring one.
+          // With a code-login token in hand, the password-based authorize (the fixed "123456" on a
+          // magic login) and the JIT /accounts/create behind it can only fail or, worse, create an
+          // account with a known password; the backend login code already created/verified it.
+          if (!accessToken) try {
             const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || 'https://test.jetzy.com';
             const loginEndpoint = `${externalApiUrl}/api/v1/accounts/authorize`;
             console.log('--- Authorize Debug Start ---');

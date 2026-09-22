@@ -15,7 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const r = await fetch(`${base}/api/v1/accounts/login-code/send`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: decodedEmail, platform: "web" }),
+            body: JSON.stringify({ email: decodedEmail, platform: "web", purpose: "login" }),
         })
         const body = await r.json().catch(() => ({} as any))
 

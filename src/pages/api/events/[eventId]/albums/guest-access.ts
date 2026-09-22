@@ -12,6 +12,7 @@ import { generateMagicToken } from "@/lib/magicLink"
 import { sendWelcomeEmail } from "@/lib/send-grid"
 import { AlbumInterest } from "@/models/events/album-interest"
 import { consumeAlbumCode, consumeFailureMessage } from "@/lib/album-verification"
+import { verifyBackendLoginCode, verifyFailureMessage } from "@/lib/backend-login-code"
 
 const schema = zod.object({
 	name: zod.string().min(1).max(120),
@@ -23,6 +24,8 @@ const schema = zod.object({
 	optOut: zod.boolean().optional(),
 	// Proof the address is theirs, from /albums/send-code.
 	code: zod.string().regex(/^\d{6}$/),
+	/** Which code `send-code` sent: "jetzy" = the backend login code; otherwise ours (outage fallback). */
+	via: zod.enum(["jetzy", "portal"]).optional(),
 })
 
 /**
@@ -61,43 +64,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const email = validation.data.email.trim().toLowerCase()
 
-		// Prove the address BEFORE creating an account, setting a cookie or recording
-		// interests — an unverified attempt must leave nothing behind.
-		const check = await consumeAlbumCode(eventId, email, validation.data.code)
-		if (!check.ok) {
-			return sendResponse(res, null, consumeFailureMessage(check.reason), false, ResCode.BAD_REQUEST)
-		}
-		const verifiedAt = new Date()
-
 		const fullName = validation.data.name.trim()
 		const firstName = fullName.split(" ")[0] || fullName
 		const lastName = fullName.split(" ").slice(1).join(" ")
 
-		// Did this email already have an account? Decides "returning" vs "new" for analytics.
+		// Prove the address BEFORE creating an account, setting a cookie or recording
+		// interests — an unverified attempt must leave nothing behind.
 		let isNewAccount = false
-		try {
-			const db = await connectMongo()
-			const existing = await db.collection("users").findOne({ email })
-			isNewAccount = !existing
-		} catch (e) {
-			console.error("[albums/guest-access] existing-user lookup failed:", e)
-		}
-
-		// Same helper ticket checkout uses — matches by email or creates the account.
 		let userId: string | undefined
-		try {
-			const result = await createOrUpdateUser({
-				firstName,
-				lastName,
-				email,
-				phone: "",
-				role: "user",
-			})
-			userId = result?.userId?.toString()
-		} catch (e) {
-			// Never block album viewing on account creation.
-			console.error("[albums/guest-access] createOrUpdateUser failed:", e)
+		let accessToken: string | undefined
+
+		if (validation.data.via === "jetzy") {
+			// The Jetzy backend's login code. A correct one CREATES the account when the address has
+			// none (same `AuthLib.createUser()` as normal signup) and always returns a real accessToken —
+			// so no password-less stub from `createOrUpdateUser`, and the visitor is properly signed in.
+			const verified = await verifyBackendLoginCode(email, validation.data.code, { firstName, lastName, source: "web_album" })
+			if (!verified.ok) {
+				return sendResponse(res, null, verifyFailureMessage(verified.status, verified.message), false, ResCode.BAD_REQUEST)
+			}
+			isNewAccount = verified.isNewUser
+			userId = verified.userId
+			accessToken = verified.accessToken
+		} else {
+			// Outage fallback: our own code, and the pre-backend behaviour — cookie access, and a
+			// session only for a brand-new account.
+			const check = await consumeAlbumCode(eventId, email, validation.data.code)
+			if (!check.ok) {
+				return sendResponse(res, null, consumeFailureMessage(check.reason), false, ResCode.BAD_REQUEST)
+			}
+
+			// Did this email already have an account? Decides "returning" vs "new" for analytics.
+			try {
+				const db = await connectMongo()
+				const existing = await db.collection("users").findOne({ email })
+				isNewAccount = !existing
+			} catch (e) {
+				console.error("[albums/guest-access] existing-user lookup failed:", e)
+			}
+
+			// Same helper ticket checkout uses — matches by email or creates the account.
+			try {
+				const result = await createOrUpdateUser({
+					firstName,
+					lastName,
+					email,
+					phone: "",
+					role: "user",
+				})
+				userId = result?.userId?.toString()
+			} catch (e) {
+				// Never block album viewing on account creation.
+				console.error("[albums/guest-access] createOrUpdateUser failed:", e)
+			}
 		}
+		const verifiedAt = new Date()
 
 		setAlbumGuestCookie(res, { email, firstName, lastName, userId, verifiedAt })
 
@@ -130,11 +150,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.error("[albums/guest-access] interest capture failed:", e)
 		}
 
-		// Sign the visitor in for real ONLY when we just created the account. An email that
-		// already belongs to someone must not hand out a session — anyone with a share link
-		// could otherwise type a known address and take over that account. Existing accounts
-		// still get album access via the cookie above, just no login.
-		const magicToken = isNewAccount ? generateMagicToken({ email, firstName, lastName, _id: userId }) : undefined
+		// A real session. With the backend code the address is PROVEN by the backend itself — the same
+		// trust `/auth/login-otp` extends — so every verified visitor, new or existing, is signed in
+		// with a real accessToken (tagging and anything else that calls the Jetzy API then works).
+		// On the outage fallback only a brand-new account is signed in: our code proves the address
+		// too, but it can't produce a token, and an existing account's session would have none.
+		const magicToken = accessToken
+			? generateMagicToken({ email, firstName, lastName, _id: userId, accessToken })
+			: isNewAccount
+				? generateMagicToken({ email, firstName, lastName, _id: userId })
+				: undefined
 
 		// Welcome the brand-new account, and tell them where it came from so the safety
 		// notice (with its block link) makes sense. Fire-and-forget — never block entry.

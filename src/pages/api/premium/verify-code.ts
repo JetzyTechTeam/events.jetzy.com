@@ -5,7 +5,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { consumeAlbumCode, consumeFailureMessage } from "@/lib/album-verification"
 import { generateMagicToken } from "@/lib/magicLink"
 import { clientKey, isRateLimited } from "@/lib/rate-limit"
-import { verifyBackendLoginCode } from "@/lib/backend-login-code"
+import { verifyBackendLoginCode, verifyFailureMessage } from "@/lib/backend-login-code"
 import zod from "zod"
 
 const schema = zod.object({
@@ -56,13 +56,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const email = validation.data.email.trim().toLowerCase()
 
 		if (validation.data.via === "jetzy") {
-			const verified = await verifyBackendLoginCode(email, validation.data.otp)
+			// Creates the Jetzy account when the address has none — no more fixed-password accounts.
+			const verified = await verifyBackendLoginCode(email, validation.data.otp, { source: "web_premium" })
 			if (!verified.ok) {
-				const message =
-					verified.status === 423 || verified.status === 429
-						? "Too many attempts. Please try again later."
-						: verified.message || "That code didn't work. Check it and try again."
-				return sendResponse(res, { verified: false }, message, false, ResCode.BAD_REQUEST)
+				return sendResponse(res, { verified: false }, verifyFailureMessage(verified.status, verified.message), false, ResCode.BAD_REQUEST)
 			}
 			// Same contract as `verify-login-otp.ts`: the real accessToken rides inside the signed
 			// magic token, so NextAuth puts it straight into the session.

@@ -6,7 +6,7 @@ import { issueAlbumCode } from "@/lib/album-verification"
 import { resolveReferralTrial } from "@/lib/referral-trial"
 import { sendPremiumVerificationCode } from "@/lib/send-grid"
 import { clientKey, isRateLimited } from "@/lib/rate-limit"
-import { hasJetzyAccount, sendBackendLoginCode } from "@/lib/backend-login-code"
+import { sendBackendLoginCode } from "@/lib/backend-login-code"
 import zod from "zod"
 
 const schema = zod.object({
@@ -74,20 +74,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
-		// An address that already has a Jetzy account gets the BACKEND's login code instead of ours:
-		// verifying that one returns a real accessToken, so the session can read and save the
-		// profile the app uses (see `backend-login-code.ts`). Anything the backend refuses other than
-		// rate limiting falls back to our own code, exactly as before — nobody loses the door.
-		if (await hasJetzyAccount(email).catch(() => false)) {
-			const sent = await sendBackendLoginCode(email).catch(() => null)
-			if (sent?.ok) {
-				return sendResponse(res, { sent: true, via: "jetzy" }, "We've emailed you a code.", true, ResCode.OK)
-			}
-			if (sent && sent.status === 429) {
-				return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
-			}
-			console.warn(`[premium/send-code] backend login code unavailable (${sent?.status ?? "error"}), using our own code`)
+		// The BACKEND's login code, for every address: verifying it returns a real accessToken — and
+		// creates the Jetzy account when there isn't one — so the session can read and save the
+		// profile the app uses (see `backend-login-code.ts`). Our own code is the outage fallback only.
+		const sent = await sendBackendLoginCode(email, "premium")
+		if (sent.ok) {
+			return sendResponse(res, { sent: true, via: "jetzy" }, "We've emailed you a code.", true, ResCode.OK)
 		}
+		if ("rateLimited" in sent) {
+			return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
+		}
+		if (!("unavailable" in sent)) {
+			return sendResponse(res, null, sent.message || "We couldn't send that code. Please check the address and try again.", false, ResCode.BAD_REQUEST)
+		}
+		console.warn(`[premium/send-code] backend login code unavailable (${sent.status ?? "network"}), using our own code`)
 
 		const issued = await issueAlbumCode(event || null, email, "premium")
 		if (!issued) {

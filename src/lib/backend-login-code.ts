@@ -1,57 +1,112 @@
 /**
- * The Jetzy backend's own emailed login code (`/v1/accounts/login-code/*`) — the same calls
- * `/auth/login-otp` makes. Verifying through it returns a REAL backend `accessToken`, which our
- * own emailed code can't: our code proves the address but leaves NextAuth trying a fixed password
- * against the backend, which fails for anyone who already has a Jetzy account. Without a token the
- * portal can't read or save their profile on the account the mobile app uses.
+ * The Jetzy backend's emailed login code (`/v1/accounts/login-code/*`) — the ONE sign-in behind the
+ * portal's email-code doors: `/auth/login-otp`, the Premium email code, and the album gate.
  *
- * SERVER ONLY — it reads the `users` collection.
+ * Since backend 9e10f0fc it serves new and existing addresses alike: `send` emails a code to any
+ * address (identical response either way — no enumeration), and a correct `verify` for an address
+ * with no account CREATES it through the same `AuthLib.createUser()` as normal signup (referral
+ * credit, settings, trial, JetPoints). Either way it returns a real backend `accessToken`, which is
+ * what lets the portal read and save the profile the mobile app uses.
+ *
+ * Our own code store (`album-verification.ts`) is now only the OUTAGE fallback — callers use it when
+ * `send` reports `unavailable` (network error or 5xx), never on a 429.
  */
-import { Users } from "@Jetzy/models/userModal"
 
 const base = () => (process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || "https://test.jetzy.com").replace(/\/$/, "")
 
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const TIMEOUT_MS = 8000
 
-/**
- * Whether the address already has a Jetzy account. `users` is the backend's own collection, so a
- * row there is an account its login-code endpoint can serve. Case-insensitive: `users.email` has
- * no `lowercase: true`.
- */
-export const hasJetzyAccount = async (email: string): Promise<boolean> => {
-	const found = await Users.findOne({ email: { $regex: `^${escapeRegex(email.trim())}$`, $options: "i" } })
-		.select("_id")
-		.lean()
-	return !!found
+export type LoginCodePurpose = "login" | "album" | "premium"
+export type LoginCodeSource = "web_login" | "web_album" | "web_premium"
+
+const post = async (path: string, body: Record<string, unknown>) => {
+	const controller = new AbortController()
+	const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+	try {
+		const r = await fetch(`${base()}/api/v1/accounts/login-code/${path}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+			body: JSON.stringify(body),
+			signal: controller.signal,
+		})
+		const json = await r.json().catch(() => ({} as any))
+		return { status: r.status, ok: r.ok, json }
+	} finally {
+		clearTimeout(timer)
+	}
 }
 
-export type BackendSendResult = { ok: true } | { ok: false; status: number; message?: string }
+export type BackendSendResult =
+	| { ok: true }
+	/** Rate-limited by the backend — tell the person to wait; do NOT fall back to our own code. */
+	| { ok: false; rateLimited: true; message?: string }
+	/** Backend unreachable or erroring — the caller may fall back to our own code. */
+	| { ok: false; unavailable: true; status?: number; message?: string }
+	/** Anything else the backend refused (e.g. a malformed address). */
+	| { ok: false; status: number; message?: string }
 
-export const sendBackendLoginCode = async (email: string): Promise<BackendSendResult> => {
-	const r = await fetch(`${base()}/api/v1/accounts/login-code/send`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ email: email.trim().toLowerCase(), platform: "web" }),
-	})
-	if (r.ok) return { ok: true }
-	const body = await r.json().catch(() => ({} as any))
-	return { ok: false, status: r.status, message: body?.message }
+export const sendBackendLoginCode = async (email: string, purpose?: LoginCodePurpose): Promise<BackendSendResult> => {
+	try {
+		const r = await post("send", {
+			email: email.trim().toLowerCase(),
+			platform: "web",
+			...(purpose ? { purpose } : {}),
+		})
+		if (r.ok) return { ok: true }
+		if (r.status === 429) return { ok: false, rateLimited: true, message: r.json?.message }
+		if (r.status >= 500) return { ok: false, unavailable: true, status: r.status, message: r.json?.message }
+		return { ok: false, status: r.status, message: r.json?.message }
+	} catch {
+		return { ok: false, unavailable: true }
+	}
 }
 
 export type BackendVerifyResult =
-	| { ok: true; accessToken: string; firstName?: string; lastName?: string }
+	| {
+			ok: true
+			accessToken: string
+			isNewUser: boolean
+			userId?: string
+			firstName?: string
+			lastName?: string
+	  }
 	| { ok: false; status: number; message?: string }
 
-export const verifyBackendLoginCode = async (email: string, code: string): Promise<BackendVerifyResult> => {
-	const r = await fetch(`${base()}/api/v1/accounts/login-code/verify`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ email: email.trim().toLowerCase(), code: code.trim() }),
-	})
-	const body = await r.json().catch(() => ({} as any))
-	if (r.ok && body?.data?.accessToken) {
-		const u = body.data.user || {}
-		return { ok: true, accessToken: body.data.accessToken, firstName: u.firstName, lastName: u.lastName }
+export const verifyBackendLoginCode = async (
+	email: string,
+	code: string,
+	opts: { firstName?: string; lastName?: string; refCode?: string; source?: LoginCodeSource } = {},
+): Promise<BackendVerifyResult> => {
+	try {
+		const r = await post("verify", {
+			email: email.trim().toLowerCase(),
+			code: code.trim(),
+			// Only used by the backend when it CREATES the account; ignored for an existing one.
+			...(opts.firstName ? { firstName: opts.firstName } : {}),
+			...(opts.lastName ? { lastName: opts.lastName } : {}),
+			...(opts.refCode ? { refCode: opts.refCode } : {}),
+			...(opts.source ? { source: opts.source } : {}),
+		})
+		const data = r.json?.data
+		if (r.ok && data?.accessToken) {
+			const u = data.user || {}
+			return {
+				ok: true,
+				accessToken: data.accessToken,
+				isNewUser: data.isNewUser === true,
+				userId: u._id ? String(u._id) : undefined,
+				firstName: u.firstName,
+				lastName: u.lastName,
+			}
+		}
+		return { ok: false, status: r.status, message: r.json?.message }
+	} catch {
+		return { ok: false, status: 503, message: "We couldn't check that code right now. Please try again." }
 	}
-	return { ok: false, status: r.status, message: body?.message }
 }
+
+/** One message per failure, shared by every door. */
+export const verifyFailureMessage = (status: number, message?: string) =>
+	status === 423 || status === 429
+		? "Too many attempts. Please try again later."
+		: message || "That code didn't work. Check it and try again."
