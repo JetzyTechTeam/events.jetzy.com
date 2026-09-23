@@ -7,7 +7,8 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import Stripe from "stripe"
-import { ticketMemberships } from "@/lib/premium-bundle"
+import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
+import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 import { buildUniqueSlug } from "@/lib/event-slug"
 import { seedDefaultReferralCodes } from "@/lib/default-referral-codes"
 
@@ -84,8 +85,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				stripeProductId: stripeProducts[index].id,
 				// Carry per-ticket approval overrides; unset stays unset so the clone inherits.
 				...(ticket.requireApproval !== undefined ? { requireApproval: ticket.requireApproval } : {}),
+				// Per-ticket capacity comes across as the host's intended cap. A clone starts with
+				// nothing sold, so it is the limit — not the remainder — that should be copied.
+				...(ticketQuantityLimit(ticket as any) !== null ? { quantity: ticketQuantityLimit(ticket as any) } : {}),
 				// A bundled ticket stays bundled in the copy.
 				memberships: ticketMemberships(ticket as any),
+				// These two were silently dropped before, so a cloned annual ticket came back
+				// monthly and a cloned gift of free months came back with none — the clone charged
+				// a different amount from the ticket it was copied from.
+				...(ticket.membershipInterval !== undefined ? { membershipInterval: ticket.membershipInterval } : {}),
+				...(ticketMembershipFreeMonths(ticket as any) > 0
+					? { membershipFreeMonths: ticketMembershipFreeMonths(ticket as any) }
+					: {}),
 				includesPremium: ticketMemberships(ticket as any).includes("premium"),
 			})),
 			questions: source.questions,

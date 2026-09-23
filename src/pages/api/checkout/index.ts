@@ -295,26 +295,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
-		// capacity 0 = unlimited (per schema). Only enforce when capacity > 0.
-		if (event.capacity > 0) {
-			const { EventTracker } = await import("@/models/events/event-tracker")
-			const eventTracker = await EventTracker.findOne({ eventId: event._id })
+		// Capacity — per ticket, plus the legacy event-wide ceiling. Counted from the bookings
+		// themselves, never from `EventTracker.bookedTickets`: that counter is absent on every
+		// event this portal didn't create, and the old `if (eventTracker)` guard therefore made
+		// those events silently unlimited. See `src/lib/ticket-availability.ts`.
+		//
+		// This is a check-then-act against a Stripe session that is created moments later, so
+		// two buyers can both pass it. That race is accepted: the alternative is refusing at
+		// fulfilment, by which point the card is charged and Jetzy issues no refunds. Same
+		// trade-off, and the same reasoning, as the premium ticket allowance.
+		{
+			const { verifyAvailability } = await import("@/lib/ticket-availability")
+			const verdict = await verifyAvailability(event, tickets.map((t) => ({ id: String(t.id), quantity: t.quantity })))
 
-			if (eventTracker) {
-				const totalTicketsRequested = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-				const availableCapacity = event.capacity - eventTracker.bookedTickets
-
-				if (availableCapacity < totalTicketsRequested) {
-					console.info("[checkout/index] Event at capacity")
-					return sendResponse(res, {
-						atCapacity: true,
-						availableCapacity,
-						requestedTickets: totalTicketsRequested,
-						eventName: event.name,
-						eventId: event._id,
-						isClosed: false,
-					}, "Event capacity reached. Would you like to join the waiting list?", true, ResCode.OK)
-				}
+			if (!verdict.ok) {
+				console.info("[checkout/index] Event at capacity:", verdict.reason)
+				return sendResponse(res, {
+					atCapacity: true,
+					availableCapacity: verdict.remaining,
+					requestedTickets: verdict.requested,
+					// Which ticket ran out, so the modal can name it rather than saying the whole
+					// event is full when one tier sold out and the others are wide open.
+					ticketId: verdict.ticketId,
+					ticketName: verdict.ticketName,
+					reason: verdict.reason,
+					eventName: event.name,
+					eventId: event._id,
+					isClosed: false,
+				}, `${verdict.reason} Would you like to join the waiting list?`, true, ResCode.OK)
 			}
 		}
 

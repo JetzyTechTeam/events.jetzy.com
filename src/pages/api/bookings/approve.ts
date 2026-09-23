@@ -6,11 +6,11 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
-import { EventTracker } from "@/models/events/event-tracker"
 import { BookingStatus } from "@/models/events/types"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
-import { sendTicketConfirmation, sendAdminApprovalNotice } from "@/lib/send-grid"
+import { sendTicketConfirmation } from "@/lib/send-grid"
+import { notifyApprovalApproved } from "@/lib/booking-notify"
 import { pricingFromBooking, type RecurringCharge } from "@/lib/ticket-pricing"
 import { getStripeClient } from "@/lib/premium"
 import { heldMemberships } from "@/lib/premium-eligibility"
@@ -57,14 +57,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		return sendResponse(res, null, "Not authorized.", false, ResCode.FORBIDDEN)
 	}
 
-	// Capacity check (0 = unlimited) — approval consumes capacity.
-	// Deliberately BEFORE any money moves: if we're going to refuse, refuse before
-	// capturing. Capturing and then discovering the event is full would leave funds we
-	// have no refund tooling to return.
-	const requestedTickets = booking.tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)
-	const eventTracker = await EventTracker.findOne({ eventId: booking.eventId })
-	if (eventTracker && eventTracker.eventCapacity > 0 && eventTracker.bookedTickets + requestedTickets > eventTracker.eventCapacity) {
-		return sendResponse(res, null, "Cannot approve: event is at full capacity.", false, ResCode.BAD_REQUEST)
+	// Capacity check — approval consumes capacity, and this is where the decision belongs: a
+	// PENDING request holds no spot, so the host can collect as many as they like and the
+	// limit bites at the moment one is let in.
+	//
+	// Deliberately BEFORE any money moves: if we're going to refuse, refuse before capturing.
+	// Capturing and then discovering the event is full would leave funds we have no refund
+	// tooling to return.
+	//
+	// Counted from the bookings, not from `EventTracker` — that counter is missing on every
+	// event this portal didn't create, and `eventTracker &&` made those approvals unlimited.
+	// This booking is excluded from the count so a re-approval after a failed capture isn't
+	// blocked by its own seats.
+	{
+		const { verifyAvailability } = await import("@/lib/ticket-availability")
+		const verdict = await verifyAvailability(
+			event,
+			booking.tickets.map((t: any) => ({ id: String(t.ticketId), quantity: t.quantity || 0 })),
+			String(booking._id),
+		)
+		if (!verdict.ok) {
+			return sendResponse(res, null, `Cannot approve: ${verdict.reason}`, false, ResCode.BAD_REQUEST)
+		}
 	}
 
 	// ---- Paid approvals: capture the card hold placed at checkout. ----
@@ -418,21 +432,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		console.error("Failed to send approval confirmation email:", emailError)
 	}
 
-	// Copy the admin inbox (contact@jetzyapp.com) that the request was approved
-	try {
-		await sendAdminApprovalNotice({
-			event,
-			firstName: firstName || booking.customerName,
-			lastName,
-			email: booking.customerEmail,
-			tickets: ticketDetails,
-			eventId: booking.eventId.toString(),
-			kind: "approved",
-			amountCharged,
-		})
-	} catch (adminError) {
-		console.error("Failed to send admin approved notice:", adminError)
-	}
+	// Copy the admin inbox (contact@jetzyapp.com) that the request was approved — on an
+	// admin-owned event only. On a host-owned one the non-admin owner is the person who just
+	// pressed Approve, and mailing them a record of their own click is noise.
+	await notifyApprovalApproved({
+		event: event as any,
+		eventId: booking.eventId.toString(),
+		firstName: firstName || booking.customerName,
+		lastName,
+		email: booking.customerEmail,
+		tickets: ticketDetails,
+		amountCharged,
+	})
 
 	return sendResponse(
 		res,

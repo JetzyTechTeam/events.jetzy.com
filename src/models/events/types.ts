@@ -10,6 +10,11 @@ export interface IEventTicket {
 	/** Per-ticket override. `undefined` inherits the event-level `requireApproval`. */
 	requireApproval?: boolean
 	/**
+	 * How many of this ticket exist. `undefined` means UNLIMITED; `0` means none available.
+	 * Resolve with `ticketQuantityLimit()` from `@/lib/ticket-quantity` — never read directly.
+	 */
+	quantity?: number
+	/**
 	 * Memberships sold with this ticket. A buyer who doesn't already hold one pays the ticket
 	 * plus its first period; existing members pay for the ticket alone. Resolve with
 	 * `ticketMemberships()` from `@/lib/premium-bundle` — never read this field directly.
@@ -271,6 +276,16 @@ export interface IBookings extends IBaseModelProps {
 	/** Set on cancellation; undefined on bookings cancelled before this was tracked. */
 	cancelledAt?: Date
 	cancelledBy?: "guest" | "host" | "admin"
+	/** Set when a host/admin changed the ticket quantities after the fact. Undefined = never edited. */
+	ticketsEditedAt?: Date
+	ticketsEditedBy?: "host" | "admin"
+	ticketsEditHistory?: Array<{
+		at: Date
+		by: string
+		byUserId?: Types.ObjectId
+		from: Array<{ ticketId: Types.ObjectId; quantity: number }>
+		to: Array<{ ticketId: Types.ObjectId; quantity: number }>
+	}>
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }

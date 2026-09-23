@@ -35,7 +35,7 @@ const TicketEditorModal = dynamic(() => import("@/components/events/TicketEditor
 const InterestsSelector = dynamic(() => import("@/components/events/InterestsSelector"), { ssr: false })
 import type { FileUploadData } from "@/components/misc/DragAndDropUploader"
 import { uniqueId } from "@/lib/utils"
-import { blurOnWheel } from "@/lib/number-input"
+
 import { Roboto } from "next/font/google"
 import { CalendarDaysIcon, ChevronDownIcon, ClockIcon } from "@heroicons/react/24/outline"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
@@ -272,7 +272,6 @@ export default function HostedEvents({ event }: Props) {
 	const [draftLocationDisclosed, setDraftLocationDisclosed] = useState(false)
 	const [draftShowOnMobile, setDraftShowOnMobile] = useState(false)
 	const [draftPremiumEvent, setDraftPremiumEvent] = useState(false)
-	const [draftCapacity, setDraftCapacity] = useState("")
 	const [draftPrivacy, setDraftPrivacy] = useState<"public" | "private">("public")
 	// Poll options are drafted WITHOUT votes — the server preserves those by option id, so the
 	// client never has to carry (or risk dropping) what guests voted for.
@@ -340,7 +339,6 @@ export default function HostedEvents({ event }: Props) {
 		setDraftLocationDisclosed(!!shownEvent?.locationDisclosedAfterBooking)
 		setDraftShowOnMobile(!!(shownEvent as any)?.showOnMobile)
 		setDraftPremiumEvent(!!(shownEvent as any)?.premiumEvent)
-		setDraftCapacity(shownEvent?.capacity != null ? String(shownEvent.capacity) : "")
 		setDraftPrivacy(shownEvent?.privacy === "private" ? "private" : "public")
 		setDraftPollActive(!!shownEvent?.datePoll?.isActive)
 		setDraftPollQuestion(shownEvent?.datePoll?.question || "")
@@ -371,6 +369,9 @@ export default function HostedEvents({ event }: Props) {
 				memberships: ticketMemberships(ticket),
 				membershipInterval: ticket.membershipInterval,
 				membershipFreeMonths: ticket.membershipFreeMonths,
+				// Same preserve rule as the interval and free months above — without it the
+				// inline editor shows "unlimited" and the next save removes the host's cap.
+				quantity: ticket.quantity,
 				includesPremium: ticketMemberships(ticket).includes("premium"),
 			})) as TicketData[],
 		)
@@ -488,6 +489,11 @@ export default function HostedEvents({ event }: Props) {
 						...((t as any).memberships !== undefined ? { memberships: (t as any).memberships } : {}),
 						...((t as any).membershipInterval !== undefined ? { membershipInterval: (t as any).membershipInterval } : {}),
 						...((t as any).membershipFreeMonths !== undefined ? { membershipFreeMonths: Number((t as any).membershipFreeMonths) || 0 } : {}),
+						// `null` is sent through as null — it is the host clearing the cap, which
+						// is a different instruction from omitting the key.
+						...((t as any).quantity !== undefined
+							? { quantity: (t as any).quantity === null ? null : Math.max(0, Math.floor(Number((t as any).quantity))) }
+							: {}),
 					})),
 				})
 				setEditingSection(null)
@@ -556,7 +562,10 @@ export default function HostedEvents({ event }: Props) {
 			payload.locationDisclosedAfterBooking = draftLocationDisclosed
 			payload.showOnMobile = draftShowOnMobile
 			payload.premiumEvent = draftPremiumEvent
-			payload.capacity = Number(draftCapacity) || 0
+			// `capacity` is no longer sent from here — there is no input for it any more, and
+			// sending a value this form no longer collects would write `0` (= unlimited) over a
+			// ceiling a live event still relies on. `/details` still accepts the key; nothing
+			// on this page supplies it.
 			payload.privacy = draftPrivacy
 			payload.datePoll = {
 				isActive: draftPollActive,
@@ -1213,10 +1222,6 @@ export default function HostedEvents({ event }: Props) {
 												Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
 											</Text>
 
-											{/* Capacity is deliberately NOT here. Changing it has to re-sync
-											    `EventTracker.eventCapacity`, which only `update.ts` does — editing
-											    it from this page would leave the tracker holding the old number.
-											    It stays in Manage Event. */}
 										</Box>
 									)}
 
@@ -1335,27 +1340,11 @@ export default function HostedEvents({ event }: Props) {
 														<option value="public">Public</option>
 													</select>
 												</Flex>
-												<Flex align="center" justify="space-between" gap={4}>
-													<Box>
-														<Text color="white" fontWeight={500}>Capacity</Text>
-														<Text fontSize="12px" color="#868686">Maximum number of attendees</Text>
-													</Box>
-													<Input
-														type="number"
-														min={0}
-														onWheel={blurOnWheel}
-														onKeyDown={(e) => { if (e.key === "-") e.preventDefault() }}
-														value={draftCapacity}
-														onChange={(e) => setDraftCapacity(e.target.value)}
-														placeholder="0"
-														bg="#090C10"
-														color="white"
-														border="1px solid #343536"
-														_focus={{ borderColor: "#343536", boxShadow: "none" }}
-														h="40px"
-														w="110px"
-													/>
-												</Flex>
+												{/* Event-wide Capacity was REMOVED from this editor. Capacity is set PER
+												    TICKET now — "Quantity Available" in the ticket editor, which this page
+												    also opens. A non-zero `event.capacity` left on an existing event is still
+												    honoured as an overall ceiling by `src/lib/ticket-availability.ts`, so
+												    nothing became unlimited; nothing new sets it. */}
 												<Flex align="center" justify="space-between" gap={4}>
 													<Box>
 														<Text color="white" fontWeight={500}>Require Approval</Text>

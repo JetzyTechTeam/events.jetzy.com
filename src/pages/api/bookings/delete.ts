@@ -6,7 +6,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
-import { EventTracker } from "@/models/events/event-tracker"
+import { adjustBookedTickets } from "@/lib/event-tracker-sync"
 import { CheckIn } from "@/models/checkIn"
 import { BookingStatus } from "@/models/events/types"
 import { getStripeClient } from "@/lib/premium"
@@ -92,12 +92,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	await Promise.all([
 		Bookings.deleteOne({ bookingRef }),
 		CheckIn.deleteOne({ bookingId: (booking as any)._id }),
-		...(consumedCapacity
-			? [EventTracker.findOneAndUpdate(
-				{ eventId: (booking as any).eventId },
-				{ $inc: { bookedTickets: -ticketCount } },
-			)]
-			: []),
+		// Through the shared adjuster, which CLAMPS at zero. The bare `$inc: -n` this used to
+		// be could drive an already-drifted counter negative, and a negative counter inflates
+		// the availability every reader computes from it.
+		...(consumedCapacity ? [adjustBookedTickets((booking as any).eventId, -ticketCount)] : []),
 	])
 
 	// Same decline notice the Approvals tab sends. Non-fatal: the booking is already gone,

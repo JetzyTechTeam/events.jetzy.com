@@ -7,7 +7,8 @@ import { buildTicketPricing, type RecurringCharge } from "@/lib/ticket-pricing"
 import { AUTH_HOLD_DAYS } from "@/lib/ticket-approval"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
-import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
+import { sendTicketConfirmation, sendApprovalPending } from "@/lib/send-grid"
+import { notifyApprovalRequest, notifyTicketSold } from "@/lib/booking-notify"
 import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
@@ -549,21 +550,19 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		} catch (emailError) {
 			console.error("[checkout-fulfillment] Failed to send approval-pending email:", emailError)
 		}
-		try {
-			await sendAdminApprovalNotice({
-				event,
-				firstName: metadata.firstName || "",
-				lastName: metadata.lastName || "",
-				email: metadata.email || "",
-				tickets: ticketSummary,
-				eventId: String(metadata.eventId),
-				kind: "request",
-				amountOnHold: total,
-				holdExpiresAt: booking.payment?.authExpiresAt,
-			})
-		} catch (adminError) {
-			console.error("[checkout-fulfillment] Failed to send admin approval notice:", adminError)
-		}
+		// Routed: Jetzy's inbox on an admin-owned event, the HOST on a host-owned one. The
+		// person who has to approve or decline is the person who gets told. Swallows its own
+		// failure — see booking-notify.
+		await notifyApprovalRequest({
+			event: event as any,
+			eventId: String(metadata.eventId),
+			firstName: metadata.firstName || "",
+			lastName: metadata.lastName || "",
+			email: metadata.email || "",
+			tickets: ticketSummary,
+			amountOnHold: total,
+			holdExpiresAt: booking.payment?.authExpiresAt,
+		})
 		// Referral usage is intentionally NOT incremented here — it is deferred to approval
 		// so a declined request doesn't burn a limited-use code.
 		return { created: true, booking, event, requiresApproval: true, session }
@@ -740,6 +739,22 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	} catch (emailError) {
 		console.error("[checkout-fulfillment] Failed to send ticket confirmation email:", emailError)
 	}
+
+	// Tell a non-admin host they made a sale. Nothing has ever done this. Placed AFTER the
+	// membership-subscription work above so a slow SendGrid call can't hold up a subscription,
+	// and after the guest's receipt so the buyer is always served first.
+	await notifyTicketSold({
+		event: event as any,
+		firstName: metadata.firstName || "",
+		lastName: metadata.lastName || "",
+		email: metadata.email || "",
+		tickets: tickets.map((t) => ({ name: t.name, price: t.price, quantity: t.quantity })),
+		orderNumber: bookingRef,
+		// What the TICKET cost. `payment.amount` would also include any membership the order
+		// bundled, which is Jetzy's revenue and not the host's sale.
+		totalAmount: total,
+		referralCode: metadata.referralCode,
+	})
 
 	return { created: true, booking, event, requiresApproval: false, session }
 }

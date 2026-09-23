@@ -428,6 +428,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					// Same reason as the interval: dropping it would show "no free months" on a
 					// ticket that gives them, and the next save would write that back.
 					membershipFreeMonths: t.membershipFreeMonths,
+					// Per-ticket capacity, carried through for the same reason as the two above:
+					// dropping it would show "unlimited" on a capped ticket and the next save
+					// would write that back, silently removing the host's limit. `null` means the
+					// host cleared it; only `undefined` means "not sent".
+					quantity: (t as any).quantity,
 					includesPremium: ticketMemberships(t as any).includes("premium"),
 				})))
 			}
@@ -491,6 +496,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				memberships: ticketMemberships(ticket),
 				membershipInterval: ticket.membershipInterval,
 				membershipFreeMonths: ticket.membershipFreeMonths,
+				// Same preserve rule as the interval and free months above.
+				quantity: ticket.quantity,
 				includesPremium: ticketMemberships(ticket).includes("premium"),
 			})),
 			privacy: event.privacy,
@@ -1570,18 +1577,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 															onChange={() => setFieldValue("requireApproval", !values.requireApproval)}
 														/>
 													</Flex>
-													<Flex align="center" justifyContent="space-between" mb={4}>
-														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
-															<MultipleUsersSVG />
-															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Capacity</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Maximum number of attendees</Text>
-															</Box>
-														</Flex>
-														{/* `min={0}` alone doesn't stop the host typing -5 — it only constrains
-													    the spinner and native form validation. Blocking the key does. */}
-													<Field as={Input} type="number" min={0} onWheel={blurOnWheel} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #2A2D31" w="90px" h="36px" />
-													</Flex>
+																					{/* Event-wide Capacity was REMOVED from this form. Capacity is set PER TICKET now
+																					    (the "Quantity Available" field in the ticket editor), which is what the
+																					    mobile app shares and what the ticket cards and checkout enforce.
+
+																					    The stored `event.capacity` field is NOT gone: a non-zero value left on an
+																					    existing event is still honoured as an overall ceiling by
+																					    `src/lib/ticket-availability.ts`, so no live event silently becomes
+																					    unlimited. Nothing new sets it, which is why the input is gone rather than
+																					    the field. `capacity: 0` stays in this form's initial values so the
+																					    outgoing payload shape is unchanged. */}
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<UserTickSVG />

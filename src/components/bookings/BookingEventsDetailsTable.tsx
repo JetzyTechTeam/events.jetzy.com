@@ -8,6 +8,7 @@ import { Booking } from "@/pages/console/bookings"
 import { isCancelledBooking } from "@/lib/booking-status"
 import { PaymentBadge } from "@/components/bookings/PaymentBadge"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
+import EditBookingTicketsDialog, { EditableTicketRow } from "@/components/bookings/EditBookingTicketsDialog"
 import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking-cancellation"
 
 type Props = {
@@ -22,15 +23,23 @@ type Props = {
 	 * also getting Delete.
 	 */
 	canManage?: boolean
+	/**
+	 * The event's ticket types, so the edit dialog can name the rows a booking holds — a
+	 * booking stores `ticketId` only. Omit it and the Edit action isn't offered.
+	 */
+	eventTickets?: Array<{ _id: string; name: string }>
 	onDeleteSuccess?: () => void
 	onCancelSuccess?: () => void
+	onEditSuccess?: () => void
 }
 
-const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, isAdmin, canManage, onDeleteSuccess, onCancelSuccess }) => {
+const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, isAdmin, canManage, eventTickets, onDeleteSuccess, onCancelSuccess, onEditSuccess }) => {
 	const [loading, setLoading] = useState(false)
 	const [deletingRef, setDeletingRef] = useState<string | null>(null)
 	const [cancellingRef, setCancellingRef] = useState<string | null>(null)
 	const [cancelTarget, setCancelTarget] = useState<Booking | null>(null)
+	const [editTarget, setEditTarget] = useState<Booking | null>(null)
+	const [editingRef, setEditingRef] = useState<string | null>(null)
 	const [localRows, setLocalRows] = useState(rows)
 
 	// Re-sync when SSR returns new rows (e.g. after applying search/filters);
@@ -112,6 +121,53 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 			alert("Network error.")
 		} finally {
 			setCancellingRef(null)
+		}
+	}
+
+	// Only tickets already ON the booking, named from the event. A ticket type the host has
+	// since deleted still holds its seats, so it is listed rather than hidden — with a plain
+	// label, since its name is gone.
+	const ticketNameById = new Map((eventTickets || []).map((t) => [String(t._id), t.name]))
+	const editableRows = (booking: Booking | null): EditableTicketRow[] =>
+		((booking?.tickets as any[]) || []).map((t: any) => ({
+			ticketId: String(t.ticketId),
+			name: ticketNameById.get(String(t.ticketId)) || "Removed ticket",
+			quantity: Number(t.quantity) || 0,
+		}))
+
+	/**
+	 * Free bookings only. The server enforces this too — this just avoids offering a control
+	 * that can only be refused. Paid bookings show no Edit button at all rather than a
+	 * disabled one, because until the refund question is settled the feature doesn't exist
+	 * for them.
+	 */
+	const canEdit = (booking: Booking) =>
+		!!canManage && !!eventTickets && bookingMoneyState(booking as any) === "free" && ((booking.tickets as any[]) || []).length > 0
+
+	const handleEdit = async (next: EditableTicketRow[]) => {
+		if (!editTarget) return
+		const bookingRef = editTarget.bookingRef
+		setEditingRef(bookingRef)
+		try {
+			const res = await fetch("/api/bookings/update-tickets", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					bookingRef,
+					tickets: next.map((r) => ({ ticketId: r.ticketId, quantity: r.quantity })),
+				}),
+			})
+			const data = await res.json()
+			if (data.status) {
+				setEditTarget(null)
+				onEditSuccess?.()
+			} else {
+				alert(data.message || "Failed to update this booking.")
+			}
+		} catch {
+			alert("Network error.")
+		} finally {
+			setEditingRef(null)
 		}
 	}
 
@@ -209,6 +265,17 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 									{(isAdmin || canManage) && (
 										<Td>
 											<Flex gap={1}>
+												{!cancelled && canEdit(row) && (
+													<Button
+														size="xs"
+														colorScheme="blue"
+														variant="ghost"
+														isLoading={editingRef === row.bookingRef}
+														onClick={() => setEditTarget(row)}
+													>
+														Edit
+													</Button>
+												)}
 												{canManage && !cancelled && (
 													<Button
 														size="xs"
@@ -250,6 +317,15 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 				amount={cancelTarget ? bookingMoneyAmount(cancelTarget as any) : 0}
 				asManager
 				guestName={cancelTarget?.customerName}
+			/>
+
+			<EditBookingTicketsDialog
+				isOpen={!!editTarget}
+				onClose={() => setEditTarget(null)}
+				onConfirm={handleEdit}
+				isLoading={!!editingRef}
+				guestName={editTarget?.customerName}
+				rows={editableRows(editTarget)}
 			/>
 		</>
 	)

@@ -1,6 +1,7 @@
 import Stripe from "stripe"
 import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { sanitizeMembershipKeys } from "@/lib/memberships"
+import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
@@ -12,6 +13,8 @@ export type IncomingTicket = {
 	description?: string
 	price: number
 	requireApproval?: boolean
+	/** Per-ticket capacity. `undefined` = unlimited, `0` = none available. */
+	quantity?: number | null
 	memberships?: string[]
 	membershipInterval?: "month" | "year"
 	membershipFreeMonths?: number
@@ -75,6 +78,19 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 						? existing.requireApproval
 						: undefined
 
+			// Per-ticket capacity. Preserve-on-omit like the flags above — but note what counts as
+			// "sent": only an ABSENT key falls through to the stored value. `null` and `""` are a
+			// host clearing the field, which means "unlimited" and must overwrite whatever was
+			// there, and `0` means "none available" and must overwrite it too. Same asymmetry as
+			// `membershipFreeMonths` below, with one more state: this field can be cleared back
+			// to unlimited, and `ticketQuantityLimit` returns null for exactly those inputs.
+			const resolvedQuantity: number | null =
+				ticket.quantity !== undefined
+					? ticketQuantityLimit({ quantity: ticket.quantity })
+					: existing?.quantity !== undefined
+						? ticketQuantityLimit(existing)
+						: null
+
 			const resolvedMemberships = resolveMemberships(ticket, existing)
 
 			const resolvedMembershipInterval =
@@ -102,6 +118,9 @@ export async function resolveTickets(existingTickets: any[] | undefined, tickets
 				price: ticket.price.toFixed(2),
 				stripeProductId,
 				...(resolvedRequireApproval !== undefined ? { requireApproval: resolvedRequireApproval } : {}),
+				// Omitted, not written as null: `undefined` IS how the schema spells unlimited, and
+				// `update.ts` replaces the whole array, so leaving the key out clears the limit.
+				...(resolvedQuantity !== null ? { quantity: resolvedQuantity } : {}),
 				memberships: resolvedMemberships,
 				...(resolvedMembershipInterval !== undefined ? { membershipInterval: resolvedMembershipInterval } : {}),
 				...(resolvedMembershipFreeMonths !== undefined ? { membershipFreeMonths: resolvedMembershipFreeMonths } : {}),

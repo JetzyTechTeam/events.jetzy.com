@@ -529,20 +529,39 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
 //                host would otherwise silently lose a paying guest.
 export const sendAdminApprovalNotice = async ({
   event, firstName, lastName, email, tickets = [], eventId, kind, amountOnHold, holdExpiresAt, amountCharged,
+  audience = "admin", to,
 }: ApprovalEmailData & {
   kind: "request" | "approved" | "expired"
   amountOnHold?: number
   holdExpiresAt?: Date | string | null
   amountCharged?: number
+  /**
+   * Who this goes to. `"admin"` (the default) is Jetzy's own inbox and is unchanged.
+   * `"host"` sends the same notice to a non-admin event owner instead. The routing decision
+   * lives in `src/lib/booking-notify.ts` and nowhere else.
+   *
+   * Extended rather than duplicated into a host-facing twin: this template already carries
+   * the Review-in-Approvals link, the hold amount and the expiry urgency banner, and two
+   * templates for one money-adjacent event are two templates that drift.
+   */
+  audience?: "admin" | "host"
+  /** Required for `audience: "host"` — the owner's address. */
+  to?: string
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
-    console.log(`[LOCALHOST MODE] sendAdminApprovalNotice (${kind}) skipped - would send to admin for:`, email)
+    console.log(`[LOCALHOST MODE] sendAdminApprovalNotice (${kind}, ${audience}) skipped - would send to:`, to || "admin", "for:", email)
     return { success: true, message: "Email skipped in localhost mode" }
   }
+  const isHost = audience === "host"
   const adminEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
-  if (!adminEmail) {
-    console.error("SENDGRID_EMAIL_SENDER not set — cannot send admin approval notice")
+  const recipient = isHost ? to?.trim() : adminEmail
+  if (!recipient) {
+    console.error(
+      isHost
+        ? "[sendAdminApprovalNotice] No host recipient resolved — skipping"
+        : "SENDGRID_EMAIL_SENDER not set — cannot send admin approval notice",
+    )
     return
   }
   const eventName = decodeHTMLEntities(event.name)
@@ -555,7 +574,9 @@ export const sendAdminApprovalNotice = async ({
   const heading = isRequest ? "New Approval Request" : isExpired ? "Card Hold Expired" : "Request Approved"
   const accent = isExpired ? "#DC2626" : "#F79432"
   const intro = isRequest
-    ? "A new attendee is awaiting approval for the following event:"
+    ? isHost
+      ? "You have a request to review for your event:"
+      : "A new attendee is awaiting approval for the following event:"
     : isExpired
       ? "A card authorization expired before this request was reviewed. The guest was <strong>not</strong> charged and the hold has been released. They will need to book again."
       : "The following attendee has been approved and their booking is now confirmed:"
@@ -578,8 +599,11 @@ export const sendAdminApprovalNotice = async ({
 
   try {
     await sgMail.send({
-      to: adminEmail,
-      from: mailFrom(adminEmail),
+      to: recipient,
+      // The admin-inbox alerts keep their own sender name as a triage label; a host-facing
+      // mail must use the standard "Jetzy" sender, and be replyable straight to the guest.
+      from: isHost ? mailFrom() : mailFrom(adminEmail),
+      ...(isHost ? { replyTo: email } : {}),
       subject: isRequest
         ? `[Approval Needed] ${firstName} ${lastName} — ${eventName}`
         : isExpired
@@ -604,7 +628,7 @@ export const sendAdminApprovalNotice = async ({
             </a>
           </div>` : ""}
           <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
-            Automated notification from Jetzy Events.
+            ${isHost ? `You are receiving this because you host "${eventName}" on Jetzy.` : "Automated notification from Jetzy Events."}
           </p>
         </div>
       `),

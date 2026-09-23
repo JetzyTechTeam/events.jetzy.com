@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
+import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 import { ticketMemberships, ticketMembershipFreeMonths, MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
@@ -83,6 +84,16 @@ const schema = zod.object({
 			// `.optional()` and never `.default(false)` — undefined must stay undefined so the
 			// ticket inherits the event-level requireApproval.
 			requireApproval: zod.boolean().optional(),
+			// Per-ticket capacity. `undefined` = unlimited (what every ticket saved before this
+			// field existed means), `0` = none available, `null` = clear an existing limit back
+			// to unlimited. Nullable AND optional because those are three different answers —
+			// unlike `membershipFreeMonths`, where 0 IS the "none" state.
+			quantity: zod
+				.number({ invalid_type_error: "Enter a whole number of tickets, or leave it blank for unlimited." })
+				.int("Ticket quantity must be a whole number.")
+				.min(0, "Ticket quantity can't be negative. Leave it blank for unlimited.")
+				.nullable()
+				.optional(),
 			// Which memberships this ticket sells — Jetzy Premium, Full Concierge, or both.
 			// Loosely typed then narrowed by `sanitizeMembershipKeys`, so an unknown key from an
 			// older client is dropped rather than rejecting the whole event.
@@ -262,6 +273,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				stripeProductId: stripeProducts[index].id,
 				// Only persist an explicit override; leaving it unset means "inherit the event".
 				...((ticket as any).requireApproval !== undefined ? { requireApproval: (ticket as any).requireApproval } : {}),
+				// Per-ticket capacity. Written only when the host gave a number — an absent key IS
+				// how the schema spells unlimited, so `null`/blank must leave it out rather than
+				// store a value. `0` is a real limit and is written.
+				...(ticketQuantityLimit(ticket as any) !== null ? { quantity: ticketQuantityLimit(ticket as any) } : {}),
 				// The array is the authority; `includesPremium` is written alongside it purely so
 				// the mobile app and any older reader still see a bundled Premium ticket.
 				memberships: ticketMemberships(ticket as any),

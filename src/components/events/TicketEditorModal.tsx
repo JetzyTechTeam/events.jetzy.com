@@ -23,6 +23,7 @@ import TicketMembershipToggles from "@/components/events/TicketMembershipToggles
 import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { blurOnWheel } from "@/lib/number-input"
+import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 import type { TicketData } from "@/components/events/TicketCard"
 
 /**
@@ -46,6 +47,7 @@ export default function TicketEditorModal({
 	isEditing,
 	eventRequireApproval,
 	isSaving = false,
+	soldCount,
 }: {
 	isOpen: boolean
 	onClose: () => void
@@ -57,8 +59,11 @@ export default function TicketEditorModal({
 	/** The event-level default an unset per-ticket flag inherits. */
 	eventRequireApproval: boolean
 	isSaving?: boolean
+	/** How many of this ticket are already booked, so the host can see what a cap would mean. */
+	soldCount?: number
 }) {
 	const toast = useToast()
+	const limit = ticketQuantityLimit(ticket as any)
 
 	const save = () => {
 		// Only the title is required — description is optional server-side (zod `.optional()`),
@@ -130,6 +135,41 @@ export default function TicketEditorModal({
 							value={Number.isFinite(ticket.price) ? ticket.price : ""}
 							onChange={(e) => onTicketChange({ ...ticket, price: Math.max(0, parseFloat(e.target.value)) })}
 						/>
+					</FormControl>
+					<FormControl mb={4}>
+						<FormLabel>Quantity Available</FormLabel>
+						{/* Three states, and the field has to be able to express all of them:
+						    blank = unlimited, 0 = stop selling, n = n exist. So an emptied input
+						    sends `null` (an explicit clear) rather than `undefined`, which the
+						    server reads as "not sent, leave it alone" — without that a host could
+						    set a limit and never remove it.
+
+						    A limit BELOW what is already sold saves: the venue shrank and the host
+						    is correcting the record. It closes the ticket, it doesn't cancel
+						    anyone. `Math.max(0, …)` is the real guard, as on Price above. */}
+						<Input
+							type="number"
+							onWheel={blurOnWheel}
+							min={0}
+							step="1"
+							placeholder="Leave blank for unlimited"
+							bg="#090C10"
+							border="1px solid #444"
+							value={limit === null ? "" : limit}
+							onChange={(e) => {
+								const raw = e.target.value
+								onTicketChange({ ...ticket, quantity: raw === "" ? null : Math.max(0, Math.floor(Number(raw))) })
+							}}
+						/>
+						<Text fontSize="12px" color="#868686" mt={1} lineHeight="140%">
+							{limit === null
+								? "Unlimited. Enter a number to cap how many of this ticket can be sold."
+								: limit === 0
+									? "Set to 0 — this ticket is closed and can't be booked."
+									: soldCount !== undefined
+										? `${soldCount} of ${limit} booked, ${Math.max(0, limit - soldCount)} left. Leave blank for unlimited.`
+										: `${limit} available in total. Leave blank for unlimited.`}
+						</Text>
 					</FormControl>
 					<FormControl mb={4}>
 						<Flex align="center" justify="space-between" gap={4}>

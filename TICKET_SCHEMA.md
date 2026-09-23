@@ -2,6 +2,12 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 4 (2026-09-23).** Adds **§10 — per-ticket capacity (`quantity`)**, and changes how
+"how many are left" is worked out: it is now COUNTED FROM THE BOOKINGS, not read from
+`eventtrackers.bookedTickets`. §3's "also create the capacity row" is therefore advisory rather
+than load-bearing — please still write it, but capacity no longer depends on it. Nothing in
+§1–§7a changed otherwise.
+
 **Revision 3 (2026-09-16).** Adds **§6b — Full Concierge is live** (tickets selling it must be
 sellable, how to show its price) and **§7a — the two routing replies** from the checkout endpoints
 (`needsCheckout`, `freeOrder`). Nothing in §1–§6a changed. Written because the app was refusing
@@ -31,6 +37,7 @@ completeness so the two implementations can still be diffed end to end.
   "price": 65,                                    // Number, major units (dollars)
   "stripeProductId": "price_1U16VV…",             // a Stripe PRICE id (see §2)
 
+  "quantity": 50,                                 // NEW — per-ticket capacity, see §10
   "requireApproval": true,                        // OPTIONAL, tri-state — see §5
   "memberships": ["premium"],                     // see §6
   "membershipInterval": "year",                   // see §6
@@ -50,6 +57,7 @@ completeness so the two implementations can still be diffed end to end.
 | `desc` | String | no | Free text; read from the event record for receipts, never from a checkout payload. |
 | `stripeProductId` | String | yes | **A Stripe price id**, despite the name. |
 | `requireApproval` | Boolean | no | `undefined` = inherit `event.requireApproval`. |
+| `quantity` | Number | no | **NEW.** How many of this ticket exist. `undefined` = unlimited, `0` = closed. See §10. |
 | `memberships` | String[] | no | `["premium"]`, `["concierge"]`, or both. `undefined` = fall back to `includesPremium`. |
 | `membershipInterval` | String | no | `"month"` or `"year"`. `undefined` = month. |
 | `membershipFreeMonths` | Number | no | **NEW.** `0`–`12`. `undefined` = none. See §6a. |
@@ -113,13 +121,18 @@ const price = await stripe.prices.create({
 `Math.round` matters: `19.99 * 100` is `1998.9999999999998` in floating point and Stripe rejects a
 non-integer `unit_amount`.
 
-**Also create the capacity row** for a new event, or capacity checks pass silently and the event
-oversells:
+**Also create the capacity row** for a new event:
 
 ```jsonc
 // collection: eventtrackers
 { "eventId": ObjectId("…"), "bookedTickets": 0, "eventCapacity": 150 }   // 0 = unlimited
 ```
+
+**(Rev 4) This is now advisory, not load-bearing.** It used to be the only thing standing between
+an event and unlimited overselling — a missing row meant every capacity check passed silently.
+Capacity is now counted from the bookings themselves (§10), so a missing tracker no longer
+disables the limit. Keep writing it: the admin portal still reads it, and web still keeps it in
+step. Just don't treat it as the source of truth, and never compute remaining spots from it.
 
 ---
 
@@ -131,7 +144,7 @@ Two behaviours to copy exactly.
 `events.tickets` wholesale mints new ids and detaches every existing booking.
 
 **Preserve on omit.** If the payload doesn't mention `requireApproval`, `memberships`,
-`membershipInterval` or `membershipFreeMonths`, keep the stored value:
+`membershipInterval`, `membershipFreeMonths` or `quantity`, keep the stored value:
 
 ```js
 const resolved = incoming.membershipInterval !== undefined
@@ -536,6 +549,9 @@ Rules:
 - [ ] Read `memberships` via the fallback in §6, not the raw field
 - [ ] Read `membershipInterval` via the `=== "year" ? "year" : "month"` rule
 - [ ] Read `membershipFreeMonths` via the clamping resolver in §6a, not the raw field
+- [ ] **(Rev 4)** Read `quantity` via the resolver in §10 — `undefined` is UNLIMITED, `0` is CLOSED
+- [ ] **(Rev 4)** Send `null` to clear a `quantity` back to unlimited; omitting the key means unchanged
+- [ ] **(Rev 4)** Count remaining spots from live bookings (§10), never from `eventtrackers.bookedTickets`
 - [ ] Write `memberships` **and** mirror `includesPremium`
 - [ ] Never write `[]` / `"month"` / `0` / `false` as defaults on a ticket you didn't create —
       omit the key instead
@@ -567,3 +583,128 @@ event's row. Scope every lookup by `eventId`, including anything that increments
 
 `ReferralCodes.freeMembershipMonths` (0–12, `default: 0`) is the field that feeds the `referral`
 side of §6a's combine rule. It is on the `referral-codes` collection, not on the ticket.
+
+---
+
+## 10. NEW (Revision 4) — Per-ticket capacity, and how "how many are left" is worked out
+
+**What changed.** Capacity used to be one number for the whole event (`events.capacity`, mirrored
+onto `eventtrackers`). A host could not say "50 VIP, 200 General". Now every ticket carries its
+own limit, and the event-wide number is legacy.
+
+### Field
+
+```jsonc
+"quantity": 50     // how many of THIS ticket exist, in total
+```
+
+| Stored | Meaning |
+|---|---|
+| **absent / `undefined`** | **UNLIMITED** |
+| `0` | closed — the ticket exists but cannot be booked |
+| `n > 0` | `n` exist in total, across every booking |
+
+**`undefined` is unlimited, and `0` is NOT the same thing.** Every ticket written before this
+field existed has no value, and reading those as "0 left" would take every live event offline at
+once. Never write `0` as a default, and never write the key at all on a ticket the host didn't
+put a number on.
+
+Note this is the opposite convention from `events.capacity`, where `0` means unlimited. They are
+different fields with different histories; don't copy one rule onto the other.
+
+### Resolver — use exactly this logic
+
+```js
+function ticketQuantityLimit(ticket) {
+  const raw = ticket?.quantity
+  if (raw === undefined || raw === null || raw === "") return null   // null = unlimited
+  const value = Math.floor(Number(raw))
+  if (!Number.isFinite(value) || value < 0) return null              // garbage reads as unlimited
+  return value
+}
+
+function remainingForTicket(limit, sold) {
+  return limit === null ? null : Math.max(0, limit - sold)           // null = unlimited
+}
+```
+
+A non-integer or negative value reads as **unlimited**, not as a limit. Refusing a sale because
+of a number nobody typed is the worse failure.
+
+### The wire format has THREE states — this is the important part
+
+| You send | Server does |
+|---|---|
+| key absent | **unchanged** (preserve-on-omit, §4) |
+| `null` (or `""`) | **clear** — the ticket goes back to unlimited |
+| a number | set it, including `0` |
+
+`membershipFreeMonths` gets away with two states because `0` *is* its "none". Here `0` (closed)
+and unlimited are genuinely different, so an explicit clear signal is unavoidable. **A form field
+the host has emptied must send `null`, not omit the key** — otherwise a limit can be set and
+never removed.
+
+### Counting what is left — from the BOOKINGS, not the counter
+
+```js
+// remaining for a ticket = quantity - (live bookings holding that ticket)
+db.bookings.aggregate([
+  { $match: {
+      eventId: ObjectId("…"),
+      isDeleted: { $ne: true },                                       // NOT `false` — see below
+      status:    { $nin: ["cancelled", "rejected", "failed", "pending"] },
+  }},
+  { $unwind: "$tickets" },
+  { $group: { _id: "$tickets.ticketId", sold: { $sum: "$tickets.quantity" } } },
+])
+```
+
+Four rules, each of which was a real bug:
+
+1. **`isDeleted: { $ne: true }`, never `isDeleted: false`.** Rows written directly to this shared
+   collection can carry no `isDeleted` field at all, and an equality match silently drops every
+   one of them. Under-counting oversells the event.
+2. **Classify dead statuses by EXCLUSION, never allow-list the live ones.** `status` is not a
+   closed set — `checked_in` is live in production. An unrecognised status must count as a live
+   seat.
+3. **`pending` does NOT hold a spot.** An approval request consumes nothing until the host
+   approves; the approval endpoint is where the limit bites. This matches what the tracker always
+   did (it only incremented on approval).
+4. **A booking with no ticket rows counts as 1 seat** against the event-wide total, and against no
+   individual ticket.
+
+### The event-wide ceiling still applies
+
+`events.capacity` is **not** removed. The web portal no longer offers an input for it, but a
+stored non-zero value is still honoured as an overall ceiling **on top of** the per-ticket
+limits, so no existing event silently became unlimited. An order is refused if EITHER the
+ticket's own remaining or the event's remaining is short:
+
+```
+ticketRemaining = quantity === undefined ? null : max(0, quantity - soldForThatTicket)
+eventRemaining  = capacity > 0           ? max(0, capacity - totalSeatsSold) : null
+maxSellable     = min(of the non-null ones)       // null when both are null
+```
+
+### What a checkout implementation must do
+
+- **Check before taking money**, not after. There are no refunds, so refusing a sale at
+  fulfilment would mean money taken with no ticket.
+- Show the buyer what is left — a "Sold out" state and a "only N left" line — and cap any
+  quantity stepper at `maxSellable`. A ticket with `quantity: 0` must not be selectable at all.
+- **Do not reject a save because the limit is below what is already sold.** The venue shrank and
+  the host is correcting the record; it closes the ticket, it does not cancel anyone. `remaining`
+  clamps at 0.
+
+### Examples
+
+```jsonc
+// 50 of this ticket, then sold out
+{ "name": "VIP", "price": 120, "stripeProductId": "price_…", "quantity": 50 }
+
+// unlimited — the key is absent, NOT set to 0
+{ "name": "General", "price": 40, "stripeProductId": "price_…" }
+
+// exists but closed; still visible, cannot be booked
+{ "name": "Early Bird", "price": 25, "stripeProductId": "price_…", "quantity": 0 }
+```

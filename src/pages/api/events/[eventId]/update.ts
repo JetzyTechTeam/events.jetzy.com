@@ -72,6 +72,16 @@ const schema = zod.object({
 			description: zod.string().optional(),
 			// `.optional()` and never `.default(false)` — see the preserve-on-omit logic below.
 			requireApproval: zod.boolean().optional(),
+			// Per-ticket capacity. `undefined` = unlimited (what every ticket saved before this
+			// field existed means), `0` = none available, `null` = clear an existing limit back
+			// to unlimited. Nullable AND optional because those are three different answers —
+			// unlike `membershipFreeMonths`, where 0 IS the "none" state.
+			quantity: zod
+				.number({ invalid_type_error: "Enter a whole number of tickets, or leave it blank for unlimited." })
+				.int("Ticket quantity must be a whole number.")
+				.min(0, "Ticket quantity can't be negative. Leave it blank for unlimited.")
+				.nullable()
+				.optional(),
 			// Sells a Jetzy Premium membership with the ticket. Also preserve-on-omit.
 			// Which memberships this ticket sells. Omitted means "unchanged" — see the
 			// preserve-on-omit rule below.

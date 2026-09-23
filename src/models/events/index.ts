@@ -30,6 +30,25 @@ const eventTicketsSchema = new Schema<IEventTicket>(
 			type: Boolean,
 			required: false,
 		},
+		// How many of this ticket exist — the per-ticket capacity.
+		//
+		// NO DEFAULT, deliberately: `undefined` means UNLIMITED, which is what every ticket
+		// saved before this field existed means. A `default: 0` would read as "sold out" and
+		// take every live event offline the first time its event was saved.
+		//
+		// `0` is a real, storable value meaning "none available" — the same asymmetry
+		// `membershipFreeMonths` has, where clearing the field is an answer rather than an
+		// omission. Resolve with `ticketQuantityLimit()` from `src/lib/ticket-quantity.ts`;
+		// never read this field directly.
+		//
+		// How many are LEFT is never stored. It is counted from the bookings themselves
+		// (`src/lib/ticket-availability.ts`) — `EventTracker.bookedTickets` is a mutable
+		// running total that drifts and is missing entirely on events this portal didn't
+		// create, which is what made event capacity unenforceable.
+		quantity: {
+			type: Number,
+			required: false,
+		},
 		// Which memberships this ticket SELLS alongside the ticket itself — Jetzy Premium,
 		// Full Concierge, or both. A buyer who doesn't already hold one is charged the ticket
 		// price PLUS the first period of each; the subscriptions themselves are created after

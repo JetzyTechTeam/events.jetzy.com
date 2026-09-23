@@ -51,11 +51,14 @@ src/
 ### `src/models/events/index.ts` — IEvent
 Fields: slug (unique), name, privacy (public/private/group), status (draft/published), startsOn, endsOn, timezone, location, venueName, coordinates (long/lat/placeId), locationDisclosedAfterBooking, desc, images[], videos[], capacity, requireApproval, showParticipants, tickets[] (IEventTicket), questions[] (ICustomQuestion), datePoll (IDatePoll), host (name/email/phone), ownerId, feedbackFormUrl, thankYouEmailSentAt, benefits, isDeleted
 
+- `tickets[].quantity` — **per-ticket capacity. No default**: `undefined` = unlimited, `0` = closed. Resolve with `ticketQuantityLimit()` from `src/lib/ticket-quantity.ts`, never raw. See "Feature: Per-ticket capacity".
+- `capacity` — event-wide ceiling, **legacy**. No host-facing input any more, but a stored non-zero value is still enforced on top of the per-ticket limits. `0` = unlimited (the opposite of `tickets[].quantity`).
+
 ### `src/models/events/types.ts` — type definitions
 IEvent, IEventTicket, ICustomQuestion, IDatePoll, IDatePollOption, IBookings, IEventTracker, IReferralCode
 
 ### `src/models/events/bookings.ts` — IBookings
-Fields: bookingRef (unique), eventId, bookerUserId?, tickets[], status (pending/approved/confirmed/cancelled/rejected/failed/refunded), customerName, customerEmail, customerPhone, subTotal, tax, total, referralCode, discountAmount, customAnswers[], payment{}, **cancelledAt?**, **cancelledBy?** (`guest|host|admin`, no defaults)
+Fields: bookingRef (unique), eventId, bookerUserId?, tickets[], status (pending/approved/confirmed/cancelled/rejected/failed/refunded), customerName, customerEmail, customerPhone, subTotal, tax, total, referralCode, discountAmount, customAnswers[], payment{}, **cancelledAt?**, **cancelledBy?** (`guest|host|admin`, no defaults), **ticketsEditedAt?**, **ticketsEditedBy?** (`host|admin`), **ticketsEditHistory?** (all no defaults)
 
 - `status` also carries values this repo never writes — **`checked_in` is live in production** (written by the mobile app / admin portal against the shared collection). Never treat `BookingStatus` as an exhaustive allowlist; classify by exclusion (`!isPending && !isCancelled`) instead.
 - `status: "refunded"` has **never been written** — see "No refunds" below.
@@ -174,6 +177,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | GET | `/api/events/[eventId]/event-bookings` | event bookings |
 | GET | `/api/events/[eventId]/participants` | participants |
 | GET | `/api/events/[eventId]/totals` | totals |
+| GET | `/api/events/[eventId]/availability` | **public** — spots left per ticket + event-wide. Counts only, no PII, `no-store`. |
 | GET/POST | `/api/events/[eventId]/referral-codes` | admin OR owner |
 | PUT/DELETE | `/api/events/[eventId]/referral-codes/[codeId]` | admin OR owner |
 | GET | `/api/events/[eventId]/referral-codes/[codeId]/stats` | admin OR owner |
@@ -251,6 +255,8 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/preview` — **GET, unauthenticated, keyed by `bookingRef`.** Backs the emailed cancel link (`/cancel-booking`). Returns only event name/slug/date, ticket count, money state and cancel eligibility. **Never** returns customer email, phone, custom answers or Stripe ids — the ref is a bearer token and a leaked one must not harvest PII.
 
 `/api/bookings/cancel` — POST `{ bookingRef }`. Session ⇒ admin, event owner, or the booker; no session ⇒ `bookingRef` as bearer token (email link). **Guests and bearer-token callers are held to the event-start cutoff** (`canGuestCancel`); admins/owners are not. Releases an uncaptured hold, **never refunds**, sets `cancelledAt`/`cancelledBy`, deletes the `CheckIn` row, decrements `EventTracker` only when the booking was CONFIRMED, then emails guest (`sendBookingCancellation`) + host and `ADMIN_NOTIFICATION_EMAIL` (`sendHostCancellationNotice`). Both emails are best-effort. Returns `{ booking, moneyState, releasedAmount, cancelledBy }`.
+
+`/api/bookings/update-tickets` — POST `{ bookingRef, tickets: [{ ticketId, quantity }] }`. **Session required** (no bearer path), admin OR event owner. **Free bookings only** — refuses `hold`/`captured`/`released`/`unknown`. Ticket set must be an exact permutation of the stored one; capacity re-checked on increase (this booking excluded); check-in count is a floor. Money fields untouched. Adjusts `EventTracker` by the delta via `adjustBookedTickets`, only when the booking was CONFIRMED. Writes `ticketsEditedAt`/`ticketsEditedBy`/`ticketsEditHistory`.
 
 `/api/bookings/my-for-event` — GET `?eventId`. The caller's live booking for one event, plus `moneyState`/`moneyAmount`/`canCancel`. Excludes CANCELLED/REJECTED/FAILED.
 
@@ -3027,3 +3033,60 @@ stale one opening the dialog on an unrelated later arrival.
 - **Backend follow-ups (2026-09-22):** 9e10f0fc pushed to prod-v2 (176a79c7) — confirm the App Runner deploy is live before the web prod deploy. `Users.signupSource` (`web_login|web_album|web_premium`, written only when login-code CREATES the account) is on staging (d30179e4), prod pending our check. `AuthLib.createUser()` sends an in-app welcome only, NO email — so the album welcome email is NOT a duplicate; keep it. Existing album stub accounts are not backfilled (not needed).
 - **`settings.profile.isCompleted` / `hasPicture` are dead flags** — set false once when Settings is created and never written by anything (not PUT /accounts, not sync_location), for every account. The backend's real calculator (`ProfileCompletionService`: name/image/interests/location/gender) only feeds a one-time notification and a reminder cron, and is not in GET /accounts. **Never read those two flags.** The web computes completeness itself (`profileMissingFields`). The mobile app decides its "complete your profile" screen from the USER FIELDS (image, firstName, dob, gender), not these flags (mobile team, 2026-09-22) — so a profile completed on web satisfies the app, and no backend fix is needed.
 - **Post-payment polish (2026-09-23).** `usePostPurchaseProfile` exposes a **"Finishing up…" overlay** while the profile check is in flight, and every door starts that check BESIDE the confirm request rather than after it — the member / "under review" card used to show for about a second before the form covered it. The profile form's **city suggestions are our own list, drawn inside the dialog** (`usePlacesAutocompleteService`, deep-imported; predictions + `getDetails` under one session token) — Google's `.pac-container` is attached to `<body>` and landed off-screen or over the dialog edge in a centred modal. Coordinates still come from `placeToProfileLocation(details)`. `EventLocationField` and the event forms keep `usePlacesWidget` — unchanged.
+
+## Feature: Per-ticket capacity
+
+Capacity used to be one number for the whole event and, in practice, was not enforced at all.
+
+**What was broken**
+- `api/checkout/free-events.ts` had **no capacity check whatsoever**. Every free ticket, every RSVP and every order a referral code discounted to $0 is routed there, so all of them bypassed the limit. This was the main symptom.
+- The three places that did check were written `if (eventTracker)`. `EventTracker` rows are only created by `api/events/create.ts` and `clone.ts`, so any event written by the mobile app, an import or a direct DB insert had no tracker and was **silently unlimited forever** — and changing its capacity did nothing.
+- The counter drifts: `api/bookings/delete.ts` decremented with a bare `$inc: -n` that could go negative, which *inflates* the availability every reader computes from it, and the non-atomic `bookedTickets += n; save()` loses concurrent writes.
+- Two sources of truth: `checkout/index.ts` read `event.capacity` for the limit but `tracker.bookedTickets` for the usage, while `approve.ts` read `tracker.eventCapacity`.
+- There was no way to express "50 VIP, 200 General", and nothing anywhere showed a guest how many spots were left or that a ticket had sold out.
+
+**The model now**
+- `eventTicketsSchema.quantity` — Number, **no default**. `undefined` = unlimited, `0` = closed, `n` = n exist. Opposite convention to `event.capacity`, where `0` means unlimited.
+- Remaining is **counted from the bookings** (`src/lib/ticket-availability.ts`), not read from a counter. `EventTracker` is still written everywhere it was, as a mirror the mobile app and admin portal read.
+- `event.capacity` keeps working as an **overall ceiling** on top of the per-ticket limits, so no live event became unlimited. Its input was removed from all three host forms; the schema field and the tracker resync are untouched.
+
+**Files**
+- `src/lib/ticket-quantity.ts` — pure/isomorphic: `ticketQuantityLimit`, `remainingForTicket`, `isSoldOut`, `remainingMessage`, `notEnoughLeftMessage`, `LOW_STOCK_THRESHOLD`. The event page imports these, so it must never reach mongoose.
+- `src/lib/ticket-availability.ts` — server only: `getEventAvailability`, `checkSelection`, `verifyAvailability`. One `$facet` aggregation.
+- `src/pages/api/events/[eventId]/availability.ts` — public, counts only, `Cache-Control: no-store`.
+- Enforcement: `api/checkout/index.ts`, `api/checkout/free-events.ts` (new), `api/bookings/approve.ts`, `api/waiting-list/approve.ts`.
+- Host input: `TicketEditorModal.tsx`, the duplicated inline modal in `console/events/create.tsx`, `TicketData` in `TicketCard.tsx`, manage's two mappers, `HostedEvents.tsx`'s seed + PATCH. Server: three zod copies + `resolveTickets`.
+- Guest UI: `EventTicketsComponent.tsx` — stepper cap, "Sold out" / "Only N left" badges, blocked selection.
+
+**Rules that must not be broken**
+- Never `default: 0` on `quantity`. It reads as sold out and takes every live event offline on the next save.
+- Count with `isDeleted: { $ne: true }`, never `isDeleted: false` — shared-collection rows may carry no such field, and dropping them oversells.
+- Classify dead statuses by exclusion (`$nin`), never allow-list live ones — `checked_in` is live in production.
+- `PENDING` does not hold a spot. `approve.ts` is where the limit bites, and it excludes the booking being approved.
+- Fulfilment deliberately does **not** re-check. The card is already charged and there are no refunds. The check-then-act race at session creation is accepted, as it already is for `PREMIUM_TICKET_LIMIT_PER_EVENT`.
+- The wire format is three-valued: absent = unchanged, `null` = clear to unlimited, number = set. An emptied form field sends `null`.
+- A limit below what is already sold **saves** — the venue shrank and the host is correcting the record. It closes the ticket; it cancels nobody.
+
+Mobile contract: `TICKET_SCHEMA.md` §10 (Revision 4).
+
+## Feature: Booking notifications routed to the host
+
+Before this, a new booking emailed the buyer and the hardcoded `tech@jetzyapp.com`, and nothing else. Approval requests on a host-created event went to Jetzy's admin inbox rather than to the host who has to act on them. `sendOrganizerSaleNotification` had existed in `send-grid.ts` with the right shape and **zero call sites**.
+
+- `src/lib/booking-notify.ts` — `resolveBookingAudience`, `notifyApprovalRequest`, `notifyApprovalApproved`, `notifyTicketSold`. Mirrors `event-approval-notify.ts`.
+- **Admin-owned event → unchanged.** **Non-admin-owned event → the owner alone**, Jetzy's copy dropped. Anything unresolvable falls back to the admin inbox.
+- `sendAdminApprovalNotice` gained `audience` + `to` rather than a host-facing twin; `host` uses `mailFrom()` and `replyTo` the guest.
+- Call sites: `checkout-fulfillment.ts` (both branches), `checkout/free-events.ts` (both branches), `bookings/approve.ts`, `waiting-list/approve.ts`.
+- Never put notify logic inside `sendTicketConfirmation` — five hardcoded per-event templates early-return from it.
+
+## Feature: Host/admin edits a free booking's quantity
+
+`POST /api/bookings/update-tickets` — the only endpoint that mutates a booking's contents after creation.
+
+- **Free bookings only** (`bookingMoneyState === "free"`). Paid editing is deferred pending the CEO; the console offers no Edit button for one.
+- Only the quantities of tickets already on the booking; the submitted set must be an exact permutation of the stored set.
+- Capacity re-checked on increase only, with this booking excluded from the count. Check-in count is a floor.
+- Money fields are never recomputed — no money moved, and rewriting `subTotal` on a 100%-discounted order would change what the growth report says that code achieved.
+- `src/lib/event-tracker-sync.ts` (`adjustBookedTickets`, `bookingConsumedCapacity`) applies the delta, clamped. `bookings/delete.ts` now routes through it, which clamps its previously-unclamped `$inc`.
+- Audit: `ticketsEditedAt`, `ticketsEditedBy`, `ticketsEditHistory` on the booking (no defaults).
+- UI: `EditBookingTicketsDialog.tsx` + an Edit action in `BookingEventsDetailsTable.tsx` (`eventTickets` prop supplies the names).

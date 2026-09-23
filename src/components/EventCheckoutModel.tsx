@@ -436,6 +436,15 @@ export default function EventCheckoutModel({ event, eventData }: { event: string
 				}),
 			})
 			const result = await response.json()
+			// BEFORE the success branch, not after it. `atCapacity` is a routing verdict and
+			// comes back with `status: true` (the paid path does the same, so the two replies
+			// stay symmetrical) — reading `result.status` first would show a registration
+			// confirmation and a booking reference of `undefined` to someone who got nothing.
+			if (result.data?.atCapacity) {
+				setWaitingListData(result.data)
+				setShowWaitingList(true)
+				return
+			}
 			if (result.status) {
 				setFreeBookingRef(result.data?.bookingRef)
 				if (result.data?.pendingApproval) {

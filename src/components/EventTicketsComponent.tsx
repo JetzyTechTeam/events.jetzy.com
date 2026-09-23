@@ -2,7 +2,8 @@ import {
   setSelectedTickets,
   toggleCheckoutForm,
 } from "@Jetzy/redux/reducers/checkoutSlice";
-import { useAppDispatch } from "@Jetzy/redux/stores";
+import { useAppDispatch, useAppSelector } from "@Jetzy/redux/stores";
+import { getCheckoutStore } from "@Jetzy/redux/reducers/checkoutSlice";
 import React, { useRef, useState } from "react";
 import { waitUntil } from "@Jetzy/lib/utils";
 import Spinner from "./misc/Spinner";
@@ -36,6 +37,8 @@ import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionRetu
 import { useRouter } from "next/router";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { isPreviewQuery } from "@/lib/event-preview";
+import { LOW_STOCK_THRESHOLD, notEnoughLeftMessage, remainingMessage } from "@/lib/ticket-quantity";
+import type { EventAvailability } from "@/lib/ticket-availability";
 
 type Props = {
   event: IEvent;
@@ -132,6 +135,50 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
 
   const eventId = event._id.toString();
 
+  // How many spots are left, per ticket and overall.
+  //
+  // Fetched client-side rather than passed through props: `HostedEvents` is already
+  // `ssr: false`, so there is no server-rendered first paint to improve, and a number baked
+  // into props goes stale the moment the visitor sits on the page. `refetch` runs when the
+  // checkout modal closes.
+  //
+  // Only the TYPE is imported from `ticket-availability` (server-only); the runtime helpers
+  // come from the pure `ticket-quantity`, or webpack would pull the models into this bundle.
+  const { data: availability, refetch: refetchAvailability } = useQuery<EventAvailability>({
+    queryKey: ["event-availability", eventId],
+    queryFn: async () => {
+      const res = await fetch(`/api/events/${eventId}/availability`);
+      // Not `new Error(...)`: `Error` in this file is the toaster helper, not the global.
+      if (!res.ok) return Promise.reject("Failed to load availability");
+      return res.json();
+    },
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
+
+  /** How many of this ticket are left. `null` = unlimited (no limit, or not loaded yet). */
+  const remainingFor = (ticketId: string): number | null => {
+    if (!availability) return null;
+    const row = availability.tickets.find((t) => t.ticketId === ticketId);
+    const ticketRemaining = row?.remaining ?? null;
+    const eventRemaining = availability.eventRemaining;
+    // The event ceiling composes on top of the per-ticket limit — whichever bites first.
+    const limits = [ticketRemaining, eventRemaining].filter((n): n is number => n !== null);
+    return limits.length > 0 ? Math.min(...limits) : null;
+  };
+
+  const isSoldOutFor = (ticketId: string) => remainingFor(ticketId) === 0;
+
+  // Re-count when the checkout modal closes. A buyer who books and comes back (the free path
+  // for an app buyer doesn't reload, and an abandoned checkout doesn't either) would otherwise
+  // keep looking at the number the page mounted with.
+  const { showCheckout } = useAppSelector(getCheckoutStore);
+  const wasCheckoutOpen = useRef(false);
+  React.useEffect(() => {
+    if (wasCheckoutOpen.current && !showCheckout) refetchAvailability();
+    wasCheckoutOpen.current = showCheckout;
+  }, [showCheckout, refetchAvailability]);
+
   // Checkout funnel instrumentation.
   //
   // `ticket_select` and `booking_start` have been accepted by the API and read by the funnel
@@ -169,16 +216,20 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     // Pressing `+` from zero selects the ticket without ever going through
     // handleTicketSelection, so the funnel would miss everyone who buys that way.
     const stepped = tickets.find((t) => t.id === id);
+    if (delta > 0 && isSoldOutFor(id)) return;
     if (stepped && delta > 0 && stepped.quantity === 0) {
       reportTicketSelected(id, stepped.name);
     }
 
     setTickets((prevTickets) =>
       prevTickets.map((ticket, index) => {
-        // A Premium ticket also sells a membership, so it is capped. Everything else is
-        // unbounded, as before. The `+` button is disabled at the cap too — this clamp is
-        // the backstop for a rapid double-click landing two increments in one batch.
-        const maxQty = ticket.memberships.length > 0 ? PREMIUM_TICKET_MAX_PER_ORDER : Infinity;
+        // Two independent caps, whichever bites first: a Premium ticket also sells a
+        // membership and is capped per order, and any ticket may have a capacity limit.
+        // The `+` button is disabled at both — this clamp is the backstop for a rapid
+        // double-click landing two increments in one batch.
+        const membershipCap = ticket.memberships.length > 0 ? PREMIUM_TICKET_MAX_PER_ORDER : Infinity;
+        const stockCap = remainingFor(ticket.id) ?? Infinity;
+        const maxQty = Math.min(membershipCap, stockCap);
         const newQty = Math.min(maxQty, Math.max(0, ticket.quantity + delta));
         const ticketItem = ticketsItems[index];
 
@@ -196,6 +247,11 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
   };
 
   const handleTicketSelection = (id: string) => {
+    // A sold-out ticket can't be picked at all. The stepper only renders on a paid event
+    // (see the `event.isPaid` gate below), so on a FREE event this is the only thing standing
+    // between a visitor and a booking for a ticket that has none left.
+    const target = tickets.find((t) => t.id === id);
+    if (target && !target.isSelected && isSoldOutFor(id)) return;
     // Only the turning-ON edge counts. De-selecting is not a funnel step, and counting it
     // would let one undecided visitor inflate "Picked a ticket" by toggling.
     const picked = tickets.find((t) => t.id === id);
@@ -242,6 +298,18 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
     if (overCapKey) {
       setLoader(false);
       Error("Too many tickets", premiumOrderCapMessage(overCapKey));
+      return;
+    }
+
+    // Same backstop for capacity. The real enforcement is server-side in `api/checkout` and
+    // `api/checkout/free-events` — this only stops someone reaching the modal for a ticket
+    // the page already knows is gone, so they aren't asked to fill a form that can't succeed.
+    const overStock = tickets.find(
+      (t) => t.isSelected && remainingFor(t.id) !== null && Math.max(1, t.quantity) > remainingFor(t.id)!,
+    );
+    if (overStock) {
+      setLoader(false);
+      Error("Not enough tickets", notEnoughLeftMessage(remainingFor(overStock.id)!, overStock.name));
       return;
     }
 
@@ -447,6 +515,19 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                     {/* The long form of this pill ("card authorized, charged on approval") is
                         three wrapped lines on a 360px screen. The short form carries the same
                         warning; the full sentence is in the notice above the list. */}
+                    {/* Sold out / low stock. Rendered on the CARD, not beside the stepper,
+                        because the stepper only exists on a paid event — a free event needs
+                        to show this too. */}
+                    {remainingFor(ticket.id) === 0 ? (
+                      <span className="inline-block mt-2 mr-2 text-[10px] font-semibold uppercase tracking-wide text-gray-300 bg-gray-500/20 border border-gray-500/50 rounded px-2 py-0.5">
+                        Sold out
+                      </span>
+                    ) : remainingFor(ticket.id) !== null && remainingFor(ticket.id)! <= LOW_STOCK_THRESHOLD ? (
+                      <span className="inline-block mt-2 mr-2 text-[10px] font-semibold uppercase tracking-wide text-[#F5C518] bg-[#F5C518]/15 border border-[#F5C518]/40 rounded px-2 py-0.5">
+                        Only {remainingFor(ticket.id)} left
+                      </span>
+                    ) : null}
+
                     {ticket.requireApproval && (
                       <span className="inline-block mt-2 text-[10px] font-semibold uppercase tracking-wide text-[#F79432] bg-[#F79432]/15 border border-[#F79432]/40 rounded px-2 py-0.5">
                         Approval required
@@ -492,11 +573,16 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                           <button
                             aria-label="Increase quantity"
                             onClick={() => handleQuantityChange(ticket.id, 1)}
-                            disabled={ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER}
+                            disabled={
+                              (ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER) ||
+                              (remainingFor(ticket.id) !== null && ticket.quantity >= remainingFor(ticket.id)!)
+                            }
                             title={
                               ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER
                                 ? premiumOrderCapMessage(ticket.memberships[0])
-                                : undefined
+                                : remainingFor(ticket.id) !== null && ticket.quantity >= remainingFor(ticket.id)!
+                                  ? remainingMessage(remainingFor(ticket.id)!, ticket.name)
+                                  : undefined
                             }
                             className="bg-black text-white w-9 h-9 rounded-full flex items-center justify-center text-lg hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-black"
                           >
@@ -504,11 +590,15 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                           </button>
                         </div>
                         {/* Say why the stepper stopped, rather than leaving a dead button. */}
-                        {ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER && (
+                        {ticket.memberships.length > 0 && ticket.quantity >= PREMIUM_TICKET_MAX_PER_ORDER ? (
                           <p className="text-xs flex-1 min-w-[140px]" style={{ color: "#F5C518" }}>
                             {premiumOrderCapMessage(ticket.memberships[0])}
                           </p>
-                        )}
+                        ) : remainingFor(ticket.id) !== null && ticket.quantity >= remainingFor(ticket.id)! ? (
+                          <p className="text-xs flex-1 min-w-[140px]" style={{ color: "#F5C518" }}>
+                            {remainingMessage(remainingFor(ticket.id)!, ticket.name)}
+                          </p>
+                        ) : null}
                       </div>
                     )}
                   </div>

@@ -41,7 +41,6 @@ import { usePlacesWidget } from "react-google-autocomplete";
 import {
   LocationSVG,
   LockSVG,
-  MultipleUsersSVG,
   PlusSVG,
   TicketSVG,
   UserTickSVG,
@@ -80,6 +79,7 @@ import TicketMembershipToggles from "@/components/events/TicketMembershipToggles
 import { SortableTicketList, SortableTicketItem } from "@/components/events/SortableTicketList";
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
 import { blurOnWheel } from "@/lib/number-input"
+import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
 
@@ -815,18 +815,16 @@ const CreateEventPage = () => {
                       onChange={() => setFieldValue("requireApproval", !values.requireApproval)}
                     />
                   </Flex>
-                  <Flex align="center" justifyContent="space-between" mb={4}>
-                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
-                      <MultipleUsersSVG />
-                      <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Capacity</Text>
-                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Maximum number of attendees</Text>
-                      </Box>
-                    </Flex>
-                    {/* `min={0}` alone doesn't stop the host typing -5 — it only constrains the
-                        spinner and native form validation. Blocking the key does. */}
-                    <Field as={Input} type="number" min={0} onWheel={blurOnWheel} onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "-") e.preventDefault() }} value={values.capacity ?? ""} placeholder="0" name="capacity" bg="#090C10" color="white" border="1px solid #343536" w="90px" h="36px" />
-                  </Flex>
+                  {/* Event-wide Capacity was REMOVED from this form. Capacity is set PER TICKET now
+                        (the "Quantity Available" field in the ticket editor), which is what the
+                        mobile app shares and what the ticket cards and checkout enforce.
+
+                        The stored `event.capacity` field is NOT gone: a non-zero value left on an
+                        existing event is still honoured as an overall ceiling by
+                        `src/lib/ticket-availability.ts`, so no live event silently becomes
+                        unlimited. Nothing new sets it, which is why the input is gone rather than
+                        the field. `capacity: 0` stays in this form's initial values so the
+                        outgoing payload shape is unchanged. */}
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <LocationSVG />
@@ -1100,6 +1098,39 @@ const CreateEventPage = () => {
                             })
                           }
                         />
+                      </FormControl>
+                      {/* KEEP IN STEP WITH TicketEditorModal — this modal is a duplicate of it,
+                          not a caller. Three states: blank = unlimited, 0 = closed, n = n exist,
+                          so an emptied field sends `null` (explicit clear), never `undefined`,
+                          which the server reads as "not sent, leave it alone". */}
+                      <FormControl mb={4}>
+                        <FormLabel>Quantity Available</FormLabel>
+                        <Input
+                          id="ticketQuantity"
+                          name="ticketQuantity"
+                          type="number"
+                          onWheel={blurOnWheel}
+                          min={0}
+                          step="1"
+                          placeholder="Leave blank for unlimited"
+                          bg="#090C10"
+                          border="1px solid #444"
+                          value={ticketQuantityLimit(tempTicket as any) === null ? "" : ticketQuantityLimit(tempTicket as any)!}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            setTempTicket({
+                              ...tempTicket,
+                              quantity: raw === "" ? null : Math.max(0, Math.floor(Number(raw))),
+                            })
+                          }}
+                        />
+                        <Text fontSize="12px" color="#868686" mt={1} lineHeight="140%">
+                          {ticketQuantityLimit(tempTicket as any) === null
+                            ? "Unlimited. Enter a number to cap how many of this ticket can be sold."
+                            : ticketQuantityLimit(tempTicket as any) === 0
+                              ? "Set to 0 — this ticket is closed and can't be booked."
+                              : `${ticketQuantityLimit(tempTicket as any)} available in total. Leave blank for unlimited.`}
+                        </Text>
                       </FormControl>
                       <FormControl mb={4}>
                         <Flex align="center" justify="space-between" gap={4}>
