@@ -53,6 +53,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Blast not found", false, ResCode.NOT_FOUND)
 		}
 
+		// The full record INCLUDING per-recipient delivery outcomes. Its own method rather than
+		// widening the list above, because the recipient array is large and only wanted when a
+		// host actually opens a blast to ask who didn't get it.
+		if (req.method === "GET") {
+			return sendResponse(res, blast, "Blast retrieved successfully", true, ResCode.OK)
+		}
+
 		if (req.method === "PATCH") {
 			const validation = updateBlastSchema.safeParse(req.body)
 			if (!validation.success) {

@@ -34,10 +34,28 @@ const SENDER_NAME = "Jetzy"
 /** Where unwatermarked-photo requests are worked. Override with PHOTO_REQUEST_NOTIFICATION_EMAIL. */
 const PHOTO_REQUEST_INBOX = "tech@jetzyapp.com"
 
-const mailFrom = (email?: string) => ({
+/**
+ * `name` is a SCOPED exception to the one-sender-name rule above, not a loosening of it.
+ *
+ * Every guest-facing transactional email still uses `SENDER_NAME`. The exception exists for
+ * BLASTS on a host-owned event, which are written by the host and must read as coming from them
+ * — "Anna Khan via Jetzy" — or the guest gets a message about Anna's event that appears to come
+ * from a company they've never dealt with. Use `blastSenderName()` below; don't pass a raw name.
+ *
+ * The ADDRESS never moves. It cannot: SendGrid rejects an unverified sender outright, and a
+ * host's own address sent through our account fails SPF/DMARC alignment. Identity rides on the
+ * display name and `replyTo`.
+ */
+export const mailFrom = (email?: string, name?: string) => ({
 	email: (email || (process.env.SENDGRID_EMAIL_SENDER as string))?.trim(),
-	name: SENDER_NAME,
+	name: name || SENDER_NAME,
 })
+
+/** "Anna Khan via Jetzy". Never the host's address — that cannot go in `from`. */
+export const blastSenderName = (hostName?: string) => {
+	const trimmed = (hostName || "").trim()
+	return trimmed ? `${trimmed} via ${SENDER_NAME}` : SENDER_NAME
+}
 
 
 const CONTACT_EMAIL = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim() || "contact@jetzyapp.com"

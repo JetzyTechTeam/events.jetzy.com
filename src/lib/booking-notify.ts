@@ -30,22 +30,16 @@ export type BookingAudience = { mode: "admin" } | { mode: "owner"; email: string
 /**
  * The owner's address, but only when they are NOT an admin.
  *
- * `findUserRecord` searches BOTH `Users` and `EventUsers` — one person can hold a document in
- * either, and `ownerId` may point at either one. Never `Users.findById` alone.
+ * The lookup itself lives in `src/lib/event-owner.ts` — one definition, shared with blast
+ * sender identity. It searches BOTH `Users` and `EventUsers` (one person can hold a document in
+ * either, and `ownerId` may point at either one) and never throws; `null` means "couldn't
+ * resolve", which lands on the admin inbox exactly as an admin owner does.
  */
 export async function resolveBookingAudience(event: NotifiableEvent): Promise<BookingAudience> {
-	try {
-		if (!event?.ownerId) return { mode: "admin" }
-		const { findUserRecord } = await import("@/lib/premium")
-		const { isAdminRole } = await import("@/lib/default-referral-codes")
-		const record = await findUserRecord(String(event.ownerId))
-		const doc = record?.doc
-		if (!doc?.email || isAdminRole(doc.role)) return { mode: "admin" }
-		return { mode: "owner", email: doc.email, firstName: doc.firstName || undefined }
-	} catch (error: any) {
-		console.error("[booking-notify] Owner lookup failed, falling back to the admin inbox:", error?.message || error)
-		return { mode: "admin" }
-	}
+	const { resolveEventOwner } = await import("@/lib/event-owner")
+	const owner = await resolveEventOwner(event)
+	if (!owner || owner.isAdmin) return { mode: "admin" }
+	return { mode: "owner", email: owner.email, firstName: owner.firstName }
 }
 
 /**

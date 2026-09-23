@@ -3091,3 +3091,34 @@ Before this, a new booking emailed the buyer and the hardcoded `tech@jetzyapp.co
 - `src/lib/event-tracker-sync.ts` (`adjustBookedTickets`, `bookingConsumedCapacity`) applies the delta, clamped. `bookings/delete.ts` now routes through it, which clamps its previously-unclamped `$inc`.
 - Audit: `ticketsEditedAt`, `ticketsEditedBy`, `ticketsEditHistory` on the booking (no defaults).
 - UI: `EditBookingTicketsDialog.tsx` + an Edit action in `BookingEventsDetailsTable.tsx` (`eventTickets` prop supplies the names).
+
+# Feature: Blast sender identity + delivery detail
+
+## Blasts carry the host's identity (IMPLEMENTED 2026-09-23)
+- **Blasting was ALREADY open to non-admin owners** — the Blasts tab has no admin gate and `send-blast.ts` accepts admin-or-owner. Nothing was ungated. What changed is who the mail says it is FROM.
+- **The host's address CANNOT go in `from`.** SendGrid rejects an unverified sender outright, and a host address sent through our account fails SPF/DMARC alignment. Identity rides on the **display name** (`"Anna Khan via Jetzy"`) and **`replyTo`** — the same shape `sendSupportRequestNotice` and `sendEventReviewAdminNotice` already use. Don't "fix" this by putting the host in `from`.
+- **`mailFrom` is now exported and takes an optional `name`.** That is a SCOPED exception to the one-sender-name rule, for blasts only — every transactional email still uses `SENDER_NAME`. Use **`blastSenderName(hostName)`**, never a raw name. The ADDRESS never moves.
+- `send-blast.ts` used to pass `from` as a **bare address string**, which is why blasts rendered as "contact" — it bypassed `send-grid.ts` entirely. It goes through `mailFrom()` now.
+- **Admin-owned event, no `ownerId`, or an owner we can't resolve → plain "Jetzy", no `replyTo`** — exactly today's behaviour. `resolveEventOwner` never throws. A blast must not fail because the host couldn't be identified.
+- **Use `src/lib/event-owner.ts` (`resolveEventOwner`)** — the ONE owner lookup. It had grown three copies (`booking-notify.ts`, `bookings/cancel.ts`, and nearly a third here). It goes through `findUserRecord`, which searches **both** `Users` and `EventUsers`; `Users.findById` alone misses every owner who signed up through this portal. `resolveBookingAudience` now delegates to it.
+- **The footer changed on host events.** It told the guest to contact `contact@jetzyapp.com` about a question only the host could answer. It now says replying reaches the host, and names them. Admin events keep the old footer.
+
+## Blast delivery detail — who didn't get it, and why (IMPLEMENTED 2026-09-23)
+- **`Blasts.recipients[]`** records one row per addressee: `email`, `name`, `status`, `reason`, `respondedAt`. Plus `sentFromName` / `sentReplyTo` for audit. **No defaults on any of them** — absent means a blast sent before this existed, which is not the same as one sent as "Jetzy" to nobody.
+- **Use `src/lib/blast-delivery.ts`** — pure/client-safe (the console imports the labels), so it must never touch mongoose. `describeDeliveryFailure` turns a raw SMTP string (`"550 5.1.1 ... does not exist"`) into a sentence a host can act on; the raw text is stored and still shown underneath, because support needs it.
+- **TWO failure moments, and they are not the same thing.** `failed` = SendGrid refused at send time, known immediately. `bounced`/`blocked`/`spam_report` = accepted, then refused by the receiving server, arriving **minutes to hours later** over the event webhook. So a row legitimately reads "Delivered" and changes afterwards — that is accurate, not a glitch, and it is why `status` is not frozen at send time.
+- **`sendgrid-webhook.ts` attributes a bounce back to the blast** (`recordBlastBounce`). It updates only the **most recent** blast to that address — retro-marking five past blasts would rewrite history that was true when they were sent. Matched **case-insensitively**: `Bookings.customerEmail` has no `lowercase: true`, so a row can hold `Anna@Example.com` while SendGrid reports `anna@example.com`. Best-effort, and the handler still always returns 200 or SendGrid retries forever.
+- `status` has **no enum** — the webhook is an external source and an unrecognised value must be storable, not rejected mid-write.
+- **The blast record is now written even when every send failed.** It was `if (succeeded > 0)`, which threw the record away exactly when the host most needed it.
+- **`recipients` is excluded from the blast LIST query** (`.select("-recipients")`) and served by a new `GET /api/events/[eventId]/blasts/[blastId]`. A 2,000-guest blast is a 2,000-entry array and the history renders five rows of counts.
+- **Copy must not claim suppression that doesn't exist.** The spam-report line states the consequence, not that we removed the address — there is no opt-out list yet (see below).
+
+## Blast gaps still open (NOT addressed 2026-09-23)
+Deliberately out of scope; all pre-existing, none introduced by the identity work.
+- **No unsubscribe link anywhere on a blast**, while `terms.tsx` promises one. The intended fix is a SendGrid ASM unsubscribe group — it supplies the link, hosts the page, sets the `List-Unsubscribe` headers Gmail/Yahoo now require, and suppresses per-group so ticket confirmations are unaffected. Needs a one-time dashboard setup per environment.
+- **`emailBounced` is recorded on the user and never read before sending**, so a dead address is re-mailed on every blast. All hosts share ONE sending domain, so one host's stale list degrades delivery for ticket confirmations and password resets too.
+- **No rate limit on `send-blast.ts`** at all, while `src/lib/rate-limit.ts` is the house pattern.
+- **`subject` / `message` are interpolated into the HTML unescaped.**
+- **One SendGrid call per recipient, all concurrent, no chunking** — a 2,000-guest event opens 2,000 simultaneous connections in one serverless invocation.
+- **`targetType: "all"` ignores `status`** and mails cancelled, failed and refunded bookings; neither branch filters `isDeleted`.
+- `send-invites.ts` has the same bare-string `from`, no `replyTo`, and uses `Promise.all` rather than `allSettled` — one rejection fails the request after mail has already gone out.

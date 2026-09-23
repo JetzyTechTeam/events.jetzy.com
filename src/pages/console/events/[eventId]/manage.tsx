@@ -92,6 +92,13 @@ import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { apportionRevenue, describeDiscount, describePriceChange, isOnHold } from "@/lib/booking-revenue"
 import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
+import {
+	BLAST_STATUS_COLOR,
+	BLAST_STATUS_LABEL,
+	describeDeliveryFailure,
+	type BlastRecipient,
+	type BlastRecipientStatus,
+} from "@/lib/blast-delivery"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import EventSlugField from "@/components/events/EventSlugField"
 import { isPendingAdminApproval } from "@/lib/event-approval"
@@ -2190,6 +2197,94 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	)
 }
 
+/**
+ * Who received one blast, and what happened to it.
+ *
+ * Fetched on demand — the blast LIST deliberately excludes the recipient array, which on a big
+ * event is thousands of rows. Opened from the "N didn't arrive" toggle on a history row.
+ *
+ * Two different failures are shown as two different things, because they mean different things
+ * to a host: `Not sent` never left SendGrid (usually a malformed address), while `Bounced`
+ * was accepted and then refused by the receiving server, and arrives MINUTES AFTER the send via
+ * the webhook. A row can therefore read "Delivered" for a while and change later — that is
+ * accurate, not a glitch.
+ */
+function BlastDeliveryDetail({ eventId, blastId }: { eventId: string; blastId: string }) {
+	const { data, isLoading, isError } = useQuery({
+		queryKey: ["blast-detail", eventId, blastId],
+		queryFn: async () => {
+			const res = await axios.get(`/api/events/${eventId}/blasts/${blastId}`)
+			return res.data?.data
+		},
+	})
+
+	if (isLoading) return <Text color="#9C9C9C" fontSize="sm" mt={3}>Loading delivery details…</Text>
+	if (isError) return <Text color="#EC5E5E" fontSize="sm" mt={3}>Couldn&apos;t load delivery details.</Text>
+
+	const recipients: BlastRecipient[] = data?.recipients || []
+
+	// Blasts sent before per-recipient tracking existed carry no rows at all. Say so, rather
+	// than rendering an empty table that reads as "nobody was mailed".
+	if (recipients.length === 0) {
+		return (
+			<Text color="#9C9C9C" fontSize="sm" mt={3}>
+				This blast was sent before per-recipient tracking was added, so there is no delivery breakdown for it.
+			</Text>
+		)
+	}
+
+	const problems = recipients.filter((r) => r.status !== "sent")
+	const rows = problems.length > 0 ? problems : recipients
+
+	return (
+		<Box mt={3} borderTop="1px solid #434343" pt={3}>
+			{problems.length > 0 ? (
+				<Text color="#9C9C9C" fontSize="xs" mb={2}>
+					{problems.length} of {recipients.length} didn&apos;t arrive. The rest were delivered.
+				</Text>
+			) : (
+				<Text color="#9C9C9C" fontSize="xs" mb={2}>
+					All {recipients.length} delivered.
+				</Text>
+			)}
+
+			<Box display="flex" flexDirection="column" gap={2} maxH="320px" overflowY="auto">
+				{rows.map((r, i) => {
+					const status = (r.status || "sent") as BlastRecipientStatus
+					const explanation = status === "sent" ? "" : describeDeliveryFailure(status, r.reason)
+					return (
+						<Box key={`${r.email}-${i}`} bg="#161616" borderRadius="md" p={3}>
+							<Flex justify="space-between" align="start" gap={3} wrap="wrap">
+								<Box flex="1" minW="180px">
+									<Text color="white" fontSize="sm" wordBreak="break-all">
+										{r.name ? `${r.name} — ` : ""}
+										{r.email}
+									</Text>
+									{explanation && (
+										<Text color="#B5B6B7" fontSize="xs" mt={1}>
+											{explanation}
+										</Text>
+									)}
+									{/* The raw server response. Kept verbatim under the plain-English line —
+									    support needs the real text, the host needs the sentence above it. */}
+									{r.reason && (
+										<Text color="#6E6E6E" fontSize="xs" mt={1} wordBreak="break-word">
+											{r.reason}
+										</Text>
+									)}
+								</Box>
+								<Badge colorScheme={BLAST_STATUS_COLOR[status] || "gray"} flexShrink={0}>
+									{BLAST_STATUS_LABEL[status] || status}
+								</Badge>
+							</Flex>
+						</Box>
+					)
+				})}
+			</Box>
+		</Box>
+	)
+}
+
 function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: () => void }) {
 	const toast = useToast({ position: "top" })
 	const queryClient = useQueryClient()
@@ -2208,6 +2303,9 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 	const [resending, setResending] = useState(false)
 	const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
 	const [deleting, setDeleting] = useState(false)
+	// Which history row has its delivery breakdown open. One at a time — each open row fetches
+	// its own recipient list.
+	const [expandedBlastId, setExpandedBlastId] = useState<string | null>(null)
 
 	const { data: blasts = [], isLoading } = useQuery({
 		queryKey: ["blasts", event._id],
@@ -2403,12 +2501,39 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 										<Text color="#9C9C9C" fontSize="xs">
 											{b.succeededCount}/{b.recipientCount} delivered
 										</Text>
+										{/* What the guests actually saw in their inbox. Absent on blasts sent
+										    before host identity existed — shown as nothing rather than
+										    claiming a sender we can't vouch for. */}
+										{b.sentFromName && (
+											<Text color="#9C9C9C" fontSize="xs">
+												from {b.sentFromName}
+											</Text>
+										)}
 										{b.sentAt && (
 											<Text color="#9C9C9C" fontSize="xs">
 												{DateTime.fromISO(b.sentAt).toLocaleString(DateTime.DATETIME_MED)}
 											</Text>
 										)}
+										{/* The way in to "who didn't get it, and why". Labelled with the
+										    failure count when there is one, because that is the question a
+										    host actually opens this to ask. */}
+										<Text
+											as="button"
+											type="button"
+											onClick={() => setExpandedBlastId(expandedBlastId === b._id ? null : b._id)}
+											color="#F79432"
+											fontSize="xs"
+											fontWeight="bold"
+										>
+											{expandedBlastId === b._id
+												? "Hide delivery details"
+												: b.failedCount > 0
+													? `${b.failedCount} didn't arrive — see why`
+													: "Delivery details"}
+										</Text>
 									</Flex>
+
+									{expandedBlastId === b._id && <BlastDeliveryDetail eventId={event._id} blastId={b._id} />}
 								</Box>
 								<Flex gap={2} flexShrink={0}>
 									<Button size="sm" bg="#3E3E3E" color="white" _hover={{ bg: "#4A4A4A" }} onClick={() => openEdit(b)}>

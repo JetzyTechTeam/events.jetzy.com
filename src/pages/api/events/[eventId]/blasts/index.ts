@@ -36,10 +36,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		if (req.method === "GET") {
+			// `recipients` is deliberately excluded. A 2,000-guest blast carries a 2,000-entry
+			// array, and this list renders five rows of counts — pulling every address on every
+			// page load would dwarf the rest of the response. The detail endpoint
+			// (`blasts/[blastId]` GET) serves them on demand when a host expands a row.
 			const blasts = await Blasts.find({
 				eventId: new Types.ObjectId(eventId),
 				isDeleted: false,
-			}).sort({ createdAt: -1 })
+			})
+				.select("-recipients")
+				.sort({ createdAt: -1 })
 
 			return sendResponse(res, blasts, "Blasts retrieved successfully", true, ResCode.OK)
 		}

@@ -331,6 +331,18 @@ export interface IBlast extends IBaseModelProps {
 	succeededCount: number
 	failedCount: number
 	sentBy?: Types.ObjectId
+	/** Display name the recipients saw, e.g. "Anna Khan via Jetzy". Absent on pre-feature blasts. */
+	sentFromName?: string
+	/** Where a reply goes — the host on a host-owned event. Absent on pre-feature blasts. */
+	sentReplyTo?: string
+	/** Per-recipient outcome. Updated after the fact by the SendGrid webhook on a bounce. */
+	recipients?: Array<{
+		email: string
+		name?: string
+		status: string
+		reason?: string
+		respondedAt?: Date
+	}>
 	sentAt: Date
 	isDeleted: boolean
 }

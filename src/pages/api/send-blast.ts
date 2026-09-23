@@ -10,6 +10,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]";
 import { isPendingAdminApproval, PENDING_APPROVAL_MESSAGE } from "@/lib/event-approval";
 import { eventUrl } from "@/lib/event-slug";
+import { resolveEventOwner } from "@/lib/event-owner";
+import { mailFrom, blastSenderName } from "@/lib/send-grid";
+import type { BlastRecipient } from "@/lib/blast-delivery";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -54,6 +57,21 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   if (isPendingAdminApproval(eventDoc as any)) {
     return res.status(403).json({ error: PENDING_APPROVAL_MESSAGE });
   }
+
+  // ---- Who is this blast FROM? ----
+  //
+  // The host's address CANNOT go in `from`: SendGrid rejects an unverified sender outright, and
+  // a host address sent through our account fails SPF/DMARC alignment. So identity rides on the
+  // display name ("Anna Khan via Jetzy") and `replyTo`, which is what Eventbrite and Luma do and
+  // what `sendSupportRequestNotice` already does here.
+  //
+  // Admin-owned event, no ownerId, or an owner we can't resolve -> plain "Jetzy" with no
+  // replyTo, i.e. exactly today's behaviour. `resolveEventOwner` never throws. A blast must not
+  // fail because we couldn't work out who the host is.
+  const owner = await resolveEventOwner(eventDoc as any);
+  const sendAsHost = !!owner && !owner.isAdmin;
+  const senderName = sendAsHost ? blastSenderName(owner!.displayName) : blastSenderName();
+  const replyTo = sendAsHost ? owner!.email : undefined;
 
   // Build the recipient link here rather than trusting the client's `eventLink`: a
   // private Premium event needs its access code appended, and the host's own browser
@@ -100,6 +118,13 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       return true;
     });
 
+    // On a host-owned event the old footer was wrong: it told the guest to contact
+    // contact@jetzyapp.com about a question only the host can answer. Replying now reaches the
+    // host directly (see `replyTo` above), so the footer says so and names them.
+    const footerContact = sendAsHost
+      ? `Questions? Just reply to this email &mdash; it goes straight to ${owner!.displayName}.<br />Sent by ${owner!.displayName} via Jetzy Events`
+      : `Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #F79432; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>`
+
     // Create different email templates based on emailType — Jetzy brand theme
     // (matches welcome/invitation emails: favicon logo, orange #F79432 CTA, white 600px card).
     const html = emailType === 'availability' ? `
@@ -139,7 +164,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           </a>
         </div>
         <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #F79432; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>
+          ${footerContact}
           <br />
           &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
         </p>
@@ -171,7 +196,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           </a>
         </div>
         <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #F79432; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>
+          ${footerContact}
           <br />
           &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
         </p>
@@ -200,7 +225,12 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
 
       await sendgrid.send({
         to: userEmail,
-        from: (process.env.SENDGRID_EMAIL_SENDER as string)?.trim(),
+        // Through `mailFrom` rather than a bare address string — a bare string makes mail
+        // clients render the sender as "contact" (the mailbox name), which is the exact bug
+        // `mailFrom` exists to prevent. The ADDRESS is unchanged, so sender verification and
+        // domain reputation are untouched; only the display name moves.
+        from: mailFrom(undefined, senderName),
+        ...(replyTo ? { replyTo } : {}),
         subject: subject,
         html: personalizedHtml,
       })
@@ -209,9 +239,34 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     const succeeded = results.filter(r => r.status === 'fulfilled').length
     const failed = results.filter(r => r.status === 'rejected').length
 
+    // Per-recipient outcome, so the history can answer "who didn't get it, and why" instead of
+    // showing a bare "5/7 delivered". `sent` here means SendGrid ACCEPTED it — a bounce can
+    // still arrive minutes later over the event webhook, which updates these rows in place.
+    const recipientRows: BlastRecipient[] = findPeople.map((person: any, index: number) => {
+      const outcome = results[index]
+      const email = (person.email || person.customerEmail || "").trim()
+      const name = ((person.customerName || person.name || "") as string).trim() || undefined
+
+      if (outcome.status === 'fulfilled') {
+        return { email, name, status: 'sent' }
+      }
+
+      const err: any = (outcome as PromiseRejectedResult).reason
+      // SendGrid nests the useful sentence; fall back through the shapes it actually returns.
+      const reason: string =
+        err?.response?.body?.errors?.[0]?.message ||
+        err?.message ||
+        "The email could not be sent."
+      return { email, name, status: 'failed', reason }
+    })
+
     // Persist the blast in history (Blasts tab). Never let a logging failure
     // break an already-sent blast — best effort only.
-    if (succeeded > 0) {
+    //
+    // Recorded even when NOTHING succeeded. It used to be `if (succeeded > 0)`, which threw away
+    // the record precisely when the host most needed it: a blast where every address failed left
+    // no trace at all, and no way to find out why. A failed send is history too.
+    {
       try {
         await Blasts.create({
           eventId: eventObjectId,
@@ -224,6 +279,10 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           succeededCount: succeeded,
           failedCount: failed,
           sentBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
+          // What the guests actually saw, and who a reply reaches.
+          sentFromName: senderName,
+          ...(replyTo ? { sentReplyTo: replyTo } : {}),
+          recipients: recipientRows,
           sentAt: new Date(),
         })
       } catch (persistErr) {
