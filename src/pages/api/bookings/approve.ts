@@ -16,6 +16,8 @@ import { getStripeClient } from "@/lib/premium"
 import { heldMemberships } from "@/lib/premium-eligibility"
 import { MEMBERSHIPS } from "@/lib/memberships"
 import { bookingMemberships } from "@/lib/booking-memberships"
+import { bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
+import { Types } from "mongoose"
 import { startMembershipSubscription } from "@/lib/membership-subscriptions"
 import { addEventMember } from "@/utils/eventMembership"
 import Stripe from "stripe"
@@ -23,6 +25,15 @@ import zod from "zod"
 
 const schema = zod.object({
 	bookingRef: zod.string().nonempty(),
+	/**
+	 * Optional REDUCED selection — "approve 1 of the 2 they asked for".
+	 *
+	 * Absent means approve the request as it stands, which is every ordinary approval. Present,
+	 * it may only ever SHRINK the booking: this endpoint seats fewer people, it never sells more.
+	 */
+	tickets: zod
+		.array(zod.object({ ticketId: zod.string().nonempty(), quantity: zod.number().int().min(0) }))
+		.optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -41,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	const parsed = schema.safeParse(req.body)
 	if (!parsed.success) return sendResponse(res, null, "Invalid input.", false, ResCode.BAD_REQUEST)
 
-	const { bookingRef } = parsed.data
+	const { bookingRef, tickets: reducedTickets } = parsed.data
 	const booking = await Bookings.findOne({ bookingRef })
 	if (!booking) return sendResponse(res, null, "Booking not found.", false, ResCode.NOT_FOUND)
 
@@ -55,6 +66,85 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	// Ownership: admin OR owner of the event
 	if (!isAdmin && (event as any).ownerId?.toString() !== userId) {
 		return sendResponse(res, null, "Not authorized.", false, ResCode.FORBIDDEN)
+	}
+
+	// ---- Partial approval: seat only part of what was asked for. ----
+	//
+	// Reached when the request no longer fits what's left. Without it the host's only exit is
+	// Reject — losing a guest who would happily have taken the one remaining seat, and leaving
+	// a card hold doing nothing until it expires.
+	//
+	// The server allows any VALID reduction, not only one that capacity currently forces.
+	// Gating on "must not fit" here would be a race: another approval could free a seat between
+	// the host seeing the button and pressing it, and the request would then fail for a reason
+	// they can't act on. The UI decides when to OFFER it; this decides whether it's legal.
+	const originalTickets = booking.tickets.map((t: any) => ({ ticketId: String(t.ticketId), quantity: Number(t.quantity) || 0 }))
+	const originalQty = bookingTicketCount(originalTickets)
+	let approvedQty = originalQty
+	let isPartial = false
+
+	if (reducedTickets) {
+		const requestedQty = bookingTicketCount(reducedTickets as any)
+
+		// Same ticket ids, no additions, and every row no larger than what was booked.
+		const storedById = new Map(originalTickets.map((t) => [t.ticketId, t.quantity]))
+		const sameSet =
+			reducedTickets.length === originalTickets.length &&
+			reducedTickets.every((row) => storedById.has(String(row.ticketId))) &&
+			new Set(reducedTickets.map((r) => String(r.ticketId))).size === reducedTickets.length
+		const withinOriginal = reducedTickets.every((row) => row.quantity <= (storedById.get(String(row.ticketId)) ?? 0))
+
+		if (!sameSet || !withinOriginal) {
+			return sendResponse(res, null, "That ticket selection doesn't match this request — refresh and try again.", false, ResCode.BAD_REQUEST)
+		}
+		if (requestedQty < 1) {
+			return sendResponse(res, null, "Approve at least one ticket, or decline the request instead.", false, ResCode.BAD_REQUEST)
+		}
+		if (requestedQty > originalQty) {
+			return sendResponse(res, null, "You can't approve more tickets than were requested.", false, ResCode.BAD_REQUEST)
+		}
+
+		if (requestedQty < originalQty) {
+			// Both refusals are about money, not policy — see `booking-approval.ts`.
+			const refusal = partialApprovalRefusal(originalTickets, {
+				sellsMembership: bookingMemberships(booking.payment).length > 0,
+				seatable: requestedQty,
+			})
+			if (refusal) {
+				return sendResponse(res, null, PARTIAL_REFUSAL_MESSAGE[refusal], false, ResCode.BAD_REQUEST)
+			}
+
+			isPartial = true
+			approvedQty = requestedQty
+			booking.tickets = reducedTickets.filter((r) => r.quantity > 0).map((r) => ({
+				ticketId: new Types.ObjectId(String(r.ticketId)),
+				quantity: r.quantity,
+			})) as any
+
+			// Scale the money the booking RECORDS alongside the quantity. Leaving `subTotal` at
+			// the two-ticket figure while `total` reflects one would put a receipt in front of
+			// the guest whose lines don't add up.
+			const ratio = approvedQty / originalQty
+			const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+			booking.subTotal = round2((Number(booking.subTotal) || 0) * ratio)
+			booking.discountAmount = round2((Number(booking.discountAmount) || 0) * ratio)
+			booking.total = round2((Number(booking.total) || 0) * ratio)
+
+			// Same audit shape the host-side quantity edit writes — one history, not two.
+			const now = new Date()
+			;(booking as any).ticketsEditedAt = now
+			;(booking as any).ticketsEditedBy = isAdmin ? "admin" : "host"
+			;(booking as any).ticketsEditHistory = [
+				...(((booking as any).ticketsEditHistory as any[]) || []),
+				{
+					at: now,
+					by: isAdmin ? "admin" : "host",
+					byUserId: Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined,
+					from: originalTickets.map((t) => ({ ticketId: new Types.ObjectId(t.ticketId), quantity: t.quantity })),
+					to: booking.tickets,
+				},
+			]
+		}
 	}
 
 	// Capacity check — approval consumes capacity, and this is where the decision belongs: a
@@ -154,10 +244,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Partial capture when part of the hold is no longer owed. Stripe releases the
 			// uncaptured remainder at no cost. Computed by subtracting only the memberships
 			// being skipped, so a buyer who holds one of two still pays for the other.
-			pi = releasedAmount > 0
-				? await stripe.paymentIntents.capture(piId, {
-					amount_to_capture: Math.max(0, Math.round(((Number(booking.payment!.amount) || 0) - releasedAmount) * 100)),
-				})
+			// Two independent reasons to capture less than the hold, and they compose:
+			//   - a membership the buyer turns out to already own (`releasedAmount`);
+			//   - fewer tickets being seated than were asked for (`isPartial`).
+			//
+			// The ticket portion is scaled PROPORTIONALLY rather than by a unit price, because a
+			// booking stores no per-ticket price. That is exact under any discount — but only
+			// when every ticket in the order costs the same, which is why a multi-type booking
+			// can't be partially approved at all (see `booking-approval.ts`).
+			//
+			// Capturing under the authorized amount costs nothing and is NOT a refund: Stripe
+			// simply releases the difference.
+			const heldAmount = Number(booking.payment!.amount) || 0
+			const ticketPortion = heldAmount - releasedAmount
+			const captureAmount = isPartial
+				? Math.max(0, Math.round(ticketPortion * (approvedQty / originalQty) * 100))
+				: Math.max(0, Math.round(ticketPortion * 100))
+
+			pi = releasedAmount > 0 || isPartial
+				? await stripe.paymentIntents.capture(piId, { amount_to_capture: captureAmount })
 				: await stripe.paymentIntents.capture(piId)
 		} catch (err: any) {
 			const code = err?.code || err?.raw?.code
@@ -396,6 +501,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.error("Failed to generate QR code:", qrError)
 		}
 		await sendTicketConfirmation({
+			// Says plainly that fewer tickets were confirmed than asked for. Without it the guest
+			// would read an ordinary confirmation and believe they still hold two.
+			...(isPartial ? { partialApproval: { requested: originalQty, confirmed: approvedQty } } : {}),
 			event,
 			firstName: firstName || booking.customerName,
 			lastName,
@@ -454,10 +562,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				? { status: booking.payment.status, amount: booking.payment.amount, capturedAt: booking.payment.capturedAt }
 				: undefined,
 			amountCharged,
+			requestedTickets: originalQty,
+			approvedTickets: approvedQty,
+			partial: isPartial,
 		},
 		amountCharged !== undefined
-			? `Booking approved. $${amountCharged.toFixed(2)} charged successfully.`
-			: "Booking approved and confirmed.",
+			? `${isPartial ? `Approved ${approvedQty} of ${originalQty} tickets. ` : "Booking approved. "}$${amountCharged.toFixed(2)} charged successfully.`
+			: isPartial
+				? `Approved ${approvedQty} of ${originalQty} tickets.`
+				: "Booking approved and confirmed.",
 		true,
 		ResCode.OK,
 	)

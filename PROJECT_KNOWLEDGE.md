@@ -3122,3 +3122,75 @@ Deliberately out of scope; all pre-existing, none introduced by the identity wor
 - **One SendGrid call per recipient, all concurrent, no chunking** — a 2,000-guest event opens 2,000 simultaneous connections in one serverless invocation.
 - **`targetType: "all"` ignores `status`** and mails cancelled, failed and refunded bookings; neither branch filters `isDeleted`.
 - `send-invites.ts` has the same bare-string `from`, no `replyTo`, and uses `Promise.all` rather than `allSettled` — one rejection fails the request after mail has already gone out.
+
+# Feature: Partial approval + approvals capacity visibility
+
+## Approvals: seats left, ticket names, and partial approval (IMPLEMENTED 2026-09-24)
+
+**The problem.** Ticket capacity 3, approval required. Two guests each request 2. Both submit —
+**a PENDING request holds no seat**, by design, so a host can collect more requests than they
+have seats. The host approves the first 2, then the second is refused with "1 left". The refusal
+is CORRECT (2 people don't fit in 1 chair); the failure was that the host's only remaining button
+was Reject — losing a guest who'd have taken the one free seat, and leaving a card hold idle
+until it expired. Nothing in the tab warned them either.
+
+- **Use `src/lib/booking-approval.ts`** — pure/client-safe, imported by BOTH `api/bookings/approve.ts`
+  and `ApprovalRequests.tsx` so the button offered and the rule enforced cannot disagree.
+  `approvalFit`, `partialApprovalRefusal`, `buildPartialSelection`, `bookingTicketCount`,
+  `bookingTicketTypeCount`. Only the TYPE comes from `ticket-availability` (server only).
+- **`approvalFit` composes BOTH limits** — the ticket's own remaining and the event-wide ceiling,
+  smaller wins, same rule as the guest-facing stepper. Rows on unlimited tickets are added back
+  into `seatable` after the per-ticket pass, or a mixed booking under-reports. **No availability
+  loaded reads as unlimited** — the server re-checks before anything is seated, so the worst case
+  is a refusal the host can act on, never an oversell.
+
+### Partial approval
+- **`POST /api/bookings/approve` takes an optional `tickets: [{ticketId, quantity}]`** — a REDUCED
+  selection. Absent = approve as requested (every ordinary approval). It may only ever SHRINK:
+  same ticket id set, each row `<=` stored, total `>= 1` and `<` the original.
+- **The server allows any VALID reduction, not only one capacity forces.** Gating on "must not
+  fit" server-side would be a race — another approval could free a seat between the host seeing
+  the button and pressing it, and the request would fail for a reason they can't act on. The UI
+  decides when to OFFER; the server decides what is legal.
+- **Two hard refusals, both about money, not policy** (`partialApprovalRefusal`):
+  - **More than one ticket type.** A booking stores NO per-ticket price, so partial capture scales
+    the held amount proportionally — exact under any discount, but only when every ticket costs
+    the same. Single-select checkout guarantees one type; a mobile-posted order does not, so this
+    fails closed.
+  - **The ticket sells a membership.** Quantity is tied to how many subscriptions get created and
+    to `PREMIUM_TICKET_LIMIT_PER_EVENT`.
+- **Capture math:** `amount_to_capture = round(ticketPortion × approved / requested × 100)`, where
+  `ticketPortion = payment.amount − releasedAmount`. It COMPOSES with the existing membership
+  release — both reasons to capture less apply at once. **Not a refund:** capturing under the
+  authorization makes Stripe release the difference at no cost.
+- **`subTotal`, `discountAmount` and `total` are scaled by the same ratio.** Leaving `subTotal` at
+  the 2-ticket figure while `total` reflects 1 would put a receipt in front of the guest whose
+  lines don't add up. (Contrast the host-side quantity edit, which deliberately does NOT rewrite
+  money — there no money moved; here a smaller amount is actually captured.)
+- Audit reuses `ticketsEditedAt` / `ticketsEditedBy` / `ticketsEditHistory` from the booking-edit
+  feature — one history shape, not two.
+- **The guest is told.** `sendTicketConfirmation` takes `partialApproval: { requested, confirmed }`
+  and renders an amber block: asked for 2, room for 1, not charged for the other, hold released.
+  **Known limit:** the five hardcoded per-event templates early-return before that block, so on
+  those events a partial approval sends the hardcoded body with no note.
+
+### UI — `src/components/console/ApprovalRequests.tsx`
+- **"Spots left" strip** above the pending table, from the existing public
+  `GET /api/events/[eventId]/availability` — the same endpoint the event page uses, so host and
+  guest can never see different numbers. **Rendered only for tickets that carry a limit**, so an
+  unlimited event shows nothing new. It also states, once, that requests don't hold a spot.
+- **`["event-availability", eventId]` must be invalidated in `act()`** alongside the bookings
+  query, or the counts and badges show the state from before the approval.
+- **Ticket NAMES on pending rows and in the processed list.** `ticketBreakdown` already existed
+  but was dialog-only; the Tickets column showed a bare integer, so a host running VIP and General
+  couldn't tell what they were approving. Processed had no ticket information at all.
+- **A "Needs 2, 1 left" badge** on any row that doesn't fit.
+- **In the dialog, the plain Approve is NOT rendered when the request doesn't fit** — it could
+  only be refused. Either "Approve 1 of 2", or the reason it can't be split with Reject as the
+  only route.
+
+### Deliberately NOT done
+- **No guest accept/decline round trip.** The host's decision is final and the email says so. A
+  partial approval can split a couple; the dialog makes it an explicit, one-off host action rather
+  than anything automatic.
+- Partial approval is never offered when the request fits.

@@ -45,6 +45,15 @@ import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
  * filtered down to pending only.
  */
 
+import {
+	approvalFit,
+	buildPartialSelection,
+	partialApprovalRefusal,
+	PARTIAL_REFUSAL_MESSAGE,
+	type ApprovalFit,
+} from "@/lib/booking-approval"
+import type { EventAvailability } from "@/lib/ticket-availability"
+
 const money = (n?: number) => `$${Number(n || 0).toFixed(2)}`
 
 const HOUR = 60 * 60 * 1000
@@ -100,6 +109,23 @@ export function ApprovalRequests({
 			return res.data || []
 		},
 	})
+
+	// How many seats are actually left. The same public endpoint the event page uses, so the
+	// host and the guest can never be looking at two different numbers.
+	//
+	// It counts every live booking EXCEPT pending ones — a request holds no seat until it is
+	// approved, which is exactly the arithmetic the host needs here.
+	const { data: availability } = useQuery<EventAvailability>({
+		queryKey: ["event-availability", eventId],
+		queryFn: async () => (await axios.get(`/api/events/${eventId}/availability`)).data,
+		staleTime: 10_000,
+	})
+
+	/** Does this request still fit, and if not how much of it does? */
+	const fitFor = (b: any): ApprovalFit => approvalFit(b?.tickets, availability)
+
+	/** Tickets that actually carry a limit — the only ones worth reporting remaining stock for. */
+	const limitedTickets = (availability?.tickets || []).filter((t) => t.remaining !== null)
 
 	// Soonest-expiring first — that ordering is the entire point of showing the countdown.
 	const pending = (bookings as any[])
@@ -183,17 +209,25 @@ export function ApprovalRequests({
 		return String(ans.answer) || "—"
 	}
 
-	const act = async (bookingRef: string, action: "approve" | "reject") => {
+	const act = async (
+		bookingRef: string,
+		action: "approve" | "reject",
+		/** A REDUCED ticket list — seating only part of the request. Omitted for a normal approval. */
+		tickets?: Array<{ ticketId: string; quantity: number }>,
+	) => {
 		setProcessingRef(bookingRef)
 		try {
-			const res = await axios.post(`/api/bookings/${action}`, { bookingRef })
+			const res = await axios.post(`/api/bookings/${action}`, { bookingRef, ...(tickets ? { tickets } : {}) })
 			if (res.data?.status) {
 				// Say what happened to the money, not just "done" — this is the only
 				// confirmation the host gets that a card was actually charged.
 				const amount = res.data?.data?.amountCharged ?? res.data?.data?.releasedAmount
+				const partial = res.data?.data?.partial
+					? `${res.data.data.approvedTickets} of ${res.data.data.requestedTickets} tickets approved.`
+					: undefined
 				const detail =
 					action === "approve"
-						? amount !== undefined ? `${money(amount)} charged successfully.` : undefined
+						? [partial, amount !== undefined ? `${money(amount)} charged successfully.` : undefined].filter(Boolean).join(" ") || undefined
 						: amount !== undefined ? `The ${money(amount)} hold has been released.` : undefined
 
 				toast({
@@ -205,6 +239,9 @@ export function ApprovalRequests({
 				})
 				queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
 				queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
+				// Seats just moved — without this the remaining count and the "doesn't fit"
+				// badges keep showing the state from before this approval.
+				queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
 			} else {
 				toast({ title: res.data?.message || "Action failed", status: "error", duration: 8000, isClosable: true })
 				// The server may have moved the booking to expired/failed — refresh either way.
@@ -232,11 +269,17 @@ export function ApprovalRequests({
 	 */
 	const requestApprove = (b: any) => setApproveTarget(b)
 
-	const confirmApprove = async () => {
+	const confirmApprove = async (seatable?: number) => {
 		if (!approveTarget) return
 		const ref = approveTarget.bookingRef
+		// Built from the SAME helper the server validates against, so the two cannot disagree
+		// about what a reduced selection looks like.
+		const reduced =
+			seatable !== undefined && seatable < ticketCount(approveTarget)
+				? buildPartialSelection(approveTarget.tickets, seatable)
+				: undefined
 		setApproveTarget(null)
-		await act(ref, "approve")
+		await act(ref, "approve", reduced)
 	}
 
 	if (isLoading) return <Text color="white">Loading requests...</Text>
@@ -256,6 +299,32 @@ export function ApprovalRequests({
 					</Text>
 					<Text color="#D6D6D6" fontSize="xs" mt={1}>
 						Holds are released automatically once they lapse and cannot be recovered — approve or decline these first.
+					</Text>
+				</Box>
+			)}
+
+			{/* What's actually left, so the host isn't ambushed mid-queue.
+			    Rendered ONLY for tickets that carry a limit — on an unlimited event nothing new
+			    appears at all, which is most events. */}
+			{limitedTickets.length > 0 && (
+				<Box bg="#15181C" border="1px solid #343536" borderRadius="8px" p={3} mb={4}>
+					<Text color="#9C9C9C" fontSize="xs" fontWeight={700} textTransform="uppercase" letterSpacing="0.04em" mb={2}>
+						Spots left
+					</Text>
+					<Flex gap={4} wrap="wrap">
+						{limitedTickets.map((t) => (
+							<Flex key={t.ticketId} align="center" gap={2}>
+								<Text color="#D6D6D6" fontSize="sm">{t.name || "Ticket"}</Text>
+								<Badge colorScheme={t.remaining === 0 ? "red" : (t.remaining ?? 0) <= 5 ? "orange" : "green"} borderRadius="4px">
+									{t.remaining === 0 ? "Sold out" : `${t.remaining} left`}
+								</Badge>
+							</Flex>
+						))}
+					</Flex>
+					{/* The reason a host can end up with more requests than seats, said once
+					    rather than discovered at the third approval. */}
+					<Text color="#9C9C9C" fontSize="xs" mt={2}>
+						Requests don&apos;t hold a spot until you approve them, so you may have more requests than spots.
 					</Text>
 				</Box>
 			)}
@@ -317,6 +386,7 @@ export function ApprovalRequests({
 								const colSpan = 6 + eventQuestions.length
 								const prior = priorConfirmedFor(b)
 								const priorQty = prior.reduce((sum, p) => sum + ticketCount(p), 0)
+								const fit = fitFor(b)
 
 								return (
 									<React.Fragment key={b.bookingRef}>
@@ -374,7 +444,26 @@ export function ApprovalRequests({
 												</Flex>
 												<Text color="#9C9C9C" fontSize="xs">{b.customerEmail || "—"}</Text>
 											</Td>
-											<Td color="white">{qty}</Td>
+											{/* The ticket NAME, not just a count. A host running VIP and General
+											    couldn't tell what they were approving without opening the dialog. */}
+											<Td color="white">
+												{ticketBreakdown(b).length > 0 ? (
+													ticketBreakdown(b).map((line, i) => (
+														<Text key={i} fontSize="sm" whiteSpace="nowrap">
+															{line.quantity} &times; {line.name}
+														</Text>
+													))
+												) : (
+													<Text fontSize="sm">{qty}</Text>
+												)}
+												{/* Says the squeeze out loud before the host clicks a button that
+												    would only be refused. */}
+												{!fit.fits && fit.seatable !== null && (
+													<Badge colorScheme={fit.seatable > 0 ? "orange" : "red"} fontSize="0.65em" borderRadius="4px" px={1.5} mt={1}>
+														{fit.seatable > 0 ? `Needs ${qty}, ${fit.seatable} left` : "No spots left"}
+													</Badge>
+												)}
+											</Td>
 											<Td><PaymentBadge booking={b} /></Td>
 											<Td><HoldExpiry booking={b} /></Td>
 											{eventQuestions.map((q) => (
@@ -425,6 +514,9 @@ export function ApprovalRequests({
 									<Tr>
 										<Th color="#9C9C9C">Name</Th>
 										<Th color="#9C9C9C">Email</Th>
+										{/* Past decisions were unreadable without this — Outcome alone doesn't
+										    say what was actually approved or declined. */}
+										<Th color="#9C9C9C">Tickets</Th>
 										<Th color="#9C9C9C">Outcome</Th>
 										<Th color="#9C9C9C">When</Th>
 									</Tr>
@@ -437,6 +529,17 @@ export function ApprovalRequests({
 											<Tr key={b.bookingRef}>
 												<Td color="white">{b.customerName || "—"}</Td>
 												<Td color="white">{b.customerEmail || "—"}</Td>
+												<Td color="white">
+													{ticketBreakdown(b).length > 0 ? (
+														ticketBreakdown(b).map((line, i) => (
+															<Text key={i} fontSize="sm" whiteSpace="nowrap">
+																{line.quantity} &times; {line.name}
+															</Text>
+														))
+													) : (
+														<Text fontSize="sm">{ticketCount(b) || "—"}</Text>
+													)}
+												</Td>
 												<Td>
 													{payment.status === "captured" ? (
 														<Badge colorScheme="green">Charged {money(payment.amount)}</Badge>
@@ -487,6 +590,17 @@ export function ApprovalRequests({
 							// The row's button reads "Retry charge" after a failed capture; the dialog
 							// has to agree, or it looks like a different action from the one clicked.
 							const retrying = isCaptureFailed(approveTarget)
+						// Does the whole request still fit, and if not, may we seat part of it?
+						const approveFit = fitFor(approveTarget)
+						const seatable = approveFit.seatable ?? thisQty
+						const shortfall = !approveFit.fits
+						const refusal = shortfall
+							? partialApprovalRefusal(approveTarget.tickets, {
+								sellsMembership: approveMemberships.length > 0,
+								seatable,
+							})
+							: null
+						const canSeatPart = shortfall && !refusal && seatable > 0
 
 							return (
 								<>
@@ -572,6 +686,30 @@ export function ApprovalRequests({
 											</Flex>
 										</Box>
 
+										{/* The squeeze, explained at the point of no return. Either the host
+										    can seat part of the request, or we say why they can't and leave
+										    Reject as the only honest option — never a button that will fail. */}
+										{shortfall && (
+											<Box bg="rgba(247,148,50,0.12)" border="1px solid rgba(247,148,50,0.4)" borderRadius="8px" p={3} mt={4}>
+												<Text fontSize="sm" color="#F79432" fontWeight={700}>
+													{seatable > 0
+														? `Only ${seatable} of these ${thisQty} tickets will fit`
+														: "There are no spots left"}
+												</Text>
+												<Text fontSize="xs" color="#D6D6D6" mt={2}>
+													{refusal
+														? PARTIAL_REFUSAL_MESSAGE[refusal]
+														: canSeatPart
+															? `You can confirm ${seatable} now. ${
+																	approveTarget?.payment?.status
+																		? `The card is charged for ${seatable} only — the rest of the hold is released and nothing is refunded.`
+																		: "The guest is told they asked for more than was available."
+																}`
+															: "Decline this request, or approve it once more spots free up."}
+												</Text>
+											</Box>
+										)}
+
 										{prior.length > 0 && (
 											<Box bg="rgba(247,148,50,0.12)" border="1px solid rgba(247,148,50,0.4)" borderRadius="8px" p={3} mt={4}>
 												<Text fontSize="sm" color="#F79432" fontWeight={700}>
@@ -599,9 +737,17 @@ export function ApprovalRequests({
 
 									<AlertDialogFooter>
 										<Button ref={cancelRef} onClick={() => setApproveTarget(null)}>Cancel</Button>
-										<Button colorScheme={retrying ? "orange" : "green"} onClick={confirmApprove} ml={3}>
-											{retrying ? "Retry charge" : prior.length > 0 ? "Approve anyway" : "Approve"}
-										</Button>
+										{/* When the request doesn't fit, the plain Approve is NOT offered — it
+										    could only be refused. Either seat what fits, or cancel and reject. */}
+										{canSeatPart ? (
+											<Button colorScheme="orange" onClick={() => confirmApprove(seatable)} ml={3}>
+												Approve {seatable} of {thisQty}
+											</Button>
+										) : shortfall ? null : (
+											<Button colorScheme={retrying ? "orange" : "green"} onClick={() => confirmApprove()} ml={3}>
+												{retrying ? "Retry charge" : prior.length > 0 ? "Approve anyway" : "Approve"}
+											</Button>
+										)}
 									</AlertDialogFooter>
 								</>
 							)

@@ -137,6 +137,12 @@ type TicketEmailData = {
   discountAmount?: number
   discountPercentage?: number
   approvalContext?: boolean // true when sent as a Require-Approval acceptance (celebratory header + subject)
+  /**
+   * Set when the host could only seat PART of what was requested — "you asked for 2, we
+   * confirmed 1". Renders a plain statement of the shortfall; without it the guest reads an
+   * ordinary confirmation and believes they still hold the full number.
+   */
+  partialApproval?: { requested: number; confirmed: number }
   amountCharged?: number // paid approvals only: the hold has just been captured, so say so
   /**
    * Itemised order total. Preferred over the legacy referralCode/discountAmount trio —
@@ -1088,7 +1094,7 @@ export const sendBlastEmail = async ({
   }
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged, pricing }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged, pricing, partialApproval }: TicketEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
 
   if (!baseUrl) {
@@ -1632,6 +1638,19 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
             ${amountCharged ? `<p style="color: #155724; margin: 12px 0 0 0;">Your card has now been charged <strong>${formatMoney(amountCharged)}</strong>.</p>` : ""}
           </div>
           ` : `<h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>`}
+
+          ${partialApproval && partialApproval.confirmed < partialApproval.requested ? `
+          <div style="background-color: #fff3cd; padding: 16px 18px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #ffc107;">
+            <p style="color: #856404; margin: 0; font-size: 15px;">
+              You asked for <strong>${partialApproval.requested} tickets</strong>, but the event only had room for
+              <strong>${partialApproval.confirmed}</strong>. We've confirmed ${partialApproval.confirmed === 1 ? "1 ticket" : `${partialApproval.confirmed} tickets`} for you.
+            </p>
+            <p style="color: #856404; margin: 10px 0 0 0; font-size: 14px;">
+              You have <strong>not</strong> been charged for the ${partialApproval.requested - partialApproval.confirmed === 1 ? "other ticket" : "other tickets"} &mdash; any hold on your card for
+              ${partialApproval.requested - partialApproval.confirmed === 1 ? "it" : "them"} has been released.
+            </p>
+          </div>
+          ` : ""}
 
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
