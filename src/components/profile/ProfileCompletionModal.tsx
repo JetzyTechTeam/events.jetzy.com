@@ -1,12 +1,13 @@
 import React from "react"
 import { Modal, ModalOverlay, ModalContent } from "@chakra-ui/react"
 import { signOut, useSession } from "next-auth/react"
-import { usePlacesWidget } from "react-google-autocomplete"
+// Deep import: the package root re-exports only `usePlacesWidget`, and this is the service hook —
+// predictions we render ourselves rather than Google's own `<body>` dropdown. Types ship beside it.
+import usePlacesAutocompleteService from "react-google-autocomplete/lib/usePlacesAutocompleteService"
 import { uploadFile } from "@/services/upload.service"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import Spinner from "@Jetzy/components/misc/Spinner"
-import { allowPlacesDropdown, suppressPlacesDropdown } from "@/lib/google-place"
 import { countryCodeForName, listCountries } from "@/lib/countries"
 import {
 	GENDER_OPTIONS,
@@ -40,13 +41,16 @@ const fieldClass =
  * asks for. Google Places still does the searching because a picked city carries coordinates, which
  * `sync_location` needs exactly as mobile sends them.
  *
- * Lives in its OWN component on purpose. `usePlacesWidget` attaches Google Autocomplete in a
- * mount-only effect and silently gives up if the input doesn't exist yet. Called at the top of the
- * modal, that effect ran while step 1 was showing (and before Chakra's portal had mounted), so the
- * step-2 input never got suggestions. Mounting the hook with the input guarantees the element is
- * there when it looks. The country restriction is updated in place by the hook's own effect, so
- * changing country doesn't remount (and orphan) a second suggestion list.
+ * The suggestions are OURS, drawn inside the dialog under the field. Google's own dropdown
+ * (`.pac-container`) is appended to `<body>` and positioned against the input, so in a centred modal
+ * it landed half off-screen or over the dialog's edge and people didn't see it. A list in the
+ * dialog's own flow scrolls with the form and cannot be clipped or mispositioned.
+ *
+ * Predictions come from `AutocompleteService`; the coordinates come from a `getDetails` call on the
+ * chosen prediction, both under one session token so the pair bills as a single lookup.
  */
+type CityPrediction = { place_id: string; main: string; secondary: string }
+
 function ProfileCityInput({
 	value,
 	countryCode,
@@ -58,46 +62,164 @@ function ProfileCityInput({
 	onTextChange: (text: string) => void
 	onPick: (location: ProfileLocation) => void
 }) {
-	const lastPicked = React.useRef(value)
-	const componentRestrictions = React.useMemo(
-		() => (countryCode ? { country: countryCode.toLowerCase() } : undefined),
-		[countryCode]
+	const [open, setOpen] = React.useState(false)
+	const [highlighted, setHighlighted] = React.useState(0)
+	const [resolving, setResolving] = React.useState(false)
+	/**
+	 * A query is on its way but hasn't started.
+	 *
+	 * The hook debounces by 300ms, during which it is neither loading nor holding results — so the
+	 * list said "No cities found" the moment somebody typed the first letter.
+	 */
+	const [awaitingSearch, setAwaitingSearch] = React.useState(false)
+	const blurTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+	const listRef = React.useRef<HTMLDivElement>(null)
+
+	const { placePredictions, getPlacePredictions, isPlacePredictionsLoading, placesService, refreshSessionToken } =
+		usePlacesAutocompleteService({
+			apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
+			debounce: 300,
+			sessionToken: true,
+			options: { types: ["(cities)"], input: "" },
+		})
+
+	const predictions: CityPrediction[] = React.useMemo(
+		() =>
+			(placePredictions || []).map((p: any) => ({
+				place_id: p.place_id,
+				main: p.structured_formatting?.main_text || p.description,
+				secondary: p.structured_formatting?.secondary_text || "",
+			})),
+		[placePredictions]
 	)
 
-	const { ref: placesRef } = usePlacesWidget<HTMLInputElement>({
-		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-		onPlaceSelected: (place) => {
-			const loc = placeToProfileLocation(place)
-			lastPicked.current = loc.city || ""
-			onPick(loc)
-		},
-		options: {
+	React.useEffect(() => () => {
+		if (blurTimer.current) clearTimeout(blurTimer.current)
+	}, [])
+
+	// Results (or an empty result) are back.
+	React.useEffect(() => {
+		setAwaitingSearch(false)
+	}, [placePredictions])
+
+	// Keep the highlighted row in view when arrowing through a scrolled list.
+	React.useEffect(() => {
+		const el = listRef.current?.children[highlighted] as HTMLElement | undefined
+		el?.scrollIntoView({ block: "nearest" })
+	}, [highlighted])
+
+	const search = (text: string) => {
+		if (!text.trim() || !countryCode) {
+			setAwaitingSearch(false)
+			return
+		}
+		setAwaitingSearch(true)
+		getPlacePredictions({
+			input: text,
 			types: ["(cities)"],
-			fields: ["address_components", "geometry", "name", "formatted_address"],
-			componentRestrictions,
-		},
-	})
+			componentRestrictions: { country: countryCode.toLowerCase() },
+		})
+	}
+
+	const choose = (prediction: CityPrediction) => {
+		setOpen(false)
+		if (!placesService) return
+		setResolving(true)
+		placesService.getDetails(
+			{ placeId: prediction.place_id, fields: ["address_components", "geometry", "name"] },
+			(place: any, status: string) => {
+				setResolving(false)
+				// A new token per completed lookup — one search plus its details is one session.
+				refreshSessionToken?.()
+				if (status !== "OK" || !place) {
+					// Details failed: keep the name so nothing is lost, but no coordinates means the
+					// field stays unpicked and the hint still asks for a suggestion.
+					onTextChange(prediction.main)
+					return
+				}
+				onPick(placeToProfileLocation(place))
+			}
+		)
+	}
+
+	const showList = open && !!countryCode && (predictions.length > 0 || isPlacePredictionsLoading || !!value.trim())
 
 	return (
-		<input
-			id="profile-city"
-			ref={placesRef}
-			type="text"
-			value={value}
-			disabled={!countryCode}
-			onFocus={() => {
-				// An untouched saved city must not pop a fresh search on focus.
-				if (value && value === lastPicked.current) suppressPlacesDropdown()
-			}}
-			onChange={(e) => {
-				allowPlacesDropdown()
-				onTextChange(e.target.value)
-			}}
-			onBlur={() => allowPlacesDropdown()}
-			placeholder={countryCode ? "Search your city" : "Select a country first"}
-			autoComplete="off"
-			className={`mt-2 ${fieldClass} disabled:cursor-not-allowed disabled:opacity-50`}
-		/>
+		<div className="relative">
+			<input
+				id="profile-city"
+				type="text"
+				value={value}
+				disabled={!countryCode}
+				role="combobox"
+				aria-expanded={showList}
+				aria-controls="profile-city-list"
+				aria-autocomplete="list"
+				onChange={(e) => {
+					onTextChange(e.target.value)
+					setHighlighted(0)
+					setOpen(true)
+					search(e.target.value)
+				}}
+				onFocus={() => {
+					if (value.trim()) setOpen(true)
+				}}
+				onBlur={() => {
+					// Delayed — a click on a suggestion fires after blur.
+					blurTimer.current = setTimeout(() => setOpen(false), 150)
+				}}
+				onKeyDown={(e) => {
+					if (e.key === "Escape") return setOpen(false)
+					if (!showList || predictions.length === 0) return
+					if (e.key === "ArrowDown") {
+						e.preventDefault()
+						setHighlighted((i) => (i + 1) % predictions.length)
+					} else if (e.key === "ArrowUp") {
+						e.preventDefault()
+						setHighlighted((i) => (i - 1 + predictions.length) % predictions.length)
+					} else if (e.key === "Enter") {
+						e.preventDefault()
+						choose(predictions[highlighted])
+					}
+				}}
+				placeholder={countryCode ? "Search your city" : "Select a country first"}
+				autoComplete="off"
+				className={`mt-2 ${fieldClass} text-base disabled:cursor-not-allowed disabled:opacity-50`}
+			/>
+
+			{showList && (
+				<div
+					id="profile-city-list"
+					ref={listRef}
+					role="listbox"
+					className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-[#434343] bg-[#141414]"
+				>
+					{predictions.map((p, i) => (
+						<button
+							key={p.place_id}
+							type="button"
+							role="option"
+							aria-selected={i === highlighted}
+							onMouseEnter={() => setHighlighted(i)}
+							onClick={() => choose(p)}
+							className={`block w-full border-b border-[#2A2A2A] px-4 py-3 text-left last:border-b-0 ${
+								i === highlighted ? "bg-[#2A2A2A]" : ""
+							}`}
+						>
+							<span className="block text-base text-white">{p.main}</span>
+							{p.secondary && <span className="block text-sm text-gray-400">{p.secondary}</span>}
+						</button>
+					))}
+					{predictions.length === 0 && (
+						<p className="px-4 py-3 text-sm text-gray-400">
+							{isPlacePredictionsLoading || awaitingSearch ? "Searching…" : "No cities found"}
+						</p>
+					)}
+				</div>
+			)}
+
+			{resolving && <p className="mt-2 text-sm text-gray-400">Getting that city…</p>}
+		</div>
 	)
 }
 
@@ -254,16 +376,6 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 		>
 			<ModalOverlay bg="blackAlpha.700" />
 			<ModalContent mx={4} borderRadius="2xl" bg="#1E1E1E" color="white" border="1px solid #434343">
-				{/* Google's suggestion list renders on <body>, under Chakra's modal layer by default. */}
-				<style>{`
-					.pac-container{z-index:2000 !important;background:#1E1E1E;border:1px solid #434343;border-radius:12px;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.5);font-family:inherit}
-					.pac-container:after{display:none}
-					.pac-item{color:#9CA3AF;border-top:1px solid #2A2A2A;padding:8px 12px;cursor:pointer}
-					.pac-item:first-child{border-top:none}
-					.pac-item:hover,.pac-item-selected{background:#2A2A2A}
-					.pac-item-query{color:#fff}
-					.pac-matched{color:#F79432}
-				`}</style>
 				<div className="p-6">
 					{intro && <p className="mb-3 rounded-lg bg-app/10 px-3 py-2 text-sm font-medium text-app">{intro}</p>}
 					<h2 className="text-xl font-bold text-white">Complete your profile</h2>
@@ -418,10 +530,11 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 									setError(null)
 								}}
 							/>
-							<p className="mt-1 text-xs text-gray-500">
+							<p className="mt-2 flex items-start gap-2 text-sm font-medium text-gray-300">
+								<span aria-hidden="true">📍</span>
 								{!location.city && !location.country && hasLocation(location)
 									? "Using the location from your Jetzy app. Pick a country and city to change it."
-									: "Start typing and pick your city from the suggestions."}
+									: "Start typing your city, then pick it from the list that appears."}
 							</p>
 						</>
 					)}

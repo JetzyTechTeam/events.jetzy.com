@@ -724,14 +724,15 @@ export default function PremiumPage() {
 		const sessionId = router.query.application_session_id
 		if (!sessionId || typeof sessionId !== "string") return
 
+		// Card saved, application under review — the page shows the review card and the profile is
+		// asked over it (CEO, 2026-09-22). Started here rather than after the confirm: the check is a
+		// round trip, and waiting for it let the review card show first.
+		postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 		axios
 			.get(`/api/premium/applications/confirm?session_id=${sessionId}`)
 			.then(() => {
 				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
 				router.replace(SELF, undefined, { shallow: true })
-				// Card saved, application under review — the page shows the review card; the profile is
-				// asked over it (CEO, 2026-09-22).
-				postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 			})
 			.catch(() => {
 				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
@@ -744,6 +745,9 @@ export default function PremiumPage() {
 		const sessionId = router.query.premium_session_id
 		if (!sessionId || typeof sessionId !== "string") return
 
+		// Beside the confirm — the member card renders at once, so a profile check that waited for the
+		// confirm showed it first and then covered it.
+		postPurchaseProfile.prompt()
 		axios
 			.get(`/api/subscriptions/confirm?session_id=${sessionId}`)
 			.then(() => {
@@ -753,7 +757,6 @@ export default function PremiumPage() {
 				Success("Welcome to Jetzy Premium!", "Your membership is now active.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
 				router.replace(SELF, undefined, { shallow: true })
-				postPurchaseProfile.prompt()
 			})
 			.catch(() => {
 				ErrorToast("Error", "We couldn't confirm your membership. Please contact support if this persists.")

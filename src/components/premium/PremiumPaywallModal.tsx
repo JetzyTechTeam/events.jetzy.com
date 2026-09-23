@@ -202,6 +202,9 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 		if (!consumeApplicationMarker()) return
 
 		setJustApplied(true)
+		// Beside the confirm, not after it: the profile check is a round trip of its own, and the
+		// review card renders immediately — waiting would show it, then cover it.
+		postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 		axios
 			.get(`/api/premium/applications/confirm?session_id=${encodeURIComponent(applicationSessionId)}`)
 			.catch(() => {
@@ -209,7 +212,6 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			})
 			.finally(() => {
 				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
-				postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 				const { application_session_id: _applied, ...rest } = router.query
 				router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
 			})

@@ -114,6 +114,7 @@ export default function SubscribePage() {
 			.then(() => {
 				Success("Welcome to Jetzy Premium!", "Your subscription is now active.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
+				// Complete profile → this is what returns to the app; incomplete → the form, then the app.
 				postPurchaseProfile.prompt(goToApp)
 			})
 			.catch(() => {
@@ -152,14 +153,13 @@ export default function SubscribePage() {
 		const sessionId = router.query.application_session_id
 		if (!sessionId || typeof sessionId !== "string") return
 
+		// Beside the confirm, so the review card can't appear before the form (CEO, 2026-09-22).
+		postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 		axios
 			.get(`/api/premium/applications/confirm?session_id=${sessionId}`)
 			.then(() => {
 				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
 				router.replace("/subscribe", undefined, { shallow: true })
-				// Card saved, application under review — the page shows the review card; the profile is
-				// asked over it (CEO, 2026-09-22).
-				postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
 			})
 			.catch(() => {
 				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
