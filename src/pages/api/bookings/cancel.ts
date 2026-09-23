@@ -160,6 +160,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Notify the host + the Jetzy inbox so a freed seat isn't a silent event.
+		//
+		// This does NOT go through `booking-notify.ts`, and does not drop the admin copy on a
+		// host-owned event the way the sale and approval-request mail now does. Deliberate — a
+		// cancellation is the one moment the no-refund rule bites, and Jetzy support has to have
+		// seen it. Full reasoning on `sendHostCancellationNotice`.
 		try {
 			if (event) {
 				let organizerEmail: string | undefined

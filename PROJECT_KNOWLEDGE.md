@@ -3078,6 +3078,7 @@ Before this, a new booking emailed the buyer and the hardcoded `tech@jetzyapp.co
 - `sendAdminApprovalNotice` gained `audience` + `to` rather than a host-facing twin; `host` uses `mailFrom()` and `replyTo` the guest.
 - Call sites: `checkout-fulfillment.ts` (both branches), `checkout/free-events.ts` (both branches), `bookings/approve.ts`, `waiting-list/approve.ts`.
 - Never put notify logic inside `sendTicketConfirmation` — five hardcoded per-event templates early-return from it.
+- **`bookings/cancel.ts` is a deliberate exception** and keeps its Jetzy inbox copy on every event, host-owned or not. A cancellation is where the no-refund rule bites and support has to have seen it; a sale is the host's business. The resulting asymmetry — Jetzy sees cancellations on host events but not the sales — is intended.
 
 ## Feature: Host/admin edits a free booking's quantity
 

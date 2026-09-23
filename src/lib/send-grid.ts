@@ -2068,6 +2068,17 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
 /**
  * Tells the host (and the Jetzy inbox) that a seat just came back. Non-fatal by design —
  * a guest's cancellation must never fail because an operational email bounced.
+ *
+ * **The Jetzy inbox copy is KEPT on every event, including a non-admin host's, and that is a
+ * deliberate exception** (decided 2026-09-23) to the rule in `src/lib/booking-notify.ts`, where
+ * a host-owned event's sale and approval-request mail goes to the owner alone.
+ *
+ * The two carry different information. A sale is the host's business. A cancellation is where
+ * the money gets contentious: a CAPTURED payment is **not refunded**, this email is the only
+ * place that fact is stated to anyone on the Jetzy side, and support answering an angry guest
+ * needs to have seen it. So `tech@jetzyapp.com` will see cancellations on host events without
+ * having seen the original sales — that asymmetry is intended, not an oversight. Don't
+ * "harmonise" it with booking-notify without re-deciding the support question.
  */
 export const sendHostCancellationNotice = async ({
   event,
