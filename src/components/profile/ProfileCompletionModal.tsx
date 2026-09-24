@@ -582,7 +582,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 									setError(null)
 								}}
 							/>
-							<p className="mt-2 flex items-start gap-2 text-sm font-medium text-gray-300">
+							<p className="mt-2 flex items-start gap-2 text-sm text-gray-400">
 								<span aria-hidden="true">📍</span>
 								{!location.city && !location.country && hasLocation(location)
 									? "Using the location from your Jetzy app. Pick a country and city to change it."
