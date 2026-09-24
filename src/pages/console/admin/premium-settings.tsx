@@ -100,6 +100,16 @@ export default function PremiumSettingsPage() {
 	const [questions, setQuestions] = React.useState<Question[]>([])
 	const [editing, setEditing] = React.useState<Question | null>(null)
 	const [editingIndex, setEditingIndex] = React.useState<number | null>(null)
+	/**
+	 * The Options textarea's raw text, kept SEPARATE from `editing.options` while typing.
+	 *
+	 * Deriving the controlled textarea's value from a filtered `editing.options` array broke
+	 * multi-line entry entirely: pressing Enter produced a trailing blank line, which
+	 * `.filter(Boolean)` immediately dropped, which fed straight back into the textarea's `value`
+	 * and erased the newline the same render — the blank line, and the ability to start a second
+	 * option, never survived a single keystroke. Filtering now happens once, on save.
+	 */
+	const [optionsText, setOptionsText] = React.useState("")
 	const { isOpen, onOpen, onClose } = useDisclosure()
 
 	React.useEffect(() => {
@@ -130,11 +140,13 @@ export default function PremiumSettingsPage() {
 	const openAdd = () => {
 		setEditing(emptyQuestion())
 		setEditingIndex(null)
+		setOptionsText("")
 		onOpen()
 	}
 	const openEdit = (q: Question, index: number) => {
 		setEditing({ ...q })
 		setEditingIndex(index)
+		setOptionsText((q.options || []).join("\n"))
 		onOpen()
 	}
 	const remove = (index: number) => {
@@ -153,9 +165,14 @@ export default function PremiumSettingsPage() {
 			toast({ title: "Give the question a title", status: "warning" })
 			return
 		}
+		// Filtered ONCE, here — not on every keystroke (see `optionsText`).
+		const finalized: Question =
+			editing.type === "options" || editing.type === "multiple_choice"
+				? { ...editing, options: optionsText.split("\n").map((s) => s.trim()).filter(Boolean) }
+				: editing
 		const next = [...questions]
-		if (editingIndex === null) next.push(editing)
-		else next[editingIndex] = editing
+		if (editingIndex === null) next.push(finalized)
+		else next[editingIndex] = finalized
 		save(enabled, next)
 		onClose()
 	}
@@ -267,8 +284,8 @@ export default function PremiumSettingsPage() {
 											<FormLabel>Options (one per line)</FormLabel>
 											<Textarea
 												{...fieldProps}
-												value={(editing.options || []).join("\n")}
-												onChange={(e) => setEditing({ ...editing, options: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
+												value={optionsText}
+												onChange={(e) => setOptionsText(e.target.value)}
 												rows={4}
 											/>
 										</FormControl>
