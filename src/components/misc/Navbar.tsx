@@ -282,6 +282,13 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
                     {membershipLabel}
                   </MenuItem>
                 )}
+                {/* Non-member counterpart — desktop has this inline (above), mobile only had the
+                    member case until now, so a non-member on a phone had no way to reach it. */}
+                {!isPremium && !hideMembershipCta && (
+                  <MenuItem bg="#1a1a1a" _hover={{ bg: "gray.700" }} display={{ base: "flex", md: "none" }} onClick={openMembershipDialog}>
+                    Buy Jetzy Premium
+                  </MenuItem>
+                )}
                 <MenuItem
                   bg="#1a1a1a"
                   _hover={{ bg: "gray.700" }}
@@ -307,27 +314,31 @@ const Navbar = ({ hideEventNav = false, hideMembershipCta = false, handlesPremiu
              wrong. The bar keeps its height because the heading above sets it. */
           null
         ) : (
-          <Flex align="center" gap={4}>
+          <Flex align="center" gap={4} wrap="wrap" justify="flex-end" rowGap={2}>
+            {/* Visible at every width, including mobile — there is no hamburger menu in this
+                branch to fall back to, so hiding it below `sm` meant a signed-out phone visitor
+                never saw it at all. */}
             {!hideMembershipCta && (
               <Button
+                size={{ base: "sm", sm: "md" }}
                 bg="#F5C518"
                 color="black"
                 _hover={{ bg: "#E0B317" }}
                 onClick={openMembershipDialog}
                 leftIcon={<span style={{ fontSize: "13px" }}>⭐</span>}
-                display={{ base: "none", sm: "flex" }}
               >
                 Buy Jetzy Premium
               </Button>
             )}
             <Button
+              size={{ base: "sm", sm: "md" }}
               variant="outline"
               colorScheme="orange"
               onClick={() => router.push("/login")}
             >
               Login
             </Button>
-            <Button colorScheme="orange" onClick={() => router.push("/signup")}>
+            <Button size={{ base: "sm", sm: "md" }} colorScheme="orange" onClick={() => router.push("/signup")}>
               Sign Up
             </Button>
           </Flex>
