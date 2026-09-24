@@ -17,6 +17,7 @@ import { PremiumApplicationSettings } from "@/models/premium-application-setting
 import type { ICustomQuestion } from "@/models/events/types"
 import { getStripeClient, hasEverHadMembership } from "@/lib/premium"
 import { DEFAULT_TRIAL_MONTHS } from "@/lib/invite-trial"
+import { missingRequiredQuestions, formatAnswerValue } from "@/lib/profile-links"
 
 /** Seeded once, on first read — the admin can edit or delete any of these afterward. */
 export const DEFAULT_APPLICATION_QUESTIONS: ICustomQuestion[] = [
@@ -49,20 +50,13 @@ export async function getApplicationSettings(): Promise<PremiumApplicationSettin
 export const applicationRequired = (settings: { enabled: boolean }, hasCode: boolean): boolean => settings.enabled && !hasCode
 
 /**
- * Every question marked `isRequired` needs a non-empty answer. Mirrors the client-side check in
- * `EventCheckoutModel.tsx`'s "Additional Questions" step — re-checked here because the client
- * validation is only a courtesy.
+ * Every question marked `isRequired` needs a non-empty answer — re-checked here because the
+ * questionnaire's own check is only a courtesy. Delegates to `isAnswerMissing` in
+ * `profile-links.ts`, the one place that logic lives, so this can't drift from what the
+ * questionnaire blocks submit on.
  */
 export function missingRequiredAnswers(questions: ICustomQuestion[], answers: Record<string, any>): string[] {
-	return questions
-		.filter((q) => q.isRequired)
-		.filter((q) => {
-			const value = answers[q.id]
-			if (Array.isArray(value)) return value.length === 0
-			if (typeof value === "object" && value !== null) return Object.values(value).every((v) => !v)
-			return value === undefined || value === null || String(value).trim() === ""
-		})
-		.map((q) => q.title)
+	return missingRequiredQuestions(questions, answers).map((q) => q.title)
 }
 
 /**
@@ -101,7 +95,7 @@ export async function fulfillApplicationSetupSession(sessionId: string): Promise
 		const { questions } = await getApplicationSettings()
 		const answers = (application.answers || []).map((a: { questionId: string; answer: any }) => ({
 			title: questions.find((q) => q.id === a.questionId)?.title || a.questionId,
-			value: Array.isArray(a.answer) ? a.answer.join(", ") : typeof a.answer === "object" && a.answer !== null ? Object.values(a.answer).filter(Boolean).join(" — ") : String(a.answer ?? ""),
+			value: formatAnswerValue(a.answer),
 		}))
 		await sendPremiumApplicationAdminNotice({ kind: "submitted", email: application.email, name: application.name, interval: application.interval, answers })
 	} catch (emailError) {

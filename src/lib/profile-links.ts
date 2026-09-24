@@ -142,6 +142,52 @@ export function validateApplicationAnswers(
 	return { errors, values }
 }
 
+/**
+ * Whether a REQUIRED question's answer counts as missing — the one place this is decided, shared
+ * by the questionnaire (blocks submit) and `start.ts` (blocks the request). They used to each
+ * reimplement it and drifted: neither treated a `checkbox` answer of `false` as missing (a plain
+ * `String(false)` is `"false"`, never `""`), so a "Required" single checkbox — or a required
+ * terms agreement left unticked — could be submitted anyway.
+ */
+export function isAnswerMissing(question: Pick<ICustomQuestion, "type" | "collectSignature">, value: unknown): boolean {
+	if (question.type === "checkbox") return value !== true
+
+	if (question.type === "terms") {
+		const v = value && typeof value === "object" ? (value as Record<string, unknown>) : {}
+		if (!v.agreed) return true
+		// A signature the question demands but the buyer left blank is the same as not agreeing.
+		if (question.collectSignature && !String(v.signature || "").trim()) return true
+		return false
+	}
+
+	if (Array.isArray(value)) return value.length === 0
+	if (typeof value === "object" && value !== null) return Object.values(value).every((v) => !v)
+	return value === undefined || value === null || String(value).trim() === ""
+}
+
+/** Every required question whose answer is missing, in order — titles for the "please answer…" message. */
+export function missingRequiredQuestions(questions: ICustomQuestion[], answers: Record<string, any>): ICustomQuestion[] {
+	return questions.filter((q) => q.isRequired && isAnswerMissing(q, answers[q.id]))
+}
+
+/**
+ * How an answer reads to a human — the admin queue table and the "new application" admin email
+ * both use this, so they can't disagree on what a checkbox or a terms agreement means.
+ */
+export function formatAnswerValue(answer: any): string {
+	if (typeof answer === "boolean") return answer ? "Yes" : "No"
+	if (Array.isArray(answer)) return answer.join(", ")
+	if (typeof answer === "object" && answer !== null) {
+		if ("agreed" in answer) {
+			const parts = [answer.agreed ? "Agreed" : "Not agreed"]
+			if (answer.signature) parts.push(`signed: ${answer.signature}`)
+			return parts.join(" — ")
+		}
+		return Object.values(answer).filter(Boolean).join(" — ")
+	}
+	return String(answer ?? "")
+}
+
 /** True only for a value that is safe to put in an `href`. */
 export const isHttpUrl = (value: unknown): value is string => typeof value === "string" && /^https?:\/\/\S+$/i.test(value)
 

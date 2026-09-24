@@ -38,7 +38,7 @@ import {
 	Stack,
 } from "@chakra-ui/react"
 import axios from "axios"
-import { displayProfileValue, isHttpUrl } from "@/lib/profile-links"
+import { displayProfileValue, isHttpUrl, formatAnswerValue } from "@/lib/profile-links"
 
 /**
  * The admin approval queue for Jetzy Premium applications — the questions + card-setup step a
@@ -63,12 +63,6 @@ type Application = {
 
 type Question = { id: string; title: string }
 
-const formatAnswer = (answer: any): string => {
-	if (Array.isArray(answer)) return answer.join(", ")
-	if (typeof answer === "object" && answer !== null) return Object.values(answer).filter(Boolean).join(" — ")
-	return String(answer ?? "")
-}
-
 const day = (iso?: string) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—")
 
 function ApplicationAnswers({ answers, questions }: { answers: Answer[]; questions: Question[] }) {
@@ -87,7 +81,7 @@ function ApplicationAnswers({ answers, questions }: { answers: Answer[]; questio
 								{displayProfileValue(a.answer)}
 							</Link>
 						) : (
-							formatAnswer(a.answer)
+							formatAnswerValue(a.answer)
 						)}
 					</Text>
 				)

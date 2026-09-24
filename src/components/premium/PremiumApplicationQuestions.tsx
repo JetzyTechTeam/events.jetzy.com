@@ -1,7 +1,7 @@
 import React from "react"
 import axios from "axios"
 import { Error as ErrorToast } from "@/lib/_toaster"
-import { validateApplicationAnswers } from "@/lib/profile-links"
+import { validateApplicationAnswers, missingRequiredQuestions } from "@/lib/profile-links"
 import type { ICustomQuestion } from "@/models/events/types"
 import { defaultTrialOffer } from "@/lib/invite-trial"
 import { planPriceForInterval, useMembershipPlan } from "@/hooks/usePremiumPlan"
@@ -173,11 +173,9 @@ export default function PremiumApplicationQuestions({
 	const hasAnyProfile = questions.some((q) => q.type === "social_profile" || q.type === "website") && Object.values(answers).some((v) => v && String(v).trim())
 
 	const submit = async () => {
-		const missing = questions.filter((q) => q.isRequired).filter((q) => {
-			const v = answers[q.id]
-			if (Array.isArray(v)) return v.length === 0
-			return v === undefined || v === null || String(v).trim() === ""
-		})
+		// Shared with `start.ts`'s `missingRequiredAnswers` — the questionnaire's own copy of this
+		// used to disagree (a `false` checkbox and an unsigned "I agree" both read as "answered").
+		const missing = missingRequiredQuestions(questions as ICustomQuestion[], answers)
 		if (missing.length > 0) {
 			setError(`Please answer: ${missing.map((q) => q.title).join(", ")}`)
 			return
