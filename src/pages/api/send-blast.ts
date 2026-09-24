@@ -279,6 +279,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           succeededCount: succeeded,
           failedCount: failed,
           sentBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
+          sentByAdmin: isAdmin,
           // What the guests actually saw, and who a reply reaches.
           sentFromName: senderName,
           ...(replyTo ? { sentReplyTo: replyTo } : {}),

@@ -47,6 +47,14 @@ const blastSchema = new Schema<IBlast>(
 			type: Schema.Types.ObjectId,
 			required: false,
 		},
+		// Captured once at send time, never re-derived — see the comment on `IBlast.sentByAdmin`
+		// in `types.ts`. `default: false` is deliberate: every blast sent before this field
+		// existed reads as "not an admin send" and stays visible to the owner, which is the
+		// least-surprising fallback for a field with no way to reconstruct its true history.
+		sentByAdmin: {
+			type: Boolean,
+			default: false,
+		},
 		// What the recipients actually saw in their inbox, and where a reply goes.
 		//
 		// NO DEFAULTS: absent means a blast sent before host identity existed, which is not the

@@ -43,6 +43,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const blasts = await Blasts.find({
 				eventId: new Types.ObjectId(eventId),
 				isDeleted: false,
+				// A blast an admin sent is invisible to the (non-admin) owner, by decision — an
+				// admin acting on someone else's event doesn't show up in that host's own history.
+				...(isAdmin ? {} : { sentByAdmin: { $ne: true } }),
 			})
 				.select("-recipients")
 				.sort({ createdAt: -1 })

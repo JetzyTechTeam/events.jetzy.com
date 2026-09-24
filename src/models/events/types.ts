@@ -331,6 +331,13 @@ export interface IBlast extends IBaseModelProps {
 	succeededCount: number
 	failedCount: number
 	sentBy?: Types.ObjectId
+	/**
+	 * Whether `sentBy` was an admin/super-admin AT SEND TIME — captured once, not re-derived from
+	 * the sender's current role, so a later promotion/demotion can't rewrite history. Absent/false
+	 * on a host's own sends and on every blast predating this field. Non-admin owners don't see a
+	 * blast where this is true (by decision) — see `blasts/index.ts` and `blasts/[blastId].ts`.
+	 */
+	sentByAdmin?: boolean
 	/** Display name the recipients saw, e.g. "Anna Khan via Jetzy". Absent on pre-feature blasts. */
 	sentFromName?: string
 	/** Where a reply goes — the host on a host-owned event. Absent on pre-feature blasts. */

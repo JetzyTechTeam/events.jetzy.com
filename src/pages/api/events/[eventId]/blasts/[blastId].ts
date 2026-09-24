@@ -53,6 +53,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Blast not found", false, ResCode.NOT_FOUND)
 		}
 
+		// An admin-sent blast is invisible to the (non-admin) owner — same rule as the list
+		// endpoint. 404, not 403: a non-admin owner shouldn't learn one exists by the refusal.
+		if (!isAdmin && blast.sentByAdmin) {
+			return sendResponse(res, null, "Blast not found", false, ResCode.NOT_FOUND)
+		}
+
 		// The full record INCLUDING per-recipient delivery outcomes. Its own method rather than
 		// widening the list above, because the recipient array is large and only wanted when a
 		// host actually opens a blast to ask who didn't get it.
