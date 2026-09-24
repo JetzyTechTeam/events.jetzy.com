@@ -48,6 +48,7 @@ export default function TicketEditorModal({
 	eventRequireApproval,
 	isSaving = false,
 	soldCount,
+	canManageMemberships,
 }: {
 	isOpen: boolean
 	onClose: () => void
@@ -61,6 +62,12 @@ export default function TicketEditorModal({
 	isSaving?: boolean
 	/** How many of this ticket are already booked, so the host can see what a cap would mean. */
 	soldCount?: number
+	/**
+	 * Whether to show the Jetzy Premium / Full Concierge toggles — admin/super-admin only, by
+	 * decision. No default: every caller must say explicitly, so a new call site can't leak the
+	 * controls to a host by omission.
+	 */
+	canManageMemberships: boolean
 }) {
 	const toast = useToast()
 	const limit = ticketQuantityLimit(ticket as any)
@@ -193,25 +200,29 @@ export default function TicketEditorModal({
 						</Flex>
 					</FormControl>
 
-					{/* Which memberships this ticket sells — either, both or neither. */}
-					<TicketMembershipToggles
-						value={ticketMemberships(ticket as any)}
-						onChange={(memberships) =>
-							onTicketChange({
-								...ticket,
-								memberships,
-								// Kept in step so the mobile app and any older reader still see a
-								// bundled Premium ticket. The array is the authority.
-								includesPremium: memberships.includes("premium"),
-							} as any)
-						}
-						requiresApproval={ticket.requireApproval ?? eventRequireApproval}
-						price={Number(ticket.price)}
-						interval={ticketMembershipInterval(ticket as any)}
-						onIntervalChange={(membershipInterval) => onTicketChange({ ...ticket, membershipInterval } as any)}
-						freeMonths={ticketMembershipFreeMonths(ticket as any)}
-						onFreeMonthsChange={(membershipFreeMonths) => onTicketChange({ ...ticket, membershipFreeMonths } as any)}
-					/>
+					{/* Which memberships this ticket sells — either, both or neither. Admin/super-admin
+					    only: a host can't see or touch these, on a ticket they're creating or one an
+					    admin already set up. */}
+					{canManageMemberships && (
+						<TicketMembershipToggles
+							value={ticketMemberships(ticket as any)}
+							onChange={(memberships) =>
+								onTicketChange({
+									...ticket,
+									memberships,
+									// Kept in step so the mobile app and any older reader still see a
+									// bundled Premium ticket. The array is the authority.
+									includesPremium: memberships.includes("premium"),
+								} as any)
+							}
+							requiresApproval={ticket.requireApproval ?? eventRequireApproval}
+							price={Number(ticket.price)}
+							interval={ticketMembershipInterval(ticket as any)}
+							onIntervalChange={(membershipInterval) => onTicketChange({ ...ticket, membershipInterval } as any)}
+							freeMonths={ticketMembershipFreeMonths(ticket as any)}
+							onFreeMonthsChange={(membershipFreeMonths) => onTicketChange({ ...ticket, membershipFreeMonths } as any)}
+						/>
+					)}
 				</ModalBody>
 				<ModalFooter>
 					<Button bg="#F79432" color="black" mr={3} onClick={save} isLoading={isSaving}>

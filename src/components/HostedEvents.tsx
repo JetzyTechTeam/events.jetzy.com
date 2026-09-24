@@ -1858,6 +1858,7 @@ export default function HostedEvents({ event }: Props) {
 				onTicketChange={setTempTicket}
 				isEditing={ticketEditIndex !== null}
 				eventRequireApproval={!!shownEvent?.requireApproval}
+				canManageMemberships={isAdmin}
 				onSave={(normalised: TicketData) => {
 					setDraftTickets((prev) => {
 						if (ticketEditIndex !== null) {

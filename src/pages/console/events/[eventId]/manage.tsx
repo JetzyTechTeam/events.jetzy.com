@@ -1840,6 +1840,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													onTicketChange={setTempTicket}
 													isEditing={editIndex !== null}
 													eventRequireApproval={!!values.requireApproval}
+													canManageMemberships={isAdmin}
 													onSave={(normalised) => {
 														if (editIndex !== null) replace(editIndex, normalised)
 														else push({ ...normalised, id: uniqueId(10) })

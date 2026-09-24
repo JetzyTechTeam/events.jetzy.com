@@ -1154,25 +1154,29 @@ const CreateEventPage = () => {
                         </Flex>
                       </FormControl>
 
-                      {/* Which memberships this ticket sells — either, both or neither. */}
-                      <TicketMembershipToggles
-                        value={ticketMemberships(tempTicket as any)}
-                        onChange={(memberships) =>
-                          setTempTicket({
-                            ...tempTicket,
-                            memberships,
-                            // Kept in step so the mobile app and any older reader still see a
-                            // bundled Premium ticket. The array is the authority.
-                            includesPremium: memberships.includes("premium"),
-                          } as any)
-                        }
-                        requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
-                        price={Number(tempTicket.price)}
-                        interval={ticketMembershipInterval(tempTicket as any)}
-                        onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
-                        freeMonths={ticketMembershipFreeMonths(tempTicket as any)}
-                        onFreeMonthsChange={(membershipFreeMonths) => setTempTicket({ ...tempTicket, membershipFreeMonths } as any)}
-                      />
+                      {/* Which memberships this ticket sells — either, both or neither.
+                          Admin/super-admin only — KEEP IN STEP WITH TicketEditorModal, whose own
+                          copy of this block is gated the same way via `canManageMemberships`. */}
+                      {isAdmin && (
+                        <TicketMembershipToggles
+                          value={ticketMemberships(tempTicket as any)}
+                          onChange={(memberships) =>
+                            setTempTicket({
+                              ...tempTicket,
+                              memberships,
+                              // Kept in step so the mobile app and any older reader still see a
+                              // bundled Premium ticket. The array is the authority.
+                              includesPremium: memberships.includes("premium"),
+                            } as any)
+                          }
+                          requiresApproval={tempTicket.requireApproval ?? values.requireApproval}
+                          price={Number(tempTicket.price)}
+                          interval={ticketMembershipInterval(tempTicket as any)}
+                          onIntervalChange={(membershipInterval) => setTempTicket({ ...tempTicket, membershipInterval } as any)}
+                          freeMonths={ticketMembershipFreeMonths(tempTicket as any)}
+                          onFreeMonthsChange={(membershipFreeMonths) => setTempTicket({ ...tempTicket, membershipFreeMonths } as any)}
+                        />
+                      )}
                     </ModalBody>
 
                     <ModalFooter>
