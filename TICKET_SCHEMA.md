@@ -2,6 +2,13 @@
 
 For the mobile app / backend, which writes to the same `events` collection this portal does.
 
+**Revision 5 (2026-09-24).** Adds three sections, all read/write contracts rather than schema
+changes: **§11 — `GET /api/events/:eventId/availability`**, the endpoint that answers "how many
+are left" so you don't have to run §10's aggregation yourself; **§12 — approvals**, including the
+rule that a PENDING request consumes NO capacity, and the new ability to approve FEWER tickets
+than were asked for; and **§13 — a host changing a booking's quantity after the fact**, with the
+audit fields that come with it. §1–§10 are unchanged.
+
 **Revision 4 (2026-09-23).** Adds **§10 — per-ticket capacity (`quantity`)**, and changes how
 "how many are left" is worked out: it is now COUNTED FROM THE BOOKINGS, not read from
 `eventtrackers.bookedTickets`. §3's "also create the capacity row" is therefore advisory rather
@@ -552,6 +559,12 @@ Rules:
 - [ ] **(Rev 4)** Read `quantity` via the resolver in §10 — `undefined` is UNLIMITED, `0` is CLOSED
 - [ ] **(Rev 4)** Send `null` to clear a `quantity` back to unlimited; omitting the key means unchanged
 - [ ] **(Rev 4)** Count remaining spots from live bookings (§10), never from `eventtrackers.bookedTickets`
+- [ ] **(Rev 5)** Read availability from `GET /api/events/:id/availability` (§11) — public, no auth, never cached
+- [ ] **(Rev 5)** Do NOT block a request because pending ones "fill" the ticket — pending holds no seat (§12)
+- [ ] **(Rev 5)** Surface the approve endpoint's refusal message verbatim; it is written for the host
+- [ ] **(Rev 5)** If you build an approvals screen, support approving fewer tickets, with its three refusals (§12)
+- [ ] **(Rev 5)** Read a booking's quantity from `booking.tickets` — it can change after purchase (§13)
+- [ ] **(Rev 5)** Never call `refunds.create`. A reduced capture is not a refund.
 - [ ] Write `memberships` **and** mirror `includesPremium`
 - [ ] Never write `[]` / `"month"` / `0` / `false` as defaults on a ticket you didn't create —
       omit the key instead
@@ -708,3 +721,206 @@ maxSellable     = min(of the non-null ones)       // null when both are null
 // exists but closed; still visible, cannot be booked
 { "name": "Early Bird", "price": 25, "stripeProductId": "price_…", "quantity": 0 }
 ```
+
+---
+
+## 11. NEW (Revision 5) — Reading availability: `GET /api/events/:eventId/availability`
+
+§10 tells you how to COUNT what's left. This is the endpoint that does it for you, so the app
+doesn't have to run that aggregation itself.
+
+**Public and unauthenticated**, by design — it returns counts only, no personal data. Send no
+auth header. `Cache-Control: no-store`; do not cache the response, a stale availability number
+sells a seat that doesn't exist.
+
+```
+GET /api/events/68f1.../availability
+```
+
+```jsonc
+{
+  "eventLimit": 150,        // legacy event-wide ceiling; null = no ceiling
+  "eventSold": 138,
+  "eventRemaining": 12,     // null = unlimited
+  "tickets": [
+    { "ticketId": "6a83…", "name": "VIP",     "limit": 50,   "sold": 50, "remaining": 0 },
+    { "ticketId": "6a84…", "name": "General", "limit": null, "sold": 88, "remaining": null }
+  ]
+}
+```
+
+**This is NOT the usual `{ message, status, code, data }` envelope** — it returns the object
+directly. It is the one endpoint in this document that does.
+
+### How to use it
+
+```js
+// what a buyer may select for one ticket — both limits apply, smaller wins
+function maxSelectable(availability, ticketId) {
+  const row = availability.tickets.find(t => t.ticketId === ticketId)
+  const limits = [row?.remaining, availability.eventRemaining].filter(n => n !== null && n !== undefined)
+  return limits.length ? Math.min(...limits) : null      // null = unlimited
+}
+```
+
+- `remaining === 0` → show **Sold out** and make the ticket unselectable.
+- `remaining !== null` → cap the quantity stepper at it, and say why the stepper stopped.
+- `remaining === null` → unlimited, no cap, no badge.
+- **Re-fetch after a checkout attempt** and when the buyer returns to the page. Ours refetches on
+  window focus and when the checkout sheet closes.
+
+The numbers exclude PENDING approval requests (§12), so `remaining` is "seats a buyer can claim
+right now", not "seats nobody has asked about".
+
+---
+
+## 12. NEW (Revision 5) — Approvals: what consumes a seat, and approving part of a request
+
+### A PENDING request does NOT hold a seat
+
+This is the rule that surprises people, so it is stated first.
+
+`requireApproval` (§5) creates a booking with `status: "pending"`. **That booking consumes no
+capacity.** The seat is consumed when the host approves and the booking becomes `confirmed`.
+
+Consequences you must design for:
+
+- A ticket with 3 seats can legitimately collect **four requests for 2 each**. Do not refuse the
+  second request at checkout because the pending ones "fill" the ticket — they don't, and
+  over-collecting is often the point of an approval event.
+- The limit bites at **approval time**. Approving is where a request can be refused for capacity.
+- §10's counting query already excludes `pending` from the dead-status list for exactly this
+  reason. Don't change that.
+
+### Approve — `POST /api/bookings/approve`
+
+Session required. Caller must be an **admin or the event's owner**.
+
+```jsonc
+{ "bookingRef": "JZ-…" }
+```
+
+Normal envelope `{ message, status, code, data }`. On success:
+
+```jsonc
+"data": {
+  "bookingRef": "JZ-…",
+  "status": "confirmed",
+  "payment": { "status": "captured", "amount": 80, "capturedAt": "…" },
+  "amountCharged": 80,
+  "requestedTickets": 2,
+  "approvedTickets": 2,
+  "partial": false
+}
+```
+
+Approval also **captures the card hold** for a paid request. It can be refused — most commonly
+`"Cannot approve: only 1 spot is left for \"VIP\"."` Surface that message; it is written for the
+host to read.
+
+### Approving FEWER tickets than were asked for — NEW
+
+When a request no longer fits, the host does not have to reject the whole thing. Send a
+**reduced** ticket list:
+
+```jsonc
+{
+  "bookingRef": "JZ-…",
+  "tickets": [ { "ticketId": "6a83…", "quantity": 1 } ]     // they asked for 2
+}
+```
+
+```jsonc
+"data": { …, "requestedTickets": 2, "approvedTickets": 1, "partial": true }
+```
+
+Rules the server enforces — mirror them so you never show a button that will be refused:
+
+1. **It may only SHRINK.** Same ticket id set as the booking, every quantity `<=` what was
+   booked, total `>= 1`, total `<` the original. This endpoint seats fewer people; it never
+   sells more.
+2. **Refused when the booking covers more than one ticket type.** A booking stores no per-ticket
+   price (§7), so the partial capture scales the held amount proportionally — which is only
+   correct when every ticket in the order costs the same.
+3. **Refused when the ticket sells a membership** (§6). Quantity there decides how many
+   subscriptions get created and counts against the per-event membership allowance.
+4. Omit `tickets` entirely for an ordinary approval. Sending the full quantity is equivalent, but
+   omitting is clearer.
+
+### What a partial approval does to the money
+
+- The card is captured for the **reduced** amount: `held × approved / requested`.
+- **This is not a refund.** Capturing under the authorized amount makes Stripe release the
+  difference at no cost. Never call `refunds.create` — this platform issues no refunds.
+- `booking.subTotal`, `discountAmount` and `total` are scaled by the same ratio, so the stored
+  record and the receipt agree.
+- `booking.tickets` is rewritten to the reduced quantity, and the edit is recorded (§13).
+
+### What the guest is told
+
+The confirmation email states plainly that they asked for 2, there was room for 1, and they were
+**not** charged for the other. If you build your own confirmation, say the same — a guest who
+reads an ordinary confirmation will believe they hold the full number.
+
+### Reject — `POST /api/bookings/reject`
+
+```jsonc
+{ "bookingRef": "JZ-…" }
+```
+
+Same auth. Releases the card hold (never a refund — nothing was captured) and emails the guest.
+
+---
+
+## 13. NEW (Revision 5) — A host can change a booking's quantity after the fact
+
+`POST /api/bookings/update-tickets`. Session required, **admin or event owner**.
+
+```jsonc
+{
+  "bookingRef": "JZ-…",
+  "tickets": [ { "ticketId": "6a83…", "quantity": 1 } ]
+}
+```
+
+**FREE bookings only.** A booking that was paid for — held, captured, or with a non-zero total and
+no payment record — is refused. There are no refunds on this platform, so reducing a paid booking
+would take a seat back and keep the money, and increasing one would hand over a ticket nobody
+paid for. That decision is still open; treat the refusal as permanent for now.
+
+Other rules:
+
+- The submitted ticket ids must be an **exact permutation** of what the booking holds. No adding
+  a ticket type.
+- Total must be `>= 1`. To remove the booking entirely, cancel it (`POST /api/bookings/cancel`).
+- **Increasing** re-checks availability (excluding this booking's own seats, so it isn't blocked
+  by itself). Decreasing always succeeds.
+- Refused if the new total drops below the number of guests already checked in on that booking.
+- Refused if the ticket is now priced or now sells a membership, even when the booking itself was
+  free — the host may have changed the ticket since.
+- **Money fields are NOT recomputed.** No money moved. On an order a referral code discounted to
+  $0, rewriting the subtotal would change what that campaign is reported to have achieved.
+
+### New booking fields (audit)
+
+Written by both this endpoint and a partial approval (§12). All three have **no defaults** —
+absent means the booking was never edited, which is not the same as edited zero times.
+
+```jsonc
+"ticketsEditedAt":  ISODate("…"),
+"ticketsEditedBy":  "host",            // "host" | "admin"
+"ticketsEditHistory": [
+  {
+    "at": ISODate("…"),
+    "by": "host",
+    "byUserId": ObjectId("…"),
+    "from": [ { "ticketId": ObjectId("…"), "quantity": 2 } ],
+    "to":   [ { "ticketId": ObjectId("…"), "quantity": 1 } ]
+  }
+]
+```
+
+If you display a booking's quantity anywhere, read it from `booking.tickets` — it is no longer
+guaranteed to be what was originally purchased.
+
+---
