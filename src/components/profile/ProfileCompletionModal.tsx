@@ -426,7 +426,11 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 			size="md"
 			scrollBehavior="inside"
 		>
-			<ModalOverlay bg="blackAlpha.700" />
+			{/* Fully opaque, not a translucent dim — this gate can't be dismissed or clicked past, so
+			    there's no reason to let the page underneath (and its own background colour) show
+			    through around the card, which on some pages showed as a mismatched sliver above and
+			    below it. */}
+			<ModalOverlay bg="#0A0B0F" />
 			<ModalContent mx={4} borderRadius="2xl" bg="#1E1E1E" color="white" border="1px solid #434343">
 				<div className="p-6">
 					{intro && <p className="mb-3 rounded-lg bg-app/10 px-3 py-2 text-sm font-medium text-app">{intro}</p>}
