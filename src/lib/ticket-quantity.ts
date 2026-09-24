@@ -20,10 +20,17 @@
  */
 
 /**
- * Below this many left, the ticket card says so. A count, not a ratio — "2 left" is urgent
- * whether the ticket started at 10 or at 1000.
+ * The ONLY remaining-count the ticket card advertises is the last one — "Only 1 left".
+ *
+ * Deliberately 1, not a range (CEO, 2026-09-24). A running "Only 4 left" on a public page
+ * broadcasts how little has sold, which reads as a quiet event rather than a scarce one. One
+ * left is the only count that is pure urgency, so it is the only count shown. Sold out is a
+ * STATE rather than a count and is still shown at 0.
+ *
+ * This governs the BADGE only. The stepper still names the exact number when it stops, because
+ * that appears at the moment a buyer is blocked and the alternative is a dead button.
  */
-export const LOW_STOCK_THRESHOLD = 5
+export const LOW_STOCK_THRESHOLD = 1
 
 /** Anything with a `quantity`, so a raw form value can be resolved the same way a stored ticket is. */
 type QuantityLike = { quantity?: number | string | null } | null | undefined

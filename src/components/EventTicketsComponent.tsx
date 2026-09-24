@@ -515,9 +515,13 @@ const EventTicketsComponent: React.FC<Props> = ({ event, canManage = false, onEd
                     {/* The long form of this pill ("card authorized, charged on approval") is
                         three wrapped lines on a 360px screen. The short form carries the same
                         warning; the full sentence is in the notice above the list. */}
-                    {/* Sold out / low stock. Rendered on the CARD, not beside the stepper,
-                        because the stepper only exists on a paid event — a free event needs
-                        to show this too. */}
+                    {/* Sold out, or the last ticket. Rendered on the CARD, not beside the
+                        stepper, because the stepper only exists on a paid event — a free event
+                        needs to show this too.
+
+                        Only the LAST one is announced (LOW_STOCK_THRESHOLD = 1). A standing
+                        "Only 4 left" tells a visitor how little has sold, which reads as a quiet
+                        event; "Only 1 left" is the one count that is purely urgent. */}
                     {remainingFor(ticket.id) === 0 ? (
                       <span className="inline-block mt-2 mr-2 text-[10px] font-semibold uppercase tracking-wide text-gray-300 bg-gray-500/20 border border-gray-500/50 rounded px-2 py-0.5">
                         Sold out
