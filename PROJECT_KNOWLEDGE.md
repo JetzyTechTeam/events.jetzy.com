@@ -3194,3 +3194,4 @@ until it expired. Nothing in the tab warned them either.
   partial approval can split a couple; the dialog makes it an explicit, one-off host action rather
   than anything automatic.
 - Partial approval is never offered when the request fits.
+- **The city list flips ABOVE the field when the keyboard leaves no room** (2026-09-23): the field sits near the bottom of the dialog, so on a phone the list was drawn behind the on-screen keyboard. Measured from **`window.visualViewport.height`** (the only one that shrinks for the keyboard — `innerHeight` does not on iOS), re-measured on its `resize`/`scroll` and 300ms after focus, since the keyboard appears after focus. The list is also scrolled into view whenever it opens.

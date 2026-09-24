@@ -74,6 +74,15 @@ function ProfileCityInput({
 	const [awaitingSearch, setAwaitingSearch] = React.useState(false)
 	const blurTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 	const listRef = React.useRef<HTMLDivElement>(null)
+	const inputRef = React.useRef<HTMLInputElement>(null)
+	/**
+	 * Open upwards when the space under the field is too small to show the list.
+	 *
+	 * On a phone the on-screen keyboard covers the bottom of the screen, and this field sits near the
+	 * bottom of the dialog — so a list rendered below it was drawn behind the keyboard. `visualViewport`
+	 * is what shrinks when the keyboard opens; `innerHeight` does not, on iOS.
+	 */
+	const [placeAbove, setPlaceAbove] = React.useState(false)
 
 	const { placePredictions, getPlacePredictions, isPlacePredictionsLoading, placesService, refreshSessionToken } =
 		usePlacesAutocompleteService({
@@ -102,11 +111,43 @@ function ProfileCityInput({
 		setAwaitingSearch(false)
 	}, [placePredictions])
 
+	// A freshly opened list must be visible even when it opens below a field near the dialog's fold.
+	React.useEffect(() => {
+		if (!open) return
+		const id = setTimeout(() => listRef.current?.scrollIntoView({ block: "nearest" }), 50)
+		return () => clearTimeout(id)
+	}, [open, placePredictions])
+
 	// Keep the highlighted row in view when arrowing through a scrolled list.
 	React.useEffect(() => {
 		const el = listRef.current?.children[highlighted] as HTMLElement | undefined
 		el?.scrollIntoView({ block: "nearest" })
 	}, [highlighted])
+
+	// Enough room below for a list, or does it have to open upwards? Re-measured while the list is
+	// open, because the keyboard appears AFTER focus and changes the answer.
+	const measureSpace = React.useCallback(() => {
+		const rect = inputRef.current?.getBoundingClientRect()
+		if (!rect) return
+		const viewportHeight = (typeof window !== "undefined" && window.visualViewport?.height) || window.innerHeight
+		const below = viewportHeight - rect.bottom
+		// Roughly two rows plus padding — less than this and the list is not usefully visible.
+		setPlaceAbove(below < 170 && rect.top > below)
+	}, [])
+
+	React.useEffect(() => {
+		if (!open) return
+		measureSpace()
+		const viewport = typeof window !== "undefined" ? window.visualViewport : undefined
+		viewport?.addEventListener("resize", measureSpace)
+		viewport?.addEventListener("scroll", measureSpace)
+		window.addEventListener("resize", measureSpace)
+		return () => {
+			viewport?.removeEventListener("resize", measureSpace)
+			viewport?.removeEventListener("scroll", measureSpace)
+			window.removeEventListener("resize", measureSpace)
+		}
+	}, [open, measureSpace])
 
 	const search = (text: string) => {
 		if (!text.trim() || !countryCode) {
@@ -144,9 +185,43 @@ function ProfileCityInput({
 
 	const showList = open && !!countryCode && (predictions.length > 0 || isPlacePredictionsLoading || !!value.trim())
 
+	const list = showList ? (
+		<div
+			id="profile-city-list"
+			ref={listRef}
+			role="listbox"
+			className={`${placeAbove ? "mb-2" : "mt-2"} max-h-56 overflow-y-auto rounded-xl border border-[#434343] bg-[#141414]`}
+		>
+			{predictions.map((p, i) => (
+				<button
+					key={p.place_id}
+					type="button"
+					role="option"
+					aria-selected={i === highlighted}
+					onMouseEnter={() => setHighlighted(i)}
+					onClick={() => choose(p)}
+					className={`block w-full border-b border-[#2A2A2A] px-4 py-3 text-left last:border-b-0 ${
+						i === highlighted ? "bg-[#2A2A2A]" : ""
+					}`}
+				>
+					<span className="block text-base text-white">{p.main}</span>
+					{p.secondary && <span className="block text-sm text-gray-400">{p.secondary}</span>}
+				</button>
+			))}
+			{predictions.length === 0 && (
+				<p className="px-4 py-3 text-sm text-gray-400">
+					{isPlacePredictionsLoading || awaitingSearch ? "Searching…" : "No cities found"}
+				</p>
+			)}
+		</div>
+	) : null
+
 	return (
 		<div className="relative">
+			{/* Above the field when the keyboard leaves no room below it — see `placeAbove`. */}
+			{placeAbove && list}
 			<input
+				ref={inputRef}
 				id="profile-city"
 				type="text"
 				value={value}
@@ -163,6 +238,12 @@ function ProfileCityInput({
 				}}
 				onFocus={() => {
 					if (value.trim()) setOpen(true)
+					// The keyboard slides up after focus; give it a moment, then bring the field (and the
+					// room around it) into the shrunken viewport and re-measure which way to open.
+					setTimeout(() => {
+						inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" })
+						measureSpace()
+					}, 300)
 				}}
 				onBlur={() => {
 					// Delayed — a click on a suggestion fires after blur.
@@ -187,36 +268,7 @@ function ProfileCityInput({
 				className={`mt-2 ${fieldClass} text-base disabled:cursor-not-allowed disabled:opacity-50`}
 			/>
 
-			{showList && (
-				<div
-					id="profile-city-list"
-					ref={listRef}
-					role="listbox"
-					className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-[#434343] bg-[#141414]"
-				>
-					{predictions.map((p, i) => (
-						<button
-							key={p.place_id}
-							type="button"
-							role="option"
-							aria-selected={i === highlighted}
-							onMouseEnter={() => setHighlighted(i)}
-							onClick={() => choose(p)}
-							className={`block w-full border-b border-[#2A2A2A] px-4 py-3 text-left last:border-b-0 ${
-								i === highlighted ? "bg-[#2A2A2A]" : ""
-							}`}
-						>
-							<span className="block text-base text-white">{p.main}</span>
-							{p.secondary && <span className="block text-sm text-gray-400">{p.secondary}</span>}
-						</button>
-					))}
-					{predictions.length === 0 && (
-						<p className="px-4 py-3 text-sm text-gray-400">
-							{isPlacePredictionsLoading || awaitingSearch ? "Searching…" : "No cities found"}
-						</p>
-					)}
-				</div>
-			)}
+			{!placeAbove && list}
 
 			{resolving && <p className="mt-2 text-sm text-gray-400">Getting that city…</p>}
 		</div>
