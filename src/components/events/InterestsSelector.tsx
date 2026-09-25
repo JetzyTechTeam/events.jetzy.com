@@ -28,25 +28,47 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 	const [saving, setSaving] = React.useState(false)
 	const [createError, setCreateError] = React.useState<string | null>(null)
 
+	// Search. `search` is what is in the box; `query` is what the list on screen was actually
+	// fetched with — the two differ for the length of the debounce, and the difference is what
+	// tells "no results" apart from "still typing".
+	const [search, setSearch] = React.useState('')
+	const [query, setQuery] = React.useState('')
+	// While searching every match is expanded by default (a result nobody opens is a result
+	// nobody sees), so collapsing is the deviation that needs storing. Reset on every new query.
+	const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set())
+
+	// Debounced fetches can land out of order — a short query issued after a long one often
+	// answers first. Only the newest request may write to state.
+	const seqRef = React.useRef(0)
+
 	// Returns the list as well as storing it, so a create can locate what it just made.
-	const loadCategories = React.useCallback(async (): Promise<Category[]> => {
+	const loadCategories = React.useCallback(async (term = ''): Promise<Category[]> => {
+		const seq = ++seqRef.current
 		setLoading(true)
 		try {
-			const res = await fetch('/api/interests')
+			const res = await fetch(`/api/interests?search=${encodeURIComponent(term)}`)
 			const data = await res.json()
 			const rows = Array.isArray(data) ? data : []
-			setCategories(rows)
+			if (seq === seqRef.current) {
+				setCategories(rows)
+				setQuery(term)
+				setCollapsed(new Set())
+			}
 			return rows
 		} catch {
 			return []
 		} finally {
-			setLoading(false)
+			if (seq === seqRef.current) setLoading(false)
 		}
 	}, [])
 
+	// One effect for the first load and for every keystroke after it: `search` starts empty,
+	// so the initial run is the unfiltered fetch.
 	React.useEffect(() => {
-		loadCategories()
-	}, [loadCategories])
+		const term = search.trim()
+		const t = setTimeout(() => { loadCategories(term) }, term ? 300 : 0)
+		return () => clearTimeout(t)
+	}, [search, loadCategories])
 
 	const toggle = (id: string) => {
 		if (selected.includes(id)) {
@@ -56,8 +78,10 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 		}
 	}
 
-	const toggleCategory = (cat: Category) => {
-		const subIds = cat.subCategories.map(s => s.id)
+	// `subs` is what is on screen, which while searching is a subset of the category — Select
+	// All has to mean the rows the host can actually see, not ones the filter is hiding.
+	const toggleCategory = (cat: Category, subs: Category['subCategories']) => {
+		const subIds = subs.map(s => s.id)
 		const allSelected = subIds.every(id => selected.includes(id))
 		if (allSelected) {
 			onChange(selected.filter(id => !subIds.includes(id)))
@@ -109,6 +133,9 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 				return
 			}
 
+			// Back to the unfiltered list: what was just created need not match whatever the host
+			// had typed in the search box, and the lookup below finds it by name in `rows`.
+			setSearch('')
 			const rows = await loadCategories()
 
 			if (isSub) {
@@ -221,11 +248,43 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 		})
 		return set
 	}, [categories])
-	// Guarded on `categories.length`: mid-load everything looks unrecognised.
-	const unrecognised = categories.length > 0 ? selected.filter(id => !knownIds.has(id)).length : 0
+	// The term the rendered list was fetched with, normalised the same way the taxonomy is —
+	// `search` would be one keystroke ahead of the rows on screen.
+	const q = normalizeInterestName(query)
+
+	// Guarded on `categories.length`: mid-load everything looks unrecognised. Suppressed while
+	// a search is applied for the same reason — `categories` is then a deliberate subset, and
+	// every interest the filter excluded would be reported as missing from the taxonomy.
+	const unrecognised = !query && categories.length > 0 ? selected.filter(id => !knownIds.has(id)).length : 0
 
 	const list = (
 		<>
+			{/* First thing in the panel. There are ~35 categories holding several hundred
+			    sub-interests, so scanning was the only way to find one. Filtering happens on the
+			    BACKEND (`?search=`), which matches sub-interest names as well as category names —
+			    a client-side filter over one page could only ever see what was already fetched. */}
+			<Box pb={3} pt={1}>
+				<Input
+					value={search}
+					onChange={(e) => setSearch(e.target.value)}
+					onKeyDown={(e) => {
+						// Inside the event <Formik>: Enter here would submit the whole event.
+						if (e.key === 'Enter') e.preventDefault()
+						if (e.key === 'Escape') {
+							e.preventDefault()
+							setSearch('')
+						}
+					}}
+					placeholder="Search interests"
+					size="sm"
+					rounded="full"
+					bg="#090C10"
+					borderColor="#3A3D42"
+					color="white"
+					_placeholder={{ color: '#6B6E73' }}
+				/>
+			</Box>
+
 			{unrecognised > 0 && (
 				<Box mb={3} p={3} borderRadius="10px" bg="#1A1206" border="1px solid #F7943255">
 					<Text color="#F79432" fontSize="xs" fontWeight="bold">
@@ -276,7 +335,11 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 			{loading && categories.length === 0 ? (
 				<Text color="gray.500" fontSize="sm">Loading interests...</Text>
 			) : categories.length === 0 ? (
-				<Text color="gray.600" fontSize="sm">No interests available</Text>
+				// `query`, not `search`: it names the term the empty list actually came back for,
+				// so it can't quote something the host typed after the request went out.
+				<Text color="gray.600" fontSize="sm" py={3}>
+					{query ? `No interests match "${query}". Add it above, or clear the search.` : 'No interests available'}
+				</Text>
 			) : (
 				categories.map((cat, idx) => {
 					const subIds = cat.subCategories.map(s => s.id)
@@ -285,8 +348,18 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 					// against sub ids alone made those events show a correct "N Selected" count
 					// with nothing highlighted anywhere.
 					const categorySelected = selected.includes(cat._id)
+					// Counted over the WHOLE category, never the filtered view — the badge reports
+					// what is on the event, and a search must not make picks look dropped.
 					const selectedCount = subIds.filter(id => selected.includes(id)).length + (categorySelected ? 1 : 0)
-					const isExpanded = expanded === cat._id
+					// The backend returns a matching category with ALL of its sub-interests, so a
+					// search for one chip still hands back 26 of them. Narrow to the matches here —
+					// unless the CATEGORY name is what matched, in which case the whole thing is
+					// the result.
+					const categoryMatched = !q || normalizeInterestName(cat.name).includes(q)
+					const visibleSubs = categoryMatched ? cat.subCategories : cat.subCategories.filter(sub => normalizeInterestName(sub.name).includes(q))
+					// While searching, a match nobody opens is a match nobody sees — so results are
+					// expanded by default and collapsing is the state worth keeping.
+					const isExpanded = q ? !collapsed.has(cat._id) : expanded === cat._id
 					const addingSubHere = creating?.kind === 'sub' && creating.categoryId === cat._id
 					return (
 						<Box key={cat._id} borderBottom={idx === categories.length - 1 ? 'none' : '1px solid #2E2E2E'}>
@@ -295,7 +368,18 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 								justify="space-between"
 								cursor="pointer"
 								py={4}
-								onClick={() => setExpanded(isExpanded ? null : cat._id)}
+								onClick={() => {
+									if (q) {
+										setCollapsed(prev => {
+											const next = new Set(prev)
+											if (next.has(cat._id)) next.delete(cat._id)
+											else next.add(cat._id)
+											return next
+										})
+									} else {
+										setExpanded(isExpanded ? null : cat._id)
+									}
+								}}
 							>
 								<Flex align="center" gap={3}>
 									<Text color="white" fontWeight="bold" textTransform="capitalize" fontSize="md">
@@ -371,7 +455,7 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 												All of {cat.name}
 											</Box>
 										)}
-										{cat.subCategories.map(sub => {
+										{visibleSubs.map(sub => {
 											const isSelected = selected.includes(sub.id)
 											return (
 												<Box
@@ -403,9 +487,9 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 										color="gray.500"
 										_hover={{ color: 'white' }}
 										type="button"
-										onClick={() => toggleCategory(cat)}
+										onClick={() => toggleCategory(cat, visibleSubs)}
 									>
-										{subIds.every(id => selected.includes(id)) ? 'Deselect All' : 'Select All'}
+										{visibleSubs.length > 0 && visibleSubs.every(sub => selected.includes(sub.id)) ? 'Deselect All' : 'Select All'}
 									</Button>
 								</Box>
 							)}
