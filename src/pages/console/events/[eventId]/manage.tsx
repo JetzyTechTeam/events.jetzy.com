@@ -712,7 +712,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			leaveGuard.bypass()
 			router.replace(router.asPath)
 		} catch (err) {
-			toast({ title: "Failed to discard draft.", status: "error", duration: 3000 })
+			toast({ title: "Failed to discard changes.", status: "error", duration: 3000 })
 			setIsDiscardingDraft(false)
 		}
 	}
@@ -1263,8 +1263,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 												direction={{ base: "column", md: "row" }}
 												gap={3}
 											>
+												{/* "Draft" is the event's STATUS. Unpublished edits are "changes" — the two
+												    were both called draft, and a host reading "discard draft" next to a Status
+												    dropdown set to Draft could not tell which one they were about to lose. */}
 												<Text className={roboto.className} color="#F5C77E" fontSize="14px" lineHeight="130%">
-													You&rsquo;re editing unsaved autosaved changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Update Event</b>.
+													You&rsquo;re editing unpublished changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Update Event</b>.
 												</Text>
 												<Button
 													size="sm"
@@ -1276,7 +1279,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													onClick={handleDiscardDraft}
 													flexShrink={0}
 												>
-													Discard draft
+													Discard changes
 												</Button>
 											</Flex>
 										)}
@@ -2003,7 +2006,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								? "Your changes aren’t in the review yet"
 								: "Your changes aren’t live yet"
 					}
-					savedLabel={lastAutosavedLabel ? `Draft saved ${lastAutosavedLabel}` : null}
+					savedLabel={lastAutosavedLabel ? `Changes saved ${lastAutosavedLabel}` : null}
 					body={
 						willUnpublish ? (
 							<>
@@ -2013,20 +2016,20 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							</>
 						) : isPendingApproval ? (
 							<>
-								Nothing is lost — they&rsquo;re saved as a draft. This event is awaiting admin
-								approval, and the version being reviewed is the last one you saved. Press{" "}
+								Nothing is lost — your changes are saved. This event is awaiting admin
+								approval, and the version being reviewed is the last one you published. Press{" "}
 								<Box as="span" color="white" fontWeight={700}>Update Event</Box> to include these changes.
 							</>
 						) : (
 							<>
-								Nothing is lost — they&rsquo;re saved as a draft. Guests keep seeing the
+								Nothing is lost — your changes are saved. Guests keep seeing the
 								published version until you press <Box as="span" color="white" fontWeight={700}>Update Event</Box>.
 							</>
 						)
 					}
 					/* "Leave as draft" is ambiguous when the DRAFT is the status being saved — there,
 					   leaving means the event carries on being published. Say that instead. */
-					leaveLabel={willUnpublish ? "Leave it published" : "Leave as draft"}
+					leaveLabel={willUnpublish ? "Leave it published" : "Leave unpublished"}
 					onLeave={() => leaveGuard.confirmLeave()}
 					onKeepEditing={leaveGuard.cancelLeave}
 					primary={{

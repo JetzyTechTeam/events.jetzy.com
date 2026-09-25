@@ -1347,7 +1347,7 @@ const CreateEventPage = () => {
       <UnsavedDraftDialog
         isOpen={leaveGuard.isOpen}
         title="Your event is saved as a draft"
-        savedLabel={lastAutosavedLabel ? `Draft saved ${lastAutosavedLabel}` : null}
+        savedLabel={lastAutosavedLabel ? `Saved ${lastAutosavedLabel}` : null}
         body={
           <>
             You&rsquo;ll find it under <Box as="span" color="white" fontWeight={700}>My Events</Box>, marked
