@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Flex, Text, Button, Input } from '@chakra-ui/react'
+import { Box, Flex, Text, Button, Input, Select } from '@chakra-ui/react'
 import { ChevronDownIcon, PlusIcon } from '@heroicons/react/24/outline'
 import { normalizeInterestName, type InterestCategory } from '@/lib/jetzy-interests'
 
@@ -17,6 +17,8 @@ type CreateTarget = { kind: 'category' } | { kind: 'sub'; categoryId: string }
 
 export default function InterestsSelector({ selected, onChange, bare = false }: Props) {
 	const [categories, setCategories] = React.useState<Category[]>([])
+	// The last unfiltered read — see the note in `loadCategories`.
+	const [allCategories, setAllCategories] = React.useState<Category[]>([])
 	const [expanded, setExpanded] = React.useState<string | null>(null)
 	const [open, setOpen] = React.useState(false)
 	const [loading, setLoading] = React.useState(false)
@@ -53,6 +55,10 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 				setCategories(rows)
 				setQuery(term)
 				setCollapsed(new Set())
+				// The unfiltered read is the only one that sees the whole taxonomy. Keep it: the
+				// selected strip has to name interests the current filter excludes, and the
+				// zero-result panel has to offer categories the search did not return.
+				if (!term) setAllCategories(rows)
 			}
 			return rows
 		} catch {
@@ -92,9 +98,9 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 		}
 	}
 
-	const openCreate = (target: CreateTarget) => {
+	const openCreate = (target: CreateTarget, seed = '') => {
 		setCreating(target)
-		setDraft('')
+		setDraft(seed)
 		setCreateError(null)
 	}
 
@@ -236,13 +242,94 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 	)
 
 	const addingCategory = creating?.kind === 'category'
+	// A search that returned nothing gets its own create panel below, with a parent picker.
+	// The block at the top stands down for it — two name fields bound to one `draft`, both
+	// autoFocusing, is not a choice anyone can make.
+	const emptyResult = !!query && categories.length === 0
 
 	// The term the rendered list was fetched with, normalised the same way the taxonomy is —
 	// `search` would be one keystroke ahead of the rows on screen.
 	const q = normalizeInterestName(query)
 
+	/**
+	 * id -> label, for the selected strip.
+	 *
+	 * Built from the unfiltered read FIRST and the current one second, so a pick stays named
+	 * while a search hides the category holding it. A category id is a legitimate selection
+	 * (the Jetzy app tags events with whole top-level interests), so it is labelled as one.
+	 */
+	const nameById = React.useMemo(() => {
+		const map = new Map<string, string>()
+		const add = (rows: Category[]) => rows.forEach(cat => {
+			map.set(cat._id, `All of ${cat.name}`)
+			cat.subCategories.forEach(sub => map.set(sub.id, sub.name))
+		})
+		add(allCategories)
+		add(categories)
+		return map
+	}, [allCategories, categories])
+
+	// Ids the taxonomy cannot name — picked against a different Jetzy environment. They are
+	// left out of the strip rather than rendered as a blank chip; they stay on the event, and
+	// saving does not drop them.
+	const selectedNamed = selected.map(id => ({ id, name: nameById.get(id) })).filter(row => !!row.name) as { id: string; name: string }[]
+
+	/**
+	 * What to prefill a create form with.
+	 *
+	 * Somebody searching for a name that isn't there is telling us what they want to add, so
+	 * the text carries over. It is dropped when the name already exists at that level — then
+	 * the host is adding something else and a prefilled duplicate would only be refused.
+	 */
+	const seedForCreate = (target: CreateTarget): string => {
+		if (!q) return ''
+		const pool = target.kind === 'category'
+			? allCategories.map(cat => cat.name)
+			: ([...categories, ...allCategories].find(cat => cat._id === target.categoryId)?.subCategories ?? []).map(sub => sub.name)
+		return pool.some(name => normalizeInterestName(name) === q) ? '' : search.trim()
+	}
+
 	const list = (
 		<>
+			{/* Above the search box: with the list filtered — or simply scrolled — what is
+			    already picked is otherwise off screen, and this is the one place every pick is
+			    visible at once and removable in one click. */}
+			{selectedNamed.length > 0 && (
+				<Box pb={3} mb={1} borderBottom="1px solid #2E2E2E">
+					<Text color="#9C9C9C" fontSize="xs" fontWeight="bold" mb={2}>
+						Selected ({selectedNamed.length})
+					</Text>
+					<Flex wrap="wrap" gap={2}>
+						{selectedNamed.map(row => (
+							<Flex
+								key={row.id}
+								as="button"
+								type="button"
+								align="center"
+								gap={2}
+								px={3}
+								py={1.5}
+								rounded="full"
+								fontSize="sm"
+								fontWeight="medium"
+								cursor="pointer"
+								bg="#F79432"
+								color="white"
+								textTransform="capitalize"
+								title={`Remove ${row.name}`}
+								onClick={() => toggle(row.id)}
+								_hover={{ bg: '#E68422' }}
+							>
+								{row.name}
+								{/* Not textTransform'd with the label: a capitalised multiplication
+								    sign is still the same glyph, but the aria label should read plainly. */}
+								<Box as="span" aria-hidden fontSize="md" lineHeight="1">&times;</Box>
+							</Flex>
+						))}
+					</Flex>
+				</Box>
+			)}
+
 			{/* First thing in the panel. There are ~35 categories holding several hundred
 			    sub-interests, so scanning was the only way to find one. Filtering happens on the
 			    BACKEND (`?search=`), which matches sub-interest names as well as category names —
@@ -271,7 +358,7 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 
 			{/* At the TOP, not after the list. There are ~35 categories, so at the bottom this
 			    sat below several screens of chips and a host looking for it never found it. */}
-			<Box pb={3} mb={1} borderBottom={categories.length > 0 ? '1px solid #2E2E2E' : 'none'}>
+			<Box pb={3} mb={1} borderBottom={categories.length > 0 ? '1px solid #2E2E2E' : 'none'} display={emptyResult ? 'none' : undefined}>
 				{addingCategory ? (
 					renderCreateForm('New interest category')
 				) : (
@@ -292,7 +379,7 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 						bg="#F7943214"
 						color="#F79432"
 						border="1px dashed #F79432"
-						onClick={() => openCreate({ kind: 'category' })}
+						onClick={() => openCreate({ kind: 'category' }, seedForCreate({ kind: 'category' }))}
 						_hover={{ bg: '#F7943229' }}
 					>
 						<Box as={PlusIcon} w="16px" h="16px" />
@@ -309,9 +396,65 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 			) : categories.length === 0 ? (
 				// `query`, not `search`: it names the term the empty list actually came back for,
 				// so it can't quote something the host typed after the request went out.
-				<Text color="gray.600" fontSize="sm" py={3}>
-					{query ? `No interests match "${query}". Add it above, or clear the search.` : 'No interests available'}
-				</Text>
+				query ? (
+					<Box py={3}>
+						<Text color="#9C9C9C" fontSize="sm">
+							No interests match &ldquo;{query}&rdquo;.
+						</Text>
+						{/* With nothing returned there is no category on screen to add under, and a
+						    search that found nothing is exactly when a host wants to create the thing
+						    they were looking for. So the parent is a picker over the FULL taxonomy
+						    (`allCategories`), not over the empty result. */}
+						{creating ? (
+							<Box mt={3}>
+								<Text color="#6B6E73" fontSize="xs" mb={1}>Add it under</Text>
+								<Select
+									size="sm"
+									rounded="full"
+									maxW="260px"
+									bg="#090C10"
+									borderColor="#3A3D42"
+									color="white"
+									isDisabled={saving}
+									value={creating.kind === 'sub' ? creating.categoryId : ''}
+									// setCreating directly, never openCreate — that resets the draft,
+									// and the name the host typed must survive changing the parent.
+									onChange={(e) => setCreating(e.target.value ? { kind: 'sub', categoryId: e.target.value } : { kind: 'category' })}
+								>
+									<option value="">A new top-level category</option>
+									{allCategories.map(cat => (
+										<option key={cat._id} value={cat._id}>{cat.name}</option>
+									))}
+								</Select>
+								{renderCreateForm('Interest name')}
+								{/* Repeated here because the block carrying it at the top is stood
+								    down on an empty result — and this is a create path like any other. */}
+								<Text color="#6B6E73" fontSize="xs" mt={2}>
+									Interests you add here are shared across Jetzy, including the mobile app.
+								</Text>
+							</Box>
+						) : (
+							<Button
+								type="button"
+								mt={3}
+								size="sm"
+								bg="#F7943214"
+								color="#F79432"
+								border="1px dashed #F79432"
+								rounded="full"
+								_hover={{ bg: '#F7943229' }}
+								leftIcon={<Box as={PlusIcon} w="14px" h="14px" />}
+								// Seeded with what was searched for — unconditionally here, since an
+								// empty result means nothing by that name exists to collide with.
+								onClick={() => openCreate({ kind: 'category' }, search.trim())}
+							>
+								Add &ldquo;{search.trim()}&rdquo;
+							</Button>
+						)}
+					</Box>
+				) : (
+					<Text color="gray.600" fontSize="sm" py={3}>No interests available</Text>
+				)
 			) : (
 				categories.map((cat, idx) => {
 					const subIds = cat.subCategories.map(s => s.id)
@@ -396,7 +539,7 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 												bg="#F7943214"
 												color="#F79432"
 												border="1px dashed #F79432"
-												onClick={() => openCreate({ kind: 'sub', categoryId: cat._id })}
+												onClick={() => openCreate({ kind: 'sub', categoryId: cat._id }, seedForCreate({ kind: 'sub', categoryId: cat._id }))}
 												_hover={{ bg: '#F7943229' }}
 											>
 												<Box as={PlusIcon} w="14px" h="14px" />
