@@ -324,7 +324,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 				<div className="flex-1 min-w-0 space-y-1.5">
 					<div className="flex items-center gap-2 flex-wrap">
 						<Link href={eventPath(event.slug)} className="min-w-0 max-w-full">
-							<Heading as="h3" fontSize={18} cursor="pointer" _hover={{ textDecoration: "underline" }} className={`break-words ${props.isEnded ? 'text-gray-400' : ''}`}>
+							{/* `anywhere`, not `break-word`: the two break text identically, but only
+							    `anywhere` counts toward min-content, and this sits in a flex row. With
+							    `break-word` a name containing a long run of characters and no spaces
+							    still measured as wide as that run, so the text painted outside the
+							    card even though it was willing to break. Same reason the manage
+							    page's <h1> sets it. */}
+							<Heading as="h3" fontSize={18} cursor="pointer" overflowWrap="anywhere" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
 								{stripHtml(event.name)}
 							</Heading>
 						</Link>
@@ -372,7 +378,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 						{event.locationDisclosedAfterBooking ? (
 							<>
 								<span className="shrink-0">📍</span>
-								<span className="min-w-0 line-clamp-2 sm:line-clamp-1">
+								<span className="min-w-0 line-clamp-2 sm:line-clamp-1 [overflow-wrap:anywhere]">
 									Disclosed after registration <span className="text-xs text-gray-500 ml-1">(Actual: {event.location})</span>
 								</span>
 							</>
@@ -381,7 +387,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								<span className="shrink-0 flex mt-[3px]">
 									<LocationSVG width={15} height={16} stroke="#EC5E5E" />
 								</span>
-								<span className="min-w-0 line-clamp-2 sm:line-clamp-1">{event.location}</span>
+								<span className="min-w-0 line-clamp-2 sm:line-clamp-1 [overflow-wrap:anywhere]">{event.location}</span>
 							</>
 						)}
 					</div>
