@@ -169,10 +169,26 @@ const updateEventSchema = z.object({
 
 // Syncs Formik's `dirty` flag up to the page, so the sticky header (rendered
 // outside <Formik>) can show an unsaved-changes indicator.
-function FormDirtyWatcher({ dirty, onChange }: { dirty: boolean; onChange: (dirty: boolean) => void }) {
+// Reports Formik state the page header needs but sits outside Formik to read: whether the
+// form is dirty, and the status it would save as. Kept as a tiny child so the heavy page
+// doesn't re-render on every keystroke.
+function FormDirtyWatcher({
+	dirty,
+	status,
+	onChange,
+	onStatusChange,
+}: {
+	dirty: boolean
+	status?: string
+	onChange: (dirty: boolean) => void
+	onStatusChange: (status?: string) => void
+}) {
 	useEffect(() => {
 		onChange(dirty)
 	}, [dirty, onChange])
+	useEffect(() => {
+		onStatusChange(status)
+	}, [status, onStatusChange])
 	return null
 }
 
@@ -441,6 +457,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const [editPollIndex, setEditPollIndex] = useState<number | null>(null)
 	const [sendUpdateEmailCheck, setSendUpdateEmailCheck] = useState(false)
 	const [isFormDirty, setIsFormDirty] = useState(false)
+	// The status the form would SAVE as, which is not the status the event currently has —
+	// the host can switch a published event to Draft, and that save unpublishes it.
+	const [formStatus, setFormStatus] = useState<string | undefined>(undefined)
 
 	// Initialize images, videos and tickets on mount. When a shadow draft exists, seed
 	// from the autosaved payload (form-shaped) instead of the live event fields.
@@ -622,6 +641,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			(hasPendingDraft || autosaveState.status === "unsaved" || autosaveState.status === "saving"),
 	)
 	const afterSaveUrlRef = React.useRef<string | null>(null)
+
+	// The host has switched Status to Draft on an event that is currently published, so the
+	// pending save UNPUBLISHES it — the opposite of "your changes aren't live yet".
+	const willUnpublish = isPublished && formStatus === "draft"
 
 	// "6:41 PM" for a draft saved today, "Sep 25, 6:41 PM" for an older one — a bare time on
 	// a draft from last week would read as minutes ago. This session's autosave wins over the
@@ -1112,7 +1135,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							{tabIndex === 0 && isFormDirty && (
 								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
 							)}
-							Update Event
+							{/* Same rule as the leave dialog: with Status switched to Draft this button
+							    takes the event off the public listing, so it must not say "Update". */}
+							{willUnpublish ? "Save & unpublish" : "Update Event"}
 						</Button>
 						{/* Analytics, Clone and Delete are occasional, and Delete is destructive — none
 						    of them belong beside the button the host presses every few minutes. */}
@@ -1213,7 +1238,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							>
 								{({ values, setFieldValue, dirty }) => (
 									<Form>
-										<FormDirtyWatcher dirty={dirty} onChange={setIsFormDirty} />
+										<FormDirtyWatcher dirty={dirty} status={values.status} onChange={setIsFormDirty} onStatusChange={setFormStatus} />
 										<AutosaveManager
 											enabled={tabIndex === 0 && !autosaveLocked}
 											mediaVersion={mediaVersion}
@@ -1967,12 +1992,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							    the sentence underneath can stay plain. */}
 							<AlertDialogHeader pt={6} px={6} pb={0}>
 								<Flex align="flex-start" gap={3}>
-									<Flex flexShrink={0} w="40px" h="40px" borderRadius="full" bg="#3A2A00" align="center" justify="center">
-										<ClockIcon className="w-5 h-5" style={{ color: "#F79432" }} />
+									<Flex flexShrink={0} w="40px" h="40px" borderRadius="full" bg={willUnpublish ? "#3A1B1B" : "#3A2A00"} align="center" justify="center">
+										<ClockIcon className="w-5 h-5" style={{ color: willUnpublish ? "#F87171" : "#F79432" }} />
 									</Flex>
 									<Box minW={0}>
 										<Text className={roboto.className} fontSize="18px" fontWeight={700} lineHeight="1.3" color="white">
-											Your changes aren&rsquo;t live yet
+											{willUnpublish ? "Saving will unpublish this event" : "Your changes aren’t live yet"}
 										</Text>
 										{lastAutosavedLabel && (
 											<Text className={roboto.className} fontSize="12px" fontWeight={400} color="#7E8083" mt={1}>
@@ -1985,8 +2010,18 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 
 							<AlertDialogBody px={6} pt={4} pb={5}>
 								<Text className={roboto.className} fontSize="14px" lineHeight="1.6" color="#B5B6B7">
-									Nothing is lost — they&rsquo;re saved as a draft. Guests keep seeing the published
-									version until you press <Box as="span" color="white" fontWeight={700}>Update Event</Box>.
+									{willUnpublish ? (
+										<>
+											You&rsquo;ve set Status to <Box as="span" color="white" fontWeight={700}>Draft</Box>.
+											Saving now takes this event off the public listing — guests who have the link
+											won&rsquo;t be able to see or book it. Your edits are kept either way.
+										</>
+									) : (
+										<>
+											Nothing is lost — they&rsquo;re saved as a draft. Guests keep seeing the
+											published version until you press <Box as="span" color="white" fontWeight={700}>Update Event</Box>.
+										</>
+									)}
 								</Text>
 							</AlertDialogBody>
 
@@ -2031,7 +2066,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								<Button
 									onClick={handlePublishAndLeave}
 									isLoading={isSubmitting}
-									loadingText="Updating"
+									loadingText={willUnpublish ? "Saving" : "Updating"}
 									bg="#F79432"
 									color="black"
 									fontWeight="bold"
@@ -2039,7 +2074,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 									_active={{ bg: "#D97913" }}
 									order={{ base: 1, sm: 4 }}
 								>
-									Update Event
+									{/* Says what the button does. "Update Event" on a status the host has just
+									    switched to Draft reads as "publish my edits" and does the opposite. */}
+									{willUnpublish ? "Save & unpublish" : "Update Event"}
 								</Button>
 							</AlertDialogFooter>
 						</AlertDialogContent>
