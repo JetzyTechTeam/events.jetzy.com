@@ -112,6 +112,7 @@ import { useAppDispatch } from "@/redux/stores"
 import { UpdateEventThunk, DeleteEventThunk } from "@/redux/reducers/eventsSlice"
 import { UpdateEventApis, SaveDraftRevisionApis, DiscardDraftRevisionApis } from "@/services/events/eventsapis"
 import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState } from "@/components/events/AutosaveManager"
+import { useUnsavedDraftGuard } from "@/hooks/useUnsavedDraftGuard"
 import { CreateEventFormData, DatePollOption } from "@/types"
 import { TicketData } from "@/components/events/TicketCard"
 import { FileUploadData } from "@/components/misc/DragAndDropUploader"
@@ -246,6 +247,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 
 	const [autosaveState, setAutosaveState] = useState<AutosaveState>({ status: "idle" })
 	const [isDiscardingDraft, setIsDiscardingDraft] = useState(false)
+
+	// Does the server hold edits the host hasn't published? Seeded from the draft this page
+	// loaded with, then kept in step by autosave / discard / Update Event. It is what the
+	// leave guard below asks about — a host who walks away from a shadow draft has changed
+	// nothing a guest can see, and nothing on the way out says so.
+	const [hasPendingDraft, setHasPendingDraft] = useState(!!draftPayload)
 
 	const [activeTab, setActiveTab] = useState<"about" | "guests" | "bookings" | "waitingList" | "referralCodes" | "discussion">("about")
 	const [tabIndex, setTabIndex] = useState(0)
@@ -412,6 +419,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure()
 	const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure()
 	const cancelRef = React.useRef<any>(null)
+	const keepEditingRef = React.useRef<any>(null)
 
 	const [uploadedImages, setUploadedImages] = useState<FileUploadData[]>([])
 	const [uploadProgress, setUploadProgress] = useState(0)
@@ -599,6 +607,46 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const autosaveLockedRef = React.useRef(false)
 	const autosaveInFlightRef = React.useRef<Promise<any> | null>(null)
 
+	// Stop the host walking away believing their edits are live. The pill's own status covers
+	// the window before the ~2s autosave debounce has fired; `hasPendingDraft` covers
+	// everything after it, including a draft this page was loaded with. Deliberately NOT
+	// Formik's `dirty`: the mount effect seeds tickets and media with setFieldValue, so
+	// reading it directly risks warning about edits nobody made. The pill is set by the same
+	// AutosaveManager effect that decides whether to save at all. `autosaveLocked` is set the
+	// moment a manual Update Event starts, so the guard can never fire on the navigation that
+	// save performs itself.
+	const leaveGuard = useUnsavedDraftGuard(
+		() =>
+			isPublished &&
+			!autosaveLockedRef.current &&
+			(hasPendingDraft || autosaveState.status === "unsaved" || autosaveState.status === "saving"),
+	)
+	const afterSaveUrlRef = React.useRef<string | null>(null)
+
+	// "Update Event" from the leave dialog. Runs the SAME submit the header button runs, so
+	// validation is unchanged; on success it navigates to where the host was heading.
+	const handlePublishAndLeave = async () => {
+		afterSaveUrlRef.current = leaveGuard.pendingUrl
+		try {
+			await formikRef.current?.submitForm()
+		} finally {
+			// onSubmit reads this synchronously at its top, so it is safe to clear as soon as
+			// submitForm returns — which is BEFORE the save itself finishes (the update thunk
+			// is not awaited in there).
+			afterSaveUrlRef.current = null
+		}
+	}
+
+	// Close the dialog once the save is over rather than when submitForm returns: it returns
+	// while the update is still in flight, which would drop the spinner and the dialog before
+	// anything had happened. On success the page has already navigated by now; on failure the
+	// host needs the form and the error toast, not a dialog on top of them.
+	const wasSubmittingRef = React.useRef(false)
+	useEffect(() => {
+		if (wasSubmittingRef.current && !isSubmitting && leaveGuard.isOpen) leaveGuard.cancelLeave()
+		wasSubmittingRef.current = isSubmitting
+	}, [isSubmitting, leaveGuard])
+
 	// Published event -> shadow draft (live untouched). Draft event -> update in place (stays draft).
 	const handleAutosave = async (values: CreateEventFormData) => {
 		if (autosaveLockedRef.current) return
@@ -610,6 +658,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		autosaveInFlightRef.current = p
 		try {
 			await p
+			// Only a published event hides its autosave from guests; a draft event was
+			// never live, so there is nothing to warn about on the way out.
+			if (isPublished) setHasPendingDraft(true)
 		} finally {
 			if (autosaveInFlightRef.current === p) autosaveInFlightRef.current = null
 		}
@@ -620,6 +671,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		setIsDiscardingDraft(true)
 		try {
 			await DiscardDraftRevisionApis({ id: event._id.toString() })
+			setHasPendingDraft(false)
+			leaveGuard.bypass()
 			router.replace(router.asPath)
 		} catch (err) {
 			toast({ title: "Failed to discard draft.", status: "error", duration: 3000 })
@@ -628,6 +681,13 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	}
 
 	const onSubmit = async (values: CreateEventFormData) => {
+		// Where to land after a successful save. Set only by the leave dialog, so a host who
+		// published from there reaches the page they were actually heading for instead of
+		// being dropped on My Events. Read once and cleared, so a later ordinary save from
+		// the header can't inherit it. Not a parameter: Formik owns onSubmit's arguments.
+		const afterSaveUrl = afterSaveUrlRef.current
+		afterSaveUrlRef.current = null
+
 		const isDraft = values.status === "draft"
 		values.images = uploadedImages
 		values.videos = uploadedVideos
@@ -820,7 +880,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					}
 				}
 				toast({ title: "Event updated!", status: "success", duration: 3000 })
-				router.push(ROUTES.dashboard.events.index)
+				// The draft has been published and `update.ts` has $unset it, so the leave
+				// guard has nothing left to warn about.
+				setHasPendingDraft(false)
+				leaveGuard.bypass()
+				router.push(afterSaveUrl ?? ROUTES.dashboard.events.index)
 			}
 		}).finally(() => {
 			setIsSubmitting(false)
@@ -934,6 +998,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		axios.post(`/api/events/${event._id}/clone`).then((res) => {
 			const newId = res?.data?.data?._id
 			toast({ title: "Event cloned successfully!", status: "success", duration: 3000 })
+			// Deliberate navigation — the draft is untouched and still waiting on this event.
+			leaveGuard.bypass()
 			if (newId) router.push(`/console/events/${newId}/manage`)
 			else router.replace(router.asPath)
 		}).catch((err) => {
@@ -947,6 +1013,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			if (event.images?.length > 0) event.images.forEach((image: string) => deleteFile(image))
 			toast({ title: "Event deleted successfully!", status: "success", duration: 3000 })
 			onDeleteClose()
+			leaveGuard.bypass()
 			router.push(ROUTES.dashboard.events.index)
 		}).finally(() => setIsDeleting(false))
 	}
@@ -1873,6 +1940,32 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							<AlertDialogFooter>
 								<Button ref={cancelRef} onClick={onDeleteClose}>Cancel</Button>
 								<Button colorScheme="red" onClick={handleDeleteEvent} ml={3} isLoading={isDeleting}>Delete</Button>
+							</AlertDialogFooter>
+						</AlertDialogContent>
+					</AlertDialogOverlay>
+				</AlertDialog>
+
+				{/* LEAVING WITH AN UNPUBLISHED DRAFT
+				    Autosave on a published event writes a shadow draft and leaves the live event
+				    alone, so a host can edit, walk away, and see none of it on the event page.
+				    The orange banner only tells them that on their NEXT visit — this says it on
+				    the way out, while they can still act on it. */}
+				<AlertDialog isOpen={leaveGuard.isOpen} leastDestructiveRef={keepEditingRef} onClose={leaveGuard.cancelLeave} isCentered>
+					<AlertDialogOverlay>
+						<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
+							<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">Your changes aren&rsquo;t live yet</AlertDialogHeader>
+							<AlertDialogBody color="white">
+								They&rsquo;re saved as a draft, so nothing is lost. The event page still shows the
+								published version until you press <b>Update Event</b>.
+							</AlertDialogBody>
+							<AlertDialogFooter display="flex" flexWrap="wrap" gap={3}>
+								<Button ref={keepEditingRef} onClick={leaveGuard.cancelLeave} isDisabled={isSubmitting}>Keep editing</Button>
+								<Button variant="ghost" color="#B5B6B7" _hover={{ bg: "#2A2D31" }} onClick={() => leaveGuard.confirmLeave()} isDisabled={isSubmitting}>
+									Leave as draft
+								</Button>
+								<Button bg="#F79432" color="black" fontWeight="bold" _hover={{ bg: "#E68422" }} onClick={handlePublishAndLeave} isLoading={isSubmitting}>
+									Update Event
+								</Button>
 							</AlertDialogFooter>
 						</AlertDialogContent>
 					</AlertDialogOverlay>
