@@ -170,6 +170,47 @@ const updateEventSchema = z.object({
 
 // Syncs Formik's `dirty` flag up to the page, so the sticky header (rendered
 // outside <Formik>) can show an unsaved-changes indicator.
+// ONE mapping from a stored ticket to the form's shape, and one from a shadow draft's
+// ticket. They exist because `initialValues` and the mount effect used to map tickets
+// SEPARATELY, and differently — the effect wrote 5 keys over the 10 that initialValues had
+// seeded. react-fast-compare counts own keys, so Formik read `dirty` on a page nobody had
+// touched: the pill said "Unsaved changes" and an autosave fired ~2s after load, creating a
+// shadow draft on an untouched event. That is the stale-draft trap all over again.
+const mapEventTicket = (ticket: any) => ({
+	id: ticket._id?.toString() || uniqueId(10),
+	title: stripHtml(ticket.name),
+	price: Number(ticket.price),
+	// RAW, never stripHtml(). The description is written in the rich-text editor and stored as
+	// HTML; seeding the form with the tags removed showed the host one run-on paragraph and,
+	// on the next save, wrote that flattened text back over their markup.
+	description: ticket.desc || "",
+	// Pass through as-is (never `?? false`): undefined means "inherit the event setting", and
+	// coercing it here would let autosave pin every ticket to OFF.
+	requireApproval: ticket.requireApproval,
+	memberships: ticketMemberships(ticket),
+	// Carried through so the Monthly/Annual control shows what the ticket actually sells, the
+	// free-months control shows what it gives, and a capped ticket keeps its cap. Dropping any
+	// of them would write that loss back on the next save.
+	membershipInterval: ticket.membershipInterval,
+	membershipFreeMonths: ticket.membershipFreeMonths,
+	quantity: ticket.quantity,
+	includesPremium: ticketMemberships(ticket).includes("premium"),
+})
+
+/** A shadow draft's tickets are already form-shaped; normalise the derived fields only. */
+const mapDraftTicket = (t: any) => ({
+	id: t.id || uniqueId(10),
+	title: t.title,
+	price: Number(t.price),
+	description: t.description,
+	requireApproval: t.requireApproval,
+	memberships: ticketMemberships(t),
+	membershipInterval: t.membershipInterval,
+	membershipFreeMonths: t.membershipFreeMonths,
+	quantity: t.quantity,
+	includesPremium: ticketMemberships(t).includes("premium"),
+})
+
 // Reports Formik state the page header needs but sits outside Formik to read: whether the
 // form is dirty, and the status it would save as. Kept as a tiny child so the heavy page
 // doesn't re-render on every keystroke.
@@ -468,30 +509,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			setUploadedImages((draftPayload.images || []).map((img: any) => ({ id: img?.id || uniqueId(10), file: typeof img === "string" ? img : img?.file })))
 			setUploadedVideos((draftPayload.videos || []).map((v: any) => ({ id: v?.id || uniqueId(10), file: typeof v === "string" ? v : v?.file })))
 			setMediaOrder(Array.isArray(draftPayload.mediaOrder) ? draftPayload.mediaOrder : [])
-			if (draftPayload.tickets && formikRef.current) {
-				formikRef.current.setFieldValue("tickets", draftPayload.tickets.map((t: any) => ({
-					id: t.id || uniqueId(10),
-					title: t.title,
-					price: Number(t.price),
-					description: t.description,
-					// Must pass through as-is (never `?? false`): undefined means "inherit the
-					// event setting", and coercing it here would let autosave pin every ticket to OFF.
-					requireApproval: t.requireApproval,
-					memberships: ticketMemberships(t as any),
-					// Carried through so the Monthly/Annual control shows what the ticket actually
-					// sells. Dropping it left the toggle reading "Monthly" on an annual ticket.
-					membershipInterval: t.membershipInterval,
-					// Same reason as the interval: dropping it would show "no free months" on a
-					// ticket that gives them, and the next save would write that back.
-					membershipFreeMonths: t.membershipFreeMonths,
-					// Per-ticket capacity, carried through for the same reason as the two above:
-					// dropping it would show "unlimited" on a capped ticket and the next save
-					// would write that back, silently removing the host's limit. `null` means the
-					// host cleared it; only `undefined` means "not sent".
-					quantity: (t as any).quantity,
-					includesPremium: ticketMemberships(t as any).includes("premium"),
-				})))
-			}
+			// Tickets are NOT set here. `initialValues` seeds them through the same mapper and
+			// `enableReinitialize` applies it; writing them again with setFieldValue is what made
+			// the form dirty on load. Only the media state, which lives outside Formik, belongs here.
 			return
 		}
 		if (event.images && event.images.length > 0) {
@@ -501,25 +521,22 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			setUploadedVideos(event.videos.map((v: string) => ({ id: uniqueId(10), file: v })))
 		}
 		setMediaOrder(Array.isArray((event as any).mediaOrder) ? (event as any).mediaOrder : [])
-		if (event.tickets && event.tickets.length > 0 && formikRef.current) {
-			formikRef.current.setFieldValue("tickets", event.tickets.map((ticket: any) => ({
-				id: ticket._id?.toString() || uniqueId(10),
-				title: ticket.name,
-				price: Number(ticket.price),
-				description: ticket.desc,
-				requireApproval: ticket.requireApproval,
-			})))
-		}
 	}, [event])
 
 	const initialValues: CreateEventFormData = React.useMemo(() => {
 		// Editing a published event with a shadow draft: the payload is already form-shaped.
-		// Force status to "published" so a manual Save publishes the edits into the live event.
 		if (draftPayload) {
+			// `payload.status` is always "draft" — autosave forces it so a shadow-draft write can
+			// never publish — so it cannot carry what the host picked. `intendedStatus` does, and
+			// without it the Status dropdown was the one field a draft silently forgot: set it to
+			// Draft, leave, come back, and it read Published again. Absent (drafts written before
+			// this) still means published, which is what those drafts were.
+			const { intendedStatus, ...rest } = draftPayload as any
 			return {
-				...draftPayload,
+				...rest,
+				tickets: (rest.tickets || []).map(mapDraftTicket),
 				images: uploadedImages,
-				status: "published",
+				status: intendedStatus === "draft" ? "draft" : "published",
 			} as CreateEventFormData
 		}
 
@@ -539,23 +556,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			requireApproval: event.requireApproval,
 			isPaid: event.isPaid,
 			images: uploadedImages,
-			tickets: (event.tickets || []).map((ticket: any) => ({
-				id: ticket._id?.toString() || uniqueId(10),
-				title: stripHtml(ticket.name),
-				price: Number(ticket.price),
-				// RAW, never stripHtml(). The description is written in the rich-text editor and
-				// stored as HTML; seeding the form with the tags removed showed the host one
-				// run-on paragraph and, on the next save, wrote that flattened text back over
-				// their markup. `title` is a plain input, so stripping there is still right.
-				description: ticket.desc || "",
-				requireApproval: ticket.requireApproval,
-				memberships: ticketMemberships(ticket),
-				membershipInterval: ticket.membershipInterval,
-				membershipFreeMonths: ticket.membershipFreeMonths,
-				// Same preserve rule as the interval and free months above.
-				quantity: ticket.quantity,
-				includesPremium: ticketMemberships(ticket).includes("premium"),
-			})),
+			tickets: (event.tickets || []).map(mapEventTicket),
 			privacy: event.privacy,
 			status: (event.status ?? "published") as "draft" | "published",
 			startDate: start ? start.format("YYYY-MM-DD") : "",
@@ -683,7 +684,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// Published event -> shadow draft (live untouched). Draft event -> update in place (stays draft).
 	const handleAutosave = async (values: CreateEventFormData) => {
 		if (autosaveLockedRef.current) return
-		const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" }, mediaOrder)
+		// `status` in the payload is the autosave mechanism's, not the host's — it must stay
+		// "draft" or a shadow-draft write would publish. `intendedStatus` is the host's choice,
+		// carried so reopening the page shows the Status they actually set.
+		const payload = { ...buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" }, mediaOrder), intendedStatus: values.status }
 		const payloadStr = JSON.stringify(payload)
 		const p = isPublished
 			? SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
