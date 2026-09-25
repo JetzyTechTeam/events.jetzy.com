@@ -54,6 +54,9 @@ import { Error } from "@/lib/_toaster";
 import { CreateEventThunk, UpdateEventThunk } from "@/redux/reducers/eventsSlice";
 import { CreateEventApis, UpdateEventApis } from "@/services/events/eventsapis";
 import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState } from "@/components/events/AutosaveManager";
+import dayjs from "dayjs";
+import { useUnsavedDraftGuard } from "@/hooks/useUnsavedDraftGuard";
+import { UnsavedDraftDialog } from "@/components/events/UnsavedDraftDialog";
 import { useAppDispatch } from "@/redux/stores";
 import { useRouter } from "next/router";
 import { TicketData } from "@/components/events/TicketCard";
@@ -174,6 +177,26 @@ const CreateEventPage = () => {
   const [autosaveLocked, setAutosaveLocked] = React.useState(false);
   const autosaveLockedRef = React.useRef(false);
   const autosaveInFlightRef = React.useRef<Promise<any> | null>(null);
+
+  // A half-finished event IS saved — autosave created a real draft record — but nothing on
+  // the way out says so, so a host who navigates away assumes it is gone and starts again.
+  // No publish action here, unlike Manage Event: this form is usually incomplete, so the
+  // only thing a primary button could do is fail validation. `autosaveLocked` is set the
+  // moment a manual submit starts and stays set on success, which covers both the draft
+  // branch's own navigation and every link in the success modal.
+  // "6:41 PM" today, "Sep 25, 6:41 PM" older — a bare time on yesterday's draft would read
+  // as minutes ago. Mirrors the same label on Manage Event.
+  const lastAutosavedLabel = React.useMemo(() => {
+    if (!autosaveState.savedAt) return null;
+    const d = dayjs(autosaveState.savedAt);
+    return d.isSame(dayjs(), "day") ? d.format("h:mm A") : d.format("MMM D, h:mm A");
+  }, [autosaveState.savedAt]);
+
+  const leaveGuard = useUnsavedDraftGuard(
+    () =>
+      !autosaveLockedRef.current &&
+      (!!autosaveIdRef.current || autosaveState.status === "unsaved" || autosaveState.status === "saving")
+  );
   const mediaVersion = React.useMemo(
     // mediaOrder included: dragging changes neither array, so without it a reorder would
     // never trigger an autosave.
@@ -1317,6 +1340,24 @@ const CreateEventPage = () => {
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      {/* LEAVING A HALF-FINISHED EVENT
+          It is already saved — the first change created a real draft record — but a host
+          who walks away has no way of knowing that, and starts over. */}
+      <UnsavedDraftDialog
+        isOpen={leaveGuard.isOpen}
+        title="Your event is saved as a draft"
+        savedLabel={lastAutosavedLabel ? `Draft saved ${lastAutosavedLabel}` : null}
+        body={
+          <>
+            You&rsquo;ll find it under <Box as="span" color="white" fontWeight={700}>My Events</Box>, marked
+            Draft. Nobody else can see it — it stays private until you finish and publish it.
+          </>
+        }
+        leaveLabel="Leave for now"
+        onLeave={() => leaveGuard.confirmLeave()}
+        onKeepEditing={leaveGuard.cancelLeave}
+      />
 
     </ConsoleLayout>
   );

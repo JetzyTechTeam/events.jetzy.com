@@ -113,6 +113,7 @@ import { UpdateEventThunk, DeleteEventThunk } from "@/redux/reducers/eventsSlice
 import { UpdateEventApis, SaveDraftRevisionApis, DiscardDraftRevisionApis } from "@/services/events/eventsapis"
 import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState } from "@/components/events/AutosaveManager"
 import { useUnsavedDraftGuard } from "@/hooks/useUnsavedDraftGuard"
+import { UnsavedDraftDialog } from "@/components/events/UnsavedDraftDialog"
 import { CreateEventFormData, DatePollOption } from "@/types"
 import { TicketData } from "@/components/events/TicketCard"
 import { FileUploadData } from "@/components/misc/DragAndDropUploader"
@@ -435,7 +436,6 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure()
 	const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure()
 	const cancelRef = React.useRef<any>(null)
-	const keepEditingRef = React.useRef<any>(null)
 
 	const [uploadedImages, setUploadedImages] = useState<FileUploadData[]>([])
 	const [uploadProgress, setUploadProgress] = useState(0)
@@ -1984,117 +1984,52 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				    Autosave on a published event writes a shadow draft and leaves the live event
 				    alone, so a host can edit, walk away, and see none of it on the event page.
 				    The orange banner only tells them that on their NEXT visit — this says it on
-				    the way out, while they can still act on it. */}
-				<AlertDialog isOpen={leaveGuard.isOpen} leastDestructiveRef={keepEditingRef} onClose={leaveGuard.cancelLeave} isCentered motionPreset="slideInBottom">
-					<AlertDialogOverlay bg="blackAlpha.700" backdropFilter="blur(2px)">
-						<AlertDialogContent bg="#161616" border="1px solid #2A2D31" borderRadius="16px" mx={4} maxW="460px" overflow="hidden">
-							{/* Icon + heading share a row: the amber mark carries the "not live" state so
-							    the sentence underneath can stay plain. */}
-							<AlertDialogHeader pt={6} px={6} pb={0}>
-								<Flex align="flex-start" gap={3}>
-									<Flex flexShrink={0} w="40px" h="40px" borderRadius="full" bg={willUnpublish ? "#3A1B1B" : "#3A2A00"} align="center" justify="center">
-										<ClockIcon className="w-5 h-5" style={{ color: willUnpublish ? "#F87171" : "#F79432" }} />
-									</Flex>
-									<Box minW={0}>
-										<Text className={roboto.className} fontSize="18px" fontWeight={700} lineHeight="1.3" color="white">
-											{willUnpublish
-												? "Saving will unpublish this event"
-												: isPendingApproval
-													? "Your changes aren’t in the review yet"
-													: "Your changes aren’t live yet"}
-										</Text>
-										{lastAutosavedLabel && (
-											<Text className={roboto.className} fontSize="12px" fontWeight={400} color="#7E8083" mt={1}>
-												Draft saved {lastAutosavedLabel}
-											</Text>
-										)}
-									</Box>
-								</Flex>
-							</AlertDialogHeader>
+				    the way out, while they can still act on it.
 
-							<AlertDialogBody px={6} pt={4} pb={5}>
-								<Text className={roboto.className} fontSize="14px" lineHeight="1.6" color="#B5B6B7">
-									{willUnpublish ? (
-										<>
-											You&rsquo;ve set Status to <Box as="span" color="white" fontWeight={700}>Draft</Box>.
-											Saving now takes this event off the public listing — guests who have the link
-											won&rsquo;t be able to see or book it. Your edits are kept either way.
-										</>
-									) : isPendingApproval ? (
-										/* Awaiting admin review: saying "guests keep seeing the published version"
-										   would be untrue — nobody can see this event yet. What is stale is the
-										   copy sitting in the admin's queue. */
-										<>
-											Nothing is lost — they&rsquo;re saved as a draft. This event is awaiting admin
-											approval, and the version being reviewed is the last one you saved. Press{" "}
-											<Box as="span" color="white" fontWeight={700}>Update Event</Box> to include these changes.
-										</>
-									) : (
-										<>
-											Nothing is lost — they&rsquo;re saved as a draft. Guests keep seeing the
-											published version until you press <Box as="span" color="white" fontWeight={700}>Update Event</Box>.
-										</>
-									)}
-								</Text>
-							</AlertDialogBody>
-
-							{/* Stacked full-width on a phone — three buttons on one line is what wrapped
-							    Update Event onto a ragged second row. `order` puts the primary first in
-							    the stack and last in the desktop row, with a flex spacer pushing the two
-							    leave actions away from Keep editing so they can't be hit by accident. */}
-							<AlertDialogFooter
-								px={6}
-								pt={0}
-								pb={6}
-								display="flex"
-								flexDirection={{ base: "column", sm: "row" }}
-								alignItems="stretch"
-								gap={3}
-							>
-								<Button
-									ref={keepEditingRef}
-									onClick={leaveGuard.cancelLeave}
-									isDisabled={isSubmitting}
-									variant="ghost"
-									color="#B5B6B7"
-									fontWeight={600}
-									_hover={{ bg: "#232629", color: "white" }}
-									order={{ base: 3, sm: 1 }}
-								>
-									Keep editing
-								</Button>
-								<Box flex="1" display={{ base: "none", sm: "block" }} order={{ sm: 2 }} />
-								<Button
-									onClick={() => leaveGuard.confirmLeave()}
-									isDisabled={isSubmitting}
-									variant="outline"
-									color="white"
-									borderColor="#3A3D41"
-									fontWeight={600}
-									_hover={{ bg: "#232629", borderColor: "#4A4D51" }}
-									order={{ base: 2, sm: 3 }}
-								>
-									Leave as draft
-								</Button>
-								<Button
-									onClick={handlePublishAndLeave}
-									isLoading={isSubmitting}
-									loadingText={willUnpublish ? "Saving" : "Updating"}
-									bg="#F79432"
-									color="black"
-									fontWeight="bold"
-									_hover={{ bg: "#E68422" }}
-									_active={{ bg: "#D97913" }}
-									order={{ base: 1, sm: 4 }}
-								>
-									{/* Says what the button does. "Update Event" on a status the host has just
-									    switched to Draft reads as "publish my edits" and does the opposite. */}
-									{willUnpublish ? "Save & unpublish" : "Update Event"}
-								</Button>
-							</AlertDialogFooter>
-						</AlertDialogContent>
-					</AlertDialogOverlay>
-				</AlertDialog>
+				    Three copy states, because "press Update Event" is not always a publish: the form
+				    may be switched to Draft (the save UNPUBLISHES), or the event may still be in the
+				    admin's review queue (no guest can see it either way). */}
+				<UnsavedDraftDialog
+					isOpen={leaveGuard.isOpen}
+					tone={willUnpublish ? "danger" : "warning"}
+					title={
+						willUnpublish
+							? "Saving will unpublish this event"
+							: isPendingApproval
+								? "Your changes aren’t in the review yet"
+								: "Your changes aren’t live yet"
+					}
+					savedLabel={lastAutosavedLabel ? `Draft saved ${lastAutosavedLabel}` : null}
+					body={
+						willUnpublish ? (
+							<>
+								You&rsquo;ve set Status to <Box as="span" color="white" fontWeight={700}>Draft</Box>.
+								Saving now takes this event off the public listing — guests who have the link
+								won&rsquo;t be able to see or book it. Your edits are kept either way.
+							</>
+						) : isPendingApproval ? (
+							<>
+								Nothing is lost — they&rsquo;re saved as a draft. This event is awaiting admin
+								approval, and the version being reviewed is the last one you saved. Press{" "}
+								<Box as="span" color="white" fontWeight={700}>Update Event</Box> to include these changes.
+							</>
+						) : (
+							<>
+								Nothing is lost — they&rsquo;re saved as a draft. Guests keep seeing the
+								published version until you press <Box as="span" color="white" fontWeight={700}>Update Event</Box>.
+							</>
+						)
+					}
+					leaveLabel="Leave as draft"
+					onLeave={() => leaveGuard.confirmLeave()}
+					onKeepEditing={leaveGuard.cancelLeave}
+					primary={{
+						label: willUnpublish ? "Save & unpublish" : "Update Event",
+						loadingLabel: willUnpublish ? "Saving" : "Updating",
+						onClick: handlePublishAndLeave,
+					}}
+					isBusy={isSubmitting}
+				/>
 			</ConsoleLayout>
 		</>
 	)
