@@ -126,6 +126,28 @@ const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md t
 const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`
 const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`
 
+// One definition for all eight tabs — they were eight identical prop blocks, so a change to
+// any of them (the mobile sizing below, for one) had to be made eight times to stay consistent.
+// The smaller type and padding on a phone are what get more than two tabs on screen at once;
+// the strip still scrolls, but the scroll is now a way to reach the last tab rather than the
+// only way to discover there are any others.
+const manageTabProps = {
+	className: roboto.className,
+	fontWeight: 500,
+	fontSize: { base: "14px", md: "18px" },
+	lineHeight: "100%",
+	color: "#FFFFFF",
+	borderTopRadius: "10px",
+	px: { base: 3, md: 5 },
+	whiteSpace: "nowrap" as const,
+	_selected: {
+		bg: "#FFFFFF",
+		color: "#0B0B0B",
+		fontWeight: 700,
+		borderColor: "#FFFFFF",
+	},
+}
+
 // Brighten any icon SVGs (stroke or fill based) within a container for better visibility
 const iconBrighten = {
 	"& [stroke]": { stroke: "#E6E6E6" },
@@ -1059,146 +1081,34 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					</Box>
 				)}
 
-				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={6}>
+				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={{ base: 4, md: 6 }}>
 					<TabList position="sticky" top="var(--console-header-h, 112px)" zIndex={20} bg="#0B0B0B" borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
-						<Tab
-							className={roboto.className}
-							fontWeight={500}
-							fontSize="18px"
-							lineHeight="100%"
-							color="#FFFFFF"
-							borderTopRadius="10px"
-							px={5}
-							_selected={{
-								bg: "#FFFFFF",
-								color: "#0B0B0B",
-								fontWeight: 700,
-								borderColor: "#FFFFFF",
-							}}
-						>
+						<Tab {...manageTabProps}>
 							Overview
 						</Tab>
-						<Tab
-							className={roboto.className}
-							fontWeight={500}
-							fontSize="18px"
-							lineHeight="100%"
-							color="#FFFFFF"
-							borderTopRadius="10px"
-							px={5}
-							_selected={{
-								bg: "#FFFFFF",
-								color: "#0B0B0B",
-								fontWeight: 700,
-								borderColor: "#FFFFFF",
-							}}
-						>
+						<Tab {...manageTabProps}>
 							Guests
 						</Tab>
-						<Tab
-							className={roboto.className}
-							fontWeight={500}
-							fontSize="18px"
-							lineHeight="100%"
-							color="#FFFFFF"
-							borderTopRadius="10px"
-							px={5}
-							_selected={{
-								bg: "#FFFFFF",
-								color: "#0B0B0B",
-								fontWeight: 700,
-								borderColor: "#FFFFFF",
-							}}
-						>
+						<Tab {...manageTabProps}>
 							Referral Codes
 						</Tab>
-						<Tab
-							className={roboto.className}
-							fontWeight={500}
-							fontSize="18px"
-							lineHeight="100%"
-							color="#FFFFFF"
-							borderTopRadius="10px"
-							px={5}
-							_selected={{
-								bg: "#FFFFFF",
-								color: "#0B0B0B",
-								fontWeight: 700,
-								borderColor: "#FFFFFF",
-							}}
-						>
+						<Tab {...manageTabProps}>
 							Custom Questions
 						</Tab>
-						<Tab
-							className={roboto.className}
-							fontWeight={500}
-							fontSize="18px"
-							lineHeight="100%"
-							color="#FFFFFF"
-							borderTopRadius="10px"
-							px={5}
-							_selected={{
-								bg: "#FFFFFF",
-								color: "#0B0B0B",
-								fontWeight: 700,
-								borderColor: "#FFFFFF",
-							}}
-						>
+						<Tab {...manageTabProps}>
 							Responses
 						</Tab>
-						<Tab
-							className={roboto.className}
-							fontWeight={500}
-							fontSize="18px"
-							lineHeight="100%"
-							color="#FFFFFF"
-							borderTopRadius="10px"
-							px={5}
-							_selected={{
-								bg: "#FFFFFF",
-								color: "#0B0B0B",
-								fontWeight: 700,
-								borderColor: "#FFFFFF",
-							}}
-						>
+						<Tab {...manageTabProps}>
 							Blasts
 						</Tab>
 						{hasApprovalTickets && (
-							<Tab
-								className={roboto.className}
-								fontWeight={500}
-								fontSize="18px"
-								lineHeight="100%"
-								color="#FFFFFF"
-								borderTopRadius="10px"
-								px={5}
-								_selected={{
-									bg: "#FFFFFF",
-									color: "#0B0B0B",
-									fontWeight: 700,
-									borderColor: "#FFFFFF",
-								}}
-							>
+							<Tab {...manageTabProps}>
 								Approvals
 							</Tab>
 						)}
 						{/* Unconditional, and LAST — Approvals above it is conditional, so anything
 						    added before it would shift its index. */}
-						<Tab
-							className={roboto.className}
-							fontWeight={500}
-							fontSize="18px"
-							lineHeight="100%"
-							color="#FFFFFF"
-							borderTopRadius="10px"
-							px={5}
-							_selected={{
-								bg: "#FFFFFF",
-								color: "#0B0B0B",
-								fontWeight: 700,
-								borderColor: "#FFFFFF",
-							}}
-						>
+						<Tab {...manageTabProps}>
 							Photo Requests
 						</Tab>
 					</TabList>
