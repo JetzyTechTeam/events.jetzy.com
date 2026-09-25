@@ -3,6 +3,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ReferralCodes } from "@/models/events/referral-codes"
+import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -24,6 +25,10 @@ const createReferralCodeSchema = zod.object({
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	try {
+		// `getServerSession` is JWT-only and never touches Mongo, so nothing below it warms the
+		// connection. Connect first or the `Events.findOne` a few lines down races a cold start.
+		await ensureDbConnected()
+
 		const session = await getServerSession(req, res, authOptions)
 
 		// Verify admin authentication
@@ -50,12 +55,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Allow admin or event owner only
 		if (!isAdmin && event.ownerId?.toString() !== userId) {
 			return sendResponse(res, null, "Access denied. Only the event owner can manage referral codes.", false, ResCode.FORBIDDEN)
-		}
-
-		// Ensure database connection
-		const { dbconn } = await import("@/configs/database")
-		if (dbconn.readyState !== 1) {
-			await dbconn.asPromise()
 		}
 
 		// Handle POST - Create referral code

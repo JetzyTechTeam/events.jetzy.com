@@ -38,6 +38,11 @@ export const bookingConsumedCapacity = (booking: { status?: string } | null | un
 export async function adjustBookedTickets(eventId: any, delta: number): Promise<void> {
 	if (!delta) return
 	try {
+		// Server-only helper: connect before querying so a caller that forgot its own guard
+		// cannot race a cold start. Idempotent — a no-op once `readyState === 1`.
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
+
 		const { EventTracker } = await import("@/models/events/event-tracker")
 		await EventTracker.findOneAndUpdate({ eventId }, [
 			{ $set: { bookedTickets: { $max: [0, { $add: [{ $ifNull: ["$bookedTickets", 0] }, delta] }] } } },

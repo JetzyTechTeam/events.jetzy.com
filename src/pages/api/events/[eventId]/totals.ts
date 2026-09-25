@@ -2,10 +2,10 @@ import { Bookings } from "@/models/events/bookings";
 import { BookingStatus } from "@/models/events/types";
 import { NextApiRequest, NextApiResponse } from "next";
 
-import { dbconn } from "@/configs/database";
+import { ensureDbConnected } from "@/configs/database";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {//gets total num of tickets/customers
-    await dbconn.asPromise();
+    await ensureDbConnected();
 
     if (req.method !== "GET") {
         return res.status(405).json({ message: "Method is not allowed" });

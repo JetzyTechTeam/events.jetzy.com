@@ -8,6 +8,7 @@ import { Roles } from "@Jetzy/types"
 import type { NextApiRequest, NextApiResponse } from "next"
 import bcrypt from "bcrypt"
 import { EventUsers } from "@/models/eventUsersModal"
+import { ensureDbConnected } from "@/configs/database"
 
 type Data = {
 	firstName: string
@@ -19,6 +20,8 @@ type Data = {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<Data>) {
 	try {
+		await ensureDbConnected()
+
 		const { firstName, lastName, email, password, shouldBeAJetzyMember, acceptedTerms, location, latitude, longitude, placeId, refCode, signupSource, signupSessionId } = req?.body
 
 		const userType = Roles.USER

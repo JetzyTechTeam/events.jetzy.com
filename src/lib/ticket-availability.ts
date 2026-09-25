@@ -68,6 +68,8 @@ const DEAD_STATUSES = [BookingStatus.CANCELLED, BookingStatus.REJECTED, BookingS
  * booking's quantity, so they aren't blocked by the seats it already holds.
  */
 async function soldCounts(eventId: string, excludeBookingId?: string): Promise<{ byTicket: Map<string, number>; total: number }> {
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { Bookings } = await import("@/models/events/bookings")
 
 	const match: Record<string, any> = {

@@ -17,11 +17,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Event ID and referral code are required", false, ResCode.BAD_REQUEST)
 		}
 
-		// Ensure database connection
-		const { dbconn } = await import("@/configs/database")
-		if (dbconn.readyState !== 1) {
-			await dbconn.asPromise()
-		}
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
 
 		// Find referral code
 		const referralCode = await ReferralCodes.findOne({

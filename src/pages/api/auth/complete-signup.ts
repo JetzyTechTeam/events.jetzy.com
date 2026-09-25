@@ -5,6 +5,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import { EventUsers } from "@/models/eventUsersModal"
 import { grantSignupTrial } from "@/lib/signup-trial"
 import { isSignupTrialCode } from "@/lib/invite-trial"
+import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -12,6 +13,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
+
 		const { token, password } = req.body || {}
 
 		if (!token || typeof token !== "string") {

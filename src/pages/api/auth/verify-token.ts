@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { EventUsers } from "@/models/eventUsersModal"
+import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "GET") {
@@ -9,6 +10,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
+
 		const token = typeof req.query.token === "string" ? req.query.token : ""
 		if (!token) {
 			return sendResponse(res, null, "Missing token.", false, ResCode.BAD_REQUEST)

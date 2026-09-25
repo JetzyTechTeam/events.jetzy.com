@@ -23,6 +23,11 @@ export const isAdminRole = (role: unknown): boolean => role === "admin" || role 
  * the event it was meant to decorate.
  */
 export async function seedDefaultReferralCodes(eventId: Types.ObjectId | string, createdBy?: Types.ObjectId | string) {
+	// Server-only helper: connect before querying so a caller that forgot its own guard
+	// cannot race a cold start. Idempotent — a no-op once `readyState === 1`.
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
+
 	const { ReferralCodes } = await import("@/models/events/referral-codes")
 	const eventObjectId = new Types.ObjectId(String(eventId))
 

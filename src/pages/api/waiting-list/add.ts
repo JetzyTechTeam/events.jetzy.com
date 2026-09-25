@@ -3,7 +3,7 @@ import { WaitingList } from "@/models/waitingList"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { sendWaitingListNotification } from "@/lib/send-grid"
-import { dbconn } from "@/configs/database"
+import { ensureDbConnected } from "@/configs/database"
 import mongoose from "mongoose"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -14,11 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	try {
 		console.log("Waiting list add request:", req.body)
 		
-		// Check database connection
-		if (dbconn.readyState !== 1) {
-			console.log("Database not connected, attempting to connect...")
-			await dbconn.asPromise()
-		}
+		await ensureDbConnected()
 		
 		const { eventId, firstName, lastName, email, phone, tickets, eventName } = req.body
 

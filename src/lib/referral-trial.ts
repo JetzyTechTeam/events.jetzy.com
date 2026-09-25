@@ -45,6 +45,8 @@ export async function resolveReferralTrial(
 
 	// The usage limit is the only thing standing between a forwarded link and an unbounded
 	// giveaway, so its absence is a refusal rather than a default.
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { ReferralCodes } = await import("@/models/events/referral-codes")
 	const { Types } = await import("mongoose")
 	const record = await ReferralCodes.findOne({

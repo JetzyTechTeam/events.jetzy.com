@@ -78,10 +78,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Too many requests. Please slow down.", false, ResCode.TOO_MANY_REQUESTS)
 		}
 
-		const { dbconn } = await import("@/configs/database")
-		if (dbconn.readyState !== 1) {
-			await dbconn.asPromise()
-		}
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
 
 		const { Events } = await import("@/models/events")
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })

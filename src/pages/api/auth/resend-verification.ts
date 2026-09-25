@@ -4,6 +4,7 @@ import { sendResponse } from "@Jetzy/lib/helpers"
 import { ResCode } from "@Jetzy/lib/responseCodes"
 import { EventUsers } from "@/models/eventUsersModal"
 import { sendVerificationEmail } from "@Jetzy/lib/send-grid"
+import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -11,6 +12,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
+
 		const { email } = req.body || {}
 		const cleanEmail = typeof email === "string" ? email.trim().toLowerCase() : ""
 

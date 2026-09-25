@@ -179,6 +179,8 @@ const parseMembershipLines = (metadata: SessionMetadata): MembershipLine[] => {
 export const incrementReferralUsage = async (code?: string, eventId?: string) => {
 	if (!code) return
 	try {
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
 		const { ReferralCodes } = await import("@/models/events/referral-codes")
 		const { Types } = await import("mongoose")
 		const referralCode = await ReferralCodes.findOne({

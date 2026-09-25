@@ -42,6 +42,8 @@ export async function validateReferralCodeForEvent(
 		return { ok: false, message: "Invalid event ID" }
 	}
 
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { ReferralCodes } = await import("@/models/events/referral-codes")
 
 	const codeRecord = await ReferralCodes.findOne({

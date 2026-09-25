@@ -130,6 +130,11 @@ export const pushProfileToBackend = async (token: string, input: ProfileInput) =
  * our flat `location` string there would overwrite the object the mobile app reads.
  */
 export const mirrorProfileLocally = async (userId: string, input: ProfileInput, syncPending: boolean) => {
+	// Server-only helper: connect before querying so a caller that forgot its own guard
+	// cannot race a cold start. Idempotent — a no-op once `readyState === 1`.
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
+
 	const dob = parseDob(input.dob)
 	const res = await EventUsers.updateOne(
 		{ _id: userId },
@@ -191,6 +196,8 @@ export const flushPendingProfile = async (token: string | null | undefined, user
 				longitude: user.longitude,
 			},
 		})
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
 		await EventUsers.updateOne({ _id: user._id }, { $unset: { profileSyncPending: "" } })
 		console.log(`[profile] pending profile synced for ${user.email}`)
 	} catch (err: any) {

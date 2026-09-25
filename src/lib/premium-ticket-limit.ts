@@ -51,6 +51,8 @@ export async function getMembershipTicketAllowances(eventId: string, email: stri
 
 	if (!trimmed || !eventId || !Types.ObjectId.isValid(eventId)) return allowances
 
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { Events } = await import("@/models/events")
 	const { Bookings } = await import("@/models/events/bookings")
 

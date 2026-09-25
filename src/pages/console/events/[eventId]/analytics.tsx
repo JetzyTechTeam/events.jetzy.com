@@ -1032,10 +1032,8 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	}
 
 	// Ensure database connection is ready
-	const { dbconn } = await import("@/configs/database")
-	if (dbconn.readyState !== 1) {
-		await dbconn.asPromise()
-	}
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 
 	const event = await Events.findOne({ _id: eventId, isDeleted: false }).select("_id name slug").lean()
 

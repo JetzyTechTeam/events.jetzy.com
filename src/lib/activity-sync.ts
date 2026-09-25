@@ -40,6 +40,11 @@ export const mapEventToActivity = (event: IEvent | any) => {
  */
 export const upsertActivityFromEvent = async (event: IEvent | any) => {
     try {
+        // Server-only helper: connect before querying so a caller that forgot its own guard
+        // cannot race a cold start. Idempotent — a no-op once `readyState === 1`.
+        const { ensureDbConnected } = await import("@/configs/database")
+        await ensureDbConnected()
+
         const activityData = mapEventToActivity(event);
 
         // Use eventId as the primary key for syncing
@@ -62,6 +67,9 @@ export const upsertActivityFromEvent = async (event: IEvent | any) => {
  */
 export const deleteActivityByEventId = async (eventId: string | Types.ObjectId) => {
     try {
+        const { ensureDbConnected } = await import("@/configs/database")
+        await ensureDbConnected()
+
         const result = await InterestV2model.findOneAndUpdate(
             { eventId: new Types.ObjectId(eventId.toString()) },
             { $set: { status: "deleted" } },
