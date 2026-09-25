@@ -1,5 +1,5 @@
 "use client"
-import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch, Checkbox, Radio, RadioGroup, Stack } from "@chakra-ui/react"
+import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch, Checkbox, Radio, RadioGroup, Stack, useBreakpointValue } from "@chakra-ui/react"
 import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2, FiShare2 } from "react-icons/fi"
 import { useState, useEffect } from "react"
 import { premiumShareLink, shareableReason } from "@/lib/referral-share"
@@ -21,6 +21,20 @@ interface ReferralCode {
 	createdAt: string
 }
 
+/** One labelled line inside a mobile card — the phone stand-in for a table cell. */
+function CardRow({ label, children }: { label: string; children: React.ReactNode }) {
+	return (
+		<Flex justify="space-between" align="flex-start" gap={3}>
+			<Text fontSize="xs" color="#9C9C9C" flexShrink={0}>
+				{label}
+			</Text>
+			<Box fontSize="sm" textAlign="right" minW={0}>
+				{children}
+			</Box>
+		</Flex>
+	)
+}
+
 export interface ReferralTicketOption {
 	_id: string
 	name: string
@@ -34,6 +48,8 @@ interface ReferralCodesManagerProps {
 }
 
 export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesManagerProps) {
+	// `isCentered` takes no responsive value, and a full-screen dialog must not be centered.
+	const isDesktopModal = useBreakpointValue({ base: false, md: true }) ?? true
 	const [codes, setCodes] = useState<ReferralCode[]>([])
 	const [loading, setLoading] = useState(true)
 	const [creating, setCreating] = useState(false)
@@ -66,6 +82,14 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 		const names = live.map((id) => tickets.find((t) => t._id === id)?.name || "Ticket")
 		return { text: names.join(", ") }
 	}
+
+	// The table (lg and up) and the cards (below it) render the SAME strings — a code reads
+	// differently on a phone and a laptop the moment either side re-derives one of these.
+	const freePremiumLabel = (code: ReferralCode) =>
+		code.freeMembershipMonths ? `${code.freeMembershipMonths} ${code.freeMembershipMonths === 1 ? "month" : "months"}` : "—"
+
+	const maxUsesLabel = (code: ReferralCode) =>
+		code.maxUses == null ? "Unlimited" : `${code.maxUses} (${code.maxUses - code.usageCount} remaining)`
 
 	const toggleTicket = (ticketId: string) =>
 		setFormData((prev) => ({
@@ -379,10 +403,77 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 		onOpen()
 	}
 
+	// One definition of the row's five controls, rendered by both the table and the cards.
+	// The Share gate in particular must not be copied — a second copy is a second place for
+	// `shareableReason` to be forgotten, and that button gives a membership away.
+	const codeActions = (code: ReferralCode) => (
+		<>
+			{/* Sharing gives a membership away with no ticket behind it, so the button is only
+			    live on a code that can actually carry that — free months set, and a usage limit
+			    to cap what a forwarded link can cost. The reason is on the button itself rather
+			    than hidden in a tooltip nobody hovers. */}
+			<Button
+				size="sm"
+				variant="ghost"
+				color={shareableReason(code) ? "#6B6B6B" : "#F5C518"}
+				_hover={{ bg: shareableReason(code) ? "transparent" : "rgba(245, 197, 24, 0.1)" }}
+				leftIcon={<FiShare2 />}
+				onClick={() => {
+					const reason = shareableReason(code)
+					if (reason) {
+						toast({ title: "Can't share this code yet", description: reason, status: "info", duration: 6000 })
+						return
+					}
+					setSharingCode(code)
+				}}
+			>
+				Share
+			</Button>
+			<Button
+				size="sm"
+				variant="ghost"
+				color="#F79432"
+				_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+				leftIcon={<FiBarChart2 />}
+				onClick={() => setAnalyticsCode(code)}
+			>
+				Analytics
+			</Button>
+			<Button
+				size="sm"
+				variant="ghost"
+				color="#F79432"
+				_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+				onClick={() => handleOpenStats(code)}
+			>
+				Stats
+			</Button>
+			<IconButton
+				aria-label="Edit code"
+				icon={<FiEdit2 />}
+				size="sm"
+				variant="ghost"
+				color="#F79432"
+				_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+				onClick={() => handleOpenEdit(code)}
+				isDisabled={updating === code._id}
+			/>
+			<IconButton
+				aria-label="Delete code"
+				icon={<FiTrash2 />}
+				size="sm"
+				colorScheme="red"
+				variant="ghost"
+				onClick={() => handleDelete(code._id)}
+				isLoading={deleting === code._id}
+			/>
+		</>
+	)
+
 	return (
 		<Box bg="#1E1E1E" borderRadius="2xl" border="1px solid #434343" p={0} mb={4} overflow="hidden">
 			<Box p={4} borderBottom="1px solid #434343">
-				<Flex justify="space-between" align="center">
+				<Flex justify="space-between" align="center" gap={3} wrap="wrap">
 					<Text fontSize="xl" fontWeight="bold" color="white">Referral Codes</Text>
 					<Button
 						leftIcon={<FiPlus />}
@@ -407,6 +498,54 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={handleOpenCreate}>Create Your First Code</Button>
 					</Box>
 				) : (
+					<>
+					{/* Below md the eight columns squash to a couple of characters each, so the
+					    same rows are rendered as cards instead. The table is untouched from lg up. */}
+					<Stack display={{ base: "flex", lg: "none" }} spacing={3}>
+						{codes.map((code) => {
+							const scope = ticketScopeLabel(code)
+							return (
+								<Box key={code._id} bg="#101010" border="1px solid #434343" borderRadius="xl" p={3}>
+									<Flex align="center" justify="space-between" gap={2} mb={3}>
+										<Flex align="center" gap={1} minW={0}>
+											<Text fontFamily="mono" fontWeight="semibold" noOfLines={1}>{code.code}</Text>
+											<IconButton
+												aria-label="Copy code"
+												icon={<FiCopy />}
+												size="xs"
+												variant="ghost"
+												onClick={() => handleCopyCode(code.code)}
+											/>
+										</Flex>
+										<Switch
+											isChecked={code.isActive}
+											onChange={(e) => handleUpdate(code._id, { isActive: e.target.checked })}
+											isDisabled={updating === code._id}
+											colorScheme="green"
+										/>
+									</Flex>
+
+									<Stack spacing={2} pb={3} borderBottom="1px solid #2a2a2a">
+										<CardRow label="Discount">{code.discountPercentage}%</CardRow>
+										<CardRow label="Free Premium">{freePremiumLabel(code)}</CardRow>
+										<CardRow label="Tickets">
+											<Text fontSize="sm" color={scope.broken ? "red.300" : undefined} title={scope.text}>
+												{scope.text}
+											</Text>
+										</CardRow>
+										<CardRow label="Usage">{code.usageCount}</CardRow>
+										<CardRow label="Max uses">{maxUsesLabel(code)}</CardRow>
+									</Stack>
+
+									<Flex gap={1} mt={2} wrap="wrap" align="center">
+										{codeActions(code)}
+									</Flex>
+								</Box>
+							)
+						})}
+					</Stack>
+
+					<Box display={{ base: "none", lg: "block" }}>
 					<Table variant="simple">
 						<Thead>
 							<Tr>
@@ -436,7 +575,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 										</Flex>
 									</Td>
 									<Td>{code.discountPercentage}%</Td>
-									<Td>{code.freeMembershipMonths ? `${code.freeMembershipMonths} ${code.freeMembershipMonths === 1 ? "month" : "months"}` : "—"}</Td>
+									<Td>{freePremiumLabel(code)}</Td>
 									<Td maxW="220px">
 										{(() => {
 											const scope = ticketScopeLabel(code)
@@ -456,82 +595,26 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 										/>
 									</Td>
 									<Td>{code.usageCount}</Td>
-									<Td>{code.maxUses == null ? "Unlimited" : `${code.maxUses} (${code.maxUses - code.usageCount} remaining)`}</Td>
+									<Td>{maxUsesLabel(code)}</Td>
 									<Td>
 										<Flex gap={2}>
-											{/* Sharing gives a membership away with no ticket behind it, so the
-											    button is only live on a code that can actually carry that — free
-											    months set, and a usage limit to cap what a forwarded link can
-											    cost. The reason is on the button itself rather than hidden in a
-											    tooltip nobody hovers. */}
-											<Button
-												size="sm"
-												variant="ghost"
-												color={shareableReason(code) ? "#6B6B6B" : "#F5C518"}
-												_hover={{ bg: shareableReason(code) ? "transparent" : "rgba(245, 197, 24, 0.1)" }}
-												leftIcon={<FiShare2 />}
-												onClick={() => {
-													const reason = shareableReason(code)
-													if (reason) {
-														toast({ title: "Can't share this code yet", description: reason, status: "info", duration: 6000 })
-														return
-													}
-													setSharingCode(code)
-												}}
-											>
-												Share
-											</Button>
-											<Button
-												size="sm"
-												variant="ghost"
-												color="#F79432"
-												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
-												leftIcon={<FiBarChart2 />}
-												onClick={() => setAnalyticsCode(code)}
-											>
-												Analytics
-											</Button>
-											<Button
-												size="sm"
-												variant="ghost"
-												color="#F79432"
-												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
-												onClick={() => handleOpenStats(code)}
-											>
-												Stats
-											</Button>
-											<IconButton
-												aria-label="Edit code"
-												icon={<FiEdit2 />}
-												size="sm"
-												variant="ghost"
-												color="#F79432"
-												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
-												onClick={() => handleOpenEdit(code)}
-												isDisabled={updating === code._id}
-											/>
-											<IconButton
-												aria-label="Delete code"
-												icon={<FiTrash2 />}
-												size="sm"
-												colorScheme="red"
-												variant="ghost"
-												onClick={() => handleDelete(code._id)}
-												isLoading={deleting === code._id}
-											/>
+											{codeActions(code)}
 										</Flex>
 									</Td>
 								</Tr>
 							))}
 						</Tbody>
 					</Table>
+					</Box>
+					</>
 				)}
 			</Box>
 
-			{/* Create/Edit Modal */}
-			<Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
+			{/* Create/Edit Modal. Full-screen on a phone: the form is five controls tall, so a
+			    boxed dialog inside Chakra's margins leaves the footer buttons off-screen. */}
+			<Modal isOpen={isOpen} onClose={onClose} size={{ base: "full", md: "lg" }} isCentered={isDesktopModal} scrollBehavior="inside">
 				<ModalOverlay />
-				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343" m={{ base: 0, md: 4 }} borderRadius={{ base: 0, md: "md" }}>
 					<ModalHeader>{editingCode ? "Edit Referral Code" : "Create Referral Code"}</ModalHeader>
 					<ModalCloseButton />
 					<ModalBody>
@@ -610,13 +693,13 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 									value={formData.ticketScope}
 									onChange={(value) => setFormData({ ...formData, ticketScope: value as "all" | "specific" })}
 								>
-									<Stack direction="row" spacing={6}>
+									<Stack direction={{ base: "column", md: "row" }} spacing={{ base: 2, md: 6 }}>
 										<Radio value="all" colorScheme="orange">All tickets</Radio>
 										<Radio value="specific" colorScheme="orange" isDisabled={tickets.length === 0}>Specific tickets</Radio>
 									</Stack>
 								</RadioGroup>
 								{formData.ticketScope === "specific" && (
-									<Stack mt={3} spacing={2} bg="#101010" border="1px solid #434343" borderRadius="md" p={3} maxH="200px" overflowY="auto">
+									<Stack mt={3} spacing={2} bg="#101010" border="1px solid #434343" borderRadius="md" p={3} maxH={{ base: "40vh", md: "200px" }} overflowY="auto">
 										{tickets.map((ticket) => (
 											<Checkbox
 												key={ticket._id}
@@ -662,10 +745,11 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 						</Box>
 					</ModalBody>
 
-					<ModalFooter>
+					<ModalFooter flexDirection={{ base: "column-reverse", md: "row" }} gap={{ base: 2, md: 0 }}>
 						<Button
 							variant="ghost"
-							mr={3}
+							mr={{ base: 0, md: 3 }}
+							width={{ base: "100%", md: "auto" }}
 							onClick={() => {
 								onClose()
 								resetForm()
@@ -678,6 +762,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 						<Button
 							bg="#F79432"
 							color="black"
+							width={{ base: "100%", md: "auto" }}
 							_hover={{ bg: "#E68422" }}
 							onClick={editingCode ? handleSaveEdit : handleCreate}
 							isLoading={editingCode ? updating === editingCode._id : creating}
@@ -699,9 +784,9 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 			{/* The Premium link. Everything a host needs to decide whether to send it: what the
 			    recipient gets, how many are left, and the fact that the same allowance is shared
 			    with ticket redemptions. */}
-			<Modal isOpen={!!sharingCode} onClose={() => setSharingCode(null)} size="xl" isCentered>
+			<Modal isOpen={!!sharingCode} onClose={() => setSharingCode(null)} size={{ base: "full", md: "xl" }} isCentered={isDesktopModal} scrollBehavior="inside">
 				<ModalOverlay />
-				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343" m={{ base: 0, md: 4 }} borderRadius={{ base: 0, md: "md" }}>
 					<ModalHeader>Share Jetzy Premium</ModalHeader>
 					<ModalCloseButton />
 					<ModalBody pb={6}>
@@ -745,9 +830,9 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 			</Modal>
 
 			{/* Performance for one code — the buyers, the money, and the CSV to hand over. */}
-			<Modal isOpen={!!analyticsCode} onClose={() => setAnalyticsCode(null)} size="5xl" isCentered scrollBehavior="inside">
+			<Modal isOpen={!!analyticsCode} onClose={() => setAnalyticsCode(null)} size={{ base: "full", md: "5xl" }} isCentered={isDesktopModal} scrollBehavior="inside">
 				<ModalOverlay />
-				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343" m={{ base: 0, md: 4 }} borderRadius={{ base: 0, md: "md" }}>
 					<ModalHeader>
 						Performance: <span style={{ fontFamily: "monospace" }}>{analyticsCode?.code}</span>
 					</ModalHeader>
@@ -766,9 +851,9 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 			</Modal>
 
 			{/* Stats Modal */}
-			<Modal isOpen={isStatsOpen} onClose={onStatsClose} size="lg" isCentered>
+			<Modal isOpen={isStatsOpen} onClose={onStatsClose} size={{ base: "full", md: "lg" }} isCentered={isDesktopModal} scrollBehavior="inside">
 				<ModalOverlay />
-				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343">
+				<ModalContent bg="#1E1E1E" color="white" border="1px solid #434343" m={{ base: 0, md: 4 }} borderRadius={{ base: 0, md: "md" }}>
 					<ModalHeader>Referral Stats: {selectedStatsCode?.code}</ModalHeader>
 					<ModalCloseButton />
 					<ModalBody pb={6}>
@@ -778,7 +863,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 							</Flex>
 						) : statsData ? (
 							<Box>
-								<Flex gap={4} mb={6}>
+								<Flex gap={4} mb={6} direction={{ base: "column", md: "row" }}>
 									<Box flex={1} bg="#101010" p={4} borderRadius="xl" border="1px solid #333">
 										<Text fontSize="sm" color="gray.400" mb={1}>Total Bookings</Text>
 										<Text fontSize="2xl" fontWeight="bold">{statsData!.verifiedUsageCount}</Text>
@@ -795,7 +880,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 									<Text fontWeight="bold" mb={4} fontSize="lg">Commission Calculator</Text>
 									<FormControl mb={4}>
 										<FormLabel color="gray.400">Commission Percentage</FormLabel>
-										<Flex gap={2} align="center">
+										<Flex gap={2} align="center" wrap="wrap">
 											<NumberInput
 												value={commissionRate}
 												onChange={(value) => setCommissionRate(value)}
