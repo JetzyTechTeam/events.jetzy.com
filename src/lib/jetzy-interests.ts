@@ -52,16 +52,25 @@ export const findDuplicateSub = (categories: InterestCategory[], categoryId: str
 }
 
 /**
- * The whole taxonomy in one page.
+ * The whole taxonomy in one page, or the subset matching `search`.
  *
  * `perPage=10000` matches what the picker has always requested — the list is small and the
  * component has no paging, so a second page would silently go missing.
  *
+ * `search` is the backend's own filter and it matches SUB-INTEREST names as well as category
+ * names (verified against test: `search=backpacking` returns the `travel` category). It
+ * returns the matching categories with **all** of their sub-interests, not just the matched
+ * ones, so a caller narrowing down to a single chip still has to filter the subs itself.
+ *
+ * Defaults to `""` — the duplicate checks in `api/interests/categories.ts` and
+ * `sub-categories.ts` must keep seeing the whole taxonomy, or a filtered read would report
+ * an existing name as free to create.
+ *
  * Response shape is `{ message, status, code, data: { data: [...], pagination } }`; the
  * double `data` is the backend's envelope, not a typo.
  */
-export const fetchInterestCategories = async (token: string): Promise<InterestCategory[]> => {
-	const res = await fetch(`${interestsApiBase()}/bulk-categories?perPage=10000&page=1&search=`, {
+export const fetchInterestCategories = async (token: string, search = ""): Promise<InterestCategory[]> => {
+	const res = await fetch(`${interestsApiBase()}/bulk-categories?perPage=10000&page=1&search=${encodeURIComponent(search)}`, {
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",

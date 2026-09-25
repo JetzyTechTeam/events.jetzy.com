@@ -11,12 +11,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 	const token = (session.user as any).accessToken
 
+	// The backend's own filter, matching sub-interest names as well as category names. An
+	// array param (?search=a&search=b) would stringify as "a,b" and match nothing, so take
+	// the first value only.
+	const raw = req.query.search
+	const search = (Array.isArray(raw) ? raw[0] : raw) ?? ''
+
 	try {
 		// The base used to be hardcoded to prod-api.jetzy.com while the accessToken above is
 		// issued by NEXT_PUBLIC_EXTERNAL_API_BASE_URL, so this call was sending a test-issued
 		// token to production and reading a taxonomy nothing else in the app writes to. See
 		// the note on `interestsApiBase`.
-		const categories = await fetchInterestCategories(token)
+		const categories = await fetchInterestCategories(token, search)
 		return res.status(200).json(categories)
 	} catch (error: any) {
 		console.error('Error fetching interests:', error.message)
