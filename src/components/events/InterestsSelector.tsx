@@ -237,25 +237,9 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 
 	const addingCategory = creating?.kind === 'category'
 
-	// Ids on the event that this taxonomy cannot render at all. The taxonomy is per
-	// environment — an id created against one Jetzy backend does not exist on the other — so
-	// without this the header counts interests the host can see no trace of anywhere.
-	const knownIds = React.useMemo(() => {
-		const set = new Set<string>()
-		categories.forEach(cat => {
-			set.add(cat._id)
-			cat.subCategories.forEach(sub => set.add(sub.id))
-		})
-		return set
-	}, [categories])
 	// The term the rendered list was fetched with, normalised the same way the taxonomy is —
 	// `search` would be one keystroke ahead of the rows on screen.
 	const q = normalizeInterestName(query)
-
-	// Guarded on `categories.length`: mid-load everything looks unrecognised. Suppressed while
-	// a search is applied for the same reason — `categories` is then a deliberate subset, and
-	// every interest the filter excluded would be reported as missing from the taxonomy.
-	const unrecognised = !query && categories.length > 0 ? selected.filter(id => !knownIds.has(id)).length : 0
 
 	const list = (
 		<>
@@ -284,18 +268,6 @@ export default function InterestsSelector({ selected, onChange, bare = false }: 
 					_placeholder={{ color: '#6B6E73' }}
 				/>
 			</Box>
-
-			{unrecognised > 0 && (
-				<Box mb={3} p={3} borderRadius="10px" bg="#1A1206" border="1px solid #F7943255">
-					<Text color="#F79432" fontSize="xs" fontWeight="bold">
-						{unrecognised} selected {unrecognised === 1 ? 'interest is' : 'interests are'} not in this list
-					</Text>
-					<Text color="#9C9C9C" fontSize="xs" mt={1} lineHeight="140%">
-						They were picked against a different Jetzy environment&apos;s interest list, so there is
-						nothing here to highlight. They stay on the event — saving does not remove them.
-					</Text>
-				</Box>
-			)}
 
 			{/* At the TOP, not after the list. There are ~35 categories, so at the bottom this
 			    sat below several screens of chips and a host looking for it never found it. */}
