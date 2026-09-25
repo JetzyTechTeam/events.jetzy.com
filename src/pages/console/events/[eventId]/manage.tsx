@@ -1137,7 +1137,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							)}
 							{/* Same rule as the leave dialog: with Status switched to Draft this button
 							    takes the event off the public listing, so it must not say "Update". */}
-							{willUnpublish ? "Save & unpublish" : "Update Event"}
+							{willUnpublish ? "Unpublish" : "Update Event"}
 						</Button>
 						{/* Analytics, Clone and Delete are occasional, and Delete is destructive — none
 						    of them belong beside the button the host presses every few minutes. */}
@@ -2020,12 +2020,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							</>
 						)
 					}
-					leaveLabel="Leave as draft"
+					/* "Leave as draft" is ambiguous when the DRAFT is the status being saved — there,
+					   leaving means the event carries on being published. Say that instead. */
+					leaveLabel={willUnpublish ? "Leave it published" : "Leave as draft"}
 					onLeave={() => leaveGuard.confirmLeave()}
 					onKeepEditing={leaveGuard.cancelLeave}
 					primary={{
-						label: willUnpublish ? "Save & unpublish" : "Update Event",
-						loadingLabel: willUnpublish ? "Saving" : "Updating",
+						label: willUnpublish ? "Unpublish" : "Update Event",
+						loadingLabel: willUnpublish ? "Unpublishing" : "Updating",
 						onClick: handlePublishAndLeave,
 					}}
 					isBusy={isSubmitting}
