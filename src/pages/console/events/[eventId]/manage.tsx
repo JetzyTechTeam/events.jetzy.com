@@ -623,6 +623,16 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	)
 	const afterSaveUrlRef = React.useRef<string | null>(null)
 
+	// "6:41 PM" for a draft saved today, "Sep 25, 6:41 PM" for an older one — a bare time on
+	// a draft from last week would read as minutes ago. This session's autosave wins over the
+	// timestamp the page loaded with.
+	const lastAutosavedLabel = React.useMemo(() => {
+		const savedAt = autosaveState.savedAt ?? (draftSavedAt ? new Date(draftSavedAt) : null)
+		if (!savedAt) return null
+		const d = dayjs(savedAt)
+		return d.isSame(dayjs(), "day") ? d.format("h:mm A") : d.format("MMM D, h:mm A")
+	}, [autosaveState.savedAt, draftSavedAt])
+
 	// "Update Event" from the leave dialog. Runs the SAME submit the header button runs, so
 	// validation is unchanged; on success it navigates to where the host was heading.
 	const handlePublishAndLeave = async () => {
@@ -1950,20 +1960,85 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				    alone, so a host can edit, walk away, and see none of it on the event page.
 				    The orange banner only tells them that on their NEXT visit — this says it on
 				    the way out, while they can still act on it. */}
-				<AlertDialog isOpen={leaveGuard.isOpen} leastDestructiveRef={keepEditingRef} onClose={leaveGuard.cancelLeave} isCentered>
-					<AlertDialogOverlay>
-						<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
-							<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">Your changes aren&rsquo;t live yet</AlertDialogHeader>
-							<AlertDialogBody color="white">
-								They&rsquo;re saved as a draft, so nothing is lost. The event page still shows the
-								published version until you press <b>Update Event</b>.
+				<AlertDialog isOpen={leaveGuard.isOpen} leastDestructiveRef={keepEditingRef} onClose={leaveGuard.cancelLeave} isCentered motionPreset="slideInBottom">
+					<AlertDialogOverlay bg="blackAlpha.700" backdropFilter="blur(2px)">
+						<AlertDialogContent bg="#161616" border="1px solid #2A2D31" borderRadius="16px" mx={4} maxW="460px" overflow="hidden">
+							{/* Icon + heading share a row: the amber mark carries the "not live" state so
+							    the sentence underneath can stay plain. */}
+							<AlertDialogHeader pt={6} px={6} pb={0}>
+								<Flex align="flex-start" gap={3}>
+									<Flex flexShrink={0} w="40px" h="40px" borderRadius="full" bg="#3A2A00" align="center" justify="center">
+										<ClockIcon className="w-5 h-5" style={{ color: "#F79432" }} />
+									</Flex>
+									<Box minW={0}>
+										<Text className={roboto.className} fontSize="18px" fontWeight={700} lineHeight="1.3" color="white">
+											Your changes aren&rsquo;t live yet
+										</Text>
+										{lastAutosavedLabel && (
+											<Text className={roboto.className} fontSize="12px" fontWeight={400} color="#7E8083" mt={1}>
+												Draft saved {lastAutosavedLabel}
+											</Text>
+										)}
+									</Box>
+								</Flex>
+							</AlertDialogHeader>
+
+							<AlertDialogBody px={6} pt={4} pb={5}>
+								<Text className={roboto.className} fontSize="14px" lineHeight="1.6" color="#B5B6B7">
+									Nothing is lost — they&rsquo;re saved as a draft. Guests keep seeing the published
+									version until you press <Box as="span" color="white" fontWeight={700}>Update Event</Box>.
+								</Text>
 							</AlertDialogBody>
-							<AlertDialogFooter display="flex" flexWrap="wrap" gap={3}>
-								<Button ref={keepEditingRef} onClick={leaveGuard.cancelLeave} isDisabled={isSubmitting}>Keep editing</Button>
-								<Button variant="ghost" color="#B5B6B7" _hover={{ bg: "#2A2D31" }} onClick={() => leaveGuard.confirmLeave()} isDisabled={isSubmitting}>
+
+							{/* Stacked full-width on a phone — three buttons on one line is what wrapped
+							    Update Event onto a ragged second row. `order` puts the primary first in
+							    the stack and last in the desktop row, with a flex spacer pushing the two
+							    leave actions away from Keep editing so they can't be hit by accident. */}
+							<AlertDialogFooter
+								px={6}
+								pt={0}
+								pb={6}
+								display="flex"
+								flexDirection={{ base: "column", sm: "row" }}
+								alignItems="stretch"
+								gap={3}
+							>
+								<Button
+									ref={keepEditingRef}
+									onClick={leaveGuard.cancelLeave}
+									isDisabled={isSubmitting}
+									variant="ghost"
+									color="#B5B6B7"
+									fontWeight={600}
+									_hover={{ bg: "#232629", color: "white" }}
+									order={{ base: 3, sm: 1 }}
+								>
+									Keep editing
+								</Button>
+								<Box flex="1" display={{ base: "none", sm: "block" }} order={{ sm: 2 }} />
+								<Button
+									onClick={() => leaveGuard.confirmLeave()}
+									isDisabled={isSubmitting}
+									variant="outline"
+									color="white"
+									borderColor="#3A3D41"
+									fontWeight={600}
+									_hover={{ bg: "#232629", borderColor: "#4A4D51" }}
+									order={{ base: 2, sm: 3 }}
+								>
 									Leave as draft
 								</Button>
-								<Button bg="#F79432" color="black" fontWeight="bold" _hover={{ bg: "#E68422" }} onClick={handlePublishAndLeave} isLoading={isSubmitting}>
+								<Button
+									onClick={handlePublishAndLeave}
+									isLoading={isSubmitting}
+									loadingText="Updating"
+									bg="#F79432"
+									color="black"
+									fontWeight="bold"
+									_hover={{ bg: "#E68422" }}
+									_active={{ bg: "#D97913" }}
+									order={{ base: 1, sm: 4 }}
+								>
 									Update Event
 								</Button>
 							</AlertDialogFooter>
