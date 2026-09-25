@@ -48,12 +48,17 @@ export default function ConsoleLayout({
         ref={headerRef}
         className={`bg-[#090C10] shadow ${
           stickyHeader
-            ? "sticky top-0 z-30 pb-4 border-b border-[#232323]"
+            ? "sticky top-0 z-30 pb-3 sm:pb-4 border-b border-[#232323]"
             : ""
         }`}
       >
+        {/* `sm:px-6`, not `xs:px-6`: `xs` is 300px here, so the old rule fired on every handset
+            and inset the header 24px while `<main>` below it sits at 16px — the title and the
+            page content did not line up. This now matches `<main>` exactly.
+            `flex-col md:flex-row` replaces `md:flex-row xs:flex-col`, which is the same thing at
+            every width a real device has and only reads as if it were doing more. */}
         <div
-          className={`mx-auto px-4 pt-6 xs:px-6 lg:px-8 flex md:flex-row xs:flex-col justify-between gap-4 ${
+          className={`mx-auto px-4 pt-4 sm:px-6 sm:pt-6 lg:px-8 flex flex-col md:flex-row justify-between gap-4 ${
             maxW ? maxW : "max-w-7xl"
           }`}
         >

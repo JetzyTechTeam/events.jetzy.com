@@ -957,8 +957,15 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 				stickyHeader
 				page={
 					<span className="flex flex-col mt-3 min-w-0">
-						<span className={`${roboto.className} mb-2`} style={{ fontSize: "16px", lineHeight: "100%", letterSpacing: "0" }}>
-							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}>My Events &rsaquo; </span>
+						{/* `truncate` matters on a phone: the name here is the same name the <h1> below
+						    repeats, and without it a long one wraps the breadcrumb onto a second line
+						    that says nothing new. "My Events" is a real link — it was a plain span,
+						    so the only way back to the list was the browser's own back button. */}
+						<span className={`${roboto.className} mb-2 block truncate`} style={{ fontSize: "16px", lineHeight: "1.4", letterSpacing: "0" }}>
+							<Link href={ROUTES.dashboard.events.index} className="font-normal hover:underline" style={{ color: "rgba(255,255,255,0.8)" }}>
+								My Events
+							</Link>
+							<span className="font-normal" style={{ color: "rgba(255,255,255,0.8)" }}> &rsaquo; </span>
 							<span className="text-[#F79432] font-normal">{stripHtml(event.name)}</span>
 						</span>
 						{/* Title and badge are flex siblings, not inline text: as an inline span the
@@ -982,17 +989,18 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					   used while editing — Approve (when it applies), Preview, Update Event — and the
 					   rest sit behind a "More" menu. The autosave pill moves above the row so it stops
 					   competing with the buttons for the same line. */
-					<div className="flex flex-col items-end gap-2 self-end min-w-0">
+					<div className="flex flex-col w-full md:w-auto items-stretch md:items-end gap-2 self-stretch md:self-end min-w-0">
 						{tabIndex === 0 && (
 							<div className="flex justify-end">
 								<AutosaveStatusPill state={autosaveState} />
 							</div>
 						)}
-						{/* Wraps on a phone, one row from `sm` up. Not `xs:` — that breakpoint is 300px
-						    here, which would force four buttons onto one line on every handset. */}
-						<div className="flex flex-wrap sm:flex-nowrap gap-2 items-center justify-end">
+						{/* Full width on a phone, natural width from `md` up — the same breakpoint the
+						    buttons already switch size at. Not `xs:`, which is 300px here and would
+						    force four buttons onto one line on every handset. */}
+						<div className="flex flex-wrap md:flex-nowrap gap-2 items-center justify-end w-full md:w-auto">
 						{isAdmin && isPendingApproval && (
-							<Button size={{ base: "sm", md: "md" }} flexShrink={0} bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
+							<Button size={{ base: "sm", md: "md" }} flexShrink={0} flexBasis={{ base: "100%", md: "auto" }} bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
 								Approve Event
 							</Button>
 						)}
@@ -1010,7 +1018,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						>
 							<Button
 								size={{ base: "sm", md: "md" }}
-								flexShrink={0}
+								flex={{ base: "1 1 0", md: "0 0 auto" }}
+								minW={0}
 								bg="#3E3E3E"
 								color="white"
 								_hover={{ bg: "#323232" }}
@@ -1022,7 +1031,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 								Preview
 							</Button>
 						</Tooltip>
-						<Button size={{ base: "sm", md: "md" }} flexShrink={0} bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
+						<Button size={{ base: "sm", md: "md" }} flex={{ base: "1 1 0", md: "0 0 auto" }} minW={0} bg="#F79432" color="black" _hover={{ bg: "#E68422" }} _active={{ bg: "#E68422" }} fontWeight="bold" isLoading={isSubmitting} onClick={() => formikRef.current?.submitForm()}>
 							{tabIndex === 0 && isFormDirty && (
 								<Box as="span" w="8px" h="8px" borderRadius="full" bg="#0B0B0B" mr="2" flexShrink={0} />
 							)}
