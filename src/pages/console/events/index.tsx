@@ -323,8 +323,8 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 				{/* INFO */}
 				<div className="flex-1 min-w-0 space-y-1.5">
 					<div className="flex items-center gap-2 flex-wrap">
-						<Link href={eventPath(event.slug)}>
-							<Heading as="h3" fontSize={18} cursor="pointer" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
+						<Link href={eventPath(event.slug)} className="min-w-0 max-w-full">
+							<Heading as="h3" fontSize={18} cursor="pointer" _hover={{ textDecoration: "underline" }} className={`break-words ${props.isEnded ? 'text-gray-400' : ''}`}>
 								{stripHtml(event.name)}
 							</Heading>
 						</Link>
@@ -349,9 +349,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					</div>
 
 					{/* TIME ROW */}
-					<div className="flex items-center gap-x-2 text-sm text-[#A7A7A7]">
-						<DateTimeSVG width={16} height={16} stroke="#F79432" />
-						<span>
+					<div className="flex items-start gap-x-2 text-sm text-[#A7A7A7]">
+						<span className="shrink-0 flex mt-[3px]">
+							<DateTimeSVG width={16} height={16} stroke="#F79432" />
+						</span>
+						<span className="min-w-0">
 							{(() => {
 								const showStart = event.startsOn && event.hasStartTime !== false
 								const showEnd = event.endsOn && event.hasEndTime !== false
@@ -366,18 +368,20 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					</div>
 
 					{/* LOCATION ROW */}
-					<div className="flex items-center gap-x-2 text-sm text-[#A7A7A7]">
+					<div className="flex items-start gap-x-2 text-sm text-[#A7A7A7]">
 						{event.locationDisclosedAfterBooking ? (
 							<>
-								<span>📍</span>
-								<span>
+								<span className="shrink-0">📍</span>
+								<span className="min-w-0 line-clamp-2 sm:line-clamp-1">
 									Disclosed after registration <span className="text-xs text-gray-500 ml-1">(Actual: {event.location})</span>
 								</span>
 							</>
 						) : (
 							<>
-								<LocationSVG width={15} height={16} stroke="#EC5E5E" />
-								<span className="truncate">{event.location}</span>
+								<span className="shrink-0 flex mt-[3px]">
+									<LocationSVG width={15} height={16} stroke="#EC5E5E" />
+								</span>
+								<span className="min-w-0 line-clamp-2 sm:line-clamp-1">{event.location}</span>
 							</>
 						)}
 					</div>
