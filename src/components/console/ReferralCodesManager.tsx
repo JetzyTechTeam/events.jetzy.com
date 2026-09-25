@@ -1,6 +1,6 @@
 "use client"
 import { Box, Text, Button, Input, Table, Thead, Tbody, Tr, Th, Td, Badge, IconButton, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, ModalFooter, useDisclosure, useToast, FormControl, FormLabel, NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper, Flex, Switch, Checkbox, Radio, RadioGroup, Stack, useBreakpointValue } from "@chakra-ui/react"
-import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2, FiShare2 } from "react-icons/fi"
+import { FiPlus, FiEdit2, FiTrash2, FiCopy, FiBarChart2, FiShare2, FiTrendingUp } from "react-icons/fi"
 import { useState, useEffect } from "react"
 import { premiumShareLink, shareableReason } from "@/lib/referral-share"
 import { liveScopedTicketIds, referralAppliesToAllTickets } from "@/lib/referral-ticket-scope"
@@ -403,29 +403,31 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 		onOpen()
 	}
 
-	// One definition of the row's five controls, rendered by both the table and the cards.
-	// The Share gate in particular must not be copied — a second copy is a second place for
-	// `shareableReason` to be forgotten, and that button gives a membership away.
+	// The table's five controls in a single row. The cards lay the same five out as 3 + 2, so
+	// the markup differs by surface — but every handler, and the share gate above, is shared.
+	// Sharing gives a membership away with no ticket behind it, so it is only allowed on a code
+	// that can actually carry that — free months set, and a usage limit to cap what a forwarded
+	// link can cost. The gate lives here, once: the table and the cards lay the buttons out
+	// differently, but neither gets its own copy of this, which is the thing that must not drift.
+	const handleShareClick = (code: ReferralCode) => {
+		const reason = shareableReason(code)
+		if (reason) {
+			// The reason goes on screen rather than into a tooltip nobody hovers.
+			toast({ title: "Can't share this code yet", description: reason, status: "info", duration: 6000 })
+			return
+		}
+		setSharingCode(code)
+	}
+
 	const codeActions = (code: ReferralCode) => (
 		<>
-			{/* Sharing gives a membership away with no ticket behind it, so the button is only
-			    live on a code that can actually carry that — free months set, and a usage limit
-			    to cap what a forwarded link can cost. The reason is on the button itself rather
-			    than hidden in a tooltip nobody hovers. */}
 			<Button
 				size="sm"
 				variant="ghost"
 				color={shareableReason(code) ? "#6B6B6B" : "#F5C518"}
 				_hover={{ bg: shareableReason(code) ? "transparent" : "rgba(245, 197, 24, 0.1)" }}
 				leftIcon={<FiShare2 />}
-				onClick={() => {
-					const reason = shareableReason(code)
-					if (reason) {
-						toast({ title: "Can't share this code yet", description: reason, status: "info", duration: 6000 })
-						return
-					}
-					setSharingCode(code)
-				}}
+				onClick={() => handleShareClick(code)}
 			>
 				Share
 			</Button>
@@ -444,6 +446,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 				variant="ghost"
 				color="#F79432"
 				_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+				leftIcon={<FiTrendingUp />}
 				onClick={() => handleOpenStats(code)}
 			>
 				Stats
@@ -472,7 +475,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 
 	return (
 		<Box bg="#1E1E1E" borderRadius="2xl" border="1px solid #434343" p={0} mb={4} overflow="hidden">
-			<Box p={4} borderBottom="1px solid #434343">
+			<Box p={{ base: 3, md: 4 }} borderBottom="1px solid #434343">
 				<Flex justify="space-between" align="center" gap={3} wrap="wrap">
 					<Text fontSize="xl" fontWeight="bold" color="white">Referral Codes</Text>
 					<Button
@@ -489,7 +492,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 				</Flex>
 			</Box>
 
-			<Box p={4}>
+			<Box p={{ base: 3, md: 4 }}>
 				{loading ? (
 					<Text>Loading...</Text>
 				) : codes.length === 0 ? (
@@ -505,7 +508,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 						{codes.map((code) => {
 							const scope = ticketScopeLabel(code)
 							return (
-								<Box key={code._id} bg="#101010" border="1px solid #434343" borderRadius="xl" p={3}>
+								<Box key={code._id} bg="#101010" border="1px solid #434343" borderRadius="xl" p={{ base: 2.5, md: 3 }}>
 									<Flex align="center" justify="space-between" gap={2} mb={3}>
 										<Flex align="center" gap={1} minW={0}>
 											<Text fontFamily="mono" fontWeight="semibold" noOfLines={1}>{code.code}</Text>
@@ -514,6 +517,8 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 												icon={<FiCopy />}
 												size="xs"
 												variant="ghost"
+												color="#9C9C9C"
+												_hover={{ color: "white", bg: "#2a2a2a" }}
 												onClick={() => handleCopyCode(code.code)}
 											/>
 										</Flex>
@@ -537,9 +542,79 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 										<CardRow label="Max uses">{maxUsesLabel(code)}</CardRow>
 									</Stack>
 
-									<Flex gap={1} mt={2} wrap="wrap" align="center">
-										{codeActions(code)}
-									</Flex>
+									{/* Laid out as a deliberate 3 + 2 rather than left to wrap — wrapping
+								    put Stats alone on a second line beside the icon buttons, which
+								    reads as a mistake. Same five controls, same handlers. */}
+									<Stack spacing={2} mt={3}>
+										<Flex gap={2}>
+											<Button
+												size="sm"
+												flex={1}
+												px={2}
+												fontSize="xs"
+												variant="ghost"
+												color={shareableReason(code) ? "#6B6B6B" : "#F5C518"}
+												_hover={{ bg: shareableReason(code) ? "transparent" : "rgba(245, 197, 24, 0.1)" }}
+												leftIcon={<FiShare2 />}
+												onClick={() => handleShareClick(code)}
+											>
+												Share
+											</Button>
+											<Button
+												size="sm"
+												flex={1}
+												px={2}
+												fontSize="xs"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												leftIcon={<FiBarChart2 />}
+												onClick={() => setAnalyticsCode(code)}
+											>
+												Analytics
+											</Button>
+											<Button
+												size="sm"
+												flex={1}
+												px={2}
+												fontSize="xs"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												leftIcon={<FiTrendingUp />}
+												onClick={() => handleOpenStats(code)}
+											>
+												Stats
+											</Button>
+										</Flex>
+										<Flex gap={2}>
+											<Button
+												size="sm"
+												flex={1}
+												fontSize="xs"
+												variant="ghost"
+												color="#F79432"
+												_hover={{ bg: "rgba(247, 148, 50, 0.1)" }}
+												leftIcon={<FiEdit2 />}
+												onClick={() => handleOpenEdit(code)}
+												isDisabled={updating === code._id}
+											>
+												Edit
+											</Button>
+											<Button
+												size="sm"
+												flex={1}
+												fontSize="xs"
+												colorScheme="red"
+												variant="ghost"
+												leftIcon={<FiTrash2 />}
+												onClick={() => handleDelete(code._id)}
+												isLoading={deleting === code._id}
+											>
+												Delete
+											</Button>
+										</Flex>
+									</Stack>
 								</Box>
 							)
 						})}
@@ -570,6 +645,8 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 												icon={<FiCopy />}
 												size="xs"
 												variant="ghost"
+												color="#9C9C9C"
+												_hover={{ color: "white", bg: "#2a2a2a" }}
 												onClick={() => handleCopyCode(code.code)}
 											/>
 										</Flex>
