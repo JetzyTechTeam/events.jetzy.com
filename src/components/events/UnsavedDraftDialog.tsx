@@ -90,7 +90,7 @@ export function UnsavedDraftDialog({
 					    primary onto a ragged second row. `order` puts the primary first in the stack
 					    and last in the desktop row, with a flex spacer pushing the leave action away
 					    from Keep editing so it can't be hit by accident. */}
-					<AlertDialogFooter px={6} pt={0} pb={6} display="flex" flexDirection={{ base: "column", sm: "row" }} alignItems="stretch" gap={3}>
+					<AlertDialogFooter px={6} pt={0} pb={6} display="flex" flexDirection={{ base: "column", sm: "row" }} alignItems="stretch" gap={2} whiteSpace="nowrap">
 						<Button
 							ref={keepEditingRef}
 							onClick={onKeepEditing}
@@ -98,8 +98,10 @@ export function UnsavedDraftDialog({
 							variant="ghost"
 							color="#B5B6B7"
 							fontWeight={600}
-							_hover={{ bg: "#232629", color: "white" }}
+							px={3}
+							flexShrink={0}
 							order={{ base: 3, sm: 1 }}
+							_hover={{ bg: "#232629", color: "white" }}
 						>
 							Keep editing
 						</Button>
@@ -111,22 +113,26 @@ export function UnsavedDraftDialog({
 							color="white"
 							borderColor="#3A3D41"
 							fontWeight={600}
-							_hover={{ bg: "#232629", borderColor: "#4A4D51" }}
+							flexShrink={0}
 							order={{ base: 2, sm: 3 }}
+							_hover={{ bg: "#232629", borderColor: "#4A4D51" }}
 						>
 							{leaveLabel}
 						</Button>
 						{primary && (
+							/* Destructive variants are red: an orange "primary" on a button that takes
+							   the event off the public listing reads as the safe way out. */
 							<Button
 								onClick={primary.onClick}
 								isLoading={isBusy}
 								loadingText={primary.loadingLabel ?? "Saving"}
-								bg="#F79432"
-								color="black"
+								bg={danger ? "#DC2626" : "#F79432"}
+								color={danger ? "white" : "black"}
 								fontWeight="bold"
-								_hover={{ bg: "#E68422" }}
-								_active={{ bg: "#D97913" }}
+								flexShrink={0}
 								order={{ base: 1, sm: 4 }}
+								_hover={{ bg: danger ? "#B91C1C" : "#E68422" }}
+								_active={{ bg: danger ? "#991B1B" : "#D97913" }}
 							>
 								{primary.label}
 							</Button>
