@@ -1997,7 +1997,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 									</Flex>
 									<Box minW={0}>
 										<Text className={roboto.className} fontSize="18px" fontWeight={700} lineHeight="1.3" color="white">
-											{willUnpublish ? "Saving will unpublish this event" : "Your changes aren’t live yet"}
+											{willUnpublish
+												? "Saving will unpublish this event"
+												: isPendingApproval
+													? "Your changes aren’t in the review yet"
+													: "Your changes aren’t live yet"}
 										</Text>
 										{lastAutosavedLabel && (
 											<Text className={roboto.className} fontSize="12px" fontWeight={400} color="#7E8083" mt={1}>
@@ -2015,6 +2019,15 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 											You&rsquo;ve set Status to <Box as="span" color="white" fontWeight={700}>Draft</Box>.
 											Saving now takes this event off the public listing — guests who have the link
 											won&rsquo;t be able to see or book it. Your edits are kept either way.
+										</>
+									) : isPendingApproval ? (
+										/* Awaiting admin review: saying "guests keep seeing the published version"
+										   would be untrue — nobody can see this event yet. What is stale is the
+										   copy sitting in the admin's queue. */
+										<>
+											Nothing is lost — they&rsquo;re saved as a draft. This event is awaiting admin
+											approval, and the version being reviewed is the last one you saved. Press{" "}
+											<Box as="span" color="white" fontWeight={700}>Update Event</Box> to include these changes.
 										</>
 									) : (
 										<>
