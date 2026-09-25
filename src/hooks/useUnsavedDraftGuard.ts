@@ -2,6 +2,27 @@ import React from "react"
 import { useRouter } from "next/router"
 
 /**
+ * Thrown to abort a navigation, and matched by identity when swallowing our own rejection.
+ * A module-level object so nothing else can accidentally equal it.
+ */
+const ABORT_SENTINEL = { unsavedDraftGuard: "route change aborted" }
+
+/** Path without query or hash — what decides whether a navigation leaves this page. */
+const pathOf = (url: string) => url.split("?")[0].split("#")[0]
+
+export interface UnsavedDraftGuard {
+	/** Route the visitor tried to reach, while the dialog is open. */
+	pendingUrl: string | null
+	isOpen: boolean
+	/** Let the blocked navigation through (or go to `url` instead). */
+	confirmLeave: (url?: string) => void
+	/** Stay on the page. */
+	cancelLeave: () => void
+	/** Suppress both guards for a navigation the page itself is performing. */
+	bypass: () => void
+}
+
+/**
  * Interrupts a navigation away from a page that holds changes the visitor may not realise
  * are unpublished.
  *
@@ -17,18 +38,6 @@ import { useRouter } from "next/router"
  * Generic on purpose (`shouldGuard` is a callback) so the Create Event page can adopt it
  * without this hook learning anything about events.
  */
-export interface UnsavedDraftGuard {
-	/** Route the visitor tried to reach, while the dialog is open. */
-	pendingUrl: string | null
-	isOpen: boolean
-	/** Let the blocked navigation through (or go to `url` instead). */
-	confirmLeave: (url?: string) => void
-	/** Stay on the page. */
-	cancelLeave: () => void
-	/** Suppress both guards for a navigation the page itself is performing. */
-	bypass: () => void
-}
-
 export function useUnsavedDraftGuard(shouldGuard: () => boolean): UnsavedDraftGuard {
 	const router = useRouter()
 
@@ -47,11 +56,15 @@ export function useUnsavedDraftGuard(shouldGuard: () => boolean): UnsavedDraftGu
 
 	// --- in-app navigation -------------------------------------------------------------
 	React.useEffect(() => {
-		const handleRouteChangeStart = (url: string) => {
+		const handleRouteChangeStart = (url: string, routeProps?: { shallow?: boolean }) => {
 			if (bypassRef.current) return
 			if (!shouldGuardRef.current()) return
-			// Same page (e.g. a shallow query change) is not a departure.
-			if (url === router.asPath) return
+			// Not a departure: a shallow change, or the same page reloading its own props.
+			// Manage Event does BOTH — it strips `?invite=true` shallowly on mount and calls
+			// `router.replace(router.asPath)` after some saves. Guarding those would put the
+			// dialog on the screen while the host was still sitting on the page.
+			if (routeProps?.shallow) return
+			if (pathOf(url) === pathOf(router.asPath)) return
 
 			setPendingUrl(url)
 			setIsOpen(true)
@@ -67,7 +80,16 @@ export function useUnsavedDraftGuard(shouldGuard: () => boolean): UnsavedDraftGu
 			// The documented pages-router abort: tell Next the change failed, then unwind.
 			router.events.emit("routeChangeError")
 			// eslint-disable-next-line no-throw-literal
-			throw "routeChange aborted by useUnsavedDraftGuard"
+			throw ABORT_SENTINEL
+		}
+
+		// Next emits `routeChangeStart` OUTSIDE the try block in `Router.change()`, and
+		// `Link` calls `router.push()` without a catch — so the throw above escapes as an
+		// unhandled rejection, which the dev overlay reports as a runtime error. The throw is
+		// still the only way to stop a pages-router navigation, so swallow exactly our own
+		// sentinel (identity match, nothing else) and leave every other rejection alone.
+		const swallowOwnAbort = (e: PromiseRejectionEvent) => {
+			if (e.reason === ABORT_SENTINEL) e.preventDefault()
 		}
 
 		// A bypass covers ONE navigation. Without this a `router.replace(router.asPath)` —
@@ -80,10 +102,12 @@ export function useUnsavedDraftGuard(shouldGuard: () => boolean): UnsavedDraftGu
 		router.events.on("routeChangeStart", handleRouteChangeStart)
 		router.events.on("routeChangeComplete", clearBypass)
 		router.events.on("routeChangeError", clearBypass)
+		window.addEventListener("unhandledrejection", swallowOwnAbort)
 		return () => {
 			router.events.off("routeChangeStart", handleRouteChangeStart)
 			router.events.off("routeChangeComplete", clearBypass)
 			router.events.off("routeChangeError", clearBypass)
+			window.removeEventListener("unhandledrejection", swallowOwnAbort)
 		}
 	}, [router])
 
