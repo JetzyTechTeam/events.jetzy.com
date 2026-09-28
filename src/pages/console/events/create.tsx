@@ -195,11 +195,6 @@ const CreateEventPage = () => {
     return d.isSame(dayjs(), "day") ? d.format("h:mm A") : d.format("MMM D, h:mm A");
   }, [autosaveState.savedAt]);
 
-  const leaveGuard = useUnsavedDraftGuard(
-    () =>
-      !autosaveLockedRef.current &&
-      (!!autosaveIdRef.current || autosaveState.status === "unsaved" || autosaveState.status === "saving")
-  );
   const mediaVersion = React.useMemo(
     // mediaOrder included: dragging changes neither array, so without it a reorder would
     // never trigger an autosave.
@@ -212,6 +207,21 @@ const CreateEventPage = () => {
   // moves it forward, which is what makes removing a just-saved photo save too.
   const [savedMediaVersion, setSavedMediaVersion] = React.useState(EMPTY_MEDIA_VERSION);
   const mediaDirty = mediaVersion !== savedMediaVersion;
+  const uploadInFlight = isUploading || isUploadingVideo;
+  // Media the host has added that no draft holds yet. `canSave` requires a name before a
+  // record can be created at all, so photos uploaded first sit in the browser attached to
+  // nothing — and leaving used to take them without a word.
+  const unsavedMediaWithoutName = mediaDirty && !autosaveIdRef.current;
+
+  const leaveGuard = useUnsavedDraftGuard(
+    () =>
+      uploadInFlight ||
+      (!autosaveLockedRef.current &&
+        (!!autosaveIdRef.current ||
+          unsavedMediaWithoutName ||
+          autosaveState.status === "unsaved" ||
+          autosaveState.status === "saving"))
+  );
 
   const handleAutosave = async (values: CreateEventFormData) => {
     if (autosaveLockedRef.current) return;
@@ -1325,15 +1335,34 @@ const CreateEventPage = () => {
           who walks away has no way of knowing that, and starts over. */}
       <UnsavedDraftDialog
         isOpen={leaveGuard.isOpen}
-        title="Your event is saved as a draft"
+        title={
+          uploadInFlight
+            ? "An upload is still finishing"
+            : unsavedMediaWithoutName
+              ? "This event needs a name to be saved"
+              : "Your event is saved as a draft"
+        }
         savedLabel={lastAutosavedLabel ? `Saved ${lastAutosavedLabel}` : null}
         body={
-          <>
-            You&rsquo;ll find it under <Box as="span" color="white" fontWeight={700}>My Events</Box>, marked
-            Draft. Nobody else can see it — it stays private until you finish and publish it.
-          </>
+          uploadInFlight ? (
+            <>
+              Leave now and the file won&rsquo;t be attached to this event — it finishes uploading
+              with nowhere to go. It usually takes a moment.
+            </>
+          ) : unsavedMediaWithoutName ? (
+            <>
+              Nothing is saved yet. Give your event a name and it&rsquo;s kept as a draft under{" "}
+              <Box as="span" color="white" fontWeight={700}>My Events</Box> — photos and all. Leave
+              now and the media you&rsquo;ve added won&rsquo;t be kept.
+            </>
+          ) : (
+            <>
+              You&rsquo;ll find it under <Box as="span" color="white" fontWeight={700}>My Events</Box>, marked
+              Draft. Nobody else can see it — it stays private until you finish and publish it.
+            </>
+          )
         }
-        leaveLabel="Leave for now"
+        leaveLabel={uploadInFlight || unsavedMediaWithoutName ? "Leave anyway" : "Leave for now"}
         onLeave={() => leaveGuard.confirmLeave()}
         onKeepEditing={leaveGuard.cancelLeave}
       />
