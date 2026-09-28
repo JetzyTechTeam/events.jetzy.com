@@ -8,6 +8,14 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	// DELETE only. With no guard this route answered any verb, including GET — so the bare URL
+	// was a working delete link: pasted in an email or a message and clicked by a signed-in
+	// admin, it destroyed the event with no form, no button and no confirmation. Both callers
+	// (`DeleteEventApis` via `DROP`, and the row button on /console/events) already send DELETE.
+	if (req.method !== "DELETE") {
+		return sendResponse(res, null, "Method not allowed", false, ResCode.METHOD_NOT_ALLOWED)
+	}
+
 	await ensureDbConnected()
 	const session = await getServerSession(req, res, authOptions)
 
