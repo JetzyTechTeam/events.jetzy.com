@@ -493,6 +493,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const { isOpen: isPollModalOpen, onOpen: onPollModalOpen, onClose: onPollModalClose } = useDisclosure()
 	const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure()
 	const cancelRef = React.useRef<any>(null)
+	// Approving is irreversible — there is no reject or un-approve endpoint — so it asks
+	// first, in the same words the events list uses. Its own ref: `leastDestructiveRef` is
+	// what a dialog returns focus to, and two dialogs sharing one is a focus bug.
+	const { isOpen: isApproveOpen, onOpen: onApproveOpen, onClose: onApproveClose } = useDisclosure()
+	const approveCancelRef = React.useRef<any>(null)
 
 	const [uploadedImages, setUploadedImages] = useState<FileUploadData[]>([])
 	const [uploadProgress, setUploadProgress] = useState(0)
@@ -1074,6 +1079,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		setIsApproving(true)
 		axios.post(`/api/events/${event._id}/approve`).then(() => {
 			toast({ title: "Event approved successfully!", status: "success", duration: 3000 })
+			onApproveClose()
 			router.replace(router.asPath)
 		}).catch((err) => {
 			toast({ title: err?.response?.data?.message || "Failed to approve event.", status: "error", duration: 4000 })
@@ -1156,7 +1162,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						    force four buttons onto one line on every handset. */}
 						<div className="flex flex-wrap md:flex-nowrap gap-2 items-center justify-end w-full md:w-auto">
 						{isAdmin && canApproveEvent && (
-							<Button size={{ base: "sm", md: "md" }} flexShrink={0} flexBasis={{ base: "100%", md: "auto" }} bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
+							<Button size={{ base: "sm", md: "md" }} flexShrink={0} flexBasis={{ base: "100%", md: "auto" }} bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={onApproveOpen}>
 								Approve Event
 							</Button>
 						)}
@@ -2026,6 +2032,24 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						</TabPanel>
 					</TabPanels>
 				</Tabs>
+
+				{/* APPROVE EVENT CONFIRMATION — same wording as the events list's, so the two screens
+				    can't drift about what approving does. */}
+				<AlertDialog isOpen={isApproveOpen} leastDestructiveRef={approveCancelRef} onClose={onApproveClose} isCentered>
+					<AlertDialogOverlay>
+						<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
+							<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">Approve Event</AlertDialogHeader>
+							<AlertDialogBody color="white">
+								Approve &ldquo;{stripHtml(event.name)}&rdquo;? It goes live immediately and the host is emailed.
+								This can&rsquo;t be undone — there is no way to un-approve an event.
+							</AlertDialogBody>
+							<AlertDialogFooter>
+								<Button ref={approveCancelRef} onClick={onApproveClose}>Cancel</Button>
+								<Button bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} onClick={handleApproveEvent} ml={3} isLoading={isApproving}>Approve</Button>
+							</AlertDialogFooter>
+						</AlertDialogContent>
+					</AlertDialogOverlay>
+				</AlertDialog>
 
 				{/* DELETE EVENT CONFIRMATION */}
 				<AlertDialog isOpen={isDeleteOpen} leastDestructiveRef={cancelRef} onClose={onDeleteClose} isCentered>
