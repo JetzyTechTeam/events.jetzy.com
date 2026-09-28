@@ -39,6 +39,12 @@ export interface UnsavedDraftDialogProps {
 	onKeepEditing: () => void
 	primary?: { label: string; loadingLabel?: string; onClick: () => void }
 	isBusy?: boolean
+	/**
+	 * A second, sharper paragraph under the body, for something the main copy would otherwise
+	 * overstate — an upload still running, or photos already deleted from the live event.
+	 * Rendered in amber so it reads as a consequence, not as more reassurance.
+	 */
+	warning?: React.ReactNode
 }
 
 export function UnsavedDraftDialog({
@@ -47,6 +53,7 @@ export function UnsavedDraftDialog({
 	body,
 	savedLabel,
 	tone = "warning",
+	warning,
 	leaveLabel,
 	onLeave,
 	onKeepEditing,
@@ -98,6 +105,13 @@ export function UnsavedDraftDialog({
 						<Text className={roboto.className} fontSize="14px" lineHeight="1.6" color="#B5B6B7">
 							{body}
 						</Text>
+						{warning && (
+							<Box mt={3} px={3} py={2} borderRadius="8px" bg="#2A2000" border="1px solid #5A4510">
+								<Text className={roboto.className} fontSize="13px" lineHeight="1.5" color="#F5C77E">
+									{warning}
+								</Text>
+							</Box>
+						)}
 					</AlertDialogBody>
 
 					{/* Stacked full-width on a phone — three buttons on one line is what wrapped the

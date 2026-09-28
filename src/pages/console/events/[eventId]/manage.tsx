@@ -532,6 +532,10 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// The status the form would SAVE as, which is not the status the event currently has —
 	// the host can switch a published event to Draft, and that save unpublishes it.
 	const [formStatus, setFormStatus] = useState<string | undefined>(undefined)
+	// An image delete is IMMEDIATE and live (handleImageDelete calls /api/delete-image on the
+	// click, not on Save), so the leave dialog's "guests keep seeing the published version"
+	// is not the whole truth once one has been removed. The dialog says so when this is set.
+	const [deletedLiveImage, setDeletedLiveImage] = useState(false)
 	// What the media looked like when it was last WRITTEN — seeded from the record on mount,
 	// then moved forward by each successful autosave. Not "as loaded": a host who adds a photo,
 	// lets it save, then removes it is back at the seeded state but no longer at the saved one,
@@ -685,11 +689,18 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// save performs itself.
 	const leaveGuard = useUnsavedDraftGuard(
 		() =>
-			isPublished &&
-			!autosaveLockedRef.current &&
-			(hasPendingDraft || autosaveState.status === "unsaved" || autosaveState.status === "saving"),
+			// An upload in flight is worth stopping for on its own, and on ANY event: leave now
+			// and the file finishes uploading into a page that no longer exists, attached to
+			// nothing. It is the one case here that is not about `isPublished`.
+			isUploading ||
+			isUploadingVideo ||
+			(isPublished &&
+				!autosaveLockedRef.current &&
+				(hasPendingDraft || autosaveState.status === "unsaved" || autosaveState.status === "saving")),
 	)
 	const afterSaveUrlRef = React.useRef<string | null>(null)
+
+	const uploadInFlight = isUploading || isUploadingVideo
 
 	// The host has switched Status to Draft on an event that is currently published, so the
 	// pending save UNPUBLISHES it — the opposite of "your changes aren't live yet".
@@ -1041,6 +1052,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			// event, which meant it could strip an image off somebody else's.
 			await axios.post("/api/delete-image", { eventId: event._id, url: imageUrl })
 			setUploadedImages((prev) => prev.filter((img) => img.file !== imageUrl))
+			setDeletedLiveImage(true)
 		} catch (error: any) {
 			console.error("Error deleting image", error)
 		}
@@ -2078,15 +2090,30 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					isOpen={leaveGuard.isOpen}
 					tone={willUnpublish ? "danger" : "warning"}
 					title={
-						willUnpublish
-							? "Saving will unpublish this event"
-							: isPendingApproval
-								? "Your changes aren’t in the review yet"
-								: "Your changes aren’t live yet"
+						uploadInFlight
+							? "An upload is still finishing"
+							: willUnpublish
+								? "Saving will unpublish this event"
+								: isPendingApproval
+									? "Your changes aren’t in the review yet"
+									: "Your changes aren’t live yet"
 					}
 					savedLabel={lastAutosavedLabel ? `Changes saved ${lastAutosavedLabel}` : null}
+					warning={
+						deletedLiveImage ? (
+							<>
+								Photos you removed are already gone from the live event and can&rsquo;t be brought
+								back — that part doesn&rsquo;t wait for <Box as="span" fontWeight={700}>Update Event</Box>.
+							</>
+						) : undefined
+					}
 					body={
-						willUnpublish ? (
+						uploadInFlight ? (
+							<>
+								Leave now and the file won&rsquo;t be attached to this event — it finishes
+								uploading with nowhere to go. It usually takes a moment.
+							</>
+						) : willUnpublish ? (
 							<>
 								You&rsquo;ve set Status to <Box as="span" color="white" fontWeight={700}>Draft</Box>.
 								Saving now takes this event off the public listing — guests who have the link
@@ -2107,14 +2134,20 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					}
 					/* "Leave as draft" is ambiguous when the DRAFT is the status being saved — there,
 					   leaving means the event carries on being published. Say that instead. */
-					leaveLabel={willUnpublish ? "Leave it published" : "Leave unpublished"}
+					leaveLabel={uploadInFlight ? "Leave anyway" : willUnpublish ? "Leave it published" : "Leave unpublished"}
 					onLeave={() => leaveGuard.confirmLeave()}
 					onKeepEditing={leaveGuard.cancelLeave}
-					primary={{
-						label: willUnpublish ? "Unpublish" : "Update Event",
-						loadingLabel: willUnpublish ? "Unpublishing" : "Updating",
-						onClick: handlePublishAndLeave,
-					}}
+					/* No primary while an upload runs: saving then would publish the event WITHOUT
+					   the file still on its way, which is the one outcome nobody wants. */
+					primary={
+						uploadInFlight
+							? undefined
+							: {
+									label: willUnpublish ? "Unpublish" : "Update Event",
+									loadingLabel: willUnpublish ? "Unpublishing" : "Updating",
+									onClick: handlePublishAndLeave,
+								}
+					}
 					isBusy={isSubmitting}
 				/>
 			</ConsoleLayout>
