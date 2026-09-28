@@ -55,6 +55,9 @@ export function UnsavedDraftDialog({
 }: UnsavedDraftDialogProps) {
 	const keepEditingRef = React.useRef<any>(null)
 	const danger = tone === "danger"
+	// Create Event has no primary action in this dialog (a half-finished form could only fail
+	// validation), so "Keep editing" carries the emphasis there instead.
+	const keepEditingIsPrimary = !primary
 
 	return (
 		<AlertDialog isOpen={isOpen} leastDestructiveRef={keepEditingRef} onClose={onKeepEditing} isCentered motionPreset="slideInBottom">
@@ -107,17 +110,30 @@ export function UnsavedDraftDialog({
 						gap={2}
 						whiteSpace="nowrap"
 					>
+						{/* Every button gets a real surface. As a ghost this read as body text, which
+						    on the Create dialog — where it is one of only two actions — left the panel
+						    looking like it had a single button.
+
+						    With no `primary` in the footer, Keep editing IS the encouraged action, so
+						    it takes the orange. Where a primary exists it steps back to the neutral
+						    fill, because two orange buttons name no winner. */}
 						<Button
 							ref={keepEditingRef}
 							onClick={onKeepEditing}
 							isDisabled={isBusy}
-							variant="ghost"
-							color="#B5B6B7"
-							fontWeight={600}
-							px={3}
+							bg={keepEditingIsPrimary ? "#F79432" : "#242628"}
+							color={keepEditingIsPrimary ? "black" : "white"}
+							border="1px solid"
+							borderColor={keepEditingIsPrimary ? "#F79432" : "#3A3D41"}
+							fontWeight={keepEditingIsPrimary ? "bold" : 600}
+							px={4}
 							flexShrink={0}
 							order={{ base: 3, sm: 1 }}
-							_hover={{ bg: "#232629", color: "white" }}
+							_hover={{
+								bg: keepEditingIsPrimary ? "#E68422" : "#2E3135",
+								borderColor: keepEditingIsPrimary ? "#E68422" : "#4A4D51",
+							}}
+							_active={{ bg: keepEditingIsPrimary ? "#D97913" : "#1E2023" }}
 						>
 							Keep editing
 						</Button>
@@ -125,14 +141,19 @@ export function UnsavedDraftDialog({
 						<Button
 							onClick={onLeave}
 							isDisabled={isBusy}
-							variant="outline"
+							/* Outlined, not filled: on Manage it sits beside a filled "Keep editing"
+							   and two identical surfaces would name no difference between staying
+							   and leaving. */
+							bg="transparent"
 							color="white"
+							border="1px solid"
 							borderColor="#3A3D41"
 							fontWeight={600}
 							px={4}
 							flexShrink={0}
 							order={{ base: 2, sm: 3 }}
 							_hover={{ bg: "#232629", borderColor: "#4A4D51" }}
+							_active={{ bg: "#1E2023" }}
 						>
 							{leaveLabel}
 						</Button>
