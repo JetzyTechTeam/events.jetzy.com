@@ -113,6 +113,7 @@ import { UpdateEventThunk, DeleteEventThunk } from "@/redux/reducers/eventsSlice
 import { UpdateEventApis, SaveDraftRevisionApis, DiscardDraftRevisionApis } from "@/services/events/eventsapis"
 import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState } from "@/components/events/AutosaveManager"
 import { useUnsavedDraftGuard } from "@/hooks/useUnsavedDraftGuard"
+import { draftIsCurrent } from "@/lib/event-draft"
 import { UnsavedDraftDialog } from "@/components/events/UnsavedDraftDialog"
 import { CreateEventFormData, DatePollOption } from "@/types"
 import { TicketData } from "@/components/events/TicketCard"
@@ -309,17 +310,15 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// the pending edits instead of the live fields, and offer to Discard back to live.
 	const isPublished = (event.status ?? "published") === "published"
 
-	// A shadow draft is only worth seeding from while it is NEWER than the live document.
-	// The inline editor on the event page (`details.ts`) and the tickets endpoint now clear the
-	// draft when they save, but drafts written before that are still in the database — and
-	// preferring one of those showed the host, and any admin, the interests/images/dates the
-	// event had BEFORE those edits, then republished them on the next "Update Event".
-	// The 5s slack absorbs legacy drafts, whose write bumped `updatedAt` a few ms after `savedAt`
-	// (autosave no longer touches `updatedAt` at all — see draft-revision.ts).
-	const draftSavedMs = event.draftRevision?.savedAt ? new Date(event.draftRevision.savedAt).getTime() : 0
-	const liveSavedMs = event.updatedAt ? new Date(event.updatedAt).getTime() : 0
-	const draftIsCurrent = draftSavedMs > 0 && draftSavedMs + 5000 >= liveSavedMs
-	const draftPayload: any = isPublished && event.draftRevision?.payload && draftIsCurrent ? event.draftRevision.payload : null
+	// A shadow draft is only worth seeding from while it is NEWER than the live document —
+	// preferring a stale one showed the host the values the event had BEFORE somebody else's
+	// edit, then republished them on the next "Update Event". The whole rule, and the slack
+	// that keeps legacy drafts readable, lives in `src/lib/event-draft.ts` so this page and
+	// the endpoints that vouch for a draft cannot drift on what "still current" means.
+	const draftPayload: any =
+		isPublished && event.draftRevision?.payload && draftIsCurrent(event.draftRevision, event.updatedAt)
+			? event.draftRevision.payload
+			: null
 	const draftSavedAt: string | null = draftPayload ? event.draftRevision?.savedAt ?? null : null
 
 	const [autosaveState, setAutosaveState] = useState<AutosaveState>({ status: "idle" })

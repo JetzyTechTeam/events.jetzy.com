@@ -75,7 +75,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Ticket has bookings and cannot be deleted", false, ResCode.BAD_REQUEST)
 		}
 
-		const updatedEvent = await Events.findByIdAndUpdate(eventId, { $pull: { tickets: { _id: ticketId } } }, { new: true })
+		// Deleting a ticket is a content change, so the shadow draft goes with it — a draft
+		// written before this would restore the deleted ticket on the next "Update Event".
+		const updatedEvent = await Events.findByIdAndUpdate(
+			eventId,
+			{ $pull: { tickets: { _id: ticketId } }, $unset: { draftRevision: "" } },
+			{ new: true },
+		)
 		if (!updatedEvent) return sendResponse(res, null, "Ticket not found", false, ResCode.NOT_FOUND)
 
 		return sendResponse(res, null, "Ticket deleted successfully", true, ResCode.NO_CONTENT)

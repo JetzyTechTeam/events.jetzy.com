@@ -57,6 +57,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		// Update the ticket
+		// This IS a content change, so the shadow draft must go — the same rule `update.ts`,
+		// `details.ts` and `tickets/index.ts` follow. Manage Event prefers a draft over the live
+		// record, so one written before this edit would put the old ticket back on the next
+		// "Update Event".
 		const updated = await Events.findOneAndUpdate(
 			{ _id: eventId, "tickets._id": ticketId },
 			{
@@ -64,6 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					"tickets.$.name": data.data.title,
 					"tickets.$.desc": data.data.description,
 				},
+				$unset: { draftRevision: "" },
 			},
 			{ new: true },
 		)
