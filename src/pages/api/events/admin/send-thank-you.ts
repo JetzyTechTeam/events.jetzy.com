@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import { sendThankYouNotification } from "@/lib/send-grid"
 import { generateMagicToken } from "@/lib/magicLink"
+import { carryDraftForward } from "@/lib/event-draft"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
@@ -31,7 +32,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, null, "Event ID is required.", false, ResCode.BAD_REQUEST)
         }
 
-        const event = await Events.findById(eventId)
+        // `+draftRevision` for the carry-forward below — the field is `select: false`.
+        const event = await Events.findById(eventId).select("+draftRevision")
         if (!event) {
             return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
         }
@@ -79,8 +81,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 }
 
                 // Update sent status
+                // Sending a blast changes no event content, but it moves `updatedAt`, which is
+                // what retires the host's shadow draft. Carry it forward in the same write.
                 await Events.findByIdAndUpdate(eventId, {
-                    thankYouEmailSentAt: new Date()
+                    $set: { thankYouEmailSentAt: new Date(), ...carryDraftForward(event as any) }
                 })
                 console.log(`[ThankYouBlast] Successfully sent all emails for event: ${event.name}`)
             } catch (error) {

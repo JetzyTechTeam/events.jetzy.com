@@ -7,6 +7,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import { notifyOwnerEventApproved } from "@/lib/event-approval-notify"
+import { carryDraftForward } from "@/lib/event-draft"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -27,17 +28,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		}
 
 		const { eventId } = req.query
-		const event = await Events.findById(eventId)
+		// `+draftRevision` because the field is `select: false`: the carry-forward below has to
+		// be able to see the host's draft to vouch for it.
+		const event = await Events.findById(eventId).select("+draftRevision")
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
 		// Conditional on `pending` so only ONE request performs the flip — that one emails the
 		// host. A double click, or approving an already-approved event, sends nothing.
+		// Approving changes no content, but it moves `updatedAt` — and Manage Event reads that
+		// to decide whether the host's shadow draft is still newer than the live record. Without
+		// the carry-forward, approving an event silently threw away every unpublished edit its
+		// host had made while it sat in the queue. Same operation, so the two stamps move together.
+		const carry = carryDraftForward(event as any)
 		const flipped = await Events.findOneAndUpdate(
 			{ _id: event._id, adminApprovalStatus: "pending" },
-			{ adminApprovalStatus: "approved" },
+			{ $set: { adminApprovalStatus: "approved", ...carry } },
 			{ new: true },
 		)
-		const updatedEvent = flipped || await Events.findByIdAndUpdate(eventId, { adminApprovalStatus: "approved" }, { new: true })
+		const updatedEvent = flipped || await Events.findByIdAndUpdate(eventId, { $set: { adminApprovalStatus: "approved", ...carry } }, { new: true })
 
 		if (flipped) await notifyOwnerEventApproved(flipped)
 

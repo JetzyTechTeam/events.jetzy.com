@@ -8,6 +8,7 @@ import { Users } from "@/models/userModal"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../../auth/[...nextauth]"
 import zod from "zod"
+import { carryDraftForward } from "@/lib/event-draft"
 
 const schema = zod.object({
 	optionId: zod.string().nonempty(),
@@ -33,7 +34,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	if (!voterIdentifier) return sendResponse(res, null, "You must be logged in to vote.", false, ResCode.BAD_REQUEST)
 
 	try {
-		const event = await Events.findById(eventId)
+		// `+draftRevision` for the carry-forward below — the field is `select: false`.
+		const event = await Events.findById(eventId).select("+draftRevision")
 		if (!event) return sendResponse(res, null, "Event not found.", false, ResCode.NOT_FOUND)
 		if (!event.datePoll?.isActive) return sendResponse(res, null, "No active poll for this event.", false, ResCode.NOT_FOUND)
 
@@ -47,7 +49,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Add vote to selected option
 		event.datePoll.options[optionIndex].votes.push(voterIdentifier)
-		await Events.updateOne({ _id: eventId }, { $set: { datePoll: event.datePoll } })
+		// A vote is a GUEST action and changes nothing the host was editing, but it moves
+		// `updatedAt` — which Manage Event reads to decide whether the host's shadow draft is
+		// still newer than the live record. Without this, a single guest voting discarded
+		// every unpublished edit the host had in progress.
+		await Events.updateOne({ _id: eventId }, { $set: { datePoll: event.datePoll, ...carryDraftForward(event as any) } })
 
 		// Collect all unique, valid ObjectIds for lookup
 		const allVoterIds = new Set<string>()

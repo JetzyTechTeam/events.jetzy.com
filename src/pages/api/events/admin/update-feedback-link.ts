@@ -6,6 +6,7 @@ import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Roles } from "@/types"
+import { carryDraftForward } from "@/lib/event-draft"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
@@ -20,25 +21,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return sendResponse(res, null, "You need to be logged in.", false, ResCode.UNAUTHORIZED)
         }
 
+        const { eventId, feedbackFormUrl } = req.body
+        if (!eventId) {
+            return sendResponse(res, null, "Event ID is required.", false, ResCode.BAD_REQUEST)
+        }
+
+        // `+draftRevision` because the field is `select: false` — without it the carry-forward
+        // below would never see a draft and would silently do nothing.
+        const event = await Events.findById(eventId).select("+draftRevision")
+
         // @ts-ignore
         if (session.user.role !== Roles.ADMIN && session.user.role !== Roles.SUPER_ADMIN) {
             // Also allow the event host to update their own event's feedback link
-            const eventId = req.body.eventId
-            const event = await Events.findById(eventId)
             // @ts-ignore
             if (!event || event.ownerId?.toString() !== session.user._id?.toString()) {
                 return sendResponse(res, null, "Unauthorized.", false, ResCode.FORBIDDEN)
             }
         }
 
-        const { eventId, feedbackFormUrl } = req.body
-        if (!eventId) {
-            return sendResponse(res, null, "Event ID is required.", false, ResCode.BAD_REQUEST)
-        }
-
+        // Carries the host's unpublished draft forward: this writes no event content, but it
+        // moves `updatedAt`, which is what Manage Event reads to decide the draft is stale.
         const updatedEvent = await Events.findByIdAndUpdate(
             eventId,
-            { $set: { feedbackFormUrl } },
+            { $set: { feedbackFormUrl, ...carryDraftForward(event as any) } },
             { new: true }
         )
 
