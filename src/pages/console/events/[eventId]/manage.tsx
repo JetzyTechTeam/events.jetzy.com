@@ -197,6 +197,25 @@ const mapEventTicket = (ticket: any) => ({
 	includesPremium: ticketMemberships(ticket).includes("premium"),
 })
 
+/**
+ * Formik's `initialValues` must NOT carry the banner. This page sets `enableReinitialize`,
+ * so when `images` was seeded from the `uploadedImages` state every upload produced new
+ * initial values, Formik called `resetForm()`, and two things broke: `dirty` was cleared (so
+ * the edit never autosaved) and anything the host had typed but not yet saved was thrown
+ * away. Nothing reads `values.images` — `ListingCardPreview` takes media as props,
+ * `buildEventPayload` takes it from its arguments, and `onSubmit` assigns both arrays from
+ * state before validation — so a stable empty array is all the type needs.
+ */
+const NO_MEDIA: FileUploadData[] = []
+
+/**
+ * One signature for the banner: the two url lists plus the host's arrangement across them.
+ * Shared by `mediaVersion` and the seeded baseline so "has the media changed?" is a string
+ * compare that cannot drift between the two.
+ */
+const mediaSignature = (images: FileUploadData[], videos: FileUploadData[], order: string[]) =>
+	JSON.stringify([images.map((i) => i.file), videos.map((v) => v.file), order])
+
 /** A shadow draft's tickets are already form-shaped; normalise the derived fields only. */
 const mapDraftTicket = (t: any) => ({
 	id: t.id || uniqueId(10),
@@ -513,26 +532,37 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// The status the form would SAVE as, which is not the status the event currently has —
 	// the host can switch a published event to Draft, and that save unpublishes it.
 	const [formStatus, setFormStatus] = useState<string | undefined>(undefined)
+	// What the media looked like when it was last WRITTEN — seeded from the record on mount,
+	// then moved forward by each successful autosave. Not "as loaded": a host who adds a photo,
+	// lets it save, then removes it is back at the seeded state but no longer at the saved one,
+	// and that revert has to save too or the draft keeps a url that no longer exists.
+	const [savedMediaVersion, setSavedMediaVersion] = useState<string | null>(null)
 
 	// Initialize images, videos and tickets on mount. When a shadow draft exists, seed
 	// from the autosaved payload (form-shaped) instead of the live event fields.
 	useEffect(() => {
 		if (draftPayload) {
-			setUploadedImages((draftPayload.images || []).map((img: any) => ({ id: img?.id || uniqueId(10), file: typeof img === "string" ? img : img?.file })))
-			setUploadedVideos((draftPayload.videos || []).map((v: any) => ({ id: v?.id || uniqueId(10), file: typeof v === "string" ? v : v?.file })))
-			setMediaOrder(Array.isArray(draftPayload.mediaOrder) ? draftPayload.mediaOrder : [])
+			const images = (draftPayload.images || []).map((img: any) => ({ id: img?.id || uniqueId(10), file: typeof img === "string" ? img : img?.file }))
+			const videos = (draftPayload.videos || []).map((v: any) => ({ id: v?.id || uniqueId(10), file: typeof v === "string" ? v : v?.file }))
+			const order = Array.isArray(draftPayload.mediaOrder) ? draftPayload.mediaOrder : []
+			setUploadedImages(images)
+			setUploadedVideos(videos)
+			setMediaOrder(order)
+			setSavedMediaVersion(mediaSignature(images, videos, order))
 			// Tickets are NOT set here. `initialValues` seeds them through the same mapper and
 			// `enableReinitialize` applies it; writing them again with setFieldValue is what made
 			// the form dirty on load. Only the media state, which lives outside Formik, belongs here.
 			return
 		}
-		if (event.images && event.images.length > 0) {
-			setUploadedImages(event.images.map((img: string) => ({ id: uniqueId(10), file: img })))
-		}
-		if (event.videos && event.videos.length > 0) {
-			setUploadedVideos(event.videos.map((v: string) => ({ id: uniqueId(10), file: v })))
-		}
-		setMediaOrder(Array.isArray((event as any).mediaOrder) ? (event as any).mediaOrder : [])
+		const images = (event.images || []).map((img: string) => ({ id: uniqueId(10), file: img }))
+		const videos = (event.videos || []).map((v: string) => ({ id: uniqueId(10), file: v }))
+		const order = Array.isArray((event as any).mediaOrder) ? (event as any).mediaOrder : []
+		if (images.length > 0) setUploadedImages(images)
+		if (videos.length > 0) setUploadedVideos(videos)
+		setMediaOrder(order)
+		// The baseline is recorded on EVERY path, including the no-media one: without it the
+		// first upload on an event that had no banner would look like the seeding.
+		setSavedMediaVersion(mediaSignature(images, videos, order))
 	}, [event])
 
 	const initialValues: CreateEventFormData = React.useMemo(() => {
@@ -543,11 +573,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			// without it the Status dropdown was the one field a draft silently forgot: set it to
 			// Draft, leave, come back, and it read Published again. Absent (drafts written before
 			// this) still means published, which is what those drafts were.
-			const { intendedStatus, ...rest } = draftPayload as any
+			const { intendedStatus, images: _draftImages, videos: _draftVideos, ...rest } = draftPayload as any
 			return {
 				...rest,
 				tickets: (rest.tickets || []).map(mapDraftTicket),
-				images: uploadedImages,
+				images: NO_MEDIA,
 				status: intendedStatus === "draft" ? "draft" : "published",
 			} as CreateEventFormData
 		}
@@ -567,7 +597,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			capacity: event.capacity,
 			requireApproval: event.requireApproval,
 			isPaid: event.isPaid,
-			images: uploadedImages,
+			images: NO_MEDIA,
 			tickets: (event.tickets || []).map(mapEventTicket),
 			privacy: event.privacy,
 			status: (event.status ?? "published") as "draft" | "published",
@@ -588,7 +618,8 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 			} : { isActive: false, question: "", options: [] as DatePollOption[] },
 			interests: ((event.interests ?? []) as any[]).map((id: any) => id?.toString?.() ?? id),
 		} as CreateEventFormData
-	}, [event, uploadedImages])
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [event])
 
 	// Remembers the text produced by the last selection, so focusing an untouched field can
 	// be told apart from the user actually editing it.
@@ -625,9 +656,14 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	const mediaVersion = React.useMemo(
 		// mediaOrder included: dragging changes neither array, so without it a reorder would
 		// never trigger an autosave.
-		() => JSON.stringify([uploadedImages.map((i) => i.file), uploadedVideos.map((v) => v.file), mediaOrder]),
+		() => mediaSignature(uploadedImages, uploadedVideos, mediaOrder),
 		[uploadedImages, uploadedVideos, mediaOrder],
 	)
+
+	// The host has changed the banner since it was last written. Media lives outside Formik,
+	// so `dirty` can never say so — and until the baseline is recorded a change cannot be
+	// told apart from the page seeding itself.
+	const mediaDirty = savedMediaVersion !== null && mediaVersion !== savedMediaVersion
 
 	// A manual "Update Event" must always win over autosave. Once a manual save reaches
 	// dispatch we LOCK autosave for the rest of this page's life (it only unlocks if the
@@ -701,12 +737,17 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 		// carried so reopening the page shows the Status they actually set.
 		const payload = { ...buildEventPayload(values, uploadedImages, uploadedVideos, { status: "draft" }, mediaOrder), intendedStatus: values.status }
 		const payloadStr = JSON.stringify(payload)
+		// Captured BEFORE the request: if the host edits the banner again while this is in
+		// flight, the baseline must land on what was actually written, not on what the media
+		// happens to be when the response arrives.
+		const savingMediaVersion = mediaSignature(uploadedImages, uploadedVideos, mediaOrder)
 		const p = isPublished
 			? SaveDraftRevisionApis({ id: event._id.toString(), data: { payload: payloadStr } })
 			: UpdateEventApis({ id: event._id.toString(), data: { payload: payloadStr } })
 		autosaveInFlightRef.current = p
 		try {
 			await p
+			setSavedMediaVersion(savingMediaVersion)
 			// Only a published event hides its autosave from guests; a draft event was
 			// never live, so there is nothing to warn about on the way out.
 			if (isPublished) setHasPendingDraft(true)
@@ -1261,6 +1302,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 										<AutosaveManager
 											enabled={tabIndex === 0 && !autosaveLocked}
 											mediaVersion={mediaVersion}
+											mediaDirty={mediaDirty}
 											canSave={(v) => !!v.name?.trim()}
 											onAutosave={handleAutosave}
 											onStatusChange={setAutosaveState}

@@ -45,6 +45,13 @@ interface AutosaveManagerProps {
 	enabled: boolean
 	// Bump whenever media (images/videos) changes so image-only edits also autosave.
 	mediaVersion: string | number
+	/**
+	 * Has the host actually CHANGED the media, as opposed to the page seeding it on mount?
+	 * Formik's `dirty` cannot answer for media: the arrays live outside the form. The page
+	 * owns this because only the page knows what it seeded — treating the seeding as an edit
+	 * would autosave on page load and write a draft onto an event nobody touched.
+	 */
+	mediaDirty?: boolean
 	// Gate a save (e.g. require a non-empty name before creating a draft).
 	canSave?: (values: CreateEventFormData) => boolean
 	onAutosave: (values: CreateEventFormData) => Promise<void>
@@ -58,6 +65,7 @@ interface AutosaveManagerProps {
 export function AutosaveManager({
 	enabled,
 	mediaVersion,
+	mediaDirty = false,
 	canSave,
 	onAutosave,
 	onStatusChange,
@@ -111,7 +119,11 @@ export function AutosaveManager({
 			firstRun.current = false
 			return
 		}
-		if (!enabled || !dirty) return
+		// `dirty` OR media. Media is not part of Formik's values, so a host who only swaps a
+		// photo never makes the form dirty — and on Manage Event, where `initialValues` used
+		// to carry the images and `enableReinitialize` is on, the upload actively RESET dirty
+		// to false. Either way the edit went unsaved and nothing warned them on the way out.
+		if (!enabled || (!dirty && !mediaDirty)) return
 		if (canSaveRef.current && !canSaveRef.current(valuesRef.current)) return
 
 		onStatusRef.current?.({ status: "unsaved" })
@@ -121,7 +133,7 @@ export function AutosaveManager({
 			if (timer.current) clearTimeout(timer.current)
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [values, mediaVersion, enabled, dirty, debounceMs, runSave])
+	}, [values, mediaVersion, mediaDirty, enabled, dirty, debounceMs, runSave])
 
 	return null
 }
