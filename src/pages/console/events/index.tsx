@@ -280,12 +280,22 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 	// thunk or service wrapper. The reload is what keeps the badge, the queue count and the
 	// Pending chip's own list moving together — patching the row alone would leave two of them
 	// stale until the next navigation.
+	//
+	// It asks first. Approving is irreversible — there is no reject or un-approve endpoint —
+	// and here the button sits on every awaiting-review row, so a misclick on the neighbouring
+	// row puts the wrong event live and emails its host with no way back.
+	const { isOpen: isApproveOpen, onOpen: onApproveOpen, onClose: onApproveClose } = useDisclosure()
+	// Its own ref, not the delete dialog's: `leastDestructiveRef` is what each dialog returns
+	// focus to, and two dialogs sharing one is a focus bug waiting to happen.
+	const approveCancelRef = useRef<HTMLButtonElement>(null)
+
 	const handleApprove = () => {
 		setIsApproving(true)
 		axios
 			.post(`/api/events/${event._id}/approve`)
 			.then(() => {
 				toast.success("Event approved.")
+				onApproveClose()
 				router.replace(router.asPath)
 			})
 			.catch((err) => toast.error(err?.response?.data?.message || "Failed to approve event."))
@@ -475,7 +485,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					{canApprove && (
 						<button
 							type="button"
-							onClick={handleApprove}
+							onClick={onApproveOpen}
 							disabled={isApproving}
 							className="flex items-center justify-center gap-1 bg-[#2FA84F] text-white font-bold py-2.5 px-3 rounded-md text-sm hover:bg-[#279143] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
 						>
@@ -498,6 +508,27 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					)}
 				</div>
 			</div>
+
+			{/* Same wording as Manage Event's, so the two screens can't drift about what
+			    approving does. Names the event: on a list of near-identical rows nothing else
+			    says which one is about to go live. */}
+			<AlertDialog isOpen={isApproveOpen} leastDestructiveRef={approveCancelRef} onClose={onApproveClose} isCentered>
+				<AlertDialogOverlay>
+					<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
+						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
+							Approve Event
+						</AlertDialogHeader>
+						<AlertDialogBody color="white">
+							Approve &ldquo;{stripHtml(event.name)}&rdquo;? It goes live immediately and the host is emailed.
+							This can&rsquo;t be undone — there is no way to un-approve an event.
+						</AlertDialogBody>
+						<AlertDialogFooter>
+							<Button ref={approveCancelRef} onClick={onApproveClose}>Cancel</Button>
+							<Button bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} onClick={handleApprove} ml={3} isLoading={isApproving}>Approve</Button>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialogOverlay>
+			</AlertDialog>
 
 			{/* Naming the event is the point: an admin deleting from a list of near-identical rows
 			    has nothing else to tell them which one is about to go. The endpoint hard-deletes an
@@ -535,7 +566,11 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const ownerFilter = isAdmin ? {} : { ownerId: userId }
 
 	const LIMIT = 20
-	const page = context.query.page ? parseInt(context.query.page as string) : 1
+	// User input, and it indexes an array: `?page=abc` yielded NaN (slicing nothing) and
+	// `?page=-1` a negative `skip`, which slices from the END of the list. Floor it at 1 so
+	// the clamp below is the only thing that decides which page renders.
+	const requestedPage = parseInt((context.query.page as string) || "1", 10)
+	const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1
 	const skip = (page - 1) * LIMIT
 
 	// Optional search by event name or location (case-insensitive)
@@ -638,6 +673,25 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	const paginatedEvents = filteredEvents.slice(skip, skip + LIMIT)
 	const total = filteredEvents.length
 	const totalPages = Math.ceil(total / LIMIT)
+
+	// An out-of-range page renders "No events found." with a Prev button — a dead end you
+	// reach by deleting the last row on a page, by switching to a filter with fewer pages,
+	// or by hand-typing ?page=99. Send them to the last real page instead.
+	//
+	// The `page > 1` guard is what stops a redirect loop: an empty result set has
+	// `totalPages === 0`, and without it page 1 would redirect to itself forever. The query
+	// is rebuilt from the RESOLVED values, not `context.query`, so a host's refused
+	// ?filter=pending drops off the URL rather than claiming a filter the page isn't applying.
+	if (page > 1 && page > totalPages) {
+		const params = new URLSearchParams()
+		if (search) params.set("search", search)
+		if (filter !== "all") params.set("filter", filter)
+		const target = Math.max(totalPages, 1)
+		if (target > 1) params.set("page", String(target))
+		const qs = params.toString()
+		// Never permanent — a cached redirect would outlive the page count that justified it.
+		return { redirect: { destination: `/console/events${qs ? `?${qs}` : ""}`, permanent: false } }
+	}
 
 	return {
 		props: {
