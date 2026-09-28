@@ -59,7 +59,7 @@ export function UnsavedDraftDialog({
 	return (
 		<AlertDialog isOpen={isOpen} leastDestructiveRef={keepEditingRef} onClose={onKeepEditing} isCentered motionPreset="slideInBottom">
 			<AlertDialogOverlay bg="blackAlpha.700" backdropFilter="blur(2px)">
-				<AlertDialogContent bg="#161616" border="1px solid #2A2D31" borderRadius="16px" mx={4} maxW="460px" overflow="hidden">
+				<AlertDialogContent bg="#161616" border="1px solid #2A2D31" borderRadius="16px" mx={4} maxW="520px" overflow="hidden">
 					{/* Icon + heading share a row: the coloured mark carries the state, so the
 					    sentence underneath can stay plain. */}
 					<AlertDialogHeader pt={6} px={6} pb={0}>
@@ -89,8 +89,24 @@ export function UnsavedDraftDialog({
 					{/* Stacked full-width on a phone — three buttons on one line is what wrapped the
 					    primary onto a ragged second row. `order` puts the primary first in the stack
 					    and last in the desktop row, with a flex spacer pushing the leave action away
-					    from Keep editing so it can't be hit by accident. */}
-					<AlertDialogFooter px={6} pt={0} pb={6} display="flex" flexDirection={{ base: "column", sm: "row" }} alignItems="stretch" gap={2} whiteSpace="nowrap">
+					    from Keep editing so it can't be hit by accident.
+
+					    `flexWrap` is the safety net, and it is not optional: Chakra's footer aligns
+					    to flex-end, so three no-shrink buttons wider than the panel overflow to the
+					    LEFT, where `overflow: hidden` on the content clips the first one's label.
+					    Wrapping drops a button to its own row instead of amputating it. */}
+					<AlertDialogFooter
+						px={6}
+						pt={0}
+						pb={6}
+						display="flex"
+						flexDirection={{ base: "column", sm: "row" }}
+						alignItems="stretch"
+						justifyContent="flex-end"
+						flexWrap={{ base: "nowrap", sm: "wrap" }}
+						gap={2}
+						whiteSpace="nowrap"
+					>
 						<Button
 							ref={keepEditingRef}
 							onClick={onKeepEditing}
@@ -113,6 +129,7 @@ export function UnsavedDraftDialog({
 							color="white"
 							borderColor="#3A3D41"
 							fontWeight={600}
+							px={4}
 							flexShrink={0}
 							order={{ base: 2, sm: 3 }}
 							_hover={{ bg: "#232629", borderColor: "#4A4D51" }}
@@ -129,6 +146,7 @@ export function UnsavedDraftDialog({
 								bg={danger ? "#DC2626" : "#F79432"}
 								color={danger ? "white" : "black"}
 								fontWeight="bold"
+								px={4}
 								flexShrink={0}
 								order={{ base: 1, sm: 4 }}
 								_hover={{ bg: danger ? "#B91C1C" : "#E68422" }}
