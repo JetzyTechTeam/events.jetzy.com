@@ -56,6 +56,9 @@ import { CreateEventThunk, UpdateEventThunk } from "@/redux/reducers/eventsSlice
 import { CreateEventApis, UpdateEventApis } from "@/services/events/eventsapis";
 import { AutosaveManager, AutosaveStatusPill, buildEventPayload, AutosaveState } from "@/components/events/AutosaveManager";
 import dayjs from "dayjs";
+
+/** The banner as it stands before the host has touched anything on this page. */
+const EMPTY_MEDIA_VERSION = JSON.stringify([[], [], []]);
 import { useUnsavedDraftGuard } from "@/hooks/useUnsavedDraftGuard";
 import { UnsavedDraftDialog } from "@/components/events/UnsavedDraftDialog";
 import { useAppDispatch } from "@/redux/stores";
@@ -204,9 +207,18 @@ const CreateEventPage = () => {
     [uploadedImages, uploadedVideos, mediaOrder]
   );
 
+  // Media lives outside Formik, so `dirty` never reports an image the host just added.
+  // Nothing is seeded on this page, so the baseline starts empty; each successful autosave
+  // moves it forward, which is what makes removing a just-saved photo save too.
+  const [savedMediaVersion, setSavedMediaVersion] = React.useState(EMPTY_MEDIA_VERSION);
+  const mediaDirty = mediaVersion !== savedMediaVersion;
+
   const handleAutosave = async (values: CreateEventFormData) => {
     if (autosaveLockedRef.current) return;
     const payload = buildEventPayload(values, uploadedImages, uploadedVideos, { status: 'draft' }, mediaOrder);
+    // Captured before the request, for the same reason as on Manage Event: the baseline must
+    // land on what was written, not on whatever the media is when the response arrives.
+    const savingMediaVersion = mediaVersion;
     const existingId = autosaveIdRef.current;
     let p: Promise<any>;
     if (existingId) {
@@ -225,6 +237,7 @@ const CreateEventPage = () => {
     autosaveInFlightRef.current = p;
     try {
       await p;
+      setSavedMediaVersion(savingMediaVersion);
     } finally {
       if (autosaveInFlightRef.current === p) autosaveInFlightRef.current = null;
     }
@@ -487,6 +500,7 @@ const CreateEventPage = () => {
             <AutosaveManager
               enabled={!autosaveLocked}
               mediaVersion={mediaVersion}
+              mediaDirty={mediaDirty}
               canSave={(v) => !!v.name?.trim()}
               onAutosave={handleAutosave}
               onStatusChange={setAutosaveState}
