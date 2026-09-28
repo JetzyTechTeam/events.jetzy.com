@@ -101,7 +101,7 @@ import {
 } from "@/lib/blast-delivery"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import EventSlugField from "@/components/events/EventSlugField"
-import { isPendingAdminApproval } from "@/lib/event-approval"
+import { isPendingAdminApproval, isAwaitingAdminReview } from "@/lib/event-approval"
 import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { previewPath } from "@/lib/event-preview"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
@@ -329,6 +329,13 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	// Public events await admin review before anyone else can open them, so outward-facing
 	// actions (invite, blast, share, check-in) stay hidden until approved.
 	const isPendingApproval = isPendingAdminApproval(event as any)
+
+	// Approvable only once the host has actually published. update.ts re-stamps `pending` only
+	// on a private→public transition, so a draft approved ahead of time would go live on publish
+	// having never been reviewed. It also drives the PENDING APPROVAL badge, so the badge and
+	// the button agree. Deliberately narrower than `isPendingApproval` above, which still gates
+	// the outward-facing actions — a draft mustn't invite or blast either.
+	const canApproveEvent = isAwaitingAdminReview(event as any)
 
 	useEffect(() => {
 		if (router.query.invite === "true") {
@@ -1079,7 +1086,9 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 							<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "1.15", letterSpacing: "-0.03em", color: "#FFFFFF", minWidth: 0, overflowWrap: "anywhere" }}>
 								{stripHtml(event.name)}
 							</span>
-							{isPendingApproval && (
+							{/* Same rule as the Approve Event button beside it: a draft isn't in the
+							    queue, so it doesn't wear the badge. */}
+							{canApproveEvent && (
 								<Box as="span" px="10px" py="3px" borderRadius="md" fontSize="12px" fontWeight="bold" letterSpacing="0.03em" whiteSpace="nowrap" bg="#3A2A00" color="#F79432" border="1px solid #F79432">
 									PENDING APPROVAL
 								</Box>
@@ -1103,7 +1112,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						    buttons already switch size at. Not `xs:`, which is 300px here and would
 						    force four buttons onto one line on every handset. */}
 						<div className="flex flex-wrap md:flex-nowrap gap-2 items-center justify-end w-full md:w-auto">
-						{isAdmin && isPendingApproval && (
+						{isAdmin && canApproveEvent && (
 							<Button size={{ base: "sm", md: "md" }} flexShrink={0} flexBasis={{ base: "100%", md: "auto" }} bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={handleApproveEvent}>
 								Approve Event
 							</Button>
@@ -1799,9 +1808,12 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 												{isPendingApproval ? (
 													<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 														<Heading size="md" color="white" mb={2}>Quick Actions</Heading>
+														{/* Still gated on the loose flag — a draft mustn't invite or blast either — but
+														    the copy has to name the step the host is actually missing. */}
 														<Text className={roboto.className} color="#868686" fontSize="14px" lineHeight="150%">
-															Quick actions unlock once your event is approved. You&apos;ll be able to invite guests,
-															send blasts and open the check-in portal then.
+															{event.status === "draft"
+																? "Quick actions unlock once you publish this event and it's approved. You'll be able to invite guests, send blasts and open the check-in portal then."
+																: "Quick actions unlock once your event is approved. You'll be able to invite guests, send blasts and open the check-in portal then."}
 														</Text>
 													</Box>
 												) : (

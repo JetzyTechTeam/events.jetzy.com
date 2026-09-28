@@ -1,14 +1,14 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import { eventPath } from "@/lib/event-slug"
 import { eventMedia } from "@/lib/event-media"
-import { isPendingAdminApproval } from "@/lib/event-approval"
+import { isAwaitingAdminReview } from "@/lib/event-approval"
 import { stripHtml, escapeRegExp } from "@/utils/text";
 import ConsoleLayout from "@/components/layout/ConsoleLayout"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { IEvent } from "@/models/events/types"
-import { Button, Heading, Text, Input, InputGroup, InputLeftElement, Flex } from "@chakra-ui/react"
+import { Button, Heading, Text, Input, InputGroup, InputLeftElement, Flex, AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, useDisclosure } from "@chakra-ui/react"
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -19,7 +19,7 @@ import { formatEventTime, formatEventZoneLabel, formatEventDateParts } from "@/u
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 import { useRouter } from "next/router"
-import React, { useState } from "react"
+import React, { useRef, useState } from "react"
 import { toast } from "react-toastify"
 import { useQuery } from "@tanstack/react-query"
 import axios from "axios"
@@ -143,7 +143,11 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 
 			{/* FILTER CHIPS */}
 			<div className="flex flex-wrap items-center gap-2 max-w-[800px] mx-auto mb-5">
-				{FILTERS.map(({ key, label }) => {
+				{/* Pending Approval is the admin review queue — a host has nothing to do with it,
+				    so it isn't shown to them at all; each row's own DRAFT / PENDING APPROVAL badge
+				    already tells them where their event stands. getServerSideProps refuses the
+				    filter for a non-admin too, so a hand-typed ?filter=pending can't reach it. */}
+				{FILTERS.filter(({ key }) => key !== "pending" || isAdmin).map(({ key, label }) => {
 					const active = filter === key
 					return (
 						<button
@@ -165,7 +169,7 @@ export default function EventsListing({ events, pagination, isAdmin, search, fil
 				{!eventList.length && <p>No events found.</p>}
 
 				{eventList.map((event) => (
-					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} isEnded={event.isEnded} timeStatus={(event as any).timeStatus} />
+					<ListingCard {...event} key={event.slug} onEventRemoved={handleEventRemoved} isEnded={event.isEnded} timeStatus={(event as any).timeStatus} isAdmin={isAdmin} />
 				))}
 			</div>
 
@@ -261,10 +265,63 @@ const TIME_STATUS_BADGE: Record<EventStatus, { label: string; className: string 
 	past: { label: "ENDED", className: "bg-[#444444] text-[#A7A7A7]" },
 }
 
-const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isEnded?: boolean; timeStatus?: EventStatus }) => {
+const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isEnded?: boolean; timeStatus?: EventStatus; isAdmin?: boolean }) => {
 	const event = props
 	const timeStatus: EventStatus = props.timeStatus ?? getEventStatus(props)
 	const statusBadge = TIME_STATUS_BADGE[timeStatus]
+	const router = useRouter()
+	const [isApproving, setIsApproving] = useState(false)
+
+	// Published only, never a draft — see the note on `pendingCount` in getServerSideProps and
+	// the matching guard in api/events/[eventId]/approve.ts.
+	const canApprove = !!props.isAdmin && isAwaitingAdminReview(event as any)
+
+	// Same shape as manage.tsx's handleApproveEvent: direct axios, since there is no approve
+	// thunk or service wrapper. The reload is what keeps the badge, the queue count and the
+	// Pending chip's own list moving together — patching the row alone would leave two of them
+	// stale until the next navigation.
+	const handleApprove = () => {
+		setIsApproving(true)
+		axios
+			.post(`/api/events/${event._id}/approve`)
+			.then(() => {
+				toast.success("Event approved.")
+				router.replace(router.asPath)
+			})
+			.catch((err) => toast.error(err?.response?.data?.message || "Failed to approve event."))
+			.finally(() => setIsApproving(false))
+	}
+
+	// Deleting from the row is admin-only, even though the endpoint also accepts the owner.
+	// A host reaches Delete through Manage Event, behind the event they are looking at; a
+	// one-click delete on every row of their own list is a different risk entirely.
+	const canDelete = !!props.isAdmin
+	const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure()
+	const cancelRef = useRef<HTMLButtonElement>(null)
+	const [isDeleting, setIsDeleting] = useState(false)
+
+	// `deleteFile` is a documented no-op, so manage.tsx's image-cleanup loop does nothing
+	// and there is none to replicate here. No `.finally`: `onEventRemoved` unmounts this
+	// card, and a setState afterwards is pointless work on a dead component.
+	const handleDelete = () => {
+		setIsDeleting(true)
+		axios
+			.delete(`/api/events/${event._id}/delete`)
+			.then(() => {
+				toast.success("Event deleted.")
+				setIsDeleting(false)
+				onDeleteClose()
+				// Drop the row at once, then re-run getServerSideProps so the heading total and the
+				// Pending Approval count follow it. `onEventRemoved` was passed to this card from the
+				// day it was written and never called — this is its first caller.
+				props.onEventRemoved(event._id.toString())
+				router.replace(router.asPath)
+			})
+			.catch((err) => {
+				toast.error(err?.response?.data?.message || "Failed to delete event.")
+				setIsDeleting(false)
+			})
+	}
 
 	const { data: totals } = useQuery({
 		queryKey: ["eventTotals", event._id],
@@ -342,7 +399,11 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								DRAFT
 							</span>
 						)}
-						{isPendingAdminApproval(event as any) && (
+						{/* Awaiting review, never merely pending. A draft is stamped `pending` at birth
+						    and nobody has submitted it, so this badge beside DRAFT claimed a queue the
+						    event wasn't in — and it was a second badge saying the same "not live yet"
+						    thing. DRAFT alone covers a draft; this appears the moment it's published. */}
+						{isAwaitingAdminReview(event as any) && (
 							<span className="px-2 py-0.5 bg-[#3A2A00] text-[#F79432] border border-[#F79432] text-xs rounded-full font-medium">
 								PENDING APPROVAL
 							</span>
@@ -408,11 +469,55 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							<PremiumEventBadge />
 						</div>
 					)}
+					{/* Approving from the row saves an admin opening every event in the queue in
+					    turn. Same green as the manage page's Approve Event, so the two read as one
+					    action in two places. */}
+					{canApprove && (
+						<button
+							type="button"
+							onClick={handleApprove}
+							disabled={isApproving}
+							className="flex items-center justify-center gap-1 bg-[#2FA84F] text-white font-bold py-2.5 px-3 rounded-md text-sm hover:bg-[#279143] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+						>
+							{isApproving ? "Approving…" : "✅ Approve Event"}
+						</button>
+					)}
 					<Link href={`/console/events/${event._id}/manage`} className="flex items-center justify-center gap-1 bg-[#3E3E3E] py-2.5 px-3 rounded-md text-sm hover:bg-[#4E4E4E] transition-colors">
 						✏️ Manage Event
 					</Link>
+					{/* Outlined rather than solid: it sits under the two actions an admin actually came
+					    for, and a filled red block on every row would read as the primary one. */}
+					{canDelete && (
+						<button
+							type="button"
+							onClick={onDeleteOpen}
+							className="flex items-center justify-center gap-1 border border-[#7C1D1D] text-[#FF6B6B] py-2.5 px-3 rounded-md text-sm hover:bg-[#7C1D1D] hover:text-white transition-colors"
+						>
+							🗑️ Delete Event
+						</button>
+					)}
 				</div>
 			</div>
+
+			{/* Naming the event is the point: an admin deleting from a list of near-identical rows
+			    has nothing else to tell them which one is about to go. The endpoint hard-deletes an
+			    event with no bookings and soft-deletes one that has them; neither is reversible. */}
+			<AlertDialog isOpen={isDeleteOpen} leastDestructiveRef={cancelRef} onClose={onDeleteClose} isCentered>
+				<AlertDialogOverlay>
+					<AlertDialogContent bg="#1E1E1E" border="1px solid #444">
+						<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
+							Delete Event
+						</AlertDialogHeader>
+						<AlertDialogBody color="white">
+							Delete &ldquo;{stripHtml(event.name)}&rdquo;? This cannot be undone.
+						</AlertDialogBody>
+						<AlertDialogFooter>
+							<Button ref={cancelRef} onClick={onDeleteClose}>Cancel</Button>
+							<Button colorScheme="red" onClick={handleDelete} ml={3} isLoading={isDeleting}>Delete</Button>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialogOverlay>
+			</AlertDialog>
 		</>
 	)
 }
@@ -493,10 +598,17 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 	// Apply status filter chip (server-side) before pagination
 	const allowedFilters = ["all", "public", "private", "premium", "upcoming", "ended", "tbd", "pending"]
 	const rawFilter = (context.query.filter as string) || "all"
-	const filter = allowedFilters.includes(rawFilter) ? rawFilter : "all"
+	// Approval is an admin concern, so the chip isn't rendered for a host — and the filter is
+	// refused here too, or a hand-typed ?filter=pending would still reach it.
+	const filter = allowedFilters.includes(rawFilter) && (rawFilter !== "pending" || isAdmin) ? rawFilter : "all"
 
-	const isPendingApproval = (e: any) => isPendingAdminApproval(e)
-	const pendingCount = allEvents.filter(isPendingApproval).length
+	// The review queue is `isAwaitingAdminReview` — pending AND published — not the looser
+	// `isPendingAdminApproval`. Every public event is stamped `pending` at birth and the create
+	// page autosaves a real record on the first keystroke, so the loose predicate filled the
+	// queue with abandoned draft stubs nobody had submitted. The row badge deliberately keeps
+	// the loose one: a host should still see where their draft stands.
+	const isAwaitingReview = (e: any) => isAwaitingAdminReview(e)
+	const pendingCount = allEvents.filter(isAwaitingReview).length
 
 	const filteredEvents = allEvents.filter((e: any) => {
 		switch (filter) {
@@ -517,7 +629,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 			case "tbd":
 				return e.timeStatus === "tbd"
 			case "pending":
-				return isPendingApproval(e)
+				return isAwaitingReview(e)
 			default:
 				return true
 		}

@@ -30,6 +30,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const event = await Events.findById(eventId)
 		if (!event) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
+		// Published events only. Every public event is created `pending`, including the record
+		// the create page autosaves on the first keystroke — but update.ts re-stamps `pending`
+		// only on a private→public transition, so a draft approved ahead of time would go live
+		// on publish having never been reviewed. Both Approve buttons and the admin queue use
+		// `isAwaitingAdminReview` for the same reason.
+		if ((event as any).status === "draft") {
+			return sendResponse(res, null, "This event is still a draft. It can be approved once the host publishes it.", false, ResCode.BAD_REQUEST)
+		}
+
 		// Conditional on `pending` so only ONE request performs the flip — that one emails the
 		// host. A double click, or approving an already-approved event, sends nothing.
 		const flipped = await Events.findOneAndUpdate(
