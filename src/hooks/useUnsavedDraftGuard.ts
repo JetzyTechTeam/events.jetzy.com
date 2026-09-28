@@ -131,8 +131,12 @@ export function useUnsavedDraftGuard(shouldGuard: () => boolean): UnsavedDraftGu
 			const target = url ?? pendingUrl
 			setIsOpen(false)
 			setPendingUrl(null)
+			// Only raise the bypass when something will actually navigate. A bypass is cleared
+			// by `routeChangeComplete`, so setting it with no navigation to follow would leave
+			// the guard switched off for the rest of the page's life.
+			if (!target) return
 			bypassRef.current = true
-			if (target) router.push(target)
+			router.push(target)
 		},
 		[pendingUrl, router],
 	)

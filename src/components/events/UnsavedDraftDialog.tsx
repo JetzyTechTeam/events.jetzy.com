@@ -60,7 +60,18 @@ export function UnsavedDraftDialog({
 	const keepEditingIsPrimary = !primary
 
 	return (
-		<AlertDialog isOpen={isOpen} leastDestructiveRef={keepEditingRef} onClose={onKeepEditing} isCentered motionPreset="slideInBottom">
+		/* `closeOnEsc` / `closeOnOverlayClick` follow `isBusy`: the buttons disable themselves
+		   while a save is in flight, but Escape and a backdrop tap did not, so the dialog could
+		   be dismissed mid-publish and leave the host with no sign of what was happening. */
+		<AlertDialog
+			isOpen={isOpen}
+			leastDestructiveRef={keepEditingRef}
+			onClose={onKeepEditing}
+			isCentered
+			motionPreset="slideInBottom"
+			closeOnEsc={!isBusy}
+			closeOnOverlayClick={!isBusy}
+		>
 			<AlertDialogOverlay bg="blackAlpha.700" backdropFilter="blur(2px)">
 				<AlertDialogContent bg="#161616" border="1px solid #2A2D31" borderRadius="16px" mx={4} maxW="520px" overflow="hidden">
 					{/* Icon + heading share a row: the coloured mark carries the state, so the
@@ -128,7 +139,10 @@ export function UnsavedDraftDialog({
 							fontWeight={keepEditingIsPrimary ? "bold" : 600}
 							px={4}
 							flexShrink={0}
-							order={{ base: 3, sm: 1 }}
+							/* Primary on top on a phone, whichever button is carrying it: with no
+							   `primary` in the footer that is this one, and stacking it last would
+							   put Create's main action at the bottom while Manage's sits at the top. */
+							order={{ base: keepEditingIsPrimary ? 1 : 3, sm: 1 }}
 							_hover={{
 								bg: keepEditingIsPrimary ? "#E68422" : "#2E3135",
 								borderColor: keepEditingIsPrimary ? "#E68422" : "#4A4D51",
