@@ -10,6 +10,7 @@ import {
 	Box,
 	Flex,
 	Button,
+	Input,
 	SimpleGrid,
 	Text,
 	useDisclosure,
@@ -28,6 +29,10 @@ import {
  * with arrow buttons at both ends. Two white strips down the middle of a dark panel, from
  * markup that never asked for them. A container that doesn't scroll has no scrollbar to
  * style on any platform, and every choice is visible at once, which is the point of a picker.
+ *
+ * **The chips are 5-minute steps, so an exact-minute field sits under them.** 9:03 has to be
+ * reachable: `parse` accepts any minute, legacy rows and the mobile app write off-step values,
+ * and an event genuinely starting at 6:47 is the host's business, not the picker's.
  *
  * The props contract is UNCHANGED so all eleven call sites swap without edits, and in
  * particular `onChange("")` is still reachable — via Clear. That empty string is load-bearing:
@@ -131,11 +136,33 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 	const { isOpen, onOpen, onClose } = useDisclosure()
 	const parsedValue = parse(defaultValue)
 	const [draft, setDraft] = React.useState<Parsed>(parsedValue ?? FALLBACK)
+	// The exact-minute field keeps its own text so a half-typed "0" isn't clamped to 0 under
+	// the host's fingers. `draft.minute` stays the single source of truth for the time itself.
+	const [minuteText, setMinuteText] = React.useState<string>(String((parsedValue ?? FALLBACK).minute).padStart(2, "0"))
+
+	const setMinute = (minute: number) => {
+		setDraft((d) => ({ ...d, minute }))
+		setMinuteText(String(minute).padStart(2, "0"))
+	}
+
+	const onMinuteTextChange = (raw: string) => {
+		const digits = raw.replace(/\D/g, "").slice(0, 2)
+		setMinuteText(digits)
+		if (digits === "") return
+		const value = Number(digits)
+		if (value >= 0 && value <= 59) setDraft((d) => ({ ...d, minute: value }))
+	}
+
+	// Blur is where the field tidies itself up: pad to two digits, and put back the committed
+	// minute if they left it empty or typed something out of range.
+	const onMinuteBlur = () => setMinuteText(String(draft.minute).padStart(2, "0"))
 
 	// Seed the draft from the committed value each time the dialog opens, so cancelling and
 	// reopening never shows a stale selection the field doesn't actually hold.
 	const openDialog = () => {
-		setDraft(parse(defaultValue) ?? FALLBACK)
+		const next = parse(defaultValue) ?? FALLBACK
+		setDraft(next)
+		setMinuteText(String(next.minute).padStart(2, "0"))
 		onOpen()
 	}
 
@@ -221,13 +248,44 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 						</SimpleGrid>
 
 						<FieldLabel>Minute</FieldLabel>
-						<SimpleGrid columns={6} spacing={2} mb={4}>
+						<SimpleGrid columns={6} spacing={2} mb={3}>
 							{minutes.map((minute) => (
-								<TimeChip key={minute} isSelected={minute === draft.minute} onClick={() => setDraft((d) => ({ ...d, minute }))}>
+								<TimeChip key={minute} isSelected={minute === draft.minute} onClick={() => setMinute(minute)}>
 									{String(minute).padStart(2, "0")}
 								</TimeChip>
 							))}
 						</SimpleGrid>
+
+						{/* The chips are every fifth minute; this is how the other 48 are reached. A
+						    typed value also appears as its own chip, because `minutes` carries any
+						    off-step minute — so the grid confirms the selection rather than contradicting it. */}
+						<Flex align="center" gap={3} mb={4}>
+							<Text fontSize="13px" color={MUTED} flexShrink={0}>
+								Exact minute
+							</Text>
+							<Input
+								value={minuteText}
+								onChange={(e) => onMinuteTextChange(e.target.value)}
+								onBlur={onMinuteBlur}
+								inputMode="numeric"
+								maxLength={2}
+								aria-label="Exact minute, 0 to 59"
+								w="64px"
+								h="38px"
+								textAlign="center"
+								fontSize="15px"
+								fontWeight={600}
+								bg={CHIP}
+								border="1px solid"
+								borderColor={BORDER}
+								borderRadius="8px"
+								_hover={{ borderColor: "#4A4D51" }}
+								_focusVisible={{ borderColor: ACCENT, boxShadow: "none" }}
+							/>
+							<Text fontSize="12px" color="#7E8083">
+								0&ndash;59
+							</Text>
+						</Flex>
 
 						<Flex gap={2} mb={4}>
 							{MERIDIEMS.map((meridiem) => (
