@@ -3224,3 +3224,175 @@ until it expired. Nothing in the tab warned them either.
   than anything automatic.
 - Partial approval is never offered when the request fits.
 - **The city list flips ABOVE the field when the keyboard leaves no room** (2026-09-23): the field sits near the bottom of the dialog, so on a phone the list was drawn behind the on-screen keyboard. Measured from **`window.visualViewport.height`** (the only one that shrinks for the keyboard — `innerHeight` does not on iOS), re-measured on its `resize`/`scroll` and 300ms after focus, since the keyboard appears after focus. The list is also scrolled into view whenever it opens.
+
+# Feature: Guests tab approvals, time dialog, banner media (2026-09-29)
+
+## Guests tab does approvals, and says who was invited (IMPLEMENTED 2026-09-29)
+
+**Two different `GuestsList` components exist and only one was touched.** The console one
+(`manage.tsx`, Guests tab) merges invitations and bookings; the event-page accordion
+(`HostedEvents.tsx`) reads `api/events/guests.ts`, which is `status: 'accepted'` only and
+cannot see a booking at all. This work is the console one.
+
+- **Use `src/lib/guest-rows.ts` (`buildGuestRows`)** — one row per PERSON. Never re-derive the
+  join inline. `eventinvitations` and `bookings` share **no key but the email string**, and
+  `Bookings.customerEmail` has no `lowercase: true`, so both sides are lowercased or the same
+  person renders as two guests — one "invited", one "booked". That was the bug.
+- **A row holds ALL of a person's bookings, not one.** The old `bookingByEmail` kept a single
+  booking per address ("prefer a non-cancelled one"), so somebody with a confirmed booking AND
+  a pending request showed only one of them — unusable once the row carries an Approve button.
+  `primaryBooking` drives the descriptive columns; `pendingBookings` drives the actions.
+- **Deleted bookings are excluded.** `/api/get-bookings` does not filter `isDeleted`, unlike
+  `bookings/mine`. They were previously listed as guests and counted into ticket stats.
+- **Duplicate invitations resolve by PRECEDENCE, not recency** (`accepted > declined >
+  pending`, newest breaks ties). There is no unique index on `(eventId, email)` and
+  `send-invites.ts` creates unconditionally, so re-inviting writes a second `pending` row;
+  newest-wins would reset an accepted invite to "Invited" and tell the host their guest never
+  replied. `duplicateInvitationCount` surfaces the rest rather than hiding them.
+- **"Accepted — no ticket" is its own state.** `guests/invite/accept.tsx` flips an invitation
+  to `accepted` and creates NO booking; the cell used to fall back to "Purchased", reporting a
+  sale that never happened.
+- **Approval machinery is SHARED, never copied** — `src/components/console/approvals/`:
+  `useBookingApprovals` (the `["event-availability"]` query, `fitFor`, `priorConfirmedFor`,
+  and `act()` with all three cache invalidations), `ApprovalDialogs` (approve + reject, incl.
+  partial approval and the money itemisation), `ApprovalActions` (the button pair and its
+  expired/retry rules), `expiringSoonBookings`. `ApprovalRequests.tsx` went 782 -> ~390 lines
+  and now contains no `axios.post("/api/bookings/...")` and no `AlertDialog`. **Both tabs mount
+  the same modules**, so the button offered and the rule enforced cannot disagree.
+- `bookings` is passed INTO the hook rather than fetched by it, so both mounts keep sharing the
+  one `["event-bookings", eventId]` cache entry and nothing fetches twice.
+- **Row actions are gated on `row.pendingBookings.length > 0`, deliberately NOT on
+  `eventHasAnyApprovalTicket`.** A host who switches a ticket's `requireApproval` off still has
+  live card holds to resolve; gating on the current flag would strand them with no button.
+- **Delete is no longer a second way to decline.** It is hidden on a row with a pending
+  booking (Reject is the route) and reads **"Remove invite"** when there is no booking at all.
+- `handleDeleteGuest` now also invalidates `["event-availability", eventId]` — deleting a
+  confirmed booking frees a seat, and the Approvals counts were going stale.
+- Chips **All / Needs approval / Booked / Invited only / Cancelled**, counted over the
+  UNFILTERED set, composing with the search box and the ticket-type Select. Search now also
+  matches `bookingRef`.
+- **CSV is ONE LINE PER BOOKING** (plus one per invitation-only person), with Guest Type,
+  Booking Ref, Payment Status and Hold Expires. The table is one line per person because that
+  is who the host is looking at; two card holds on one address are two amounts, not one.
+- **`/api/guests-list.ts` had NO AUTH AT ALL** — any eventId returned every invited person's
+  name and email. Now admin-or-owner. **Its response must stay a BARE ARRAY**: the consumer
+  reads `res.data || []`, so moving it to `sendResponse`'s `{data}` wrapper would silently
+  empty the tab with no type error.
+
+### Still open (not addressed)
+- `HostedEvents.tsx` sends invites with `eventLink: shareUrl`, bypassing
+  `/events/[eventId]/guests/invite`, so those invitations can never reach `accepted` — and
+  `api/events/guests.ts` filters to `accepted`, leaving the event-page Guests accordion
+  permanently empty for them. The console Guests tab is unaffected (it reads all statuses).
+- `invite-jetzy-user.ts` writes no `EventInvitation` row, so Jetzy-app invitees are invisible
+  to every Guests surface.
+- `guests/invite/accept.tsx`, `decline.tsx` and `guests/find-by-email.tsx` are still
+  unauthenticated.
+
+## Time picker is a dialog (IMPLEMENTED 2026-09-29)
+
+- **All nine call sites go through one component**, `src/components/form/TimePicker.tsx`
+  (create + manage + `HostedEvents` inline editor, each with start / end / date-poll option).
+  The props contract is unchanged, so the swap touched no call site.
+- Was flatpickr `noCalendar`. Two real faults: the instance was **destroyed and rebuilt on
+  every parent render** (every call site passes an inline arrow to `onChange`, which was in the
+  effect's dep array), and its stylesheet is imported globally with no dark-theme override, so
+  it rendered light against a dark form. Now hour / minute / AM-PM snap columns plus quick
+  picks, seeded from the committed value on open and scrolled into view.
+- **`onChange("")` must stay reachable — that is the Clear button.** The empty string is
+  load-bearing: it persists `hasStartTime: false`, i.e. a date-only event, honoured across
+  ~12 display surfaces and the guest emails. A dialog whose only exit is Done would silently
+  give every date-only event a midnight start.
+- **Chakra `Modal`, not a hand-rolled portal.** Three call sites open it from inside an already
+  open Chakra Modal (the date-poll option editors); Chakra stacks nested focus locks, a bare
+  portal would be locked out by the parent.
+- Minutes step by 5, and the column carries the stored minute as an extra entry when it isn't
+  on a boundary — legacy and mobile-written times are not all multiples of five.
+- `flatpickr` is still used by `DatePicker.tsx` and its CSS import in `_app.tsx` stays.
+
+## Banner media: cap of 5, sound, and click-to-open (IMPLEMENTED 2026-09-29)
+
+- **Use `src/lib/event-media-limit.ts`** (`allowedMediaCount`, `mediaLimitRefusal`).
+  `EVENT_MEDIA_LIMIT = 5`, photos and videos counted **together** — separately would allow five
+  of each, and the banner shows one list.
+- **The cap is NON-ADMIN ONLY** (decision, 2026-09-29). Admins are uncapped; `allowedMediaCount`
+  returns `null` for them.
+- **Grandfathered against what is already stored.** `allowedMediaCount(isAdmin, storedCount)`
+  floors the allowance at the stored count, so an event that predates the cap can be kept or
+  trimmed but never grown. A flat `> 5` rejection in `update.ts` would have made every
+  over-limit event unsavable — a host could not fix a title typo without deleting photos.
+- Enforced in `create.ts`, `[eventId]/update.ts` and `[eventId]/details.ts` as well as in
+  `media-upload-section.tsx`; the form cap is the affordance, not the rule. The `multiple` file
+  input is truncated to the free slots via a `DataTransfer` (FileList is not constructible)
+  rather than letting the page's upload loop put files on the CDN that the save will refuse.
+- `HostedEvents` uses `hasAdminRole`, not the preview-suppressed `isAdmin` — the cap is about
+  privilege, not about what the host is currently looking at.
+- **Banner video still starts MUTED and there is now a sound button.** Chrome and Safari refuse
+  to begin an unmuted video and render a stalled player, so `muted` is not a preference — the
+  button is the user gesture that makes audio legal.
+- **Only one video may carry audio at a time.** `infinite: true` makes react-slick clone
+  slides, so the same file can be mounted two or three times; unmuting through a React prop
+  would play the soundtrack over itself. `applyBannerAudio` mutes every banner video then
+  unmutes the one inside `.slick-current`.
+- **The slide handlers are scoped to `bannerRef` now.** They were
+  `document.querySelectorAll('video')`, which paused album tiles, discussion videos and
+  anything else on the page. `settings` moved inside the component so the handlers can see state.
+- **Use `src/components/events/MediaLightbox.tsx`** for click-to-open. Video there is **not**
+  muted and does not loop: it is only ever reached by a click, and that click is the gesture
+  the autoplay policy requires — this is where "video with music" is true.
+- **An image opens the viewer from anywhere on it; a video cannot** — its own `controls` own
+  those clicks, so the Expand button beside the sound button is its way in.
+- **Fullscreen is the first use of the Fullscreen API in this repo.** It falls back to
+  `webkitRequestFullscreen`, then to `video.webkitEnterFullscreen()` — iPhone Safari refuses
+  element fullscreen entirely and only ever fullscreens a `<video>`, so without that last
+  branch the button would be dead on the device most likely to want it.
+- **Escape in fullscreen belongs to the browser.** The viewer does not close on that press, or
+  one keystroke would dump the viewer back to the page.
+- The album lightbox in `[slug]/album/[albumId].tsx` is untouched and still has no fullscreen
+  control; `MediaLightbox` is the newer pattern.
+
+
+## Letterbox bars are a blurred fill of the photo, not black (IMPLEMENTED 2026-09-29)
+
+Event banners have **no enforced upload aspect ratio**, so every frame renders the whole image
+with `object-contain` and pads the rest. Those pads were flat black — on a portrait photo in a
+landscape frame, two large dead slabs. CEO (2026-09-29): match what mobile does.
+
+- **Use `src/components/events/MediaBackdrop.tsx`.** Ported from the mobile widget: deep
+  ambient layer (cover, scale 1.14, heavy blur), mid bridge layer (cover, scale 1.06, lighter
+  blur, 50% opacity), black tint at 8%, caller's sharp media on top. Never re-derive it inline.
+- **It must be the FIRST child of the frame.** It is `position: absolute` with **no z-index**,
+  so DOM order alone keeps it under the sharp media and under the overlays. Do **not** give the
+  sharp media a `z-index` to "fix" stacking — `PremiumEventBadge variant="ribbon"` is
+  `z-[3]` and renders BEFORE the media, so a `z-10` on the media would hide the ribbon.
+- **A frame whose media is in normal flow needs `position: relative` on that media** — a static
+  element paints below every positioned one, so otherwise the blurred fill covers the photo.
+  Only `console/events/index.tsx` (My Events thumbnail) is like this; every other surface
+  already had `absolute inset-0`.
+- **The frame needs `overflow: hidden`.** The layers are scaled past the frame deliberately, so
+  the blur doesn't fade out at the frame's own edge. `PromotedEvents.tsx` had `relative` but no
+  `overflow` and had to gain it.
+- **The backdrop clips itself** (`overflow-hidden` + `borderRadius: \inherit\` on its own
+  wrapper). Safari lets a filtered child escape a rounded `overflow: hidden` ancestor, which
+  shows as blur bleeding past the card corners.
+- **Same URL as the sharp copy — one network fetch, served from cache.** No `next/image`
+  anywhere on event media (Chakra `Image` compiles to a plain `<img>`), so there is no
+  optimizer transform to pay for twice. `alt=\` plus `aria-hidden` on the wrapper keeps it
+  out of the accessibility tree.
+- **A video's backdrop is its FIRST FRAME, not a second playing copy** (decision, 2026-09-29) —
+  the `#t=0.1` poster trick the cards already use. It stays still while the video plays;
+  decoding the file twice on every card to blur it is not worth the motion.
+- **Blur strength is per-surface and layer count is per-surface.** Banner gets the full two
+  layers at 26px (mobile's sigma); cards get ONE layer (18px listing/bookings, 16px promoted,
+  12px My Events) — the bridge layer is invisible at 110px and a listing page renders a dozen
+  frames, every blurred layer being real paint cost.
+- **Fit stayed `contain`, not `scale-down`.** Mobile prefers `BoxFit.scaleDown` so small images
+  aren't upscaled, and its prompt allows either; `contain` was kept so no existing event's
+  banner changes size. Switching is a one-word change per call site if the CEO wants it.
+- Five surfaces: `HostedEvents.tsx` `renderMedia` (detail banner), `EventListingCard.tsx`
+  (which also covers `CardGroup` and `ListingCardPreview`), `BookingCard.tsx`,
+  `console/events/index.tsx`, `PromotedEvents.tsx`.
+- **Deliberately NOT applied**: album grid tiles and both lightboxes (a full-bleed viewer on
+  near-black is a different screen, and nobody complained about it), the host media-upload grid
+  and album covers (already `cover`, no bars), and the discussion video players (they paint
+  their bars via the element's own `backgroundColor` with no wrapper).
