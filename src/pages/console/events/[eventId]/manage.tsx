@@ -83,6 +83,13 @@ import EventDescription from "@/components/events/EventDescription"
 import AnswerText from "@/components/events/AnswerText"
 import InterestsSelector from "@/components/events/InterestsSelector"
 import MediaUploadSection from "@/components/media-upload-section"
+import { allowedMediaCount } from "@/lib/event-media-limit"
+import { buildGuestRows, matchesAudience, GUEST_KIND_LABEL, type GuestRow, type GuestAudience } from "@/lib/guest-rows"
+import { bookingTicketCount } from "@/lib/booking-approval"
+import { useBookingApprovals } from "@/components/console/approvals/useBookingApprovals"
+import { ApprovalDialogs } from "@/components/console/approvals/ApprovalDialogs"
+import { ApprovalActions, expiringSoonBookings } from "@/components/console/approvals/ApprovalActions"
+import { HoldExpiry } from "@/components/bookings/PaymentBadge"
 import BenefitsField from "@/components/events/BenefitsField"
 import TicketEditorModal from "@/components/events/TicketEditorModal"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
@@ -1846,6 +1853,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 														handleVideoDelete={handleVideoDelete}
 														mediaOrder={mediaOrder}
 														onReorder={setMediaOrder}
+														maxItems={allowedMediaCount(isAdmin, uploadedImages.length + uploadedVideos.length)}
 													/>
 												</Box>
 
@@ -3093,6 +3101,8 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const [deletingEmail, setDeletingEmail] = useState<string | null>(null)
 	const [ticketTypeFilter, setTicketTypeFilter] = useState<string>("all")
 	const [searchQuery, setSearchQuery] = useState("")
+	// Invited vs booked is a second axis, independent of the ticket-type filter — the two compose.
+	const [audience, setAudience] = useState<GuestAudience>("all")
 	const queryClient = useQueryClient()
 	const toast = useToast()
 
@@ -3128,6 +3138,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 			}
 			queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
 			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
+			// Deleting a confirmed booking frees a seat. Without this the Approvals seat counts
+			// and the "doesn't fit" badges keep showing the state from before the removal.
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
 			if (bookingResult?.data?.rejectionEmailSent) {
 				toast({ title: bookingResult.message || "Request declined.", status: "success", duration: 5000, isClosable: true })
 			}
@@ -3171,19 +3184,18 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		queryFn: () => axios.get("/api/check-in/booking-status", { params: { eventId } }).then(r => r.data?.data || []),
 	})
 
-	const guestByEmail: Record<string, any> = {}
-	guests.forEach((g: any) => {
-		if (g.email) guestByEmail[g.email.toLowerCase()] = g
-	})
+	// One row per PERSON, joining invitations to bookings on the lowercased email — the only
+	// key the two collections share. Replaces a pair of maps that kept ONE booking per address,
+	// so somebody holding a confirmed booking and a pending request showed only one of them.
+	const guestRows = React.useMemo(() => buildGuestRows({ invitations: guests as any[], bookings: bookings as any[] }), [guests, bookings])
+	const rowByEmail = React.useMemo(() => new Map(guestRows.map((r) => [r.key, r])), [guestRows])
 
-	const bookingByEmail: Record<string, any> = {}
-	;(bookings as any[]).forEach((b: any) => {
-		if (!b.customerEmail) return
-		const key = b.customerEmail.toLowerCase()
-		// Prefer an active booking over a cancelled one when an email has multiple.
-		const existing = bookingByEmail[key]
-		if (!existing || isCancelledBooking(existing)) bookingByEmail[key] = b
-	})
+	// Approve / reject / partial-approve, from the same hook the Approvals tab uses, so the two
+	// screens cannot offer different terms for the same decision. It shares the
+	// ["event-bookings", eventId] query already fetched above rather than issuing its own.
+	const approvals = useBookingApprovals({ eventId, bookings: bookings as any[] })
+	const pendingRows = guestRows.filter((r) => r.pendingBookings.length > 0)
+	const expiringHolds = expiringSoonBookings(pendingRows.flatMap((r) => r.pendingBookings))
 
 	const checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }> = {}
 	;(checkIns as any[]).forEach((ci: any) => {
@@ -3204,7 +3216,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	}
 	const ticketStatsById: Record<string, { sold: number; revenue: number }> = {}
 	;(bookings as any[]).forEach((b: any) => {
-		if (isCancelledBooking(b)) return
+		if (b?.isDeleted || isCancelledBooking(b)) return
 		apportionRevenue(b, priceOfTicket).forEach((row) => {
 			const entry = ticketStatsById[row.ticketId] || { sold: 0, revenue: 0 }
 			entry.sold += row.quantity
@@ -3245,34 +3257,45 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	if (guestsLoading) return <Text>Loading guests...</Text>
 	if (guestsError) return <Text color="red.500">Failed to load guests.</Text>
 
-	const rawEmails = Array.from(new Set([
-		...guests.map((g: any) => g.email?.toLowerCase()).filter(Boolean),
-		...bookings.map((b: any) => b.customerEmail?.toLowerCase()).filter(Boolean)
-	]))
+	const rawEmails = guestRows.map((r) => r.key)
 
-	const matchesTicketFilter = (email: string) => {
+	// Checked across EVERY live booking on the row. Reading a single chosen booking dropped a
+	// guest from a ticket filter they legitimately matched whenever the one picked happened to
+	// be their cancelled order.
+	const matchesTicketFilter = (row: GuestRow) => {
 		if (ticketTypeFilter === "all") return true
-		const booking = bookingByEmail[email]
-		if (!booking || isCancelledBooking(booking)) return false
-		return (booking.tickets || []).some((t: any) => t.ticketId?.toString() === ticketTypeFilter)
+		return row.bookings.some(
+			(b: any) => !isCancelledBooking(b) && (b.tickets || []).some((t: any) => t.ticketId?.toString() === ticketTypeFilter),
+		)
 	}
 
-	const matchesSearch = (email: string) => {
+	const matchesSearch = (row: GuestRow) => {
 		const q = searchQuery.trim().toLowerCase()
 		if (!q) return true
-		const guest = guestByEmail[email]
-		const booking = bookingByEmail[email]
-		const name = (booking?.customerName || guest?.name || "").toLowerCase()
-		return email.includes(q) || name.includes(q)
+		// Booking refs too: a host pasting a ref out of the approval email got no result.
+		return (
+			row.key.includes(q) ||
+			(row.name || "").toLowerCase().includes(q) ||
+			row.bookings.some((b: any) => (b?.bookingRef || "").toLowerCase().includes(q))
+		)
 	}
 
-	const allEmails = rawEmails.filter(matchesTicketFilter).filter(matchesSearch)
-	const hasActiveFilters = ticketTypeFilter !== "all" || !!searchQuery.trim()
-	const clearFilters = () => { setTicketTypeFilter("all"); setSearchQuery(""); setPage(1) }
+	const visibleRows = guestRows.filter((r) => matchesAudience(r, audience)).filter(matchesTicketFilter).filter(matchesSearch)
+	const hasActiveFilters = ticketTypeFilter !== "all" || !!searchQuery.trim() || audience !== "all"
+	const clearFilters = () => { setTicketTypeFilter("all"); setSearchQuery(""); setAudience("all"); setPage(1) }
 	const selectedTicketName = eventTickets.find((t: any) => t._id?.toString() === ticketTypeFilter)?.name
 
-	const totalPages = Math.ceil(allEmails.length / GUESTS_PAGE_SIZE)
-	const pagedEmails = allEmails.slice((page - 1) * GUESTS_PAGE_SIZE, page * GUESTS_PAGE_SIZE)
+	// Counts are over the UNFILTERED set, so a chip always says how many it would show.
+	const audienceCounts: Record<GuestAudience, number> = {
+		all: guestRows.length,
+		needs_approval: guestRows.filter((r) => matchesAudience(r, "needs_approval")).length,
+		booked: guestRows.filter((r) => matchesAudience(r, "booked")).length,
+		invited_only: guestRows.filter((r) => matchesAudience(r, "invited_only")).length,
+		cancelled: guestRows.filter((r) => matchesAudience(r, "cancelled")).length,
+	}
+
+	const totalPages = Math.ceil(visibleRows.length / GUESTS_PAGE_SIZE)
+	const pagedRows = visibleRows.slice((page - 1) * GUESTS_PAGE_SIZE, page * GUESTS_PAGE_SIZE)
 
 	const escapeCsv = (value: any) => {
 		const str = String(value ?? '')
@@ -3280,27 +3303,49 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	}
 
 	const handleExportCsv = () => {
-		const headers = ['Name', 'Email', 'Status', 'Ticket Type', 'Amount Paid', 'Invited At', 'Check-In']
-		const rows = allEmails.map((email: string) => {
-			const guest = guestByEmail[email]
-			const booking = bookingByEmail[email]
-			const ci = booking?._id ? checkInMap[booking._id.toString()] : null
-			const cancelled = isCancelledBooking(booking)
-			const checkInLabel = cancelled
-				? 'Cancelled'
-				: !booking?._id ? 'N/A'
-				: !ci ? 'Not Checked In'
-				: ci.isFullyCheckedIn ? 'Fully Checked In'
-				: `Partial (${ci.checkedInCount})`
-			return [
-				booking?.customerName || guest?.name || '',
-				email,
-				cancelled ? 'Cancelled' : (guest?.status || (booking ? 'Purchased' : '')),
-				formatBookingTickets(booking),
-				booking ? Number(booking.total ?? 0).toFixed(2) : '',
-				guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : '',
-				checkInLabel,
-			]
+		const headers = [
+			'Name', 'Email', 'Guest Type', 'Booking Ref', 'Status', 'Invitation Status', 'Invited At',
+			'Ticket Type', 'Amount Paid', 'Payment Status', 'Hold Expires', 'Booked At', 'Check-In',
+		]
+		// ONE LINE PER BOOKING, plus one for anyone invited who never booked. The table shows one
+		// line per person because that is who the host is looking at; a spreadsheet has to show
+		// the money, and two card holds on one address are two amounts, not one.
+		const rows = visibleRows.flatMap((row: GuestRow) => {
+			const invitedAt = row.invitedAt ? DateTime.fromISO(row.invitedAt).toLocaleString(DateTime.DATETIME_MED) : ''
+			if (!row.bookings.length) {
+				return [[
+					row.name, row.email, GUEST_KIND_LABEL[row.kind], '',
+					row.invitationStatus === 'accepted' ? 'Accepted — no ticket' : row.invitationStatus === 'declined' ? 'Declined' : 'Invited',
+					row.invitationStatus || '', invitedAt, '', '', '', '', '', 'N/A',
+				]]
+			}
+			return row.bookings.map((booking: any) => {
+				const ci = booking?._id ? checkInMap[booking._id.toString()] : null
+				const cancelled = isCancelledBooking(booking)
+				const pending = isPendingBooking(booking)
+				const checkInLabel = cancelled
+					? 'Cancelled'
+					: pending ? 'N/A'
+					: !booking?._id ? 'N/A'
+					: !ci ? 'Not Checked In'
+					: ci.isFullyCheckedIn ? 'Fully Checked In'
+					: `Partial (${ci.checkedInCount})`
+				return [
+					booking.customerName || row.name || '',
+					booking.customerEmail || row.email,
+					GUEST_KIND_LABEL[row.kind],
+					booking.bookingRef || '',
+					cancelled ? (booking.status === 'rejected' ? 'Rejected' : 'Cancelled') : pending ? 'Pending approval' : 'Confirmed',
+					row.invitationStatus || '',
+					invitedAt,
+					formatBookingTickets(booking),
+					Number(booking.total ?? 0).toFixed(2),
+					booking?.payment?.status || '',
+					booking?.payment?.authExpiresAt ? DateTime.fromISO(new Date(booking.payment.authExpiresAt).toISOString()).toLocaleString(DateTime.DATETIME_MED) : '',
+					booking.createdAt ? DateTime.fromISO(booking.createdAt).toLocaleString(DateTime.DATETIME_MED) : '',
+					checkInLabel,
+				]
+			})
 		})
 		const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(',')).join('\n')
 		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -3315,9 +3360,65 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		URL.revokeObjectURL(url)
 	}
 
+	const AUDIENCE_CHIPS: Array<{ key: GuestAudience; label: string }> = [
+		{ key: "all", label: "All" },
+		{ key: "needs_approval", label: "Needs approval" },
+		{ key: "booked", label: "Booked" },
+		{ key: "invited_only", label: "Invited only" },
+		{ key: "cancelled", label: "Cancelled" },
+	]
+
 	return (
 		<>
+			{/* Card holds lapse on their own and cannot be recovered, so the most urgent thing on
+			    this tab is said before the table rather than inside a row. Same 48h threshold as
+			    the Approvals tab, from the same helper. */}
+			{expiringHolds.length > 0 && (
+				<Box bg="rgba(247,148,50,0.12)" border="1px solid rgba(247,148,50,0.4)" borderRadius="8px" p={3} mb={3}>
+					<Text color="#F79432" fontWeight={700} fontSize="sm">
+						{expiringHolds.length} request{expiringHolds.length > 1 ? "s have" : " has"} a card hold expiring within 48 hours
+					</Text>
+					<Text color="#D6D6D6" fontSize="xs" mt={1}>
+						Holds are released automatically once they lapse and cannot be recovered — approve or decline these first.
+					</Text>
+				</Box>
+			)}
+
+			{pendingRows.length > 0 && (
+				<Text fontSize="xs" color="#9C9C9C" mb={3}>
+					A request doesn&apos;t hold a spot until you approve it, so you can receive more requests than you have seats.
+				</Text>
+			)}
+
 			<Flex direction="column" gap={2} mb={3}>
+				{/* Invited vs booked as its own axis. The ticket-type Select below narrows within
+				    whichever audience is chosen — they compose rather than replace each other. */}
+				<Flex align="center" gap={2} flexWrap="wrap">
+					{AUDIENCE_CHIPS.map((chip) => {
+						const count = audienceCounts[chip.key]
+						const active = audience === chip.key
+						// A chip for a state nobody is in is noise — except All, which anchors the row,
+						// and except the one currently selected. Approving the last pending request
+						// while filtered to "Needs approval" would otherwise take that chip away and
+						// leave an empty table with nothing highlighted to explain it.
+						if (count === 0 && chip.key !== "all" && !active) return null
+						return (
+							<Button
+								key={chip.key}
+								size="xs"
+								borderRadius="full"
+								bg={active ? "#F79432" : "#2A2A2A"}
+								color={active ? "black" : "white"}
+								border="1px solid #444"
+								_hover={{ bg: active ? "#e6832a" : "#3A3A3A" }}
+								onClick={() => { setAudience(chip.key); setPage(1) }}
+							>
+								{chip.label} ({count})
+							</Button>
+						)
+					})}
+				</Flex>
+
 				<Flex align="center" gap={3} flexWrap="wrap">
 					<InputGroup size="sm" maxW="280px">
 						<InputLeftElement pointerEvents="none">
@@ -3361,7 +3462,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 						</Button>
 					)}
 
-					{allEmails.length > 0 && (
+					{visibleRows.length > 0 && (
 						<Button
 							size="sm"
 							variant="outline"
@@ -3378,7 +3479,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				</Flex>
 
 				<Flex align="center" gap={2} flexWrap="wrap" fontSize="sm" color="#9C9C9C">
-					<Text>Showing <Text as="span" color="white" fontWeight="bold">{allEmails.length}</Text> of {rawEmails.length} guests</Text>
+					<Text>Showing <Text as="span" color="white" fontWeight="bold">{visibleRows.length}</Text> of {rawEmails.length} guests</Text>
 					{ticketTypeFilter !== "all" && (
 						<>
 							<Text>·</Text>
@@ -3397,10 +3498,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 
 			{!rawEmails.length ? (
 				<Text>No guests or bookings found.</Text>
-			) : !allEmails.length ? (
+			) : !visibleRows.length ? (
 				<Flex direction="column" gap={2} align="start">
 					<Text color="#9C9C9C">
-						No guests match{searchQuery.trim() ? ` "${searchQuery.trim()}"` : ''}{selectedTicketName ? ` for ${selectedTicketName}` : ''}.
+						No guests match{searchQuery.trim() ? ` "${searchQuery.trim()}"` : ''}{selectedTicketName ? ` for ${selectedTicketName}` : ''}
+						{audience !== "all" ? ` in ${(AUDIENCE_CHIPS.find((c) => c.key === audience)?.label || "").toLowerCase()}` : ''}.
 					</Text>
 					<Button size="sm" variant="link" color="#F79432" onClick={clearFilters}>Clear filters</Button>
 				</Flex>
@@ -3412,6 +3514,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							<Tr>
 								<Th color="#9C9C9C">Name</Th>
 								<Th color="#9C9C9C">Email</Th>
+								<Th color="#9C9C9C">Type</Th>
 								<Th color="#9C9C9C">Status</Th>
 								<Th color="#9C9C9C">Ticket Type</Th>
 								<Th color="#9C9C9C">Amount Paid</Th>
@@ -3421,23 +3524,79 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							</Tr>
 						</Thead>
 						<Tbody>
-							{pagedEmails.map((email: string) => {
-								const guest = guestByEmail[email]
-								const booking = bookingByEmail[email]
+							{pagedRows.map((row: GuestRow) => {
+								const email = row.key
+								const booking = row.primaryBooking
 								const ci = booking?._id ? checkInMap[booking._id.toString()] : null
-								const cancelled = isCancelledBooking(booking)
-								const rejected = booking?.status === 'rejected'
-								const pending = isPendingBooking(booking)
+								// A row is struck through only when EVERY booking on it is dead — somebody
+								// with a cancelled order and a live one is not a cancelled guest.
+								const cancelled = row.cancelledOnly
+								const rejected = cancelled && booking?.status === 'rejected'
+								const pending = row.pendingBookings.length > 0
 								return (
 									<Tr key={email} opacity={cancelled ? 0.55 : 1}>
-										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{booking?.customerName || guest?.name || "—"}</Td>
-										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{email}</Td>
+										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{row.name || "—"}</Td>
+										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{row.email}</Td>
+										{/* Where this person came from. An invitation and a booking share no key
+										    but the email string, so somebody who was invited AND bought is ONE
+										    row that says both — not two rows that look like two people. */}
+										<Td>
+											<Flex gap={1} align="center" flexWrap="wrap">
+												<Tooltip
+													hasArrow
+													label={
+														row.kind === "invited_and_booked"
+															? "Invited by you, and has since booked."
+															: row.kind === "booked"
+																? "Booked directly — never sent an invite."
+																: "Invited by you. No booking yet."
+													}
+												>
+													<Badge
+														colorScheme={row.kind === "invited_and_booked" ? "teal" : row.kind === "booked" ? "green" : "purple"}
+														variant={row.kind === "invited" ? "outline" : "solid"}
+														borderRadius="6px"
+													>
+														{GUEST_KIND_LABEL[row.kind]}
+													</Badge>
+												</Tooltip>
+												{row.bookings.length > 1 && (
+													<Tooltip hasArrow label={`${row.bookings.length} separate bookings on this address.`}>
+														<Badge colorScheme="gray" borderRadius="6px">{row.bookings.length} bookings</Badge>
+													</Tooltip>
+												)}
+												{row.duplicateInvitationCount > 1 && (
+													<Tooltip hasArrow label={`Invited ${row.duplicateInvitationCount} times.`}>
+														<Badge colorScheme="gray" variant="outline" borderRadius="6px">×{row.duplicateInvitationCount}</Badge>
+													</Tooltip>
+												)}
+											</Flex>
+										</Td>
 										<Td color="white">
-											{cancelled
-												? <Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
-												: pending
-												? <Badge colorScheme="yellow">Pending Approval</Badge>
-												: (guest?.status || (booking ? 'Purchased' : '—'))}
+											{pending ? (
+												<Flex direction="column" gap={1} align="start">
+													<Badge colorScheme="yellow">Pending Approval</Badge>
+													{/* How long the card hold has left — the reason this is urgent. */}
+													{row.pendingBookings.map((pb: any) => (
+														<HoldExpiry key={pb.bookingRef} booking={pb} />
+													))}
+												</Flex>
+											) : cancelled ? (
+												<Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
+											) : row.bookings.length > 0 ? (
+												<Badge colorScheme="green">Confirmed</Badge>
+											) : row.invitationStatus === 'accepted' ? (
+												/* An accepted invite creates NO booking. Falling back to "Purchased"
+												   here, as this cell used to, told the host about a ticket sale that
+												   never happened. */
+												<Tooltip hasArrow label="Accepted the invitation but has not booked a ticket.">
+													<Badge colorScheme="blue">Accepted — no ticket</Badge>
+												</Tooltip>
+											) : row.invitationStatus === 'declined' ? (
+												<Badge colorScheme="red" variant="outline">Declined</Badge>
+											) : (
+												<Badge colorScheme="purple" variant="outline">Invited</Badge>
+											)}
 										</Td>
 										<Td color="white">{formatBookingTickets(booking)}</Td>
 										{/* The amount alone can't distinguish a free ticket from a $95 one
@@ -3474,7 +3633,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												)
 											})()}
 										</Td>
-										<Td color="white">{guest?.invitedAt ? DateTime.fromISO(guest.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
+										<Td color="white">{row.invitedAt ? DateTime.fromISO(row.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										<Td>
 											{cancelled
 												? <Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
@@ -3490,27 +3649,55 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 											}
 										</Td>
 										<Td>
+											{/* Approve / Reject, one pair per pending request. Never merged: two
+											    requests are two card holds and two calls to /api/bookings/approve.
+
+											    Gated on the row actually HOLDING a pending booking, not on
+											    `eventHasAnyApprovalTicket` — a host who switches a ticket's
+											    requireApproval off afterwards still has live holds to resolve,
+											    and gating on the current flag would strand them. */}
+											{row.pendingBookings.map((pb: any) => {
+												const fit = approvals.fitFor(pb)
+												return (
+													<Flex key={pb.bookingRef} direction="column" gap={1} mb={2} align="start">
+														{row.pendingBookings.length > 1 && (
+															<Text fontSize="xs" color="#9C9C9C">{pb.bookingRef}</Text>
+														)}
+														<ApprovalActions booking={pb} controller={approvals} size="xs" />
+														{!fit.fits && (
+															<Badge colorScheme="orange" fontSize="0.65em" borderRadius="4px" px={1.5}>
+																Needs {bookingTicketCount(pb?.tickets)}, {fit.seatable ?? 0} left
+															</Badge>
+														)}
+													</Flex>
+												)
+											})}
 											<Button
 												size="sm"
 												variant="ghost"
 												color="#F79432"
 												_hover={{ bg: '#2A2A2A' }}
 												leftIcon={<EyeIcon style={{ width: 14, height: 14 }} />}
-												onClick={() => setSelectedGuest({ guest, booking, checkIn: ci })}
+												onClick={() => setSelectedGuest({ guest: row.invitation, booking, checkIn: ci })}
 											>
 												View Details
 											</Button>
-											<Button
-												size="sm"
-												variant="ghost"
-												color="red.400"
-												_hover={{ bg: '#2A2A2A' }}
-												isLoading={deletingEmail === email}
-												onClick={() => handleDeleteGuest(email, guest, booking)}
-												ml={1}
-											>
-												Delete
-											</Button>
+											{/* With a real Reject button on the row, the old delete-as-decline path
+											    would be a second, different way to turn somebody down. Delete is
+											    offered only where there is nothing to decide. */}
+											{!pending && (
+												<Button
+													size="sm"
+													variant="ghost"
+													color="red.400"
+													_hover={{ bg: '#2A2A2A' }}
+													isLoading={deletingEmail === email}
+													onClick={() => handleDeleteGuest(email, row.invitation, booking)}
+													ml={1}
+												>
+													{row.bookings.length === 0 ? 'Remove invite' : 'Delete'}
+												</Button>
+											)}
 										</Td>
 									</Tr>
 								)
@@ -3558,6 +3745,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				)}
 			</Box>
 			)}
+
+			{/* Approve / reject confirmation, the SAME dialogs the Approvals tab mounts — so a
+			    decision made here shows the same money, the same shortfall and the same partial
+			    option it would there. */}
+			<ApprovalDialogs controller={approvals} event={event} />
 
 			{/* Guest Detail Modal */}
 			<Modal isOpen={!!selectedGuest} onClose={() => setSelectedGuest(null)} isCentered size="2xl">
