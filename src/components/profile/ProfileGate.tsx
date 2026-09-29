@@ -8,6 +8,7 @@ import { isUngatedPath, type JetzyProfile, type ProfileField } from "@/lib/jetzy
 // Lazy: the Places widget and upload code are only needed by the few users who are incomplete,
 // and must not weigh down every page for everybody else.
 const ProfileCompletionModal = dynamic(() => import("./ProfileCompletionModal"), { ssr: false })
+const ProfileErrorBoundary = dynamic(() => import("./ProfileErrorBoundary"), { ssr: false })
 
 export type ProfileStatus = {
 	complete: boolean
@@ -86,12 +87,14 @@ export default function ProfileGate() {
 	if (!gated || held || !data || data.complete) return null
 
 	return (
-		<ProfileCompletionModal
-			isOpen
-			initialProfile={data.profile}
-			onCompleted={(profile) => {
-				queryClient.setQueryData<ProfileStatus>(profileStatusKey(userId), { complete: true, missing: [], profile })
-			}}
-		/>
+		<ProfileErrorBoundary>
+			<ProfileCompletionModal
+				isOpen
+				initialProfile={data.profile}
+				onCompleted={(profile) => {
+					queryClient.setQueryData<ProfileStatus>(profileStatusKey(userId), { complete: true, missing: [], profile })
+				}}
+			/>
+		</ProfileErrorBoundary>
 	)
 }

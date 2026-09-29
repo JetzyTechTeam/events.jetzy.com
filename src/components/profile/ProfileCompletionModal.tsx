@@ -1,9 +1,7 @@
 import React from "react"
 import { Modal, ModalOverlay, ModalContent } from "@chakra-ui/react"
 import { signOut, useSession } from "next-auth/react"
-// Deep import: the package root re-exports only `usePlacesWidget`, and this is the service hook —
-// predictions we render ourselves rather than Google's own `<body>` dropdown. Types ship beside it.
-import usePlacesAutocompleteService from "react-google-autocomplete/lib/usePlacesAutocompleteService"
+import { useCityAutocomplete, type CityPrediction } from "@/hooks/useCityAutocomplete"
 import { uploadFile } from "@/services/upload.service"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
@@ -46,32 +44,28 @@ const fieldClass =
  * it landed half off-screen or over the dialog's edge and people didn't see it. A list in the
  * dialog's own flow scrolls with the form and cannot be clipped or mispositioned.
  *
- * Predictions come from `AutocompleteService`; the coordinates come from a `getDetails` call on the
- * chosen prediction, both under one session token so the pair bills as a single lookup.
+ * Predictions come from `useCityAutocomplete` — our own hook, because the library's service hook
+ * reads a bare `google` and threw `ReferenceError` (blanking this form) whenever the Maps script
+ * hadn't loaded. When it can't load, the field falls back to a plain typed city.
  */
-type CityPrediction = { place_id: string; main: string; secondary: string }
 
 function ProfileCityInput({
 	value,
 	countryCode,
 	onTextChange,
 	onPick,
+	onSearchableChange,
 }: {
 	value: string
 	countryCode?: string
 	onTextChange: (text: string) => void
 	onPick: (location: ProfileLocation) => void
+	/** False when Google Places can't load — the form then accepts a typed city. */
+	onSearchableChange?: (searchable: boolean) => void
 }) {
 	const [open, setOpen] = React.useState(false)
 	const [highlighted, setHighlighted] = React.useState(0)
 	const [resolving, setResolving] = React.useState(false)
-	/**
-	 * A query is on its way but hasn't started.
-	 *
-	 * The hook debounces by 300ms, during which it is neither loading nor holding results — so the
-	 * list said "No cities found" the moment somebody typed the first letter.
-	 */
-	const [awaitingSearch, setAwaitingSearch] = React.useState(false)
 	const blurTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 	const listRef = React.useRef<HTMLDivElement>(null)
 	const inputRef = React.useRef<HTMLInputElement>(null)
@@ -84,39 +78,23 @@ function ProfileCityInput({
 	 */
 	const [placeAbove, setPlaceAbove] = React.useState(false)
 
-	const { placePredictions, getPlacePredictions, isPlacePredictionsLoading, placesService, refreshSessionToken } =
-		usePlacesAutocompleteService({
-			apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-			debounce: 300,
-			sessionToken: true,
-			options: { types: ["(cities)"], input: "" },
-		})
+	const { status, predictions, loading, search, pick, reset } = useCityAutocomplete(process.env.NEXT_PUBLIC_GOOGLE_API_KEY)
+	const searchable = status !== "unavailable"
 
-	const predictions: CityPrediction[] = React.useMemo(
-		() =>
-			(placePredictions || []).map((p: any) => ({
-				place_id: p.place_id,
-				main: p.structured_formatting?.main_text || p.description,
-				secondary: p.structured_formatting?.secondary_text || "",
-			})),
-		[placePredictions]
-	)
+	React.useEffect(() => {
+		onSearchableChange?.(searchable)
+	}, [searchable, onSearchableChange])
 
 	React.useEffect(() => () => {
 		if (blurTimer.current) clearTimeout(blurTimer.current)
 	}, [])
-
-	// Results (or an empty result) are back.
-	React.useEffect(() => {
-		setAwaitingSearch(false)
-	}, [placePredictions])
 
 	// A freshly opened list must be visible even when it opens below a field near the dialog's fold.
 	React.useEffect(() => {
 		if (!open) return
 		const id = setTimeout(() => listRef.current?.scrollIntoView({ block: "nearest" }), 50)
 		return () => clearTimeout(id)
-	}, [open, placePredictions])
+	}, [open, predictions])
 
 	// Keep the highlighted row in view when arrowing through a scrolled list.
 	React.useEffect(() => {
@@ -149,41 +127,21 @@ function ProfileCityInput({
 		}
 	}, [open, measureSpace])
 
-	const search = (text: string) => {
-		if (!text.trim() || !countryCode) {
-			setAwaitingSearch(false)
+	const choose = async (prediction: CityPrediction) => {
+		setOpen(false)
+		setResolving(true)
+		const picked = await pick(prediction.placeId)
+		setResolving(false)
+		if (!picked) {
+			// Google couldn't resolve it: keep the name so nothing is lost. Without coordinates the
+			// field is still a typed city, which the form accepts alongside the country.
+			onTextChange(prediction.main)
 			return
 		}
-		setAwaitingSearch(true)
-		getPlacePredictions({
-			input: text,
-			types: ["(cities)"],
-			componentRestrictions: { country: countryCode.toLowerCase() },
-		})
+		onPick(picked)
 	}
 
-	const choose = (prediction: CityPrediction) => {
-		setOpen(false)
-		if (!placesService) return
-		setResolving(true)
-		placesService.getDetails(
-			{ placeId: prediction.place_id, fields: ["address_components", "geometry", "name"] },
-			(place: any, status: string) => {
-				setResolving(false)
-				// A new token per completed lookup — one search plus its details is one session.
-				refreshSessionToken?.()
-				if (status !== "OK" || !place) {
-					// Details failed: keep the name so nothing is lost, but no coordinates means the
-					// field stays unpicked and the hint still asks for a suggestion.
-					onTextChange(prediction.main)
-					return
-				}
-				onPick(placeToProfileLocation(place))
-			}
-		)
-	}
-
-	const showList = open && !!countryCode && (predictions.length > 0 || isPlacePredictionsLoading || !!value.trim())
+	const showList = searchable && open && !!countryCode && (predictions.length > 0 || loading || !!value.trim())
 
 	const list = showList ? (
 		<div
@@ -194,7 +152,7 @@ function ProfileCityInput({
 		>
 			{predictions.map((p, i) => (
 				<button
-					key={p.place_id}
+					key={p.placeId}
 					type="button"
 					role="option"
 					aria-selected={i === highlighted}
@@ -209,9 +167,7 @@ function ProfileCityInput({
 				</button>
 			))}
 			{predictions.length === 0 && (
-				<p className="px-4 py-3 text-sm text-gray-400">
-					{isPlacePredictionsLoading || awaitingSearch ? "Searching…" : "No cities found"}
-				</p>
+				<p className="px-4 py-3 text-sm text-gray-400">{loading ? "Searching…" : "No cities found"}</p>
 			)}
 		</div>
 	) : null
@@ -234,10 +190,10 @@ function ProfileCityInput({
 					onTextChange(e.target.value)
 					setHighlighted(0)
 					setOpen(true)
-					search(e.target.value)
+					if (searchable) search(e.target.value, countryCode)
 				}}
 				onFocus={() => {
-					if (value.trim()) setOpen(true)
+					if (searchable && value.trim()) setOpen(true)
 					// The keyboard slides up after focus; give it a moment, then bring the field (and the
 					// room around it) into the shrunken viewport and re-measure which way to open.
 					setTimeout(() => {
@@ -250,7 +206,11 @@ function ProfileCityInput({
 					blurTimer.current = setTimeout(() => setOpen(false), 150)
 				}}
 				onKeyDown={(e) => {
-					if (e.key === "Escape") return setOpen(false)
+					if (e.key === "Escape") {
+						setOpen(false)
+						reset()
+						return
+					}
 					if (!showList || predictions.length === 0) return
 					if (e.key === "ArrowDown") {
 						e.preventDefault()
@@ -298,6 +258,8 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 	const [location, setLocation] = React.useState<ProfileLocation>({})
 	const [cityText, setCityText] = React.useState("")
 	const [countryCode, setCountryCode] = React.useState("")
+	/** Google Places reachable? False falls the field back to a plain typed city. */
+	const [citySearchable, setCitySearchable] = React.useState(true)
 	const countries = React.useMemo(() => listCountries(), [])
 	const [error, setError] = React.useState<string | null>(null)
 	const [saving, setSaving] = React.useState(false)
@@ -574,10 +536,13 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 							<ProfileCityInput
 								value={cityText}
 								countryCode={countryCode || undefined}
+								onSearchableChange={setCitySearchable}
 								onTextChange={(text) => {
-									// Typed text is not a place — only a picked suggestion counts.
 									setCityText(text)
-									setLocation((prev) => ({ country: prev.country }))
+									// Normally only a picked suggestion counts as a place. With Places unavailable
+									// there is nothing to pick, so the typed city is taken as written — it saves
+									// without coordinates, which `sync_location` simply skips.
+									setLocation((prev) => (citySearchable ? { country: prev.country } : { country: prev.country, city: text.trim() || undefined }))
 								}}
 								onPick={(loc) => {
 									const countryName = countries.find((c) => c.code === countryCode)?.name
@@ -588,9 +553,11 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 							/>
 							<p className="mt-2 flex items-start gap-2 text-sm text-gray-400">
 								<span aria-hidden="true">📍</span>
-								{!location.city && !location.country && hasLocation(location)
-									? "Using the location from your Jetzy app. Pick a country and city to change it."
-									: "Start typing your city, then pick it from the list that appears."}
+								{!citySearchable
+									? "City search is unavailable right now — type your city and continue."
+									: !location.city && !location.country && hasLocation(location)
+										? "Using the location from your Jetzy app. Pick a country and city to change it."
+										: "Start typing your city, then pick it from the list that appears."}
 							</p>
 						</>
 					)}

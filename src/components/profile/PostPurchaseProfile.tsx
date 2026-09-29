@@ -6,6 +6,7 @@ import type { JetzyProfile } from "@/lib/jetzy-profile"
 import { fetchProfileStatus, profileStatusKey, type ProfileStatus } from "./ProfileGate"
 
 const ProfileCompletionModal = dynamic(() => import("./ProfileCompletionModal"), { ssr: false })
+const ProfileErrorBoundary = dynamic(() => import("./ProfileErrorBoundary"), { ssr: false })
 
 export const POST_PURCHASE_INTRO = "You're a Jetzy Premium member! One last step."
 /** After card setup on an application — nothing is active yet, so it must not say "member". */
@@ -55,17 +56,19 @@ export function usePostPurchaseProfile() {
 			<p className="text-sm font-medium text-white">Finishing up…</p>
 		</div>
 	) : pending ? (
-		<ProfileCompletionModal
-			isOpen
-			intro={pending.intro}
-			initialProfile={pending.profile}
-			onCompleted={(profile) => {
-				queryClient.setQueryData<ProfileStatus>(profileStatusKey(userId), { complete: true, missing: [], profile })
-				const done = pending.onDone
-				setPending(null)
-				done?.()
-			}}
-		/>
+		<ProfileErrorBoundary>
+			<ProfileCompletionModal
+				isOpen
+				intro={pending.intro}
+				initialProfile={pending.profile}
+				onCompleted={(profile) => {
+					queryClient.setQueryData<ProfileStatus>(profileStatusKey(userId), { complete: true, missing: [], profile })
+					const done = pending.onDone
+					setPending(null)
+					done?.()
+				}}
+			/>
+		</ProfileErrorBoundary>
 	) : null
 
 	return { prompt, element }
