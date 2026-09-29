@@ -8,6 +8,7 @@ import { EventStatus, STATUS_LABEL } from "@/utils/eventSort"
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import { stripHtml } from "@/utils/text"
 import { eventMedia } from "@/lib/event-media"
+import MediaBackdrop from "@/components/events/MediaBackdrop"
 import PremiumBadge from "@/components/premium/PremiumBadge"
 import { isCancelledBooking } from "@/lib/booking-status"
 import { BookingStatus } from "@/models/events/types"
@@ -130,6 +131,7 @@ export default function BookingCard({ booking, onClick }: { booking: BookingRow;
 				{lead ? (
 					// Letterbox on black rather than crop — matches the listing card and the detail page hero.
 					<Box position="relative" w="100%" h="200px" rounded="lg" overflow="hidden" bg="black">
+						<MediaBackdrop url={lead.url} type={lead.type} layers={1} deepBlur={18} />
 						{lead.type === "video" ? (
 							// First frame only, via the `#t=0.1` poster trick. Nothing autoplays in a list.
 							<Box as="video" src={`${lead.url}#t=0.1`} muted playsInline preload="metadata" position="absolute" inset={0} w="100%" h="100%" sx={{ objectFit: "contain" }} />

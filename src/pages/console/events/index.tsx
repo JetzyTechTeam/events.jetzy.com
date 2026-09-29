@@ -26,6 +26,7 @@ import axios from "axios"
 import PremiumBadge from "@/components/premium/PremiumBadge"
 // The EVENT tag. Unrelated to PremiumBadge above, which marks a premium SUBSCRIBER.
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
+import MediaBackdrop from "@/components/events/MediaBackdrop"
 
 type Pagination = {
 	total: number
@@ -366,14 +367,18 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							const boxClass = `relative w-[110px] h-[88px] sm:w-[150px] sm:h-[120px] rounded-lg bg-black overflow-hidden shrink-0 ${props.isEnded ? 'opacity-60' : ''}`
 							return isValidUrl ? (
 								<div className={boxClass}>
+									{/* First child, and the media below it is `relative` — a static element
+									    paints beneath every positioned one, so without that the blurred fill
+									    would sit on top of the photo. */}
+									<MediaBackdrop url={lead.url} type={lead.type} layers={1} deepBlur={12} />
 									{lead.type === "video" ? (
 										// First frame only, via the `#t=0.1` poster trick — a list never autoplays.
-										<video src={`${lead.url}#t=0.1`} muted playsInline preload="metadata" className="w-full h-full object-contain" />
+										<video src={`${lead.url}#t=0.1`} muted playsInline preload="metadata" className="relative w-full h-full object-contain" />
 									) : (
 										<img
 											src={lead.url}
 											alt={stripHtml(event.name)}
-											className="w-full h-full object-contain"
+											className="relative w-full h-full object-contain"
 										/>
 									)}
 								</div>

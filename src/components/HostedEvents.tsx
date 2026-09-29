@@ -7,6 +7,7 @@ import { ROUTES, homeRouteForRole } from "@/configs/routes"
 import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
 import { applyMediaOrder, eventMedia, type EventMedia } from "@/lib/event-media"
+import { allowedMediaCount } from "@/lib/event-media-limit"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
@@ -58,6 +59,8 @@ import { IEvent } from "@/models/events/types"
 import { Badge, Button, Image, Switch, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, InputGroup, InputLeftElement, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
 import { ShareIcon, QrCodeIcon as QrCodeIconOutline } from "@heroicons/react/24/outline"
 import QRCodeModal from "@/components/events/QRCodeModal"
+import MediaLightbox from "@/components/events/MediaLightbox"
+import MediaBackdrop from "@/components/events/MediaBackdrop"
 import Pagination from "@/components/misc/Pagination"
 import { EventWaitingList } from "@/components/events/EventWaitingList"
 import { useQuery } from "@tanstack/react-query"
@@ -99,6 +102,9 @@ const fieldBase = "w-full h-[48px] rounded-md bg-[#090C10] text-white text-[14px
 const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`
 const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`
 
+/** Banner videos the page controls — everything except the blurred ambient backdrop. */
+const BANNER_VIDEO = "video:not([data-media-backdrop])"
+
 const settings = {
 	infinite: true,
 	speed: 500,
@@ -107,17 +113,6 @@ const settings = {
 	// Carousel autoplay (advancing slides), not video autoplay — those are unrelated.
 	autoplay: false,
 	arrow: true,
-	beforeChange: (_: number, __: number) => {
-		document.querySelectorAll<HTMLVideoElement>('video').forEach(v => { v.pause() })
-	},
-	// Counterpart to the pause above: without this, sliding onto a video leaves it frozen,
-	// because beforeChange had just paused every video on the page.
-	afterChange: () => {
-		document.querySelectorAll<HTMLVideoElement>('.slick-current video').forEach(v => {
-			// Muted is what makes this allowed at all; a rejected play() must not throw.
-			v.play().catch(() => {})
-		})
-	},
 	nextArrow: (
 		<CustomArrow>
 			<ChevronRightSVG stroke="#fff" width={16} height={16} />
@@ -310,6 +305,7 @@ export default function HostedEvents({ event }: Props) {
 	// `eventMedia` applies the host's `mediaOrder` across the two arrays — never read
 	// `images` directly, or a video lead and any hand-arranged order are lost.
 	const shownMedia = clonedEvent ? eventMedia(clonedEvent) : []
+
 	const shownEvent = clonedEvent
 
 	const startEventEdit = (section: EditSection) => {
@@ -612,20 +608,84 @@ export default function HostedEvents({ event }: Props) {
 	// same screenshot could mean stripped props or a dead S3 object.
 	const [failedMedia, setFailedMedia] = useState<Record<string, true>>({})
 	const markMediaFailed = (url: string) => setFailedMedia((prev) => (prev[url] ? prev : { ...prev, [url]: true }))
-	const renderMedia = (media: EventMedia, key?: React.Key) => (
+
+	// ── Banner sound ────────────────────────────────────────────────────────
+	// Banner video still starts muted, because Chrome and Safari refuse to begin an unmuted
+	// video and render a stalled player instead. The button below is the user gesture that
+	// makes sound legal, so "video with music" costs one tap rather than being impossible.
+	//
+	// Only ONE video may carry audio at a time. `infinite: true` makes react-slick clone
+	// slides, so the same file can be mounted two or three times; unmuting via a React prop
+	// would unmute every copy and play the soundtrack over itself. `applyBannerAudio` therefore
+	// mutes every banner video and then unmutes the one inside `.slick-current`.
+	//
+	// BANNER_VIDEO excludes the ambient blurred backdrop, which is the frame's first child and
+	// would otherwise win every `querySelector` here — the sound button would unmute a copy
+	// nobody can hear, and the carousel would set the backdrop playing.
+	const bannerRef = React.useRef<HTMLDivElement>(null)
+	const [bannerMuted, setBannerMuted] = useState(true)
+	const bannerMutedRef = React.useRef(true)
+	bannerMutedRef.current = bannerMuted
+
+	const applyBannerAudio = React.useCallback(() => {
+		const root = bannerRef.current
+		if (!root) return
+		const videos = Array.from(root.querySelectorAll<HTMLVideoElement>(BANNER_VIDEO))
+		videos.forEach((v) => {
+			v.muted = true
+		})
+		if (bannerMutedRef.current) return
+		const active = root.querySelector<HTMLVideoElement>(`.slick-current ${BANNER_VIDEO}`) ?? videos[0]
+		if (active) active.muted = false
+	}, [])
+
+	React.useEffect(() => {
+		applyBannerAudio()
+	}, [bannerMuted, applyBannerAudio])
+
+	// Built here rather than at module scope so the slide handlers can see component state.
+	// Both handlers are now scoped to `bannerRef` — the old ones ran
+	// `document.querySelectorAll('video')`, which paused album tiles, discussion videos and the
+	// lightbox along with the banner.
+	const sliderSettings = React.useMemo(
+		() => ({
+			...settings,
+			beforeChange: () => {
+				bannerRef.current?.querySelectorAll<HTMLVideoElement>(BANNER_VIDEO).forEach((v) => v.pause())
+			},
+			// Counterpart to the pause above: without this, sliding onto a video leaves it frozen.
+			afterChange: () => {
+				applyBannerAudio()
+				bannerRef.current?.querySelectorAll<HTMLVideoElement>(`.slick-current ${BANNER_VIDEO}`).forEach((v) => {
+					// A rejected play() must not throw. Unmuted playback is only attempted after the
+					// viewer has pressed the sound button, which is the gesture that permits it.
+					v.play().catch(() => {})
+				})
+			},
+		}),
+		[applyBannerAudio],
+	)
+
+	// ── Click to open large ─────────────────────────────────────────────────
+	const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+
+	const renderMedia = (media: EventMedia, key?: React.Key, index = 0) => (
 		<div key={key} className="relative w-full h-52 md:h-[335px] bg-black rounded-xl overflow-hidden">
+			{/* FIRST child, deliberately: the ambient fill is absolute with no z-index, so DOM
+			    order is what keeps it under the sharp media and under the overlay buttons. */}
+			{!failedMedia[media.url] && <MediaBackdrop url={media.url} type={media.type} />}
 			{failedMedia[media.url] ? (
 				<div className="absolute inset-0 flex items-center justify-center bg-gray-800">
 					<p className="text-gray-400">{media.type === "video" ? "Video couldn't load" : "Image couldn't load"}</p>
 				</div>
 			) : media.type === "video" ? (
-				/* Plays on arrival. `muted` is not a preference — Chrome and Safari refuse to
-				   start an unmuted video and render a stalled player instead; `controls` is how
-				   a viewer turns the sound on. With `infinite: true` react-slick clones slides,
-				   so the same file may also be playing in an off-screen clone: harmless (muted,
-				   hidden), and `afterChange` is what guarantees the VISIBLE one runs. Don't
-				   "fix" that by dropping autoPlay — a single-media event renders with no Slider
-				   at all, and this attribute is the only thing that starts it. */
+				/* Plays on arrival. Starts muted — Chrome and Safari refuse to start an unmuted
+				   video and render a stalled player instead; the sound button below is what turns
+				   audio on. With `infinite: true` react-slick clones slides, so the same file may
+				   also be mounted off-screen: harmless while muted, and `applyBannerAudio` is what
+				   guarantees only the visible one is ever audible. Don't "fix" the clones by
+				   dropping autoPlay — a single-media event renders with no Slider at all, and this
+				   attribute is the only thing that starts it. */
 				<video
 					src={media.url}
 					controls
@@ -638,7 +698,40 @@ export default function HostedEvents({ event }: Props) {
 					onError={() => markMediaFailed(media.url)}
 				/>
 			) : (
-				<img src={media.url} alt="Event Banner" className="absolute inset-0 w-full h-full object-contain" onError={() => markMediaFailed(media.url)} />
+				/* An image opens the viewer from anywhere on it. A video cannot: its own controls
+				   own those clicks, so the expand button beside them is its way in. */
+				<img
+					src={media.url}
+					alt="Event Banner"
+					onClick={() => setLightboxIndex(index)}
+					className="absolute inset-0 w-full h-full object-contain cursor-zoom-in"
+					onError={() => markMediaFailed(media.url)}
+				/>
+			)}
+
+			{!failedMedia[media.url] && (
+				<div className="absolute top-3 right-3 z-20 flex gap-2" data-analytics-ignore="">
+					{media.type === "video" && (
+						<button
+							type="button"
+							onClick={() => setBannerMuted((m) => !m)}
+							aria-label={bannerMuted ? "Turn sound on" : "Mute"}
+							title={bannerMuted ? "Turn sound on" : "Mute"}
+							className="rounded-full bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"
+						>
+							{bannerMuted ? "🔇 Sound on" : "🔊 Mute"}
+						</button>
+					)}
+					<button
+						type="button"
+						onClick={() => setLightboxIndex(index)}
+						aria-label="View larger"
+						title="View larger"
+						className="rounded-full bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"
+					>
+						⤢ Expand
+					</button>
+				</div>
 			)}
 		</div>
 	)
@@ -1030,6 +1123,7 @@ export default function HostedEvents({ event }: Props) {
 										handleVideoDelete={handleEventVideoDelete}
 										mediaOrder={draftMediaOrder}
 										onReorder={setDraftMediaOrder}
+										maxItems={allowedMediaCount(hasAdminRole, draftImages.length + draftVideos.length)}
 									/>
 									{/* Said out loud because it contradicts the Cancel button beside it:
 									    an image delete is written immediately, exactly as in Manage Event. */}
@@ -1043,16 +1137,19 @@ export default function HostedEvents({ event }: Props) {
 								</div>
 							) : (
 							<>
+							{/* `bannerRef` scopes the slide handlers and the audio rule to this carousel —
+							    they used to query every <video> on the page. */}
+							<div ref={bannerRef}>
 							{(() => {
 								const allMedia = shownMedia
 								if (allMedia.length > 1) {
 									return (
-										<Slider {...settings}>
-											{allMedia.map((media, idx) => renderMedia(media, idx))}
+										<Slider {...sliderSettings}>
+											{allMedia.map((media, idx) => renderMedia(media, idx, idx))}
 										</Slider>
 									)
 								} else if (allMedia.length === 1) {
-									return renderMedia(allMedia[0])
+									return renderMedia(allMedia[0], undefined, 0)
 								} else {
 									return (
 										<div className="w-full h-52 md:h-[335px] bg-gray-800 flex items-center justify-center rounded-xl">
@@ -1061,6 +1158,7 @@ export default function HostedEvents({ event }: Props) {
 									)
 								}
 							})()}
+							</div>
 
 							{/* Premium tag + Benefits overlay share ONE top-left column — two absolutes
 							    at the same corner would sit on top of each other. The tag leads,
@@ -1870,6 +1968,16 @@ export default function HostedEvents({ event }: Props) {
 					})
 					setTicketModalOpen(false)
 				}}
+			/>
+
+			{/* Banner media opened large. Video plays unmuted here: it is only ever reached by a
+			    click, and that click is the gesture the autoplay policy requires. */}
+			<MediaLightbox
+				media={shownMedia}
+				index={lightboxIndex}
+				onClose={() => setLightboxIndex(null)}
+				onIndexChange={setLightboxIndex}
+				title={stripHtml(shownName)}
 			/>
 
 			{clonedEvent?.name && <EventCheckoutModel event={stripHtml(shownName)} eventData={clonedEvent} />}
