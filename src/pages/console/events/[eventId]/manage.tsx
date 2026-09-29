@@ -2141,13 +2141,23 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 					}
 					/* "Leave as draft" is ambiguous when the DRAFT is the status being saved — there,
 					   leaving means the event carries on being published. Say that instead. */
-					leaveLabel={uploadInFlight ? "Leave anyway" : willUnpublish ? "Leave it published" : "Leave unpublished"}
+					leaveLabel={
+						leaveGuard.isActionLeave
+							? "Log out anyway"
+							: uploadInFlight
+								? "Leave anyway"
+								: willUnpublish
+									? "Leave it published"
+									: "Leave unpublished"
+					}
 					onLeave={() => leaveGuard.confirmLeave()}
 					onKeepEditing={leaveGuard.cancelLeave}
 					/* No primary while an upload runs: saving then would publish the event WITHOUT
-					   the file still on its way, which is the one outcome nobody wants. */
+					   the file still on its way, which is the one outcome nobody wants. Nor on a
+					   logout: publishing navigates to My Events, which would quietly drop the
+					   logout they actually asked for. Their draft is on the server either way. */
 					primary={
-						uploadInFlight
+						uploadInFlight || leaveGuard.isActionLeave
 							? undefined
 							: {
 									label: willUnpublish ? "Unpublish" : "Update Event",

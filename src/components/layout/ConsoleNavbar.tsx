@@ -11,6 +11,7 @@ import Link from "next/link"
 import { useRouter } from "next/router"
 import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
+import { requestAppLeave } from "@/hooks/useUnsavedDraftGuard"
 import { getUserSlug } from "@Jetzy/lib/utils"
 import QRCodeModal from "@Jetzy/components/events/QRCodeModal"
 import { usePremiumStatus } from "@/hooks/usePremiumStatus"
@@ -34,11 +35,21 @@ export default function ConsoleNavbar({ page }: ConsoleNavbarProps) {
 	// still one click in, under "Manage in Stripe".
 	const { open: openMembershipDialog, dialog: membershipDialog, label: membershipLabel } = useMembershipDialog()
 
-	const logout = () => {
+	const signOutNow = () => {
 		// Clear Redux session storage first
 		dispatch(destroySession({}))
 		// Then sign out
 		signOut({ callbackUrl: "/" })
+	}
+
+	const logout = () => {
+		// `signOut` is a FULL page load, so a page holding unpublished changes would be met by
+		// the browser's own "Leave site?" dialog — whose wording we cannot set, and which on
+		// iOS Safari may not appear at all. This is our own button, so we can ask properly
+		// first. `requestAppLeave` returns false when there is nothing pending, and logout
+		// proceeds untouched.
+		if (requestAppLeave(signOutNow)) return
+		signOutNow()
 	}
 
 	const user = {

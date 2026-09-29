@@ -1401,7 +1401,13 @@ const CreateEventPage = () => {
             </>
           )
         }
-        leaveLabel={uploadInFlight || unsavedMediaWithoutName ? "Leave anyway" : "Leave for now"}
+        leaveLabel={
+          leaveGuard.isActionLeave
+            ? "Log out anyway"
+            : uploadInFlight || unsavedMediaWithoutName
+              ? "Leave anyway"
+              : "Leave for now"
+        }
         onLeave={() => leaveGuard.confirmLeave()}
         onKeepEditing={leaveGuard.cancelLeave}
       />
