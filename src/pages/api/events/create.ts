@@ -13,6 +13,7 @@ import { ticketMemberships, ticketMembershipFreeMonths, MAX_MEMBERSHIP_FREE_MONT
 import { buildUniqueSlug, slugifyFromName, validateEventSlug } from "@/lib/event-slug"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { isAdminRole, seedDefaultReferralCodes } from "@/lib/default-referral-codes"
+import { mediaLimitRefusal } from "@/lib/event-media-limit"
 import { isAwaitingAdminReview } from "@/lib/event-approval"
 import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
 import zod from "zod"
@@ -151,6 +152,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Desctructure the request body
 		let { startDate, startTime, endDate, endTime, name, slug: requestedSlug, location, venueName, entrance, longitude, latitude, placeId, capacity, requireApproval, images, videos, mediaOrder, tickets, isPaid, desc, privacy, timezone, showParticipants, benefits, locationDisclosedAfterBooking, showOnMobile, premiumEvent, datePoll, status, interests } = params
+
+		// Banner media is capped for non-admin hosts. Enforced here as well as in the form
+		// because the form's cap is an affordance — this route is reachable directly, and the
+		// two arrays are counted together since that is what the banner shows.
+		const mediaRefusal = mediaLimitRefusal({
+			isAdmin: isAdminRole((session.user as any)?.role),
+			nextCount: (images?.length ?? 0) + (videos?.length ?? 0),
+		})
+		if (mediaRefusal) return sendResponse(res, null, mediaRefusal, false, ResCode.BAD_REQUEST)
 
 		// Resolve the event URL. A host-supplied slug is validated and made unique; a blank
 		// one is derived from the event name, falling back to a random id when the name has

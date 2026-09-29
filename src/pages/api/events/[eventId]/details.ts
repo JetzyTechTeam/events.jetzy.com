@@ -3,6 +3,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
+import { mediaLimitRefusal } from "@/lib/event-media-limit"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -244,6 +245,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			if (images.length === 0 && videos.length === 0) {
 				return sendResponse(res, null, "Keep at least one photo or video.", false, ResCode.BAD_REQUEST)
 			}
+			// Cap for non-admin hosts, grandfathered against what is already stored so an
+			// over-limit legacy event can still be trimmed or left alone — just not grown.
+			const mediaRefusal = mediaLimitRefusal({
+				isAdmin,
+				nextCount: images.length + videos.length,
+				storedCount: ((event as any).images?.length ?? 0) + ((event as any).videos?.length ?? 0),
+			})
+			if (mediaRefusal) return sendResponse(res, null, mediaRefusal, false, ResCode.BAD_REQUEST)
 			// `mediaOrder` must name exactly what is being stored. A leftover url would render
 			// nothing and a missing one would silently fall back to the legacy
 			// images-then-videos order — both look like the host's arrangement was ignored.

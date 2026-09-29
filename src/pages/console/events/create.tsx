@@ -71,6 +71,7 @@ import { FileUploadData } from "@/components/misc/DragAndDropUploader";
 import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
 import MediaUploadSection from "../../../components/media-upload-section";
+import { allowedMediaCount } from "@/lib/event-media-limit";
 import ListingCardPreview from "@/components/events/ListingCardPreview";
 import { previewPath } from "@/lib/event-preview";
 import TimezoneSelect from "../../../components/timezone-select";
@@ -980,6 +981,8 @@ const CreateEventPage = () => {
                 {/* ---- Event Media ---- */}
                 <Box id="images" bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
                   <Heading size="md" color="white" mb={4}>Event Media</Heading>
+                  {/* Admins are uncapped; see src/lib/event-media-limit.ts. Nothing is stored yet
+                      on a create, so there is no grandfathered allowance to respect. */}
                   <MediaUploadSection
                     uploadedImages={uploadedImages}
                     uploadedVideos={uploadedVideos}
@@ -993,6 +996,7 @@ const CreateEventPage = () => {
                     handleVideoDelete={handleVideoDelete}
                     mediaOrder={mediaOrder}
                     onReorder={setMediaOrder}
+                    maxItems={allowedMediaCount(isAdmin)}
                   />
                 </Box>
 
