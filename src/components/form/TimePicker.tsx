@@ -10,22 +10,30 @@ import {
 	Box,
 	Flex,
 	Button,
+	SimpleGrid,
 	Text,
 	useDisclosure,
 } from "@chakra-ui/react"
 
 /**
- * Time picker rendered as a dialog: three snap columns (hour / minute / AM-PM) plus quick picks.
+ * Time picker rendered as a dialog: hour and minute grids, an AM/PM pair, and quick picks.
  *
  * Replaces a flatpickr `noCalendar` dropdown. Two things about that setup drove the rewrite:
  * the instance was rebuilt on every parent render (every call site passes an inline arrow to
  * `onChange`, and that was in the effect's dep array), and its stylesheet is imported globally
  * with no dark-theme overrides, so the dropdown rendered light against a dark form.
  *
- * The props contract is UNCHANGED so all nine call sites swap without edits, and in particular
- * `onChange("")` is still reachable — via Clear. That empty string is load-bearing: it is what
- * persists `hasStartTime: false`, i.e. a date-only event. A dialog whose only exit is a Done
- * button would make it unreachable and silently give every date-only event a midnight start.
+ * **Grids, not scrolling columns.** The first version of this dialog used three
+ * `overflow-y: auto` columns, which on Windows Chrome paint the OS scrollbar — a light track
+ * with arrow buttons at both ends. Two white strips down the middle of a dark panel, from
+ * markup that never asked for them. A container that doesn't scroll has no scrollbar to
+ * style on any platform, and every choice is visible at once, which is the point of a picker.
+ *
+ * The props contract is UNCHANGED so all eleven call sites swap without edits, and in
+ * particular `onChange("")` is still reachable — via Clear. That empty string is load-bearing:
+ * it is what persists `hasStartTime: false`, i.e. a date-only event. A dialog whose only exit
+ * is a Done button would make it unreachable and silently give every date-only event a
+ * midnight start.
  */
 
 type Props = {
@@ -40,6 +48,16 @@ const HOURS = Array.from({ length: 12 }, (_, i) => i + 1)
 const MERIDIEMS: Array<"AM" | "PM"> = ["AM", "PM"]
 const STEP_MINUTES = Array.from({ length: 12 }, (_, i) => i * 5)
 const QUICK_PICKS = ["09:00", "12:00", "18:00", "19:00"]
+
+// The console's own tokens — the same set the manage page and the leave dialog use. The
+// previous pass invented `#090C10` for the columns, which matched nothing else on the screen.
+const SURFACE = "#161616"
+const BORDER = "#2A2D31"
+const CHIP = "#242628"
+const CHIP_HOVER = "#2E3135"
+const ACCENT = "#F79432"
+const ACCENT_HOVER = "#E68422"
+const MUTED = "#B5B6B7"
 
 type Parsed = { hour12: number; minute: number; meridiem: "AM" | "PM" }
 
@@ -66,6 +84,49 @@ const label = (parsed: Parsed): string => `${parsed.hour12}:${String(parsed.minu
 
 const FALLBACK: Parsed = { hour12: 9, minute: 0, meridiem: "AM" }
 
+/** One selectable value. Same shape for hours, minutes and AM/PM so the three read as a set. */
+function TimeChip({
+	children,
+	isSelected,
+	onClick,
+	minW,
+}: {
+	children: React.ReactNode
+	isSelected: boolean
+	onClick: () => void
+	minW?: string
+}) {
+	return (
+		<Button
+			type="button"
+			onClick={onClick}
+			aria-pressed={isSelected}
+			h="38px"
+			minW={minW}
+			px={0}
+			borderRadius="8px"
+			fontSize="15px"
+			fontWeight={isSelected ? 700 : 500}
+			bg={isSelected ? ACCENT : CHIP}
+			color={isSelected ? "black" : "white"}
+			border="1px solid"
+			borderColor={isSelected ? ACCENT : BORDER}
+			_hover={{ bg: isSelected ? ACCENT_HOVER : CHIP_HOVER, borderColor: isSelected ? ACCENT_HOVER : "#4A4D51" }}
+			_active={{ bg: isSelected ? ACCENT_HOVER : "#1E2023" }}
+		>
+			{children}
+		</Button>
+	)
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+	return (
+		<Text fontSize="11px" fontWeight={600} letterSpacing="0.06em" textTransform="uppercase" color="#7E8083" mb={2}>
+			{children}
+		</Text>
+	)
+}
+
 export default function TimePicker({ onChange, placeholder = "Select Time", defaultValue, className }: Props) {
 	const { isOpen, onOpen, onClose } = useDisclosure()
 	const parsedValue = parse(defaultValue)
@@ -89,7 +150,7 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 	}
 
 	// A stored time need not sit on a 5-minute boundary (legacy events, or the mobile app), so
-	// the column carries the current minute as an extra entry rather than dropping the value.
+	// the grid carries the current minute as an extra chip rather than dropping the value.
 	const minutes = React.useMemo(() => {
 		const list = [...STEP_MINUTES]
 		if (!list.includes(draft.minute)) list.push(draft.minute)
@@ -132,58 +193,73 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 				)}
 			</Box>
 
-			{/* Chakra rather than a hand-rolled portal: three of the nine call sites open this from
-			    inside an already-open Chakra Modal (the date-poll option editors), and Chakra stacks
-			    nested focus locks correctly where a bare portal would be locked out by the parent. */}
-			<Modal isOpen={isOpen} onClose={onClose} isCentered size="xs">
-				<ModalOverlay bg="rgba(0,0,0,0.6)" />
-				<ModalContent bg="#15181C" color="white" border="1px solid #343536" borderRadius="12px">
-					<ModalHeader fontSize="16px" fontWeight={600} pb={2}>
+			{/* Chakra rather than a hand-rolled portal: three of the eleven call sites open this
+			    from inside an already-open Chakra Modal (the date-poll option editors), and Chakra
+			    stacks nested focus locks correctly where a bare portal would be locked out by the
+			    parent. `sm` so the four quick picks fit one row — at `xs` the fourth wrapped alone. */}
+			<Modal isOpen={isOpen} onClose={onClose} isCentered size="sm" motionPreset="slideInBottom">
+				<ModalOverlay bg="blackAlpha.700" backdropFilter="blur(2px)" />
+				<ModalContent bg={SURFACE} color="white" border="1px solid" borderColor={BORDER} borderRadius="16px" mx={4}>
+					<ModalHeader pt={5} px={5} pb={0} fontSize="15px" fontWeight={600} color={MUTED}>
 						{placeholder}
 					</ModalHeader>
-					<ModalCloseButton color="#9CA3AF" />
-					<ModalBody pb={2}>
-						<Text fontSize="28px" fontWeight={700} textAlign="center" mb={3}>
+					<ModalCloseButton top={4} right={4} color="#7E8083" _hover={{ bg: CHIP, color: "white" }} />
+
+					<ModalBody px={5} pt={2} pb={4}>
+						{/* Tabular figures so the headline doesn't jiggle as the digits change width. */}
+						<Text fontSize="32px" fontWeight={700} lineHeight="1.2" mb={5} sx={{ fontVariantNumeric: "tabular-nums" }}>
 							{label(draft)}
 						</Text>
 
-						<Flex gap={2} justify="center">
-							<TimeColumn
-								heading="Hour"
-								options={HOURS.map((h) => ({ value: h, text: String(h) }))}
-								selected={draft.hour12}
-								onSelect={(hour12) => setDraft((d) => ({ ...d, hour12 }))}
-								isOpen={isOpen}
-							/>
-							<TimeColumn
-								heading="Min"
-								options={minutes.map((m) => ({ value: m, text: String(m).padStart(2, "0") }))}
-								selected={draft.minute}
-								onSelect={(minute) => setDraft((d) => ({ ...d, minute }))}
-								isOpen={isOpen}
-							/>
-							<TimeColumn
-								heading=""
-								options={MERIDIEMS.map((m) => ({ value: m, text: m }))}
-								selected={draft.meridiem}
-								onSelect={(meridiem) => setDraft((d) => ({ ...d, meridiem }))}
-								isOpen={isOpen}
-							/>
+						<FieldLabel>Hour</FieldLabel>
+						<SimpleGrid columns={6} spacing={2} mb={4}>
+							{HOURS.map((hour12) => (
+								<TimeChip key={hour12} isSelected={hour12 === draft.hour12} onClick={() => setDraft((d) => ({ ...d, hour12 }))}>
+									{hour12}
+								</TimeChip>
+							))}
+						</SimpleGrid>
+
+						<FieldLabel>Minute</FieldLabel>
+						<SimpleGrid columns={6} spacing={2} mb={4}>
+							{minutes.map((minute) => (
+								<TimeChip key={minute} isSelected={minute === draft.minute} onClick={() => setDraft((d) => ({ ...d, minute }))}>
+									{String(minute).padStart(2, "0")}
+								</TimeChip>
+							))}
+						</SimpleGrid>
+
+						<Flex gap={2} mb={4}>
+							{MERIDIEMS.map((meridiem) => (
+								<TimeChip
+									key={meridiem}
+									minW="72px"
+									isSelected={meridiem === draft.meridiem}
+									onClick={() => setDraft((d) => ({ ...d, meridiem }))}
+								>
+									{meridiem}
+								</TimeChip>
+							))}
 						</Flex>
 
-						<Flex gap={2} mt={4} wrap="wrap" justify="center">
+						<FieldLabel>Quick picks</FieldLabel>
+						<Flex gap={2} wrap="wrap">
 							{QUICK_PICKS.map((pick) => {
 								const parsed = parse(pick)
 								if (!parsed) return null
 								return (
 									<Button
 										key={pick}
-										size="xs"
-										variant="outline"
-										borderColor="#343536"
-										color="#D1D5DB"
-										fontWeight={500}
-										_hover={{ bg: "#23262B" }}
+										h="32px"
+										px={3}
+										borderRadius="8px"
+										fontSize="13px"
+										fontWeight={600}
+										bg="transparent"
+										color={MUTED}
+										border="1px solid"
+										borderColor={BORDER}
+										_hover={{ bg: CHIP, color: "white", borderColor: "#4A4D51" }}
 										onClick={() => commit(parsed)}
 									>
 										{label(parsed)}
@@ -192,76 +268,18 @@ export default function TimePicker({ onChange, placeholder = "Select Time", defa
 							})}
 						</Flex>
 					</ModalBody>
-					<ModalFooter gap={2}>
+
+					<ModalFooter px={5} pt={0} pb={5} gap={2}>
 						{/* Clear is the only route back to "no time" — see the note at the top of the file. */}
-						<Button variant="ghost" color="#9CA3AF" _hover={{ bg: "#23262B" }} onClick={clear}>
+						<Button variant="ghost" color={MUTED} fontWeight={600} _hover={{ bg: CHIP, color: "white" }} onClick={clear}>
 							Clear
 						</Button>
-						<Button bg="#F79432" color="white" _hover={{ bg: "#e0862b" }} onClick={() => commit(draft)}>
+						<Button bg={ACCENT} color="black" fontWeight="bold" _hover={{ bg: ACCENT_HOVER }} _active={{ bg: "#D97913" }} onClick={() => commit(draft)}>
 							Done
 						</Button>
 					</ModalFooter>
 				</ModalContent>
 			</Modal>
 		</>
-	)
-}
-
-function TimeColumn<T extends string | number>({
-	heading,
-	options,
-	selected,
-	onSelect,
-	isOpen,
-}: {
-	heading: string
-	options: Array<{ value: T; text: string }>
-	selected: T
-	onSelect: (value: T) => void
-	isOpen: boolean
-}) {
-	const selectedRef = React.useRef<HTMLButtonElement>(null)
-
-	// Scroll the committed value into view when the dialog opens; without this a 9 PM event
-	// opens on a column showing 1-4 and reads as though nothing is selected.
-	React.useEffect(() => {
-		if (!isOpen) return
-		const id = window.setTimeout(() => {
-			selectedRef.current?.scrollIntoView({ block: "center" })
-		}, 0)
-		return () => window.clearTimeout(id)
-	}, [isOpen])
-
-	return (
-		<Box>
-			<Text fontSize="11px" color="#6B7280" textAlign="center" mb={1} h="14px">
-				{heading}
-			</Text>
-			<Box maxH="180px" overflowY="auto" borderRadius="8px" bg="#090C10" border="1px solid #343536" px={1} py={1}>
-				{options.map((option) => {
-					const isSelected = option.value === selected
-					return (
-						<Button
-							key={String(option.value)}
-							ref={isSelected ? selectedRef : undefined}
-							type="button"
-							onClick={() => onSelect(option.value)}
-							w="60px"
-							h="36px"
-							my="2px"
-							borderRadius="6px"
-							fontSize="15px"
-							fontWeight={isSelected ? 700 : 500}
-							bg={isSelected ? "#F79432" : "transparent"}
-							color={isSelected ? "white" : "#D1D5DB"}
-							_hover={{ bg: isSelected ? "#e0862b" : "#23262B" }}
-							aria-pressed={isSelected}
-						>
-							{option.text}
-						</Button>
-					)
-				})}
-			</Box>
-		</Box>
 	)
 }
