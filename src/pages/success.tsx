@@ -299,9 +299,9 @@ const CheckoutSuccessPage: React.FC = () => {
 						{/* Event Info */}
 						{displayEvent && (
 							<div className="mb-6 space-y-1">
-								<p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Event:</strong> {displayEvent.name}</p>
-								<p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Venue:</strong> {displayLocation}</p>
-								<p className="text-gray-700 break-words overflow-wrap-anywhere">
+								<p className="text-gray-700 break-words [overflow-wrap:anywhere]"><strong>Event:</strong> {displayEvent.name}</p>
+								<p className="text-gray-700 break-words [overflow-wrap:anywhere]"><strong>Venue:</strong> {displayLocation}</p>
+								<p className="text-gray-700 break-words [overflow-wrap:anywhere]">
 									<strong>Date & Time:</strong>{" "}
 									{formattedDate}{formattedTime ? <>&nbsp;{formattedTime}</> : null}
 									{(displayEvent.timezone) ? ` (${displayEvent.timezone})` : ""}

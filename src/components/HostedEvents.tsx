@@ -1239,7 +1239,7 @@ export default function HostedEvents({ event }: Props) {
 										<p className="text-xs text-[#9C9C9C] mt-1">{EVENT_TITLE_LIMIT_HINT}</p>
 										</>
 									) : (
-										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
+										<h2 className="text-2xl sm:text-3xl font-bold break-words [overflow-wrap:anywhere]">{stripHtml(shownName)}</h2>
 									)}
 									{editingSection === "details" && (
 										<Box mt={4} mb={2} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4}>
@@ -1339,13 +1339,13 @@ export default function HostedEvents({ event }: Props) {
 									</p>
 									<p className="text-sm sm:text-base mt-1 flex items-start gap-x-2 text-[#bbbbbb] break-words">
 										{!canSeeLocation ? (
-											<span className="break-words overflow-wrap-anywhere">
+											<span className="break-words [overflow-wrap:anywhere]">
 												📍 Location will be disclosed after registration
 											</span>
 										) : (
 											<>
 												<span className="flex-shrink-0 mt-0.5"><LocationSVG /></span>
-												<span className="break-words overflow-wrap-anywhere">
+												<span className="break-words [overflow-wrap:anywhere]">
 													{disclosedLocation}
 												</span>
 											</>

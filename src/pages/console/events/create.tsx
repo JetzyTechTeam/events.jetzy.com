@@ -540,7 +540,7 @@ const CreateEventPage = () => {
                   <Heading size="md" color="white" mb={5}>Basic Information</Heading>
 
                   <FormControl mb={4}>
-                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text> <Text as="span" color="#9C9C9C">{EVENT_TITLE_LIMIT_HINT}</Text></FormLabel>
+                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="1.4" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text> <Text as="span" color="#9C9C9C">{EVENT_TITLE_LIMIT_HINT}</Text></FormLabel>
                     <InputGroup>
                       <Field
                         as={Input}

@@ -6,7 +6,7 @@ import { Bookings } from "@/models/events/bookings";
 import { Events } from "@/models/events";
 import { CheckIn } from "@/models/checkIn";
 import { ensureDbConnected } from "@/configs/database";
-import { escapeRegExp } from "@/utils/text";
+import { escapeRegExp, stripHtml } from "@/utils/text";
 import { Pages } from "@/types";
 import { Booking } from ".";
 import { authorizedOnly } from "@/lib/authSession"
@@ -77,8 +77,12 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
         </Button>
       </Flex>
 
-      <Text fontSize={20} fontWeight="semibold">
-        Event Name : {event.name}
+      {/* `overflowWrap="anywhere"` and not just `break-word`: a 150-character title with no spaces
+          is one unbreakable word, and only `anywhere` counts toward min-content, so without it this
+          line set the page's width and gave the whole console a horizontal scrollbar on a phone.
+          Same rule as the My Events rows. `stripHtml` matches every other display of the name. */}
+      <Text fontSize={20} fontWeight="semibold" overflowWrap="anywhere" minW={0}>
+        Event Name : {stripHtml(event.name || "")}
       </Text>
       <Text fontSize={17} fontWeight="semibold">
         Starts on ({event.startsOn ? new Date(event.startsOn).toLocaleDateString() : "TBD"}) - Ends on ({event.endsOn ? new Date(event.endsOn).toLocaleDateString() : "TBD"})

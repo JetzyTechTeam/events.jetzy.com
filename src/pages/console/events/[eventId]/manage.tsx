@@ -1149,7 +1149,11 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 						    badge broke across two lines ("PENDING" / "APPROVAL") the moment the name
 						    filled the row. `whiteSpace: nowrap` keeps it one chip whatever the width. */}
 						<span className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
-							<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "1.15", letterSpacing: "-0.03em", color: "#FFFFFF", minWidth: 0, overflowWrap: "anywhere" }}>
+							{/* Clamped to two lines because this header is `sticky top-0`: a 150-character
+							    title at 24px wraps to roughly eight lines on a phone and then stays
+							    pinned there, eating a third of the viewport on every scroll. The
+							    breadcrumb above already truncates for the same reason. */}
+							<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "1.15", letterSpacing: "-0.03em", color: "#FFFFFF", minWidth: 0, overflowWrap: "anywhere", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden" }}>
 								{stripHtml(event.name)}
 							</span>
 							{/* Same rule as the Approve Event button beside it: a draft isn't in the
@@ -1377,7 +1381,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													<Heading size="md" color="white" mb={5}>Basic Information</Heading>
 
 													<FormControl mb={4}>
-														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text> <Text as="span" color="#9C9C9C">{EVENT_TITLE_LIMIT_HINT}</Text></FormLabel>
+														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="1.4" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text> <Text as="span" color="#9C9C9C">{EVENT_TITLE_LIMIT_HINT}</Text></FormLabel>
 														<InputGroup>
 															<Field
 																as={Input}
