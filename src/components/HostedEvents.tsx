@@ -1209,7 +1209,14 @@ export default function HostedEvents({ event }: Props) {
 							    location lines under it are icon-led and wrap, so a long venue
 							    produced ragged centred text under a centred heading. */}
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
-								<div className="text-left w-full sm:w-auto min-w-0">
+								{/* `sm:w-auto` is right for the read-only title: it hugs its text so the action
+								    buttons sit beside it. It is wrong while the details form is open, because this
+								    same column then holds the whole editor — title field, "When & where", location,
+								    capacity. As a shrink-to-fit flex item next to a `flex-shrink-0` sibling it took
+								    only its max-content width, so from 640px up the form rendered as a narrow strip
+								    with empty space beside it. `sm:flex-1` makes it take the remaining width while
+								    editing; `min-w-0` keeps it from overflowing. Read-only is unchanged. */}
+								<div className={`text-left min-w-0 ${editingSection === "details" ? "w-full sm:flex-1" : "w-full sm:w-auto"}`}>
 									{editingSection === "details" ? (
 										// Same field as the manage form's Event title. The cap lives in
 										// `@/lib/event-title` — 150 characters that are not whitespace — so the
@@ -1230,6 +1237,15 @@ export default function HostedEvents({ event }: Props) {
 												// Raw backstop only; `clampEventTitle` enforces the real rule. 500 is what
 												// `/api/events/[eventId]/details` accepts, which is where Save posts this name.
 												maxLength={EVENT_TITLE_RAW_LIMIT}
+												// The counter is an `InputLeftElement` pushed to the right with
+												// `left="auto" right="3"`. Chakra does not know that: seeing a LEFT element
+												// on a real `<Input>`, `InputGroup` injects `paddingStart: var(--input-height)`
+												// (40px) to clear an element that is not there, leaving a dead gutter before
+												// the first character. `pl` is a different key from `paddingStart` and is
+												// spread after it, so this is what overrides it. The two console forms pass
+												// `<Field as={Input}>`, whose `type.id` is not "Input", so Chakra skips the
+												// injection there and they never had the gutter.
+												pl="16px"
 												pr="60px"
 											/>
 											<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" fontSize="xs" color={isEventTitleOverLimit(draftName) ? "#F79432" : "gray.500"}>
