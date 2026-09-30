@@ -309,6 +309,45 @@ export default function HostedEvents({ event }: Props) {
 
 	const shownEvent = clonedEvent
 
+	/**
+	 * Mobile "… more" on the title.
+	 *
+	 * The title may now run to 150 non-whitespace characters, which is several lines on a phone and
+	 * would push the date, the location and Get Tickets off the first screen. It is clamped to two
+	 * lines below `sm` and shown in full from `sm` up, where there is room for it to simply grow
+	 * downward.
+	 *
+	 * Whether the toggle is needed is MEASURED, not guessed from the character count — which is how
+	 * `TicketDescription` and the album description decide. How many characters fit on two lines
+	 * depends on the width, the font and where the words break, and a guess is visibly wrong in both
+	 * directions: a "… more" under a title that isn't clipped, or a clipped title with no way to open
+	 * it, which is the complaint this exists to fix.
+	 *
+	 * Measuring also gates the button to mobile for free. From `sm` up the clamp is
+	 * `line-clamp-none`, so the element cannot overflow, so `titleClamped` stays false and nothing
+	 * renders — no breakpoint hook needed. Safe to touch the DOM at all because `[slug].tsx` loads
+	 * this component with `ssr: false`, so there is no hydration pass to mismatch.
+	 */
+	const titleRef = useRef<HTMLHeadingElement>(null)
+	const [titleExpanded, setTitleExpanded] = useState(false)
+	const [titleClamped, setTitleClamped] = useState(false)
+
+	useEffect(() => {
+		const el = titleRef.current
+		if (!el) return
+		const measure = () => {
+			// Only meaningful while the clamp is on. Expanding removes it, so measuring then would
+			// always report "fits" and take the Show less button away mid-interaction.
+			if (titleExpanded) return
+			setTitleClamped(el.scrollHeight > el.clientHeight + 1)
+		}
+		measure()
+		window.addEventListener("resize", measure)
+		// Webfonts land after first paint and change the line count.
+		document.fonts?.ready?.then(measure).catch(() => {})
+		return () => window.removeEventListener("resize", measure)
+	}, [titleExpanded, shownName])
+
 	const startEventEdit = (section: EditSection) => {
 		// `stripHtml` on load, raw on save — the same asymmetry manage has, so the two forms
 		// seed from the stored value identically.
@@ -1255,7 +1294,30 @@ export default function HostedEvents({ event }: Props) {
 										<p className="text-xs text-[#9C9C9C] mt-1">{EVENT_TITLE_LIMIT_HINT}</p>
 										</>
 									) : (
-										<h2 className="text-2xl sm:text-3xl font-bold break-words [overflow-wrap:anywhere]">{stripHtml(shownName)}</h2>
+										<>
+											{/* Two lines on a phone so the date, location and Get Tickets stay on the first
+											    screen; full title from `sm` up, where it simply grows downward. `line-clamp-none`
+											    resets `display`/`overflow`, so the desktop rendering is what it was before. */}
+											<h2
+												ref={titleRef}
+												className={`text-2xl sm:text-3xl font-bold break-words [overflow-wrap:anywhere] ${titleExpanded ? "" : "line-clamp-2 sm:line-clamp-none"}`}
+											>
+												{stripHtml(shownName)}
+											</h2>
+											{titleClamped && (
+												// `sm:hidden` on top of the measurement: resizing phone -> desktop while expanded
+												// skips the re-measure, and without this the button would linger on a title that is
+												// no longer clamped.
+												<button
+													type="button"
+													onClick={() => setTitleExpanded((v) => !v)}
+													aria-expanded={titleExpanded}
+													className="sm:hidden mt-1 text-sm font-semibold text-jetzy underline underline-offset-2"
+												>
+													{titleExpanded ? "Show less" : "… more"}
+												</button>
+											)}
+										</>
 									)}
 									{editingSection === "details" && (
 										<Box mt={4} mb={2} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4}>
