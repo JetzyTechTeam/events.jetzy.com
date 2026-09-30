@@ -2,11 +2,11 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { WaitingList } from "@/models/waitingList"
 import { Bookings } from "@/models/events/bookings"
 import { Events } from "@/models/events"
-import { EventTracker } from "@/models/events/event-tracker"
 import { ensureDbConnected } from "@/configs/database"
 import { sendResponse } from "@/lib/helpers"
 import { ResCode } from "@/lib/responseCodes"
 import { sendTicketConfirmation } from "@/lib/send-grid"
+import { notifyTicketSold } from "@/lib/booking-notify"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { BookingStatus } from "@/models/events/types"
 import mongoose from "mongoose"
@@ -51,18 +51,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Not authorized", false, ResCode.FORBIDDEN)
 		}
 
-		// Check event capacity before approving
-		const eventTracker = await EventTracker.findOne({ eventId: waitingListEntry.eventId })
-		if (!eventTracker) {
-			return sendResponse(res, null, "Event tracker not found", false, ResCode.NOT_FOUND)
-		}
-
-		// Calculate total tickets requested by this waiting list user
-		const requestedTickets = waitingListEntry.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-
-		// Check if adding these tickets would exceed capacity (0 = unlimited)
-		if (eventTracker.eventCapacity > 0 && eventTracker.bookedTickets + requestedTickets > eventTracker.eventCapacity) {
-			return sendResponse(res, null, "Cannot approve: Event is at full capacity", false, ResCode.BAD_REQUEST)
+		// Check capacity before approving — per ticket, plus the legacy event-wide ceiling.
+		//
+		// Counted from the bookings rather than read off `EventTracker`. Note the old
+		// `if (!eventTracker) return 404` is gone with it: a missing tracker meant nobody could
+		// ever be let off the waiting list of an event this portal didn't create.
+		{
+			const { verifyAvailability } = await import("@/lib/ticket-availability")
+			const verdict = await verifyAvailability(
+				event,
+				waitingListEntry.tickets.map((ticket: any) => ({ id: String(ticket.ticketId), quantity: ticket.quantity })),
+			)
+			if (!verdict.ok) {
+				return sendResponse(res, null, `Cannot approve: ${verdict.reason}`, false, ResCode.BAD_REQUEST)
+			}
 		}
 
 		// Generate booking reference
@@ -90,10 +92,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			total
 		})
 
-		// Update event tracker (already fetched above)
-		const totalTicketsToAdd = waitingListEntry.tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-		eventTracker.bookedTickets += totalTicketsToAdd
-		await eventTracker.save()
+		// Keep the mirror in step for the mobile app / admin portal, which still read it. The
+		// shared method no-ops when the tracker is missing, which the inline `+=` here could not.
+		await booking.updateEventTracker()
 
 		// Update waiting list status to approved
 		await WaitingList.findByIdAndUpdate(waitingListId, { status: 'approved' })
@@ -122,6 +123,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.error("Failed to send booking confirmation email:", emailError)
 			// Don't fail the request if email fails
 		}
+
+		// A waiting-list conversion is a sale, and the host heard nothing about it before.
+		await notifyTicketSold({
+			event: event as any,
+			firstName: waitingListEntry.firstName,
+			lastName: waitingListEntry.lastName,
+			email: waitingListEntry.email,
+			tickets: waitingListEntry.tickets.map((ticket: any) => ({
+				name: ticket.name,
+				price: ticket.price,
+				quantity: ticket.quantity,
+			})),
+			orderNumber: bookingRef,
+			totalAmount: total,
+		})
 
 		return sendResponse(res, {
 			success: true,

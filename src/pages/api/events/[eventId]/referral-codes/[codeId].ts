@@ -9,6 +9,7 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
 import { zodIssuesToMessage } from "@/lib/zod-error"
+import { resolveReferralTicketIds } from "@/lib/referral-ticket-scope"
 
 // Validation schema for updating referral code
 const updateReferralCodeSchema = zod.object({
@@ -17,6 +18,8 @@ const updateReferralCodeSchema = zod.object({
 	freeMembershipMonths: zod.number().int("Free months must be a whole number").min(0, "Free months cannot be negative").max(12, "Free months cannot exceed 12").optional(),
 	commissionPercentage: zod.number().min(0).max(100).optional(),
 	maxUses: zod.number().positive("Maximum uses must be greater than 0").optional().nullable(),
+	// Omitted = unchanged; `[]` = every ticket; otherwise the tickets the code works on.
+	ticketIds: zod.array(zod.string()).max(200).optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -76,6 +79,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 
 			const updateData: any = {}
+			const unsetData: Record<string, ""> = {}
+			if (validation.data.ticketIds !== undefined) {
+				const scope = resolveReferralTicketIds(event, validation.data.ticketIds)
+				if (!scope.ok) {
+					return sendResponse(res, null, scope.message, false, ResCode.BAD_REQUEST)
+				}
+				// All tickets is stored as an ABSENT field, the same shape every legacy code has.
+				if (scope.ticketIds) updateData.ticketIds = scope.ticketIds
+				else unsetData.ticketIds = ""
+			}
 			if (validation.data.isActive !== undefined) {
 				updateData.isActive = validation.data.isActive
 			}
@@ -95,7 +108,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			// Update referral code
 			const updatedCode = await ReferralCodes.findByIdAndUpdate(
 				codeId,
-				{ $set: updateData },
+				{
+					...(Object.keys(updateData).length > 0 ? { $set: updateData } : {}),
+					...(Object.keys(unsetData).length > 0 ? { $unset: unsetData } : {}),
+				},
 				{ new: true }
 			)
 

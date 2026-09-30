@@ -9,7 +9,7 @@
  * session, so an admin approving (or editing) a host's event still reaches the host, and an
  * admin's own event never mails the admin.
  */
-const isAdminRole = (role: unknown): boolean => role === "admin" || role === "super admin"
+import { isAdminRole } from "@/lib/default-referral-codes"
 
 type NotifiableEvent = { _id: any; ownerId?: any; name: string; slug?: string }
 

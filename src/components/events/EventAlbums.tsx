@@ -747,6 +747,9 @@ export function GuestAccessModal({
 	const [step, setStep] = useState<"FORM" | "CODE">("FORM")
 	const [code, setCode] = useState("")
 	const [resendIn, setResendIn] = useState(0)
+	// Which code the server sent — the Jetzy backend's login code ("jetzy"), or ours when the backend
+	// is down ("portal"). Handed back to guest-access so the right side checks it.
+	const [codeVia, setCodeVia] = useState<"jetzy" | "portal">("portal")
 
 	// Resend cooldown, mirroring the server's 60s window so the button can't promise
 	// something the API will refuse.
@@ -793,7 +796,8 @@ export function GuestAccessModal({
 		}
 		setSubmitting(true)
 		try {
-			await axios.post(`/api/events/${eventId}/albums/send-code`, { email: email.trim() })
+			const sent = await axios.post(`/api/events/${eventId}/albums/send-code`, { email: email.trim(), for: "access" })
+			setCodeVia(sent.data?.data?.via === "jetzy" ? "jetzy" : "portal")
 			setCode("")
 			setResendIn(60)
 			setStep("CODE")
@@ -829,13 +833,15 @@ export function GuestAccessModal({
 				customInterests: effectiveCustoms,
 				optOut,
 				code: code.trim(),
+				via: codeVia,
 			})
 			// Remember for the access-notice call so it can report returning vs new.
 			try { sessionStorage.setItem("album_is_new_account", res.data?.data?.isNewAccount ? "1" : "0") } catch {}
 
-			// The server only issues a magic token for brand-new accounts, so this signs in
-			// exactly those people (nothing to hijack). Existing accounts get album access
-			// via the guest cookie instead. Never block entry if the sign-in fails.
+			// A verified visitor is signed in for real — new or existing account — because the Jetzy
+			// backend itself proved the address and issued the token. (If the backend was down and our
+			// own code was used, only a brand-new account gets a token here; others keep cookie access.)
+			// Never block entry if the sign-in fails.
 			const magicToken = res.data?.data?.magicToken
 			if (magicToken) {
 				try {
@@ -863,7 +869,8 @@ export function GuestAccessModal({
 		if (resendIn > 0) return
 		setSubmitting(true)
 		try {
-			await axios.post(`/api/events/${eventId}/albums/send-code`, { email: email.trim() })
+			const sent = await axios.post(`/api/events/${eventId}/albums/send-code`, { email: email.trim(), for: "access" })
+			setCodeVia(sent.data?.data?.via === "jetzy" ? "jetzy" : "portal")
 			setCode("")
 			setResendIn(60)
 			toast({ title: "New code sent", status: "success", duration: 2500, isClosable: true })

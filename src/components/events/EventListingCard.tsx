@@ -16,6 +16,7 @@ import { getEventZone } from "@/utils/eventTime"
 import { stripHtml } from "@/utils/text"
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
+import MediaBackdrop from "@/components/events/MediaBackdrop"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -142,7 +143,7 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 			onClick={open}
 		>
 			<Box p="2" position="relative" flexShrink={0}>
-				{/* Status badge (live / upcoming / tbd / ended) */}
+					{/* Status badge (live / upcoming / tbd / ended) */}
 				<Flex position="absolute" top="4" right="4" zIndex="3" gap="1.5" align="center">
 					{isAdmin && isPrivate && (
 						<Box bg="#7C1D1D" border="1px solid" borderColor="red.400" px="2" py="0.5" rounded="md" fontSize="xs" fontWeight="bold" color="white">
@@ -169,6 +170,8 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 				    show the whole image — same treatment as the event detail page hero. */}
 				{lead ? (
 					<Box position="relative" w="100%" h="200px" rounded="lg" overflow="hidden" bg="black">
+						{/* First child so it paints under both the media and the PREMIUM ribbon below. */}
+						<MediaBackdrop url={lead.url} type={lead.type} layers={1} deepBlur={18} />
 						{/* Premium ribbon — top-LEFT corner of the artwork, the one free corner:
 						    status/PRIVATE own the top-right and the benefits chips own the bottom.
 						    Not admin-gated; every visitor sees it. */}

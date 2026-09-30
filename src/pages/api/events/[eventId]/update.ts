@@ -4,6 +4,7 @@ import { ResCode } from "@Jetzy/lib/responseCodes"
 import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
+import { mediaLimitRefusal } from "@/lib/event-media-limit"
 import { getServerSession } from "next-auth"
 import { CreateEventFormData } from "@/types"
 import { DEFAULT_EVENT_IMAGE } from "@/types/const"
@@ -72,6 +73,16 @@ const schema = zod.object({
 			description: zod.string().optional(),
 			// `.optional()` and never `.default(false)` — see the preserve-on-omit logic below.
 			requireApproval: zod.boolean().optional(),
+			// Per-ticket capacity. `undefined` = unlimited (what every ticket saved before this
+			// field existed means), `0` = none available, `null` = clear an existing limit back
+			// to unlimited. Nullable AND optional because those are three different answers —
+			// unlike `membershipFreeMonths`, where 0 IS the "none" state.
+			quantity: zod
+				.number({ invalid_type_error: "Enter a whole number of tickets, or leave it blank for unlimited." })
+				.int("Ticket quantity must be a whole number.")
+				.min(0, "Ticket quantity can't be negative. Leave it blank for unlimited.")
+				.nullable()
+				.optional(),
 			// Sells a Jetzy Premium membership with the ticket. Also preserve-on-omit.
 			// Which memberships this ticket sells. Omitted means "unchanged" — see the
 			// preserve-on-omit rule below.
@@ -184,6 +195,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!isAdmin && event.ownerId?.toString() !== userId) {
 			return sendResponse(res, null, "Forbidden. You can only edit your own events.", false, ResCode.FORBIDDEN)
 		}
+
+		// Banner media cap for non-admin hosts. `storedCount` grandfathers events that predate
+		// the cap: without it a flat rejection here would make an over-limit event unsavable,
+		// so a host could not fix a typo in the title without first deleting photos.
+		const mediaRefusal = mediaLimitRefusal({
+			isAdmin,
+			nextCount: (images?.length ?? 0) + (videos?.length ?? 0),
+			storedCount: (event.images?.length ?? 0) + (event.videos?.length ?? 0),
+		})
+		if (mediaRefusal) return sendResponse(res, null, mediaRefusal, false, ResCode.BAD_REQUEST)
 
 		// Resolve the event URL only when the client actually sent one. Omitting it means
 		// "leave unchanged", so an older client or a stale autosave can't blank the slug.

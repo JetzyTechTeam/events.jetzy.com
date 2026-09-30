@@ -7,7 +7,8 @@ import { buildTicketPricing, type RecurringCharge } from "@/lib/ticket-pricing"
 import { AUTH_HOLD_DAYS } from "@/lib/ticket-approval"
 import { resolveEventLocation } from "@/lib/event-helpers"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
-import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
+import { sendTicketConfirmation, sendApprovalPending } from "@/lib/send-grid"
+import { notifyApprovalRequest, notifyTicketSold } from "@/lib/booking-notify"
 import { Events } from "@/models/events"
 import { Bookings } from "@/models/events/bookings"
 import { BookingStatus, IBookings, IEvent } from "@/models/events/types"
@@ -53,6 +54,8 @@ type SessionMetadata = {
 	tickets?: string
 	referralCode?: string
 	referralDiscountPercentage?: string
+	/** What the referral percentage was taken off — only the tickets the code is scoped to. */
+	referralSubtotal?: string
 	premiumMemberDiscount?: string
 	premiumMemberDiscountPercentage?: string
 	/** Ticket-only figures, stamped at session creation — see the totals block below. */
@@ -176,6 +179,8 @@ const parseMembershipLines = (metadata: SessionMetadata): MembershipLine[] => {
 export const incrementReferralUsage = async (code?: string, eventId?: string) => {
 	if (!code) return
 	try {
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
 		const { ReferralCodes } = await import("@/models/events/referral-codes")
 		const { Types } = await import("mongoose")
 		const referralCode = await ReferralCodes.findOne({
@@ -361,8 +366,13 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	const premiumPercent = premiumMemberDiscountApplied && metadata.premiumMemberDiscountPercentage ? parseFloat(metadata.premiumMemberDiscountPercentage) : 0
 	const combinedDiscountFraction = 1 - (1 - premiumPercent / 100) * (1 - referralPercent / 100)
 	const effectiveDiscountPercentage = Math.round(combinedDiscountFraction * 10000) / 100
+	// A referral code scoped to some of the tickets discounts only those, so the discount is
+	// taken off `referralSubtotal`. Absent on sessions created before scoping existed, which
+	// always discounted the whole order.
+	const metaReferralSubtotal = metadata.referralSubtotal !== undefined ? parseFloat(metadata.referralSubtotal) : NaN
+	const referralSubtotal = Number.isFinite(metaReferralSubtotal) ? Math.min(subtotal, metaReferralSubtotal) : subtotal
 	const discountAmount = combinedDiscountFraction > 0
-		? Math.round((subtotal * combinedDiscountFraction + Number.EPSILON) * 100) / 100
+		? Math.round(((Number.isFinite(metaReferralSubtotal) ? referralSubtotal * (referralPercent / 100) : subtotal * combinedDiscountFraction) + Number.EPSILON) * 100) / 100
 		: 0
 
 	// ---- Memberships sold with this ticket ----
@@ -542,21 +552,19 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 		} catch (emailError) {
 			console.error("[checkout-fulfillment] Failed to send approval-pending email:", emailError)
 		}
-		try {
-			await sendAdminApprovalNotice({
-				event,
-				firstName: metadata.firstName || "",
-				lastName: metadata.lastName || "",
-				email: metadata.email || "",
-				tickets: ticketSummary,
-				eventId: String(metadata.eventId),
-				kind: "request",
-				amountOnHold: total,
-				holdExpiresAt: booking.payment?.authExpiresAt,
-			})
-		} catch (adminError) {
-			console.error("[checkout-fulfillment] Failed to send admin approval notice:", adminError)
-		}
+		// Routed: Jetzy's inbox on an admin-owned event, the HOST on a host-owned one. The
+		// person who has to approve or decline is the person who gets told. Swallows its own
+		// failure — see booking-notify.
+		await notifyApprovalRequest({
+			event: event as any,
+			eventId: String(metadata.eventId),
+			firstName: metadata.firstName || "",
+			lastName: metadata.lastName || "",
+			email: metadata.email || "",
+			tickets: ticketSummary,
+			amountOnHold: total,
+			holdExpiresAt: booking.payment?.authExpiresAt,
+		})
 		// Referral usage is intentionally NOT incremented here — it is deferred to approval
 		// so a declined request doesn't burn a limited-use code.
 		return { created: true, booking, event, requiresApproval: true, session }
@@ -723,6 +731,7 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 				subtotal,
 				referralCode: metadata.referralCode,
 				referralPercentage: referralPercent,
+				referralSubtotal,
 				premiumPercentage: premiumPercent,
 				total,
 				...(recurringCharges.length > 0 ? { recurring: recurringCharges } : {}),
@@ -732,6 +741,22 @@ export async function fulfillCheckoutSessionById(sessionId: string): Promise<Ful
 	} catch (emailError) {
 		console.error("[checkout-fulfillment] Failed to send ticket confirmation email:", emailError)
 	}
+
+	// Tell a non-admin host they made a sale. Nothing has ever done this. Placed AFTER the
+	// membership-subscription work above so a slow SendGrid call can't hold up a subscription,
+	// and after the guest's receipt so the buyer is always served first.
+	await notifyTicketSold({
+		event: event as any,
+		firstName: metadata.firstName || "",
+		lastName: metadata.lastName || "",
+		email: metadata.email || "",
+		tickets: tickets.map((t) => ({ name: t.name, price: t.price, quantity: t.quantity })),
+		orderNumber: bookingRef,
+		// What the TICKET cost. `payment.amount` would also include any membership the order
+		// bundled, which is Jetzy's revenue and not the host's sale.
+		totalAmount: total,
+		referralCode: metadata.referralCode,
+	})
 
 	return { created: true, booking, event, requiresApproval: false, session }
 }

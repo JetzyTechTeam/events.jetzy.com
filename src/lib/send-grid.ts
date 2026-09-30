@@ -34,10 +34,28 @@ const SENDER_NAME = "Jetzy"
 /** Where unwatermarked-photo requests are worked. Override with PHOTO_REQUEST_NOTIFICATION_EMAIL. */
 const PHOTO_REQUEST_INBOX = "tech@jetzyapp.com"
 
-const mailFrom = (email?: string) => ({
+/**
+ * `name` is a SCOPED exception to the one-sender-name rule above, not a loosening of it.
+ *
+ * Every guest-facing transactional email still uses `SENDER_NAME`. The exception exists for
+ * BLASTS on a host-owned event, which are written by the host and must read as coming from them
+ * — "Anna Khan via Jetzy" — or the guest gets a message about Anna's event that appears to come
+ * from a company they've never dealt with. Use `blastSenderName()` below; don't pass a raw name.
+ *
+ * The ADDRESS never moves. It cannot: SendGrid rejects an unverified sender outright, and a
+ * host's own address sent through our account fails SPF/DMARC alignment. Identity rides on the
+ * display name and `replyTo`.
+ */
+export const mailFrom = (email?: string, name?: string) => ({
 	email: (email || (process.env.SENDGRID_EMAIL_SENDER as string))?.trim(),
-	name: SENDER_NAME,
+	name: name || SENDER_NAME,
 })
+
+/** "Anna Khan via Jetzy". Never the host's address — that cannot go in `from`. */
+export const blastSenderName = (hostName?: string) => {
+	const trimmed = (hostName || "").trim()
+	return trimmed ? `${trimmed} via ${SENDER_NAME}` : SENDER_NAME
+}
 
 
 const CONTACT_EMAIL = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim() || "contact@jetzyapp.com"
@@ -119,6 +137,12 @@ type TicketEmailData = {
   discountAmount?: number
   discountPercentage?: number
   approvalContext?: boolean // true when sent as a Require-Approval acceptance (celebratory header + subject)
+  /**
+   * Set when the host could only seat PART of what was requested — "you asked for 2, we
+   * confirmed 1". Renders a plain statement of the shortfall; without it the guest reads an
+   * ordinary confirmation and believes they still hold the full number.
+   */
+  partialApproval?: { requested: number; confirmed: number }
   amountCharged?: number // paid approvals only: the hold has just been captured, so say so
   /**
    * Itemised order total. Preferred over the legacy referralCode/discountAmount trio —
@@ -529,20 +553,39 @@ export const sendApprovalPending = async ({ event, firstName, email, tickets = [
 //                host would otherwise silently lose a paying guest.
 export const sendAdminApprovalNotice = async ({
   event, firstName, lastName, email, tickets = [], eventId, kind, amountOnHold, holdExpiresAt, amountCharged,
+  audience = "admin", to,
 }: ApprovalEmailData & {
   kind: "request" | "approved" | "expired"
   amountOnHold?: number
   holdExpiresAt?: Date | string | null
   amountCharged?: number
+  /**
+   * Who this goes to. `"admin"` (the default) is Jetzy's own inbox and is unchanged.
+   * `"host"` sends the same notice to a non-admin event owner instead. The routing decision
+   * lives in `src/lib/booking-notify.ts` and nowhere else.
+   *
+   * Extended rather than duplicated into a host-facing twin: this template already carries
+   * the Review-in-Approvals link, the hold amount and the expiry urgency banner, and two
+   * templates for one money-adjacent event are two templates that drift.
+   */
+  audience?: "admin" | "host"
+  /** Required for `audience: "host"` — the owner's address. */
+  to?: string
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
   if (baseUrl?.includes("localhost")) {
-    console.log(`[LOCALHOST MODE] sendAdminApprovalNotice (${kind}) skipped - would send to admin for:`, email)
+    console.log(`[LOCALHOST MODE] sendAdminApprovalNotice (${kind}, ${audience}) skipped - would send to:`, to || "admin", "for:", email)
     return { success: true, message: "Email skipped in localhost mode" }
   }
+  const isHost = audience === "host"
   const adminEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
-  if (!adminEmail) {
-    console.error("SENDGRID_EMAIL_SENDER not set — cannot send admin approval notice")
+  const recipient = isHost ? to?.trim() : adminEmail
+  if (!recipient) {
+    console.error(
+      isHost
+        ? "[sendAdminApprovalNotice] No host recipient resolved — skipping"
+        : "SENDGRID_EMAIL_SENDER not set — cannot send admin approval notice",
+    )
     return
   }
   const eventName = decodeHTMLEntities(event.name)
@@ -555,7 +598,9 @@ export const sendAdminApprovalNotice = async ({
   const heading = isRequest ? "New Approval Request" : isExpired ? "Card Hold Expired" : "Request Approved"
   const accent = isExpired ? "#DC2626" : "#F79432"
   const intro = isRequest
-    ? "A new attendee is awaiting approval for the following event:"
+    ? isHost
+      ? "You have a request to review for your event:"
+      : "A new attendee is awaiting approval for the following event:"
     : isExpired
       ? "A card authorization expired before this request was reviewed. The guest was <strong>not</strong> charged and the hold has been released. They will need to book again."
       : "The following attendee has been approved and their booking is now confirmed:"
@@ -578,8 +623,11 @@ export const sendAdminApprovalNotice = async ({
 
   try {
     await sgMail.send({
-      to: adminEmail,
-      from: mailFrom(adminEmail),
+      to: recipient,
+      // The admin-inbox alerts keep their own sender name as a triage label; a host-facing
+      // mail must use the standard "Jetzy" sender, and be replyable straight to the guest.
+      from: isHost ? mailFrom() : mailFrom(adminEmail),
+      ...(isHost ? { replyTo: email } : {}),
       subject: isRequest
         ? `[Approval Needed] ${firstName} ${lastName} — ${eventName}`
         : isExpired
@@ -604,7 +652,7 @@ export const sendAdminApprovalNotice = async ({
             </a>
           </div>` : ""}
           <p style="font-size: 12px; color: #999; text-align: center; border-top: 1px solid #eee; margin-top: 25px; padding-top: 15px;">
-            Automated notification from Jetzy Events.
+            ${isHost ? `You are receiving this because you host "${eventName}" on Jetzy.` : "Automated notification from Jetzy Events."}
           </p>
         </div>
       `),
@@ -1046,7 +1094,7 @@ export const sendBlastEmail = async ({
   }
 }
 
-export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged, pricing }: TicketEmailData) => {
+export const sendTicketConfirmation = async ({ event, firstName, lastName, email, phone, tickets, orderNumber, isNewUser = false, qrCodeImageUrl, guestEmails = [], referralCode, discountAmount, discountPercentage, approvalContext = false, amountCharged, pricing, partialApproval }: TicketEmailData) => {
   const baseUrl = process.env.NEXT_PUBLIC_URL
 
   if (!baseUrl) {
@@ -1591,6 +1639,19 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
           ` : `<h1 style="color: #333; text-align: center;">Thank you for your purchase!</h1>`}
 
+          ${partialApproval && partialApproval.confirmed < partialApproval.requested ? `
+          <div style="background-color: #fff3cd; padding: 16px 18px; border-radius: 8px; margin: 0 0 20px 0; border-left: 4px solid #ffc107;">
+            <p style="color: #856404; margin: 0; font-size: 15px;">
+              You asked for <strong>${partialApproval.requested} tickets</strong>, but the event only had room for
+              <strong>${partialApproval.confirmed}</strong>. We've confirmed ${partialApproval.confirmed === 1 ? "1 ticket" : `${partialApproval.confirmed} tickets`} for you.
+            </p>
+            <p style="color: #856404; margin: 10px 0 0 0; font-size: 14px;">
+              You have <strong>not</strong> been charged for the ${partialApproval.requested - partialApproval.confirmed === 1 ? "other ticket" : "other tickets"} &mdash; any hold on your card for
+              ${partialApproval.requested - partialApproval.confirmed === 1 ? "it" : "them"} has been released.
+            </p>
+          </div>
+          ` : ""}
+
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
             <p><strong>Date and Time: </strong>${timestamp}</p>
@@ -2044,6 +2105,17 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
 /**
  * Tells the host (and the Jetzy inbox) that a seat just came back. Non-fatal by design —
  * a guest's cancellation must never fail because an operational email bounced.
+ *
+ * **The Jetzy inbox copy is KEPT on every event, including a non-admin host's, and that is a
+ * deliberate exception** (decided 2026-09-23) to the rule in `src/lib/booking-notify.ts`, where
+ * a host-owned event's sale and approval-request mail goes to the owner alone.
+ *
+ * The two carry different information. A sale is the host's business. A cancellation is where
+ * the money gets contentious: a CAPTURED payment is **not refunded**, this email is the only
+ * place that fact is stated to anyone on the Jetzy side, and support answering an angry guest
+ * needs to have seen it. So `tech@jetzyapp.com` will see cancellations on host events without
+ * having seen the original sales — that asymmetry is intended, not an oversight. Don't
+ * "harmonise" it with booking-notify without re-deciding the support question.
  */
 export const sendHostCancellationNotice = async ({
   event,
@@ -3558,6 +3630,159 @@ export const sendMembershipStarted = async ({
 		console.log(`✅ Membership welcome email sent to: ${email}`)
 	} catch (error) {
 		console.error("❌ Failed to send membership welcome email:", error)
+	}
+}
+
+/**
+ * Sent the moment a Premium APPLICATION's card is saved (setup succeeded) — confirms the
+ * submission and sets expectations. Nothing about the offer amount is stated here: the amount
+ * was already shown on the application screen and could in principle differ by the time an admin
+ * reviews it, so this is deliberately just "we got it, here's what happens next."
+ */
+export const sendPremiumApplicationReceived = async ({ email, name }: { email: string; name?: string }) => {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (baseUrl?.includes("localhost")) {
+		console.log("[LOCALHOST MODE] sendPremiumApplicationReceived skipped - would send to:", email)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
+	const first = name || email.split("@")[0]
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: "Your Jetzy Premium application is under review",
+			html: membershipShell(
+				`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0 0 15px 0;">Hi ${first},</p>
+        <h1 style="color:#1F2937;font-size:22px;line-height:1.4;margin:0 0 15px 0;">Thanks for applying to Jetzy Premium</h1>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:0 0 15px 0;">
+          We've received your application and your payment card. Our team reviews new applications within
+          <strong>24-48 hours</strong> — you won't be charged anything while you wait.
+        </p>
+        <div style="background-color:#FFFBEB;border:1px solid #F0D78C;border-radius:8px;padding:15px;margin:20px 0;">
+          <p style="color:#7A5C00;font-size:15px;line-height:1.6;margin:0;">
+            <strong>If approved, your first period is 100% free.</strong> We'll email you the moment a decision is made.
+          </p>
+        </div>
+      `,
+				"#F5C518",
+			),
+			text: `Hi ${first},\n\nThanks for applying to Jetzy Premium. We've received your application and your payment card — you won't be charged anything while we review it (24-48 hours). If approved, your first period is 100% free. We'll email you once a decision is made.\n\n— Team Jetzy`,
+		})
+	} catch (error) {
+		console.error("Failed to send premium application received email:", error)
+	}
+}
+
+/** Sent when an admin declines an application. Nothing was ever charged — the Stripe session was `mode: "setup"`. */
+export const sendPremiumApplicationRejected = async ({ email, name, reason }: { email: string; name?: string; reason?: string }) => {
+	const baseUrl = process.env.NEXT_PUBLIC_URL
+	if (baseUrl?.includes("localhost")) {
+		console.log("[LOCALHOST MODE] sendPremiumApplicationRejected skipped - would send to:", email)
+		return { success: true, message: "Email skipped in localhost mode" }
+	}
+	const first = name || email.split("@")[0]
+	const reasonBlock = reason
+		? `<p style="color:#4B5563;font-size:15px;line-height:1.6;margin:0 0 15px 0;"><strong>Note from our team:</strong> ${reason}</p>`
+		: ""
+
+	try {
+		await sgMail.send({
+			to: email,
+			from: mailFrom(),
+			subject: "An update on your Jetzy Premium application",
+			html: membershipShell(
+				`
+        <p style="color:#1F2937;font-size:16px;line-height:1.6;margin:0 0 15px 0;">Hi ${first},</p>
+        <h1 style="color:#1F2937;font-size:22px;line-height:1.4;margin:0 0 15px 0;">Your Jetzy Premium application</h1>
+        <p style="color:#4B5563;font-size:15px;line-height:1.6;margin:0 0 15px 0;">
+          Thank you for your interest in Jetzy Premium. We're not able to approve your application at this time.
+        </p>
+        ${reasonBlock}
+        <div style="background-color:#e8f4fd;border-left:4px solid #2196f3;border-radius:8px;padding:15px;margin:20px 0;">
+          <p style="color:#0d47a1;font-size:15px;line-height:1.6;margin:0;"><strong>You have not been charged.</strong> The card you saved has been removed from our records.</p>
+        </div>
+      `,
+				"#9C9C9C",
+			),
+			text: `Hi ${first},\n\nThank you for your interest in Jetzy Premium. We're not able to approve your application at this time.${reason ? `\n\nNote from our team: ${reason}` : ""}\n\nYou have not been charged. The card you saved has been removed from our records.\n\n— Team Jetzy`,
+		})
+	} catch (error) {
+		console.error("Failed to send premium application rejected email:", error)
+	}
+}
+
+/** Ops visibility into the queue — the shared admin inbox, same as every other "something needs a human" notice. */
+export const sendPremiumApplicationAdminNotice = async ({
+	kind,
+	email,
+	name,
+	interval,
+	answers,
+}: {
+	kind: "submitted" | "approved" | "rejected"
+	email: string
+	name?: string
+	interval?: string
+	/** What the applicant entered — question title and value, so the admin can review from the email. */
+	answers?: { title: string; value: string }[]
+}) => {
+	const senderEmail = (process.env.SENDGRID_EMAIL_SENDER as string)?.trim()
+	const adminEmail = (process.env.ADMIN_NOTIFICATION_EMAIL as string)?.trim() || senderEmail
+	if (!senderEmail || !adminEmail) {
+		console.error("SENDGRID_EMAIL_SENDER / ADMIN_NOTIFICATION_EMAIL not set — cannot send premium application admin notice")
+		return
+	}
+	// Applicant-typed text goes into HTML; escape it. Only http(s) values become links.
+	const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+	const answersHtml =
+		answers && answers.length > 0
+			? `<p style="color:#4B5563;line-height:1.6;margin-bottom:4px;"><strong>Their answers</strong></p>` +
+				answers
+					.map(({ title, value }) =>
+						/^https?:\/\/\S+$/i.test(value)
+							? `<p style="margin:2px 0;color:#4B5563;">${esc(title)}: <a href="${esc(value)}">${esc(value)}</a></p>`
+							: `<p style="margin:2px 0;color:#4B5563;">${esc(title)}: ${esc(value)}</p>`,
+					)
+					.join("")
+			: ""
+	const answersText = answers && answers.length > 0 ? `\n\nTheir answers:\n${answers.map(({ title, value }) => `${title}: ${value}`).join("\n")}` : ""
+	const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
+	const subject =
+		kind === "submitted"
+			? `[Jetzy Premium] New application: ${name || email}`
+			: kind === "approved"
+				? `[Jetzy Premium] Application approved: ${name || email}`
+				: `[Jetzy Premium] Application rejected: ${name || email}`
+	const body =
+		kind === "submitted"
+			? `A new Jetzy Premium application is awaiting review.`
+			: kind === "approved"
+				? `A Jetzy Premium application was approved — the membership is now live.`
+				: `A Jetzy Premium application was rejected.`
+
+	try {
+		await sgMail.send({
+			to: adminEmail,
+			from: mailFrom(),
+			subject,
+			html: wrapHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color:#333;">${subject}</h2>
+          <p style="color:#4B5563;line-height:1.6;">${body}</p>
+          <p style="color:#4B5563;line-height:1.6;">
+            Applicant: <strong>${name || "—"}</strong> (${email})<br/>
+            Plan: <strong>${interval || "month"}ly</strong>
+          </p>
+          ${answersHtml}
+          ${kind === "submitted" ? `<p><a href="${baseUrl}/console/admin/premium-applications">Review in the console</a></p>` : ""}
+        </div>
+      `),
+			text: `${subject}\n\n${body}\n\nApplicant: ${name || "—"} (${email})\nPlan: ${interval || "month"}ly${answersText}${kind === "submitted" ? `\n\nReview: ${baseUrl}/console/admin/premium-applications` : ""}`,
+		})
+	} catch (error) {
+		console.error("Failed to send premium application admin notice:", error)
 	}
 }
 

@@ -178,6 +178,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
+		// ---- Application gate, enforced HERE ----
+		//
+		// The cards decide client-side whether to show the questionnaire, which is only a UI: calling
+		// this route directly, or clicking buy while a typed code is still being checked, used to walk
+		// past the questions and admin review entirely. A code counts only once THIS route has
+		// accepted it — invite code, host referral link, or a verified mobile referral code. The
+		// standing offer is not a code.
+		{
+			const { getApplicationSettings, applicationRequired } = await import("@/lib/premium-application")
+			const settings = await getApplicationSettings()
+			const acceptedCode = !!(trialCodeApplied || referralCodeApplied || mobileReferralCodeApplied)
+			if (applicationRequired(settings, acceptedCode)) {
+				return sendResponse(
+					res,
+					{ applicationRequired: true },
+					"Please answer a few questions to apply for Jetzy Premium.",
+					false,
+					ResCode.FORBIDDEN,
+				)
+			}
+			// An application still in progress is never bypassed by buying outright — same rule as
+			// `applicationBlocksCheckout` on the cards, whether or not the gate is still switched on.
+			const { PremiumApplications } = await import("@/models/premium-applications")
+			const emailPattern = email ? new RegExp(`^${String(email).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") : null
+			const openApplication = await PremiumApplications.findOne({
+				$or: [...(userId ? [{ userId }] : []), ...(emailPattern ? [{ email: emailPattern }] : [])],
+				status: { $in: ["awaiting_card", "under_review"] },
+			})
+				.select("_id")
+				.lean()
+			if (openApplication) {
+				return sendResponse(
+					res,
+					{ applicationInProgress: true },
+					"Your Jetzy Premium application is still in progress.",
+					false,
+					ResCode.BAD_REQUEST,
+				)
+			}
+		}
+
 		const baseUrl = (process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com").replace(/\/$/, "")
 		const successUrl = `${baseUrl}${returnTo}?premium_session_id={CHECKOUT_SESSION_ID}`
 		const cancelUrl = `${baseUrl}${returnTo}?premium_cancelled=1`

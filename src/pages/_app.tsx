@@ -20,6 +20,7 @@ import SessionSync from "@Jetzy/components/auth/SessionSync";
 import { AnalyticsProvider } from "@/contexts/AnalyticsContext";
 import { useInAppNavigationTracking } from "@/lib/navigation";
 import { useAppOriginTracking } from "@/lib/app-return";
+import ProfileGate from "@/components/profile/ProfileGate";
 
 export default function App({
   Component,
@@ -55,6 +56,8 @@ export default function App({
           <ChakraProvider>
             <AnalyticsProvider>
               <Component {...pageProps} />
+              {/* Blocks a signed-in user with an incomplete Jetzy profile until it's done. */}
+              <ProfileGate />
               <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
             </AnalyticsProvider>
           </ChakraProvider>

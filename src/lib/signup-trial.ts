@@ -57,6 +57,8 @@ export async function grantSignupTrial({
 	if (!resolved.ok) return { granted: false, reason: "unknown-code" }
 
 	try {
+		const { ensureDbConnected } = await import("@/configs/database")
+		await ensureDbConnected()
 		const { MembershipPurchases } = await import("@/models/events/membership-purchases")
 		const { heldMemberships } = await import("@/lib/premium-eligibility")
 		const { getMembershipPrice, hasEverHadMembership, resolveStripeCustomerForUser } = await import("@/lib/premium")

@@ -10,6 +10,11 @@ export interface IEventTicket {
 	/** Per-ticket override. `undefined` inherits the event-level `requireApproval`. */
 	requireApproval?: boolean
 	/**
+	 * How many of this ticket exist. `undefined` means UNLIMITED; `0` means none available.
+	 * Resolve with `ticketQuantityLimit()` from `@/lib/ticket-quantity` — never read directly.
+	 */
+	quantity?: number
+	/**
 	 * Memberships sold with this ticket. A buyer who doesn't already hold one pays the ticket
 	 * plus its first period; existing members pay for the ticket alone. Resolve with
 	 * `ticketMemberships()` from `@/lib/premium-bundle` — never read this field directly.
@@ -271,6 +276,16 @@ export interface IBookings extends IBaseModelProps {
 	/** Set on cancellation; undefined on bookings cancelled before this was tracked. */
 	cancelledAt?: Date
 	cancelledBy?: "guest" | "host" | "admin"
+	/** Set when a host/admin changed the ticket quantities after the fact. Undefined = never edited. */
+	ticketsEditedAt?: Date
+	ticketsEditedBy?: "host" | "admin"
+	ticketsEditHistory?: Array<{
+		at: Date
+		by: string
+		byUserId?: Types.ObjectId
+		from: Array<{ ticketId: Types.ObjectId; quantity: number }>
+		to: Array<{ ticketId: Types.ObjectId; quantity: number }>
+	}>
 	updateEventTracker: () => Promise<void>
 	getEvent: () => Promise<IEvent>
 }
@@ -292,6 +307,11 @@ export interface IReferralCode extends IBaseModelProps {
 	discountPercentage: number
 	/** Free months of Jetzy Premium on a ticket that already bundles it. 0 = none. */
 	freeMembershipMonths?: number
+	/**
+	 * The event tickets (`_id` strings) this code works on. Absent or empty = every ticket.
+	 * Read through `src/lib/referral-ticket-scope.ts`, never directly.
+	 */
+	ticketIds?: string[]
 	commissionPercentage: number
 	isActive: boolean
 	usageCount: number
@@ -311,6 +331,25 @@ export interface IBlast extends IBaseModelProps {
 	succeededCount: number
 	failedCount: number
 	sentBy?: Types.ObjectId
+	/**
+	 * Whether `sentBy` was an admin/super-admin AT SEND TIME — captured once, not re-derived from
+	 * the sender's current role, so a later promotion/demotion can't rewrite history. Absent/false
+	 * on a host's own sends and on every blast predating this field. Non-admin owners don't see a
+	 * blast where this is true (by decision) — see `blasts/index.ts` and `blasts/[blastId].ts`.
+	 */
+	sentByAdmin?: boolean
+	/** Display name the recipients saw, e.g. "Anna Khan via Jetzy". Absent on pre-feature blasts. */
+	sentFromName?: string
+	/** Where a reply goes — the host on a host-owned event. Absent on pre-feature blasts. */
+	sentReplyTo?: string
+	/** Per-recipient outcome. Updated after the fact by the SendGrid webhook on a bounce. */
+	recipients?: Array<{
+		email: string
+		name?: string
+		status: string
+		reason?: string
+		respondedAt?: Date
+	}>
 	sentAt: Date
 	isDeleted: boolean
 }

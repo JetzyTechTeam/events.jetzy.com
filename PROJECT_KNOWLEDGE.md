@@ -51,11 +51,14 @@ src/
 ### `src/models/events/index.ts` — IEvent
 Fields: slug (unique), name, privacy (public/private/group), status (draft/published), startsOn, endsOn, timezone, location, venueName, coordinates (long/lat/placeId), locationDisclosedAfterBooking, desc, images[], videos[], capacity, requireApproval, showParticipants, tickets[] (IEventTicket), questions[] (ICustomQuestion), datePoll (IDatePoll), host (name/email/phone), ownerId, feedbackFormUrl, thankYouEmailSentAt, benefits, isDeleted
 
+- `tickets[].quantity` — **per-ticket capacity. No default**: `undefined` = unlimited, `0` = closed. Resolve with `ticketQuantityLimit()` from `src/lib/ticket-quantity.ts`, never raw. See "Feature: Per-ticket capacity".
+- `capacity` — event-wide ceiling, **legacy**. No host-facing input any more, but a stored non-zero value is still enforced on top of the per-ticket limits. `0` = unlimited (the opposite of `tickets[].quantity`).
+
 ### `src/models/events/types.ts` — type definitions
 IEvent, IEventTicket, ICustomQuestion, IDatePoll, IDatePollOption, IBookings, IEventTracker, IReferralCode
 
 ### `src/models/events/bookings.ts` — IBookings
-Fields: bookingRef (unique), eventId, bookerUserId?, tickets[], status (pending/approved/confirmed/cancelled/rejected/failed/refunded), customerName, customerEmail, customerPhone, subTotal, tax, total, referralCode, discountAmount, customAnswers[], payment{}, **cancelledAt?**, **cancelledBy?** (`guest|host|admin`, no defaults)
+Fields: bookingRef (unique), eventId, bookerUserId?, tickets[], status (pending/approved/confirmed/cancelled/rejected/failed/refunded), customerName, customerEmail, customerPhone, subTotal, tax, total, referralCode, discountAmount, customAnswers[], payment{}, **cancelledAt?**, **cancelledBy?** (`guest|host|admin`, no defaults), **ticketsEditedAt?**, **ticketsEditedBy?** (`host|admin`), **ticketsEditHistory?** (all no defaults)
 
 - `status` also carries values this repo never writes — **`checked_in` is live in production** (written by the mobile app / admin portal against the shared collection). Never treat `BookingStatus` as an exhaustive allowlist; classify by exclusion (`!isPending && !isCancelled`) instead.
 - `status: "refunded"` has **never been written** — see "No refunds" below.
@@ -174,6 +177,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | GET | `/api/events/[eventId]/event-bookings` | event bookings |
 | GET | `/api/events/[eventId]/participants` | participants |
 | GET | `/api/events/[eventId]/totals` | totals |
+| GET | `/api/events/[eventId]/availability` | **public** — spots left per ticket + event-wide. Counts only, no PII, `no-store`. |
 | GET/POST | `/api/events/[eventId]/referral-codes` | admin OR owner |
 | PUT/DELETE | `/api/events/[eventId]/referral-codes/[codeId]` | admin OR owner |
 | GET | `/api/events/[eventId]/referral-codes/[codeId]/stats` | admin OR owner |
@@ -218,7 +222,7 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 | GET | `/api/analytics/qr-signups/list` | admin only — paginated QR-signup rows; `dateFrom/dateTo/search/source/provider/hasRefCode/page/limit`, `format=csv` streams the full filtered set. Projection is an explicit allowlist (never password/tokens). |
 | GET | `/api/analytics/qr-signups/funnel` | admin only — `/jetzyqrsignup` funnel (page view → form focus → submit → account created) + totals + top locations, all date-filtered |
 
-**Perf pattern:** `overview.ts`, `visitors.ts`, `top-users.ts`, `top-events.ts` run all independent DB queries in one `Promise.all` (not sequentially). Earlier sequential version stalled the dashboard for 30+ seconds on Atlas. Also: prefer `countDocuments` over `.distinct()` for unique counts; for distinct counts use `aggregate([{$group:{_id:"$field"}},{$count:"count"}])` (avoids loading all IDs into Node memory). Connection pool `maxPoolSize: 10` + `bufferCommands: false` (see `src/configs/database.ts`).
+**Perf pattern:** `overview.ts`, `visitors.ts`, `top-users.ts`, `top-events.ts` run all independent DB queries in one `Promise.all` (not sequentially). Earlier sequential version stalled the dashboard for 30+ seconds on Atlas. Also: prefer `countDocuments` over `.distinct()` for unique counts; for distinct counts use `aggregate([{$group:{_id:"$field"}},{$count:"count"}])` (avoids loading all IDs into Node memory). Connection pool `maxPoolSize: 10` + `bufferCommands: true` with an explicit `bufferTimeoutMS: 10000` (see `src/configs/database.ts`). Buffering was `false` until 2026-09-25 and that is what produced the intermittent ``Cannot call `events.findOne()` before initial connection is complete`` errors on Manage Event / Referral Codes / Custom Questions: on a cold serverless container a query can legitimately beat the handshake, and with buffering off mongoose throws instead of queueing. Every API route and `getServerSideProps` still opens with `await ensureDbConnected()` — buffering covers the gap, the guard is what bounds latency and surfaces a dead database cleanly. `ensureDbConnected()` re-opens the SAME connection on a failed first connect (`$initialConnection` is one-shot; models are bound to `dbconn` at import time, so it can never be replaced).
 
 ### Auth
 `/api/auth/[...nextauth]`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/send-login-otp`, `/api/auth/verify-login-otp`, `/api/auth/verify/send-code`, `/api/auth/verify/confirm-code`, `/api/auth/report-abuse`
@@ -251,6 +255,8 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 `/api/bookings/preview` — **GET, unauthenticated, keyed by `bookingRef`.** Backs the emailed cancel link (`/cancel-booking`). Returns only event name/slug/date, ticket count, money state and cancel eligibility. **Never** returns customer email, phone, custom answers or Stripe ids — the ref is a bearer token and a leaked one must not harvest PII.
 
 `/api/bookings/cancel` — POST `{ bookingRef }`. Session ⇒ admin, event owner, or the booker; no session ⇒ `bookingRef` as bearer token (email link). **Guests and bearer-token callers are held to the event-start cutoff** (`canGuestCancel`); admins/owners are not. Releases an uncaptured hold, **never refunds**, sets `cancelledAt`/`cancelledBy`, deletes the `CheckIn` row, decrements `EventTracker` only when the booking was CONFIRMED, then emails guest (`sendBookingCancellation`) + host and `ADMIN_NOTIFICATION_EMAIL` (`sendHostCancellationNotice`). Both emails are best-effort. Returns `{ booking, moneyState, releasedAmount, cancelledBy }`.
+
+`/api/bookings/update-tickets` — POST `{ bookingRef, tickets: [{ ticketId, quantity }] }`. **Session required** (no bearer path), admin OR event owner. **Free bookings only** — refuses `hold`/`captured`/`released`/`unknown`. Ticket set must be an exact permutation of the stored one; capacity re-checked on increase (this booking excluded); check-in count is a floor. Money fields untouched. Adjusts `EventTracker` by the delta via `adjustBookedTickets`, only when the booking was CONFIRMED. Writes `ticketsEditedAt`/`ticketsEditedBy`/`ticketsEditHistory`.
 
 `/api/bookings/my-for-event` — GET `?eventId`. The caller's live booking for one event, plus `moneyState`/`moneyAmount`/`canCancel`. Excludes CANCELLED/REJECTED/FAILED.
 
@@ -1090,6 +1096,24 @@ The old "force `requireApproval=false` when every ticket is paid" rule in `creat
 - Location safety: pending email never contains location; only the approval-confirmed email reveals it (always, regardless of `locationDisclosedAfterBooking`). Public page never shows a hidden location on-page.
 - **Gotcha:** [bookings.ts](src/models/events/bookings.ts) caches the compiled model (`dbconn.models["Bookings"] || …`). After a schema edit a hot-reloaded dev server keeps the old model and **silently drops every `payment` field with no error** — restart the dev server.
 
+### Jetzy Premium application gate — questions, card setup, admin review (IMPLEMENTED)
+
+Runs BEFORE checkout on the **standalone** Premium purchase (`/premium`, `/subscribe`, `PremiumPaywallModal`) when the buyer types **no invite code** — a ticket-bundled Premium purchase is untouched. Admin toggle, **default OFF**; flip it on at `/console/admin/premium-settings` once the question list is right.
+
+- **`src/models/premium-application-settings`** — singleton (`key:"default"`): `enabled`, `questions: ICustomQuestion[]` (same subdocument shape as an event's custom questions, [src/models/events/types.ts](src/models/events/types.ts)). Seeded on first read with LinkedIn / Instagram / Website ([src/lib/premium-application.ts](src/lib/premium-application.ts) `DEFAULT_APPLICATION_QUESTIONS`), all editable/removable, plus arbitrary admin-added ones.
+- **`src/models/premium-applications`** — one row per application: `status: awaiting_card → under_review → approved | rejected`, `answers[]`, `stripeCustomerId`, `paymentMethodId`, `trialMonths` (resolved and STORED at card-setup time, not re-derived at approval — same "price/terms locked in at the deal" rule as a referral-granted trial).
+- **Flow**: questions (`PremiumApplicationQuestions.tsx`) → `POST /api/premium/applications/start` (creates the row) → `POST /api/premium/applications/checkout` (Stripe `mode:"setup"` session — collects a card, **never charges**; the fourth session shape, same as the free-ticket-plus-free-months case in `api/checkout/index.ts`) → `GET /api/premium/applications/confirm` (fast path) + the webhook's `purpose==="premium_application"` branch (authoritative), both calling the same idempotent `fulfillApplicationSetupSession`.
+- **Approve** (`POST /api/premium/applications/[id]/approve`, admin only) calls `startMembershipSubscription` — the SAME call `bookings/approve.ts` makes — with the stored `paymentMethodId`/`trialMonths`. First period free, same as any other first-timer trial; welcome email is the existing `sendMembershipStarted`, no new copy needed. **Reject** (`.../reject`) detaches the saved card, never touches the subscription — nothing was ever charged.
+- **`GET/PUT /api/premium/applications/settings`** — GET is public (the buy-Premium pages need it before anyone is signed in); PUT is admin-only.
+- Repeat visits: `GET /api/premium/applications/mine` — while `awaiting_card`/`under_review`, `PremiumApplicationReview.tsx` REPLACES the plan card on all three doors. `rejected` is NOT sticky — a declined buyer sees the ordinary plan card again and can re-apply.
+- Admin UI: `/console/admin/premium-applications` (Pending/Processed queue, Approve/Decline) + `/console/admin/premium-settings` (toggle + question editor). New nav link in `ConsoleNavbar.tsx`.
+- `MembershipPurchaseSource` gained `"application"` ([membership-purchases.ts](src/models/events/membership-purchases.ts), [membership-subscriptions.ts](src/lib/membership-subscriptions.ts)) — shown on `/console/analytics/growth`'s Jetzy Premium tab as "Approved application".
+- Index script: `scripts/create-premium-application-index.ts` (run once per database — `autoIndex:false`).
+- **Answers are validated and stored NORMALISED** — `src/lib/profile-links.ts` (`validateApplicationAnswers`, pure/isomorphic): the questionnaire shows inline errors and `start.ts` enforces the same rules, so a name typed into "Instagram Handle" is refused. Instagram → `https://www.instagram.com/<handle>`, LinkedIn must be a `/in|company|school|pub/<slug>` link, `website` gets `https://` and needs a real TLD, non-http(s) schemes refused. It cannot prove an account exists. The admin queue renders only `http(s)` values as links (`isHttpUrl`; older unvalidated rows show as text), shows Profiles in Pending AND Processed, and the "new application" admin email lists the answers.
+- **Stripe's card-setup page has no plan summary** (that left panel is subscription-mode only) — by decision we keep `mode:"setup"` and state the offer ourselves: a "Due today $0.00 / if approved: 1 month free, then $X" box above the button (live price via `useMembershipPlan`) and the same in `custom_text.submit` (price read server-side in `applications/checkout.ts`).
+- **`usePremiumApplicationSettings()` carries NO `staleTime` and every buy click re-fetches it LIVE via `.refetch()`** before deciding questionnaire-vs-instant-checkout — never the react-query cache. An admin toggling the gate must take effect on the buyer's very next click; a cached read let a just-toggled gate sit invisible for up to a minute (only self-correcting via the server 403 in `api/subscriptions/checkout.ts` + `handleApplicationRefusal`'s retry, which read as "doesn't work the first time, works after refresh/second click").
+- **Known gap**: the old `?go=1`/`premiumSubscribe=1` post-login resume paths (pre-dating this feature, for links already in the wild) gate on `appSettings`/`myApplication` that may not have finished loading yet when those effects fire — low-traffic legacy paths, not the main door.
+
 ### Discussions/Comments
 `/api/events/discussions/create|get|list|update|delete|react|report|who-reacted|who-viewed`
 `/api/events/discussions/comments/create|get|delete|reply|react|report|who-reacted`
@@ -1348,6 +1372,7 @@ Debounced (~2s) autosave with a "Saving… / Saved / Unsaved" pill next to the S
   - **Three cases the dialog now names.** An **upload in flight** guards on BOTH pages regardless of `isPublished` (leave and the file lands attached to nothing) and hides the primary — saving then would publish without it. On Create, **media added before a name** is guarded too: `canSave` needs a name, so those photos belong to no record yet. And because `handleImageDelete` deletes from the live event **on the click**, a session that removed one gets an amber line saying so — "Guests keep seeing the published version" is not true of a photo already gone.
   - **The Create page has the same guard** (no publish button): leaving a half-finished event says it is saved as a draft under My Events and private until published. A primary action there could only fail validation — the form is usually incomplete. `autosaveLocked` is set the moment a manual submit starts and stays set on success, which covers both the draft branch's own navigation and every link in the post-creation modal, so no `bypass()` calls are needed.
   - **VOCABULARY RULE: "Draft" names the STATUS and nothing else; unpublished edits are "changes".** The two were both called draft on one screen — a Status dropdown reading Draft beside a banner about "autosaved changes" and a **Discard draft** button — and they mean opposite things (not published vs published with newer edits waiting), so a host could not tell which one Discard would take. The banner now says "unpublished changes", its button is **Discard changes**, and the leave dialog says "your changes are saved" / "Changes saved 1:04 AM" / **Leave unpublished**. Still legitimately "draft": the Status options, the My Events badge, Create's "Save as Draft" and its leave dialog (that record IS a draft event), and the unpublish dialog quoting the control by name. Internal identifiers are untouched — `draftRevision` is a schema field on a collection the mobile app and admin portal share, so renaming it is a migration, not copy.
+  - **Logging out is OUR dialog too (2026-09-29).** `signOut` is a full page load, so a host with unpublished changes used to meet the browser's own "Leave site?" — whose wording cannot be set and which iOS Safari may not show at all. `requestAppLeave(onProceed)` in the hook asks the mounted page first and returns false when there is nothing pending, so logout is untouched on every other screen. It uses a module-level slot, not a context: the asker is `ConsoleNavbar`, nowhere near the page holding the state, and only one such page is ever mounted. **The primary is hidden on a logout** for the same reason as mid-upload — publishing navigates to My Events and would quietly drop the logout they asked for; the draft is on the server either way. Refresh, tab close and a typed URL stay the browser's: the page is being destroyed, so there is no frame left to render our own dialog into.
   - **One dialog component, `src/components/events/UnsavedDraftDialog.tsx`**, used by both screens (`primary` optional, `tone` amber/red) — same rule as `BenefitsField`: two screens must not drift about what leaving means.
   - **The dialog has three copy states, because "press Update Event" is not always a publish.** Form status switched to Draft on a published event → "Saving will unpublish this event" (red mark, button reads *Save & unpublish*; the header button switches too). Awaiting admin review → "your changes aren't in the review yet", since claiming guests see a published version would be untrue of an event nobody can see. Otherwise the plain "aren't live yet". The form's pending status leaves Formik on `FormDirtyWatcher`, which now reports `values.status` alongside `dirty`.
   - **Update Event from the dialog runs the SAME `onSubmit`**, so validation is unchanged. The destination the host clicked rides on `afterSaveUrlRef` (a ref, not an argument — Formik owns `onSubmit`'s parameters), read once at the top of `onSubmit` and cleared. The dialog closes when `isSubmitting` goes false, not when `submitForm()` resolves: the update thunk isn't awaited in there, so returning early would drop the spinner while the save was still in flight.
@@ -1412,6 +1437,22 @@ Full CRUD: `/api/events/[eventId]/referral-codes`
 Admin OR owner access
 Tracks discountPercentage, commissionPercentage, usageCount, maxUses
 Stats endpoint available
+
+### Referral codes scoped to tickets (2026-09-15)
+- CEO ask: a host picks, per code, which tickets of the event it works on. "Applies to" in the create/edit modal of `ReferralCodesManager` (All tickets / Specific tickets + checkboxes); a **Tickets** column in the table. `manage.tsx` passes `tickets`.
+- Schema `ReferralCodes.ticketIds: [String]` (ticket `_id` strings), `default: undefined`. **Absent or empty = every ticket** — every legacy code and every mobile/admin-portal code. No migration, no index.
+- **A stale list never widens.** If every scoped ticket was deleted, the code covers NOTHING; the table shows "No tickets (deleted)" in red.
+- **All logic in `src/lib/referral-ticket-scope.ts`** (pure): `referralAppliesToAllTickets`, `referralCoversTicket`, `selectionHasEligibleTicket`, `referralEligibleSubtotal`, `resolveReferralTicketIds` (server: dedupe + filter to live ids, refuse a non-empty list resolving to none), `liveScopedTicketIds`, `REFERRAL_NOT_FOR_SELECTION_MESSAGE`.
+- APIs: POST `referral-codes` accepts `ticketIds` (revive replaces the old scope); PATCH `[codeId]` — omitted = unchanged, `[]` = `$unset` (all tickets). `validate.ts` takes optional `ticketIds` and returns the code's `ticketIds`.
+- **Mixed cart: only eligible tickets are discounted.** `buildTicketPricing` gained `referralSubtotal` (defaults to the whole subtotal). A selection with no eligible ticket is **refused** ("This code doesn't apply to the tickets you selected"), in `validateReferralCodeForEvent(eventId, code, selectedTicketIds)`, the modal and both checkout endpoints.
+- `api/checkout`: eligibility decided from the STORED ticket matched by price id, never the body. The Stripe coupon's `applies_to.products` lists only eligible tickets' products whenever the code is scoped (every ticket price is minted with its own `product_data`, so products are per-ticket). `metadata.referralSubtotal` stamped; `checkout-fulfillment.ts` records `discountAmount` from it (falls back to the subtotal for older sessions).
+- **Free months from a code follow the scope** — granted only when a covered selected ticket sells that membership (checkout + modal).
+- Standalone `/premium?code=&event=` share link is unaffected — there is no ticket.
+
+### Default referral codes on admin-created events (2026-09-15)
+- When an **admin / super admin** creates (`api/events/create.ts`) or clones (`[eventId]/clone.ts`) an event, `seedDefaultReferralCodes` (`src/lib/default-referral-codes.ts`) adds **`JETZY-ME`** (2 free months of Jetzy Premium) and **`1M-OFF`** (1 free month): 0% discount, all tickets, unlimited uses, active. Host-created events get none.
+- Upsert with `$setOnInsert` (idempotent) and best-effort — errors are logged, the event is still created. An 11000 means the per-event index migration (`scripts/migrate-referral-code-index.ts`) is missing on that database.
+- The free months only apply on tickets that sell Premium. These are event referral codes, unrelated to the `TRIAL_CODES` invite codes of the same names on `/subscribe`.
 
 ## Feature: Invite Code on QR Signup (user-level referral, NOT event referral codes)
 - UI: `jetzyqrsignup.tsx` — optional invite-code input, first field. Non-empty code live-verified via `VerifyReferralCodeApi` (`src/services/auth/authapis.ts`) → `GET external:/v1/referral/verify/{code}` (200 = valid; main Jetzy backend, same host as SSO). Invalid → inline error, blocks submit. Empty → skipped.
@@ -1578,6 +1619,7 @@ stop someone finishing their own signup.
 - **Checkout:** `/api/subscriptions/checkout` re-verifies; `unavailable` → 400, `invalid` → existing invite-code 400. Valid → metadata `mobileReferralCode` (never `referralCode`, which the webhook counts against an event's `maxUses`).
 - **Recorded:** webhook writes `membership_purchases.mobileReferralCode` with `source: "mobile_referral"`. `/api/analytics/memberships` searches it, exports it (CSV column "Mobile Referral Code"), and returns `mobileReferralCodes[]` per-code totals; growth page Jetzy Premium tab shows them + source filter.
 - The referrer is **not** credited on the Jetzy backend — analytics only, by decision.
+- **Application gate is enforced in `/api/subscriptions/checkout`** (same day): gate ON + no code accepted by that route → 403 `{ applicationRequired: true }`; an open application (`awaiting_card`/`under_review`) → 400 `{ applicationInProgress: true }`. Codes that skip the gate: `jetzy-me`, `1m-off`, host referral link, valid mobile referral code. Cards react by opening the questions / refreshing `premium-application-mine`.
 
 ---
 
@@ -2979,3 +3021,427 @@ back with no card in sight. It now consumes the marker, restores `{code, interva
 `usePremiumSubscriptionReturn` is untouched (a cancel is not a purchase and must not confirm a
 session or fire a toast). The no-param branch still clears the marker — that is the guard against a
 stale one opening the dialog on an unrelated later arrival.
+
+## Profile completion, synced with the mobile app (2026-09-15)
+
+**Why.** `/signup` collected date of birth and location into local `EventUsers` only — the Jetzy backend, and so the mobile app, never saw them. Mobile asks for photo, name, DOB and gender through `/v1/accounts` when missing. The portal now asks for the same fields (plus location) from every signed-in user and writes them where mobile reads them.
+
+| | Endpoint | Notes |
+|---|---|---|
+| Read | `GET /v1/accounts` | `dob` ISO; `location` `{country,city,region}` and/or `{longitude,latitude}`; `image` defaults to `/default-avatars/…` |
+| Save | `PUT /v1/accounts` | partial: `firstName` (full name), `lastName:""`, `dob` `MM/dd/yyyy`, `gender` (`Male`/`Female`/`Non-binary`), `image`, `location {country,city}` — exactly the keys mobile sends |
+| Coordinates | `POST /v1/onboarding/sync_location` | `{location:{type:"Point",coordinates:[lng,lat]}}`, same as mobile. Verified on test: the backend MERGES both into `location {country, city, longitude, latitude}`, so order doesn't matter |
+| Photo | `POST /uploader/multiple` via `uploadFile(file,{folder:"photos"})` | then url on the PUT |
+
+**Files.**
+- `src/lib/jetzy-profile.ts` — pure rules: `profileMissingFields`, `isDefaultAvatar`, `hasLocation`, `toBackendDob`, `dobParts`, `placeToProfileLocation`, `isUngatedPath`.
+- `src/lib/jetzy-profile-server.ts` — backend calls + `EventUsers` mirror + `flushPendingProfile`.
+- `src/pages/api/profile/index.ts` — `GET` → `{complete, missing, profile, source}`; `PUT` validated with zod.
+- `src/components/profile/ProfileCompletionModal.tsx` — two steps (photo/name/DOB → gender/location), non-dismissible, logout link.
+  - Location is **Country + City**, like the app's "Update Location" sheet (2026-09-22): a country `<select>` (`src/lib/countries.ts` — ISO codes named by `Intl.DisplayNames`, English to match the backend) then a Google Places `(cities)` search restricted to that country via `componentRestrictions`. Places is kept because the picked city carries the coordinates `sync_location` needs. Changing country clears the city. A stored country name we can't match leaves the picker unset but the saved location stands; coordinates-only (mobile synced, no names) still passes untouched.
+- `src/components/profile/ProfileGate.tsx` — mounted in `_app.tsx`; react-query keyed by user id.
+- `src/pages/auth/verify-signup.tsx` — after password + sign-in, shows the modal before following `_cb`.
+- `EventUsers` gained `gender`, `locationCity`, `locationRegion`, `locationCountry`, `profileSyncPending` (no default).
+
+**No token.** Save goes to `EventUsers` with `profileSyncPending: true`; NextAuth `authorize` (credentials + firebase) pushes it on the next login with a token. `Users` docs are never written (it is the backend's collection).
+
+**Fails open** on any read failure. **Ungated paths:** `/login`, `/signup`, `/auth/*`, `/post-signup`, `/terms`, `/privacy`, `/manage-membership`, `/jetzyqrsignup`.
+
+### Premium: profile asked AFTER payment (2026-09-22)
+- **CEO:** on the standalone Premium purchase the profile is asked right after a confirmed payment, not before. `/premium` and `/subscribe` are now in `isUngatedPath`; `usePostPurchaseProfile()` (`src/components/profile/PostPurchaseProfile.tsx`) runs on the confirmed `?premium_session_id` return on `/premium`, `/subscribe` (then `goToApp`, so the app return waits for the form) and in `PremiumPaywallModal` (the navbar "Buy Jetzy Premium" door). Opens only when something is missing; fails open like the gate.
+- **`useHoldProfileGate(active)`** (`ProfileGate.tsx`) stands the page gate down while the Premium pop-up or its post-purchase form is on screen — the pop-up opens on gated pages, and without the hold the gate would block a buyer who signed in mid-purchase and stack a second form after payment.
+- **Premium email-code sign-in now gets a real backend token for existing accounts.** `send-code` checks `users` (`hasJetzyAccount`); if found it sends the BACKEND's login code (`src/lib/backend-login-code.ts`, same endpoints as `/auth/login-otp`) and answers `via: "jetzy"`; `verify-code` with `via: "jetzy"` verifies with the backend and puts the accessToken in the magic token. New addresses, or a backend send failure (not 429), keep our own code (`via: "portal"`). Before this an existing account signed in with no token, so its profile could be neither read nor saved. Also used by `/manage-membership` (same dialog).
+- **Application (approval) return, 2026-09-22.** The card-setup trip returns with `?application_session_id`, which the Premium POP-UP never handled — from the navbar button the buyer came back to a bare page, got the page's own profile gate, and never saw "under review". `PremiumPaywallModal` now sets `APPLICATION_MARKER` before either card-setup redirect it causes (`resumeCardSetup`, and `PremiumApplicationQuestions` via new `onBeforeRedirect`), and on return the first mounted dialog to consume it confirms (`/api/premium/applications/confirm`, idempotent), reopens with `justApplied` on `PremiumApplicationReview`, and runs `usePostPurchaseProfile().prompt(undefined, { intro: APPLICATION_INTRO })` over it. `/premium` and `/subscribe` prompt the same after their existing application confirm (`/subscribe` does NOT return to the app — nothing is active yet). No-approval purchases already end on the member card / app return after the form.
+
+## One email-code sign-in: the backend login code (2026-09-22)
+- **Backend 9e10f0fc (test.jetzy.com):** `POST /v1/accounts/login-code/send` emails ANY address (optional `purpose`: `login|album|premium` changes subject/heading only; identical response whether or not the account exists). `POST /v1/accounts/login-code/verify` CREATES the account on a correct code when none exists (`AuthLib.createUser()` — referral credit, settings, trial, JetPoints; no password), takes optional `firstName`/`lastName`/`refCode`/`source`, returns `{ accessToken, isNewUser, user }`. Tokens never expire. **Prod (`prod-api`) must get it BEFORE the web prod deploy** — the old prod `send` silently skips unknown emails.
+- **`src/lib/backend-login-code.ts`** is the only client of those endpoints: `sendBackendLoginCode(email, purpose)` (→ `ok | rateLimited | unavailable | refused`), `verifyBackendLoginCode(email, code, { firstName, lastName, refCode, source })`, `verifyFailureMessage`. `hasJetzyAccount` was removed.
+- **All three doors use it for every address:** Premium (`api/premium/send-code` + `verify-code`, `source: web_premium`), the album gate (`albums/send-code` with body `for: "access"` + `guest-access` with `via: "jetzy"`, `source: web_album`), and `/auth/login-otp` (`purpose: login`, `source: web_login`). Each answers `via: "jetzy"`; the client hands it back on verify.
+- **Our own code store is the OUTAGE fallback only** — used when `send` is `unavailable` (network/5xx), never on a 429. The album photo-request email change (`RequestUnwatermarkedDialog`) keeps our code on purpose — it proves an address, it is not a login.
+- **Album sign-in now gives EVERY verified visitor a real session** (new or existing), with the accessToken in the magic token — tagging and other Jetzy-API features no longer bounce to `/login`, and the profile gate works. `createOrUpdateUser` is no longer called on the backend path, so no new password-less stubs. On the fallback path the old rule holds (session only for a brand-new account).
+- **NextAuth** skips the password `authorize` + JIT `/accounts/create` whenever the magic token carries an accessToken. The fixed `123456` fallback still exists for the OTHER magic links (thank-you, discussion, album-publish emails), which carry no token — retiring it is a follow-up.
+- **Backend follow-ups (2026-09-22):** 9e10f0fc pushed to prod-v2 (176a79c7) — confirm the App Runner deploy is live before the web prod deploy. `Users.signupSource` (`web_login|web_album|web_premium`, written only when login-code CREATES the account) is on staging (d30179e4), prod pending our check. `AuthLib.createUser()` sends an in-app welcome only, NO email — so the album welcome email is NOT a duplicate; keep it. Existing album stub accounts are not backfilled (not needed).
+- **`settings.profile.isCompleted` / `hasPicture` are dead flags** — set false once when Settings is created and never written by anything (not PUT /accounts, not sync_location), for every account. The backend's real calculator (`ProfileCompletionService`: name/image/interests/location/gender) only feeds a one-time notification and a reminder cron, and is not in GET /accounts. **Never read those two flags.** The web computes completeness itself (`profileMissingFields`). The mobile app decides its "complete your profile" screen from the USER FIELDS (image, firstName, dob, gender), not these flags (mobile team, 2026-09-22) — so a profile completed on web satisfies the app, and no backend fix is needed.
+- **Post-payment polish (2026-09-23).** `usePostPurchaseProfile` exposes a **"Finishing up…" overlay** while the profile check is in flight, and every door starts that check BESIDE the confirm request rather than after it — the member / "under review" card used to show for about a second before the form covered it. The profile form's **city suggestions are our own list, drawn inside the dialog** (`usePlacesAutocompleteService`, deep-imported; predictions + `getDetails` under one session token) — Google's `.pac-container` is attached to `<body>` and landed off-screen or over the dialog edge in a centred modal. Coordinates still come from `placeToProfileLocation(details)`. `EventLocationField` and the event forms keep `usePlacesWidget` — unchanged.
+
+## Feature: Per-ticket capacity
+
+Capacity used to be one number for the whole event and, in practice, was not enforced at all.
+
+**What was broken**
+- `api/checkout/free-events.ts` had **no capacity check whatsoever**. Every free ticket, every RSVP and every order a referral code discounted to $0 is routed there, so all of them bypassed the limit. This was the main symptom.
+- The three places that did check were written `if (eventTracker)`. `EventTracker` rows are only created by `api/events/create.ts` and `clone.ts`, so any event written by the mobile app, an import or a direct DB insert had no tracker and was **silently unlimited forever** — and changing its capacity did nothing.
+- The counter drifts: `api/bookings/delete.ts` decremented with a bare `$inc: -n` that could go negative, which *inflates* the availability every reader computes from it, and the non-atomic `bookedTickets += n; save()` loses concurrent writes.
+- Two sources of truth: `checkout/index.ts` read `event.capacity` for the limit but `tracker.bookedTickets` for the usage, while `approve.ts` read `tracker.eventCapacity`.
+- There was no way to express "50 VIP, 200 General", and nothing anywhere showed a guest how many spots were left or that a ticket had sold out.
+
+**The model now**
+- `eventTicketsSchema.quantity` — Number, **no default**. `undefined` = unlimited, `0` = closed, `n` = n exist. Opposite convention to `event.capacity`, where `0` means unlimited.
+- Remaining is **counted from the bookings** (`src/lib/ticket-availability.ts`), not read from a counter. `EventTracker` is still written everywhere it was, as a mirror the mobile app and admin portal read.
+- `event.capacity` keeps working as an **overall ceiling** on top of the per-ticket limits, so no live event became unlimited. Its input was removed from all three host forms; the schema field and the tracker resync are untouched.
+
+**Files**
+- `src/lib/ticket-quantity.ts` — pure/isomorphic: `ticketQuantityLimit`, `remainingForTicket`, `isSoldOut`, `remainingMessage`, `notEnoughLeftMessage`, `LOW_STOCK_THRESHOLD`. The event page imports these, so it must never reach mongoose.
+- `src/lib/ticket-availability.ts` — server only: `getEventAvailability`, `checkSelection`, `verifyAvailability`. One `$facet` aggregation.
+- `src/pages/api/events/[eventId]/availability.ts` — public, counts only, `Cache-Control: no-store`.
+- Enforcement: `api/checkout/index.ts`, `api/checkout/free-events.ts` (new), `api/bookings/approve.ts`, `api/waiting-list/approve.ts`.
+- Host input: `TicketEditorModal.tsx`, the duplicated inline modal in `console/events/create.tsx`, `TicketData` in `TicketCard.tsx`, manage's two mappers, `HostedEvents.tsx`'s seed + PATCH. Server: three zod copies + `resolveTickets`.
+- Guest UI: `EventTicketsComponent.tsx` — stepper cap, "Sold out" / "Only N left" badges, blocked selection.
+
+**Rules that must not be broken**
+- Never `default: 0` on `quantity`. It reads as sold out and takes every live event offline on the next save.
+- Count with `isDeleted: { $ne: true }`, never `isDeleted: false` — shared-collection rows may carry no such field, and dropping them oversells.
+- Classify dead statuses by exclusion (`$nin`), never allow-list live ones — `checked_in` is live in production.
+- `PENDING` does not hold a spot. `approve.ts` is where the limit bites, and it excludes the booking being approved.
+- Fulfilment deliberately does **not** re-check. The card is already charged and there are no refunds. The check-then-act race at session creation is accepted, as it already is for `PREMIUM_TICKET_LIMIT_PER_EVENT`.
+- The wire format is three-valued: absent = unchanged, `null` = clear to unlimited, number = set. An emptied form field sends `null`.
+- A limit below what is already sold **saves** — the venue shrank and the host is correcting the record. It closes the ticket; it cancels nobody.
+
+Mobile contract: `TICKET_SCHEMA.md` §10 (Revision 4).
+
+## Feature: Booking notifications routed to the host
+
+Before this, a new booking emailed the buyer and the hardcoded `tech@jetzyapp.com`, and nothing else. Approval requests on a host-created event went to Jetzy's admin inbox rather than to the host who has to act on them. `sendOrganizerSaleNotification` had existed in `send-grid.ts` with the right shape and **zero call sites**.
+
+- `src/lib/booking-notify.ts` — `resolveBookingAudience`, `notifyApprovalRequest`, `notifyApprovalApproved`, `notifyTicketSold`. Mirrors `event-approval-notify.ts`.
+- **Admin-owned event → unchanged.** **Non-admin-owned event → the owner alone**, Jetzy's copy dropped. Anything unresolvable falls back to the admin inbox.
+- `sendAdminApprovalNotice` gained `audience` + `to` rather than a host-facing twin; `host` uses `mailFrom()` and `replyTo` the guest.
+- Call sites: `checkout-fulfillment.ts` (both branches), `checkout/free-events.ts` (both branches), `bookings/approve.ts`, `waiting-list/approve.ts`.
+- Never put notify logic inside `sendTicketConfirmation` — five hardcoded per-event templates early-return from it.
+- **`bookings/cancel.ts` is a deliberate exception** and keeps its Jetzy inbox copy on every event, host-owned or not. A cancellation is where the no-refund rule bites and support has to have seen it; a sale is the host's business. The resulting asymmetry — Jetzy sees cancellations on host events but not the sales — is intended.
+
+## Feature: Host/admin edits a free booking's quantity
+
+`POST /api/bookings/update-tickets` — the only endpoint that mutates a booking's contents after creation.
+
+- **Free bookings only** (`bookingMoneyState === "free"`). Paid editing is deferred pending the CEO; the console offers no Edit button for one.
+- Only the quantities of tickets already on the booking; the submitted set must be an exact permutation of the stored set.
+- Capacity re-checked on increase only, with this booking excluded from the count. Check-in count is a floor.
+- Money fields are never recomputed — no money moved, and rewriting `subTotal` on a 100%-discounted order would change what the growth report says that code achieved.
+- `src/lib/event-tracker-sync.ts` (`adjustBookedTickets`, `bookingConsumedCapacity`) applies the delta, clamped. `bookings/delete.ts` now routes through it, which clamps its previously-unclamped `$inc`.
+- Audit: `ticketsEditedAt`, `ticketsEditedBy`, `ticketsEditHistory` on the booking (no defaults).
+- UI: `EditBookingTicketsDialog.tsx` + an Edit action in `BookingEventsDetailsTable.tsx` (`eventTickets` prop supplies the names).
+
+# Feature: Blast sender identity + delivery detail
+
+## Blasts carry the host's identity (IMPLEMENTED 2026-09-23)
+- **Blasting was ALREADY open to non-admin owners** — the Blasts tab has no admin gate and `send-blast.ts` accepts admin-or-owner. Nothing was ungated. What changed is who the mail says it is FROM.
+- **The host's address CANNOT go in `from`.** SendGrid rejects an unverified sender outright, and a host address sent through our account fails SPF/DMARC alignment. Identity rides on the **display name** (`"Anna Khan via Jetzy"`) and **`replyTo`** — the same shape `sendSupportRequestNotice` and `sendEventReviewAdminNotice` already use. Don't "fix" this by putting the host in `from`.
+- **`mailFrom` is now exported and takes an optional `name`.** That is a SCOPED exception to the one-sender-name rule, for blasts only — every transactional email still uses `SENDER_NAME`. Use **`blastSenderName(hostName)`**, never a raw name. The ADDRESS never moves.
+- `send-blast.ts` used to pass `from` as a **bare address string**, which is why blasts rendered as "contact" — it bypassed `send-grid.ts` entirely. It goes through `mailFrom()` now.
+- **Admin-owned event, no `ownerId`, or an owner we can't resolve → plain "Jetzy", no `replyTo`** — exactly today's behaviour. `resolveEventOwner` never throws. A blast must not fail because the host couldn't be identified.
+- **Use `src/lib/event-owner.ts` (`resolveEventOwner`)** — the ONE owner lookup. It had grown three copies (`booking-notify.ts`, `bookings/cancel.ts`, and nearly a third here). It goes through `findUserRecord`, which searches **both** `Users` and `EventUsers`; `Users.findById` alone misses every owner who signed up through this portal. `resolveBookingAudience` now delegates to it.
+- **The footer changed on host events.** It told the guest to contact `contact@jetzyapp.com` about a question only the host could answer. It now says replying reaches the host, and names them. Admin events keep the old footer.
+
+## Blast delivery detail — who didn't get it, and why (IMPLEMENTED 2026-09-23)
+- **`Blasts.recipients[]`** records one row per addressee: `email`, `name`, `status`, `reason`, `respondedAt`. Plus `sentFromName` / `sentReplyTo` for audit. **No defaults on any of them** — absent means a blast sent before this existed, which is not the same as one sent as "Jetzy" to nobody.
+- **Use `src/lib/blast-delivery.ts`** — pure/client-safe (the console imports the labels), so it must never touch mongoose. `describeDeliveryFailure` turns a raw SMTP string (`"550 5.1.1 ... does not exist"`) into a sentence a host can act on; the raw text is stored and still shown underneath, because support needs it.
+- **TWO failure moments, and they are not the same thing.** `failed` = SendGrid refused at send time, known immediately. `bounced`/`blocked`/`spam_report` = accepted, then refused by the receiving server, arriving **minutes to hours later** over the event webhook. So a row legitimately reads "Delivered" and changes afterwards — that is accurate, not a glitch, and it is why `status` is not frozen at send time.
+- **`sendgrid-webhook.ts` attributes a bounce back to the blast** (`recordBlastBounce`). It updates only the **most recent** blast to that address — retro-marking five past blasts would rewrite history that was true when they were sent. Matched **case-insensitively**: `Bookings.customerEmail` has no `lowercase: true`, so a row can hold `Anna@Example.com` while SendGrid reports `anna@example.com`. Best-effort, and the handler still always returns 200 or SendGrid retries forever.
+- `status` has **no enum** — the webhook is an external source and an unrecognised value must be storable, not rejected mid-write.
+- **The blast record is now written even when every send failed.** It was `if (succeeded > 0)`, which threw the record away exactly when the host most needed it.
+- **`recipients` is excluded from the blast LIST query** (`.select("-recipients")`) and served by a new `GET /api/events/[eventId]/blasts/[blastId]`. A 2,000-guest blast is a 2,000-entry array and the history renders five rows of counts.
+- **Copy must not claim suppression that doesn't exist.** The spam-report line states the consequence, not that we removed the address — there is no opt-out list yet (see below).
+
+## Blast gaps still open (NOT addressed 2026-09-23)
+Deliberately out of scope; all pre-existing, none introduced by the identity work.
+- **No unsubscribe link anywhere on a blast**, while `terms.tsx` promises one. The intended fix is a SendGrid ASM unsubscribe group — it supplies the link, hosts the page, sets the `List-Unsubscribe` headers Gmail/Yahoo now require, and suppresses per-group so ticket confirmations are unaffected. Needs a one-time dashboard setup per environment.
+- **`emailBounced` is recorded on the user and never read before sending**, so a dead address is re-mailed on every blast. All hosts share ONE sending domain, so one host's stale list degrades delivery for ticket confirmations and password resets too.
+- **No rate limit on `send-blast.ts`** at all, while `src/lib/rate-limit.ts` is the house pattern.
+- **`subject` / `message` are interpolated into the HTML unescaped.**
+- **One SendGrid call per recipient, all concurrent, no chunking** — a 2,000-guest event opens 2,000 simultaneous connections in one serverless invocation.
+- **`targetType: "all"` ignores `status`** and mails cancelled, failed and refunded bookings; neither branch filters `isDeleted`.
+- `send-invites.ts` has the same bare-string `from`, no `replyTo`, and uses `Promise.all` rather than `allSettled` — one rejection fails the request after mail has already gone out.
+
+# Feature: Partial approval + approvals capacity visibility
+
+## Approvals: seats left, ticket names, and partial approval (IMPLEMENTED 2026-09-24)
+
+**The problem.** Ticket capacity 3, approval required. Two guests each request 2. Both submit —
+**a PENDING request holds no seat**, by design, so a host can collect more requests than they
+have seats. The host approves the first 2, then the second is refused with "1 left". The refusal
+is CORRECT (2 people don't fit in 1 chair); the failure was that the host's only remaining button
+was Reject — losing a guest who'd have taken the one free seat, and leaving a card hold idle
+until it expired. Nothing in the tab warned them either.
+
+- **Use `src/lib/booking-approval.ts`** — pure/client-safe, imported by BOTH `api/bookings/approve.ts`
+  and `ApprovalRequests.tsx` so the button offered and the rule enforced cannot disagree.
+  `approvalFit`, `partialApprovalRefusal`, `buildPartialSelection`, `bookingTicketCount`,
+  `bookingTicketTypeCount`. Only the TYPE comes from `ticket-availability` (server only).
+- **`approvalFit` composes BOTH limits** — the ticket's own remaining and the event-wide ceiling,
+  smaller wins, same rule as the guest-facing stepper. Rows on unlimited tickets are added back
+  into `seatable` after the per-ticket pass, or a mixed booking under-reports. **No availability
+  loaded reads as unlimited** — the server re-checks before anything is seated, so the worst case
+  is a refusal the host can act on, never an oversell.
+
+### Partial approval
+- **`POST /api/bookings/approve` takes an optional `tickets: [{ticketId, quantity}]`** — a REDUCED
+  selection. Absent = approve as requested (every ordinary approval). It may only ever SHRINK:
+  same ticket id set, each row `<=` stored, total `>= 1` and `<` the original.
+- **The server allows any VALID reduction, not only one capacity forces.** Gating on "must not
+  fit" server-side would be a race — another approval could free a seat between the host seeing
+  the button and pressing it, and the request would fail for a reason they can't act on. The UI
+  decides when to OFFER; the server decides what is legal.
+- **Two hard refusals, both about money, not policy** (`partialApprovalRefusal`):
+  - **More than one ticket type.** A booking stores NO per-ticket price, so partial capture scales
+    the held amount proportionally — exact under any discount, but only when every ticket costs
+    the same. Single-select checkout guarantees one type; a mobile-posted order does not, so this
+    fails closed.
+  - **The ticket sells a membership.** Quantity is tied to how many subscriptions get created and
+    to `PREMIUM_TICKET_LIMIT_PER_EVENT`.
+- **Capture math:** `amount_to_capture = round(ticketPortion × approved / requested × 100)`, where
+  `ticketPortion = payment.amount − releasedAmount`. It COMPOSES with the existing membership
+  release — both reasons to capture less apply at once. **Not a refund:** capturing under the
+  authorization makes Stripe release the difference at no cost.
+- **`subTotal`, `discountAmount` and `total` are scaled by the same ratio.** Leaving `subTotal` at
+  the 2-ticket figure while `total` reflects 1 would put a receipt in front of the guest whose
+  lines don't add up. (Contrast the host-side quantity edit, which deliberately does NOT rewrite
+  money — there no money moved; here a smaller amount is actually captured.)
+- Audit reuses `ticketsEditedAt` / `ticketsEditedBy` / `ticketsEditHistory` from the booking-edit
+  feature — one history shape, not two.
+- **The guest is told.** `sendTicketConfirmation` takes `partialApproval: { requested, confirmed }`
+  and renders an amber block: asked for 2, room for 1, not charged for the other, hold released.
+  **Known limit:** the five hardcoded per-event templates early-return before that block, so on
+  those events a partial approval sends the hardcoded body with no note.
+
+### UI — `src/components/console/ApprovalRequests.tsx`
+- **"Spots left" strip** above the pending table, from the existing public
+  `GET /api/events/[eventId]/availability` — the same endpoint the event page uses, so host and
+  guest can never see different numbers. **Rendered only for tickets that carry a limit**, so an
+  unlimited event shows nothing new. It also states, once, that requests don't hold a spot.
+- **`["event-availability", eventId]` must be invalidated in `act()`** alongside the bookings
+  query, or the counts and badges show the state from before the approval.
+- **Ticket NAMES on pending rows and in the processed list.** `ticketBreakdown` already existed
+  but was dialog-only; the Tickets column showed a bare integer, so a host running VIP and General
+  couldn't tell what they were approving. Processed had no ticket information at all.
+- **A "Needs 2, 1 left" badge** on any row that doesn't fit.
+- **In the dialog, the plain Approve is NOT rendered when the request doesn't fit** — it could
+  only be refused. Either "Approve 1 of 2", or the reason it can't be split with Reject as the
+  only route.
+
+### Deliberately NOT done
+- **No guest accept/decline round trip.** The host's decision is final and the email says so. A
+  partial approval can split a couple; the dialog makes it an explicit, one-off host action rather
+  than anything automatic.
+- Partial approval is never offered when the request fits.
+- **The city list flips ABOVE the field when the keyboard leaves no room** (2026-09-23): the field sits near the bottom of the dialog, so on a phone the list was drawn behind the on-screen keyboard. Measured from **`window.visualViewport.height`** (the only one that shrinks for the keyboard — `innerHeight` does not on iOS), re-measured on its `resize`/`scroll` and 300ms after focus, since the keyboard appears after focus. The list is also scrolled into view whenever it opens.
+
+# Feature: Guests tab approvals, time dialog, banner media (2026-09-29)
+
+## Guests tab does approvals, and says who was invited (IMPLEMENTED 2026-09-29)
+
+**Two different `GuestsList` components exist and only one was touched.** The console one
+(`manage.tsx`, Guests tab) merges invitations and bookings; the event-page accordion
+(`HostedEvents.tsx`) reads `api/events/guests.ts`, which is `status: 'accepted'` only and
+cannot see a booking at all. This work is the console one.
+
+- **Use `src/lib/guest-rows.ts` (`buildGuestRows`)** — one row per PERSON. Never re-derive the
+  join inline. `eventinvitations` and `bookings` share **no key but the email string**, and
+  `Bookings.customerEmail` has no `lowercase: true`, so both sides are lowercased or the same
+  person renders as two guests — one "invited", one "booked". That was the bug.
+- **A row holds ALL of a person's bookings, not one.** The old `bookingByEmail` kept a single
+  booking per address ("prefer a non-cancelled one"), so somebody with a confirmed booking AND
+  a pending request showed only one of them — unusable once the row carries an Approve button.
+  `primaryBooking` drives the descriptive columns; `pendingBookings` drives the actions.
+- **Deleted bookings are excluded.** `/api/get-bookings` does not filter `isDeleted`, unlike
+  `bookings/mine`. They were previously listed as guests and counted into ticket stats.
+- **Duplicate invitations resolve by PRECEDENCE, not recency** (`accepted > declined >
+  pending`, newest breaks ties). There is no unique index on `(eventId, email)` and
+  `send-invites.ts` creates unconditionally, so re-inviting writes a second `pending` row;
+  newest-wins would reset an accepted invite to "Invited" and tell the host their guest never
+  replied. `duplicateInvitationCount` surfaces the rest rather than hiding them.
+- **"Accepted — no ticket" is its own state.** `guests/invite/accept.tsx` flips an invitation
+  to `accepted` and creates NO booking; the cell used to fall back to "Purchased", reporting a
+  sale that never happened.
+- **Approval machinery is SHARED, never copied** — `src/components/console/approvals/`:
+  `useBookingApprovals` (the `["event-availability"]` query, `fitFor`, `priorConfirmedFor`,
+  and `act()` with all three cache invalidations), `ApprovalDialogs` (approve + reject, incl.
+  partial approval and the money itemisation), `ApprovalActions` (the button pair and its
+  expired/retry rules), `expiringSoonBookings`. `ApprovalRequests.tsx` went 782 -> ~390 lines
+  and now contains no `axios.post("/api/bookings/...")` and no `AlertDialog`. **Both tabs mount
+  the same modules**, so the button offered and the rule enforced cannot disagree.
+- `bookings` is passed INTO the hook rather than fetched by it, so both mounts keep sharing the
+  one `["event-bookings", eventId]` cache entry and nothing fetches twice.
+- **Row actions are gated on `row.pendingBookings.length > 0`, deliberately NOT on
+  `eventHasAnyApprovalTicket`.** A host who switches a ticket's `requireApproval` off still has
+  live card holds to resolve; gating on the current flag would strand them with no button.
+- **Delete is no longer a second way to decline.** It is hidden on a row with a pending
+  booking (Reject is the route) and reads **"Remove invite"** when there is no booking at all.
+- `handleDeleteGuest` now also invalidates `["event-availability", eventId]` — deleting a
+  confirmed booking frees a seat, and the Approvals counts were going stale.
+- Chips **All / Needs approval / Booked / Invited only / Cancelled**, counted over the
+  UNFILTERED set, composing with the search box and the ticket-type Select. Search now also
+  matches `bookingRef`.
+- **CSV is ONE LINE PER BOOKING** (plus one per invitation-only person), with Guest Type,
+  Booking Ref, Payment Status and Hold Expires. The table is one line per person because that
+  is who the host is looking at; two card holds on one address are two amounts, not one.
+- **`/api/guests-list.ts` had NO AUTH AT ALL** — any eventId returned every invited person's
+  name and email. Now admin-or-owner. **Its response must stay a BARE ARRAY**: the consumer
+  reads `res.data || []`, so moving it to `sendResponse`'s `{data}` wrapper would silently
+  empty the tab with no type error.
+
+### Still open (not addressed)
+- `HostedEvents.tsx` sends invites with `eventLink: shareUrl`, bypassing
+  `/events/[eventId]/guests/invite`, so those invitations can never reach `accepted` — and
+  `api/events/guests.ts` filters to `accepted`, leaving the event-page Guests accordion
+  permanently empty for them. The console Guests tab is unaffected (it reads all statuses).
+- `invite-jetzy-user.ts` writes no `EventInvitation` row, so Jetzy-app invitees are invisible
+  to every Guests surface.
+- `guests/invite/accept.tsx`, `decline.tsx` and `guests/find-by-email.tsx` are still
+  unauthenticated.
+
+## Time picker is a dialog (IMPLEMENTED 2026-09-29)
+
+- **All nine call sites go through one component**, `src/components/form/TimePicker.tsx`
+  (create + manage + `HostedEvents` inline editor, each with start / end / date-poll option).
+  The props contract is unchanged, so the swap touched no call site.
+- Was flatpickr `noCalendar`. Two real faults: the instance was **destroyed and rebuilt on
+  every parent render** (every call site passes an inline arrow to `onChange`, which was in the
+  effect's dep array), and its stylesheet is imported globally with no dark-theme override, so
+  it rendered light against a dark form. Now hour / minute / AM-PM snap columns plus quick
+  picks, seeded from the committed value on open and scrolled into view.
+- **`onChange("")` must stay reachable — that is the Clear button.** The empty string is
+  load-bearing: it persists `hasStartTime: false`, i.e. a date-only event, honoured across
+  ~12 display surfaces and the guest emails. A dialog whose only exit is Done would silently
+  give every date-only event a midnight start.
+- **Chakra `Modal`, not a hand-rolled portal.** Three call sites open it from inside an already
+  open Chakra Modal (the date-poll option editors); Chakra stacks nested focus locks, a bare
+  portal would be locked out by the parent.
+- Minutes step by 5, and the column carries the stored minute as an extra entry when it isn't
+  on a boundary — legacy and mobile-written times are not all multiples of five.
+- `flatpickr` is still used by `DatePicker.tsx` and its CSS import in `_app.tsx` stays.
+
+## Banner media: cap of 5, sound, and click-to-open (IMPLEMENTED 2026-09-29)
+
+- **Use `src/lib/event-media-limit.ts`** (`allowedMediaCount`, `mediaLimitRefusal`).
+  `EVENT_MEDIA_LIMIT = 5`, photos and videos counted **together** — separately would allow five
+  of each, and the banner shows one list.
+- **The cap is NON-ADMIN ONLY** (decision, 2026-09-29). Admins are uncapped; `allowedMediaCount`
+  returns `null` for them.
+- **Grandfathered against what is already stored.** `allowedMediaCount(isAdmin, storedCount)`
+  floors the allowance at the stored count, so an event that predates the cap can be kept or
+  trimmed but never grown. A flat `> 5` rejection in `update.ts` would have made every
+  over-limit event unsavable — a host could not fix a title typo without deleting photos.
+- Enforced in `create.ts`, `[eventId]/update.ts` and `[eventId]/details.ts` as well as in
+  `media-upload-section.tsx`; the form cap is the affordance, not the rule. The `multiple` file
+  input is truncated to the free slots via a `DataTransfer` (FileList is not constructible)
+  rather than letting the page's upload loop put files on the CDN that the save will refuse.
+- `HostedEvents` uses `hasAdminRole`, not the preview-suppressed `isAdmin` — the cap is about
+  privilege, not about what the host is currently looking at.
+- **Banner video still starts MUTED and there is now a sound button.** Chrome and Safari refuse
+  to begin an unmuted video and render a stalled player, so `muted` is not a preference — the
+  button is the user gesture that makes audio legal.
+- **Only one video may carry audio at a time.** `infinite: true` makes react-slick clone
+  slides, so the same file can be mounted two or three times; unmuting through a React prop
+  would play the soundtrack over itself. `applyBannerAudio` mutes every banner video then
+  unmutes the one inside `.slick-current`.
+- **The slide handlers are scoped to `bannerRef` now.** They were
+  `document.querySelectorAll('video')`, which paused album tiles, discussion videos and
+  anything else on the page. `settings` moved inside the component so the handlers can see state.
+- **Use `src/components/events/MediaLightbox.tsx`** for click-to-open. Video there is **not**
+  muted and does not loop: it is only ever reached by a click, and that click is the gesture
+  the autoplay policy requires — this is where "video with music" is true.
+- **An image opens the viewer from anywhere on it; a video cannot** — its own `controls` own
+  those clicks, so the Expand button beside the sound button is its way in.
+- **Fullscreen is the first use of the Fullscreen API in this repo.** It falls back to
+  `webkitRequestFullscreen`, then to `video.webkitEnterFullscreen()` — iPhone Safari refuses
+  element fullscreen entirely and only ever fullscreens a `<video>`, so without that last
+  branch the button would be dead on the device most likely to want it.
+- **Escape in fullscreen belongs to the browser.** The viewer does not close on that press, or
+  one keystroke would dump the viewer back to the page.
+- The album lightbox in `[slug]/album/[albumId].tsx` is untouched and still has no fullscreen
+  control; `MediaLightbox` is the newer pattern.
+
+
+## Letterbox bars are a blurred fill of the photo, not black (IMPLEMENTED 2026-09-29)
+
+Event banners have **no enforced upload aspect ratio**, so every frame renders the whole image
+with `object-contain` and pads the rest. Those pads were flat black — on a portrait photo in a
+landscape frame, two large dead slabs. CEO (2026-09-29): match what mobile does.
+
+- **Use `src/components/events/MediaBackdrop.tsx`.** Ported from the mobile widget: deep
+  ambient layer (cover, scale 1.14, heavy blur), mid bridge layer (cover, scale 1.06, lighter
+  blur, 50% opacity), black tint at 8%, caller's sharp media on top. Never re-derive it inline.
+- **It must be the FIRST child of the frame.** It is `position: absolute` with **no z-index**,
+  so DOM order alone keeps it under the sharp media and under the overlays. Do **not** give the
+  sharp media a `z-index` to "fix" stacking — `PremiumEventBadge variant="ribbon"` is
+  `z-[3]` and renders BEFORE the media, so a `z-10` on the media would hide the ribbon.
+- **A frame whose media is in normal flow needs `position: relative` on that media** — a static
+  element paints below every positioned one, so otherwise the blurred fill covers the photo.
+  Only `console/events/index.tsx` (My Events thumbnail) is like this; every other surface
+  already had `absolute inset-0`.
+- **The frame needs `overflow: hidden`.** The layers are scaled past the frame deliberately, so
+  the blur doesn't fade out at the frame's own edge. `PromotedEvents.tsx` had `relative` but no
+  `overflow` and had to gain it.
+- **The backdrop clips itself** (`overflow-hidden` + `borderRadius: \inherit\` on its own
+  wrapper). Safari lets a filtered child escape a rounded `overflow: hidden` ancestor, which
+  shows as blur bleeding past the card corners.
+- **Same URL as the sharp copy — one network fetch, served from cache.** No `next/image`
+  anywhere on event media (Chakra `Image` compiles to a plain `<img>`), so there is no
+  optimizer transform to pay for twice. `alt=\` plus `aria-hidden` on the wrapper keeps it
+  out of the accessibility tree.
+- **A video's backdrop is its FIRST FRAME, not a second playing copy** (decision, 2026-09-29) —
+  the `#t=0.1` poster trick the cards already use. It stays still while the video plays;
+  decoding the file twice on every card to blur it is not worth the motion.
+- **Blur strength is per-surface and layer count is per-surface.** Banner gets the full two
+  layers at 26px (mobile's sigma); cards get ONE layer (18px listing/bookings, 16px promoted,
+  12px My Events) — the bridge layer is invisible at 110px and a listing page renders a dozen
+  frames, every blurred layer being real paint cost.
+- **Fit stayed `contain`, not `scale-down`.** Mobile prefers `BoxFit.scaleDown` so small images
+  aren't upscaled, and its prompt allows either; `contain` was kept so no existing event's
+  banner changes size. Switching is a one-word change per call site if the CEO wants it.
+- Five surfaces: `HostedEvents.tsx` `renderMedia` (detail banner), `EventListingCard.tsx`
+  (which also covers `CardGroup` and `ListingCardPreview`), `BookingCard.tsx`,
+  `console/events/index.tsx`, `PromotedEvents.tsx`.
+- **Deliberately NOT applied**: album grid tiles and both lightboxes (a full-bleed viewer on
+  near-black is a different screen, and nobody complained about it), the host media-upload grid
+  and album covers (already `cover`, no bars), and the discussion video players (they paint
+  their bars via the element's own `backgroundColor` with no wrapper).
+- **The city field must never crash the page (2026-09-29).** `react-google-autocomplete`'s `usePlacesAutocompleteService` builds its services behind `if (!google)` — a BARE identifier — so with the Maps script absent or blocked it threw `ReferenceError: google is not defined` inside an effect and Next blanked the profile form. Replaced by **`src/hooks/useCityAutocomplete.ts`**: one cached loader, every `google` access behind `typeof`, a 10s timeout, and failures reported as `status: "unavailable"` instead of thrown. Unavailable = the field accepts a **typed** city (saved with the country, no coordinates — `sync_location` is skipped) and the hint says so. **`ProfileErrorBoundary`** now wraps the form in both `ProfileGate` and `PostPurchaseProfile`: the gate is non-dismissible, so any future throw would otherwise leave a blank page with no way out. `usePlacesWidget` (event forms) guards properly and is untouched — don't swap it to the service hook.
+
+## `eventinvitations` holds TWO shapes, and we only ever read one (FIXED 2026-09-30)
+
+**The symptom:** a host invited people through "Invite Jetzy users", the invite arrived, and
+the portal's guest lists showed nobody. Reported against TechNova Summit 2026 on staging, which
+had 2 invitations and displayed 0.
+
+**The cause.** The collection is SHARED with the Jetzy backend and the two writers store
+different documents:
+
+| Writer | Fields |
+|---|---|
+| ours, `send-invites.ts` | `eventId`, `email`, `name`, `status`, `invitedAt` |
+| theirs, `POST /v2/events/:id/members/invite` | `event`, `recipient`, `inviteCode`, `channel`, `isUser`, `status`, `createdAt` |
+
+Note **`event` vs `eventId`** and **`recipient` (a user id) vs `email`**. On staging **307 of 409
+rows are theirs**. Both read paths queried `{ eventId }` and read `.email`, so every app-user
+invite was invisible — and had been since the feature shipped. Our `invite-jetzy-user.ts`
+writes no row of its own; it proxies, and the BACKEND lands the record.
+
+- **Use `src/lib/event-invitations.ts` (`fetchEventInvitations`)** — reads both shapes, resolves
+  `recipient` against `Users` AND `EventUsers`, normalises to one field set with a `source` of
+  `"email" | "app"`. Never query this collection inline again: two endpoints each carrying half
+  a definition is exactly what caused this.
+- **RAW DRIVER for that query, deliberately.** `event` is not on our schema, and a Mongoose
+  query strips unknown paths whenever `strictQuery` is on — reducing the filter to
+  `$or: [{eventId}, {}]`, which returns **every invitation in the collection, for every event**.
+  Mongoose 8 defaults it off; a silent catastrophic failure riding on a global default is not
+  something to leave standing.
+- **`status` is not our enum.** The backend writes `cancelled` (28 rows on staging), which our
+  schema does not list. Typed and rendered as itself; `InvitationStatus` gained it, and
+  `INVITATION_RANK` ranks it. An unrecognised value from an external writer must be readable.
+- **`/api/events/guests.ts` also dropped its `status: 'accepted'` filter.** An app invite sits
+  at `pending`, and an invite emailed from the event page links to the EVENT rather than the
+  accept page so it can never reach `accepted` at all. Between the two, the panel showed nothing
+  on most events. It now returns every invitation with its status. Measured on staging: Chicago
+  Party II showed **1** guest and actually has **12 invitations, 3 accepted** — two genuinely
+  accepted guests were invisible.
+- The event-page panel renders name + email + a status chip + a "via app" badge, and its header
+  reads "Guests (N)  M accepted" — one number covering both would have to pick a meaning.
+- **Invited-only now sorts ABOVE booked** in `guest-rows.ts`. The list this replaced was built
+  invitations-first; ranking them below every booking pushed them off page 1 on any busy event.
+
+**Still not fixed, deliberately:** `HostedEvents.tsx` sends invites with `eventLink: shareUrl`,
+bypassing `/events/[eventId]/guests/invite`, so those invitations can never become `accepted`.
+Changing where that link points is a product decision, not a bug fix — the invitations are at
+least visible now.

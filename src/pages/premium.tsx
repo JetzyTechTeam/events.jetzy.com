@@ -6,11 +6,15 @@ import { MOBILE_REFERRAL_ACCEPTED, MOBILE_REFERRAL_UNAVAILABLE, checkMobileRefer
 import { PREMIUM_STATUS_QUERY_KEY, usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import { APPLICATION_INTRO, usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
 import { ROUTES } from "@/configs/routes"
 import Navbar from "@Jetzy/components/misc/Navbar"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { planPriceForInterval, useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
+import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@Jetzy/hooks/usePremiumApplication"
+import PremiumApplicationQuestions from "@Jetzy/components/premium/PremiumApplicationQuestions"
+import PremiumApplicationReview from "@Jetzy/components/premium/PremiumApplicationReview"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import { GetServerSideProps } from "next"
@@ -66,6 +70,17 @@ export default function PremiumPage() {
 	const queryClient = useQueryClient()
 	const isAuthenticated = status === "authenticated"
 	const { anonId, sessionId } = useAnalytics()
+
+	// ---- Application gate ----
+	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
+	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
+	// instantly — see `src/lib/premium-application.ts`. `myApplication` covers the repeat visit:
+	// a buyer mid-review sees the review screen instead of the plan card again.
+	const applicationSettingsQuery = usePremiumApplicationSettings()
+	const appSettings = applicationSettingsQuery.data
+	const { data: myApplication } = useMyPremiumApplication(isAuthenticated)
+	const [showQuestions, setShowQuestions] = React.useState(false)
+	const [resumingCardSetup, setResumingCardSetup] = React.useState(false)
 
 	const [inviteCode, setInviteCode] = React.useState("")
 	const [inviteAccepted, setInviteAccepted] = React.useState<string | null>(null)
@@ -485,6 +500,27 @@ export default function PremiumPage() {
 		[selectedInterval, referralEventId, anonId, sessionId],
 	)
 
+	/**
+	 * The server enforces the application gate. True when it refused this checkout for that reason
+	 * and the page has moved the buyer on — to the questions, or to their open application.
+	 */
+	const handleApplicationRefusal = React.useCallback(
+		(error: any): boolean => {
+			if (error?.response?.data?.data?.applicationRequired) {
+				setAutoState("idle")
+				setShowQuestions(true)
+				return true
+			}
+			if (error?.response?.data?.data?.applicationInProgress) {
+				setAutoState("idle")
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				return true
+			}
+			return false
+		},
+		[queryClient],
+	)
+
 	const subscribeMutation = useMutation({
 		// A refused code is left behind — sending it could only fail, and the card is already showing
 		// what this buyer gets without it.
@@ -506,6 +542,7 @@ export default function PremiumPage() {
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
 				return
 			}
+			if (handleApplicationRefusal(error)) return
 			ErrorToast("Error", error?.response?.data?.message || "Could not start checkout. Please try again.")
 		},
 	})
@@ -518,14 +555,26 @@ export default function PremiumPage() {
 			else ErrorToast("Error", "Could not start checkout. Please try again.")
 		},
 		onError: (error: any) => {
+			// Dropping the code with the questions switched on is exactly the case the gate exists for.
+			if (handleApplicationRefusal(error)) return
 			ErrorToast("Error", error?.response?.data?.message || "Could not start checkout. Please try again.")
 		},
 	})
 
 	// ---- Get Premium ----
-	const handleChoosePremium = React.useCallback((intervalOverride?: string) => {
+	const handleChoosePremium = React.useCallback(async (intervalOverride?: string) => {
 		pendingInterval.current = intervalOverride
 		if (isAuthenticated) {
+			if (applicationBlocksCheckout(myApplication)) return // review screen is already showing instead of this button
+			// Re-fetched LIVE, not read from the cache: an admin toggling the gate must take effect on
+			// this exact click, not on a refresh or a lucky retry a minute later.
+			const { data: freshSettings } = await applicationSettingsQuery.refetch()
+			// A refused code is not an invite code — counting it as one would let a typo past the
+			// questionnaire the gate exists to ask.
+			if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
+				setShowQuestions(true)
+				return
+			}
 			subscribeMutation.mutate(intervalOverride)
 			return
 		}
@@ -536,7 +585,7 @@ export default function PremiumPage() {
 		// The `/login?_cb=…&go=1` round trip it replaced still works — old links carry it and the
 		// effect below still honours it — but nothing sends anyone down it any more.
 		setVerifyOpen(true)
-	}, [isAuthenticated, subscribeMutation])
+	}, [isAuthenticated, subscribeMutation, myApplication, applicationSettingsQuery, usableCode])
 
 	// ---- Back from login with intent ----
 	//
@@ -561,6 +610,13 @@ export default function PremiumPage() {
 
 		;(async () => {
 			try {
+				// Live, not cached — same reasoning as `handleChoosePremium`.
+				const { data: freshSettings } = await applicationSettingsQuery.refetch()
+				if (applicationRequiredForPurchase(freshSettings, !!code, myApplication)) {
+					setAutoState("idle")
+					setShowQuestions(true)
+					return
+				}
 				if (code) {
 					// Throws when the account isn't eligible — which is the case this whole flow
 					// exists to handle honestly.
@@ -578,6 +634,10 @@ export default function PremiumPage() {
 				setAutoState("blocked")
 				ErrorToast("Error", "Could not start checkout. Please try again.")
 			} catch (error: any) {
+				if (handleApplicationRefusal(error)) {
+					router.replace(SELF, undefined, { shallow: true })
+					return
+				}
 				// Stop here. They are one click from paying full price for something they were
 				// shown as free, so the decision goes back to them with the reason attached.
 				setAutoState("blocked")
@@ -602,14 +662,21 @@ export default function PremiumPage() {
 	 */
 	const handleVerified = React.useCallback(() => {
 		setVerifyOpen(false)
+		// The code as last resolved, not as typed: a refused one is dropped here rather than sent to
+		// a checkout that can only reject it and leave the card looking untouched.
+		const code = usableCode
 		autoStarted.current = true
 		setAutoState("running")
 
 		;(async () => {
-			// The code as last resolved, not as typed: a refused one is dropped here rather than sent
-			// to a checkout that can only reject it and leave the card looking untouched.
-			const code = usableCode
 			try {
+				// Live, not cached — same reasoning as `handleChoosePremium`.
+				const { data: freshSettings } = await applicationSettingsQuery.refetch()
+				if (applicationRequiredForPurchase(freshSettings, !!code, myApplication)) {
+					setAutoState("idle")
+					setShowQuestions(true)
+					return
+				}
 				if (code) {
 					await axios.post("/api/subscriptions/invite-code", {
 						code,
@@ -625,18 +692,62 @@ export default function PremiumPage() {
 				setAutoState("blocked")
 				ErrorToast("Error", "Could not start checkout. Please try again.")
 			} catch (error: any) {
+				if (handleApplicationRefusal(error)) return
 				setAutoState("blocked")
 				setInviteAccepted(null)
 				setInviteError(error?.response?.data?.message || "That code couldn't be applied to this account.")
 			}
 		})()
-	}, [usableCode, referralEventId, selectedInterval, startCheckout])
+	}, [usableCode, referralEventId, selectedInterval, startCheckout, applicationSettingsQuery, myApplication, handleApplicationRefusal])
+
+	/** Picks up an application whose card setup was interrupted (closed the Stripe tab, etc). */
+	const resumeCardSetup = React.useCallback(async () => {
+		if (!myApplication?._id) return
+		setResumingCardSetup(true)
+		try {
+			const { data } = await axios.post("/api/premium/applications/checkout", { applicationId: myApplication._id, returnTo: SELF })
+			if (data?.data?.url) window.location.href = data.data.url
+			else ErrorToast("Error", "Could not resume card setup. Please try again.")
+		} catch (error: any) {
+			ErrorToast("Error", error?.response?.data?.message || "Could not resume card setup. Please try again.")
+		} finally {
+			setResumingCardSetup(false)
+		}
+	}, [myApplication])
+
+	// The profile is asked for right after a confirmed payment or a completed application card setup
+	// (CEO, 2026-09-22) — this page is ungated before purchase, so nobody is stopped from buying.
+	const postPurchaseProfile = usePostPurchaseProfile()
+
+	// ---- Back from Stripe (application card setup) ----
+	React.useEffect(() => {
+		const sessionId = router.query.application_session_id
+		if (!sessionId || typeof sessionId !== "string") return
+
+		// Card saved, application under review — the page shows the review card and the profile is
+		// asked over it (CEO, 2026-09-22). Started here rather than after the confirm: the check is a
+		// round trip, and waiting for it let the review card show first.
+		postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
+		axios
+			.get(`/api/premium/applications/confirm?session_id=${sessionId}`)
+			.then(() => {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				router.replace(SELF, undefined, { shallow: true })
+			})
+			.catch(() => {
+				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
+			})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.query.application_session_id])
 
 	// ---- Back from Stripe ----
 	React.useEffect(() => {
 		const sessionId = router.query.premium_session_id
 		if (!sessionId || typeof sessionId !== "string") return
 
+		// Beside the confirm — the member card renders at once, so a profile check that waited for the
+		// confirm showed it first and then covered it.
+		postPurchaseProfile.prompt()
 		axios
 			.get(`/api/subscriptions/confirm?session_id=${sessionId}`)
 			.then(() => {
@@ -703,39 +814,53 @@ export default function PremiumPage() {
 			{/* `4xl` so the cancellation link fits on one line — see the paywall modal. */}
 			<div className="max-w-4xl mx-auto">
 				{/* The same card the paywall modal and /subscribe render, so the offer reads
-				    identically whichever door someone came through. */}
-				<PlanComparison
-					plan={plan}
-					planLoading={planLoading}
-					prices={prices}
-					selectedInterval={selectedInterval}
-					onIntervalChange={setSelectedInterval}
-					isPremium={isPremium}
-					currentPlan={currentPlan}
-					onSwitchInterval={() => portalMutation.mutate("switch")}
-					onManageBilling={() => portalMutation.mutate(undefined)}
-					billingPending={portalMutation.isPending}
-					inviteCode={inviteCode}
-					onInviteCodeChange={(next) => {
-						// From here on it is their code, so a refusal is explained rather than swallowed.
-						codeIsOurs.current = false
-						setInviteCode(next)
-					}}
-					inviteAccepted={inviteAccepted}
-					inviteError={inviteError}
-					inviteChecking={inviteChecking}
-					trial={trialOffer}
-					trialPending={!isPremium && !trialResolved}
-					premiumPending={subscribeMutation.isPending}
-					// A shared link is one specific offer, not a menu — "Continue with Free" beside it
-					// invites the recipient to decline something they were given.
-					hideFreePlan={!!referralEventId}
-					// Browsing is the free plan here — there is no app to hand back to. Signed out it
-					// means starting an account, which is what Jetzy Basic actually is.
-					onChooseFree={() => router.push(isAuthenticated ? ROUTES.home : ROUTES.create)}
-					onChoosePremium={() => handleChoosePremium()}
-					onChoosePremiumAtInterval={(interval) => handleChoosePremium(interval)}
-					subscribedCtaLabel="Browse events"
+				    identically whichever door someone came through. Swapped for the review screen
+				    once an application is in flight — nothing left to buy until it's decided. */}
+				{applicationBlocksCheckout(myApplication) ? (
+					<PremiumApplicationReview application={myApplication as any} onResumeCardSetup={resumeCardSetup} resuming={resumingCardSetup} />
+				) : (
+					<PlanComparison
+						plan={plan}
+						planLoading={planLoading}
+						prices={prices}
+						selectedInterval={selectedInterval}
+						onIntervalChange={setSelectedInterval}
+						isPremium={isPremium}
+						currentPlan={currentPlan}
+						onSwitchInterval={() => portalMutation.mutate("switch")}
+						onManageBilling={() => portalMutation.mutate(undefined)}
+						billingPending={portalMutation.isPending}
+						inviteCode={inviteCode}
+						onInviteCodeChange={(next) => {
+							// From here on it is their code, so a refusal is explained rather than swallowed.
+							codeIsOurs.current = false
+							setInviteCode(next)
+						}}
+						inviteAccepted={inviteAccepted}
+						inviteError={inviteError}
+						inviteChecking={inviteChecking}
+						trial={trialOffer}
+						trialPending={!isPremium && !trialResolved}
+						premiumPending={subscribeMutation.isPending}
+						// A shared link is one specific offer, not a menu — "Continue with Free" beside it
+						// invites the recipient to decline something they were given.
+						hideFreePlan={!!referralEventId}
+						// Browsing is the free plan here — there is no app to hand back to. Signed out it
+						// means starting an account, which is what Jetzy Basic actually is.
+						onChooseFree={() => router.push(isAuthenticated ? ROUTES.home : ROUTES.create)}
+						onChoosePremium={() => handleChoosePremium()}
+						onChoosePremiumAtInterval={(interval) => handleChoosePremium(interval)}
+						subscribedCtaLabel="Browse events"
+					/>
+				)}
+
+				<PremiumApplicationQuestions
+					open={showQuestions}
+					onClose={() => setShowQuestions(false)}
+					onBack={() => setShowQuestions(false)}
+					questions={appSettings?.questions || []}
+					interval={selectedInterval}
+					returnTo={SELF}
 				/>
 
 				<EmailVerifyDialog
@@ -746,6 +871,8 @@ export default function PremiumPage() {
 				onClose={() => setVerifyOpen(false)}
 				onVerified={handleVerified}
 			/>
+
+			{postPurchaseProfile.element}
 
 			{/* Only after a code was refused for THIS account. Buying without it is a real
 				    choice, so it gets a real button rather than being the silent default. */}

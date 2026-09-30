@@ -26,6 +26,16 @@ const schema = zod.object({
 			description: zod.string().optional(),
 			// Never `.default(false)` — preserve-on-omit, resolved in lib/event-tickets.ts.
 			requireApproval: zod.boolean().optional(),
+			// Per-ticket capacity. `undefined` = unlimited (what every ticket saved before this
+			// field existed means), `0` = none available, `null` = clear an existing limit back
+			// to unlimited. Nullable AND optional because those are three different answers —
+			// unlike `membershipFreeMonths`, where 0 IS the "none" state.
+			quantity: zod
+				.number({ invalid_type_error: "Enter a whole number of tickets, or leave it blank for unlimited." })
+				.int("Ticket quantity must be a whole number.")
+				.min(0, "Ticket quantity can't be negative. Leave it blank for unlimited.")
+				.nullable()
+				.optional(),
 			memberships: zod.array(zod.string()).optional(),
 			membershipInterval: zod.enum(["month", "year"]).optional(),
 			membershipFreeMonths: zod.number().int().min(0).max(MAX_MEMBERSHIP_FREE_MONTHS).optional(),

@@ -11,6 +11,12 @@ export type TicketData = {
   /** Per-ticket approval override. `undefined` inherits the event-level setting. */
   requireApproval?: boolean
   /**
+   * Per-ticket capacity. `undefined`/`null` = unlimited, `0` = none available. Three states,
+   * so a blank field must send `null` (clear) and not be confused with `0` (closed).
+   * Read it with `ticketQuantityLimit()`.
+   */
+  quantity?: number | null
+  /**
    * Memberships sold with this ticket. A buyer who doesn't already hold one pays the ticket
    * price plus that membership's first period; an existing member pays for the ticket alone.
    * Resolve with `ticketMemberships()` — never read either field directly.

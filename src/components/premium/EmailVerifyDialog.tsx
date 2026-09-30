@@ -56,6 +56,9 @@ export default function EmailVerifyDialog({
 	const [error, setError] = React.useState<string | null>(null)
 	const [busy, setBusy] = React.useState(false)
 	const [cooldown, setCooldown] = React.useState(0)
+	// Which code the server sent — ours, or the Jetzy backend's login code for an existing account.
+	// Handed back on verify so the right side checks it.
+	const [via, setVia] = React.useState<"jetzy" | "portal" | undefined>(undefined)
 
 	React.useEffect(() => {
 		if (!open) {
@@ -79,12 +82,13 @@ export default function EmailVerifyDialog({
 		setBusy(true)
 		setError(null)
 		try {
-			await axios.post("/api/premium/send-code", {
+			const { data } = await axios.post("/api/premium/send-code", {
 				email: email.trim(),
 				// Sent only together — the server reads their presence as "this is a shared link"
 				// and resolves the host's offer before mailing anything.
 				...(eventId && referralCode ? { event: eventId, code: referralCode } : {}),
 			})
+			setVia(data?.data?.via === "jetzy" ? "jetzy" : "portal")
 			setStep("code")
 			setCooldown(RESEND_SECONDS)
 		} catch (err: any) {
@@ -102,6 +106,7 @@ export default function EmailVerifyDialog({
 				email: email.trim(),
 				...(eventId ? { event: eventId } : {}),
 				otp: otp.trim(),
+				...(via ? { via } : {}),
 			})
 			const magicToken = data?.data?.magicToken
 			if (!magicToken) throw new Error("no token")

@@ -3,13 +3,15 @@ import { createOrUpdateUser } from "@/lib/user-utils"
 import { sendResponse } from "@/lib/helpers"
 import { uniqueId } from "@/lib/utils"
 import { resolveEventLocation } from "@/lib/event-helpers"
-import { sendTicketConfirmation, sendApprovalPending, sendAdminApprovalNotice } from "@/lib/send-grid"
+import { sendTicketConfirmation, sendApprovalPending } from "@/lib/send-grid"
+import { notifyApprovalRequest, notifyTicketSold } from "@/lib/booking-notify"
 import { generateQRCodeForBooking } from "@/lib/qr-generator"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { resolveBundlePlan, selectionMemberships } from "@/lib/premium-bundle"
 import { heldMemberships } from "@/lib/premium-eligibility"
 import { membershipLabelList } from "@/lib/memberships"
 import { validateReferralCodeForEvent } from "@/lib/referral-validation"
+import { referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import { incrementReferralUsage } from "@/lib/checkout-fulfillment"
 import { ensureDbConnected } from "@/configs/database"
 import { Bookings } from "@/models/events/bookings"
@@ -41,7 +43,7 @@ type BodyParams = {
 	customAnswers?: Array<{ questionId: string; answer: any }>
 }
 
-type ResolvedTicketRow = { name: string; price: number; quantity: number; desc: string }
+type ResolvedTicketRow = { id: string; name: string; price: number; quantity: number; desc: string }
 
 /**
  * Re-resolve the order against the EVENT RECORD, never trusting the request body.
@@ -67,7 +69,7 @@ const resolveOrder = (event: any, tickets: BodyParams["tickets"]): { rows: Resol
 
 		const price = Number(stored.price) || 0
 		subtotal += price * quantity
-		rows.push({ name: stored.name, price, quantity, desc: stored.desc || "" })
+		rows.push({ id: String(stored._id), name: stored.name, price, quantity, desc: stored.desc || "" })
 	}
 
 	return { rows, subtotal: Math.round((subtotal + Number.EPSILON) * 100) / 100 }
@@ -169,11 +171,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Validated before the booking is written: a code that has expired or run out of uses
 		// must fail the whole request rather than be silently ignored on an order it was
 		// supposed to discount.
-		const referralResult = await validateReferralCodeForEvent(eventId, req.body?.referralCode)
+		//
+		// Checked against the STORED ticket ids, so a code scoped to other tickets is refused.
+		const referralResult = await validateReferralCodeForEvent(
+			eventId,
+			req.body?.referralCode,
+			orderRows.map((row) => row.id),
+		)
 		if (!referralResult.ok) {
 			return sendResponse(res, null, referralResult.message, false, 400)
 		}
 		const referralCodeData = referralResult.data
+		// Only the tickets the code is scoped to are discounted.
+		const referralSubtotal = referralCodeData ? referralEligibleSubtotal(referralCodeData, orderRows) : 0
 
 		// A membership that still has to be CREATED cannot be settled here, even when its first
 		// months are free.
@@ -214,6 +224,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			subtotal,
 			referralCode: referralCodeData?.code,
 			referralPercentage: referralCodeData?.discountPercentage,
+			referralSubtotal,
 		})
 
 		// The free path issues a CONFIRMED (or approval-pending) booking without charging
@@ -221,6 +232,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (pricing.total !== 0) {
 			console.warn("[checkout/free-events] Rejected non-free order:", { eventId, subtotal, total: pricing.total })
 			return sendResponse(res, null, "This order isn't free — please complete checkout.", false, 400)
+		}
+
+		// Capacity — per ticket, plus the legacy event-wide ceiling.
+		//
+		// This endpoint had NO capacity check at all, which is the single biggest reason capacity
+		// "didn't work": every free ticket, every RSVP and every order a referral code discounted
+		// to $0 is routed here by `EventCheckoutModel`, and all of them walked straight past the
+		// limit. The paid path was the only one ever gated.
+		//
+		// Checked against the STORED tickets (`orderRows` came from `resolveOrder`, which rebuilds
+		// from the event record), so a crafted body can't claim a ticket id that doesn't exist.
+		{
+			const { verifyAvailability } = await import("@/lib/ticket-availability")
+			const verdict = await verifyAvailability(
+				event,
+				orderRows.map((row) => ({ id: String(row.id), quantity: row.quantity, name: row.name })),
+			)
+
+			if (!verdict.ok) {
+				console.info("[checkout/free-events] Event at capacity:", verdict.reason)
+				// Same payload shape the paid path returns, so `EventCheckoutModel`'s waiting-list
+				// prompt works identically on both. Note `status: true` — this is a routing
+				// verdict, not an error.
+				return sendResponse(
+					res,
+					{
+						atCapacity: true,
+						availableCapacity: verdict.remaining,
+						requestedTickets: verdict.requested,
+						ticketId: verdict.ticketId,
+						ticketName: verdict.ticketName,
+						reason: verdict.reason,
+						eventName: event.name,
+						eventId: event._id,
+						isClosed: false,
+					},
+					`${verdict.reason} Would you like to join the waiting list?`,
+					true,
+					200,
+				)
+			}
 		}
 
 		const discountAmount = Math.round((subtotal - pricing.total + Number.EPSILON) * 100) / 100
@@ -234,7 +286,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// priced order discounted all the way down to $0. Only the second one actually used a
 		// discount. On a $0 ticket a referral code and a member rate reduce nothing, so they
 		// must not be recorded as applied — and must not burn one of the code's `maxUses`.
-		const discountsDidWork = subtotal > 0
+		// With a scoped code, only a priced ELIGIBLE ticket counts — a paid ticket the code
+		// doesn't cover would never reach this endpoint anyway (it isn't free).
+		const discountsDidWork = referralCodeData ? referralSubtotal > 0 : subtotal > 0
 
 		// Capture logged-in user (if any) so they can later cancel even when booking email differs
 		const session = await getServerSession(req, res, authOptions)
@@ -300,19 +354,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			} catch (emailError) {
 				console.error("Failed to send approval-pending email:", emailError)
 			}
-			try {
-				await sendAdminApprovalNotice({
-					event,
-					firstName: user.firstName,
-					lastName: user.lastName,
-					email: user.email,
-					tickets: ticketSummary,
-					eventId,
-					kind: "request",
-				})
-			} catch (adminError) {
-				console.error("Failed to send admin approval notice:", adminError)
-			}
+			// Routed: Jetzy's inbox on an admin-owned event, the HOST on a host-owned one, so
+			// the person who has to approve or decline is the person who hears about it.
+			// No money fields — nothing is on hold on this path.
+			await notifyApprovalRequest({
+				event: event as any,
+				eventId,
+				firstName: user.firstName,
+				lastName: user.lastName,
+				email: user.email,
+				tickets: ticketSummary,
+			})
 			return sendResponse(res, { bookingRef, pendingApproval: true }, "Request submitted for approval", true, 200)
 		}
 
@@ -365,6 +417,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			console.error("Failed to send free ticket confirmation email:", emailError)
 			// Don't fail the request if email fails
 		}
+
+		// Tell a non-admin host somebody registered. A free event used to generate exactly one
+		// email, to the buyer — the host heard nothing at all.
+		await notifyTicketSold({
+			event: event as any,
+			firstName: user.firstName,
+			lastName: user.lastName,
+			email: user.email,
+			tickets: orderRows,
+			orderNumber: bookingRef,
+			totalAmount: 0,
+			referralCode: referralCodeData?.code,
+		})
 
 		return sendResponse(res, { bookingRef, success: true }, "Registration confirmed!", true, 200)
 	} catch (error) {

@@ -15,6 +15,11 @@ import EmailVerifyDialog from "@/components/premium/EmailVerifyDialog"
 import { usePremiumSubscriptionReturn } from "@/hooks/usePremiumSubscriptionReturn"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
+import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@/hooks/usePremiumApplication"
+import PremiumApplicationQuestions from "@/components/premium/PremiumApplicationQuestions"
+import PremiumApplicationReview from "@/components/premium/PremiumApplicationReview"
+import { APPLICATION_INTRO, usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
+import { useHoldProfileGate } from "@/components/profile/ProfileGate"
 
 // Query param that marks "the visitor was sent to /login specifically to finish
 // subscribing" — set right before the redirect, read back on return to auto-resume
@@ -41,6 +46,33 @@ const PURCHASE_MARKER = "jetzy_premium_modal_purchase"
  * blank and they retype a code they already typed.
  */
 const PURCHASE_CONTEXT = "jetzy_premium_modal_context"
+
+/**
+ * Marks "the card-setup trip for a Premium APPLICATION was started from this dialog".
+ *
+ * That trip returns with `?application_session_id`, which only `/premium` and `/subscribe` used to
+ * handle — so from this dialog the buyer came back to a bare page, the dialog stayed shut, and the
+ * "application under review" screen was never seen. Its own marker, not `PURCHASE_MARKER`: nothing
+ * was bought, and the return must open the review screen, never the member card.
+ */
+const APPLICATION_MARKER = "jetzy_premium_modal_application"
+
+const markApplicationTrip = () => {
+	try {
+		sessionStorage.setItem(APPLICATION_MARKER, "1")
+	} catch {}
+}
+
+/** Takes the marker, once — the first mounted dialog to read it owns the return. */
+const consumeApplicationMarker = (): boolean => {
+	try {
+		if (sessionStorage.getItem(APPLICATION_MARKER) !== "1") return false
+		sessionStorage.removeItem(APPLICATION_MARKER)
+		return true
+	} catch {
+		return false
+	}
+}
 
 /**
  * "This document is the one that sent the buyer to Stripe."
@@ -73,6 +105,31 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	const { status: sessionStatus } = useSession()
 	const router = useRouter()
 	const queryClient = useQueryClient()
+
+	// ---- Application gate ----
+	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
+	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
+	// instantly — see `src/lib/premium-application.ts`.
+	const applicationSettingsQuery = usePremiumApplicationSettings()
+	const appSettings = applicationSettingsQuery.data
+	const { data: myApplication } = useMyPremiumApplication(sessionStatus === "authenticated")
+	const [showQuestions, setShowQuestions] = useState(false)
+	const [resumingCardSetup, setResumingCardSetup] = useState(false)
+	const resumeCardSetup = useCallback(async () => {
+		if (!myApplication?._id) return
+		setResumingCardSetup(true)
+		try {
+			const { data } = await axios.post("/api/premium/applications/checkout", { applicationId: myApplication._id, returnTo })
+			if (data?.data?.url) {
+				markApplicationTrip()
+				window.location.href = data.data.url
+			} else ErrorToast("Error", "Could not resume card setup. Please try again.")
+		} catch (error: any) {
+			ErrorToast("Error", error?.response?.data?.message || "Could not resume card setup. Please try again.")
+		} finally {
+			setResumingCardSetup(false)
+		}
+	}, [myApplication, returnTo])
 	const { isPremium } = usePremiumStatus()
 	const isSignedIn = sessionStatus === "authenticated"
 	const { anonId, sessionId } = useAnalytics()
@@ -118,6 +175,9 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	 */
 	const [reopenedAfterCancel, setReopenedAfterCancel] = useState(false)
 
+	/** Back from an application's card setup begun here. Reopens on the "under review" screen. */
+	const [justApplied, setJustApplied] = useState(false)
+
 	/**
 	 * The dialog is VISIBLE in three ways, and the queries below have to follow all three.
 	 *
@@ -126,7 +186,37 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	 * fetching nothing: no prices meant no annual option, which meant no "Switch to $200/year" on
 	 * the member card — the one action a member who just subscribed monthly might want.
 	 */
-	const isVisible = isOpen || justSubscribed || alreadyMember || reopenedAfterCancel
+	const isVisible = isOpen || justSubscribed || alreadyMember || reopenedAfterCancel || justApplied
+	// Profile is asked AFTER paying (CEO, 2026-09-22), so the page's own gate stands down while this
+	// dialog — or the post-purchase form it opens — is on screen.
+	const postPurchaseProfile = usePostPurchaseProfile()
+	useHoldProfileGate(isVisible || !!postPurchaseProfile.element)
+
+	// ---- Back from an application's card setup, begun in this dialog ----
+	// Confirm (idempotent — the webhook fulfils it too), reopen on the review screen, then ask for the
+	// profile over it. Completing the form leaves the buyer looking at "under review", not the page.
+	useEffect(() => {
+		if (!router.isReady) return
+		const applicationSessionId = router.query.application_session_id
+		if (typeof applicationSessionId !== "string" || !applicationSessionId) return
+		if (!consumeApplicationMarker()) return
+
+		setJustApplied(true)
+		// Beside the confirm, not after it: the profile check is a round trip of its own, and the
+		// review card renders immediately — waiting would show it, then cover it.
+		postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
+		axios
+			.get(`/api/premium/applications/confirm?session_id=${encodeURIComponent(applicationSessionId)}`)
+			.catch(() => {
+				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
+			})
+			.finally(() => {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				const { application_session_id: _applied, ...rest } = router.query
+				router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true })
+			})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.isReady, router.query.application_session_id])
 
 	// The shared hook, not a private query: it already formats every interval's label and shares
 	// its cache key, so opening this after the price has been fetched elsewhere on the page
@@ -453,6 +543,15 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 				setAlreadyMember(true)
 				return
 			}
+			// The server enforces the application gate — no code it accepted means the questions.
+			if (error?.response?.data?.data?.applicationRequired) {
+				setShowQuestions(true)
+				return
+			}
+			if (error?.response?.data?.data?.applicationInProgress) {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				return
+			}
 			const message = error?.response?.data?.message || "Could not start checkout. Please try again."
 			ErrorToast("Error", message)
 		},
@@ -527,6 +626,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 		if (sessionId) {
 			setJustSubscribed(true)
+			postPurchaseProfile.prompt()
 			return
 		}
 
@@ -588,12 +688,13 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 
 	// Stays mounted while `alreadyMember` or `justSubscribed` is set even if the parent thinks
 	// it's closed — those are the post-login and post-checkout cases described above.
-	if (!isVisible) return null
+	if (!isVisible) return postPurchaseProfile.element
 
 	const handleClose = () => {
 		setAlreadyMember(false)
 		setJustSubscribed(false)
 		setReopenedAfterCancel(false)
+		setJustApplied(false)
 		onClose()
 	}
 
@@ -610,7 +711,7 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 	//
 	// `intervalOverride` carries the annual pitch's choice through: without it, verifying an email
 	// would drop the buyer back onto whatever the toggle says, which is monthly.
-	const handleSubscribeClick = (intervalOverride?: string) => {
+	const handleSubscribeClick = async (intervalOverride?: string) => {
 		if (sessionStatus !== "authenticated") {
 			pendingInterval.current = intervalOverride
 			setVerifyOpen(true)
@@ -622,12 +723,28 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 			setAlreadyMember(true)
 			return
 		}
+		if (applicationBlocksCheckout(myApplication)) return // review card is already showing instead of this button
+		// Re-fetched LIVE, not read from the cache: an admin toggling the gate must take effect on
+		// this exact click, not on a refresh or a lucky retry a minute later.
+		const { data: freshSettings } = await applicationSettingsQuery.refetch()
+		// A refused code is not an invite code — counting it as one would let a typo past the
+		// questionnaire the gate exists to ask.
+		if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
+			pendingInterval.current = intervalOverride
+			setShowQuestions(true)
+			return
+		}
 		subscribeMutation.mutate(intervalOverride)
 	}
 
 	// The session now exists. Straight to Stripe, which is what they pressed the button for.
-	const handleVerified = () => {
+	const handleVerified = async () => {
 		setVerifyOpen(false)
+		const { data: freshSettings } = await applicationSettingsQuery.refetch()
+		if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
+			setShowQuestions(true)
+			return
+		}
 		subscribeMutation.mutate(pendingInterval.current)
 	}
 
@@ -676,38 +793,53 @@ const PremiumPaywallModal: React.FC<Props> = ({ isOpen, onClose, returnTo, messa
 						{!showMemberCard && message && <p className="text-gray-400 text-sm mb-6">{message}</p>}
 					</div>
 
-					<PlanComparison
-						plan={plan}
-						planLoading={planLoading}
-						prices={prices}
-						selectedInterval={selectedInterval}
-						onIntervalChange={setSelectedInterval}
-						isPremium={showMemberCard}
-						currentPlan={currentPlan}
-						onSwitchInterval={() => portalMutation.mutate("switch")}
-						onManageBilling={() => portalMutation.mutate(undefined)}
-						billingPending={portalMutation.isPending}
-						inviteCode={inviteCode}
-						onInviteCodeChange={setInviteCode}
-						inviteAccepted={inviteAccepted}
-						inviteError={inviteError}
-						inviteChecking={inviteChecking}
-						trial={trialOffer}
-						trialPending={!showMemberCard && !trialResolved}
-						premiumPending={subscribeMutation.isPending}
-						onChooseFree={handleChooseFree}
-						onChoosePremium={() => handleSubscribeClick()}
-						onChoosePremiumAtInterval={(interval) => handleSubscribeClick(interval)}
-						freeCtaLabel={showMemberCard ? "Close" : "Continue with Free"}
-						subscribedCtaLabel="Close"
-					/>
+					{applicationBlocksCheckout(myApplication) ? (
+						<PremiumApplicationReview application={myApplication as any} onResumeCardSetup={resumeCardSetup} resuming={resumingCardSetup} />
+					) : (
+						<PlanComparison
+							plan={plan}
+							planLoading={planLoading}
+							prices={prices}
+							selectedInterval={selectedInterval}
+							onIntervalChange={setSelectedInterval}
+							isPremium={showMemberCard}
+							currentPlan={currentPlan}
+							onSwitchInterval={() => portalMutation.mutate("switch")}
+							onManageBilling={() => portalMutation.mutate(undefined)}
+							billingPending={portalMutation.isPending}
+							inviteCode={inviteCode}
+							onInviteCodeChange={setInviteCode}
+							inviteAccepted={inviteAccepted}
+							inviteError={inviteError}
+							inviteChecking={inviteChecking}
+							trial={trialOffer}
+							trialPending={!showMemberCard && !trialResolved}
+							premiumPending={subscribeMutation.isPending}
+							onChooseFree={handleChooseFree}
+							onChoosePremium={() => handleSubscribeClick()}
+							onChoosePremiumAtInterval={(interval) => handleSubscribeClick(interval)}
+							freeCtaLabel={showMemberCard ? "Close" : "Continue with Free"}
+							subscribedCtaLabel="Close"
+						/>
+					)}
 				</div>
 			</div>
+
+			<PremiumApplicationQuestions
+				open={showQuestions}
+				onClose={() => setShowQuestions(false)}
+				onBack={() => setShowQuestions(false)}
+				questions={appSettings?.questions || []}
+				interval={selectedInterval}
+				returnTo={returnTo}
+				onBeforeRedirect={markApplicationTrip}
+			/>
 
 			{/* Sits above the card, on top of this dialog's own overlay — it is `fixed` itself, so
 			    nesting is only about ownership. No event and no referral code: this is the ordinary
 			    price, and the endpoints key the code to the address alone. */}
 			<EmailVerifyDialog open={verifyOpen} onClose={() => setVerifyOpen(false)} onVerified={handleVerified} />
+			{postPurchaseProfile.element}
 		</div>
 	)
 }

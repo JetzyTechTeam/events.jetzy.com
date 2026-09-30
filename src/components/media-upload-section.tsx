@@ -20,6 +20,12 @@ interface MediaUploadSectionProps {
   mediaOrder?: string[];
   /** Called with the full new url order after a drag. Omit to disable reordering. */
   onReorder?: (urls: string[]) => void;
+  /**
+   * Ceiling on photos + videos TOGETHER. `null`/undefined = unlimited (admins).
+   * See `src/lib/event-media-limit.ts` — the server enforces the same number; this is the
+   * affordance, not the rule.
+   */
+  maxItems?: number | null;
 }
 
 const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
@@ -35,6 +41,7 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
   handleVideoDelete,
   mediaOrder,
   onReorder,
+  maxItems,
 }) => {
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const videoInputRef = React.useRef<HTMLInputElement>(null);
@@ -58,6 +65,21 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
   const dragFromRef = React.useRef<number | null>(null);
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
   const canReorder = typeof onReorder === "function" && items.length > 1;
+
+  // Remaining slots across both kinds. `null` = no cap.
+  const remaining = typeof maxItems === "number" ? Math.max(0, maxItems - items.length) : null;
+  const atLimit = remaining === 0;
+
+  // The file input is `multiple`, so a host can pick six files against two free slots. Truncate
+  // to what fits rather than letting the page's upload loop run past the cap and fail at save —
+  // by then the files are already on the CDN. A DataTransfer is the only way to hand a shortened
+  // FileList back, since FileList itself is not constructible.
+  const limitFiles = (files: FileList | null): FileList | null => {
+    if (!files || remaining === null || files.length <= remaining) return files;
+    const dt = new DataTransfer();
+    Array.from(files).slice(0, remaining).forEach((f) => dt.items.add(f));
+    return dt.files;
+  };
 
   const startDrag = (idx: number) => {
     dragFromRef.current = idx;
@@ -86,7 +108,7 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
         <Box
           as="button"
           type="button"
-          onClick={() => !isUploadingImage && imageInputRef.current?.click()}
+          onClick={() => !isUploadingImage && !atLimit && imageInputRef.current?.click()}
           display="flex"
           flexDirection="column"
           alignItems="center"
@@ -96,8 +118,9 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
           borderRadius="xl"
           px={5}
           py={3}
-          cursor={isUploadingImage ? "not-allowed" : "pointer"}
-          _hover={{ bg: isUploadingImage ? "#2B2B2B" : "#3A3A3A" }}
+          opacity={atLimit ? 0.45 : 1}
+          cursor={isUploadingImage || atLimit ? "not-allowed" : "pointer"}
+          _hover={{ bg: isUploadingImage || atLimit ? "#2B2B2B" : "#3A3A3A" }}
           border="1px dashed"
           borderColor="#444"
         >
@@ -107,7 +130,7 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
             multiple
             ref={imageInputRef}
             style={{ display: "none" }}
-            onChange={(e) => { onImageChange(e.target.files); e.target.value = ""; }}
+            onChange={(e) => { onImageChange(limitFiles(e.target.files)); e.target.value = ""; }}
           />
           {isUploadingImage ? (
             <Flex direction="column" align="center" gap={1}>
@@ -130,7 +153,7 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
         <Box
           as="button"
           type="button"
-          onClick={() => !isUploadingVideo && videoInputRef.current?.click()}
+          onClick={() => !isUploadingVideo && !atLimit && videoInputRef.current?.click()}
           display="flex"
           flexDirection="column"
           alignItems="center"
@@ -140,8 +163,9 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
           borderRadius="xl"
           px={5}
           py={3}
-          cursor={isUploadingVideo ? "not-allowed" : "pointer"}
-          _hover={{ bg: isUploadingVideo ? "#2B2B2B" : "#3A3A3A" }}
+          opacity={atLimit ? 0.45 : 1}
+          cursor={isUploadingVideo || atLimit ? "not-allowed" : "pointer"}
+          _hover={{ bg: isUploadingVideo || atLimit ? "#2B2B2B" : "#3A3A3A" }}
           border="1px dashed"
           borderColor="#444"
         >
@@ -151,7 +175,7 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
             multiple
             ref={videoInputRef}
             style={{ display: "none" }}
-            onChange={(e) => { onVideoChange(e.target.files); e.target.value = ""; }}
+            onChange={(e) => { onVideoChange(limitFiles(e.target.files)); e.target.value = ""; }}
           />
           {isUploadingVideo ? (
             <Flex direction="column" align="center" gap={1}>
@@ -168,6 +192,14 @@ const MediaUploadSection: React.FC<MediaUploadSectionProps> = ({
           )}
         </Box>
       </Flex>
+
+      {typeof maxItems === "number" && (
+        <Text fontSize="xs" color={atLimit ? "#F79432" : "#8a8a8a"} mb={2}>
+          {atLimit
+            ? `You've used all ${maxItems} photo and video slots. Remove one to add another.`
+            : `${items.length} of ${maxItems} photos and videos used.`}
+        </Text>
+      )}
 
       {/* Media grid — one ordered list; drag to choose what leads the banner */}
       {items.length > 0 && (

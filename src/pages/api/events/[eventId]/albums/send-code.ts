@@ -8,9 +8,16 @@ import zod from "zod"
 import { issueAlbumCode } from "@/lib/album-verification"
 import { sendAlbumVerificationCode } from "@/lib/send-grid"
 import { clientKey, isRateLimited } from "@/lib/rate-limit"
+import { sendBackendLoginCode } from "@/lib/backend-login-code"
 
 const schema = zod.object({
 	email: zod.string().email(),
+	/**
+	 * "access" = the album GATE, which signs the person in: the Jetzy backend's login code is sent so
+	 * verifying it yields a real accessToken (and creates the account if needed). Absent = anything
+	 * else that only proves an address (the photo-request email change) — our own code, unchanged.
+	 */
+	for: zod.literal("access").optional(),
 })
 
 // Generous enough for a family sharing a wifi connection, tight enough that the endpoint
@@ -53,6 +60,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const email = validation.data.email.trim().toLowerCase()
 
+		if (validation.data.for === "access") {
+			const sent = await sendBackendLoginCode(email, "album")
+			if (sent.ok) {
+				return sendResponse(res, { email, via: "jetzy" }, "Verification code sent", true, ResCode.OK)
+			}
+			if ("rateLimited" in sent) {
+				return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
+			}
+			if (!("unavailable" in sent)) {
+				return sendResponse(res, null, sent.message || "We couldn't send the code. Please check the address and try again.", false, ResCode.BAD_REQUEST)
+			}
+			// Backend down — our own code keeps the album reachable (no session, cookie only, as before).
+			console.warn(`[albums/send-code] backend login code unavailable (${sent.status ?? "network"}), using our own code`)
+		}
+
 		const issued = await issueAlbumCode(eventId, email)
 		if (!issued) {
 			return sendResponse(res, null, "A code was just sent. Please wait a moment before asking for another.", false, ResCode.TOO_MANY_REQUESTS)
@@ -62,7 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// code that will never arrive, so they need to know now.
 		await sendAlbumVerificationCode({ email, code: issued.code, eventName: (event as any).name })
 
-		return sendResponse(res, { email }, "Verification code sent", true, ResCode.OK)
+		return sendResponse(res, { email, via: "portal" }, "Verification code sent", true, ResCode.OK)
 	} catch (error: any) {
 		console.error("[albums/send-code] Error:", error)
 		return sendResponse(res, null, "We couldn't send the code. Please try again.", false, ResCode.INTERNAL_SERVER_ERROR)

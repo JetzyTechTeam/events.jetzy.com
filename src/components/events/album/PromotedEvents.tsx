@@ -9,6 +9,7 @@ import timezone from "dayjs/plugin/timezone"
 
 import { eventPath } from "@/lib/event-slug"
 import { eventMedia } from "@/lib/event-media"
+import MediaBackdrop from "@/components/events/MediaBackdrop"
 import { getEventStatus } from "@/utils/eventSort"
 import { getEventZone } from "@/utils/eventTime"
 import { stripHtml } from "@/utils/text"
@@ -93,8 +94,11 @@ export function PromotedEventCard({ event, size = "sm" }: { event: IEvent; size?
 				transition="border-color .15s ease, background .15s ease"
 				_hover={{ borderColor: "#3f3f3f", bg: "#202020" }}
 			>
-				{/* Letterboxed like every other card in the app — banners have no fixed aspect. */}
-				<Box position="relative" w="100%" h={isLg ? "200px" : "150px"} bg="black">
+				{/* Letterboxed like every other card in the app — banners have no fixed aspect.
+				    `overflow` is required by the ambient fill: its layers are scaled past the
+				    frame on purpose, so the blur doesn't fade out at the frame's own edge. */}
+				<Box position="relative" w="100%" h={isLg ? "200px" : "150px"} bg="black" overflow="hidden">
+					{lead && <MediaBackdrop url={lead.url} type={lead.type} layers={1} deepBlur={16} />}
 					{lead ? (
 						lead.type === "video" ? (
 							// First frame only, via the `#t=0.1` poster trick — a rail never autoplays.

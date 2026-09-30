@@ -6,6 +6,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcrypt"
 import { AuthorizeSSOApi, SignupSSOApi } from "@Jetzy/services/auth/authapis"
 import { verifyMagicToken } from "@/lib/magicLink"
+import { flushPendingProfile } from "@/lib/jetzy-profile-server"
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -141,8 +142,11 @@ export const authOptions: NextAuthOptions = {
           // magic token — use it directly and skip the password-based external authorize.
           let accessToken = (magicTokenData as any)?.accessToken || null;
 
-          // Try to get external token with timeout
-          try {
+          // Try to get external token with timeout — only when the magic token didn't bring one.
+          // With a code-login token in hand, the password-based authorize (the fixed "123456" on a
+          // magic login) and the JIT /accounts/create behind it can only fail or, worse, create an
+          // account with a known password; the backend login code already created/verified it.
+          if (!accessToken) try {
             const externalApiUrl = process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL || 'https://test.jetzy.com';
             const loginEndpoint = `${externalApiUrl}/api/v1/accounts/authorize`;
             console.log('--- Authorize Debug Start ---');
@@ -240,6 +244,10 @@ export const authOptions: NextAuthOptions = {
             }
           }
           console.log('--- Authorize Debug End ---');
+
+          // A profile saved while an earlier session had no backend token is owed to the backend.
+          // Best-effort — never fails a login.
+          await flushPendingProfile(accessToken, user);
 
           // Search other collections for image if missing in primary
           let finalImage = user.image;
@@ -439,6 +447,8 @@ export const authOptions: NextAuthOptions = {
             sessionImage = image;
           }
 
+          await flushPendingProfile(accessToken, user);
+
           console.log("--- Firebase Auth API Success ---");
           const firebaseDisplayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || ''
           return {
@@ -466,11 +476,23 @@ export const authOptions: NextAuthOptions = {
     signOut: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.profile = user
         // @ts-ignore
         token.accessToken = user.accessToken
+      }
+      // `useSession().update({ name, image })` after the profile-completion form, so the navbar
+      // shows the new photo and name without a re-login. Only these two keys are accepted — the
+      // client must not be able to rewrite role or ids through this.
+      if (trigger === "update" && token.profile && session) {
+        const patch: Record<string, string> = {}
+        if (typeof session.name === "string" && session.name.trim()) {
+          patch.name = session.name.trim()
+          patch.fullName = session.name.trim()
+        }
+        if (typeof session.image === "string" && /^https?:\/\//.test(session.image)) patch.image = session.image
+        token.profile = { ...(token.profile as any), ...patch }
       }
       return token
     },

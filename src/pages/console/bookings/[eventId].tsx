@@ -110,8 +110,12 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
                 // getServerSideProps already redirects anyone who is neither admin nor the
                 // event's owner, so everyone who reaches this page may manage these bookings.
                 canManage
+                // Names for the edit dialog — a booking stores `ticketId` only. Already in
+                // the props for the Approvals tab, so nothing extra is fetched.
+                eventTickets={(event.tickets || []).map((t: any) => ({ _id: String(t._id), name: t.name }))}
                 onDeleteSuccess={() => router.replace(router.asPath)}
                 onCancelSuccess={() => router.replace(router.asPath)}
+                onEditSuccess={() => router.replace(router.asPath)}
               />
             </div>
           </TabPanel>

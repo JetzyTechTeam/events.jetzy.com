@@ -24,7 +24,8 @@ import {
 import { getMembershipTicketAllowances } from "@/lib/premium-ticket-limit"
 import { findMembershipPriceForInterval, getMembershipPrice, hasActiveMembershipSubscription, resolveStripeCustomerForUser } from "@/lib/premium"
 import { MEMBERSHIPS, membershipLabelList, type MembershipKey } from "@/lib/memberships"
-import { validateReferralCodeForEvent } from "@/lib/referral-validation"
+import { validateReferralCodeForEvent, type ReferralCodeData } from "@/lib/referral-validation"
+import { REFERRAL_NOT_FOR_SELECTION_MESSAGE, referralCoversTicket, referralEligibleSubtotal } from "@/lib/referral-ticket-scope"
 import Stripe from "stripe"
 
 type BodyParams = {
@@ -159,9 +160,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Validate and get referral code if provided. The modal's green tick is only a
 		// preview — the code can be deactivated or exhausted before submit, so re-check.
-		let referralCodeData: { code: string; discountPercentage: number; freeMembershipMonths: number } | null = null
+		let referralCodeData: ReferralCodeData | null = null
 		try {
-			const referralResult = await validateReferralCodeForEvent(tickets[0]?.eventId, referralCode)
+			// Passing the selected ticket ids refuses a code scoped to other tickets. Pricing below
+			// re-derives eligibility from the STORED tickets, so a crafted id here gains nothing.
+			const referralResult = await validateReferralCodeForEvent(
+				tickets[0]?.eventId,
+				referralCode,
+				tickets.map((t) => t.id),
+			)
 			if (!referralResult.ok) {
 				console.warn("[checkout/index] Referral code rejected:", referralResult.message, referralCode)
 				return sendResponse(res, null, referralResult.message, false, ResCode.BAD_REQUEST)
@@ -288,26 +295,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			}
 		}
 
-		// capacity 0 = unlimited (per schema). Only enforce when capacity > 0.
-		if (event.capacity > 0) {
-			const { EventTracker } = await import("@/models/events/event-tracker")
-			const eventTracker = await EventTracker.findOne({ eventId: event._id })
+		// Capacity — per ticket, plus the legacy event-wide ceiling. Counted from the bookings
+		// themselves, never from `EventTracker.bookedTickets`: that counter is absent on every
+		// event this portal didn't create, and the old `if (eventTracker)` guard therefore made
+		// those events silently unlimited. See `src/lib/ticket-availability.ts`.
+		//
+		// This is a check-then-act against a Stripe session that is created moments later, so
+		// two buyers can both pass it. That race is accepted: the alternative is refusing at
+		// fulfilment, by which point the card is charged and Jetzy issues no refunds. Same
+		// trade-off, and the same reasoning, as the premium ticket allowance.
+		{
+			const { verifyAvailability } = await import("@/lib/ticket-availability")
+			const verdict = await verifyAvailability(event, tickets.map((t) => ({ id: String(t.id), quantity: t.quantity })))
 
-			if (eventTracker) {
-				const totalTicketsRequested = tickets.reduce((sum, ticket) => sum + ticket.quantity, 0)
-				const availableCapacity = event.capacity - eventTracker.bookedTickets
-
-				if (availableCapacity < totalTicketsRequested) {
-					console.info("[checkout/index] Event at capacity")
-					return sendResponse(res, {
-						atCapacity: true,
-						availableCapacity,
-						requestedTickets: totalTicketsRequested,
-						eventName: event.name,
-						eventId: event._id,
-						isClosed: false,
-					}, "Event capacity reached. Would you like to join the waiting list?", true, ResCode.OK)
-				}
+			if (!verdict.ok) {
+				console.info("[checkout/index] Event at capacity:", verdict.reason)
+				return sendResponse(res, {
+					atCapacity: true,
+					availableCapacity: verdict.remaining,
+					requestedTickets: verdict.requested,
+					// Which ticket ran out, so the modal can name it rather than saying the whole
+					// event is full when one tier sold out and the others are wide open.
+					ticketId: verdict.ticketId,
+					ticketName: verdict.ticketName,
+					reason: verdict.reason,
+					eventName: event.name,
+					eventId: event._id,
+					isClosed: false,
+				}, `${verdict.reason} Would you like to join the waiting list?`, true, ResCode.OK)
 			}
 		}
 
@@ -363,15 +378,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// was validated, and a discount that drags an otherwise fine total under the floor.
 		// Unit prices come from the event record rather than the request body, so the figure
 		// matches what Stripe is actually being asked to charge.
-		const chargeSubtotal = tickets.reduce((sum, ticket) => {
+		const chargeRows = tickets.map((ticket) => {
 			const stored = (event.tickets || []).find((et: any) => et?.stripeProductId === ticket.priceId)
-			const unitPrice = Number(stored?.price ?? ticket.price) || 0
-			return sum + unitPrice * (Number(ticket.quantity) || 0)
-		}, 0)
+			return {
+				// The STORED ticket's id decides referral eligibility, never the body's.
+				id: stored?._id ? String(stored._id) : "",
+				price: Number(stored?.price ?? ticket.price) || 0,
+				quantity: Number(ticket.quantity) || 0,
+			}
+		})
+		const chargeSubtotal = chargeRows.reduce((sum, row) => sum + row.price * row.quantity, 0)
+		// A code scoped to particular tickets discounts only those; the rest pay full price.
+		const referralSubtotal = referralCodeData ? referralEligibleSubtotal(referralCodeData, chargeRows) : 0
+		if (referralCodeData && !chargeRows.some((row) => referralCoversTicket(referralCodeData, row.id))) {
+			return sendResponse(res, null, REFERRAL_NOT_FOR_SELECTION_MESSAGE, false, ResCode.BAD_REQUEST)
+		}
 		const chargePricing = buildTicketPricing({
 			subtotal: chargeSubtotal,
 			referralCode: referralCodeData?.code,
 			referralPercentage: referralCodeData?.discountPercentage,
+			referralSubtotal,
 		})
 		if (isBelowStripeMinimum(chargePricing.total)) {
 			console.warn("[checkout/index] Order below Stripe minimum:", { subtotal: chargeSubtotal, total: chargePricing.total })
@@ -399,10 +425,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// `applies_to` takes PRODUCT ids, but `ticket.stripeProductId` actually holds a
 				// PRICE id (`api/events/create.ts` calls `stripe.prices.create`), so the product
 				// has to be read back off the price.
+				//
+				// The same scoping is what limits a code to the tickets the host picked: every ticket
+				// price is minted with its own `product_data`, so each ticket is its own product and
+				// listing only the eligible ones leaves the others at full price.
 				let appliesTo: Stripe.CouponCreateParams.AppliesTo | undefined = undefined
-				if (bundlePlan.toCharge.length > 0) {
+				const referralIsScoped = Array.isArray(referralCodeData.ticketIds) && referralCodeData.ticketIds.length > 0
+				if (bundlePlan.toCharge.length > 0 || referralIsScoped) {
+					const eligibleTickets = tickets.filter((_, index) => referralCoversTicket(referralCodeData, chargeRows[index]?.id))
 					const productIds = await Promise.all(
-						tickets.map(async (t) => {
+						eligibleTickets.map(async (t) => {
 							const price = await stripe.prices.retrieve(t.priceId)
 							return typeof price.product === "string" ? price.product : price.product.id
 						}),
@@ -468,6 +500,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (referralCodeData) {
 			metadata.referralCode = referralCodeData.code
 			metadata.referralDiscountPercentage = referralCodeData.discountPercentage.toString()
+			// What the percentage was taken off — less than the subtotal when the code is scoped
+			// to some of the tickets. Fulfilment records the discount from this.
+			metadata.referralSubtotal = referralSubtotal.toFixed(2)
 		}
 
 		// The TICKET-ONLY figures. On a bundled session Stripe's `amount_total` is the whole
@@ -618,7 +653,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					// A referral code stays Premium-only; the ticket's own months apply to whatever
 					// that ticket sells. `resolveFreeMonthsForKey` is the one place that rule lives,
 					// shared with `free-events.ts` and the checkout modal.
-					const freeMonths = resolveFreeMonthsForKey(key, ticketFreeMonths, referralCodeData?.freeMembershipMonths || 0)
+					//
+					// A code scoped to particular tickets only gives its months when one of THOSE
+					// tickets sells this membership.
+					const referralCoversKey = tickets.some((t: any, index) => {
+						const stored = storedTicketFor(t.id)
+						return !!stored && ticketMemberships(stored as any).includes(key) && referralCoversTicket(referralCodeData, chargeRows[index]?.id)
+					})
+					const freeMonths = resolveFreeMonthsForKey(
+						key,
+						ticketFreeMonths,
+						referralCoversKey ? referralCodeData?.freeMembershipMonths || 0 : 0,
+					)
 
 					membershipLines.push({
 						key,

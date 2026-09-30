@@ -3,6 +3,7 @@ import { eventPath } from "@/lib/event-slug";
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { authorizedOnly } from "@/lib/authSession";
 import { Events } from "@/models/events";
+import { ensureDbConnected } from "@/configs/database";
 import { IEvent } from "@/models/events/types";
 import { Alert, AlertDescription, AlertIcon, Box, Button, Flex, FormControl, FormLabel, Heading, Input, Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalOverlay, Text, useToast } from "@chakra-ui/react";
 import axios from "axios";
@@ -286,6 +287,8 @@ export default function GuestsInvited({ event }: { event: string }) {
 export const getServerSideProps: GetServerSideProps<any, any> = async (
   context
 ) => {
+  await ensureDbConnected();
+
   const eventId = context.query.eventId as string;
 
   if (!eventId) return { props: {} };

@@ -79,7 +79,11 @@ export default function SignupPage() {
 			</div>
 
 			<div className="mt-10 sm:mx-auto sm:w-full sm:max-w-sm bg-[#1E1E1E] p-5 rounded-lg">
-						<Formik initialValues={formData} onSubmit={handleSubmit} validationSchema={startSignupValidation}>
+						<Formik
+							initialValues={formData}
+							onSubmit={handleSubmit}
+							validationSchema={startSignupValidation}
+						>
 							{({ values, handleChange }) => (
 								<Form className="space-y-6">
 									<div>

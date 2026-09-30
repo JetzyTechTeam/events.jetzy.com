@@ -223,6 +223,37 @@ const bookingSchema = new Schema<IBookings>(
 			enum: ["guest", "host", "admin"],
 			required: false,
 		},
+		// Set when a host or admin changed the ticket quantities after the booking was made
+		// (`api/bookings/update-tickets`). No defaults, same reasoning as the two above: a
+		// booking that was never edited leaves both undefined rather than claiming an edit.
+		//
+		// This is the ONLY thing in the codebase that mutates a booking's contents after
+		// creation, and check-in counts, capacity and the guest's ticket all hang off those
+		// rows — so the before/after is recorded, not just the fact that something happened.
+		ticketsEditedAt: {
+			type: Date,
+			required: false,
+		},
+		ticketsEditedBy: {
+			type: String,
+			enum: ["host", "admin"],
+			required: false,
+		},
+		// No `default: []` — that would write an empty array onto every legacy booking the
+		// first time it was saved, turning "never edited" into "edited zero times".
+		ticketsEditHistory: {
+			type: [
+				{
+					_id: false,
+					at: { type: Date, required: true },
+					by: { type: String, required: true },
+					byUserId: { type: Schema.Types.ObjectId, required: false },
+					from: [{ _id: false, ticketId: Schema.Types.ObjectId, quantity: Number }],
+					to: [{ _id: false, ticketId: Schema.Types.ObjectId, quantity: Number }],
+				},
+			],
+			required: false,
+		},
 		isDeleted: {
 			type: Boolean,
 			default: false,

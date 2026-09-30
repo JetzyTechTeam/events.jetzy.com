@@ -54,6 +54,8 @@ export async function heldMemberships(email: string, scope?: MembershipKey[]): P
 	const trimmed = typeof email === "string" ? email.trim() : ""
 	if (!trimmed) return []
 
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { Users } = await import("@/models/userModal")
 	const { EventUsers } = await import("@/models/eventUsersModal")
 

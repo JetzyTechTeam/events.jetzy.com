@@ -52,6 +52,11 @@ export async function issueAlbumCode(
 	email: string,
 	purpose: CodePurpose = "album",
 ): Promise<{ code: string } | null> {
+	// Server-only helper: connect before querying so a caller that forgot its own guard
+	// cannot race a cold start. Idempotent — a no-op once `readyState === 1`.
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
+
 	const now = Date.now()
 	const filter = { eventId: eventKey(eventId), email, ...purposeFilter(purpose) }
 
@@ -92,6 +97,9 @@ export async function consumeAlbumCode(
 	code: string,
 	purpose: CodePurpose = "album",
 ): Promise<ConsumeResult> {
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
+
 	const filter = { eventId: eventKey(eventId), email, ...purposeFilter(purpose) }
 	const row = await AlbumVerification.findOne(filter).sort({ createdAt: -1 })
 

@@ -7,6 +7,7 @@ import { EventUsers } from "@/models/eventUsersModal"
 import { Roles } from "@Jetzy/types"
 import { sendVerificationEmail, sendWelcomeEmail } from "@Jetzy/lib/send-grid"
 import { signupTrialOffer } from "@/lib/invite-trial"
+import { ensureDbConnected } from "@/configs/database"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "POST") {
@@ -14,6 +15,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 	}
 
 	try {
+		await ensureDbConnected()
+
 		const { name, email, acceptedTerms, cb, refCode } = req.body || {}
 		// Optional. Stored now; the Jetzy backend is told once the account has a password,
 		// because /v1/accounts/create needs one — see complete-signup.ts.
@@ -33,6 +36,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (!acceptedTerms) {
 			return sendResponse(res, null, "You must accept the Terms and Conditions.", false, ResCode.BAD_REQUEST)
 		}
+
+		// Date of birth and location are no longer asked here. The profile-completion gate collects
+		// them after verification and writes them to the Jetzy backend, where the mobile app reads them.
 
 		const existingInUsers = await Users.findOne({ email: cleanEmail })
 		const existingInEventUsers = await EventUsers.findOne({ email: cleanEmail })

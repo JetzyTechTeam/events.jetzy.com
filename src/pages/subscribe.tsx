@@ -7,11 +7,15 @@ import { usePremiumStatus } from "@Jetzy/hooks/usePremiumStatus"
 import { PREMIUM_STATUS_QUERY_KEY } from "@Jetzy/hooks/usePremiumStatus"
 import PlanComparison from "@Jetzy/components/premium/PlanComparison"
 import EmailVerifyDialog from "@Jetzy/components/premium/EmailVerifyDialog"
+import { APPLICATION_INTRO, usePostPurchaseProfile } from "@/components/profile/PostPurchaseProfile"
 import Navbar from "@Jetzy/components/misc/Navbar"
 import { ROUTES } from "@/configs/routes"
 import { useAnalytics } from "@Jetzy/hooks/useAnalytics"
 import { trackPremiumView } from "@Jetzy/lib/premium-view-tracking"
 import { useCurrentMembershipPlan, useMembershipPlan } from "@Jetzy/hooks/usePremiumPlan"
+import { usePremiumApplicationSettings, useMyPremiumApplication, applicationBlocksCheckout, applicationRequiredForPurchase } from "@Jetzy/hooks/usePremiumApplication"
+import PremiumApplicationQuestions from "@Jetzy/components/premium/PremiumApplicationQuestions"
+import PremiumApplicationReview from "@Jetzy/components/premium/PremiumApplicationReview"
 import { CheckIcon } from "@heroicons/react/24/solid"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
@@ -98,6 +102,9 @@ export default function SubscribePage() {
 	// hands us a session when it has one.
 
 	// Redirect back from Stripe after a successful subscription purchase.
+	// The profile is asked for BEFORE the hop back to the app (CEO, 2026-09-22); `goToApp` runs once
+	// it is complete, or at once if nothing is missing.
+	const postPurchaseProfile = usePostPurchaseProfile()
 	React.useEffect(() => {
 		const sessionId = router.query.premium_session_id
 		if (!sessionId || typeof sessionId !== "string") return
@@ -107,13 +114,58 @@ export default function SubscribePage() {
 			.then(() => {
 				Success("Welcome to Jetzy Premium!", "Your subscription is now active.")
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
-				goToApp()
+				// Complete profile → this is what returns to the app; incomplete → the form, then the app.
+				postPurchaseProfile.prompt(goToApp)
 			})
 			.catch(() => {
 				ErrorToast("Error", "We couldn't confirm your subscription. Please contact support if this persists.")
 			})
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [router.query.premium_session_id])
+
+	// ---- Application gate ----
+	// When enabled (an admin toggle, off by default), buying Premium with no invite code shows a
+	// short questionnaire and a card-setup-only Stripe session instead of starting the trial
+	// instantly — see `src/lib/premium-application.ts`.
+	const applicationSettingsQuery = usePremiumApplicationSettings()
+	const appSettings = applicationSettingsQuery.data
+	const { data: myApplication } = useMyPremiumApplication(status === "authenticated")
+	const [showQuestions, setShowQuestions] = React.useState(false)
+	const [resumingCardSetup, setResumingCardSetup] = React.useState(false)
+
+	const resumeCardSetup = React.useCallback(async () => {
+		if (!myApplication?._id) return
+		setResumingCardSetup(true)
+		try {
+			const { data } = await axios.post("/api/premium/applications/checkout", { applicationId: myApplication._id, returnTo: "/subscribe" })
+			if (data?.data?.url) window.location.href = data.data.url
+			else ErrorToast("Error", "Could not resume card setup. Please try again.")
+		} catch (error: any) {
+			ErrorToast("Error", error?.response?.data?.message || "Could not resume card setup. Please try again.")
+		} finally {
+			setResumingCardSetup(false)
+		}
+	}, [myApplication])
+
+	// Card-setup return — the application isn't an active membership yet, so this does NOT hand
+	// the mobile app its deep link the way the subscription success effect above does.
+	React.useEffect(() => {
+		const sessionId = router.query.application_session_id
+		if (!sessionId || typeof sessionId !== "string") return
+
+		// Beside the confirm, so the review card can't appear before the form (CEO, 2026-09-22).
+		postPurchaseProfile.prompt(undefined, { intro: APPLICATION_INTRO })
+		axios
+			.get(`/api/premium/applications/confirm?session_id=${sessionId}`)
+			.then(() => {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				router.replace("/subscribe", undefined, { shallow: true })
+			})
+			.catch(() => {
+				ErrorToast("Error", "Could not confirm your application. Please contact support if this persists.")
+			})
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [router.query.application_session_id])
 
 	const { isPremium, isLoading: premiumLoading } = usePremiumStatus()
 
@@ -435,6 +487,15 @@ export default function SubscribePage() {
 				queryClient.invalidateQueries({ queryKey: PREMIUM_STATUS_QUERY_KEY })
 				return
 			}
+			// The server enforces the application gate — no code it accepted means the questions.
+			if (error?.response?.data?.data?.applicationRequired) {
+				setShowQuestions(true)
+				return
+			}
+			if (error?.response?.data?.data?.applicationInProgress) {
+				queryClient.invalidateQueries({ queryKey: ["premium-application-mine"] })
+				return
+			}
 			ErrorToast("Error", error?.response?.data?.message || "Could not start checkout. Please try again.")
 		},
 	})
@@ -445,10 +506,20 @@ export default function SubscribePage() {
 	 * `intervalOverride` carries the annual pitch's choice through the verification detour; without
 	 * it, verifying an email would drop the buyer back onto whatever the toggle says.
 	 */
-	const handleChoosePremium = (intervalOverride?: string) => {
+	const handleChoosePremium = async (intervalOverride?: string) => {
 		pendingInterval.current = intervalOverride
 		if (status !== "authenticated") {
 			setVerifyOpen(true)
+			return
+		}
+		if (applicationBlocksCheckout(myApplication)) return // review screen is already showing instead of this button
+		// Re-fetched LIVE, not read from the cache: an admin toggling the gate must take effect on
+		// this exact click, not on a refresh or a lucky retry a minute later.
+		const { data: freshSettings } = await applicationSettingsQuery.refetch()
+		// A refused code is not an invite code — counting it as one would let a typo past the
+		// questionnaire the gate exists to ask.
+		if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
+			setShowQuestions(true)
 			return
 		}
 		subscribeMutation.mutate(intervalOverride)
@@ -490,44 +561,65 @@ export default function SubscribePage() {
 			{/* `4xl` so the cancellation link fits on one line — see the paywall modal. */}
 			<div className="max-w-4xl mx-auto">
 				{/* Shared with the paywall modal, so a buyer sees the same comparison whichever
-				    door they came through. */}
-				<PlanComparison
-					plan={plan}
-					planLoading={planLoading}
-					// Monthly/Annual. The selector renders only when the product genuinely has more
-					// than one interval on sale, so this is inert until annual exists in Stripe.
-					prices={prices}
-					selectedInterval={selectedInterval}
-					onIntervalChange={setSelectedInterval}
-					isPremium={isPremium}
-					// Member state: their live plan, the switch, and the portal. `goToApp` stays on
-					// the third button so the mobile deep-link return is untouched.
-					currentPlan={currentPlan}
-					onSwitchInterval={() => portalMutation.mutate("switch")}
-					onManageBilling={() => portalMutation.mutate(undefined)}
-					billingPending={portalMutation.isPending}
-					inviteCode={inviteCode}
-					onInviteCodeChange={setInviteCode}
-					inviteAccepted={inviteAccepted}
-					inviteError={inviteError}
-					inviteChecking={inviteChecking}
-					trial={trialOffer}
-					trialPending={!isPremium && !trialResolved}
-					premiumDisabled={premiumLoading}
-					premiumPending={subscribeMutation.isPending}
-					onChooseFree={handleChooseFree}
-					onChoosePremium={() => handleChoosePremium()}
-					onChoosePremiumAtInterval={(interval) => handleChoosePremium(interval)}
-					subscribedCtaLabel="Continue"
+				    door they came through. Swapped for the review screen once an application is in
+				    flight — nothing left to buy until it's decided. */}
+				{applicationBlocksCheckout(myApplication) ? (
+					<PremiumApplicationReview application={myApplication as any} onResumeCardSetup={resumeCardSetup} resuming={resumingCardSetup} />
+				) : (
+					<PlanComparison
+						plan={plan}
+						planLoading={planLoading}
+						// Monthly/Annual. The selector renders only when the product genuinely has more
+						// than one interval on sale, so this is inert until annual exists in Stripe.
+						prices={prices}
+						selectedInterval={selectedInterval}
+						onIntervalChange={setSelectedInterval}
+						isPremium={isPremium}
+						// Member state: their live plan, the switch, and the portal. `goToApp` stays on
+						// the third button so the mobile deep-link return is untouched.
+						currentPlan={currentPlan}
+						onSwitchInterval={() => portalMutation.mutate("switch")}
+						onManageBilling={() => portalMutation.mutate(undefined)}
+						billingPending={portalMutation.isPending}
+						inviteCode={inviteCode}
+						onInviteCodeChange={setInviteCode}
+						inviteAccepted={inviteAccepted}
+						inviteError={inviteError}
+						inviteChecking={inviteChecking}
+						trial={trialOffer}
+						trialPending={!isPremium && !trialResolved}
+						premiumDisabled={premiumLoading}
+						premiumPending={subscribeMutation.isPending}
+						onChooseFree={handleChooseFree}
+						onChoosePremium={() => handleChoosePremium()}
+						onChoosePremiumAtInterval={(interval) => handleChoosePremium(interval)}
+						subscribedCtaLabel="Continue"
+					/>
+				)}
+
+				<PremiumApplicationQuestions
+					open={showQuestions}
+					onClose={() => setShowQuestions(false)}
+					onBack={() => setShowQuestions(false)}
+					questions={appSettings?.questions || []}
+					interval={selectedInterval}
+					returnTo="/subscribe"
 				/>
+
+				{postPurchaseProfile.element}
 
 				{/* No event and no referral code — this is the ordinary price, and the endpoints key
 				    the code to the address alone. */}
 				<EmailVerifyDialog
 					open={verifyOpen}
 					onClose={() => setVerifyOpen(false)}
-					onVerified={() => {
+					onVerified={async () => {
 						setVerifyOpen(false)
+						const { data: freshSettings } = await applicationSettingsQuery.refetch()
+						if (applicationRequiredForPurchase(freshSettings, !!usableCode, myApplication)) {
+							setShowQuestions(true)
+							return
+						}
 						subscribeMutation.mutate(pendingInterval.current)
 					}}
 				/>

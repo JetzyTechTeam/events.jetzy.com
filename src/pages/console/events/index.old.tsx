@@ -3,6 +3,7 @@ import EventsTableComponent from "@/components/events/EventsTableComponent"
 import { ROUTES } from "@/configs/routes"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
+import { ensureDbConnected } from "@/configs/database"
 import { IEvent } from "@/models/events/types"
 import { Pages } from "@/types"
 import { GetServerSideProps } from "next"
@@ -43,6 +44,8 @@ export default function EventsPage({ events, pagination }: Props) {
 }
 
 export const getServerSideProps: GetServerSideProps<any, any> = async (context) => {
+	await ensureDbConnected()
+
 	// check if user is authorized
 	const session = await authorizedOnly(context)
 	if (!session) return session

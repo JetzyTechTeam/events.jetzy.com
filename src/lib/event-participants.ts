@@ -15,6 +15,11 @@ export async function getEventParticipants(
   eventId: string,
   excludeEmail?: string
 ): Promise<Map<string, string>> {
+  // Server-only helper: connect before querying so a caller that forgot its own guard
+  // cannot race a cold start. Idempotent — a no-op once `readyState === 1`.
+  const { ensureDbConnected } = await import("@/configs/database")
+  await ensureDbConnected()
+
   const normalized = excludeEmail?.toLowerCase()
   const participants = new Map<string, string>()
 

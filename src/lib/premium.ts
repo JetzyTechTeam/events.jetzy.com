@@ -38,6 +38,8 @@ export type PremiumSubscriptionData = MembershipSubscriptionData
 // interchangeably (see [...nextauth].ts) — mirror that dual lookup here so membership
 // status can be read/written no matter which collection the account lives in.
 export async function findUserRecord(userId: string): Promise<{ model: any; doc: any } | null> {
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { Users } = await import("@/models/userModal")
 	const { EventUsers } = await import("@/models/eventUsersModal")
 
@@ -90,6 +92,8 @@ export async function findMembershipRecord(userId: string, email?: string | null
 	const address = (email || own?.doc?.email || "").trim()
 	if (!address) return own
 
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { Users } = await import("@/models/userModal")
 	const { EventUsers } = await import("@/models/eventUsersModal")
 
@@ -188,6 +192,8 @@ async function linkStripeCustomerByEmail(customerId: string): Promise<{ model: a
 		return null
 	}
 
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { Users } = await import("@/models/userModal")
 	const { EventUsers } = await import("@/models/eventUsersModal")
 
@@ -228,6 +234,8 @@ async function linkStripeCustomerByEmail(customerId: string): Promise<{ model: a
 }
 
 export async function findUserByStripeCustomerId(customerId: string): Promise<{ model: any; doc: any } | null> {
+	const { ensureDbConnected } = await import("@/configs/database")
+	await ensureDbConnected()
 	const { Users } = await import("@/models/userModal")
 	const { EventUsers } = await import("@/models/eventUsersModal")
 
