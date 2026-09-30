@@ -72,6 +72,7 @@ import { uploadFile, deleteFile } from "@/services/upload.service";
 import { uniqueId } from "@/lib/utils";
 import MediaUploadSection from "../../../components/media-upload-section";
 import { allowedMediaCount } from "@/lib/event-media-limit";
+import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title";
 import ListingCardPreview from "@/components/events/ListingCardPreview";
 import { previewPath } from "@/lib/event-preview";
 import TimezoneSelect from "../../../components/timezone-select";
@@ -539,7 +540,7 @@ const CreateEventPage = () => {
                   <Heading size="md" color="white" mb={5}>Basic Information</Heading>
 
                   <FormControl mb={4}>
-                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text></FormLabel>
+                    <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text> <Text as="span" color="#9C9C9C">{EVENT_TITLE_LIMIT_HINT}</Text></FormLabel>
                     <InputGroup>
                       <Field
                         as={Input}
@@ -552,12 +553,19 @@ const CreateEventPage = () => {
                         h="48px"
                         border="1px solid #343536"
                         _focus={{ borderColor: "#343536", boxShadow: "none" }}
-                        maxLength={100}
+                        // NOT the title rule — the browser cannot express "150 excluding spaces".
+                        // This is only the raw backstop; `clampEventTitle` below enforces the cap.
+                        maxLength={EVENT_TITLE_RAW_LIMIT}
                         pr="60px"
                         value={values?.name}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          const next = clampEventTitle(e.target.value);
+                          // A refused keystroke writes nothing, so it cannot re-arm the autosave debounce.
+                          if (next !== values.name) setFieldValue("name", next);
+                        }}
                       />
-                      <InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" color="gray.500" fontSize="xs">
-                        {values.name?.length || 0}/100
+                      <InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" fontSize="xs" color={isEventTitleOverLimit(values.name || "") ? "#F79432" : "gray.500"}>
+                        {eventTitleCounter(values.name || "")}
                       </InputLeftElement>
                     </InputGroup>
                   </FormControl>

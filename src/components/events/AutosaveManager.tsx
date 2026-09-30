@@ -37,6 +37,10 @@ export function buildEventPayload(
 		// Trim so a whitespace-only entry is treated as "not set". On create that means
 		// derive the URL from the event name; on update it means leave the slug alone.
 		slug: values.slug?.trim() || undefined,
+		// Trim for the same reason `slug` is: spaces no longer cost anything against the title's
+		// 150-character budget, so a trailing run now reaches here intact and would be stored and
+		// rendered as part of the name.
+		name: typeof values.name === "string" ? values.name.trim() : values.name,
 		...overrides,
 	}
 }

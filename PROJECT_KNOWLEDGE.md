@@ -3445,3 +3445,53 @@ writes no row of its own; it proxies, and the BACKEND lands the record.
 bypassing `/events/[eventId]/guests/invite`, so those invitations can never become `accepted`.
 Changing where that link points is a product decision, not a bug fix — the invitations are at
 least visible now.
+
+## Event title: 150 characters, spaces free (IMPLEMENTED 2026-09-30)
+
+The CEO reported the title field was "restricted to too few words" and asked for at least 30 words.
+Two separate defects, not one:
+
+- **Spaces spent the budget.** The cap was a native `maxLength={100}`, so every space between words
+  cost a character. A sentence-style title lost roughly a sixth of the field to the spacebar, which
+  is why the field felt far shorter than the number promised.
+- **100 characters is ~20 English words, not 30.** Measured on realistic titles, 30 words is ~138
+  non-space characters.
+
+The rule is now **150 characters that are not whitespace**. Freeing spaces alone would still have
+fitted only ~20 words; raising the number alone would have let a single-word title run 150 characters
+wide and overflow every card and preview. Together a 30-word title fits and the widest possible title
+is exactly as wide as before.
+
+- **Use `src/lib/event-title.ts`** — `EVENT_TITLE_LIMIT` (150), `EVENT_TITLE_RAW_LIMIT` (500),
+  `EVENT_TITLE_LIMIT_HINT`, `eventTitleLength`, `eventTitleCounter`, `isEventTitleOverLimit`,
+  `clampEventTitle`. Pure/isomorphic. Never re-derive the count inline: the limit previously lived as
+  **6 literal lines across 3 files** with no shared constant, and the copies had already drifted —
+  `HostedEvents` seeded its draft through `stripHtml` while the two Formik forms counted `values.name`
+  raw, so one event could show different numbers on different screens.
+- **`maxLength` can no longer express the rule**, so on all three surfaces it is set to
+  `EVENT_TITLE_RAW_LIMIT` as a raw backstop only and `clampEventTitle` in `onChange` enforces the cap.
+  Three surfaces carry it: `console/events/create.tsx`, `console/events/[eventId]/manage.tsx`,
+  `components/HostedEvents.tsx` (the inline on-page editor).
+- **Counting is by CODE POINT, not `.length`.** An emoji is `.length === 2`, so a UTF-16 budget charges
+  it double and `slice()` can halve a surrogate pair and leave a tofu box in the saved title.
+- **Trailing whitespace is never eaten.** A host at `150/150` pressing space is between words;
+  swallowing that keystroke reads as a broken keyboard. Trimming happens at save
+  (`buildEventPayload` now trims `name`, as it already did `slug`), never at keystroke.
+- **Over-limit titles are never truncated on load.** A legacy or mobile-authored title opens intact,
+  the counter reads e.g. `173/150` in orange, and it ratchets down — keepable and shortenable, never
+  growable. Clamping the seeds (`manage.tsx` `initialValues`, `HostedEvents`' `startEventEdit`) would
+  truncate on page load, and on manage the first autosave would persist that within two seconds.
+- **`details.ts` widened 300 → 500.** It is the only server cap on `name` and the endpoint the inline
+  editor posts to; 150 non-space characters with double spacing can exceed 300, which would 400 a
+  title the form just accepted. `create.ts` / `update.ts` are deliberately left with **no** max — one
+  there would make every longer title written by the mobile app or admin portal unsavable, the same
+  grandfathering trap as `event-media-limit.ts`.
+- **No `stripHtml` in the counter, unlike the description counters.** The description IS HTML; the
+  title is a plain input. `/<[^>]*>/g` would eat a legitimate `"Me <3 you > you"`, and `stripHtml`
+  also trims, which would make the count stutter mid-word — the exact behaviour this change exists to
+  make legible. Consequence: title and description now charge emoji differently. Deliberate.
+- The hint `(Max 150 chars, spaces don't count)` renders beside the label on both console forms and
+  under the field in the inline editor (which has no label), mirroring `BenefitsField`'s
+  `(Max 23 chars)`. Without it, the counter not moving on the spacebar reads as a bug — a new
+  confusion of the same species as the one that started this.
+- Still uncapped and uncounted: `src/pages/console/events/create.old.tsx` legacy name input.

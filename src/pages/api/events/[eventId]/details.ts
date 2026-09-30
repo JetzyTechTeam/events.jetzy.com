@@ -4,6 +4,7 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { mediaLimitRefusal } from "@/lib/event-media-limit"
+import { EVENT_TITLE_RAW_LIMIT } from "@/lib/event-title"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -12,7 +13,9 @@ import { isAwaitingAdminReview } from "@/lib/event-approval"
 import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
 
 const schema = zod.object({
-	name: zod.string().min(1).max(300).optional(),
+	// The title cap is 150 characters THAT ARE NOT WHITESPACE (`@/lib/event-title`), so a legitimate
+	// title can be far longer raw than the 150 it counts as. This is the raw backstop, not the rule.
+	name: zod.string().min(1).max(EVENT_TITLE_RAW_LIMIT).optional(),
 	desc: zod.string().max(20000).optional(),
 	benefits: zod.string().max(2000).optional(),
 	images: zod.array(zod.string().min(1)).optional(),

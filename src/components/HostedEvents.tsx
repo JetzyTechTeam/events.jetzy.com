@@ -8,6 +8,7 @@ import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
 import { applyMediaOrder, eventMedia, type EventMedia } from "@/lib/event-media"
 import { allowedMediaCount } from "@/lib/event-media-limit"
+import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
@@ -1210,15 +1211,14 @@ export default function HostedEvents({ event }: Props) {
 							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
 								<div className="text-left w-full sm:w-auto min-w-0">
 									{editingSection === "details" ? (
-										// Same field as the manage form's Event title, down to the 100-char
-										// cap and the counter. The server accepts up to 300, but a title that
-										// only one of the two screens will let you type is worse than a
-										// shared limit.
+										// Same field as the manage form's Event title. The cap lives in
+										// `@/lib/event-title` — 150 characters that are not whitespace — so the
+										// two screens cannot disagree about what a host is allowed to type.
 										<>
 										<InputGroup>
 											<Input
 												value={draftName}
-												onChange={(e) => setDraftName(e.target.value)}
+												onChange={(e) => setDraftName(clampEventTitle(e.target.value))}
 												placeholder="Event title"
 												className={roboto.className}
 												bg="#090C10"
@@ -1227,13 +1227,16 @@ export default function HostedEvents({ event }: Props) {
 												h="48px"
 												border="1px solid #343536"
 												_focus={{ borderColor: "#343536", boxShadow: "none" }}
-												maxLength={100}
+												// Raw backstop only; `clampEventTitle` enforces the real rule. 500 is what
+												// `/api/events/[eventId]/details` accepts, which is where Save posts this name.
+												maxLength={EVENT_TITLE_RAW_LIMIT}
 												pr="60px"
 											/>
-											<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" color="gray.500" fontSize="xs">
-												{draftName?.length || 0}/100
+											<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" fontSize="xs" color={isEventTitleOverLimit(draftName) ? "#F79432" : "gray.500"}>
+												{eventTitleCounter(draftName)}
 											</InputLeftElement>
 										</InputGroup>
+										<p className="text-xs text-[#9C9C9C] mt-1">{EVENT_TITLE_LIMIT_HINT}</p>
 										</>
 									) : (
 										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
