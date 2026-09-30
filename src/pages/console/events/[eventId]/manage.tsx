@@ -3575,6 +3575,13 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 														<Badge colorScheme="gray" borderRadius="6px">{row.bookings.length} bookings</Badge>
 													</Tooltip>
 												)}
+												{/* Emailed invite vs an in-app invite to a Jetzy user. Two different
+												    actions the host took; the tab used to show only the first. */}
+												{row.invitationSource === 'app' && (
+													<Tooltip hasArrow label="Invited through the Jetzy app, not by email.">
+														<Badge colorScheme="cyan" variant="outline" borderRadius="6px">via app</Badge>
+													</Tooltip>
+												)}
 												{row.duplicateInvitationCount > 1 && (
 													<Tooltip hasArrow label={`Invited ${row.duplicateInvitationCount} times.`}>
 														<Badge colorScheme="gray" variant="outline" borderRadius="6px">×{row.duplicateInvitationCount}</Badge>
@@ -3604,6 +3611,10 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 												</Tooltip>
 											) : row.invitationStatus === 'declined' ? (
 												<Badge colorScheme="red" variant="outline">Declined</Badge>
+											) : row.invitationStatus === 'cancelled' ? (
+												/* Written by the Jetzy backend, not by us — it is not in our schema enum,
+												   but it is real and must not read as a live invitation. */
+												<Badge colorScheme="gray" variant="outline">Invite cancelled</Badge>
 											) : (
 												<Badge colorScheme="purple" variant="outline">Invited</Badge>
 											)}

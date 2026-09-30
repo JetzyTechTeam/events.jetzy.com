@@ -3398,3 +3398,50 @@ landscape frame, two large dead slabs. CEO (2026-09-29): match what mobile does.
   and album covers (already `cover`, no bars), and the discussion video players (they paint
   their bars via the element's own `backgroundColor` with no wrapper).
 - **The city field must never crash the page (2026-09-29).** `react-google-autocomplete`'s `usePlacesAutocompleteService` builds its services behind `if (!google)` — a BARE identifier — so with the Maps script absent or blocked it threw `ReferenceError: google is not defined` inside an effect and Next blanked the profile form. Replaced by **`src/hooks/useCityAutocomplete.ts`**: one cached loader, every `google` access behind `typeof`, a 10s timeout, and failures reported as `status: "unavailable"` instead of thrown. Unavailable = the field accepts a **typed** city (saved with the country, no coordinates — `sync_location` is skipped) and the hint says so. **`ProfileErrorBoundary`** now wraps the form in both `ProfileGate` and `PostPurchaseProfile`: the gate is non-dismissible, so any future throw would otherwise leave a blank page with no way out. `usePlacesWidget` (event forms) guards properly and is untouched — don't swap it to the service hook.
+
+## `eventinvitations` holds TWO shapes, and we only ever read one (FIXED 2026-09-30)
+
+**The symptom:** a host invited people through "Invite Jetzy users", the invite arrived, and
+the portal's guest lists showed nobody. Reported against TechNova Summit 2026 on staging, which
+had 2 invitations and displayed 0.
+
+**The cause.** The collection is SHARED with the Jetzy backend and the two writers store
+different documents:
+
+| Writer | Fields |
+|---|---|
+| ours, `send-invites.ts` | `eventId`, `email`, `name`, `status`, `invitedAt` |
+| theirs, `POST /v2/events/:id/members/invite` | `event`, `recipient`, `inviteCode`, `channel`, `isUser`, `status`, `createdAt` |
+
+Note **`event` vs `eventId`** and **`recipient` (a user id) vs `email`**. On staging **307 of 409
+rows are theirs**. Both read paths queried `{ eventId }` and read `.email`, so every app-user
+invite was invisible — and had been since the feature shipped. Our `invite-jetzy-user.ts`
+writes no row of its own; it proxies, and the BACKEND lands the record.
+
+- **Use `src/lib/event-invitations.ts` (`fetchEventInvitations`)** — reads both shapes, resolves
+  `recipient` against `Users` AND `EventUsers`, normalises to one field set with a `source` of
+  `"email" | "app"`. Never query this collection inline again: two endpoints each carrying half
+  a definition is exactly what caused this.
+- **RAW DRIVER for that query, deliberately.** `event` is not on our schema, and a Mongoose
+  query strips unknown paths whenever `strictQuery` is on — reducing the filter to
+  `$or: [{eventId}, {}]`, which returns **every invitation in the collection, for every event**.
+  Mongoose 8 defaults it off; a silent catastrophic failure riding on a global default is not
+  something to leave standing.
+- **`status` is not our enum.** The backend writes `cancelled` (28 rows on staging), which our
+  schema does not list. Typed and rendered as itself; `InvitationStatus` gained it, and
+  `INVITATION_RANK` ranks it. An unrecognised value from an external writer must be readable.
+- **`/api/events/guests.ts` also dropped its `status: 'accepted'` filter.** An app invite sits
+  at `pending`, and an invite emailed from the event page links to the EVENT rather than the
+  accept page so it can never reach `accepted` at all. Between the two, the panel showed nothing
+  on most events. It now returns every invitation with its status. Measured on staging: Chicago
+  Party II showed **1** guest and actually has **12 invitations, 3 accepted** — two genuinely
+  accepted guests were invisible.
+- The event-page panel renders name + email + a status chip + a "via app" badge, and its header
+  reads "Guests (N)  M accepted" — one number covering both would have to pick a meaning.
+- **Invited-only now sorts ABOVE booked** in `guest-rows.ts`. The list this replaced was built
+  invitations-first; ranking them below every booking pushed them off page 1 on any busy event.
+
+**Still not fixed, deliberately:** `HostedEvents.tsx` sends invites with `eventLink: shareUrl`,
+bypassing `/events/[eventId]/guests/invite`, so those invitations can never become `accepted`.
+Changing where that link points is a product decision, not a bug fix — the invitations are at
+least visible now.

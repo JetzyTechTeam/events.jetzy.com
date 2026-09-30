@@ -2229,8 +2229,31 @@ function GuestsList({ eventId }: { eventId: string }) {
 		queryFn: () => axios.get(`/api/events/guests?eventId=${eventId}`),
 	})
 
-	const list: { _id: string; name: string }[] = Array.isArray(guests?.data?.data) ? guests.data.data : []
+	// Every invitation, any status — the endpoint used to return `accepted` only, which on most
+	// events is nobody: an app invite sits at `pending`, and an invite emailed from this page
+	// links to the event rather than to the accept page, so it can never reach `accepted`.
+	const list: {
+		_id: string
+		name: string
+		email?: string
+		status?: string
+		source?: "email" | "app"
+	}[] = Array.isArray(guests?.data?.data) ? guests.data.data : []
+
+	const accepted = list.filter((g) => g?.status === "accepted").length
 	const paged = list.slice((page - 1) * perPage, page * perPage)
+
+	// Plain markup rather than Chakra, matching the rest of this panel.
+	const statusChip = (status?: string) => {
+		const map: Record<string, { label: string; className: string }> = {
+			accepted: { label: "Accepted", className: "bg-[#1f3d2b] text-[#6ee7a8] border-[#2f5c41]" },
+			declined: { label: "Declined", className: "bg-[#3d1f1f] text-[#f8a3a3] border-[#5c2f2f]" },
+			cancelled: { label: "Invite cancelled", className: "bg-[#2f2f2f] text-[#b5b6b7] border-[#454545]" },
+			pending: { label: "Invited", className: "bg-[#2a2a3d] text-[#b3b6f8] border-[#3f3f5c]" },
+		}
+		const chip = map[status || "pending"] || map.pending
+		return <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${chip.className}`}>{chip.label}</span>
+	}
 
 	return (
 		<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8">
@@ -2239,7 +2262,14 @@ function GuestsList({ eventId }: { eventId: string }) {
 				className="w-full flex items-center justify-between px-6 py-4 text-left font-semibold text-white hover:bg-[#434343] transition-colors"
 				aria-expanded={isOpen}
 			>
-				<span>Guests{!isLoading ? ` (${list.length})` : ""}</span>
+				{/* The count is invitations SENT, with accepted called out separately — one number
+				    covering both would have to pick a meaning and would be wrong half the time. */}
+				<span>
+					Guests{!isLoading ? ` (${list.length})` : ""}
+					{!isLoading && list.length > 0 && (
+						<span className="ml-2 text-sm font-normal text-gray-400">{accepted} accepted</span>
+					)}
+				</span>
 				<Icon as={isOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
 			</button>
 
@@ -2248,15 +2278,26 @@ function GuestsList({ eventId }: { eventId: string }) {
 					<ul className="space-y-3">
 						{isLoading && <li className="text-gray-400 text-sm">Loading guests...</li>}
 
-						{!isLoading && list.length === 0 && <li className="text-gray-500 italic text-sm">No guests found for this event.</li>}
+						{!isLoading && list.length === 0 && <li className="text-gray-500 italic text-sm">Nobody has been invited to this event yet.</li>}
 
 						{paged.map((guest) => {
 							if (!guest) return null
+							const initial = (guest.name || guest.email || "?").charAt(0)
 							return (
-								<li key={guest._id} className="flex items-center justify-between bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition">
-									<div className="flex items-center gap-4">
-										<div className="w-9 h-9 rounded-full bg-[#444] flex items-center justify-center text-white font-semibold uppercase">{guest.name?.charAt(0) || "?"}</div>
-										<span className="text-white font-medium">{guest.name || "Unknown Guest"}</span>
+								<li key={guest._id} className="flex items-center justify-between gap-3 bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-4 py-3 shadow-sm hover:bg-[#333] transition">
+									<div className="flex items-center gap-4 min-w-0">
+										<div className="w-9 h-9 shrink-0 rounded-full bg-[#444] flex items-center justify-center text-white font-semibold uppercase">{initial}</div>
+										<div className="min-w-0">
+											<span className="block text-white font-medium truncate">{guest.name || guest.email || "Unknown Guest"}</span>
+											{/* Only when it adds something — repeating the address under itself is noise. */}
+											{guest.email && guest.name && <span className="block text-xs text-gray-400 truncate">{guest.email}</span>}
+										</div>
+									</div>
+									<div className="flex items-center gap-2 shrink-0">
+										{guest.source === "app" && (
+											<span className="rounded-full border border-[#2f4f5c] bg-[#1f333d] px-2 py-0.5 text-[11px] font-medium text-[#8fd8f8]">via app</span>
+										)}
+										{statusChip(guest.status)}
 									</div>
 								</li>
 							)

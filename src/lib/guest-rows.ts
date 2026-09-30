@@ -22,7 +22,15 @@ import { bookingTicketCount } from "@/lib/booking-approval"
 
 export type GuestRowKind = "invited" | "booked" | "invited_and_booked"
 
-export type InvitationStatus = "pending" | "accepted" | "declined"
+/**
+ * `cancelled` is NOT in our Mongoose enum — it is written by the Jetzy backend into the shared
+ * `eventinvitations` collection (28 rows on staging). Typed here because it is real and must
+ * render as itself, not fall through to "Invited".
+ */
+export type InvitationStatus = "pending" | "accepted" | "declined" | "cancelled"
+
+/** Which door the invite came through: an emailed invite, or an in-app invite to a Jetzy user. */
+export type InvitationSource = "email" | "app"
 
 export type GuestRow = {
 	/** Lowercased email. The join key and the React key. */
@@ -34,6 +42,7 @@ export type GuestRow = {
 
 	invitation: any | null
 	invitationStatus: InvitationStatus | null
+	invitationSource: InvitationSource | null
 	invitedAt: string | null
 	/** How many invitation documents exist for this address. >1 means they were invited again. */
 	duplicateInvitationCount: number
@@ -66,7 +75,7 @@ const time = (value: any) => {
  * "accepted" back to "Invited" — telling the host their guest never replied. Decided state
  * therefore outranks undecided, and the timestamp only breaks ties.
  */
-const INVITATION_RANK: Record<InvitationStatus, number> = { accepted: 3, declined: 2, pending: 1 }
+const INVITATION_RANK: Record<InvitationStatus, number> = { accepted: 4, declined: 3, cancelled: 2, pending: 1 }
 
 const betterInvitation = (a: any, b: any) => {
 	const ra = INVITATION_RANK[(a?.status as InvitationStatus) ?? "pending"] ?? 0
@@ -125,6 +134,7 @@ export const buildGuestRows = ({
 			kind,
 			invitation,
 			invitationStatus: (invitation?.status as InvitationStatus) ?? null,
+			invitationSource: (invitation?.source as InvitationSource) ?? null,
 			invitedAt: invitation?.invitedAt ?? null,
 			duplicateInvitationCount: invitationCount.get(k) || 0,
 			bookings: all,
@@ -136,9 +146,15 @@ export const buildGuestRows = ({
 		}
 	})
 
-	// Actionable rows first — with 10 per page, a host should not have to paginate to find the
-	// request waiting on them.
-	const band = (row: GuestRow) => (row.pendingBookings.length > 0 ? 0 : row.cancelledOnly ? 3 : row.bookings.length > 0 ? 1 : 2)
+	// Requests awaiting a decision first, then the people who were INVITED but have not booked,
+	// then everyone else, then the dead rows.
+	//
+	// Invited-only sits above booked deliberately. The list this replaced was built
+	// invitations-first, so invited people were on page one; ranking them below every booking
+	// pushed them off it entirely on any busy event, and the invitation flow looked like it had
+	// been removed. Ten rows per page is not much to hide behind.
+	const band = (row: GuestRow) =>
+		row.pendingBookings.length > 0 ? 0 : row.cancelledOnly ? 3 : row.bookings.length === 0 ? 1 : 2
 
 	return rows.sort((a, b) => {
 		const ba = band(a)
