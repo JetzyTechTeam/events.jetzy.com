@@ -59,10 +59,107 @@ export function mapsLinkFor(location: string): string {
 /**
  * Entrance / arrival instructions, e.g. "West side at 69th Street".
  *
- * Deliberately email-only: it is useful to someone on their way to the event and noise to
+ * Shown to people who hold a ticket — the confirmation email and the /success page — and never
+ * on the public event page: it is useful to someone on their way to the event and noise to
  * someone browsing. Hosts were typing it into the location field for want of anywhere else,
  * which is what corrupted the address strings this helper now has to tolerate.
  */
 export function resolveEntrance(event: EventLocationLike): string {
 	return (event?.entrance || "").trim()
+}
+
+/**
+ * A URL a host typed into `location` or `entrance`, and the text around it.
+ *
+ * Hosts write arrival notes with a shortened Google Maps link in them:
+ *
+ *   "Central Park South - Close to 59th St and 6th Avenue. Exact location link:
+ *    https://maps.app.goo.gl/NkMHdYaLSVghDcBp7?g_st=iw"
+ *
+ * The confirmation email used to wrap that WHOLE string in a `maps/search/?query=` link, so
+ * the one thing the host wanted clicked — their own link — became part of a free-text search
+ * query, and the guest was sent to whatever Google made of a sentence with a URL in it.
+ * `splitLocationLinks` isolates the urls so only they are clickable (CEO, 2026-10-01).
+ */
+export type LocationSegment = { type: "text"; value: string } | { type: "link"; value: string; href: string }
+
+/**
+ * Deliberately permissive on the left (a bare `www.` counts — hosts omit the scheme) and
+ * conservative on the right: anything after whitespace or an angle bracket/quote belongs to
+ * the sentence, not the url.
+ */
+const LOCATION_URL_PATTERN = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi
+
+/**
+ * Sentence punctuation that follows a url rather than belonging to it. A closing bracket is
+ * only dropped when the url holds no opening one, so `.../(Main)` survives.
+ */
+const trimUrlTail = (url: string): string => {
+	let value = url
+	while (value.length > 1) {
+		const last = value[value.length - 1]
+		if (".,;:!?'\"".includes(last)) {
+			value = value.slice(0, -1)
+			continue
+		}
+		if ((last === ")" && !value.includes("(")) || (last === "]" && !value.includes("["))) {
+			value = value.slice(0, -1)
+			continue
+		}
+		break
+	}
+	return value
+}
+
+/** Split a host-written string into plain text and the urls inside it, in order. */
+export function splitLocationLinks(text: string): LocationSegment[] {
+	const source = text || ""
+	const segments: LocationSegment[] = []
+	let cursor = 0
+
+	for (const match of source.matchAll(LOCATION_URL_PATTERN)) {
+		const raw = match[0]
+		const start = match.index ?? 0
+		const url = trimUrlTail(raw)
+
+		if (start > cursor) segments.push({ type: "text", value: source.slice(cursor, start) })
+		segments.push({ type: "link", value: url, href: url.toLowerCase().startsWith("www.") ? `https://${url}` : url })
+		cursor = start + url.length
+	}
+
+	if (cursor < source.length) segments.push({ type: "text", value: source.slice(cursor) })
+	return segments
+}
+
+/** Whether the host put a url in the string — i.e. whether they supplied their own link. */
+export function containsLocationLink(text: string): boolean {
+	return splitLocationLinks(text).some((segment) => segment.type === "link")
+}
+
+const escapeHtml = (value: string): string =>
+	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+
+/**
+ * Email markup for a location / entrance string.
+ *
+ * With a url in it, ONLY the url is a link. With none, the whole string is linked to
+ * `fallbackHref` when one is given (that is the Google Maps search for the address, which is
+ * the behaviour the venue line has always had) and is plain text otherwise.
+ *
+ * Text segments are escaped — host-written and previously interpolated raw.
+ */
+export function locationHtml(text: string, options?: { fallbackHref?: string }): string {
+	const anchor = (href: string, label: string) =>
+		`<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer" style="color: #F79432; text-decoration: underline;">${escapeHtml(label)}</a>`
+
+	const segments = splitLocationLinks(text)
+	if (!segments.some((segment) => segment.type === "link")) {
+		const value = (text || "").trim()
+		if (!value) return ""
+		return options?.fallbackHref ? anchor(options.fallbackHref, value) : escapeHtml(value)
+	}
+
+	return segments
+		.map((segment) => (segment.type === "link" ? anchor(segment.href, segment.value) : escapeHtml(segment.value)))
+		.join("")
 }

@@ -3,7 +3,7 @@ import { IEvent } from "@/models/events/types"
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import { ADMIN_SUPPORT_EMAIL } from "@/lib/support"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
-import { mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
+import { containsLocationLink, locationHtml, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventZone } from "@/utils/eventTime"
 import sgMail from "@sendgrid/mail"
@@ -1151,6 +1151,18 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     const locationMapsUrl = mapsLinkFor(location)
     const entrance = resolveEntrance(event as any)
 
+    // A host who pasted their own map link into the address or the arrival notes gets THAT link
+    // clicked, and nothing else (CEO, 2026-10-01). Wrapping the whole sentence in a
+    // `maps/search/?query=` url turned their link into search text; `locationHtml` falls back to
+    // the search link only when the host supplied none.
+    // Decoded BEFORE `locationHtml` escapes: these fields were interpolated raw, so a stored
+    // `&amp;` used to render as "&". Escaping alone would start showing the entity itself.
+    const locationLine = locationHtml(decodeHTMLEntities(location), { fallbackHref: locationMapsUrl })
+    const entranceLine = locationHtml(decodeHTMLEntities(entrance))
+    // With the host's own link in the address there is nothing for a separate Directions line to
+    // add — it is already in the sentence above it.
+    const directionsLine = location && !containsLocationLink(location) ? `\nDirections: ${locationMapsUrl}` : ""
+
     // Back to the event itself — the ticket holder's route to the discussion, the album, the
     // guest list and their own cancel button, none of which this email can carry. Built with
     // `buildEventUrl`, never by interpolation: a slug may contain spaces, accents or emoji.
@@ -1655,8 +1667,8 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           <div style="background-color: #f8f8f8; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h2 style="color: #333; margin-bottom: 15px;">Event Details</h2>
             <p><strong>Date and Time: </strong>${timestamp}</p>
-            <p><strong>Venue: </strong><a href="${locationMapsUrl}" target="_blank" rel="noreferrer" style="color: #F79432; text-decoration: underline;">${location}</a></p>
-            ${entrance ? `<p><strong>Entrance: </strong>${entrance}</p>` : ""}
+            <p><strong>Venue: </strong>${locationLine}</p>
+            ${entranceLine ? `<p><strong>Entrance: </strong>${entranceLine}</p>` : ""}
             <p><strong>Organizer: </strong>${(event.ownerId as any)?.firstName ? `${(event.ownerId as any).firstName} ${(event.ownerId as any).lastName}` : (event.host?.name || "Jetzy Events")}</p>
             ${(event.ownerId as any)?.email ? `<p><strong>Email: </strong>${(event.ownerId as any).email}</p>` : (event.host?.email ? `<p><strong>Email: </strong>${event.host.email}</p>` : "")}
             ${(event.ownerId as any)?.phone ? `<p><strong>Phone: </strong>${(event.ownerId as any).phone}</p>` : (event.host?.phone ? `<p><strong>Phone: </strong>${event.host.phone}</p>` : "")}
@@ -1810,7 +1822,7 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
           </div>
         </div>
       `),
-      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}\nDirections: ${locationMapsUrl}${entrance ? `\nEntrance: ${entrance}` : ""}\n\nEvent page: ${ticketEventUrl}\n\nThank you for choosing Jetzy Events!`,
+      text: `Thank you for your purchase for ${event.name}!\n\nOrder Number: ${orderNumber}\nDate and Time: ${timestamp}\nVenue: ${location}${directionsLine}${entrance ? `\nEntrance: ${entrance}` : ""}\n\nEvent page: ${ticketEventUrl}\n\nThank you for choosing Jetzy Events!`,
     }
 
     console.log("[sendTicketConfirmation] Sending email with payload:", {
