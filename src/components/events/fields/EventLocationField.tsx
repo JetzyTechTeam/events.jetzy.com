@@ -6,6 +6,7 @@ import { Roboto } from "next/font/google"
 
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown, type PlaceSelection } from "@/lib/google-place"
 import { LocationSVG } from "@Jetzy/assets/icons"
+import LocationValuePreview from "./LocationValuePreview"
 
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 
@@ -55,7 +56,8 @@ export default function EventLocationField({
 	})
 
 	return (
-		<InputGroup>
+		<>
+			<InputGroup>
 			<InputLeftElement h="48px" pointerEvents="none"><LocationSVG /></InputLeftElement>
 			<Input
 				ref={placesRef as any}
@@ -85,6 +87,8 @@ export default function EventLocationField({
 				_focus={{ borderColor: "#343536", boxShadow: "none" }}
 				pl="10"
 			/>
-		</InputGroup>
+			</InputGroup>
+			<LocationValuePreview value={value} />
+		</>
 	)
 }

@@ -77,6 +77,7 @@ import Link from "next/link"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import { Formik, Form, Field, FormikProps, FieldArray } from "formik"
 import { usePlacesWidget } from "react-google-autocomplete"
+import LocationValuePreview from "@/components/events/fields/LocationValuePreview"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
 import { blurOnWheel } from "@/lib/number-input"
@@ -1613,6 +1614,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																)}
 															</Field>
 														</InputGroup>
+														<LocationValuePreview value={values.location} />
 														{/* Pick from the dropdown OR type it yourself — typing is not
 														    second-class, it just means no map link of our own goes out. */}
 														<Flex justify="space-between" gap={2} mt={1}>
