@@ -1243,19 +1243,26 @@ export default function HostedEvents({ event }: Props) {
 
 						{/* Content Section */}
 						<div className="p-4 sm:p-8">
-							{/* Title + Actions row.
-							    Left-aligned on mobile: the title was centred while the date and
-							    location lines under it are icon-led and wrap, so a long venue
-							    produced ragged centred text under a centred heading. */}
-							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
-								{/* `sm:w-auto` is right for the read-only title: it hugs its text so the action
-								    buttons sit beside it. It is wrong while the details form is open, because this
-								    same column then holds the whole editor — title field, "When & where", location,
-								    capacity. As a shrink-to-fit flex item next to a `flex-shrink-0` sibling it took
-								    only its max-content width, so from 640px up the form rendered as a narrow strip
-								    with empty space beside it. `sm:flex-1` makes it take the remaining width while
-								    editing; `min-w-0` keeps it from overflowing. Read-only is unchanged. */}
-								<div className={`text-left min-w-0 ${editingSection === "details" ? "w-full sm:flex-1" : "w-full sm:w-auto"}`}>
+							{/* Title block, then the actions beneath it — stacked at EVERY width (2026-10-01).
+							    It used to become a row at `sm`, which made the title a shrink-to-fit column
+							    next to a `flex-shrink-0` button group: the buttons reserved their width on
+							    every line, not just the first, so a long title wrapped inside ~530px of an
+							    832px card and left dead space to the right of every line after the first.
+							    Titles now hold up to 150 non-whitespace characters, so that cost real lines.
+							    Stacking gives the title the full width and resolves it in fewer.
+
+							    Mobile is unchanged by construction — it was already `flex-col` there, and the
+							    CTA keeps `flex-1` so it stays a full-width tap target on a phone.
+
+							    Left-aligned: the title was centred while the date and location lines under it
+							    are icon-led and wrap, so a long venue produced ragged centred text under a
+							    centred heading. */}
+							<div className="flex flex-col mb-2 gap-4 sm:gap-6">
+								{/* Full width in both modes now that nothing sits beside it. This used to be
+								    `sm:w-auto`, a shrink-to-fit basis that also made the details EDITOR render as
+								    a narrow strip on desktop; stacking fixes both with one rule. `min-w-0` stays —
+								    it is what lets a 150-character word wrap instead of setting the card's width. */}
+								<div className="text-left min-w-0 w-full">
 									{editingSection === "details" ? (
 										// Same field as the manage form's Event title. The cap lives in
 										// `@/lib/event-title` — 150 characters that are not whitespace — so the
@@ -1433,8 +1440,10 @@ export default function HostedEvents({ event }: Props) {
 
 								{/* Icon buttons stay in a row; the CTAs take the remaining width on a
 								    phone so the primary action is a full-size tap target instead of a
-								    pill squeezed between icons. */}
-								<div className="w-full sm:w-auto flex items-center gap-2 sm:gap-x-3 sm:items-end flex-shrink-0 flex-wrap">
+								    pill squeezed between icons. From `sm` the group is right-aligned under
+								    the title — `sm:w-auto`/`flex-shrink-0`/`sm:items-end` were all about
+								    sitting BESIDE the title and mean nothing now that it sits below it. */}
+								<div className="w-full flex items-center gap-2 sm:gap-x-3 sm:justify-end flex-wrap">
 									{canManage && (
 										<button
 											onClick={onQRModalOpen}
