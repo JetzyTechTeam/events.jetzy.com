@@ -16,6 +16,7 @@ import {
 	EVENT_TIMEZONE_LIMIT,
 	EVENT_VENUE_NAME_LIMIT,
 	benefitChipsWithinLimit,
+	benefitCountWithinLimit,
 	countChars,
 } from "@/lib/event-field-limits"
 import { getServerSession } from "next-auth"
@@ -44,7 +45,8 @@ const schema = zod.object({
 		.string()
 		.max(BENEFITS_RAW_LIMIT, EVENT_FIELD_MESSAGES.benefitsTooLong)
 		.optional()
-		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong }),
+		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong })
+		.refine(benefitCountWithinLimit, { message: EVENT_FIELD_MESSAGES.tooManyBenefits }),
 	images: zod.array(zod.string().min(1)).optional(),
 	videos: zod.array(zod.string().min(1)).optional(),
 	mediaOrder: zod.array(zod.string().min(1)).optional(),

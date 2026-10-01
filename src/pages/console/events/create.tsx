@@ -81,7 +81,7 @@ import { Roboto } from "next/font/google";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
-import { MAX_BENEFIT_LENGTH, DATE_POLL_OPTION_LABEL_LIMIT, countChars } from "@/lib/event-field-limits";
+import { MAX_BENEFIT_LENGTH, MAX_BENEFIT_COUNT, DATE_POLL_OPTION_LABEL_LIMIT, countChars, benefitChips } from "@/lib/event-field-limits";
 import { stripHtml } from "@/utils/text";
 import { useSession } from "next-auth/react";
 import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle";
@@ -758,16 +758,26 @@ const CreateEventPage = () => {
                 <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
                   <Flex align="baseline" gap={2} mb={4}>
                     <Heading size="md" color="white">Event Benefits</Heading>
-                    <Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max {MAX_BENEFIT_LENGTH} chars)</Text>
+                    <Text className={roboto.className} fontSize="sm" color="#9C9C9C">
+                      (Max {MAX_BENEFIT_LENGTH} chars &middot; {benefitChips(values.benefits || "").length} of {MAX_BENEFIT_COUNT})
+                    </Text>
                   </Flex>
                   {(() => {
+                    // Same rule and same copy as BenefitsField, which Manage Event and the inline
+                    // editor both use — this page carries its own copy of the control.
+                    const list = benefitChips(values.benefits || "")
+                    const isFull = list.length >= MAX_BENEFIT_COUNT
                     const addBenefit = () => {
                       const v = benefitInput.trim()
-                      if (!v) return
-                      const list = (values.benefits || "").split(",").map((b: string) => b.trim()).filter(Boolean)
+                      if (!v || isFull) return
                       setFieldValue("benefits", [...list, v].join(","))
                       setBenefitInput("")
                     }
+                    if (isFull) return (
+                      <Text className={roboto.className} fontSize="sm" color="#9C9C9C" mb={4}>
+                        You&apos;ve added the maximum of {MAX_BENEFIT_COUNT}. Remove one to add another.
+                      </Text>
+                    )
                     return (
                       <InputGroup mb={4}>
                         <Input

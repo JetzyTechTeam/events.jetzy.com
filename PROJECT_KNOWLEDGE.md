@@ -3519,6 +3519,16 @@ Chakra component), `BENEFITS_RAW_LIMIT`, `EVENT_DESC_LIMIT` (20000), `EVENT_LOCA
 
 - **Never write a limit as a literal again.** Three copies of the benefits cap had already drifted
   into two different meanings.
+- **`MAX_BENEFIT_COUNT` is 6** (added 2026-10-01). The chips sit on the banner, so a dozen bury the
+  artwork the host just uploaded — a layout limit, like the 23. Enforced as a SECOND `.refine`
+  beside the length one on all three routes, never folded into one predicate: "one of your benefits
+  is too long" and "you have too many benefits" are different problems with different fixes, and
+  zod reports both at once when both are true. At the limit both host controls **replace** the
+  input with "You've added the maximum of 6" rather than disabling it — an Add button that doesn't
+  respond reads as broken — and `addBenefit` guards the count too, or the Enter key walks past it.
+  An event arriving with more than 6 still renders every chip and can be trimmed; seeds are never
+  silently truncated. With the count capped, the 2000 raw backstop is unreachable through the UI
+  (6 x 23 + 5 commas = 143), so its message says "too long to store", not "too many".
 - **`countChars` counts CODE POINTS** (`[...s].length`), so an emoji costs 1 rather than the 2
   UTF-16 units `.length` reports. `event-title.ts` and `checkout/index.ts` already counted this way.
 

@@ -27,6 +27,7 @@ import {
 	EVENT_TIMEZONE_LIMIT,
 	EVENT_VENUE_NAME_LIMIT,
 	benefitChipsWithinLimit,
+	benefitCountWithinLimit,
 } from "@/lib/event-field-limits"
 import zod from "zod"
 import Stripe from "stripe"
@@ -131,7 +132,8 @@ const schema = zod.object({
 		.string()
 		.max(BENEFITS_RAW_LIMIT, EVENT_FIELD_MESSAGES.benefitsTooLong)
 		.optional()
-		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong }),
+		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong })
+		.refine(benefitCountWithinLimit, { message: EVENT_FIELD_MESSAGES.tooManyBenefits }),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional().default(true),
 	// Curation tag only — badge + filter. Not the deprecated `premium` below.

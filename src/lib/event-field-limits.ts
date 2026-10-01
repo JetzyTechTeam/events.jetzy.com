@@ -26,6 +26,12 @@ export const countChars = (value: string): number => [...value].length
  */
 export const MAX_BENEFIT_LENGTH = 23
 
+/**
+ * How many benefits an event may carry. The chips sit on the banner, so a dozen of them bury the
+ * artwork the host just uploaded — this is a layout limit, like the 23 above, not an arbitrary one.
+ */
+export const MAX_BENEFIT_COUNT = 6
+
 /** The whole comma-separated value. A backstop against a paste, not the real rule. */
 export const BENEFITS_RAW_LIMIT = 2000
 
@@ -51,12 +57,23 @@ export const benefitChipsWithinLimit = (value?: string): boolean =>
 	!value || benefitChips(value).every((chip) => countChars(chip) <= MAX_BENEFIT_LENGTH)
 
 /**
+ * Kept separate from the length rule so the two report separately — "one of your benefits is too
+ * long" and "you have too many benefits" are different problems with different fixes. Built on the
+ * same `benefitChips`, so the two can never disagree about what counts as one benefit.
+ */
+export const benefitCountWithinLimit = (value?: string): boolean =>
+	!value || benefitChips(value).length <= MAX_BENEFIT_COUNT
+
+/**
  * The sentences the host reads in a toast. Written here, once, so the same mistake reads the
  * same whether it was made on Create, on Manage Event, or in the inline editor.
  */
 export const EVENT_FIELD_MESSAGES = {
 	benefitTooLong: `Each event benefit must be ${MAX_BENEFIT_LENGTH} characters or fewer.`,
-	benefitsTooLong: "That's too many event benefits. Remove a few and try again.",
+	// The 2000 backstop, not the count rule — with the count capped at 6 this is unreachable
+	// through the UI (6 x 23 + 5 commas = 143) and only a direct API call can trip it.
+	benefitsTooLong: "Those event benefits are too long to store. Shorten them and try again.",
+	tooManyBenefits: `You can have at most ${MAX_BENEFIT_COUNT} event benefits. Remove some and try again.`,
 	descTooLong: `A description can be at most ${EVENT_DESC_LIMIT.toLocaleString()} characters.`,
 	locationTooLong: `A location can be at most ${EVENT_LOCATION_LIMIT} characters.`,
 	venueNameTooLong: `A venue name can be at most ${EVENT_VENUE_NAME_LIMIT} characters.`,

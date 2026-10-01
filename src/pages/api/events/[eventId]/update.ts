@@ -25,6 +25,7 @@ import {
 	EVENT_TIMEZONE_LIMIT,
 	EVENT_VENUE_NAME_LIMIT,
 	benefitChipsWithinLimit,
+	benefitCountWithinLimit,
 } from "@/lib/event-field-limits"
 import zod from "zod"
 import { authOptions } from "../../auth/[...nextauth]"
@@ -145,7 +146,8 @@ const schema = zod.object({
 		.string()
 		.max(BENEFITS_RAW_LIMIT, EVENT_FIELD_MESSAGES.benefitsTooLong)
 		.optional()
-		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong }),
+		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong })
+		.refine(benefitCountWithinLimit, { message: EVENT_FIELD_MESSAGES.tooManyBenefits }),
 })
 
 // create stripe instance
