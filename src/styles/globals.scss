@@ -142,3 +142,17 @@ body.jetzy-hide-pac .pac-container {
     font-size: 16px !important;
   }
 }
+
+/* Underlines must be CONTINUOUS, including under commas.
+
+   Browsers default to `text-decoration-skip-ink: auto`, which lifts the underline around any
+   glyph that descends through it. A comma descends, so a host underlining a whole sentence got
+   a break at every comma — "exclusive, Invite-only, private event" rendered as three underlined
+   runs and read as a dashed line, not as emphasis. Nothing was wrong with the markup.
+
+   `none` draws straight through. Inherited, so it covers `<u>`, `<a>` and anything nested. */
+.rich-content,
+.ql-editor {
+  text-decoration-skip-ink: none;
+  -webkit-text-decoration-skip-ink: none;
+}
