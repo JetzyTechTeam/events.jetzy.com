@@ -2,6 +2,7 @@ import React, { useState } from "react"
 import { Box, Button, Flex, Heading, Input, InputGroup, InputRightElement, Text } from "@chakra-ui/react"
 import { MinusCircleIcon } from "@heroicons/react/24/solid"
 import { Roboto } from "next/font/google"
+import { MAX_BENEFIT_LENGTH } from "@/lib/event-field-limits"
 
 const roboto = Roboto({ subsets: ["latin"], weight: ["400", "500", "700"] })
 
@@ -14,9 +15,11 @@ const roboto = Roboto({ subsets: ["latin"], weight: ["400", "500", "700"] })
  * know that.
  *
  * 23 characters is the cap because the chips render over the banner image; longer ones wrap and
- * cover the artwork.
+ * cover the artwork. The number itself lives in `@/lib/event-field-limits` so the API routes can
+ * read it without importing a Chakra component; re-exported here because this is where callers
+ * have always imported it from.
  */
-export const MAX_BENEFIT_LENGTH = 23
+export { MAX_BENEFIT_LENGTH } from "@/lib/event-field-limits"
 
 export default function BenefitsField({
 	value,

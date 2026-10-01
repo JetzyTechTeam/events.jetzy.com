@@ -92,6 +92,7 @@ import { ApprovalDialogs } from "@/components/console/approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "@/components/console/approvals/ApprovalActions"
 import { HoldExpiry } from "@/components/bookings/PaymentBadge"
 import BenefitsField from "@/components/events/BenefitsField"
+import { DATE_POLL_OPTION_LABEL_LIMIT, countChars } from "@/lib/event-field-limits"
 import TicketEditorModal from "@/components/events/TicketEditorModal"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
@@ -1596,7 +1597,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													<FormControl>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
 														<RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
-														<Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{stripHtml(values.desc || "").length}/500</Text>
+														<Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{countChars(stripHtml(values.desc || ""))}/500</Text>
 													</FormControl>
 												</Box>
 
@@ -1986,7 +1987,7 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 													</FormControl>
 													<FormControl mb={4}>
 														<FormLabel>Label (optional)</FormLabel>
-														<Input placeholder="e.g. Weekend option" bg="#090C10" border="1px solid #444" color="white" value={tempPollOption.label || ""} onChange={(e) => setTempPollOption({ ...tempPollOption, label: e.target.value })} />
+														<Input placeholder="e.g. Weekend option" maxLength={DATE_POLL_OPTION_LABEL_LIMIT} bg="#090C10" border="1px solid #444" color="white" value={tempPollOption.label || ""} onChange={(e) => setTempPollOption({ ...tempPollOption, label: e.target.value })} />
 													</FormControl>
 												</ModalBody>
 												<ModalFooter>

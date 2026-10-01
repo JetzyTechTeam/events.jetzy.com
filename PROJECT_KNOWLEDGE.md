@@ -3495,3 +3495,102 @@ is exactly as wide as before.
   `(Max 23 chars)`. Without it, the counter not moving on the spacebar reads as a bug — a new
   confusion of the same species as the one that started this.
 - Still uncapped and uncounted: `src/pages/console/events/create.old.tsx` legacy name input.
+
+## Event field limits: one number per field, and an error that names it (IMPLEMENTED 2026-10-01)
+
+A host could not save an event. The toast read **"Failed to update event. / String must contain at
+most 23 character(s)"** — a sentence with no subject.
+
+`benefits` is stored as ONE comma-separated string (`"free food,free drinks"`), but the API schema
+had `benefits: zod.string().max(23)`. The 23 is **per chip** — the chips render over the banner
+artwork and longer ones wrap over it — so applied to the joined value, a second benefit made the
+event permanently unsaveable through Manage Event. The inline editor's own route allowed 2000 with
+no per-chip rule, which is how the value got there in the first place.
+
+### `src/lib/event-field-limits.ts` — the caps, in one place
+
+Pure: no mongoose, no React, no Chakra, so an API route and a Chakra component can both import it
+(same split, same reason, as `invite-trial.ts` vs `signup-trial.ts`). Holds `MAX_BENEFIT_LENGTH`
+(**moved here** out of `BenefitsField.tsx`, which re-exports it — an API route must not import a
+Chakra component), `BENEFITS_RAW_LIMIT`, `EVENT_DESC_LIMIT` (20000), `EVENT_LOCATION_LIMIT` (500),
+`EVENT_VENUE_NAME_LIMIT` (300), `EVENT_ENTRANCE_LIMIT` (200), `EVENT_TIMEZONE_LIMIT`,
+`DATE_POLL_QUESTION_LIMIT` (300), `DATE_POLL_OPTION_LABEL_LIMIT` (200), plus `countChars`,
+`benefitChips`, `benefitChipsWithinLimit` and `EVENT_FIELD_MESSAGES`.
+
+- **Never write a limit as a literal again.** Three copies of the benefits cap had already drifted
+  into two different meanings.
+- **`countChars` counts CODE POINTS** (`[...s].length`), so an emoji costs 1 rather than the 2
+  UTF-16 units `.length` reports. `event-title.ts` and `checkout/index.ts` already counted this way.
+
+### The same trap was systemic: one field, a different rule per write path
+
+`details.ts` capped seven fields that `create.ts` and `update.ts` did not cap at all, so an edit
+made on one screen could be refused by the other. All three now read the same constants and emit
+the same sentence for `desc`, `location`, `venueName`, `entrance`, `timezone`, `datePoll.question`,
+`datePoll.options[].label`, and `datePoll.options[].id`/`date` (`min(1)`); `capacity` is
+`int().min(0)` on all three (only `details.ts` rejected fractions).
+
+- **`images` is deliberately NOT aligned.** `create.ts`/`update.ts` take `{id, file}` objects,
+  `details.ts` takes url strings — different payload contracts, not drift.
+- **The date-poll label input had no `maxLength` on any of the three forms.** It was the identical
+  shape to the benefits bug: `HostedEvents` re-sends every stored option on any inline Options
+  save, so one long label blocked unrelated inline edits. Capped on all three now, from the
+  constant.
+- **Staging audit before shipping: 354 events, none violated any new rule.** Re-run against
+  production before deploy — `create`/`update` genuinely tightened.
+
+### An error that names the field
+
+The field name was always on the wire (`path: ["benefits"]`) and was thrown away twice.
+
+- **`FIELD_LABELS` in `src/lib/form-errors.ts`**, beside the existing `COLLECTION_LABELS`.
+  `describeIssue` now prefixes a top-level field — but **only when the message doesn't already name
+  it**, or "Capacity: Capacity can't be negative" is worse than either half. Array rows still read
+  "Ticket 3: …".
+- **`configs/api/index.ts` stopped discarding `path`** — it mapped issues with a bare
+  `issue?.message`. It uses `describeIssue` now, which fixes all eight redux-mediated toasts at
+  once.
+- **`zodIssuesToMessage` shares `describeIssue`** so the server's top-level `message` and the
+  client's toast cannot describe one failure in two ways.
+- **`/details`, `/tickets` and `tickets/[ticketId]/update` put the formatted sentence in the
+  TOP-LEVEL `message`.** `HostedEvents.tsx` and `manage.tsx` call them with bare axios and read only
+  that — `data[]` never reaches their catch, so every failure there read "Invalid event data".
+  `tickets/[ticketId]/update` was serving zod's whole JSON blob.
+- **`UpdateEventThunk` now uses `rejectWithValue`**, like `CreateEventThunk` always did. Without it
+  RTK's `miniSerializeError` keeps only name/message/stack/code, so `data[]` was deleted before any
+  toast saw it — same server response, two different toasts. Its reducer (and fetch/delete/ticket
+  siblings) read `action.payload || action.error`.
+
+### Counting, aligned
+
+- Benefits count code points, so an emoji no longer silently eats two of the 23.
+- **`desc` is 20000 on all three routes.** The "/500" under the editor stays as guidance, but the
+  three screens now count it identically — `create.tsx` used a bare tag-strip while the other two
+  used `stripHtml`, which also decodes entities and trims, so the same text read differently on
+  Create than on Manage.
+- **The title's 500 raw backstop is billed in code points** in `details.ts`, matching
+  `clampEventTitle`. It was `.max(500)` (UTF-16 units), so a title the clamp accepted could still
+  400 — which is exactly what `event-title.ts`'s docstring promises can never happen.
+
+## `clone.ts` and `draft-revision.ts` were unguarded (FIXED 2026-10-01)
+
+Found in the same audit, fixed with it.
+
+- **`clone.ts` had NO `req.method` check**, so it answered a GET. NextAuth's session cookie is
+  `SameSite=Lax`, which a top-level navigation carries — the bare URL was a working "create an
+  event" link that a signed-in admin fired by clicking it. Same lesson as `delete.ts`. **POST only**
+  now. It also took the id straight into `findById` (CastError 500 on a malformed one → 400 now) and
+  did not exclude deleted events (`isDeleted: { $ne: true }`, never `false` — rows from the mobile
+  app may carry no such field).
+- **`clone.ts` silently dropped `entrance`, `mediaOrder` and `premiumEvent`.** Arrival instructions
+  were lost, the banner reverted to the legacy images-then-videos order, and the curation badge was
+  dropped. `mediaOrder` moves as a UNIT with `images`/`videos` — the first two cannot express order
+  between them. `premiumEvent` is `?? false`, like `create.ts`. (It still runs no zod, which is
+  fine: it reads nothing from the body.)
+- **`draft-revision.ts` accepted any method** — only DELETE was distinguished, so GET/PUT/PATCH all
+  fell into the save branch. **POST or DELETE** now.
+- **A shadow draft is deliberately NOT validated field by field** — half-typed values are the point,
+  and `draftRevision` is shared with the mobile app. What is checked: the payload parses to a JSON
+  **object** (it is read back as the seed for the manage form) and is under 512KB. It is stored as
+  `Mixed` on the event document, which has a hard 16MB ceiling — an unbounded write here could make
+  the event itself unreadable.

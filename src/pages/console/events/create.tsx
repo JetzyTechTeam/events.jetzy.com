@@ -81,6 +81,8 @@ import { Roboto } from "next/font/google";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
+import { MAX_BENEFIT_LENGTH, DATE_POLL_OPTION_LABEL_LIMIT, countChars } from "@/lib/event-field-limits";
+import { stripHtml } from "@/utils/text";
 import { useSession } from "next-auth/react";
 import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle";
 import TicketMembershipToggles from "@/components/events/TicketMembershipToggles";
@@ -743,7 +745,7 @@ const CreateEventPage = () => {
                   <FormControl>
                     <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
                     <RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
-                    <Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{(values.desc || "").replace(/<[^>]*>/g, "").length}/500</Text>
+                    <Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{countChars(stripHtml(values.desc || ""))}/500</Text>
                   </FormControl>
                 </Box>
 
@@ -756,7 +758,7 @@ const CreateEventPage = () => {
                 <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
                   <Flex align="baseline" gap={2} mb={4}>
                     <Heading size="md" color="white">Event Benefits</Heading>
-                    <Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max 23 chars)</Text>
+                    <Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max {MAX_BENEFIT_LENGTH} chars)</Text>
                   </Flex>
                   {(() => {
                     const addBenefit = () => {
@@ -778,7 +780,7 @@ const CreateEventPage = () => {
                           border="1px solid #343536"
                           _focus={{ borderColor: "#343536", boxShadow: "none" }}
                           pr="70px"
-                          maxLength={23}
+                          maxLength={MAX_BENEFIT_LENGTH}
                           value={benefitInput}
                           onChange={(e) => setBenefitInput(e.target.value)}
                           onKeyDown={(e) => {
@@ -1049,6 +1051,7 @@ const CreateEventPage = () => {
                     <FormLabel>Label (optional)</FormLabel>
                     <Input
                       placeholder="e.g. Weekend option"
+                      maxLength={DATE_POLL_OPTION_LABEL_LIMIT}
                       bg="#090C10"
                       border="1px solid #444"
                       color="white"

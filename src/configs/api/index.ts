@@ -1,3 +1,4 @@
+import { describeIssue } from "@/lib/form-errors"
 import axios from "axios"
 
 const BaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -105,9 +106,9 @@ HTTPClient.interceptors.response.use(
 		// callers that read it directly.
 		if (body && Array.isArray(body.data) && body.data.length > 0) {
 			const detail = body.data
-				.map((issue: any) => (typeof issue === "string" ? issue : issue?.message))
+				.map((issue: any) => (typeof issue === "string" ? issue : describeIssue(issue)))
 				.filter(Boolean)
-				.join(" ")
+				.join("; ")
 			if (detail) return Promise.reject({ ...body, message: detail })
 		}
 

@@ -10,6 +10,7 @@ import { MAX_MEMBERSHIP_FREE_MONTHS } from "@/lib/premium-bundle"
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { Types } from "mongoose"
 import zod from "zod"
+import { zodIssuesToMessage } from "@/lib/zod-error"
 
 // Identical to the ticket shape in update.ts — same rules, same messages.
 const schema = zod.object({
@@ -82,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const validation = schema.safeParse(req.body)
 		if (!validation.success) {
-			return sendResponse(res, validation.error.errors, validation.error.errors?.[0]?.message || "Invalid ticket data", false, ResCode.BAD_REQUEST)
+			return sendResponse(res, validation.error.errors, zodIssuesToMessage(validation.error.errors), false, ResCode.BAD_REQUEST)
 		}
 
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })

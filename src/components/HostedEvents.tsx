@@ -11,6 +11,7 @@ import { allowedMediaCount } from "@/lib/event-media-limit"
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
+import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, countChars } from "@/lib/event-field-limits"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
@@ -1612,7 +1613,7 @@ export default function HostedEvents({ event }: Props) {
 										    host wrote in the console. `EventDescription` below already
 										    sanitises and renders that HTML for guests. */}
 										<RichTextEditor value={draftDesc} onChange={setDraftDesc} placeholder="Add Description" />
-										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{stripHtml(draftDesc || "").length}/500</p>
+										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{countChars(stripHtml(draftDesc || ""))}/500</p>
 										<InlineEditActions section="description" />
 										</>)}
 
@@ -1727,7 +1728,7 @@ export default function HostedEvents({ event }: Props) {
 														value={draftPollQuestion}
 														onChange={(e) => setDraftPollQuestion(e.target.value)}
 														placeholder="e.g. Which date suits you best?"
-														maxLength={300}
+														maxLength={DATE_POLL_QUESTION_LIMIT}
 														className={roboto.className}
 														bg="#090C10"
 														color="white"
@@ -1775,6 +1776,7 @@ export default function HostedEvents({ event }: Props) {
 															value={newPollLabel}
 															onChange={(e) => setNewPollLabel(e.target.value)}
 															placeholder="Label (optional)"
+															maxLength={DATE_POLL_OPTION_LABEL_LIMIT}
 															className={roboto.className}
 															bg="#090C10"
 															color="white"

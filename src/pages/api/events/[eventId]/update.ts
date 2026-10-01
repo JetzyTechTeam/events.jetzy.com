@@ -14,6 +14,18 @@ import { buildUniqueSlug, nextSlugHistory, validateEventSlug } from "@/lib/event
 import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pricing"
 import { isAwaitingAdminReview } from "@/lib/event-approval"
 import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
+import {
+	BENEFITS_RAW_LIMIT,
+	DATE_POLL_OPTION_LABEL_LIMIT,
+	DATE_POLL_QUESTION_LIMIT,
+	EVENT_DESC_LIMIT,
+	EVENT_ENTRANCE_LIMIT,
+	EVENT_FIELD_MESSAGES,
+	EVENT_LOCATION_LIMIT,
+	EVENT_TIMEZONE_LIMIT,
+	EVENT_VENUE_NAME_LIMIT,
+	benefitChipsWithinLimit,
+} from "@/lib/event-field-limits"
 import zod from "zod"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
@@ -34,17 +46,17 @@ const schema = zod.object({
 	name: zod.string().nonempty("Give your event a name."),
 	// Host-chosen event URL. Omitted means "leave unchanged" — never blanked.
 	slug: zod.string().optional(),
-	location: zod.string().optional(),
+	location: zod.string().max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationTooLong).optional(),
 	// The venue on its own, from the Places selection.
-	venueName: zod.string().optional(),
+	venueName: zod.string().max(EVENT_VENUE_NAME_LIMIT, EVENT_FIELD_MESSAGES.venueNameTooLong).optional(),
 	// Arrival instructions. Email-only; see the schema comment.
-	entrance: zod.string().max(200).optional(),
+	entrance: zod.string().max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceTooLong).optional(),
 	longitude: zod.number().optional(),
 	latitude: zod.number().optional(),
 	placeId: zod.string().optional(),
 	// Real sentences, not zod's defaults: these surface straight to the host in a toast, and
 	// "Number must be greater than or equal to 0" names neither the field nor the fix.
-	capacity: zod.number().nonnegative("Capacity can't be negative. Use 0 for unlimited."),
+	capacity: zod.number().int(EVENT_FIELD_MESSAGES.capacityNotWhole).nonnegative(EVENT_FIELD_MESSAGES.capacityNegative),
 	requireApproval: zod.boolean(),
 	images: zod.array(
 		zod.object({
@@ -100,8 +112,8 @@ const schema = zod.object({
 		}),
 	),
 	isPaid: zod.boolean(),
-	desc: zod.string().optional(),
-	timezone: zod.string().optional(),
+	desc: zod.string().max(EVENT_DESC_LIMIT, EVENT_FIELD_MESSAGES.descTooLong).optional(),
+	timezone: zod.string().max(EVENT_TIMEZONE_LIMIT, EVENT_FIELD_MESSAGES.timezoneTooLong).optional(),
 	locationDisclosedAfterBooking: zod.boolean().optional(),
 	showOnMobile: zod.boolean().optional(),
 	// Curation tag only — badge + filter. Not the deprecated `premium` below.
@@ -114,12 +126,12 @@ const schema = zod.object({
 	interests: zod.array(zod.string()).optional(),
 	datePoll: zod.object({
 		isActive: zod.boolean(),
-		question: zod.string().optional(),
+		question: zod.string().max(DATE_POLL_QUESTION_LIMIT, EVENT_FIELD_MESSAGES.pollQuestionTooLong).optional(),
 		options: zod.array(zod.object({
-			id: zod.string(),
-			date: zod.string(),
+			id: zod.string().min(1, EVENT_FIELD_MESSAGES.pollOptionNeedsId),
+			date: zod.string().min(1, EVENT_FIELD_MESSAGES.pollOptionNeedsDate),
 			time: zod.string().optional(),
-			label: zod.string().optional(),
+			label: zod.string().max(DATE_POLL_OPTION_LABEL_LIMIT, EVENT_FIELD_MESSAGES.pollOptionLabelTooLong).optional(),
 			// Still accepted so an older client doesn't fail validation, but IGNORED: votes are
 			// preserved server-side from the stored options, keyed by option id.
 			votes: zod.array(zod.string()).optional(),
@@ -127,7 +139,13 @@ const schema = zod.object({
 	}).optional(),
 	privacy: zod.enum(['public', 'private']).optional(),
 	feedbackFormUrl: zod.string().optional(),
-	benefits: zod.string().max(23).optional(),
+	// The 23-char cap is PER CHIP, never for the whole stored value — `benefits` is ONE
+	// comma-separated string, so a second chip used to make the event unsaveable.
+	benefits: zod
+		.string()
+		.max(BENEFITS_RAW_LIMIT, EVENT_FIELD_MESSAGES.benefitsTooLong)
+		.optional()
+		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong }),
 })
 
 // create stripe instance

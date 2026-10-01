@@ -7,6 +7,7 @@ import { NextApiRequest, NextApiResponse } from "next"
 import { getServerSession } from "next-auth"
 import { Types } from "mongoose"
 import zod from "zod"
+import { zodIssuesToMessage } from "@/lib/zod-error"
 
 const schema = zod.object({
 	title: zod.string().nonempty(),
@@ -43,7 +44,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Validate the request body before updating ticket
 		const data = schema.safeParse(req.body)
-		if (!data.success) return sendResponse(res, data.error.errors, data.error.message, false, ResCode.BAD_REQUEST)
+		// `data.error.message` is zod's whole JSON blob — unreadable in a toast.
+		if (!data.success) return sendResponse(res, data.error.errors, zodIssuesToMessage(data.error.errors), false, ResCode.BAD_REQUEST)
 
 		const userRole = (session.user as any)?.role
 		const userId = (session.user as any)?._id?.toString()

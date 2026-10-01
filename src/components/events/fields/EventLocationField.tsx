@@ -1,3 +1,4 @@
+import { EVENT_LOCATION_LIMIT } from "@/lib/event-field-limits"
 import React, { useRef } from "react"
 import { Input, InputGroup, InputLeftElement } from "@chakra-ui/react"
 import { usePlacesWidget } from "react-google-autocomplete"
@@ -64,6 +65,7 @@ export default function EventLocationField({
 				// Google's own docs require this; without it the browser's saved-form dropdown
 				// renders over the Places one.
 				autoComplete="off"
+				maxLength={EVENT_LOCATION_LIMIT}
 				onFocus={() => {
 					// Suppress the stale re-query on an untouched saved value.
 					if (value && value === lastPicked.current) suppressPlacesDropdown()
