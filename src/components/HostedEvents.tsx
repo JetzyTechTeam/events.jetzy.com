@@ -108,6 +108,15 @@ type EditSection = "media" | "title" | "schedule" | "description" | "options" | 
 /** Everything `details` used to cover, for the one guard that still needs to mean "any of them". */
 const DETAIL_SECTIONS: EditSection[] = ["media", "title", "schedule", "description", "options"]
 
+/**
+ * What the primary button says. "Update Event" is the CEO's wording and is right for the five
+ * sections that describe the event — but tickets save through a DIFFERENT endpoint, write Stripe
+ * prices and already report themselves as "Tickets updated", so calling that "Update Event" would
+ * misname a money-adjacent action. Derived in one place so the inline button and the floating bar
+ * can never say different things about the same save.
+ */
+const saveLabelFor = (section: EditSection) => (section === "tickets" ? "Update tickets" : "Update Event")
+
 /** What the floating bar says it is editing, so the host can tell which pencil they pressed. */
 const EDIT_SECTION_LABELS: Record<EditSection, string> = {
 	media: "Editing banner & benefits",
@@ -935,13 +944,14 @@ export default function HostedEvents({ event }: Props) {
 	const TicketsInlineEditor = () => (
 		<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8" id="event-tickets">
 			<div className="p-4 sm:p-8">
-				<Flex align="center" justify="space-between" gap={2} mb={4} wrap="wrap">
-					<Box>
-						<h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
-						<p className="text-[#bbbbbb] text-sm">Drag to reorder — the order here is the order guests see.</p>
-					</Box>
-					<SectionEditControls section="tickets" />
-				</Flex>
+				{/* No edit control here: this editor only mounts when tickets are ALREADY being
+				    edited, and `SectionEditControls` returns null for the section it is in — so the
+				    one that used to sit here could never render. The way in is the "Edit tickets"
+				    button further down the page. */}
+				<Box mb={4}>
+					<h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
+					<p className="text-[#bbbbbb] text-sm">Drag to reorder — the order here is the order guests see.</p>
+				</Box>
 
 				<SortableTicketList
 					items={draftTickets.map((t, i) => String(t.id || i))}
@@ -1006,6 +1016,8 @@ export default function HostedEvents({ event }: Props) {
 				<Text fontSize="xs" color="#8a8a8a" mt={3}>
 					Changing a price creates a new Stripe price. Existing bookings keep the price they were sold at.
 				</Text>
+
+				<InlineEditActions section="tickets" />
 			</div>
 		</div>
 	)
@@ -1055,7 +1067,7 @@ export default function HostedEvents({ event }: Props) {
 					disabled={savingEdits}
 					className="bg-[#F79432] text-black font-bold py-2 px-5 text-sm rounded-lg hover:bg-[#e58220] disabled:opacity-50"
 				>
-					{savingEdits ? "Saving…" : "Update Event"}
+					{savingEdits ? "Saving…" : saveLabelFor(section)}
 				</button>
 				<button
 					type="button"
@@ -2170,7 +2182,7 @@ export default function HostedEvents({ event }: Props) {
 								disabled={savingEdits}
 								className="bg-[#F79432] text-black font-bold py-2 px-5 text-sm rounded-lg hover:bg-[#e58220] disabled:opacity-50"
 							>
-								{savingEdits ? "Saving…" : "Update Event"}
+								{savingEdits ? "Saving…" : saveLabelFor(editingSection)}
 							</button>
 						</div>
 					</div>
