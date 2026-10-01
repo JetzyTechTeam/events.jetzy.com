@@ -20,12 +20,15 @@ import {
 	DATE_POLL_QUESTION_LIMIT,
 	EVENT_DESC_LIMIT,
 	EVENT_ENTRANCE_LIMIT,
+	EVENT_ENTRANCE_WORD_LIMIT,
 	EVENT_FIELD_MESSAGES,
 	EVENT_LOCATION_LIMIT,
+	EVENT_LOCATION_WORD_LIMIT,
 	EVENT_TIMEZONE_LIMIT,
 	EVENT_VENUE_NAME_LIMIT,
 	benefitChipsWithinLimit,
 	benefitCountWithinLimit,
+	withinWordLimit,
 } from "@/lib/event-field-limits"
 import zod from "zod"
 import { authOptions } from "../../auth/[...nextauth]"
@@ -47,14 +50,26 @@ const schema = zod.object({
 	name: zod.string().nonempty("Give your event a name."),
 	// Host-chosen event URL. Omitted means "leave unchanged" — never blanked.
 	slug: zod.string().optional(),
-	location: zod.string().max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationTooLong).optional(),
+	// The real rule is WORDS; the character cap is only the paste backstop (see
+	// event-field-limits.ts). A host writes directions here, with a map link in the middle.
+	location: zod
+		.string()
+		.max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_LOCATION_WORD_LIMIT), EVENT_FIELD_MESSAGES.locationTooLong)
+		.optional(),
 	// The venue on its own, from the Places selection.
 	venueName: zod.string().max(EVENT_VENUE_NAME_LIMIT, EVENT_FIELD_MESSAGES.venueNameTooLong).optional(),
 	// Arrival instructions. Email-only; see the schema comment.
-	entrance: zod.string().max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceTooLong).optional(),
-	longitude: zod.number().optional(),
-	latitude: zod.number().optional(),
-	placeId: zod.string().optional(),
+	entrance: zod
+		.string()
+		.max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_ENTRANCE_WORD_LIMIT), EVENT_FIELD_MESSAGES.entranceTooLong)
+		.optional(),
+	// Three-valued, like a ticket's `quantity`: absent = unchanged, a number = a new pick, and
+	// `null` = the host typed the address by hand, so the pick (and its map link) is CLEARED.
+	longitude: zod.number().nullable().optional(),
+	latitude: zod.number().nullable().optional(),
+	placeId: zod.string().nullable().optional(),
 	// Real sentences, not zod's defaults: these surface straight to the host in a toast, and
 	// "Number must be greater than or equal to 0" names neither the field nor the fix.
 	capacity: zod.number().int(EVENT_FIELD_MESSAGES.capacityNotWhole).nonnegative(EVENT_FIELD_MESSAGES.capacityNegative),
@@ -313,7 +328,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				// (e.g. the user re-picked a location) — otherwise leave the existing
 				// coordinates untouched instead of wiping them with undefined.
 				...(typeof longitude === "number" && typeof latitude === "number" ? {
-					coordinates: { long: longitude, lat: latitude, placeId },
+					coordinates: { long: longitude, lat: latitude, placeId: placeId || undefined },
 				} : {}),
 				desc: desc ?? "",
 				isPaid,
@@ -359,6 +374,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const unsetDoc: any = {}
 		if (!start) unsetDoc.startsOn = ""
 		if (!end) unsetDoc.endsOn = ""
+		// The host typed the address by hand instead of picking it. The coordinates are the ONLY
+		// record that a place was ever picked from the dropdown (`locationWasPicked`), and a map
+		// link is offered to a guest on the strength of them — so a typed-over address must not
+		// keep pointing at the place it replaced.
+		if (latitude === null && longitude === null) unsetDoc.coordinates = ""
 		// A real save always supersedes any autosaved shadow draft ("draft 2")
 		unsetDoc.draftRevision = ""
 		if (Object.keys(unsetDoc).length > 0) updateDoc.$unset = unsetDoc

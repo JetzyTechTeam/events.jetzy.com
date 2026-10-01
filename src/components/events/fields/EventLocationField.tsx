@@ -28,7 +28,7 @@ export default function EventLocationField({
 	value,
 	onPick,
 	onTextChange,
-	placeholder = "Choose Location",
+	placeholder = "Search for a place, or type the address yourself",
 	id = "location",
 }: {
 	value: string

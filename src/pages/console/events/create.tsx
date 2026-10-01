@@ -81,7 +81,7 @@ import { Roboto } from "next/font/google";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
-import { MAX_BENEFIT_LENGTH, MAX_BENEFIT_COUNT, DATE_POLL_OPTION_LABEL_LIMIT, countChars, benefitChips } from "@/lib/event-field-limits";
+import { MAX_BENEFIT_LENGTH, MAX_BENEFIT_COUNT, DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, benefitChips, withinWordLimit, wordCounter } from "@/lib/event-field-limits";
 import { stripHtml } from "@/utils/text";
 import { useSession } from "next-auth/react";
 import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle";
@@ -261,6 +261,22 @@ const CreateEventPage = () => {
   // be told apart from the user actually editing it.
   const lastPickedLocationRef = React.useRef<string>("");
 
+  /**
+   * Forget the Google pick. Called on every keystroke in the location field — the pick only
+   * survives while the text is exactly what the pick produced.
+   *
+   * `null`, not `undefined`: the API routes read an omitted coordinate as "unchanged" (an
+   * autosave from a stale form must not wipe a real pick) so there has to be a value that
+   * means "cleared".
+   */
+  const dropLocationPick = (setFieldValue: (field: string, value: any) => void) => {
+    setFieldValue("venueName", "")
+    setFieldValue("latitude", null)
+    setFieldValue("longitude", null)
+    setFieldValue("placeId", null)
+    lastPickedLocationRef.current = ""
+  }
+
   const { ref } = usePlacesWidget({
     apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
     onPlaceSelected: (place) => {
@@ -301,6 +317,18 @@ const CreateEventPage = () => {
       return;
     }
 
+    // Both are limited in WORDS, so the input's own `maxLength` (a loose character backstop)
+    // cannot express the rule. Checked here rather than left to the API so the host is told what
+    // to shorten — an autosave refused for this reason only shows "Unsaved".
+    if (!withinWordLimit(values.location, EVENT_LOCATION_WORD_LIMIT)) {
+      Error("Validation Error", EVENT_FIELD_MESSAGES.locationTooLong);
+      return;
+    }
+    if (!withinWordLimit(values.entrance, EVENT_ENTRANCE_WORD_LIMIT)) {
+      Error("Validation Error", EVENT_FIELD_MESSAGES.entranceTooLong);
+      return;
+    }
+
     if (isDraft) {
       if (!values.name?.trim()) {
         Error("Validation Error", "Event name is required to save as draft");
@@ -330,24 +358,13 @@ const CreateEventPage = () => {
     if (values.tickets.length > 0) values.isPaid = true
     else values.isPaid = false
 
-    // Attempt geocoding if coordinates missing, but don't block submission on failure
-    if (!values.latitude || !values.longitude) {
-      try {
-        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
-        if (apiKey && values.location) {
-          const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(values.location)}&key=${apiKey}`);
-          const data = await res.json();
-          if (data.status === "OK" && data.results.length > 0) {
-            const loc = data.results[0].geometry.location;
-            values.latitude = loc.lat;
-            values.longitude = loc.lng;
-            values.placeId = data.results[0].place_id;
-          }
-        }
-      } catch (_) {
-        // Geocoding failed, proceed without coordinates
-      }
-    }
+    // There used to be a geocode-on-submit here: with no coordinates, it sent the typed location
+    // to the Geocoding API and stored whatever came back as `coordinates` + `placeId`. That is
+    // precisely the behaviour the CEO ruled out (2026-10-01) — it manufactures a "pick" the host
+    // never made, and since `locationWasPicked` reads the coordinates, the ticket email then
+    // carried a map link to whatever Google matched the sentence to. A typed address now stores
+    // no coordinates, which is what tells every reader to send the host's own words and their
+    // own link instead. Picking from the dropdown is the way to get a map link.
 
     setIsSubmitting(true);
 
@@ -703,7 +720,7 @@ const CreateEventPage = () => {
                           {...field}
                           ref={ref}
                           id="location"
-                          placeholder="Choose Location"
+                          placeholder="Search for a place, or type the address yourself"
                           // Google's own docs require this; without it the browser's saved-form
                           // dropdown renders on top of the Places one.
                           autoComplete="off"
@@ -715,6 +732,11 @@ const CreateEventPage = () => {
                             // The moment they type, they mean to search again.
                             allowPlacesDropdown()
                             field.onChange(e)
+                            // Typing by hand DROPS the dropdown pick (CEO, 2026-10-01): the host's
+                            // own words, and their own link if they paste one, never a map link we
+                            // resolved for a place they have typed over. The coordinates are the
+                            // only record of that pick, so `null` clears them server-side.
+                            dropLocationPick(setFieldValue)
                           }}
                           onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
                             allowPlacesDropdown()
@@ -724,22 +746,40 @@ const CreateEventPage = () => {
                         )}
                       </Field>
                     </InputGroup>
+                    {/* Pick from the dropdown OR type it yourself — typing is not second-class, it
+                        just means no map link of our own goes out with the ticket. */}
+                    <Flex justify="space-between" gap={2} mt={1}>
+                      <Text fontSize="xs" color="gray.500">
+                        Pick a place for a map link in the ticket email, or type the address and your own directions. Any link you paste stays clickable.
+                      </Text>
+                      <Text fontSize="xs" color={withinWordLimit(values.location, EVENT_LOCATION_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+                        {wordCounter(values.location, EVENT_LOCATION_WORD_LIMIT)}
+                      </Text>
+                    </Flex>
                   </FormControl>
 
                   <FormControl mb={4}>
                     <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>
                       Entrance <span style={{ color: "#868686" }}>(optional)</span>
                     </FormLabel>
+                    {/* A textarea, not an input: this holds up to 150 WORDS of arrival directions
+                        now, and hosts paste a map link into the middle of them. */}
                     <Field
-                      as={Input}
+                      as={Textarea}
                       name="entrance"
-                      placeholder="e.g. West side at 69th Street"
-                      maxLength={200}
-                      className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
+                      placeholder="e.g. Entrance is from Central Park South, 59th St and 6th Avenue. Map: https://..."
+                      maxLength={EVENT_ENTRANCE_LIMIT}
+                      rows={3}
+                      className={roboto.className} bg="#090C10" color="white" fontSize="14px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
                     />
-                    <Text fontSize="xs" color="gray.500" mt={1}>
-                      Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
-                    </Text>
+                    <Flex justify="space-between" gap={2} mt={1}>
+                      <Text fontSize="xs" color="gray.500">
+                        Sent in the ticket confirmation email and shown on the booking confirmation page, just below the venue. Not shown on the event page. Any link you paste stays clickable.
+                      </Text>
+                      <Text fontSize="xs" color={withinWordLimit(values.entrance, EVENT_ENTRANCE_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+                        {wordCounter(values.entrance, EVENT_ENTRANCE_WORD_LIMIT)}
+                      </Text>
+                    </Flex>
                   </FormControl>
 
                   <FormControl>

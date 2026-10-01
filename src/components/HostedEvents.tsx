@@ -11,7 +11,7 @@ import { allowedMediaCount } from "@/lib/event-media-limit"
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
-import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, countChars } from "@/lib/event-field-limits"
+import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
@@ -49,6 +49,7 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
+import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
@@ -292,7 +293,10 @@ export default function HostedEvents({ event }: Props) {
 	const [draftLocation, setDraftLocation] = useState("")
 	const [draftVenueName, setDraftVenueName] = useState("")
 	const [draftEntrance, setDraftEntrance] = useState("")
-	const [draftCoords, setDraftCoords] = useState<{ latitude?: number; longitude?: number; placeId?: string }>({})
+	// `{}` = untouched, so the save sends nothing and the stored pick stands. Numbers = a new
+	// pick. `null` = the host typed the address by hand, which CLEARS the pick server-side —
+	// `undefined` would read as "unchanged" there, which is the whole reason for the third state.
+	const [draftCoords, setDraftCoords] = useState<{ latitude?: number | null; longitude?: number | null; placeId?: string | null }>({})
 	const [draftTimezone, setDraftTimezone] = useState("")
 	const [draftStartDate, setDraftStartDate] = useState("")
 	const [draftStartTime, setDraftStartTime] = useState("")
@@ -605,6 +609,18 @@ export default function HostedEvents({ event }: Props) {
 			if (section === "title") payload.name = name
 
 			if (section === "schedule") {
+				// Limited in WORDS, which the textarea's character `maxLength` cannot express.
+				// Refused here so the host is told what to shorten, rather than reading a 400.
+				if (!withinWordLimit(draftLocation, EVENT_LOCATION_WORD_LIMIT)) {
+					toast({ title: EVENT_FIELD_MESSAGES.locationTooLong, status: "error", duration: 4000, isClosable: true })
+					setSavingEdits(false)
+					return
+				}
+				if (!withinWordLimit(draftEntrance, EVENT_ENTRANCE_WORD_LIMIT)) {
+					toast({ title: EVENT_FIELD_MESSAGES.entranceTooLong, status: "error", duration: 4000, isClosable: true })
+					setSavingEdits(false)
+					return
+				}
 				payload.location = draftLocation
 				payload.venueName = draftVenueName
 				payload.entrance = draftEntrance
@@ -1488,7 +1504,15 @@ export default function HostedEvents({ event }: Props) {
 											<Box mb={4}>
 												<EventLocationField
 													value={draftLocation}
-													onTextChange={setDraftLocation}
+													onTextChange={(text) => {
+														setDraftLocation(text)
+														// Typed by hand → the Google pick is dropped (CEO, 2026-10-01).
+														// The guest gets the host's words, and the host's own link if
+														// they pasted one, never a map link resolved for a place that
+														// has been typed over.
+														setDraftVenueName("")
+														setDraftCoords({ latitude: null, longitude: null, placeId: null })
+													}}
 													onPick={(picked: PlaceSelection) => {
 														setDraftLocation(picked.location)
 														setDraftVenueName(picked.venueName)
@@ -1496,27 +1520,44 @@ export default function HostedEvents({ event }: Props) {
 													}}
 													id="inline-location"
 												/>
+												{/* Pick from the dropdown OR type it yourself — typing is not
+												    second-class, it just means no map link of our own goes out. */}
+												<Flex justify="space-between" gap={2} mt={1}>
+													<Text fontSize="xs" color="gray.500">
+														Pick a place for a map link in the ticket email, or type the address and your own directions. Any link you paste stays clickable.
+													</Text>
+													<Text fontSize="xs" color={withinWordLimit(draftLocation, EVENT_LOCATION_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+														{wordCounter(draftLocation, EVENT_LOCATION_WORD_LIMIT)}
+													</Text>
+												</Flex>
 											</Box>
 
 											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>
 												Entrance <span style={{ color: "#868686" }}>(optional)</span>
 											</Text>
-											<Input
+											{/* A textarea, not an input: 150 WORDS of arrival directions now, with a map
+											    link often pasted into the middle of them. */}
+											<Textarea
 												value={draftEntrance}
 												onChange={(e) => setDraftEntrance(e.target.value)}
-												placeholder="e.g. West side at 69th Street"
-												maxLength={200}
+												placeholder="e.g. Entrance is from Central Park South, 59th St and 6th Avenue. Map: https://..."
+												maxLength={EVENT_ENTRANCE_LIMIT}
+												rows={3}
 												className={roboto.className}
 												bg="#090C10"
 												color="white"
 												fontSize="14px"
-												h="48px"
 												border="1px solid #343536"
 												_focus={{ borderColor: "#343536", boxShadow: "none" }}
 											/>
-											<Text fontSize="xs" color="gray.500" mt={1}>
-												Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
-											</Text>
+											<Flex justify="space-between" gap={2} mt={1}>
+												<Text fontSize="xs" color="gray.500">
+													Sent in the ticket confirmation email and shown on the booking confirmation page, just below the venue. Not shown on the event page. Any link you paste stays clickable.
+												</Text>
+												<Text fontSize="xs" color={withinWordLimit(draftEntrance, EVENT_ENTRANCE_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+													{wordCounter(draftEntrance, EVENT_ENTRANCE_WORD_LIMIT)}
+												</Text>
+											</Flex>
 											<InlineEditActions section="schedule" />
 
 										</Box>
@@ -1549,8 +1590,11 @@ export default function HostedEvents({ event }: Props) {
 										) : (
 											<>
 												<span className="flex-shrink-0 mt-0.5"><LocationSVG /></span>
+												{/* The host may have typed their own map link into the address — it is
+												    the one thing they want clicked, so it is a link here too, exactly as
+												    it is in the ticket email. The rest stays plain text. */}
 												<span className="break-words [overflow-wrap:anywhere]">
-													{disclosedLocation}
+													<LinkedText text={disclosedLocation || ""} />
 												</span>
 											</>
 										)}

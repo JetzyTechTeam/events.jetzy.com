@@ -22,12 +22,15 @@ import {
 	DATE_POLL_QUESTION_LIMIT,
 	EVENT_DESC_LIMIT,
 	EVENT_ENTRANCE_LIMIT,
+	EVENT_ENTRANCE_WORD_LIMIT,
 	EVENT_FIELD_MESSAGES,
 	EVENT_LOCATION_LIMIT,
+	EVENT_LOCATION_WORD_LIMIT,
 	EVENT_TIMEZONE_LIMIT,
 	EVENT_VENUE_NAME_LIMIT,
 	benefitChipsWithinLimit,
 	benefitCountWithinLimit,
+	withinWordLimit,
 } from "@/lib/event-field-limits"
 import zod from "zod"
 import Stripe from "stripe"
@@ -56,16 +59,28 @@ const schema = zod.object({
 	name: zod.string().nonempty("Give your event a name."),
 	// Host-chosen event URL. Blank/omitted derives one from the event name.
 	slug: zod.string().optional(),
-	location: zod.string().max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationTooLong).optional(),
+	// The real rule is WORDS; the character cap is only the paste backstop (see
+	// event-field-limits.ts). A host writes directions here, with a map link in the middle.
+	location: zod
+		.string()
+		.max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_LOCATION_WORD_LIMIT), EVENT_FIELD_MESSAGES.locationTooLong)
+		.optional(),
 	// The venue on its own, from the Places selection. The schema has always had the field;
 	// nothing used to write it, which is why `event-helpers.ts` carries a hardcoded
 	// event-id → venue map as a manual stand-in.
 	venueName: zod.string().max(EVENT_VENUE_NAME_LIMIT, EVENT_FIELD_MESSAGES.venueNameTooLong).optional(),
 	// Arrival instructions. Email-only; see the schema comment.
-	entrance: zod.string().max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceTooLong).optional(),
-	longitude: zod.number().optional(),
-	latitude: zod.number().optional(),
-	placeId: zod.string().optional(),
+	entrance: zod
+		.string()
+		.max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_ENTRANCE_WORD_LIMIT), EVENT_FIELD_MESSAGES.entranceTooLong)
+		.optional(),
+	// `null` is what the form sends once the host types the address by hand instead of picking
+	// it — there is nothing to clear on a brand-new event, but the payload is the same shape.
+	longitude: zod.number().nullable().optional(),
+	latitude: zod.number().nullable().optional(),
+	placeId: zod.string().nullable().optional(),
 	// Real sentences, not zod's defaults — these surface straight to the host in a toast.
 	// Kept identical to update.ts so the same mistake reads the same on both forms.
 	capacity: zod.number().int(EVENT_FIELD_MESSAGES.capacityNotWhole).nonnegative(EVENT_FIELD_MESSAGES.capacityNegative),
@@ -274,11 +289,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			location,
 			...(venueName ? { venueName } : {}),
 			...(entrance ? { entrance } : {}),
-			coordinates: {
-				long: longitude,
-				lat: latitude,
-				placeId,
-			},
+			// Written only for a real dropdown pick. A typed address stores NO coordinates, which
+			// is what tells every reader (`locationWasPicked`) not to offer a map link nobody chose.
+			...(typeof longitude === "number" && typeof latitude === "number"
+				? { coordinates: { long: longitude, lat: latitude, placeId: placeId || undefined } }
+				: {}),
 			desc: desc ?? "",
 			...(start ? { startsOn: start } : {}),
 			...(end ? { endsOn: end } : {}),

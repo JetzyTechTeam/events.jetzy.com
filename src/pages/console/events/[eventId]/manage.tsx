@@ -94,7 +94,7 @@ import { ApprovalDialogs } from "@/components/console/approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "@/components/console/approvals/ApprovalActions"
 import { HoldExpiry } from "@/components/bookings/PaymentBadge"
 import BenefitsField from "@/components/events/BenefitsField"
-import { DATE_POLL_OPTION_LABEL_LIMIT, countChars } from "@/lib/event-field-limits"
+import { DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import TicketEditorModal from "@/components/events/TicketEditorModal"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
@@ -642,6 +642,22 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 	// be told apart from the user actually editing it.
 	const lastPickedLocationRef = useRef<string>("")
 
+	/**
+	 * Forget the Google pick. Called on every keystroke in the location field — the pick only
+	 * survives while the text is exactly what the pick produced.
+	 *
+	 * `null`, not `undefined`: `update.ts` reads an omitted coordinate as "unchanged" (an autosave
+	 * built from a stale form must not wipe a real pick), so there has to be a value that means
+	 * "cleared" — it `$unset`s `coordinates` on seeing it.
+	 */
+	const dropLocationPick = (setFieldValue: (field: string, value: any) => void) => {
+		setFieldValue("venueName", "")
+		setFieldValue("latitude", null)
+		setFieldValue("longitude", null)
+		setFieldValue("placeId", null)
+		lastPickedLocationRef.current = ""
+	}
+
 	const { ref: placesRef } = usePlacesWidget({
 		apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
 		onPlaceSelected: (place) => {
@@ -812,6 +828,18 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 		const hasDates = !!(values.startDate || values.endDate)
 		if (pollActive && hasDates) {
 			Error("Validation Error", "Remove either the date poll or the start/end dates before saving.")
+			return
+		}
+
+		// Both are limited in WORDS, so the input's own `maxLength` (a loose character backstop)
+		// cannot express the rule. Checked here rather than left to the API so the host is told
+		// what to shorten — an autosave refused for this reason only shows "Unsaved".
+		if (!withinWordLimit(values.location, EVENT_LOCATION_WORD_LIMIT)) {
+			Error("Validation Error", EVENT_FIELD_MESSAGES.locationTooLong)
+			return
+		}
+		if (!withinWordLimit(values.entrance, EVENT_ENTRANCE_WORD_LIMIT)) {
+			Error("Validation Error", EVENT_FIELD_MESSAGES.entranceTooLong)
 			return
 		}
 
@@ -1560,7 +1588,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																		{...field}
 																		ref={placesRef}
 																		id="location"
-																		placeholder="Choose Location"
+																		placeholder="Search for a place, or type the address yourself"
 																		// Google's own docs require this; without it the browser's
 																		// saved-form dropdown renders over the Places one.
 																		autoComplete="off"
@@ -1572,6 +1600,10 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																			// The moment they type, they mean to search again.
 																			allowPlacesDropdown()
 																			field.onChange(e)
+																			// Typing by hand DROPS the dropdown pick (CEO, 2026-10-01) —
+																			// their words and their own link, never a map link resolved
+																			// for a place they have typed over. See dropLocationPick.
+																			dropLocationPick(setFieldValue)
 																		}}
 																		onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
 																			allowPlacesDropdown()
@@ -1581,22 +1613,40 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																)}
 															</Field>
 														</InputGroup>
+														{/* Pick from the dropdown OR type it yourself — typing is not
+														    second-class, it just means no map link of our own goes out. */}
+														<Flex justify="space-between" gap={2} mt={1}>
+															<Text fontSize="xs" color="gray.500">
+																Pick a place for a map link in the ticket email, or type the address and your own directions. Any link you paste stays clickable.
+															</Text>
+															<Text fontSize="xs" color={withinWordLimit(values.location, EVENT_LOCATION_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+																{wordCounter(values.location, EVENT_LOCATION_WORD_LIMIT)}
+															</Text>
+														</Flex>
 													</FormControl>
 
 													<FormControl mb={4}>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>
 															Entrance <span style={{ color: "#868686" }}>(optional)</span>
 														</FormLabel>
+														{/* A textarea, not an input: 150 WORDS of arrival directions now, with a
+														    map link often pasted into the middle of them. */}
 														<Field
-															as={Input}
+															as={Textarea}
 															name="entrance"
-															placeholder="e.g. West side at 69th Street"
-															maxLength={200}
-															className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
+															placeholder="e.g. Entrance is from Central Park South, 59th St and 6th Avenue. Map: https://..."
+															maxLength={EVENT_ENTRANCE_LIMIT}
+															rows={3}
+															className={roboto.className} bg="#090C10" color="white" fontSize="14px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
 														/>
-														<Text fontSize="xs" color="gray.500" mt={1}>
-															Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
-														</Text>
+														<Flex justify="space-between" gap={2} mt={1}>
+															<Text fontSize="xs" color="gray.500">
+																Sent in the ticket confirmation email and shown on the booking confirmation page, just below the venue. Not shown on the event page. Any link you paste stays clickable.
+															</Text>
+															<Text fontSize="xs" color={withinWordLimit(values.entrance, EVENT_ENTRANCE_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+																{wordCounter(values.entrance, EVENT_ENTRANCE_WORD_LIMIT)}
+															</Text>
+														</Flex>
 													</FormControl>
 
 													<FormControl>

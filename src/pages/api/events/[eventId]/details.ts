@@ -11,13 +11,16 @@ import {
 	DATE_POLL_QUESTION_LIMIT,
 	EVENT_DESC_LIMIT,
 	EVENT_ENTRANCE_LIMIT,
+	EVENT_ENTRANCE_WORD_LIMIT,
 	EVENT_FIELD_MESSAGES,
 	EVENT_LOCATION_LIMIT,
+	EVENT_LOCATION_WORD_LIMIT,
 	EVENT_TIMEZONE_LIMIT,
 	EVENT_VENUE_NAME_LIMIT,
 	benefitChipsWithinLimit,
 	benefitCountWithinLimit,
 	countChars,
+	withinWordLimit,
 } from "@/lib/event-field-limits"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
@@ -50,12 +53,24 @@ const schema = zod.object({
 	images: zod.array(zod.string().min(1)).optional(),
 	videos: zod.array(zod.string().min(1)).optional(),
 	mediaOrder: zod.array(zod.string().min(1)).optional(),
-	location: zod.string().max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationTooLong).optional(),
+	// The real rule is WORDS; the character cap is only the paste backstop (see
+	// event-field-limits.ts). A host writes directions here, with a map link in the middle.
+	location: zod
+		.string()
+		.max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_LOCATION_WORD_LIMIT), EVENT_FIELD_MESSAGES.locationTooLong)
+		.optional(),
 	venueName: zod.string().max(EVENT_VENUE_NAME_LIMIT, EVENT_FIELD_MESSAGES.venueNameTooLong).optional(),
-	entrance: zod.string().max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceTooLong).optional(),
-	latitude: zod.number().optional(),
-	longitude: zod.number().optional(),
-	placeId: zod.string().optional(),
+	entrance: zod
+		.string()
+		.max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_ENTRANCE_WORD_LIMIT), EVENT_FIELD_MESSAGES.entranceTooLong)
+		.optional(),
+	// Three-valued, like a ticket's `quantity`: absent = unchanged, a number = a new pick, and
+	// `null` = the host typed the address by hand, so the pick (and its map link) is CLEARED.
+	latitude: zod.number().nullable().optional(),
+	longitude: zod.number().nullable().optional(),
+	placeId: zod.string().nullable().optional(),
 	timezone: zod.string().max(EVENT_TIMEZONE_LIMIT, EVENT_FIELD_MESSAGES.timezoneTooLong).optional(),
 	// Dates arrive already resolved to an instant, NOT as the date/time/timezone triple that
 	// `update.ts` splits and reassembles. That round trip is where its date bugs live, and this
@@ -193,10 +208,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			else if ((event as any).privacy === "private") set.adminApprovalStatus = "pending"
 		}
 
-		// Only overwrite stored coordinates when the client actually sent new ones, i.e. the
-		// user re-picked a place. Same rule as update.ts.
-		if (typeof latitude === "number" && typeof longitude === "number") {
-			set.coordinates = { long: longitude, lat: latitude, placeId }
+		// Three states, same as update.ts: `null` = typed by hand, so the pick is cleared;
+		// numbers = a fresh pick; omitted = unchanged.
+		if (latitude === null && longitude === null) {
+			// Typed by hand. The coordinates are the ONLY record that a place was picked from the
+			// dropdown (`locationWasPicked`), so leaving them behind would keep offering a guest a
+			// map link to a place the host has since typed over.
+			unset.coordinates = ""
+		} else if (typeof latitude === "number" && typeof longitude === "number") {
+			set.coordinates = { long: longitude, lat: latitude, placeId: placeId || undefined }
 		}
 
 		// A date is `$unset` when cleared rather than written as null, so "no date" reads the

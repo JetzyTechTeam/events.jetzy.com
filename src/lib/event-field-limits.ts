@@ -35,13 +35,48 @@ export const MAX_BENEFIT_COUNT = 6
 /** The whole comma-separated value. A backstop against a paste, not the real rule. */
 export const BENEFITS_RAW_LIMIT = 2000
 
+/**
+ * Words, as a person counts them: runs of non-whitespace. The rule the host is held to on
+ * `location` and `entrance` is a WORD count (CEO, 2026-10-01) — hosts write arrival directions
+ * there, with a map link in the middle of a sentence, and 200 characters ran out mid-instruction.
+ *
+ * **Whitespace is never counted** (CEO, 2026-10-02): spaces, runs of spaces, tabs and newlines
+ * add nothing, so "Central   Park   South" is the same three words as "Central Park South" and a
+ * trailing space costs a host nothing. Same principle as the title's 150 non-whitespace
+ * characters — budget is spent on content, never on formatting. A URL is one word, however long
+ * it is, which is the point: a map link must not eat a third of the allowance.
+ */
+export const countWords = (value: string): number => (value || "").trim().split(/\s+/).filter(Boolean).length
+
 export const EVENT_DESC_LIMIT = 20000
-export const EVENT_LOCATION_LIMIT = 500
+
+/**
+ * Location and entrance are limited in WORDS; the character numbers below are only a paste
+ * backstop, the same asymmetry `event-title.ts` has (150 non-whitespace characters, with
+ * `EVENT_TITLE_RAW_LIMIT` as the `maxLength` the browser can actually express). A single input
+ * cannot express "150 words", so the raw cap has to be loose enough that no legitimate 150-word
+ * value is ever refused by it — a few map links alone are several hundred characters.
+ */
+export const EVENT_LOCATION_WORD_LIMIT = 150
+export const EVENT_ENTRANCE_WORD_LIMIT = 150
+export const EVENT_LOCATION_LIMIT = 4000
 export const EVENT_VENUE_NAME_LIMIT = 300
-export const EVENT_ENTRANCE_LIMIT = 200
+export const EVENT_ENTRANCE_LIMIT = 4000
 export const EVENT_TIMEZONE_LIMIT = 100
 export const DATE_POLL_QUESTION_LIMIT = 300
 export const DATE_POLL_OPTION_LABEL_LIMIT = 200
+
+/**
+ * The word rule for `location` / `entrance`. Absent or empty is fine — both are optional, and
+ * `location` is also written by the mobile app and the admin portal against this shared
+ * collection, so this must never refuse a value for being short.
+ */
+export const withinWordLimit = (value: string | undefined | null, limit: number): boolean =>
+	!value || countWords(value) <= limit
+
+/** "12 / 150 words", for the counter under the input. */
+export const wordCounter = (value: string | undefined | null, limit: number): string =>
+	`${countWords(value || "")} / ${limit} words`
 
 /** Split a stored `benefits` value into the chips the host actually typed. */
 export const benefitChips = (value: string): string[] =>
@@ -75,9 +110,13 @@ export const EVENT_FIELD_MESSAGES = {
 	benefitsTooLong: "Those event benefits are too long to store. Shorten them and try again.",
 	tooManyBenefits: `You can have at most ${MAX_BENEFIT_COUNT} event benefits. Remove some and try again.`,
 	descTooLong: `A description can be at most ${EVENT_DESC_LIMIT.toLocaleString()} characters.`,
-	locationTooLong: `A location can be at most ${EVENT_LOCATION_LIMIT} characters.`,
+	locationTooLong: `A location can be at most ${EVENT_LOCATION_WORD_LIMIT} words.`,
 	venueNameTooLong: `A venue name can be at most ${EVENT_VENUE_NAME_LIMIT} characters.`,
-	entranceTooLong: `Arrival instructions can be at most ${EVENT_ENTRANCE_LIMIT} characters.`,
+	entranceTooLong: `Arrival instructions can be at most ${EVENT_ENTRANCE_WORD_LIMIT} words.`,
+	// The raw backstops. Unreachable through the UI — only a direct API call or a paste of
+	// several thousand characters trips them, and then the word count is not the real problem.
+	locationRawTooLong: "That location is too long to store. Shorten it and try again.",
+	entranceRawTooLong: "Those arrival instructions are too long to store. Shorten them and try again.",
 	timezoneTooLong: "That isn't a timezone we recognise.",
 	capacityNotWhole: "Capacity must be a whole number.",
 	capacityNegative: "Capacity can't be negative. Use 0 for unlimited.",
