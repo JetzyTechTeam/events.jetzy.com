@@ -49,7 +49,7 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
-import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
+import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
@@ -329,7 +329,7 @@ export default function HostedEvents({ event }: Props) {
 	 * What the page renders is simply the server's copy.
 	 *
 	 * There used to be a `live*` overlay here that patched the saved values in without a
-	 * reload. It was always incomplete — `canSeeLocation`, `isEnded`, `eventNeedsApproval`,
+	 * reload. It was always incomplete — `canSeeLocation`, `isEnded`, the approvals gate,
 	 * the date-poll components and the checkout modal all read `clonedEvent` directly, so
 	 * toggling "disclose location after booking" saved but the location line kept the old
 	 * visibility. A save now re-runs `getServerSideProps` instead (see `saveEventEdits`),
@@ -825,13 +825,23 @@ export default function HostedEvents({ event }: Props) {
 
 	// Badge counts for the admin Approvals tab, so a host sees there's something waiting —
 	// and that a card hold is about to lapse — without having to open the tab.
-	const eventNeedsApproval = eventHasAnyApprovalTicket(clonedEvent as any)
+	// Fetched for every host, NOT only when a ticket currently requires approval: that was
+	// circular — with the flag switched off the bookings were never loaded, so the pending
+	// requests that should have kept the tab alive could not be seen.
 	const { data: approvalBookings } = useQuery({
 		queryKey: ["event-bookings", clonedEvent?._id?.toString()],
 		queryFn: async () => (await axios.post("/api/get-bookings", { eventId: clonedEvent?._id })).data || [],
-		enabled: !!canManage && !!clonedEvent?._id && eventNeedsApproval,
+		enabled: !!canManage && !!clonedEvent?._id,
 	})
 	const pendingApprovalCount = (approvalBookings as any[] | undefined)?.filter((b) => isPendingBooking(b)).length ?? 0
+	// Latched: once the host has been shown the tab it stays for the life of the page. Approving
+	// the last request on an event whose tickets no longer require approval must not make the
+	// panel they are looking at disappear. Unlike the console pages there is no server-side count
+	// here — the event page is public, and a host-only badge is no reason to query bookings in the
+	// getServerSideProps that every guest goes through — so the tab appears once the fetch lands.
+	const sawPendingApprovalsRef = React.useRef(false)
+	if (pendingApprovalCount > 0) sawPendingApprovalsRef.current = true
+	const showApprovals = showApprovalsSurface(clonedEvent as any, sawPendingApprovalsRef.current ? 1 : 0)
 	const expiringHoldCount = (approvalBookings as any[] | undefined)?.filter((b) => {
 		const remaining = holdTimeRemaining(b)
 		return isPendingBooking(b) && remaining !== null && remaining > 0 && remaining < 48 * 60 * 60 * 1000
@@ -1910,7 +1920,7 @@ export default function HostedEvents({ event }: Props) {
 											>
 												Waiting List
 											</button>
-											{eventHasAnyApprovalTicket(clonedEvent as any) && (
+											{showApprovals && (
 												<button
 													onClick={() => setActiveTab("approvals")}
 													className={`flex-1 px-6 py-4 text-left font-semibold transition-colors flex items-center gap-2 ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
@@ -1938,7 +1948,7 @@ export default function HostedEvents({ event }: Props) {
 											    with so the scrolling columns don't show through. This panel is a
 											    translucent grey over the dark page rather than a flat colour, so this
 											    is the composite it resolves to. */}
-											{activeTab === "approvals" && eventHasAnyApprovalTicket(clonedEvent as any) && <ApprovalRequests eventId={clonedEvent._id.toString()} event={clonedEvent} surfaceBg="#1A1A1A" />}
+											{activeTab === "approvals" && showApprovals && <ApprovalRequests eventId={clonedEvent._id.toString()} event={clonedEvent} surfaceBg="#1A1A1A" />}
 										</div>
 									</>
 								)}

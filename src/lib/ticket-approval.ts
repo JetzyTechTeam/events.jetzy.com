@@ -49,6 +49,23 @@ export const eventHasAnyApprovalTicket = (event?: ApprovalEventLike | null): boo
 	return tickets.some((t) => ticketApprovalFlag(event, t))
 }
 
+/**
+ * Whether the host's Approvals surface (tab, panel, badge) is shown.
+ *
+ * `eventHasAnyApprovalTicket` alone is a statement about the CURRENT configuration, so turning
+ * require-approval off took the tab away while requests were still sitting in it — with pending
+ * bookings and live card holds the host could no longer approve, reject, or even see. Config is
+ * one reason to show it; an open request is the other, and it does not stop being open because
+ * the flag moved.
+ *
+ * The count is the caller's: the console pages read it server-side so the tab is right on the
+ * first paint, and the event page counts the bookings it already fetches for the badge.
+ * Processed requests deliberately do NOT keep the tab alive — once nothing is waiting, an event
+ * that no longer uses approval stops carrying the tab.
+ */
+export const showApprovalsSurface = (event?: ApprovalEventLike | null, pendingApprovalCount?: number): boolean =>
+	eventHasAnyApprovalTicket(event) || (pendingApprovalCount ?? 0) > 0
+
 /** True when every ticket on the event needs approval (used to pick banner wording). */
 export const eventRequiresApprovalForAllTickets = (event?: ApprovalEventLike | null): boolean => {
 	const tickets = event?.tickets || []

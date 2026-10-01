@@ -8,6 +8,8 @@ import { SortableTicketList, SortableTicketItem } from "@/components/events/Sort
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place"
 import { authorizedOnly } from "@/lib/authSession"
 import { Events } from "@/models/events"
+import { Bookings } from "@/models/events/bookings"
+import { BookingStatus } from "@/models/events/types"
 import { ensureDbConnected } from "@/configs/database"
 import { GetServerSideProps } from "next"
 import React, { useEffect, useRef, useState } from "react"
@@ -100,7 +102,7 @@ import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
 import { apportionRevenue, describeDiscount, describePriceChange, isOnHold } from "@/lib/booking-revenue"
-import { eventHasAnyApprovalTicket, ticketApprovalFlag } from "@/lib/ticket-approval"
+import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import {
 	BLAST_STATUS_COLOR,
 	BLAST_STATUS_LABEL,
@@ -312,7 +314,7 @@ function ManageAccessDenied({ eventName }: { eventName?: string }) {
 	)
 }
 
-function Manage({ event: eventProp, isAuthorized = true }: any) {
+function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 0 }: any) {
 	const event = React.useMemo(() => JSON.parse(eventProp), [eventProp])
 
 	// A PUBLISHED event with an autosaved shadow draft ("draft 2"): seed the form from
@@ -373,12 +375,15 @@ function Manage({ event: eventProp, isAuthorized = true }: any) {
 	}, [router.query.invite, isPendingApproval])
 
 	// Approvals surfaces show whenever ANY ticket needs approval, not just when the
-	// event-level default is on — a single flagged ticket is enough.
-	const hasApprovalTickets = React.useMemo(() => eventHasAnyApprovalTicket(event as any), [event])
+	// event-level default is on — a single flagged ticket is enough — AND whenever a request is
+	// still pending, however the flags now read. `pendingApprovalCount` comes from the server and
+	// is fixed for the life of the page, so the tab (and therefore every index below it) cannot
+	// shift under the host while they are using it.
+	const hasApprovalTickets = React.useMemo(() => showApprovalsSurface(event as any, pendingApprovalCount), [event, pendingApprovalCount])
 
 	// Approvals is conditional, so every tab after it shifts by one when it is absent.
 	// Derived rather than written down twice — a hardcoded index here silently opens the
-	// wrong panel on an event with no approval tickets.
+	// wrong panel on an event that shows no Approvals tab.
 	const photoRequestsTabIndex = hasApprovalTickets ? 7 : 6
 
 	// Deep-link from the admin approval-request email opens the Approvals tab
@@ -3686,10 +3691,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 											{/* Approve / Reject, one pair per pending request. Never merged: two
 											    requests are two card holds and two calls to /api/bookings/approve.
 
-											    Gated on the row actually HOLDING a pending booking, not on
-											    `eventHasAnyApprovalTicket` — a host who switches a ticket's
-											    requireApproval off afterwards still has live holds to resolve,
-											    and gating on the current flag would strand them. */}
+											    Gated on the row actually HOLDING a pending booking, not on the
+											    ticket's current flag — a host who switches requireApproval off
+											    afterwards still has live holds to resolve, and gating on the flag
+											    would strand them. `showApprovalsSurface` keeps the Approvals tab
+											    itself for the same reason. */}
 											{row.pendingBookings.map((pb: any) => {
 												const fit = approvals.fitFor(pb)
 												return (
@@ -4303,10 +4309,17 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		}
 	}
 
+	// Whether anything is still waiting on the host. The Approvals tab is shown for an open
+	// request even when no ticket requires approval any more — the flag can be switched off while
+	// requests and their card holds are live. Counted here rather than from the client's bookings
+	// query so the tab, and every tab index after it, is settled on the first paint.
+	const pendingApprovalCount = await Bookings.countDocuments({ eventId, status: BookingStatus.PENDING })
+
 	return {
 		props: {
 			event: JSON.stringify(event),
 			isAuthorized: true,
+			pendingApprovalCount,
 		},
 	}
 }
