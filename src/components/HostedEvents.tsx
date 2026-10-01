@@ -8,8 +8,10 @@ import EventDescription from "@/components/events/EventDescription"
 import { goBackOrTo } from "@/lib/navigation"
 import { applyMediaOrder, eventMedia, type EventMedia } from "@/lib/event-media"
 import { allowedMediaCount } from "@/lib/event-media-limit"
+import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
+import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
@@ -38,7 +40,7 @@ import type { FileUploadData } from "@/components/misc/DragAndDropUploader"
 import { uniqueId } from "@/lib/utils"
 
 import { Roboto } from "next/font/google"
-import { CalendarDaysIcon, ChevronDownIcon, ClockIcon } from "@heroicons/react/24/outline"
+import { CalendarDaysIcon, ChevronDownIcon, ClockIcon, PencilIcon } from "@heroicons/react/24/outline"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
 import Slider from "react-slick"
@@ -47,6 +49,7 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
+import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
@@ -90,12 +93,41 @@ const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "sw
 /**
  * Which block of the event page is in edit mode.
  *
- * Two, by decision: "details" is everything about the event itself — banner, benefits, title,
- * schedule, location, description, options and interests, opened by the one Edit beside the
- * Description heading — and "tickets" is its own, because tickets carry money and save through
- * a different endpoint.
+ * ONE SECTION PER THING THE HOST CAN SEE (2026-10-01). It used to be two — "details" covered
+ * the banner, the title, the schedule, the location, the description, the options, the poll and
+ * the interests, all behind a single small "Edit" beside the DESCRIPTION heading near the bottom
+ * of the card. Clicking it sprouted boxes from the top of the page, nowhere near where you
+ * clicked, and the CEO's verdict was "so many boxes so many confusions".
+ *
+ * Now each visible thing carries its own pencil and opens only its own fields. "tickets" stays
+ * separate for the original reason: tickets carry money and save through a different endpoint.
+ *
+ * `/api/events/[eventId]/details` already `$set`s only the keys it is sent, so a per-section save
+ * needs no API change — `saveEventEdits` just builds a smaller payload.
  */
-type EditSection = "details" | "tickets"
+type EditSection = "media" | "title" | "schedule" | "description" | "options" | "tickets"
+
+/** Everything `details` used to cover, for the one guard that still needs to mean "any of them". */
+const DETAIL_SECTIONS: EditSection[] = ["media", "title", "schedule", "description", "options"]
+
+/**
+ * What the primary button says. "Update Event" is the CEO's wording and is right for the five
+ * sections that describe the event — but tickets save through a DIFFERENT endpoint, write Stripe
+ * prices and already report themselves as "Tickets updated", so calling that "Update Event" would
+ * misname a money-adjacent action. Derived in one place so the inline button and the floating bar
+ * can never say different things about the same save.
+ */
+const saveLabelFor = (section: EditSection) => (section === "tickets" ? "Update tickets" : "Update Event")
+
+/** What the floating bar says it is editing, so the host can tell which pencil they pressed. */
+const EDIT_SECTION_LABELS: Record<EditSection, string> = {
+	media: "Editing banner & benefits",
+	title: "Editing the title",
+	schedule: "Editing date & location",
+	description: "Editing the description",
+	options: "Editing event options",
+	tickets: "Editing tickets",
+}
 
 // Same field classes the manage form uses, so the pickers render identically here.
 const fieldBase = "w-full h-[48px] rounded-md bg-[#090C10] text-white text-[14px] border border-[#343536] focus:outline-none"
@@ -244,6 +276,11 @@ export default function HostedEvents({ event }: Props) {
 	// the host one Save for six unrelated things; per-section editing is what the CEO asked for
 	// and it also means a save can send only the fields that section owns.
 	const [editingSection, setEditingSection] = useState<EditSection | null>(null)
+	// Is the host editing something ABOUT the event, as opposed to the tickets? Used to stand the
+	// rest of the page down while a form is open (CEO, 2026-10-01: "so many boxes so many
+	// confusions") — the bookings panel, the guest list, tickets, albums and the discussion board
+	// all used to stay on screen underneath the form, none of them part of what was being edited.
+	const editingEventDetails = !!editingSection && DETAIL_SECTIONS.includes(editingSection)
 	const [savingEdits, setSavingEdits] = useState(false)
 	const [draftName, setDraftName] = useState("")
 	const [draftDesc, setDraftDesc] = useState("")
@@ -256,7 +293,10 @@ export default function HostedEvents({ event }: Props) {
 	const [draftLocation, setDraftLocation] = useState("")
 	const [draftVenueName, setDraftVenueName] = useState("")
 	const [draftEntrance, setDraftEntrance] = useState("")
-	const [draftCoords, setDraftCoords] = useState<{ latitude?: number; longitude?: number; placeId?: string }>({})
+	// `{}` = untouched, so the save sends nothing and the stored pick stands. Numbers = a new
+	// pick. `null` = the host typed the address by hand, which CLEARS the pick server-side —
+	// `undefined` would read as "unchanged" there, which is the whole reason for the third state.
+	const [draftCoords, setDraftCoords] = useState<{ latitude?: number | null; longitude?: number | null; placeId?: string | null }>({})
 	const [draftTimezone, setDraftTimezone] = useState("")
 	const [draftStartDate, setDraftStartDate] = useState("")
 	const [draftStartTime, setDraftStartTime] = useState("")
@@ -307,6 +347,45 @@ export default function HostedEvents({ event }: Props) {
 	const shownMedia = clonedEvent ? eventMedia(clonedEvent) : []
 
 	const shownEvent = clonedEvent
+
+	/**
+	 * Mobile "… more" on the title.
+	 *
+	 * The title may now run to 150 non-whitespace characters, which is several lines on a phone and
+	 * would push the date, the location and Get Tickets off the first screen. It is clamped to two
+	 * lines below `sm` and shown in full from `sm` up, where there is room for it to simply grow
+	 * downward.
+	 *
+	 * Whether the toggle is needed is MEASURED, not guessed from the character count — which is how
+	 * `TicketDescription` and the album description decide. How many characters fit on two lines
+	 * depends on the width, the font and where the words break, and a guess is visibly wrong in both
+	 * directions: a "… more" under a title that isn't clipped, or a clipped title with no way to open
+	 * it, which is the complaint this exists to fix.
+	 *
+	 * Measuring also gates the button to mobile for free. From `sm` up the clamp is
+	 * `line-clamp-none`, so the element cannot overflow, so `titleClamped` stays false and nothing
+	 * renders — no breakpoint hook needed. Safe to touch the DOM at all because `[slug].tsx` loads
+	 * this component with `ssr: false`, so there is no hydration pass to mismatch.
+	 */
+	const titleRef = useRef<HTMLHeadingElement>(null)
+	const [titleExpanded, setTitleExpanded] = useState(false)
+	const [titleClamped, setTitleClamped] = useState(false)
+
+	useEffect(() => {
+		const el = titleRef.current
+		if (!el) return
+		const measure = () => {
+			// Only meaningful while the clamp is on. Expanding removes it, so measuring then would
+			// always report "fits" and take the Show less button away mid-interaction.
+			if (titleExpanded) return
+			setTitleClamped(el.scrollHeight > el.clientHeight + 1)
+		}
+		measure()
+		window.addEventListener("resize", measure)
+		// Webfonts land after first paint and change the line count.
+		document.fonts?.ready?.then(measure).catch(() => {})
+		return () => window.removeEventListener("resize", measure)
+	}, [titleExpanded, shownName])
 
 	const startEventEdit = (section: EditSection) => {
 		// `stripHtml` on load, raw on save — the same asymmetry manage has, so the two forms
@@ -457,11 +536,13 @@ export default function HostedEvents({ event }: Props) {
 	const saveEventEdits = async (section: EditSection) => {
 		const name = draftName.trim()
 
-		if (section === "details" && !name) {
+		// Each check belongs to the section that owns the field. They all used to fire on the one
+		// "details" save, which meant an in-flight image upload blocked a title edit.
+		if (section === "title" && !name) {
 			toast({ title: "The event needs a name", status: "warning", duration: 3000, isClosable: true })
 			return
 		}
-		if (section === "details") {
+		if (section === "media") {
 			if (draftImages.length === 0 && draftVideos.length === 0) {
 				toast({ title: "Keep at least one photo or video", status: "warning", duration: 3000, isClosable: true })
 				return
@@ -502,7 +583,7 @@ export default function HostedEvents({ event }: Props) {
 
 			const payload: any = {}
 
-			if (section === "details") {
+			if (section === "media") {
 				// `images` and `videos` are two separate arrays that cannot express order between
 				// them; `mediaOrder` is what carries the host's arrangement across both. All three
 				// go together — the endpoint rejects them apart, and rejects an order that isn't
@@ -525,8 +606,21 @@ export default function HostedEvents({ event }: Props) {
 				payload.benefits = draftBenefits
 			}
 
-			payload.name = name
-			{
+			if (section === "title") payload.name = name
+
+			if (section === "schedule") {
+				// Limited in WORDS, which the textarea's character `maxLength` cannot express.
+				// Refused here so the host is told what to shorten, rather than reading a 400.
+				if (!withinWordLimit(draftLocation, EVENT_LOCATION_WORD_LIMIT)) {
+					toast({ title: EVENT_FIELD_MESSAGES.locationTooLong, status: "error", duration: 4000, isClosable: true })
+					setSavingEdits(false)
+					return
+				}
+				if (!withinWordLimit(draftEntrance, EVENT_ENTRANCE_WORD_LIMIT)) {
+					toast({ title: EVENT_FIELD_MESSAGES.entranceTooLong, status: "error", duration: 4000, isClosable: true })
+					setSavingEdits(false)
+					return
+				}
 				payload.location = draftLocation
 				payload.venueName = draftVenueName
 				payload.entrance = draftEntrance
@@ -550,23 +644,29 @@ export default function HostedEvents({ event }: Props) {
 				}
 			}
 
-			payload.desc = draftDesc
+			if (section === "description") payload.desc = draftDesc
 
-			payload.interests = draftInterests
+			// Interests, the option toggles and the date poll are one screen to the host, so they
+			// save together. Note what scoping buys beyond tidiness: a title edit no longer ships
+			// `datePoll`, and turning a poll on server-side CLEARS the fixed dates — so the old
+			// all-in-one payload let an unrelated edit rewrite the event's dates.
+			if (section === "options") {
+				payload.interests = draftInterests
 
-			payload.requireApproval = draftRequireApproval
-			payload.locationDisclosedAfterBooking = draftLocationDisclosed
-			payload.showOnMobile = draftShowOnMobile
-			payload.premiumEvent = draftPremiumEvent
+				payload.requireApproval = draftRequireApproval
+				payload.locationDisclosedAfterBooking = draftLocationDisclosed
+				payload.showOnMobile = draftShowOnMobile
+				payload.premiumEvent = draftPremiumEvent
 			// `capacity` is no longer sent from here — there is no input for it any more, and
 			// sending a value this form no longer collects would write `0` (= unlimited) over a
 			// ceiling a live event still relies on. `/details` still accepts the key; nothing
 			// on this page supplies it.
-			payload.privacy = draftPrivacy
-			payload.datePoll = {
-				isActive: draftPollActive,
-				question: draftPollQuestion,
-				options: draftPollOptions,
+				payload.privacy = draftPrivacy
+				payload.datePoll = {
+					isActive: draftPollActive,
+					question: draftPollQuestion,
+					options: draftPollOptions,
+				}
 			}
 
 			await axios.patch(`/api/events/${clonedEvent?._id}/details`, payload)
@@ -871,13 +971,14 @@ export default function HostedEvents({ event }: Props) {
 	const TicketsInlineEditor = () => (
 		<div className="max-w-4xl mx-auto bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden mt-8" id="event-tickets">
 			<div className="p-4 sm:p-8">
-				<Flex align="center" justify="space-between" gap={2} mb={4} wrap="wrap">
-					<Box>
-						<h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
-						<p className="text-[#bbbbbb] text-sm">Drag to reorder — the order here is the order guests see.</p>
-					</Box>
-					<SectionEditControls section="tickets" />
-				</Flex>
+				{/* No edit control here: this editor only mounts when tickets are ALREADY being
+				    edited, and `SectionEditControls` returns null for the section it is in — so the
+				    one that used to sit here could never render. The way in is the "Edit tickets"
+				    button further down the page. */}
+				<Box mb={4}>
+					<h2 className="text-xl sm:text-2xl font-bold">Tickets</h2>
+					<p className="text-[#bbbbbb] text-sm">Drag to reorder — the order here is the order guests see.</p>
+				</Box>
 
 				<SortableTicketList
 					items={draftTickets.map((t, i) => String(t.id || i))}
@@ -942,29 +1043,68 @@ export default function HostedEvents({ event }: Props) {
 				<Text fontSize="xs" color="#8a8a8a" mt={3}>
 					Changing a price creates a new Stripe price. Existing bookings keep the price they were sold at.
 				</Text>
+
+				<InlineEditActions section="tickets" />
 			</div>
 		</div>
 	)
 
 	/**
-	 * The Edit button beside a section heading. Save and Cancel are NOT here — they live in the
-	 * fixed bar at the bottom of the window, because this editor is far longer than one screen
-	 * and a Save pinned to the heading scrolls out of reach.
+	 * The pencil beside a thing the host can edit. It opens ONLY that thing's fields.
+	 *
+	 * A pencil rather than the word "Edit" (CEO, 2026-10-01: "just add a pen next to it and let
+	 * the user edit it simple"). `label` still renders when given, for the places where a bare
+	 * icon would be ambiguous.
 	 */
-	const SectionEditControls = ({ section, label = "Edit" }: { section: EditSection; label?: string }) => {
+	const SectionEditControls = ({ section, label, title = "Edit" }: { section: EditSection; label?: string; title?: string }) => {
 		if (!canManage || editingSection === section) return null
 		return (
 			<button
 				type="button"
+				aria-label={title}
+				title={title}
 				onClick={() => {
 					// Opening another section while one is mid-edit would silently drop that work.
 					if (editingSection && !window.confirm("Discard the changes you're making to the other section?")) return
 					startEventEdit(section)
 				}}
-				className="border border-[#F79432] text-[#F79432] py-1 px-3 text-xs rounded-lg hover:bg-[#F79432] hover:text-black transition-colors flex-shrink-0"
+				className={`border border-[#F79432] text-[#F79432] rounded-lg hover:bg-[#F79432] hover:text-black transition-colors flex-shrink-0 inline-flex items-center gap-1.5 ${label ? "py-1 px-3 text-xs" : "p-1.5"}`}
 			>
+				<PencilIcon className="w-3.5 h-3.5" />
 				{label}
 			</button>
+		)
+	}
+
+	/**
+	 * Save / Cancel for ONE section, rendered directly beneath that section's fields.
+	 *
+	 * The fixed bar at the bottom of the window stays as well — it is the only control a host can
+	 * always reach from a long form. This is the CEO's "Update event should be right next to
+	 * edits": now that a section is one small group of fields rather than the whole event, a Save
+	 * beneath them no longer scrolls out of reach, which was the original reason there wasn't one.
+	 */
+	const InlineEditActions = ({ section }: { section: EditSection }) => {
+		if (editingSection !== section) return null
+		return (
+			<div className="mt-4 flex items-center gap-2">
+				<button
+					type="button"
+					onClick={() => saveEventEdits(section)}
+					disabled={savingEdits}
+					className="bg-[#F79432] text-black font-bold py-2 px-5 text-sm rounded-lg hover:bg-[#e58220] disabled:opacity-50"
+				>
+					{savingEdits ? "Saving…" : saveLabelFor(section)}
+				</button>
+				<button
+					type="button"
+					onClick={cancelEventEdit}
+					disabled={savingEdits}
+					className="border border-[#434343] py-2 px-4 text-sm rounded-lg hover:border-white disabled:opacity-50"
+				>
+					Cancel
+				</button>
+			</div>
 		)
 	}
 
@@ -1115,7 +1255,7 @@ export default function HostedEvents({ event }: Props) {
 					<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden transform transition-all">
 						{/* Banner Media (images + videos combined) */}
 						<div className="relative p-3">
-							{editingSection === "details" ? (
+							{editingSection === "media" ? (
 								<div className="rounded-xl border border-[#2a2a2a] bg-[#181818] p-4">
 									<Heading size="md" color="white" mb={4}>Banner &amp; benefits</Heading>
 									{/* Same component, same props, same handler names as the manage form's
@@ -1144,9 +1284,18 @@ export default function HostedEvents({ event }: Props) {
 									<div className="mt-5">
 										<BenefitsField value={draftBenefits} onChange={setDraftBenefits} />
 									</div>
+									<InlineEditActions section="media" />
 								</div>
 							) : (
 							<>
+							{/* Pencil over the banner. `z-20` clears the media itself; the benefits chips
+							    and the Premium ribbon already own the TOP-LEFT corner of this box, so this
+							    sits top-right where nothing else does. */}
+							{canManage && (
+								<div className="absolute top-6 right-6 z-20">
+									<SectionEditControls section="media" title="Edit banner and benefits" />
+								</div>
+							)}
 							{/* `bannerRef` scopes the slide handlers and the audio rule to this carousel —
 							    they used to query every <video> on the page. */}
 							<div ref={bannerRef}>
@@ -1213,22 +1362,35 @@ export default function HostedEvents({ event }: Props) {
 
 						{/* Content Section */}
 						<div className="p-4 sm:p-8">
-							{/* Title + Actions row.
-							    Left-aligned on mobile: the title was centred while the date and
-							    location lines under it are icon-led and wrap, so a long venue
-							    produced ragged centred text under a centred heading. */}
-							<div className="flex flex-col sm:flex-row justify-between items-start mb-2 space-y-4 sm:space-y-0">
-								<div className="text-left w-full sm:w-auto min-w-0">
-									{editingSection === "details" ? (
-										// Same field as the manage form's Event title, down to the 100-char
-										// cap and the counter. The server accepts up to 300, but a title that
-										// only one of the two screens will let you type is worse than a
-										// shared limit.
+							{/* Title block, then the actions beneath it — stacked at EVERY width (2026-10-01).
+							    It used to become a row at `sm`, which made the title a shrink-to-fit column
+							    next to a `flex-shrink-0` button group: the buttons reserved their width on
+							    every line, not just the first, so a long title wrapped inside ~530px of an
+							    832px card and left dead space to the right of every line after the first.
+							    Titles now hold up to 150 non-whitespace characters, so that cost real lines.
+							    Stacking gives the title the full width and resolves it in fewer.
+
+							    Mobile is unchanged by construction — it was already `flex-col` there, and the
+							    CTA keeps `flex-1` so it stays a full-width tap target on a phone.
+
+							    Left-aligned: the title was centred while the date and location lines under it
+							    are icon-led and wrap, so a long venue produced ragged centred text under a
+							    centred heading. */}
+							<div className="flex flex-col mb-2 gap-4 sm:gap-6">
+								{/* Full width in both modes now that nothing sits beside it. This used to be
+								    `sm:w-auto`, a shrink-to-fit basis that also made the details EDITOR render as
+								    a narrow strip on desktop; stacking fixes both with one rule. `min-w-0` stays —
+								    it is what lets a 150-character word wrap instead of setting the card's width. */}
+								<div className="text-left min-w-0 w-full">
+									{editingSection === "title" ? (
+										// Same field as the manage form's Event title. The cap lives in
+										// `@/lib/event-title` — 150 characters that are not whitespace — so the
+										// two screens cannot disagree about what a host is allowed to type.
 										<>
 										<InputGroup>
 											<Input
 												value={draftName}
-												onChange={(e) => setDraftName(e.target.value)}
+												onChange={(e) => setDraftName(clampEventTitle(e.target.value))}
 												placeholder="Event title"
 												className={roboto.className}
 												bg="#090C10"
@@ -1237,18 +1399,60 @@ export default function HostedEvents({ event }: Props) {
 												h="48px"
 												border="1px solid #343536"
 												_focus={{ borderColor: "#343536", boxShadow: "none" }}
-												maxLength={100}
+												// Raw backstop only; `clampEventTitle` enforces the real rule. 500 is what
+												// `/api/events/[eventId]/details` accepts, which is where Save posts this name.
+												maxLength={EVENT_TITLE_RAW_LIMIT}
+												// The counter is an `InputLeftElement` pushed to the right with
+												// `left="auto" right="3"`. Chakra does not know that: seeing a LEFT element
+												// on a real `<Input>`, `InputGroup` injects `paddingStart: var(--input-height)`
+												// (40px) to clear an element that is not there, leaving a dead gutter before
+												// the first character. `pl` is a different key from `paddingStart` and is
+												// spread after it, so this is what overrides it. The two console forms pass
+												// `<Field as={Input}>`, whose `type.id` is not "Input", so Chakra skips the
+												// injection there and they never had the gutter.
+												pl="16px"
 												pr="60px"
 											/>
-											<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" color="gray.500" fontSize="xs">
-												{draftName?.length || 0}/100
+											<InputLeftElement h="48px" w="auto" right="3" left="auto" pointerEvents="none" fontSize="xs" color={isEventTitleOverLimit(draftName) ? "#F79432" : "gray.500"}>
+												{eventTitleCounter(draftName)}
 											</InputLeftElement>
 										</InputGroup>
+										<p className="text-xs text-[#9C9C9C] mt-1">{EVENT_TITLE_LIMIT_HINT}</p>
+										<InlineEditActions section="title" />
 										</>
 									) : (
-										<h2 className="text-2xl sm:text-3xl font-bold break-words overflow-wrap-anywhere">{stripHtml(shownName)}</h2>
+										<>
+											{/* Two lines on a phone so the date, location and Get Tickets stay on the first
+											    screen; full title from `sm` up, where it simply grows downward. `line-clamp-none`
+											    resets `display`/`overflow`, so the desktop rendering is what it was before. */}
+											{/* The pencil is a flex sibling of the heading, not inside it — a button nested
+											    in a heading that also clamps would be clipped with the text. `items-start`
+											    keeps it on the first line of a title that wraps. */}
+											<div className="flex items-start gap-2">
+												<h2
+													ref={titleRef}
+													className={`min-w-0 flex-1 text-2xl sm:text-3xl font-bold break-words [overflow-wrap:anywhere] ${titleExpanded ? "" : "line-clamp-2 sm:line-clamp-none"}`}
+												>
+													{stripHtml(shownName)}
+												</h2>
+												<span className="mt-1.5"><SectionEditControls section="title" title="Edit title" /></span>
+											</div>
+											{titleClamped && (
+												// `sm:hidden` on top of the measurement: resizing phone -> desktop while expanded
+												// skips the re-measure, and without this the button would linger on a title that is
+												// no longer clamped.
+												<button
+													type="button"
+													onClick={() => setTitleExpanded((v) => !v)}
+													aria-expanded={titleExpanded}
+													className="sm:hidden mt-1 text-sm font-semibold text-jetzy underline underline-offset-2"
+												>
+													{titleExpanded ? "Show less" : "… more"}
+												</button>
+											)}
+										</>
 									)}
-									{editingSection === "details" && (
+									{editingSection === "schedule" && (
 										<Box mt={4} mb={2} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4}>
 											<Heading size="md" color="white" mb={4}>When &amp; where</Heading>
 											{/* Time zone — same control and same class as the manage form. */}
@@ -1300,7 +1504,15 @@ export default function HostedEvents({ event }: Props) {
 											<Box mb={4}>
 												<EventLocationField
 													value={draftLocation}
-													onTextChange={setDraftLocation}
+													onTextChange={(text) => {
+														setDraftLocation(text)
+														// Typed by hand → the Google pick is dropped (CEO, 2026-10-01).
+														// The guest gets the host's words, and the host's own link if
+														// they pasted one, never a map link resolved for a place that
+														// has been typed over.
+														setDraftVenueName("")
+														setDraftCoords({ latitude: null, longitude: null, placeId: null })
+													}}
 													onPick={(picked: PlaceSelection) => {
 														setDraftLocation(picked.location)
 														setDraftVenueName(picked.venueName)
@@ -1308,27 +1520,45 @@ export default function HostedEvents({ event }: Props) {
 													}}
 													id="inline-location"
 												/>
+												{/* Pick from the dropdown OR type it yourself — typing is not
+												    second-class, it just means no map link of our own goes out. */}
+												<Flex justify="space-between" gap={2} mt={1}>
+													<Text fontSize="xs" color="gray.500">
+														Pick a place for a map link in the ticket email, or type the address and your own directions. Any link you paste stays clickable.
+													</Text>
+													<Text fontSize="xs" color={withinWordLimit(draftLocation, EVENT_LOCATION_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+														{wordCounter(draftLocation, EVENT_LOCATION_WORD_LIMIT)}
+													</Text>
+												</Flex>
 											</Box>
 
 											<Text className={roboto.className} color="#FFFFFF" fontSize="12px" mb={2}>
 												Entrance <span style={{ color: "#868686" }}>(optional)</span>
 											</Text>
-											<Input
+											{/* A textarea, not an input: 150 WORDS of arrival directions now, with a map
+											    link often pasted into the middle of them. */}
+											<Textarea
 												value={draftEntrance}
 												onChange={(e) => setDraftEntrance(e.target.value)}
-												placeholder="e.g. West side at 69th Street"
-												maxLength={200}
+												placeholder="e.g. Entrance is from Central Park South, 59th St and 6th Avenue. Map: https://..."
+												maxLength={EVENT_ENTRANCE_LIMIT}
+												rows={3}
 												className={roboto.className}
 												bg="#090C10"
 												color="white"
 												fontSize="14px"
-												h="48px"
 												border="1px solid #343536"
 												_focus={{ borderColor: "#343536", boxShadow: "none" }}
 											/>
-											<Text fontSize="xs" color="gray.500" mt={1}>
-												Sent in the ticket confirmation email, just below the venue. Not shown on the event page.
-											</Text>
+											<Flex justify="space-between" gap={2} mt={1}>
+												<Text fontSize="xs" color="gray.500">
+													Sent in the ticket confirmation email and shown on the booking confirmation page, just below the venue. Not shown on the event page. Any link you paste stays clickable.
+												</Text>
+												<Text fontSize="xs" color={withinWordLimit(draftEntrance, EVENT_ENTRANCE_WORD_LIMIT) ? "gray.500" : "red.300"} whiteSpace="nowrap">
+													{wordCounter(draftEntrance, EVENT_ENTRANCE_WORD_LIMIT)}
+												</Text>
+											</Flex>
+											<InlineEditActions section="schedule" />
 
 										</Box>
 									)}
@@ -1336,6 +1566,14 @@ export default function HostedEvents({ event }: Props) {
 									{/* `items-start` + a non-shrinking icon: a wrapping date or venue used to
 									    squash the icon to a sliver and vertically centre it against two
 									    lines of text. */}
+									{/* Hidden while the schedule editor is open. These two lines used to render in BOTH
+									    states, so the host saw the date and the venue restated as plain text directly
+									    beneath the inputs editing them — and they read from `shownEvent`, the SAVED event,
+									    so they showed the OLD value beside the new one and never updated as the host typed.
+									    That is the "so many boxes" in the CEO's screenshot. */}
+									{editingSection !== "schedule" && (
+									<div className="flex items-start gap-2">
+									<div className="min-w-0 flex-1">
 									<p className="text-sm sm:text-base mt-4 sm:mt-5 flex items-start gap-x-2 text-[#bbbbbb] break-words">
 										<span className="flex-shrink-0 mt-0.5"><DateTimeSVG /></span>
 										{!shownEvent?.startsOn && !shownEvent?.endsOn && shownEvent?.datePoll?.isActive
@@ -1346,24 +1584,35 @@ export default function HostedEvents({ event }: Props) {
 									</p>
 									<p className="text-sm sm:text-base mt-1 flex items-start gap-x-2 text-[#bbbbbb] break-words">
 										{!canSeeLocation ? (
-											<span className="break-words overflow-wrap-anywhere">
+											<span className="break-words [overflow-wrap:anywhere]">
 												📍 Location will be disclosed after registration
 											</span>
 										) : (
 											<>
 												<span className="flex-shrink-0 mt-0.5"><LocationSVG /></span>
-												<span className="break-words overflow-wrap-anywhere">
-													{disclosedLocation}
+												{/* The host may have typed their own map link into the address — it is
+												    the one thing they want clicked, so it is a link here too, exactly as
+												    it is in the ticket email. The rest stays plain text. */}
+												<span className="break-words [overflow-wrap:anywhere]">
+													<LinkedText text={disclosedLocation || ""} />
 												</span>
 											</>
 										)}
 									</p>
+									</div>
+									{/* One pencil for the date, the time zone, the venue and the entrance — they are one
+									    "When & where" panel, and a pencil per line would be four buttons for one box. */}
+									<span className="mt-4 sm:mt-5"><SectionEditControls section="schedule" title="Edit date and location" /></span>
+									</div>
+									)}
 								</div>
 
 								{/* Icon buttons stay in a row; the CTAs take the remaining width on a
 								    phone so the primary action is a full-size tap target instead of a
-								    pill squeezed between icons. */}
-								<div className="w-full sm:w-auto flex items-center gap-2 sm:gap-x-3 sm:items-end flex-shrink-0 flex-wrap">
+								    pill squeezed between icons. From `sm` the group is right-aligned under
+								    the title — `sm:w-auto`/`flex-shrink-0`/`sm:items-end` were all about
+								    sitting BESIDE the title and mean nothing now that it sits below it. */}
+								<div className="w-full flex items-center gap-2 sm:gap-x-3 sm:justify-end flex-wrap">
 									{canManage && (
 										<button
 											onClick={onQRModalOpen}
@@ -1409,20 +1658,24 @@ export default function HostedEvents({ event }: Props) {
 								{isDatePollActive && (
 									<DatePollTeaser event={clonedEvent} onOpenPoll={onPollModalOpen} />
 								)}
-								{editingSection === "details" ? (
+								{(editingSection === "description" || editingSection === "options") ? (
 									<>
+										{editingSection === "description" && (<>
 										<Heading size="md" color="white" mb={3}>Description</Heading>
 										{/* The same editor as the manage form, so both screens read and write
 										    the same HTML. A plain textarea here would have flattened markup a
 										    host wrote in the console. `EventDescription` below already
 										    sanitises and renders that HTML for guests. */}
 										<RichTextEditor value={draftDesc} onChange={setDraftDesc} placeholder="Add Description" />
-										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{stripHtml(draftDesc || "").length}/500</p>
+										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{countChars(stripHtml(draftDesc || ""))}/500</p>
+										<InlineEditActions section="description" />
+										</>)}
 
-										{/* Options and Interests live inside this one editor rather than
-										    carrying Edit buttons of their own — there are two on the page,
-										    this and Tickets, and everything about the event itself saves
-										    together here. */}
+										{/* Options, the date poll and interests are one screen to the host, so they
+										    share a section and one Save. They used to be nested inside the DESCRIPTION
+										    editor, which is why editing a description also opened eight toggles and a
+										    poll builder — part of the "so many boxes" the CEO reported. */}
+										{editingSection === "options" && (<>
 										<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mt={5}>
 											<Heading size="md" color="white" mb={4}>Event Options</Heading>
 											<Flex direction="column" gap={4}>
@@ -1529,7 +1782,7 @@ export default function HostedEvents({ event }: Props) {
 														value={draftPollQuestion}
 														onChange={(e) => setDraftPollQuestion(e.target.value)}
 														placeholder="e.g. Which date suits you best?"
-														maxLength={300}
+														maxLength={DATE_POLL_QUESTION_LIMIT}
 														className={roboto.className}
 														bg="#090C10"
 														color="white"
@@ -1577,6 +1830,7 @@ export default function HostedEvents({ event }: Props) {
 															value={newPollLabel}
 															onChange={(e) => setNewPollLabel(e.target.value)}
 															placeholder="Label (optional)"
+															maxLength={DATE_POLL_OPTION_LABEL_LIMIT}
 															className={roboto.className}
 															bg="#090C10"
 															color="white"
@@ -1621,6 +1875,8 @@ export default function HostedEvents({ event }: Props) {
 											{/* The same selector the manage form uses, `bare` and all. */}
 											<InterestsSelector bare selected={draftInterests} onChange={setDraftInterests} />
 										</Box>
+										<InlineEditActions section="options" />
+										</>)}
 									</>
 								) : isEnded ? (
 									<>
@@ -1636,7 +1892,7 @@ export default function HostedEvents({ event }: Props) {
 												<h3 className="text-sm sm:text-base font-semibold">Description</h3>
 												{endedDescOpen ? <FiChevronUp className="text-[#9C9C9C]" /> : <FiChevronDown className="text-[#9C9C9C]" />}
 											</button>
-											<SectionEditControls section="details" label="Edit" />
+											<SectionEditControls section="description" title="Edit description" />
 										</div>
 										{endedDescOpen && <EventDescription description={shownDesc} />}
 									</>
@@ -1644,16 +1900,41 @@ export default function HostedEvents({ event }: Props) {
 									<>
 										<div className="flex items-center justify-between gap-2">
 											<h3 className="text-sm sm:text-base font-semibold">Description</h3>
-											<SectionEditControls section="details" label="Edit" />
+											<SectionEditControls section="description" title="Edit description" />
 										</div>
 										<EventDescription description={shownDesc} />
 									</>
+								)}
+
+								{/* The one thing with no guest-facing representation to hang a pencil on:
+								    privacy, approval, the date poll and interests are settings, not content,
+								    so a host would have had nowhere to click. This strip is the anchor, and
+								    it states the current values so the pencil is worth pressing. Host only —
+								    `canManage` is already suppressed under `?preview=1`. */}
+								{canManage && !editingSection && (
+									<div className="mt-5 flex items-start gap-2 rounded-lg border border-[#2a2e34] bg-[#15181C] px-3 py-2.5">
+										<div className="min-w-0 flex-1">
+											<p className="text-xs font-semibold text-white">Event options</p>
+											<p className="text-xs text-[#8a8a8a] break-words">
+												{[
+													shownEvent?.privacy === "private" ? "Private" : "Public",
+													shownEvent?.requireApproval ? "Approval required" : null,
+													shownEvent?.locationDisclosedAfterBooking ? "Address after booking" : null,
+													shownEvent?.premiumEvent ? "Premium" : null,
+													shownEvent?.datePoll?.isActive ? "Date poll on" : null,
+												]
+													.filter(Boolean)
+													.join(" · ")}
+											</p>
+										</div>
+										<SectionEditControls section="options" title="Edit event options" />
+									</div>
 								)}
 							</div>
 						</div>
 					</div>
 
-					{canManage && clonedEvent?._id && (
+					{canManage && clonedEvent?._id && !editingSection && (
 						<div className={`${isDatePollActive ? "" : "max-w-4xl mx-auto"} mt-8`}>
 							{/* Admin Tabs */}
 							<div className="bg-[#5656561e] border border-[#434343] rounded-2xl shadow-2xl overflow-hidden">
@@ -1720,11 +2001,11 @@ export default function HostedEvents({ event }: Props) {
 					)}
 
 					<div>
-					{canManage && clonedEvent?._id && <GuestsList eventId={clonedEvent._id.toString()} />}
+					{canManage && clonedEvent?._id && !editingSection && <GuestsList eventId={clonedEvent._id.toString()} />}
 
 					{/* Tickets are hidden once the event has ended, except for host/admin — and for
 					    them it collapses, since nothing is on sale any more. */}
-					{clonedEvent && !isEnded && (
+					{clonedEvent && !isEnded && !editingEventDetails && (
 						editingSection === "tickets" ? (
 							<TicketsInlineEditor />
 						) : (
@@ -1792,7 +2073,7 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 					)}
 
-					{clonedEvent?._id && (
+					{clonedEvent?._id && !editingSection && (
 						<div className={isDatePollActive ? "" : "max-w-4xl mx-auto"}>
 							{/* Once the event is over the photos are why anyone is still here, so the
 							    album CARDS get bigger. The section keeps its normal width — widening
@@ -1807,7 +2088,7 @@ export default function HostedEvents({ event }: Props) {
 						</div>
 					)}
 
-					{clonedEvent?._id && (
+					{clonedEvent?._id && !editingSection && (
 						<div id="discussion-section" className={`${isDatePollActive ? "" : "max-w-4xl mx-auto"} mt-8`}>
 							<div className="bg-[#4a49491e] border border-[#434343] backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden mt-8">
 							<Box mt={4} px={4}>
@@ -1925,11 +2206,16 @@ export default function HostedEvents({ event }: Props) {
 			    there. The details editor runs to several screens, so this is the only Save the
 			    host can always reach. */}
 			{editingSection && (
-				<div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#343536] bg-[#131313]/95 backdrop-blur-sm px-4 py-3">
+				// `pb` adds the phone's home-indicator inset on top of the padding — without it iOS
+				// paints that strip over the bottom of this bar, which is where Update Event sits.
+				<div
+					className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#343536] bg-[#131313]/95 backdrop-blur-sm px-4 pt-3"
+					style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+				>
 					<div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
 						<div className="min-w-0">
 							<p className="text-sm font-semibold text-white truncate">
-								{editingSection === "tickets" ? "Editing tickets" : "Editing event details"}
+								{EDIT_SECTION_LABELS[editingSection]}
 							</p>
 							<p className="text-xs text-[#8a8a8a] truncate">
 								{editingSection === "tickets"
@@ -1952,7 +2238,7 @@ export default function HostedEvents({ event }: Props) {
 								disabled={savingEdits}
 								className="bg-[#F79432] text-black font-bold py-2 px-5 text-sm rounded-lg hover:bg-[#e58220] disabled:opacity-50"
 							>
-								{savingEdits ? "Saving…" : "Save changes"}
+								{savingEdits ? "Saving…" : saveLabelFor(editingSection)}
 							</button>
 						</div>
 					</div>

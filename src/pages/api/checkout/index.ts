@@ -49,6 +49,64 @@ type BodyParams = {
 	customAnswers?: any[]
 }
 
+/**
+ * Stripe's per-value metadata ceiling. Exceeding it on ANY key rejects the whole
+ * `sessions.create` call, which reaches the buyer as a generic 500 with no way through.
+ */
+const STRIPE_METADATA_MAX = 500
+
+/**
+ * `metadata.eventDetails` — the event fields `success.tsx` falls back to, guaranteed to serialize
+ * inside Stripe's limit.
+ *
+ * `name` and `location` are the only unbounded strings in here. The event title is capped at 150
+ * characters that are NOT whitespace (`@/lib/event-title`), which permits up to 500 RAW, and
+ * `location` is a `String` with no `maxlength` holding "<venue>, <full address>". `startsOn`,
+ * `timezone` and `slug` are all bounded, `slug` by `MAX_SLUG_LENGTH`.
+ *
+ * Shrinking loops instead of slicing to a fixed budget because JSON ESCAPING is what makes a fixed
+ * budget wrong: a name full of `"` or backslashes doubles in length once stringified, so a
+ * nominally safe 140-character slice can still overflow. `name` gives way before `location` — a
+ * clipped title is still recognisable, while a clipped address stops being findable.
+ *
+ * Trimming is safe because nothing depends on the full value: `checkout-fulfillment.ts` re-loads
+ * the event from Mongo and never reads this, and `success.tsx` uses it only as the fallback behind
+ * a freshly fetched event, inside a try/catch. Keeping it PARSEABLE is the part that matters, which
+ * is why the fields are trimmed and never the serialized blob.
+ */
+function buildEventDetailsMetadata(event: any): {
+	name: string
+	location: string
+	startsOn: any
+	timezone: any
+	slug: any
+} {
+	const base = {
+		startsOn: event?.startsOn,
+		timezone: event?.timezone,
+		slug: event?.slug,
+	}
+	// Code POINTS, not UTF-16 units — the same rule `clampEventTitle` follows. A `.slice()` can cut
+	// an emoji's surrogate pair in half and leave a lone surrogate, which renders as a tofu box in
+	// the very place this value is displayed.
+	let name = Array.from(String(event?.name ?? ""))
+	let location = Array.from(String(event?.location ?? ""))
+
+	const serialized = () => JSON.stringify({ name: name.join(""), location: location.join(""), ...base }).length
+
+	// Never trim below this, so the value stays useful rather than becoming a stub.
+	const FLOOR = 40
+	const shrink = (chars: string[]) => chars.slice(0, Math.max(FLOOR, chars.length - Math.max(8, Math.ceil(chars.length * 0.1))))
+	while (serialized() > STRIPE_METADATA_MAX && name.length > FLOOR) name = shrink(name)
+	while (serialized() > STRIPE_METADATA_MAX && location.length > FLOOR) location = shrink(location)
+	// Both are at the floor and it still does not fit: the bounded fields (a 100-char slug plus a
+	// long timezone) are the remainder. Drop the location rather than send a value Stripe refuses —
+	// `success.tsx` renders the name, not the address.
+	if (serialized() > STRIPE_METADATA_MAX) location = []
+
+	return { name: name.join(""), location: location.join(""), ...base }
+}
+
 let stripeInstance: Stripe | null = null
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -333,13 +391,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const requiresApproval = selectionRequiresApproval(event as any, tickets as any)
 		const bookingRef = `JZ-${reference}`
 
-		const eventDetails = {
-			name: event?.name,
-			location: event?.location,
-			startsOn: event?.startsOn,
-			timezone: event?.timezone,
-			slug: event?.slug,
-		}
+		// Stripe caps every metadata VALUE at 500 characters and rejects the WHOLE
+		// `sessions.create` call over it — see the note further down, where a 598-character value
+		// once took checkout down completely and the buyer got "Sorry, something went wrong on our
+		// end" with no way through. The guard below this only logs, so nothing else stops it.
+		//
+		// `name` and `location` are the two unbounded host-supplied strings here. The event title
+		// is capped at 150 characters that are NOT whitespace (`@/lib/event-title`), which permits
+		// up to 500 RAW, and `location` is a `String` with no `maxlength` holding
+		// "<venue>, <full address>". Either one alone can push this past 500. `startsOn`,
+		// `timezone` and `slug` are all bounded (slug by `MAX_SLUG_LENGTH`).
+		//
+		// The FIELDS are trimmed, never the serialized blob: `success.tsx` does `JSON.parse` on
+		// this, so a truncated blob would fail to parse and lose the event name entirely. And it
+		// shrinks in a loop rather than slicing to a fixed budget because JSON ESCAPING is what
+		// makes a fixed budget wrong — a name full of `"` or `\` doubles in length once
+		// stringified, so a "safe" 140-character slice can still overflow.
+		//
+		// Trimming here is cheap: the only consumer is `success.tsx`, where this is the FALLBACK
+		// behind a freshly fetched event and is already wrapped in try/catch. `checkout-fulfillment.ts`
+		// re-loads the event from Mongo and never reads this at all.
+		const eventDetails = buildEventDetailsMetadata(event)
 
 		const baseUrl = process.env.NEXT_PUBLIC_URL || "https://events.jetzy.com"
 		const cleanBaseUrl = baseUrl.replace(/\/$/, '')

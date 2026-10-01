@@ -23,29 +23,52 @@ export const ListEventsThunk = createAsyncThunk("event/listEvents", async (param
 })
 
 
-export const FetchEventThunk = createAsyncThunk("event/fetchEvent", async (params: RequestParams) => {
-	return await FetchEventApis(params)
+export const FetchEventThunk = createAsyncThunk("event/fetchEvent", async (params: RequestParams, thunkApi) => {
+	try {
+		return await FetchEventApis(params)
+	} catch (error: any) {
+		return thunkApi.rejectWithValue(error)
+	}
 })
 
-export const UpdateEventThunk = createAsyncThunk("event/updateEvent", async (params: RequestParams<{ payload: string }>) => {
-	return await UpdateEventApis(params)
+// `rejectWithValue`, like CreateEventThunk: without it RTK's `miniSerializeError` keeps only
+// name/message/stack/code, so the zod issues in `data[]` are gone before any toast sees them and
+// a field error renders as one flat line instead of the list the toaster can already draw.
+export const UpdateEventThunk = createAsyncThunk("event/updateEvent", async (params: RequestParams<{ payload: string }>, thunkApi) => {
+	try {
+		return await UpdateEventApis(params)
+	} catch (error: any) {
+		return thunkApi.rejectWithValue(error)
+	}
 })
 
 export const DeleteEventThunk = createAsyncThunk("event/deleteEvent", async (params: RequestParams, thunkApi) => {
-	const res = await DeleteEventApis(params)
-	if (res?.status) thunkApi.dispatch(ListEventsThunk())
+	try {
+		const res = await DeleteEventApis(params)
+		if (res?.status) thunkApi.dispatch(ListEventsThunk())
 
-	return res
+		return res
+	} catch (error: any) {
+		return thunkApi.rejectWithValue(error)
+	}
 })
 
-export const DeleteTicketThunk = createAsyncThunk("event/deleteTicket", async (params: RequestParams<{ eventId: string; ticketId: string }>) => {
-	return await DeleteTicketApis(params)
+export const DeleteTicketThunk = createAsyncThunk("event/deleteTicket", async (params: RequestParams<{ eventId: string; ticketId: string }>, thunkApi) => {
+	try {
+		return await DeleteTicketApis(params)
+	} catch (error: any) {
+		return thunkApi.rejectWithValue(error)
+	}
 })
 
 export const UpdateTicketThunk = createAsyncThunk(
 	"event/updateTicket",
-	async (params: RequestParams<{ payload: { title: string; description: string }; params: { eventId: string; ticketId: string } }>) => {
-		return await UpdateTicketApis(params)
+	async (params: RequestParams<{ payload: { title: string; description: string }; params: { eventId: string; ticketId: string } }>, thunkApi) => {
+		try {
+			return await UpdateTicketApis(params)
+		} catch (error: any) {
+			return thunkApi.rejectWithValue(error)
+		}
 	},
 )
 
@@ -131,7 +154,7 @@ export const eventSlice = createSlice({
 		builder.addCase(FetchEventThunk.rejected, (state, action) => {
 			state.isFetching = false
 
-			ServerErrors("Failed to fetch event.", action?.error)
+			ServerErrors("Failed to fetch event.", action?.payload || action?.error)
 		})
 
 		// --------------------- [Update Event ] ---------------------
@@ -152,7 +175,7 @@ export const eventSlice = createSlice({
 		builder.addCase(UpdateEventThunk.rejected, (state, action) => {
 			state.isLoading = false
 
-			ServerErrors("Failed to update event.", action?.error)
+			ServerErrors("Failed to update event.", action?.payload || action?.error)
 		})
 
 		// --------------------- [Delete Event ] ---------------------
@@ -173,7 +196,7 @@ export const eventSlice = createSlice({
 		builder.addCase(DeleteEventThunk.rejected, (state, action) => {
 			state.isLoading = false
 
-			ServerErrors("Failed to delete event.", action?.error)
+			ServerErrors("Failed to delete event.", action?.payload || action?.error)
 		})
 
 		// --------------------- [Delete Ticket ] ---------------------
@@ -194,7 +217,7 @@ export const eventSlice = createSlice({
 		builder.addCase(DeleteTicketThunk.rejected, (state, action) => {
 			state.isLoading = false
 
-			ServerErrors("Failed to delete ticket.", action?.error)
+			ServerErrors("Failed to delete ticket.", action?.payload || action?.error)
 		})
 
 		// --------------------- [Update Ticket ] ---------------------
@@ -215,7 +238,7 @@ export const eventSlice = createSlice({
 		builder.addCase(UpdateTicketThunk.rejected, (state, action) => {
 			state.isLoading = false
 
-			ServerErrors("Failed to update ticket.", action?.error)
+			ServerErrors("Failed to update ticket.", action?.payload || action?.error)
 		})
 	},
 })

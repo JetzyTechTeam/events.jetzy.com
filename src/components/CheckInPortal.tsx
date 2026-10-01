@@ -532,7 +532,10 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					<Heading size="lg" mb={2} color="white">
 						Event Check-In Portal
 					</Heading>
-					<Text color="gray.400" fontSize="sm">
+					{/* Door staff are always on a phone here. Without `overflowWrap="anywhere"` a
+					    long title with no spaces overflowed the 600px box and put a horizontal
+					    scrollbar on the one screen that has to work one-handed. */}
+					<Text color="gray.400" fontSize="sm" overflowWrap="anywhere" minW={0}>
 						{eventName}
 					</Text>
 				</Box>

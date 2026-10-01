@@ -2,6 +2,7 @@ import React, { useState } from "react"
 import { Box, Button, Flex, Heading, Input, InputGroup, InputRightElement, Text } from "@chakra-ui/react"
 import { MinusCircleIcon } from "@heroicons/react/24/solid"
 import { Roboto } from "next/font/google"
+import { MAX_BENEFIT_COUNT, MAX_BENEFIT_LENGTH, benefitChips } from "@/lib/event-field-limits"
 
 const roboto = Roboto({ subsets: ["latin"], weight: ["400", "500", "700"] })
 
@@ -14,9 +15,11 @@ const roboto = Roboto({ subsets: ["latin"], weight: ["400", "500", "700"] })
  * know that.
  *
  * 23 characters is the cap because the chips render over the banner image; longer ones wrap and
- * cover the artwork.
+ * cover the artwork. The number itself lives in `@/lib/event-field-limits` so the API routes can
+ * read it without importing a Chakra component; re-exported here because this is where callers
+ * have always imported it from.
  */
-export const MAX_BENEFIT_LENGTH = 23
+export { MAX_BENEFIT_LENGTH } from "@/lib/event-field-limits"
 
 export default function BenefitsField({
 	value,
@@ -30,14 +33,15 @@ export default function BenefitsField({
 }) {
 	const [benefitInput, setBenefitInput] = useState("")
 
-	const list = (value || "")
-		.split(",")
-		.map((b) => b.trim())
-		.filter(Boolean)
+	// `benefitChips` is the same split the API validates with, so the count on screen and the
+	// count the server enforces can never disagree.
+	const list = benefitChips(value)
+	const isFull = list.length >= MAX_BENEFIT_COUNT
 
 	const addBenefit = () => {
 		const v = benefitInput.trim()
-		if (!v) return
+		// Guarded here as well as by hiding the input, or the Enter key would walk past the limit.
+		if (!v || isFull) return
 		onChange([...list, v].join(","))
 		setBenefitInput("")
 	}
@@ -52,8 +56,18 @@ export default function BenefitsField({
 		<>
 			<Flex align="baseline" gap={2} mb={4}>
 				<Heading size="md" color="white">{heading}</Heading>
-				<Text className={roboto.className} fontSize="sm" color="#9C9C9C">(Max {MAX_BENEFIT_LENGTH} chars)</Text>
+				<Text className={roboto.className} fontSize="sm" color="#9C9C9C">
+					(Max {MAX_BENEFIT_LENGTH} chars &middot; {list.length} of {MAX_BENEFIT_COUNT})
+				</Text>
 			</Flex>
+			{/* At the limit the control is REPLACED, not disabled — an Add button that doesn't
+			    respond reads as a broken page. A host over the limit (legacy or mobile-written data)
+			    still sees every chip below and can remove them. */}
+			{isFull ? (
+				<Text className={roboto.className} fontSize="sm" color="#9C9C9C" mb={4}>
+					You&apos;ve added the maximum of {MAX_BENEFIT_COUNT}. Remove one to add another.
+				</Text>
+			) : (
 			<InputGroup mb={4}>
 				<Input
 					placeholder="e.g free food, free drinks etc"
@@ -92,6 +106,7 @@ export default function BenefitsField({
 					</Button>
 				</InputRightElement>
 			</InputGroup>
+			)}
 			<Flex gap={3} flexWrap="wrap">
 				{list.map((b, idx) => (
 					<Flex key={`${b}-${idx}`} align="center" gap={2} bg="#090C10" border="1px solid #343536" rounded="md" px="4" py="2">

@@ -11,11 +11,20 @@ import { ticketMemberships, ticketMembershipFreeMonths } from "@/lib/premium-bun
 import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 import { buildUniqueSlug } from "@/lib/event-slug"
 import { seedDefaultReferralCodes } from "@/lib/default-referral-codes"
+import { Types } from "mongoose"
 
 // create stripe instance
 const stripe = new Stripe(process.env.NEXT_STRIPE_SECRET_KEY as string)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	// POST only. A route with no method check answers a GET, and NextAuth's session cookie is
+	// SameSite=Lax, which a top-level navigation carries — so the bare URL was a working
+	// "create an event" link that a signed-in admin could fire by clicking it in an email. Same
+	// lesson as `delete.ts`, which was a working delete link for the same reason.
+	if (req.method !== "POST") {
+		return sendResponse(res, null, "Method not allowed", false, ResCode.METHOD_NOT_ALLOWED)
+	}
+
 	await ensureDbConnected()
 	const session = await getServerSession(req, res, authOptions)
 
@@ -25,9 +34,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		// Get the event id from the request
 		const { eventId } = req.query
+		// A malformed id is a 400, not the CastError 500 `findById` used to throw.
+		if (!eventId || typeof eventId !== "string" || !Types.ObjectId.isValid(eventId)) {
+			return sendResponse(res, null, "Valid event ID is required", false, ResCode.BAD_REQUEST)
+		}
 
-		// Find the source event
-		const source = await Events.findById(eventId)
+		// Find the source event. `$ne: true` and never `isDeleted: false` — rows written to this
+		// shared collection by the mobile app may carry no such field at all.
+		const source = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: { $ne: true } })
 		if (!source) return sendResponse(res, null, "Event not found", false, ResCode.NOT_FOUND)
 
 		// Ownership check — admin can clone any event, user can only clone their own
@@ -61,6 +75,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			name: `Copy of ${source.name}`,
 			location: source.location,
 			venueName: source.venueName,
+			// Arrival instructions. Dropped by the copy before this, so a cloned event sent guests
+			// to the right address with no idea which door to use.
+			entrance: source.entrance,
 			coordinates: source.coordinates,
 			desc: source.desc,
 			// An active date poll is mutually exclusive with fixed dates — don't copy dates when the source has a live poll
@@ -76,6 +93,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			adminApprovalStatus: source.privacy === "private" ? "approved" : "pending",
 			images: source.images,
 			videos: source.videos,
+			// `images` and `videos` cannot express order BETWEEN them — `mediaOrder` is what carries
+			// the host's arrangement, so the three move as a unit. Copying the first two alone reset
+			// the clone's banner to the legacy images-then-videos order.
+			mediaOrder: source.mediaOrder,
 			capacity: source.capacity,
 			requireApproval: source.requireApproval,
 			tickets: sourceTickets.map((ticket, index) => ({
@@ -103,6 +124,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			benefits: source.benefits,
 			locationDisclosedAfterBooking: source.locationDisclosedAfterBooking,
 			showOnMobile: source.showOnMobile,
+			// Curation tag — badge + filter. `?? false` like create.ts.
+			premiumEvent: source.premiumEvent ?? false,
 			feedbackFormUrl: source.feedbackFormUrl,
 			interests: source.interests,
 			// reset votes on every poll option so the clone starts clean

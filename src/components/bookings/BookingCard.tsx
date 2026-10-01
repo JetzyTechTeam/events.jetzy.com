@@ -159,9 +159,16 @@ export default function BookingCard({ booking, onClick }: { booking: BookingRow;
 
 			<Box p="2">
 				<Stack spacing="3">
+					{/* `noOfLines` matters more here than on the listing card: this card is a fixed
+					    `height="470"` with `overflow="hidden"`, so an unclamped title pushes the
+					    booking reference and the amount paid off the bottom and the guest loses
+					    them. Keep `wordBreak`/`overflowWrap` too — the clamp handles LENGTH, those
+					    handle a single unbroken 150-character word. Must stay in step with
+					    `EventListingCard`, which clamps at 2 for the same reason. */}
 					<Text
 						fontSize="xl"
 						fontWeight="bold"
+						noOfLines={2}
 						wordBreak="break-word"
 						overflowWrap="anywhere"
 						textDecoration={cancelled ? "line-through" : undefined}

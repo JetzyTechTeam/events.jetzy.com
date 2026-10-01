@@ -81,7 +81,7 @@ const EventDescription: React.FC<Props> = ({
 	if (isHtml) {
 		if (typeof window === "undefined") {
 			return (
-				<div className={`${className} break-words overflow-wrap-anywhere whitespace-pre-wrap`}>
+				<div className={`${className} break-words [overflow-wrap:anywhere] whitespace-pre-wrap`}>
 					{htmlToPlainLines(description)}
 				</div>
 			)
@@ -92,7 +92,7 @@ const EventDescription: React.FC<Props> = ({
 		)
 		return (
 			<div
-				className={`${className} break-words overflow-wrap-anywhere rich-content`}
+				className={`${className} break-words [overflow-wrap:anywhere] rich-content`}
 				dangerouslySetInnerHTML={{ __html: clean }}
 			/>
 		)
@@ -102,7 +102,7 @@ const EventDescription: React.FC<Props> = ({
 	// intact rather than split into paragraphs: every line used to become its own `<p>` and the
 	// empty ones were dropped, which lost the host's spacing exactly as the HTML path did.
 	return (
-		<div className={`${className} break-words overflow-wrap-anywhere whitespace-pre-wrap leading-[1.7]`}>
+		<div className={`${className} break-words [overflow-wrap:anywhere] whitespace-pre-wrap leading-[1.7]`}>
 			<Linkify options={linkifyOptions}>{stripHtml(description)}</Linkify>
 		</div>
 	)

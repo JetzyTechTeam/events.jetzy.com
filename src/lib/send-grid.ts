@@ -3,7 +3,7 @@ import { IEvent } from "@/models/events/types"
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import { ADMIN_SUPPORT_EMAIL } from "@/lib/support"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
-import { containsLocationLink, locationHtml, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
+import { containsLocationLink, locationHtml, locationWasPicked, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventZone } from "@/utils/eventTime"
 import sgMail from "@sendgrid/mail"
@@ -1148,20 +1148,26 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     // `venueName` is a FALLBACK, never a prefix. Prepending it produced a doubled address
     // whenever the two strings differed by so much as punctuation — see event-location.ts.
     const location = resolveGuestLocation(event as any)
-    const locationMapsUrl = mapsLinkFor(location)
     const entrance = resolveEntrance(event as any)
 
-    // A host who pasted their own map link into the address or the arrival notes gets THAT link
-    // clicked, and nothing else (CEO, 2026-10-01). Wrapping the whole sentence in a
-    // `maps/search/?query=` url turned their link into search text; `locationHtml` falls back to
-    // the search link only when the host supplied none.
+    // The email carries the host's OWN words and the host's OWN link (CEO, 2026-10-01).
+    //
+    // Two rules, and they compose:
+    //  - a url the host typed is the only clickable part of the sentence around it. Wrapping the
+    //    whole string in `maps/search/?query=` turned their link into search text, so the guest
+    //    landed on whatever Google made of a sentence with a URL in it;
+    //  - a Google Maps link of OUR making is only ever offered for an address the host PICKED
+    //    from the dropdown. Typed text gets no auto-resolved link, even when it holds no url of
+    //    its own — we would be sending the guest to a place nobody chose.
+    //
     // Decoded BEFORE `locationHtml` escapes: these fields were interpolated raw, so a stored
     // `&amp;` used to render as "&". Escaping alone would start showing the entity itself.
-    const locationLine = locationHtml(decodeHTMLEntities(location), { fallbackHref: locationMapsUrl })
+    const locationMapsUrl = locationWasPicked(event as any) ? mapsLinkFor(location) : ""
+    const locationLine = locationHtml(decodeHTMLEntities(location), { fallbackHref: locationMapsUrl || undefined })
     const entranceLine = locationHtml(decodeHTMLEntities(entrance))
-    // With the host's own link in the address there is nothing for a separate Directions line to
-    // add — it is already in the sentence above it.
-    const directionsLine = location && !containsLocationLink(location) ? `\nDirections: ${locationMapsUrl}` : ""
+    // Only for a picked address, and only when the host left no link of their own — theirs is
+    // already in the sentence above it.
+    const directionsLine = locationMapsUrl && !containsLocationLink(location) ? `\nDirections: ${locationMapsUrl}` : ""
 
     // Back to the event itself — the ticket holder's route to the discussion, the album, the
     // guest list and their own cancel button, none of which this email can carry. Built with

@@ -11,7 +11,22 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "../../auth/[...nextauth]"
 import { Types } from "mongoose"
 
+/**
+ * A shadow draft is an in-progress edit, so it is deliberately NOT validated field by field —
+ * half-typed values are the whole point, and the same `draftRevision` field is shared with the
+ * mobile app. What IS checked is that the payload is a JSON object and that it is a sane size:
+ * it is stored as `Mixed` on the event document, and a document has a hard 16MB ceiling, so an
+ * unbounded write here could make the event itself unreadable.
+ */
+const DRAFT_PAYLOAD_MAX_BYTES = 512 * 1024
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+	// POST saves, DELETE discards. Anything else used to fall through to the save branch — and a
+	// route with no method check answers a GET, which a session cookie (SameSite=Lax) carries.
+	if (req.method !== "POST" && req.method !== "DELETE") {
+		return sendResponse(res, null, "Method not allowed", false, ResCode.METHOD_NOT_ALLOWED)
+	}
+
 	await ensureDbConnected()
 	const session = await getServerSession(req, res, authOptions)
 
@@ -44,10 +59,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		const body = req?.body as { payload: string }
 		if (!body?.payload) return sendResponse(res, null, "Missing payload.", false, ResCode.BAD_REQUEST)
 
+		if (Buffer.byteLength(body.payload, "utf8") > DRAFT_PAYLOAD_MAX_BYTES) {
+			return sendResponse(res, null, "These changes are too large to save as a draft.", false, ResCode.BAD_REQUEST)
+		}
+
 		let payload: any
 		try {
 			payload = JSON.parse(body.payload)
 		} catch {
+			return sendResponse(res, null, "Invalid payload.", false, ResCode.BAD_REQUEST)
+		}
+
+		// An object, not an array / string / null — `draftRevision.payload` is read back as the
+		// seed for the manage form, which would break on anything else.
+		if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
 			return sendResponse(res, null, "Invalid payload.", false, ResCode.BAD_REQUEST)
 		}
 

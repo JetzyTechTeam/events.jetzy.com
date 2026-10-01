@@ -117,3 +117,42 @@ select option:checked {
 body.jetzy-hide-pac .pac-container {
   display: none !important;
 }
+
+/* iOS Safari zooms the whole viewport when a focused field's font-size is under 16px, and it does
+   not zoom back out — the host is left on a page wider than the screen, panning sideways to reach
+   the next field. Every input in the event forms is `fontSize="14px"` (17 of them), so this fired
+   on nearly every tap. It became more visible once the event title accepted 150 characters: that
+   is the field a host now types a real sentence into.
+
+   Done here rather than per-field on purpose. Raising only the title would stop the zoom on that
+   one input while Location and Description right beneath it still zoomed, which reads as a glitch
+   rather than a fix. 16px is the exact threshold, not a preference — 15.9px still zooms.
+
+   `!important` is needed because Chakra emits its `fontSize` prop as an Emotion class, and a bare
+   `input` element selector loses to any class. Checkboxes and radios are excluded: font-size does
+   nothing for them and the rule would only add noise.
+
+   Scoped to phone widths so desktop typography is untouched. Note iPad Safari (768px and up) keeps
+   14px and therefore still zooms — widening this to all viewports would change every form on the
+   site, which is a bigger decision than this fix. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Underlines must be CONTINUOUS, including under commas.
+
+   Browsers default to `text-decoration-skip-ink: auto`, which lifts the underline around any
+   glyph that descends through it. A comma descends, so a host underlining a whole sentence got
+   a break at every comma — "exclusive, Invite-only, private event" rendered as three underlined
+   runs and read as a dashed line, not as emphasis. Nothing was wrong with the markup.
+
+   `none` draws straight through. Inherited, so it covers `<u>`, `<a>` and anything nested. */
+.rich-content,
+.ql-editor {
+  text-decoration-skip-ink: none;
+  -webkit-text-decoration-skip-ink: none;
+}

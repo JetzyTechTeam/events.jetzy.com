@@ -4,27 +4,74 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { mediaLimitRefusal } from "@/lib/event-media-limit"
+import { EVENT_TITLE_RAW_LIMIT } from "@/lib/event-title"
+import {
+	BENEFITS_RAW_LIMIT,
+	DATE_POLL_OPTION_LABEL_LIMIT,
+	DATE_POLL_QUESTION_LIMIT,
+	EVENT_DESC_LIMIT,
+	EVENT_ENTRANCE_LIMIT,
+	EVENT_ENTRANCE_WORD_LIMIT,
+	EVENT_FIELD_MESSAGES,
+	EVENT_LOCATION_LIMIT,
+	EVENT_LOCATION_WORD_LIMIT,
+	EVENT_TIMEZONE_LIMIT,
+	EVENT_VENUE_NAME_LIMIT,
+	benefitChipsWithinLimit,
+	benefitCountWithinLimit,
+	countChars,
+	withinWordLimit,
+} from "@/lib/event-field-limits"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
+import { zodIssuesToMessage } from "@/lib/zod-error"
 import { isAwaitingAdminReview } from "@/lib/event-approval"
 import { notifyOwnerEventSubmitted } from "@/lib/event-approval-notify"
 
 const schema = zod.object({
-	name: zod.string().min(1).max(300).optional(),
-	desc: zod.string().max(20000).optional(),
-	benefits: zod.string().max(2000).optional(),
+	// The title cap is 150 characters THAT ARE NOT WHITESPACE (`@/lib/event-title`), so a legitimate
+	// title can be far longer raw than the 150 it counts as. This is the raw backstop, not the rule.
+	// Billed in CODE POINTS, like `clampEventTitle` — `.max()` counts UTF-16 units, so a title the
+	// clamp accepts could still 400 here once it held emoji, which is exactly what that module
+	// promises can never happen.
+	name: zod
+		.string()
+		.min(1, "Give your event a name.")
+		.refine((v) => countChars(v) <= EVENT_TITLE_RAW_LIMIT, { message: "That title is too long." })
+		.optional(),
+	desc: zod.string().max(EVENT_DESC_LIMIT, EVENT_FIELD_MESSAGES.descTooLong).optional(),
+	// The 23-char cap is PER CHIP, never for the whole stored value — `benefits` is ONE
+	// comma-separated string. Same rule, same sentence, as create.ts / update.ts.
+	benefits: zod
+		.string()
+		.max(BENEFITS_RAW_LIMIT, EVENT_FIELD_MESSAGES.benefitsTooLong)
+		.optional()
+		.refine(benefitChipsWithinLimit, { message: EVENT_FIELD_MESSAGES.benefitTooLong })
+		.refine(benefitCountWithinLimit, { message: EVENT_FIELD_MESSAGES.tooManyBenefits }),
 	images: zod.array(zod.string().min(1)).optional(),
 	videos: zod.array(zod.string().min(1)).optional(),
 	mediaOrder: zod.array(zod.string().min(1)).optional(),
-	location: zod.string().max(500).optional(),
-	venueName: zod.string().max(300).optional(),
-	entrance: zod.string().max(200).optional(),
-	latitude: zod.number().optional(),
-	longitude: zod.number().optional(),
-	placeId: zod.string().optional(),
-	timezone: zod.string().max(100).optional(),
+	// The real rule is WORDS; the character cap is only the paste backstop (see
+	// event-field-limits.ts). A host writes directions here, with a map link in the middle.
+	location: zod
+		.string()
+		.max(EVENT_LOCATION_LIMIT, EVENT_FIELD_MESSAGES.locationRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_LOCATION_WORD_LIMIT), EVENT_FIELD_MESSAGES.locationTooLong)
+		.optional(),
+	venueName: zod.string().max(EVENT_VENUE_NAME_LIMIT, EVENT_FIELD_MESSAGES.venueNameTooLong).optional(),
+	entrance: zod
+		.string()
+		.max(EVENT_ENTRANCE_LIMIT, EVENT_FIELD_MESSAGES.entranceRawTooLong)
+		.refine((v) => withinWordLimit(v, EVENT_ENTRANCE_WORD_LIMIT), EVENT_FIELD_MESSAGES.entranceTooLong)
+		.optional(),
+	// Three-valued, like a ticket's `quantity`: absent = unchanged, a number = a new pick, and
+	// `null` = the host typed the address by hand, so the pick (and its map link) is CLEARED.
+	latitude: zod.number().nullable().optional(),
+	longitude: zod.number().nullable().optional(),
+	placeId: zod.string().nullable().optional(),
+	timezone: zod.string().max(EVENT_TIMEZONE_LIMIT, EVENT_FIELD_MESSAGES.timezoneTooLong).optional(),
 	// Dates arrive already resolved to an instant, NOT as the date/time/timezone triple that
 	// `update.ts` splits and reassembles. That round trip is where its date bugs live, and this
 	// endpoint has no reason to repeat it. Empty string clears the date.
@@ -41,20 +88,20 @@ const schema = zod.object({
 	showOnMobile: zod.boolean().optional(),
 	// Curation tag — badge + filter only. Not the deprecated `premium` field.
 	premiumEvent: zod.boolean().optional(),
-	capacity: zod.number().int().min(0).optional(),
+	capacity: zod.number().int(EVENT_FIELD_MESSAGES.capacityNotWhole).min(0, EVENT_FIELD_MESSAGES.capacityNegative).optional(),
 	privacy: zod.enum(["public", "private"]).optional(),
 	// Votes are NOT accepted from the client — they are preserved server-side by option id.
 	datePoll: zod
 		.object({
 			isActive: zod.boolean(),
-			question: zod.string().max(300).optional(),
+			question: zod.string().max(DATE_POLL_QUESTION_LIMIT, EVENT_FIELD_MESSAGES.pollQuestionTooLong).optional(),
 			options: zod
 				.array(
 					zod.object({
-						id: zod.string().min(1),
-						date: zod.string().min(1),
+						id: zod.string().min(1, EVENT_FIELD_MESSAGES.pollOptionNeedsId),
+						date: zod.string().min(1, EVENT_FIELD_MESSAGES.pollOptionNeedsDate),
 						time: zod.string().optional(),
-						label: zod.string().max(200).optional(),
+						label: zod.string().max(DATE_POLL_OPTION_LABEL_LIMIT, EVENT_FIELD_MESSAGES.pollOptionLabelTooLong).optional(),
 					}),
 				)
 				.default([]),
@@ -107,7 +154,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 		const validation = schema.safeParse(req.body)
 		if (!validation.success) {
-			return sendResponse(res, validation.error.errors, "Invalid event data", false, ResCode.BAD_REQUEST)
+			// HostedEvents / manage.tsx call this with bare axios and read ONLY `message`, so the
+			// reason has to be IN it — `data[]` never reaches their catch.
+			return sendResponse(res, validation.error.errors, zodIssuesToMessage(validation.error.errors), false, ResCode.BAD_REQUEST)
 		}
 
 		const event = await Events.findOne({ _id: new Types.ObjectId(eventId), isDeleted: false })
@@ -159,10 +208,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			else if ((event as any).privacy === "private") set.adminApprovalStatus = "pending"
 		}
 
-		// Only overwrite stored coordinates when the client actually sent new ones, i.e. the
-		// user re-picked a place. Same rule as update.ts.
-		if (typeof latitude === "number" && typeof longitude === "number") {
-			set.coordinates = { long: longitude, lat: latitude, placeId }
+		// Three states, same as update.ts: `null` = typed by hand, so the pick is cleared;
+		// numbers = a fresh pick; omitted = unchanged.
+		if (latitude === null && longitude === null) {
+			// Typed by hand. The coordinates are the ONLY record that a place was picked from the
+			// dropdown (`locationWasPicked`), so leaving them behind would keep offering a guest a
+			// map link to a place the host has since typed over.
+			unset.coordinates = ""
+		} else if (typeof latitude === "number" && typeof longitude === "number") {
+			set.coordinates = { long: longitude, lat: latitude, placeId: placeId || undefined }
 		}
 
 		// A date is `$unset` when cleared rather than written as null, so "no date" reads the

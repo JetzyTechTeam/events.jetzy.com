@@ -22,6 +22,7 @@ type EventLocationLike = {
 	location?: string | null
 	venueName?: string | null
 	entrance?: string | null
+	coordinates?: { lat?: number | null; long?: number | null; placeId?: string | null } | null
 } | null | undefined
 
 /** A location that is deliberately withheld from the public event page. */
@@ -43,6 +44,25 @@ export function resolveGuestLocation(event: EventLocationLike): string {
 	// Only substitute when there is nothing usable to show. Never concatenate the two.
 	if (isMaskedLocation(location) && venueName) return venueName
 	return location
+}
+
+/**
+ * Did the host PICK this place from the Google dropdown, or type it themselves?
+ *
+ * Only a dropdown selection may be turned into a Google Maps link (CEO, 2026-10-01): a host who
+ * types their own directions — with their own map link in the sentence — gets their words and
+ * their link, and nothing we resolved on their behalf. Guessing a map search from free text is
+ * how a guest ends up at an orthodontist on the same street as the park.
+ *
+ * The coordinates ARE the record of that pick — `buildPlaceSelection` is the only thing that
+ * writes them, and the forms clear them the moment the host edits the text by hand — so no new
+ * field is needed and the mobile app, which also writes coordinates, keeps its map links.
+ */
+export function locationWasPicked(event: EventLocationLike): boolean {
+	const coordinates = event?.coordinates
+	if (!coordinates) return false
+	if (coordinates.placeId) return true
+	return typeof coordinates.lat === "number" && typeof coordinates.long === "number"
 }
 
 /**
