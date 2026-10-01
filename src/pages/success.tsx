@@ -1,6 +1,7 @@
 'use client'
 import { Error } from "@/lib/_toaster"
 import { eventPath } from "@/lib/event-slug"
+import { splitLocationLinks } from "@/lib/event-location"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import ReturnToAppButton from "@Jetzy/components/misc/ReturnToAppButton"
@@ -27,6 +28,7 @@ type IEvent = {
 	name: string
 	location: string
 	venueName?: string
+	entrance?: string
 	startsOn: string
 	hasStartTime?: boolean
 	timezone: string
@@ -37,6 +39,33 @@ type IEvent = {
 		placeId: string
 	}
 }
+
+/**
+ * A host-written address or arrival note, with only the urls inside it clickable.
+ *
+ * Hosts paste their own shortened Google Maps link into these fields; the rest of the string is
+ * a sentence and must stay plain text (CEO, 2026-10-01). Same `splitLocationLinks` the
+ * confirmation email uses, so the page and the email cannot disagree about what is a link.
+ */
+const LinkedLocation: React.FC<{ text: string }> = ({ text }) => (
+	<>
+		{splitLocationLinks(text).map((segment, index) =>
+			segment.type === "link" ? (
+				<a
+					key={index}
+					href={segment.href}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="text-[#F79432] hover:underline break-all"
+				>
+					{segment.value}
+				</a>
+			) : (
+				<React.Fragment key={index}>{segment.value}</React.Fragment>
+			),
+		)}
+	</>
+)
 
 const CheckoutSuccessPage: React.FC = () => {
 	const router = useRouter()
@@ -300,7 +329,13 @@ const CheckoutSuccessPage: React.FC = () => {
 						{displayEvent && (
 							<div className="mb-6 space-y-1">
 								<p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Event:</strong> {displayEvent.name}</p>
-								<p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Venue:</strong> {displayLocation}</p>
+								<p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Venue:</strong> <LinkedLocation text={displayLocation || ""} /></p>
+								{/* Arrival notes carry a map link of their own as often as the address does, so the
+								    buyer sees them here as well as in the email — they have a ticket, they are not
+								    browsing, which is the only reason this was ever withheld from the event page. */}
+								{displayEvent.entrance ? (
+									<p className="text-gray-700 break-words overflow-wrap-anywhere"><strong>Entrance:</strong> <LinkedLocation text={displayEvent.entrance} /></p>
+								) : null}
 								<p className="text-gray-700 break-words overflow-wrap-anywhere">
 									<strong>Date & Time:</strong>{" "}
 									{formattedDate}{formattedTime ? <>&nbsp;{formattedTime}</> : null}
