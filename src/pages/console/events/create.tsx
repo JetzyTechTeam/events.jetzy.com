@@ -38,6 +38,7 @@ import {
 import ConsoleLayout from "@/components/layout/ConsoleLayout";
 import { CreateEventFormData, DatePollOption, Pages } from "@/types";
 import { usePlacesWidget } from "react-google-autocomplete";
+import LocationValuePreview from "@/components/events/fields/LocationValuePreview";
 import {
   LocationSVG,
   LockSVG,
@@ -746,6 +747,7 @@ const CreateEventPage = () => {
                         )}
                       </Field>
                     </InputGroup>
+                    <LocationValuePreview value={values.location} />
                     {/* Pick from the dropdown OR type it yourself — typing is not second-class, it
                         just means no map link of our own goes out with the ticket. */}
                     <Flex justify="space-between" gap={2} mt={1}>
