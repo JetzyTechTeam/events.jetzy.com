@@ -20,8 +20,9 @@ import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { EventWaitingList } from "@/components/events/EventWaitingList";
 import { ApprovalRequests } from "@/components/console/ApprovalRequests";
-import { eventHasAnyApprovalTicket } from "@/lib/ticket-approval";
+import { showApprovalsSurface } from "@/lib/ticket-approval";
 import { isPendingBooking } from "@/lib/booking-status";
+import { BookingStatus } from "@/models/events/types";
 
 type Props = {
   bookings: Booking[];
@@ -32,21 +33,30 @@ type Props = {
   exportable: any[];
   checkInMap: Record<string, { checkedInCount: number; isFullyCheckedIn: boolean }>;
   isAdmin: boolean;
+  // Counted server-side and UNFILTERED, so the Approvals tab is right on the first paint and
+  // doesn't vanish when the host narrows the table to, say, confirmed bookings only.
+  pendingApprovalCount: number;
 };
 
-export default function BookingsEventPage({ bookings, event, filters, exportable, checkInMap, isAdmin }: Props) {
+export default function BookingsEventPage({ bookings, event, filters, exportable, checkInMap, isAdmin, pendingApprovalCount: initialPendingCount }: Props) {
   const router = useRouter()
   const [tabIndex, setTabIndex] = useState(0)
-  const hasApprovalTickets = eventHasAnyApprovalTicket(event as any)
+  // Judged from the SERVER count, not the live query: it is fixed for the life of the page, so
+  // approving the last request on an event whose tickets no longer require approval doesn't pull
+  // the panel out from under the host mid-session.
+  const showApprovals = showApprovalsSurface(event as any, initialPendingCount)
 
   // Same query key as ApprovalRequests, so the badge and the tab share one fetch and an
   // approve/decline there updates the count here.
   const { data: approvalBookings } = useQuery({
     queryKey: ["event-bookings", event._id],
     queryFn: async () => (await axios.post("/api/get-bookings", { eventId: event._id })).data || [],
-    enabled: hasApprovalTickets,
+    enabled: showApprovals,
   })
-  const pendingApprovalCount = (approvalBookings as any[] | undefined)?.filter((b) => isPendingBooking(b)).length ?? 0
+  // The server count carries the badge until the query lands, so it never flashes a 0.
+  const pendingApprovalCount = approvalBookings
+    ? (approvalBookings as any[]).filter((b) => isPendingBooking(b)).length
+    : initialPendingCount
 
   // The Bookings table is server-rendered. Approving a request or a waiting-list entry
   // creates or changes a booking, so reload the props when the host comes back to it.
@@ -88,7 +98,7 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
         <TabList borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden">
           <Tab {...tabProps}>Bookings</Tab>
           <Tab {...tabProps}>Waiting List</Tab>
-          {hasApprovalTickets && (
+          {showApprovals && (
             <Tab {...tabProps}>
               Approvals
               {pendingApprovalCount > 0 && (
@@ -124,7 +134,7 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
               <EventWaitingList eventId={event._id} eventName={event.name} />
             </div>
           </TabPanel>
-          {hasApprovalTickets && (
+          {showApprovals && (
             <TabPanel px={0}>
               <div className="bg-[#181818] rounded-xl p-3">
                 <ApprovalRequests eventId={event._id} event={event} />
@@ -236,6 +246,11 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     .lean()
     .exec();
 
+  // Unfiltered, and deliberately a separate count: the list above is narrowed by whatever the
+  // host has typed into the filters, so a pending request can be absent from it while still
+  // waiting. `countDocuments` rather than another find — only the number is needed.
+  const pendingApprovalCount = await Bookings.countDocuments({ eventId, status: BookingStatus.PENDING });
+
   // Build check-in map for all returned bookings
   const bookingIds = bookings.map((b: any) => b._id);
   const checkInDocs = await CheckIn.find(
@@ -325,6 +340,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
         checkedIn: (checkedIn as string) || "",
       },
       isAdmin,
+      pendingApprovalCount,
     },
   };
 };
