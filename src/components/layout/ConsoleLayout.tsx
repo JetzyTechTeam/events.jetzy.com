@@ -62,7 +62,15 @@ export default function ConsoleLayout({
             maxW ? maxW : "max-w-7xl"
           }`}
         >
-          <Flex flexDirection="column">
+          {/* `minW={0}` + `flex` from `md` up: a flex item's min-width defaults to `auto`, so this
+              column could not shrink below its own content. A 150-character event title therefore
+              forced the row wider than the header and ran into the buttons beside it — and the
+              `min-w-0` the manage page puts on its breadcrumb and heading could do nothing, because
+              the parent was the item refusing to shrink. `1 1 0%` from `md` makes the buttons take
+              their natural width first and gives this column whatever is left, which is what lets
+              the breadcrumb truncate and the heading clamp inside their own box. Base is left at
+              `auto`: below `md` the row is `flex-col`, where a `0%` basis is a HEIGHT. */}
+          <Flex flexDirection="column" minW={0} flex={{ base: "0 1 auto", md: "1 1 0%" }}>
             {backBtn && (
               <Link href={backBtn as string} className="w-max mb-5">
                 <Flex
