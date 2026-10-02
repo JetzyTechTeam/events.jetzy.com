@@ -119,15 +119,6 @@ const DETAIL_SECTIONS: EditSection[] = ["media", "title", "schedule", "descripti
  */
 const saveLabelFor = (section: EditSection) => (section === "tickets" ? "Update tickets" : "Update Event")
 
-/** What the floating bar says it is editing, so the host can tell which pencil they pressed. */
-const EDIT_SECTION_LABELS: Record<EditSection, string> = {
-	media: "Editing banner & benefits",
-	title: "Editing the title",
-	schedule: "Editing date & location",
-	description: "Editing the description",
-	options: "Editing event options",
-	tickets: "Editing tickets",
-}
 
 // Same field classes the manage form uses, so the pickers render identically here.
 const fieldBase = "w-full h-[48px] rounded-md bg-[#090C10] text-white text-[14px] border border-[#343536] focus:outline-none"
@@ -1077,17 +1068,22 @@ export default function HostedEvents({ event }: Props) {
 	}
 
 	/**
-	 * Save / Cancel for ONE section, rendered directly beneath that section's fields.
+	 * Save / Cancel for ONE section, rendered directly beneath that section's fields. The ONLY
+	 * save on this page (2026-10-02).
 	 *
-	 * The fixed bar at the bottom of the window stays as well — it is the only control a host can
-	 * always reach from a long form. This is the CEO's "Update event should be right next to
-	 * edits": now that a section is one small group of fields rather than the whole event, a Save
-	 * beneath them no longer scrolls out of reach, which was the original reason there wasn't one.
+	 * There used to be a floating bar at the bottom of the window as well, from when one "Edit"
+	 * opened the whole event and a Save pinned to a heading would scroll out of reach. Splitting
+	 * the editor per section removed that reason, and keeping both left two Update buttons for
+	 * one save — the duplication the CEO objected to in the first place.
+	 *
+	 * The bar's "Nothing is visible to guests until you save" came with it: it is the one thing
+	 * the bar said that nothing else does, and it is reassurance worth keeping at the moment of
+	 * saving. Tickets are exempt — that panel already carries its own Stripe-price note.
 	 */
 	const InlineEditActions = ({ section }: { section: EditSection }) => {
 		if (editingSection !== section) return null
 		return (
-			<div className="mt-4 flex items-center gap-2">
+			<div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
 				<button
 					type="button"
 					onClick={() => saveEventEdits(section)}
@@ -1104,6 +1100,9 @@ export default function HostedEvents({ event }: Props) {
 				>
 					Cancel
 				</button>
+				{section !== "tickets" && (
+					<span className="text-xs text-[#8a8a8a]">Nothing is visible to guests until you save.</span>
+				)}
 			</div>
 		)
 	}
@@ -1137,7 +1136,8 @@ export default function HostedEvents({ event }: Props) {
 				{previewAsGuest && canManageForReal && (
 					<PreviewBanner eventId={String(clonedEvent._id)} slugOrId={clonedEvent.slug || String(clonedEvent._id)} query={router.query} />
 				)}
-				<div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-7 ${editingSection ? "pb-32" : ""}`}>
+				{/* `pb-32` while editing is gone with the floating save bar it was clearing. */}
+				<div className="min-h-screen py-8 px-4 sm:px-6 lg:px-7">
 					<div className={`${isDatePollActive ? "max-w-6xl" : "max-w-4xl"} mx-auto mb-6 flex flex-wrap items-center justify-between gap-3`}>
 						<div className="flex items-center gap-3">
 							{/* Most traffic to an event page arrives from OUTSIDE Jetzy — email, QR, blast,
@@ -2198,52 +2198,6 @@ export default function HostedEvents({ event }: Props) {
 					)}
 					</div>
 				</div>
-				{/* The save bar.
-			    FIXED, and rendered here at the root rather than inside the event card — that card
-			    sets both `overflow-hidden` and `transform`, and a transform makes `position:
-			    fixed` resolve against the card instead of the viewport while the overflow makes
-			    it the nearest scroll container, so neither `fixed` nor `sticky` works from in
-			    there. The details editor runs to several screens, so this is the only Save the
-			    host can always reach. */}
-			{editingSection && (
-				// `pb` adds the phone's home-indicator inset on top of the padding — without it iOS
-				// paints that strip over the bottom of this bar, which is where Update Event sits.
-				<div
-					className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#343536] bg-[#131313]/95 backdrop-blur-sm px-4 pt-3"
-					style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
-				>
-					<div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
-						<div className="min-w-0">
-							<p className="text-sm font-semibold text-white truncate">
-								{EDIT_SECTION_LABELS[editingSection]}
-							</p>
-							<p className="text-xs text-[#8a8a8a] truncate">
-								{editingSection === "tickets"
-									? "Changing a price creates a new Stripe price."
-									: "Nothing is visible to guests until you save."}
-							</p>
-						</div>
-						<div className="flex items-center gap-2 flex-shrink-0">
-							<button
-								type="button"
-								onClick={cancelEventEdit}
-								disabled={savingEdits}
-								className="border border-[#434343] py-2 px-4 text-sm rounded-lg hover:border-white disabled:opacity-50"
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
-								onClick={() => saveEventEdits(editingSection)}
-								disabled={savingEdits}
-								className="bg-[#F79432] text-black font-bold py-2 px-5 text-sm rounded-lg hover:bg-[#e58220] disabled:opacity-50"
-							>
-								{savingEdits ? "Saving…" : saveLabelFor(editingSection)}
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
 
 			<TicketEditorModal
 				isOpen={ticketModalOpen}
