@@ -342,6 +342,17 @@ export interface IBlast extends IBaseModelProps {
 	sentFromName?: string
 	/** Where a reply goes — the host on a host-owned event. Absent on pre-feature blasts. */
 	sentReplyTo?: string
+	/**
+	 * Images the host attached. NO DEFAULT and optional: absent means a blast sent before
+	 * attachments existed, which is not the same as one deliberately sent with none.
+	 * Images only — see `blast-attachments.ts` for why video is excluded.
+	 */
+	attachments?: Array<{
+		url: string
+		filename: string
+		contentType: string
+		size: number
+	}>
 	/** Per-recipient outcome. Updated after the fact by the SendGrid webhook on a bounce. */
 	recipients?: Array<{
 		email: string

@@ -68,7 +68,7 @@ Fields: bookingRef (unique), eventId, bookerUserId?, tickets[], status (pending/
 Fields: eventId, code (unique, uppercase), discountPercentage (0-100), commissionPercentage (0-100), isActive, usageCount, maxUses, createdBy, isDeleted
 
 ### `src/models/events/blast.ts` — IBlast
-Blast email history (Luma-style Blasts tab). Fields: eventId, subject, message, targetType (all/bookings/invitations), status, emailType (custom/availability), recipientCount, succeededCount, failedCount, sentBy, sentAt, isDeleted. Created automatically by `/api/send-blast` after a successful send.
+Blast email history (Luma-style Blasts tab). Fields: eventId, subject, message, targetType (all/bookings/invitations), status, emailType (custom/availability), recipientCount, succeededCount, failedCount, sentBy, sentFromName, sentReplyTo, recipients[], attachments[], sentAt, isDeleted. Created automatically by `/api/send-blast` after a successful send.
 
 ### `src/models/events/albums.ts` — IEventAlbum
 Fields: eventId, title, description, media[] (`{url, type:'image'|'video'}`), createdBy, isDeleted. Collection `event-albums`. Multiple named albums per event.
@@ -3148,11 +3148,66 @@ Deliberately out of scope; all pre-existing, none introduced by the identity wor
 - **No unsubscribe link anywhere on a blast**, while `terms.tsx` promises one. The intended fix is a SendGrid ASM unsubscribe group — it supplies the link, hosts the page, sets the `List-Unsubscribe` headers Gmail/Yahoo now require, and suppresses per-group so ticket confirmations are unaffected. Needs a one-time dashboard setup per environment.
 - **`emailBounced` is recorded on the user and never read before sending**, so a dead address is re-mailed on every blast. All hosts share ONE sending domain, so one host's stale list degrades delivery for ticket confirmations and password resets too.
 - **No rate limit on `send-blast.ts`** at all, while `src/lib/rate-limit.ts` is the house pattern.
-- **`subject` / `message` are interpolated into the HTML unescaped.**
+- **`subject` / `message` are interpolated into the HTML unescaped.** Still true at send time; the preview modal sandboxes its iframe because of it.
 - **One SendGrid call per recipient, all concurrent, no chunking** — a 2,000-guest event opens 2,000 simultaneous connections in one serverless invocation.
 - **`targetType: "all"` ignores `status`** and mails cancelled, failed and refunded bookings; neither branch filters `isDeleted`.
 - `send-invites.ts` has the same bare-string `from`, no `replyTo`, and uses `Promise.all` rather than `allSettled` — one rejection fails the request after mail has already gone out.
 
+# Feature: Blast attachments + preview
+
+## Images on a blast, and a preview before it goes (IMPLEMENTED 2026-10-02)
+
+**Why.** The CEO needed a map image sent to one event's guests. `/api/send-blast` could not carry a file,
+so it went out through a one-off script — which left it **absent from the Blasts history**, its bounces
+unattributed, and nobody able to see the email before guests did.
+
+- **Use `src/lib/blast-template.ts`** — `buildBlastHtml`, `personalizeBlastHtml`, `blastFallbackName`. The
+  template used to be two inline literals in `send-blast.ts`, so the only way to see a blast was to receive
+  one. It is **pure and client-safe** (no mongoose, no sendgrid, no server-only `process.env` reads) because
+  the preview imports it into the browser bundle; the base url and `footerContact` are passed IN. The API and
+  the preview modal both call it, so what the host is shown and what the guest receives cannot drift.
+  **Verified byte-identical** to the old output for both `emailType`s and all three personalization paths.
+- **Use `src/lib/blast-attachments.ts`** (pure: constants, `blastAttachmentRefusal`, `blastImageContentId`,
+  `formatBytes`) and **`blast-attachments-server.ts`** (`fetchBlastAttachments`). Same pure/server split, same
+  reason, as `invite-trial.ts` vs `signup-trial.ts`.
+- **IMAGES ONLY. Video is excluded by decision, not omission.** `send-blast.ts` issues one SendGrid call per
+  recipient with **no chunking**, so every megabyte attached is multiplied by the guest list. Ceilings:
+  **5 images, 5MB each, 10MB total** — base64 inflates ~33% and SendGrid hard-limits a message at 30MB.
+  These are the **first file-size checks in this codebase**: `uploadFile` has never had any, and
+  `MediaUploadSection` relies on the `accept` attribute, which is a file-picker filter that drag-and-drop
+  walks straight past. The refusal is shared by the picker and the API so the two cannot disagree.
+- **Attachments are fetched ONCE**, before the recipient loop, and the same base64 array is handed to every
+  send. The size is **re-measured from what arrives**, never trusted from the request body.
+- **An unfetchable image is SKIPPED, not fatal.** Refusing to send a written blast because one picture 404'd
+  is a worse outcome for the host than an email that goes out with two images instead of three; the skip is
+  reported back in `skippedAttachments` so they are told.
+- **`disposition: "inline"` + `cid:`, not a remote `<img src>`.** Gmail blocks remote images until the reader
+  clicks "Display images below", and the whole point of attaching a map is that it is seen without that step.
+  The same bytes still ride as a real attachment, so the file is downloadable too.
+- **`Blasts.attachments` has NO DEFAULT** and is written only when non-empty — absent means a blast sent before
+  attachments existed, which is not the same as one deliberately sent with none. Same rule as `sentFromName`.
+  **Restart the dev server after editing `blast.ts`** — the cached compiled model silently drops new fields.
+- **`doResend` carries the stored attachments forward.** Without it a resend silently drops the pictures and
+  the confirmation gives the host no way to tell.
+- **The preview renders into a SANDBOXED iframe (`sandbox=""`), never `dangerouslySetInnerHTML`.** `subject`
+  and `message` are interpolated unescaped (pre-existing, and hosts rely on it for small markup), so inline
+  rendering would execute host-typed script inside the console's own origin with an admin session present.
+- **The preview swaps `cid:` for the CDN url** — the one reference a browser can render — and says on screen
+  that the greeting shows the host's own name and that the footer is added at send time. Approximations are
+  stated, never faked silently.
+- **`testTo` sends ONE email to the session user's own address and writes NO `Blasts` record.** The address is
+  checked for equality with the session email: without that the route is a Jetzy-branded mail cannon that
+  fires at any address on request, the exact mistake `premium/send-code` was built to avoid. A rehearsal
+  nobody else saw does not belong in a history of what guests received, and writing one would inflate every
+  count on the tab.
+- **The "No people found" 404 is skipped for a test send** — the point is to rehearse BEFORE anyone has
+  booked, which is exactly when that query legitimately returns nothing.
+- **Known limit:** the pending-admin-approval gate still runs before the test branch, so a host cannot test-send
+  on an unapproved event. The preview modal itself still renders, and such an event cannot be blasted anyway.
+- Both composers carry it — the inline "Send to all" box and the Advanced options modal. Send is disabled
+  while an upload is in flight (urls the server could not yet fetch).
+- New: `src/components/console/BlastAttachmentPicker.tsx` (deliberately **not** `MediaUploadSection`, which is
+  built around the event's images/videos split and `mediaOrder`) and `BlastPreviewModal.tsx`.
 # Feature: Partial approval + approvals capacity visibility
 
 ## Approvals: seats left, ticket names, and partial approval (IMPLEMENTED 2026-09-24)
