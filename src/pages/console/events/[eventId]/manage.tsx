@@ -1184,11 +1184,18 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 						    badge broke across two lines ("PENDING" / "APPROVAL") the moment the name
 						    filled the row. `whiteSpace: nowrap` keeps it one chip whatever the width. */}
 						<span className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
-							{/* Clamped to two lines because this header is `sticky top-0`: a 150-character
-							    title at 24px wraps to roughly eight lines on a phone and then stays
-							    pinned there, eating a third of the viewport on every scroll. The
-							    breadcrumb above already truncates for the same reason. */}
-							<span className={roboto.className} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "1.15", letterSpacing: "-0.03em", color: "#FFFFFF", minWidth: 0, overflowWrap: "anywhere", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden" }}>
+							{/* Clamped because this header is `sticky top-0` at EVERY width, so its height is
+							    paid on every scroll — a 150-character title at 24px wraps to roughly eight
+							    lines on a phone and then stays pinned there. ONE line below `md`, two from
+							    `md` up: the same title is already on this screen twice more (truncated in
+							    the breadcrumb above, in full in the Event title field below), so a phone
+							    loses nothing by showing less of it.
+
+							    The clamp is in CLASSES, not the inline style, because it has to be
+							    responsive — and `display` / `WebkitBoxOrient` / `WebkitLineClamp` /
+							    `overflow` must therefore stay OUT of `style`, since an inline value would
+							    beat the class and silently pin it back to one fixed count. */}
+							<span className={`${roboto.className} line-clamp-1 md:line-clamp-2`} style={{ fontSize: "24px", fontWeight: 700, lineHeight: "1.15", letterSpacing: "-0.03em", color: "#FFFFFF", minWidth: 0, overflowWrap: "anywhere" }}>
 								{stripHtml(event.name)}
 							</span>
 							{/* Same rule as the Approve Event button beside it: a draft isn't in the
