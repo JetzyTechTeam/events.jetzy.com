@@ -78,6 +78,9 @@ import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import { Formik, Form, Field, FormikProps, FieldArray } from "formik"
 import { usePlacesWidget } from "react-google-autocomplete"
 import LocationValuePreview from "@/components/events/fields/LocationValuePreview"
+import BlastAttachmentPicker from "@/components/console/BlastAttachmentPicker"
+import BlastPreviewModal from "@/components/console/BlastPreviewModal"
+import type { BlastAttachment } from "@/lib/blast-attachments"
 import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
 import { blurOnWheel } from "@/lib/number-input"
@@ -2257,6 +2260,10 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	const [emailType, setEmailType] = useState("custom")
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState("")
+	const [attachments, setAttachments] = useState<BlastAttachment[]>([])
+	const [uploading, setUploading] = useState(false)
+	const [previewOpen, setPreviewOpen] = useState(false)
+	const { data: session } = useSession()
 
 	const toast = useToast({ position: "top" })
 
@@ -2267,6 +2274,9 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 			setStatus("all")
 			setTargetType("invitations")
 			setEmailType("custom")
+			setAttachments([])
+			setUploading(false)
+			setPreviewOpen(false)
 			setError("")
 		}
 	}, [sendBlastModal])
@@ -2288,6 +2298,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				emailType,
 				// The server rebuilds this from the event record; kept correct here anyway.
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
+				attachments,
 			})
 
 			if (res.status === 207) {
@@ -2474,9 +2485,41 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						/>
 						{error && <Text color="red.500">{error}</Text>}
 
-						<Button size="lg" bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} isLoading={loading} onClick={onSendBlast}>
-							Send Blast
-						</Button>
+						<BlastAttachmentPicker attachments={attachments} onChange={setAttachments} onUploadingChange={setUploading} />
+
+						<Flex gap={3}>
+							<Button
+								size="lg"
+								variant="outline"
+								borderColor="#444444"
+								color="white"
+								_hover={{ bg: "#2A2A2A" }}
+								isDisabled={!message.trim()}
+								onClick={() => setPreviewOpen(true)}
+							>
+								Preview
+							</Button>
+							{/* Uploads in flight would be sent as urls the server cannot fetch yet. */}
+							<Button size="lg" bg="#F79432" color="black" _hover={{ bg: "#f78c22" }} _active={{ bg: "#e67a10" }} isLoading={loading} isDisabled={uploading} onClick={onSendBlast}>
+								Send Blast
+							</Button>
+						</Flex>
+
+						<BlastPreviewModal
+							isOpen={previewOpen}
+							onClose={() => setPreviewOpen(false)}
+							subject={subject}
+							message={message}
+							eventName={event.name}
+							eventLink={eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug)}
+							event={event}
+							emailType={emailType as "custom" | "availability"}
+							attachments={attachments}
+							targetType={targetType}
+							status={status}
+							hostName={(session?.user as any)?.name}
+							hostEmail={(session?.user as any)?.email}
+						/>
 					</Box>
 				</ModalBody>
 			</ModalContent>
@@ -2579,6 +2622,10 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 	const [message, setMessage] = useState("")
 	const [sending, setSending] = useState(false)
 	const [sendResult, setSendResult] = useState<{ type: "success" | "warning" | "error"; text: string } | null>(null)
+	const [attachments, setAttachments] = useState<BlastAttachment[]>([])
+	const [uploading, setUploading] = useState(false)
+	const [previewOpen, setPreviewOpen] = useState(false)
+	const { data: session } = useSession()
 
 	const [editing, setEditing] = useState<any | null>(null)
 	const [editSubject, setEditSubject] = useState("")
@@ -2639,6 +2686,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				emailType: "custom",
 				// The server rebuilds this from the event record; kept correct here anyway.
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
+				attachments,
 			})
 			toast({
 				title: res.status === 207 ? "Partially sent" : "Blast sent!",
@@ -2648,6 +2696,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 			})
 			setSubject("")
 			setMessage("")
+			setAttachments([])
 			refresh()
 		} catch (error: any) {
 			toast({ title: "Failed to send blast.", description: error.response?.data?.error || "An unexpected error occurred.", status: "error", duration: 5000 })
@@ -2697,6 +2746,9 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				emailType: blast.emailType || "custom",
 				// The server rebuilds this from the event record; kept correct here anyway.
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
+				// Carried forward from the stored blast. Without this a resend silently drops the
+				// pictures, and the host has no way to tell from the confirmation that it did.
+				attachments: blast.attachments || [],
 			})
 			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
 			refresh()
@@ -2753,14 +2805,45 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 						{sendResult.text}
 					</Text>
 				)}
+				<BlastAttachmentPicker attachments={attachments} onChange={setAttachments} onUploadingChange={setUploading} compact />
 				<Flex justify="space-between" align="center">
 					<Text as="button" type="button" onClick={onOpenAdvanced} color="#F79432" fontSize="sm" fontWeight="bold">
 						↗ Advanced options
 					</Text>
-					<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={sending} onClick={onSend}>
-						Send to all
-					</Button>
+					<Flex gap={2}>
+						<Button
+							variant="outline"
+							borderColor="#444444"
+							color="white"
+							_hover={{ bg: "#2A2A2A" }}
+							isDisabled={!message.trim()}
+							onClick={() => setPreviewOpen(true)}
+						>
+							Preview
+						</Button>
+						{/* Uploads in flight would be sent as urls the server cannot fetch yet. */}
+						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={sending} isDisabled={uploading} onClick={onSend}>
+							Send to all
+						</Button>
+					</Flex>
+
 				</Flex>
+
+				<BlastPreviewModal
+					isOpen={previewOpen}
+					onClose={() => setPreviewOpen(false)}
+					subject={subject.trim() || `New message in ${event.name}`}
+					message={message}
+					eventName={event.name}
+					eventLink={eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug)}
+					event={event}
+					emailType="custom"
+					attachments={attachments}
+					targetType="all"
+					status="all"
+					hostName={(session?.user as any)?.name}
+					hostEmail={(session?.user as any)?.email}
+				/>
 			</Box>
 
 			{/* Sent history */}
@@ -2788,6 +2871,14 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 										<Text color="#9C9C9C" fontSize="xs">
 											{b.succeededCount}/{b.recipientCount} delivered
 										</Text>
+										{/* No count when there were none: the field has no default, so a blast
+										    predating attachments is indistinguishable from one sent without any,
+										    and "0 images" would assert something about both that we do not know. */}
+										{b.attachments?.length > 0 && (
+											<Text color="#9C9C9C" fontSize="xs">
+												📎 {b.attachments.length} image{b.attachments.length === 1 ? "" : "s"}
+											</Text>
+										)}
 										{/* What the guests actually saw in their inbox. Absent on blasts sent
 										    before host identity existed — shown as nothing rather than
 										    claiming a sender we can't vouch for. */}

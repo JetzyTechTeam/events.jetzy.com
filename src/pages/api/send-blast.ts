@@ -13,6 +13,9 @@ import { eventUrl } from "@/lib/event-slug";
 import { resolveEventOwner } from "@/lib/event-owner";
 import { mailFrom, blastSenderName } from "@/lib/send-grid";
 import type { BlastRecipient } from "@/lib/blast-delivery";
+import { blastAttachmentRefusal, type BlastAttachment } from "@/lib/blast-attachments";
+import { fetchBlastAttachments } from "@/lib/blast-attachments-server";
+import { blastFallbackName, buildBlastHtml, personalizeBlastHtml } from "@/lib/blast-template";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -32,10 +35,27 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   const userId = (session.user as any)?._id?.toString();
   const isAdmin = userRole === "admin" || userRole === "super admin";
 
-  const { status, subject, message, eventLink, event, targetType, emailType } = req.body;
+  const { status, subject, message, eventLink, event, targetType, emailType, attachments, testTo } = req.body;
 
   if (!event?._id) {
     return res.status(400).json({ error: "Event ID is required." });
+  }
+
+  // The client already refused these in the picker; this is the authoritative check. A supplied
+  // list is a request, not a fact -- the same rule `free-events.ts` applies to prices.
+  const attachmentList: BlastAttachment[] = Array.isArray(attachments) ? attachments : [];
+  const attachmentRefusal = blastAttachmentRefusal(attachmentList);
+  if (attachmentRefusal) {
+    return res.status(400).json({ error: attachmentRefusal });
+  }
+
+  // A test send goes to the caller and NOWHERE else. The address is not trusted from the body:
+  // without this equality check the route becomes a Jetzy-branded mail cannon that fires at any
+  // address on request, which is exactly what `premium/send-code` was built to avoid.
+  const sessionEmail = ((session.user as any)?.email || "").trim();
+  const isTestSend = typeof testTo === "string" && testTo.trim().length > 0;
+  if (isTestSend && testTo.trim().toLowerCase() !== sessionEmail.toLowerCase()) {
+    return res.status(403).json({ error: "A test blast can only be sent to your own address." });
   }
 
   // Loaded for everyone (not just non-admins) because the pending-approval gate depends
@@ -104,7 +124,10 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       findPeople = await EventInvitation.find(inviteFilter)
     }
 
-    if (!findPeople || findPeople.length === 0) {
+    // A test send has one recipient of its own and does not care who is on the guest list -
+    // the whole point is to rehearse the email BEFORE anyone has booked, which is exactly when
+    // this query legitimately returns nothing.
+    if (!isTestSend && (!findPeople || findPeople.length === 0)) {
       return res.status(404).json({ error: "No people found" });
     }
 
@@ -125,103 +148,66 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       ? `Questions? Just reply to this email &mdash; it goes straight to ${owner!.displayName}.<br />Sent by ${owner!.displayName} via Jetzy Events`
       : `Questions? Contact us at <a href="mailto:${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}" style="color: #F79432; text-decoration: none;">${(process.env.SENDGRID_EMAIL_SENDER as string)?.trim()}</a>`
 
-    // Create different email templates based on emailType — Jetzy brand theme
-    // (matches welcome/invitation emails: favicon logo, orange #F79432 CTA, white 600px card).
-    const html = emailType === 'availability' ? `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    </head>
-    <body>
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <img src="https://events.jetzy.com/favicon.ico" width="50" height="50" alt="Jetzy Logo" />
-        </div>
-        <h1 style="color: #333; text-align: center;">${subject}</h1>
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
-          You are registered for <strong>${event.name}</strong> with email
-        </p>
-        <p style="font-size: 18px; color: #333; line-height: 1.6; font-weight: bold;">
-          {{userEmail}}
-        </p>
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
-          This event is now full.<br/>
-          If you can not attend, kindly cancel to make room for people on waitlist.
-        </p>
-        <div style="text-align: center; margin-bottom: 24px;">
-          <a href="${process.env.NEXT_PUBLIC_URL}/cancel-booking?bookingRef={{bookingRef}}" style="display: inline-block; padding: 14px 30px; background-color: #dc3545; color: #fff; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px;">
-            Cancel My Booking
-          </a>
-        </div>
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
-          ${message}
-        </p>
-        <div style="text-align: center; margin: 35px 0;">
-          <a href="${recipientEventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-            View Event Details
-          </a>
-        </div>
-        <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          ${footerContact}
-          <br />
-          &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-        </p>
-      </div>
-    </body>
-    </html>
-  ` : `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    </head>
-    <body>
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <img src="https://events.jetzy.com/favicon.ico" width="50" height="50" alt="Jetzy Logo" />
-        </div>
-        <h1 style="color: #333; text-align: center;">${subject}</h1>
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
-          Hi {{userName}},
-        </p>
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
-          ${message}
-        </p>
-        <div style="text-align: center; margin: 35px 0;">
-          <a href="${recipientEventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-            View Event Details
-          </a>
-        </div>
-        <p style="font-size: 14px; color: #999; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-          ${footerContact}
-          <br />
-          &copy; ${new Date().getFullYear()} Jetzy Events, Inc.
-        </p>
-      </div>
-    </body>
-    </html>
-  `;
+    // The attachments are fetched ONCE here, before the recipient loop, and the same array is
+    // handed to every send - one CDN round trip per image, not one per guest.
+    const fetched = await fetchBlastAttachments(attachmentList);
+    if (fetched.skipped.length > 0) {
+      // Never fatal: refusing to send a written blast because one picture 404'd is a worse
+      // outcome for the host than an email that goes out with two images instead of three.
+      console.warn("Blast attachments skipped:", fetched.skipped);
+    }
+
+    // Built by `src/lib/blast-template.ts`, which the preview modal also calls - so what the
+    // host is shown before sending and what the guest receives cannot drift apart.
+    const html = buildBlastHtml({
+      subject,
+      message,
+      eventName: event.name,
+      eventLink: recipientEventLink,
+      footerContact,
+      emailType,
+      baseUrl: process.env.NEXT_PUBLIC_URL || "",
+      images: fetched.images,
+    });
+    const sendGridAttachments = fetched.attachments;
+
+    // A test send stops here: ONE email, to the caller's own address, and NO `Blasts` record.
+    // The history is a log of what guests received; a rehearsal nobody else saw does not belong
+    // in it, and writing one would inflate every count on the Blasts tab.
+    if (isTestSend) {
+      await sendgrid.send({
+        to: sessionEmail,
+        from: mailFrom(undefined, senderName),
+        ...(replyTo ? { replyTo } : {}),
+        subject: subject,
+        html: personalizeBlastHtml(html, {
+          userName: ((session.user as any)?.name || "").trim() || blastFallbackName(sessionEmail),
+          userEmail: sessionEmail,
+          // No bookingRef: a host testing an `availability` blast holds no booking of their own,
+          // so the Cancel Booking block is stripped exactly as it is for an invitation recipient.
+        }),
+        ...(sendGridAttachments.length > 0 ? { attachments: sendGridAttachments } : {}),
+      })
+
+      return res.status(200).json({
+        message: `Test blast sent to ${sessionEmail}.`,
+        test: true,
+        skippedAttachments: fetched.skipped,
+      });
+    }
 
     const results = await Promise.allSettled(findPeople.map(async (person) => {
       let personalizedHtml = html;
 
       const userEmail = (person as any).email || (person as any).customerEmail;
       const userName = ((person as any).customerName || (person as any).name || "").trim() || userEmail?.split("@")[0] || "there";
-      personalizedHtml = personalizedHtml.replace('{{userName}}', userName);
-      personalizedHtml = personalizedHtml.replace('{{userEmail}}', userEmail);
-
-      if (targetType === 'bookings' && 'bookingRef' in person && person.bookingRef) {
-        personalizedHtml = personalizedHtml.replace('{{bookingRef}}', person.bookingRef);
-      } else {
-        // Strip the cancel booking button block for non-booking targets
-        personalizedHtml = personalizedHtml.replace(
-          /<div style="text-align: center; margin-bottom: 24px;">\s*<a href="[^"]*cancel-booking[^"]*"[\s\S]*?<\/a>\s*<\/div>/g,
-          ''
-        );
-      }
+      // Token substitution lives in `blast-template.ts`, beside the markup those tokens are
+      // written into, so the preview and the real send personalize identically.
+      personalizedHtml = personalizeBlastHtml(personalizedHtml, {
+        userName,
+        userEmail,
+        bookingRef: targetType === 'bookings' && 'bookingRef' in person ? (person as any).bookingRef : undefined,
+      });
 
       await sendgrid.send({
         to: userEmail,
@@ -233,6 +219,9 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
         ...(replyTo ? { replyTo } : {}),
         subject: subject,
         html: personalizedHtml,
+        // The same base64 payload rides on every message - SendGrid has no notion of a shared
+        // attachment, which is why the ceilings in `blast-attachments.ts` are per-blast.
+        ...(sendGridAttachments.length > 0 ? { attachments: sendGridAttachments } : {}),
       })
     }))
 
@@ -284,6 +273,10 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           sentFromName: senderName,
           ...(replyTo ? { sentReplyTo: replyTo } : {}),
           recipients: recipientRows,
+          // Written only when there were some. The field has no default, so a blast sent with
+          // no images stays indistinguishable from one sent before attachments existed - which
+          // is the honest reading of both.
+          ...(attachmentList.length > 0 ? { attachments: attachmentList } : {}),
           sentAt: new Date(),
         })
       } catch (persistErr) {

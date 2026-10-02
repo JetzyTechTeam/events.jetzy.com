@@ -68,6 +68,26 @@ const blastSchema = new Schema<IBlast>(
 			type: String,
 			required: false,
 		},
+		// Images the host attached, recorded so the history can say what actually went out and so
+		// a resend carries the same pictures.
+		//
+		// NO DEFAULT, `required: false`: absent means a blast sent before attachments existed,
+		// which is not the same thing as one sent with none. Same rule as `sentFromName` above.
+		//
+		// Images only, by decision — `src/lib/blast-attachments.ts` holds the types and the
+		// ceilings, and the reason video is excluded.
+		attachments: {
+			type: [
+				{
+					_id: false,
+					url: { type: String, required: true },
+					filename: { type: String, required: true },
+					contentType: { type: String, required: true },
+					size: { type: Number, required: true },
+				},
+			],
+			required: false,
+		},
 		// Per-recipient outcome, so "5/7 delivered" can answer WHO and WHY.
 		//
 		// `status` starts as `sent` or `failed` at send time and is UPDATED LATER by the SendGrid
