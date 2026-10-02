@@ -50,6 +50,7 @@ import { ChevronLeftSVG, ChevronRightSVG, DateTimeSVG, LocationSVG } from "@Jetz
 import EventTicketsComponent from "@/components/EventTicketsComponent"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import LinkedText from "@Jetzy/components/misc/LinkedText"
+import { LOCATION_TBA } from "@/lib/event-location"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
@@ -1594,7 +1595,10 @@ export default function HostedEvents({ event }: Props) {
 												    the one thing they want clicked, so it is a link here too, exactly as
 												    it is in the ticket email. The rest stays plain text. */}
 												<span className="break-words [overflow-wrap:anywhere]">
-													<LinkedText text={disclosedLocation || ""} />
+													{/* No venue set is a supported state, not a fault — `location` is optional
+													    on create. Without this the line was a map pin with nothing beside it.
+													    Mirrors the date line's "Date to be decided" directly above. */}
+													<LinkedText text={disclosedLocation || LOCATION_TBA} />
 												</span>
 											</>
 										)}

@@ -3,7 +3,7 @@ import { IEvent } from "@/models/events/types"
 import { eventUrl as buildEventUrl, eventPath, eventAlbumUrl as buildEventAlbumUrl, eventAlbumPath } from "@/lib/event-slug"
 import { ADMIN_SUPPORT_EMAIL } from "@/lib/support"
 import { buildTicketPricing, TicketPricing } from "@/lib/ticket-pricing"
-import { containsLocationLink, locationHtml, locationWasPicked, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
+import { LOCATION_TBA, containsLocationLink, locationHtml, locationWasPicked, mapsLinkFor, resolveEntrance, resolveGuestLocation } from "@/lib/event-location"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { getEventZone } from "@/utils/eventTime"
 import sgMail from "@sendgrid/mail"
@@ -1148,6 +1148,11 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     // `venueName` is a FALLBACK, never a prefix. Prepending it produced a doubled address
     // whenever the two strings differed by so much as punctuation — see event-location.ts.
     const location = resolveGuestLocation(event as any)
+    // What the ticket PRINTS when the host set no venue — a blank row on a confirmation reads as
+    // a fault. Deliberately a separate value from `location`: everything below still reasons about
+    // the REAL address, because a Maps search for the words "Location to be announced" would send
+    // a ticket holder somewhere nobody chose.
+    const locationDisplay = location || LOCATION_TBA
     const entrance = resolveEntrance(event as any)
 
     // The email carries the host's OWN words and the host's OWN link (CEO, 2026-10-01).
@@ -1162,8 +1167,10 @@ export const sendTicketConfirmation = async ({ event, firstName, lastName, email
     //
     // Decoded BEFORE `locationHtml` escapes: these fields were interpolated raw, so a stored
     // `&amp;` used to render as "&". Escaping alone would start showing the entity itself.
-    const locationMapsUrl = locationWasPicked(event as any) ? mapsLinkFor(location) : ""
-    const locationLine = locationHtml(decodeHTMLEntities(location), { fallbackHref: locationMapsUrl || undefined })
+    // `location &&` guards the case of stored coordinates with an empty address: without it the
+    // placeholder itself would be turned into a Maps search.
+    const locationMapsUrl = location && locationWasPicked(event as any) ? mapsLinkFor(location) : ""
+    const locationLine = locationHtml(decodeHTMLEntities(locationDisplay), { fallbackHref: locationMapsUrl || undefined })
     const entranceLine = locationHtml(decodeHTMLEntities(entrance))
     // Only for a picked address, and only when the host left no link of their own — theirs is
     // already in the sentence above it.

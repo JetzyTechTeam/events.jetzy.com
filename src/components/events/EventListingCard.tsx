@@ -1,4 +1,5 @@
 import React, { useMemo } from "react"
+import { LOCATION_TBA } from "@/lib/event-location"
 import { useRouter } from "next/router"
 import Link from "next/link"
 import { Box, Flex, Image, Stack, Text, useColorModeValue } from "@chakra-ui/react"
@@ -271,7 +272,8 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 							) : (
 								<>
 									<span><LocationSVG /></span>
-									<Text as="span" noOfLines={2}>{event.location}</Text>
+									{/* Same empty-venue state the event page handles: a bare pin read as broken. */}
+									<Text as="span" noOfLines={2}>{event.location || LOCATION_TBA}</Text>
 								</>
 							)}
 						</Text>

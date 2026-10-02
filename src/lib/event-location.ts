@@ -25,6 +25,23 @@ type EventLocationLike = {
 	coordinates?: { lat?: number | null; long?: number | null; placeId?: string | null } | null
 } | null | undefined
 
+/**
+ * What a guest reads when the host has set no venue at all.
+ *
+ * `location` is optional on create, `required: false, default: ''` on the schema, and no form
+ * marks it required — so an event with no address is a supported state, not a data fault. Every
+ * surface used to render its map pin with nothing beside it, which reads as a broken page rather
+ * than an organiser who has not picked a venue yet.
+ *
+ * This is the venue's half of a pair: the date line has said "Date to be decided" for exactly the
+ * same reason since long before this.
+ *
+ * Applied at the DISPLAY sites, never inside `resolveGuestLocation` — that function's callers
+ * include `mapsLinkFor` and the booking API, and handing them a sentence in place of an address
+ * would have them build a Google Maps search for the words "Location to be announced".
+ */
+export const LOCATION_TBA = "Location to be announced"
+
 /** A location that is deliberately withheld from the public event page. */
 const isMaskedLocation = (location: string): boolean => {
 	const lower = location.toLowerCase()

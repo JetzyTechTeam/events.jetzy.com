@@ -1,5 +1,6 @@
 'use client'
 import { Error } from "@/lib/_toaster"
+import { LOCATION_TBA } from "@/lib/event-location"
 import { eventPath } from "@/lib/event-slug"
 import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { buildTicketPricing } from "@/lib/ticket-pricing"
@@ -302,7 +303,7 @@ const CheckoutSuccessPage: React.FC = () => {
 						{displayEvent && (
 							<div className="mb-6 space-y-1">
 								<p className="text-gray-700 break-words [overflow-wrap:anywhere]"><strong>Event:</strong> {displayEvent.name}</p>
-								<p className="text-gray-700 break-words [overflow-wrap:anywhere]"><strong>Venue:</strong> <LinkedText text={displayLocation || ""} /></p>
+								<p className="text-gray-700 break-words [overflow-wrap:anywhere]"><strong>Venue:</strong> <LinkedText text={displayLocation || LOCATION_TBA} /></p>
 								{/* Arrival notes carry a map link of their own as often as the address does, so the
 								    buyer sees them here as well as in the email — they have a ticket, they are not
 								    browsing, which is the only reason this was ever withheld from the event page. */}
