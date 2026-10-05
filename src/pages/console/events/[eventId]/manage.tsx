@@ -104,7 +104,7 @@ import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
-import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
+import { isCancelledBooking, isPendingBooking, deadBookingKind, DEAD_BOOKING_LABEL, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
 import { apportionRevenue, describeDiscount, describePriceChange, isOnHold } from "@/lib/booking-revenue"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import {
@@ -3501,8 +3501,12 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				const ci = booking?._id ? checkInMap[booking._id.toString()] : null
 				const cancelled = isCancelledBooking(booking)
 				const pending = isPendingBooking(booking)
+				// An expired hold is not a cancellation — nobody acted, the authorization
+				// simply lapsed. Flattening the three into "Cancelled" told the host the
+				// guest walked away when in fact the request was left to time out.
+				const deadLabel = DEAD_BOOKING_LABEL[deadBookingKind(booking) ?? 'cancelled']
 				const checkInLabel = cancelled
-					? 'Cancelled'
+					? deadLabel
 					: pending ? 'N/A'
 					: !booking?._id ? 'N/A'
 					: !ci ? 'Not Checked In'
@@ -3513,7 +3517,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 					booking.customerEmail || row.email,
 					GUEST_KIND_LABEL[row.kind],
 					booking.bookingRef || '',
-					cancelled ? (booking.status === 'rejected' ? 'Rejected' : 'Cancelled') : pending ? 'Pending approval' : 'Confirmed',
+					cancelled ? deadLabel : pending ? 'Pending approval' : 'Confirmed',
 					row.invitationStatus || '',
 					invitedAt,
 					formatBookingTickets(booking),
@@ -3543,7 +3547,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		{ key: "needs_approval", label: "Needs approval" },
 		{ key: "booked", label: "Booked" },
 		{ key: "invited_only", label: "Invited only" },
-		{ key: "cancelled", label: "Cancelled" },
+		// The filter is every DEAD booking, which includes holds that expired without the
+		// host acting — labelling it "Cancelled" hid those behind a word that blames the guest.
+		{ key: "cancelled", label: "Cancelled / expired" },
 	]
 
 	return (
@@ -3709,7 +3715,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 								// A row is struck through only when EVERY booking on it is dead — somebody
 								// with a cancelled order and a live one is not a cancelled guest.
 								const cancelled = row.cancelledOnly
-								const rejected = cancelled && booking?.status === 'rejected'
+								// Which KIND of dead. `expired` means the card hold lapsed before the
+								// host approved — the guest never cancelled anything.
+								const deadKind = deadBookingKind(booking) ?? 'cancelled'
 								const pending = row.pendingBookings.length > 0
 								return (
 									<Tr key={email} opacity={cancelled ? 0.55 : 1}>
@@ -3767,7 +3775,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 													))}
 												</Flex>
 											) : cancelled ? (
-												<Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
+												<Tooltip hasArrow label={DEAD_BOOKING_TOOLTIP[deadKind]}>
+													<Badge colorScheme={DEAD_BOOKING_COLOR[deadKind]}>{DEAD_BOOKING_LABEL[deadKind]}</Badge>
+												</Tooltip>
 											) : row.bookings.length > 0 ? (
 												<Badge colorScheme="green">Confirmed</Badge>
 											) : row.invitationStatus === 'accepted' ? (
@@ -3825,7 +3835,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 										<Td color="white">{row.invitedAt ? DateTime.fromISO(row.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
 										<Td>
 											{cancelled
-												? <Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
+												? <Badge colorScheme={DEAD_BOOKING_COLOR[deadKind]}>{DEAD_BOOKING_LABEL[deadKind]}</Badge>
 												: pending
 												? <Badge colorScheme="gray">N/A</Badge>
 												: !booking?._id

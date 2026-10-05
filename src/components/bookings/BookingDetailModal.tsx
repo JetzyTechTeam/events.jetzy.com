@@ -13,6 +13,7 @@ import {
 	ModalHeader,
 	ModalOverlay,
 	Text,
+	Tooltip,
 } from "@chakra-ui/react"
 import NextLink from "next/link"
 import dayjs from "dayjs"
@@ -23,7 +24,7 @@ import { getEventZone, formatEventZoneLabel } from "@/utils/eventTime"
 import { pricingFromBooking } from "@/lib/ticket-pricing"
 import { stripHtml } from "@/utils/text"
 import { PaymentBadge, HoldExpiry } from "@/components/bookings/PaymentBadge"
-import { isAuthorizedHold } from "@/lib/booking-status"
+import { isAuthorizedHold, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { BookingRow } from "./BookingCard"
 import { BookingStatus } from "@/models/events/types"
@@ -110,7 +111,17 @@ export default function BookingDetailModal({ booking, isOpen, onClose, onCancel,
 					<Flex gap={6} wrap="wrap" mb={5}>
 						<Field label="Booking Reference">{booking.bookingRef}</Field>
 						<Field label="Status">
-							<Badge colorScheme={STATUS_COLOR[booking.status] || "gray"}>{booking.status}</Badge>
+							{(() => {
+								// An expired hold is not a cancellation: nobody acted and the guest was
+								// never charged. Red + the raw word "failed" said the opposite.
+								const deadKind = deadBookingKind(booking)
+								const badge = (
+									<Badge colorScheme={deadKind ? DEAD_BOOKING_COLOR[deadKind] : STATUS_COLOR[booking.status] || "gray"}>
+										{deadKind ? deadBookingLabel(booking) : booking.status}
+									</Badge>
+								)
+								return deadKind ? <Tooltip hasArrow label={DEAD_BOOKING_TOOLTIP[deadKind]}>{badge}</Tooltip> : badge
+							})()}
 						</Field>
 						<Field label="Payment">
 							{moneyState === "free" ? (
