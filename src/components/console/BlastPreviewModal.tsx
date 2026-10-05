@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import axios from "axios"
 import {
 	Box,
@@ -11,10 +11,12 @@ import {
 	ModalFooter,
 	ModalHeader,
 	ModalOverlay,
+	Input,
 	Text,
 } from "@chakra-ui/react"
 
 import { blastImageContentId, formatBytes, type BlastAttachment } from "@/lib/blast-attachments"
+import { normalizeTestAddress } from "@/lib/blast-test-send"
 import { blastFallbackName, buildBlastHtml, personalizeBlastHtml, type BlastEmailType } from "@/lib/blast-template"
 
 /**
@@ -77,9 +79,20 @@ export default function BlastPreviewModal({
 	senderLabel?: string
 }) {
 	const [testing, setTesting] = useState(false)
+	// Seeded from the login address but editable: the person operating the console is often not
+	// the person who has to approve the email, and forwarding a test by hand changes the headers
+	// and the rendering, which defeats the point of it.
+	const [testTo, setTestTo] = useState(hostEmail || "")
 	const [testResult, setTestResult] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
 	const sampleEmail = hostEmail || "you@example.com"
+
+	// The session can resolve after this mounts. Seed the field then, but never overwrite an
+	// address the host has already typed.
+	useEffect(() => {
+		if (hostEmail && !testTo) setTestTo(hostEmail)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [hostEmail])
 	const sampleName = (hostName || "").trim() || blastFallbackName(sampleEmail)
 
 	const html = useMemo(() => {
@@ -105,9 +118,13 @@ export default function BlastPreviewModal({
 		return withPreviewableImages(personalized, attachments)
 	}, [subject, message, eventName, eventLink, emailType, attachments, sampleName, sampleEmail])
 
+	// Checked as they type so the button can refuse before a round trip. The API runs the same
+	// function and is the authority - this is feedback, not the gate.
+	const addressCheck = normalizeTestAddress(testTo)
+
 	const sendTest = async () => {
-		if (!hostEmail) {
-			setTestResult({ type: "error", text: "We don't have your email address on this session." })
+		if (addressCheck.error) {
+			setTestResult({ type: "error", text: addressCheck.error })
 			return
 		}
 		setTesting(true)
@@ -122,15 +139,16 @@ export default function BlastPreviewModal({
 				emailType,
 				eventLink,
 				attachments,
-				// The server refuses anything but the session's own address.
-				testTo: hostEmail,
+				testTo: addressCheck.email,
 			})
 			const skipped = res.data?.skippedAttachments?.length || 0
+			// Names the address actually used, which may not be the one they logged in with.
+			const sentTo = res.data?.sentTo || addressCheck.email
 			setTestResult({
 				type: "success",
 				text: skipped
-					? `Sent to ${hostEmail}. ${skipped} image${skipped === 1 ? "" : "s"} couldn't be attached.`
-					: `Sent to ${hostEmail}. Check your inbox.`,
+					? `Sent to ${sentTo}. ${skipped} image${skipped === 1 ? "" : "s"} couldn't be attached.`
+					: `Sent to ${sentTo}. Check that inbox.`,
 			})
 		} catch (err: any) {
 			setTestResult({ type: "error", text: err?.response?.data?.error || "That test didn't send." })
@@ -201,22 +219,44 @@ export default function BlastPreviewModal({
 						</Text>
 					)}
 				</ModalBody>
-				<ModalFooter>
-					<Flex gap={3} w="100%" justify="space-between" align="center">
+				<ModalFooter display="block">
+					<Text fontSize="xs" color="gray.500" mb={1}>
+						Send a test to
+					</Text>
+					<Flex gap={3} w="100%" align="center" wrap="wrap">
+						<Input
+							value={testTo}
+							onChange={(e) => setTestTo(e.target.value)}
+							placeholder="you@example.com"
+							type="email"
+							flex="1"
+							minW="220px"
+							bg="#090C10"
+							borderColor="#444444"
+							color="white"
+							_placeholder={{ color: "gray.500" }}
+						/>
 						<Button
 							variant="outline"
 							borderColor="#444444"
 							color="white"
 							_hover={{ bg: "#2A2A2A" }}
 							isLoading={testing}
+							isDisabled={!!addressCheck.error}
 							onClick={sendTest}
 						>
-							Send test to myself
+							Send test
 						</Button>
 						<Button bg="#F79432" color="black" _hover={{ bg: "#E68422" }} onClick={onClose}>
 							Close
 						</Button>
 					</Flex>
+					{/* Only once they have typed something - an empty field on open is not a mistake yet. */}
+					{addressCheck.error && testTo.trim().length > 0 && (
+						<Text fontSize="xs" color="#FC8181" mt={2}>
+							{addressCheck.error}
+						</Text>
+					)}
 				</ModalFooter>
 			</ModalContent>
 		</Modal>

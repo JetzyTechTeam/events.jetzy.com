@@ -16,6 +16,13 @@ import type { BlastRecipient } from "@/lib/blast-delivery";
 import { blastAttachmentRefusal, type BlastAttachment } from "@/lib/blast-attachments";
 import { fetchBlastAttachments } from "@/lib/blast-attachments-server";
 import { blastFallbackName, buildBlastHtml, personalizeBlastHtml } from "@/lib/blast-template";
+import {
+  BLAST_TEST_MAX_PER_WINDOW,
+  BLAST_TEST_RATE_LIMIT_MESSAGE,
+  BLAST_TEST_WINDOW_MS,
+  normalizeTestAddress,
+} from "@/lib/blast-test-send";
+import { isRateLimited } from "@/lib/rate-limit";
 
 sendgrid.setApiKey((process.env.SENDGRID_API_KEY as string)?.trim());
 
@@ -37,6 +44,13 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
 
   const { status, subject, message, eventLink, event, targetType, emailType, attachments, testTo } = req.body;
 
+  // Trimmed at the ENDS only. A pasted subject routinely carries a trailing newline, which lands
+  // both in the <h1> and in the SendGrid `subject` header; a message often carries leading blank
+  // lines from a paste. Inner whitespace is left exactly as typed - hosts separate paragraphs with
+  // blank lines, and collapsing those would silently rewrite their copy.
+  const blastSubject = typeof subject === "string" ? subject.trim() : "";
+  const blastMessage = typeof message === "string" ? message.trim() : "";
+
   if (!event?._id) {
     return res.status(400).json({ error: "Event ID is required." });
   }
@@ -49,13 +63,30 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     return res.status(400).json({ error: attachmentRefusal });
   }
 
-  // A test send goes to the caller and NOWHERE else. The address is not trusted from the body:
-  // without this equality check the route becomes a Jetzy-branded mail cannon that fires at any
-  // address on request, which is exactly what `premium/send-code` was built to avoid.
-  const sessionEmail = ((session.user as any)?.email || "").trim();
+  // A test send is ONE email, to an address the host types, and writes no `Blasts` record.
+  //
+  // It used to be locked to the session's own address. That was too tight: the person operating
+  // the console is often not the person who has to approve the email, and forwarding it by hand
+  // changes the headers and the rendering, which defeats the point of a test. What stands in for
+  // that check is below - a session, the admin-or-owner check further down (a stranger cannot
+  // reach this route at all, which is the difference between this and the unauthenticated
+  // `premium/send-code`), and a per-account ceiling so it cannot be driven as a mailing tool.
   const isTestSend = typeof testTo === "string" && testTo.trim().length > 0;
-  if (isTestSend && testTo.trim().toLowerCase() !== sessionEmail.toLowerCase()) {
-    return res.status(403).json({ error: "A test blast can only be sent to your own address." });
+  let testAddress = "";
+  if (isTestSend) {
+    const normalized = normalizeTestAddress(testTo);
+    // Narrowed on `email` rather than on `error`: the success arm is the one that carries the
+    // address, so this is the check that makes it a string for the send below.
+    if (!normalized.email) {
+      return res.status(400).json({ error: normalized.error });
+    }
+    testAddress = normalized.email;
+
+    // Keyed on the ACCOUNT, not the IP: hosts in one office behind a single address would
+    // otherwise eat each other's allowance.
+    if (isRateLimited(`blast-test:${userId}`, BLAST_TEST_MAX_PER_WINDOW, BLAST_TEST_WINDOW_MS)) {
+      return res.status(429).json({ error: BLAST_TEST_RATE_LIMIT_MESSAGE });
+    }
   }
 
   // Loaded for everyone (not just non-admins) because the pending-approval gate depends
@@ -160,8 +191,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     // Built by `src/lib/blast-template.ts`, which the preview modal also calls - so what the
     // host is shown before sending and what the guest receives cannot drift apart.
     const html = buildBlastHtml({
-      subject,
-      message,
+      subject: blastSubject,
+      message: blastMessage,
       eventName: event.name,
       eventLink: recipientEventLink,
       footerContact,
@@ -176,13 +207,13 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     // in it, and writing one would inflate every count on the Blasts tab.
     if (isTestSend) {
       await sendgrid.send({
-        to: sessionEmail,
+        to: testAddress,
         from: mailFrom(undefined, senderName),
         ...(replyTo ? { replyTo } : {}),
-        subject: subject,
+        subject: blastSubject,
         html: personalizeBlastHtml(html, {
-          userName: ((session.user as any)?.name || "").trim() || blastFallbackName(sessionEmail),
-          userEmail: sessionEmail,
+          userName: ((session.user as any)?.name || "").trim() || blastFallbackName(testAddress),
+          userEmail: testAddress,
           // No bookingRef: a host testing an `availability` blast holds no booking of their own,
           // so the Cancel Booking block is stripped exactly as it is for an invitation recipient.
         }),
@@ -190,7 +221,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       })
 
       return res.status(200).json({
-        message: `Test blast sent to ${sessionEmail}.`,
+        message: `Test blast sent to ${testAddress}.`,
+        sentTo: testAddress,
         test: true,
         skippedAttachments: fetched.skipped,
       });
@@ -217,7 +249,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
         // domain reputation are untouched; only the display name moves.
         from: mailFrom(undefined, senderName),
         ...(replyTo ? { replyTo } : {}),
-        subject: subject,
+        subject: blastSubject,
         html: personalizedHtml,
         // The same base64 payload rides on every message - SendGrid has no notion of a shared
         // attachment, which is why the ceilings in `blast-attachments.ts` are per-blast.
@@ -259,8 +291,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       try {
         await Blasts.create({
           eventId: eventObjectId,
-          subject: subject || "",
-          message: message || "",
+          subject: blastSubject,
+          message: blastMessage,
           targetType: targetType || "invitations",
           status: status || "all",
           emailType: emailType || "custom",

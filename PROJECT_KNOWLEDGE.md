@@ -3195,11 +3195,27 @@ unattributed, and nobody able to see the email before guests did.
 - **The preview swaps `cid:` for the CDN url** — the one reference a browser can render — and says on screen
   that the greeting shows the host's own name and that the footer is added at send time. Approximations are
   stated, never faked silently.
-- **`testTo` sends ONE email to the session user's own address and writes NO `Blasts` record.** The address is
-  checked for equality with the session email: without that the route is a Jetzy-branded mail cannon that
-  fires at any address on request, the exact mistake `premium/send-code` was built to avoid. A rehearsal
+- **`testTo` sends ONE email, to an address the host TYPES, and writes NO `Blasts` record.** A rehearsal
   nobody else saw does not belong in a history of what guests received, and writing one would inflate every
   count on the tab.
+- **The address was originally locked to the session email; that was relaxed 2026-10-05.** The person
+  operating the console is often not the person who has to approve the email, and forwarding a test by hand
+  changes the headers and the rendering, which defeats the point of it. **What replaces the equality check:**
+  a session is still required, the caller must still be admin-or-owner (a stranger cannot reach the route at
+  all — the difference between this and the unauthenticated `premium/send-code`), and a per-ACCOUNT rate
+  limit via `isRateLimited` keyed `blast-test:${userId}` — **10 per 10 minutes**. Keyed on the account, not
+  the IP, so hosts in one office don't eat each other's allowance.
+- **Use `src/lib/blast-test-send.ts`** (`normalizeTestAddress`, pure/client-safe) — the field and the route
+  run the identical check, the route being the authority. It trims the ends, then **refuses** rather than
+  repairs: control characters (`\r`/`\n`/`\0` — the header-injection shape; an address that arrived mangled
+  is one the host should look at), inner whitespace, and `,`/`;` (they tried to enter several, and silently
+  mailing the first would let them believe both were tested). Format via `zod.string().email()`, matching
+  `premium/send-code.ts`. Lowercased for sending — this codebase is repeatedly bitten by mixed-case
+  addresses (`Bookings.customerEmail` has no `lowercase: true`). **One address per test, by decision.**
+- **`subject` and `message` are trimmed at the ENDS only** (`blastSubject` / `blastMessage`). A pasted subject
+  routinely carries a trailing newline, which lands in the `<h1>` AND in the SendGrid `subject` header. Inner
+  whitespace is left exactly as typed — hosts separate paragraphs with blank lines and collapsing them would
+  silently rewrite their copy.
 - **The "No people found" 404 is skipped for a test send** — the point is to rehearse BEFORE anyone has
   booked, which is exactly when that query legitimately returns nothing.
 - **Known limit:** the pending-admin-approval gate still runs before the test branch, so a host cannot test-send
