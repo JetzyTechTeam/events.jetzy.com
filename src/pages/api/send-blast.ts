@@ -202,7 +202,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
     });
     const sendGridAttachments = fetched.attachments;
 
-    // A test send stops here: ONE email, to the caller's own address, and NO `Blasts` record.
+    // A test send stops here: ONE email, to the address the host typed, and NO `Blasts` record.
     // The history is a log of what guests received; a rehearsal nobody else saw does not belong
     // in it, and writing one would inflate every count on the Blasts tab.
     if (isTestSend) {
