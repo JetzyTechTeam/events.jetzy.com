@@ -1395,8 +1395,19 @@ Guest-side counterpart to `/console/bookings`. Before this, a guest had no way t
 - **No refunds** in any path (see "No refunds — by decision" above).
 - Capacity is released only when the booking was CONFIRMED (a PENDING approval never incremented the tracker). The `CheckIn` row is deleted.
 
+**A dead booking is one of THREE things, and the console used to call them all "Cancelled"** (2026-10-05). `BookingStatus.FAILED` is written only when a card authorization lapsed or was already canceled — `webhooks/stripe.ts` on `payment_intent.canceled`, and `approve.ts` finding the PI canceled — always alongside `payment.status: "expired"`. So the status alone distinguishes them.
+- **Use `deadBookingKind` / `DEAD_BOOKING_LABEL` / `DEAD_BOOKING_COLOR` / `DEAD_BOOKING_TOOLTIP` / `deadBookingLabel`** in `src/lib/booking-status.ts`. Never re-derive, and never print `booking.status` raw — `/console/bookings/[eventId]` did, so an expired hold read as the literal word **`failed`**.
+- `cancelled` (somebody ended it; `cancelledBy` says who) · `rejected` (the host declined) · **`expired`** (NOBODY acted — the ~7 day hold lapsed). Expired renders **grey, not red**: it is not the guest's doing, and telling a host the guest cancelled is backwards.
+- **`DEAD_BOOKING_TOOLTIP_GUEST` is the second-person twin**, for `BookingDetailModal` — `/my-bookings` is the only surface that uses it, and the host copy talks *about* the guest.
+- Covered: Guests tab (badge, check-in cell, CSV, and the filter chip, now "Cancelled / expired"), the host bookings table + its Excel export, the guest modal, and `BookingStatusPill` in `HostedEvents.tsx`. The Approvals tab already said "Hold expired" and `BookingCard` already said EXPIRED — those were right and are untouched.
+- The guest's own email was always honest: `sendApprovalRejected({ reason: "expired" })` says the request "wasn't reviewed in time", that they were not charged, and offers **Book Again**.
+
 **Host side**
 - `BookingEventsDetailsTable.tsx` gained a Payment column (`PaymentBadge`) and a **Cancel** action. Cancel is gated on the new `canManage` prop (admin **or** owner); Delete stays `isAdmin`-only. `/console/bookings/[eventId]` now projects the `payment` sub-doc (minus Stripe ids) and serializes its dates.
+- **Cancel is on all three host surfaces now** (2026-10-05): that table, the **Guests tab** of Manage Event, and the **Bookings & Waiting List** panel on the event detail page (`EventBookings` in `HostedEvents.tsx`). All three post to the same `/api/bookings/cancel` and mount the same `CancelBookingDialog` with `asManager` — no second endpoint, no second confirmation copy.
+  - **Live bookings only.** A pending request keeps Approve / Reject, which already releases the hold and emails the guest; a Cancel beside them would be a second, differently-worded way to decline the same request.
+  - The Guests tab **keeps its Delete** (`/api/bookings/delete`) alongside Cancel, by decision. Note Delete destroys the record and sends the guest **nothing** — Cancel is the normal action and the only one that writes `cancelledBy` / `cancelledAt`.
+  - **Invalidate the right queries or the page contradicts itself.** Guests tab: `guests-list`, `event-bookings`, **`event-availability`** (the Approvals "doesn't fit" badges read it). Event detail panel: `eventBookings` **and `eventTotals`** — the Active / Inactive counters above the rows come from the second query.
 - `sendHostCancellationNotice` emails the event owner + `ADMIN_NOTIFICATION_EMAIL` on every cancellation; non-fatal by design.
 
 **User linkage** — paid bookings previously had **no `bookerUserId`** (35 such rows in prod); it was only ever written by `free-events.ts`. Fixed forward: `checkout/index.ts` puts `bookerUserId` in the Stripe metadata and `checkout-fulfillment.ts` persists it. Older bookings still resolve by email, which is why the email match must stay case-insensitive.

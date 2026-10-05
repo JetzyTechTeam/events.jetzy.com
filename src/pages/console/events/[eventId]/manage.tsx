@@ -106,6 +106,8 @@ import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
 import { isCancelledBooking, isPendingBooking, deadBookingKind, DEAD_BOOKING_LABEL, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
 import { apportionRevenue, describeDiscount, describePriceChange, isOnHold } from "@/lib/booking-revenue"
+import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking-cancellation"
+import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import {
 	BLAST_STATUS_COLOR,
@@ -3277,6 +3279,10 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const [selectedGuest, setSelectedGuest] = useState<{ guest: any; booking: any; checkIn: any } | null>(null)
 	const [page, setPage] = useState(1)
 	const [deletingEmail, setDeletingEmail] = useState<string | null>(null)
+	// One dialog for the table, not one per row — it is mounted once at the bottom and the
+	// row only names its booking.
+	const [cancelTarget, setCancelTarget] = useState<any | null>(null)
+	const [cancellingRef, setCancellingRef] = useState<string | null>(null)
 	const [ticketTypeFilter, setTicketTypeFilter] = useState<string>("all")
 	const [searchQuery, setSearchQuery] = useState("")
 	// Invited vs booked is a second axis, independent of the ticket-type filter — the two compose.
@@ -3291,6 +3297,42 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const formatBookingTickets = (booking: any): string => {
 		if (!booking?.tickets?.length) return '—'
 		return booking.tickets.map((t: any) => `${ticketNameById[t.ticketId?.toString()] || 'Ticket'} ×${t.quantity}`).join(', ')
+	}
+
+	// Cancelling is the ordinary way to end a booking: the guest is emailed, any live card
+	// hold is released and `cancelledBy` / `cancelledAt` are written. Delete (below) destroys
+	// the record silently and stays only for cleaning up junk rows.
+	const handleCancelBooking = async () => {
+		const bookingRef = cancelTarget?.bookingRef
+		if (!bookingRef) return
+		setCancellingRef(bookingRef)
+		try {
+			const res = await axios.post("/api/bookings/cancel", { bookingRef })
+			// The route answers 200 with `status: false` for a refusal it expects (an already
+			// dead booking), so a non-throwing response is not necessarily a success.
+			// NOTE: `Error` is shadowed by the toaster import in this file — don't `throw new Error`.
+			if (res.data?.status === false) {
+				toast({ title: res.data?.message || "Failed to cancel booking.", status: "error", duration: 6000, isClosable: true })
+				return
+			}
+			queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
+			// A cancelled confirmed booking frees a seat; the Approvals "doesn't fit" badges
+			// read this query and would otherwise keep showing the pre-cancellation count.
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+			setCancelTarget(null)
+			toast({ title: "Booking cancelled.", status: "success", duration: 5000, isClosable: true })
+		} catch (err: any) {
+			// The server refuses an already-dead booking with a reason worth reading.
+			toast({
+				title: err?.response?.data?.message || "Failed to cancel booking.",
+				status: "error",
+				duration: 6000,
+				isClosable: true,
+			})
+		} finally {
+			setCancellingRef(null)
+		}
 	}
 
 	const handleDeleteGuest = async (email: string, guest: any, booking: any) => {
@@ -3882,6 +3924,23 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 											>
 												View Details
 											</Button>
+											{/* Cancel on LIVE bookings only. A pending row keeps Approve / Reject,
+											    which already releases the hold and emails the guest — a second
+											    differently-worded way to decline the same request would be worse
+											    than not having one here. */}
+											{booking?.bookingRef && !cancelled && !pending && (
+												<Button
+													size="sm"
+													variant="ghost"
+													color="orange.300"
+													_hover={{ bg: '#2A2A2A' }}
+													isLoading={cancellingRef === booking.bookingRef}
+													onClick={() => setCancelTarget(booking)}
+													ml={1}
+												>
+													Cancel
+												</Button>
+											)}
 											{/* With a real Reject button on the row, the old delete-as-decline path
 											    would be a second, different way to turn somebody down. Delete is
 											    offered only where there is nothing to decide. */}
@@ -3950,6 +4009,20 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 			    decision made here shows the same money, the same shortfall and the same partial
 			    option it would there. */}
 			<ApprovalDialogs controller={approvals} event={event} />
+
+			{/* The host is cancelling somebody else's booking, so `asManager` — and the money
+			    warning is the point of the dialog: a captured payment is not refunded. */}
+			<CancelBookingDialog
+				isOpen={!!cancelTarget}
+				onClose={() => setCancelTarget(null)}
+				onConfirm={handleCancelBooking}
+				isLoading={!!cancellingRef}
+				eventName={event?.name}
+				guestName={cancelTarget?.customerName}
+				asManager
+				moneyState={bookingMoneyState(cancelTarget || undefined) as MoneyState}
+				amount={bookingMoneyAmount(cancelTarget || undefined)}
+			/>
 
 			{/* Guest Detail Modal */}
 			<Modal isOpen={!!selectedGuest} onClose={() => setSelectedGuest(null)} isCentered size="2xl">

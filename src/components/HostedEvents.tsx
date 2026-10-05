@@ -52,12 +52,12 @@ import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { LOCATION_TBA } from "@/lib/event-location"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
-import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
+import { isPendingBooking, holdTimeRemaining, isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
-import { MoneyState } from "@/lib/booking-cancellation"
+import { MoneyState, bookingMoneyAmount, bookingMoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
 import { Badge, Button, Image, Switch, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, InputGroup, InputLeftElement, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
@@ -67,7 +67,7 @@ import MediaLightbox from "@/components/events/MediaLightbox"
 import MediaBackdrop from "@/components/events/MediaBackdrop"
 import Pagination from "@/components/misc/Pagination"
 import { EventWaitingList } from "@/components/events/EventWaitingList"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import Link from "next/link"
 import { signOut, useSession } from "next-auth/react"
@@ -1990,7 +1990,7 @@ export default function HostedEvents({ event }: Props) {
 
 										{/* Tab Content */}
 										<div className="p-6">
-											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} />}
+											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} canManage={canManage} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
 											{/* `surfaceBg` is what the frozen Actions/Guest columns paint themselves
 											    with so the scrolling columns don't show through. This panel is a
@@ -2611,18 +2611,53 @@ function BookingStatusPill({ booking }: { booking: Booking }) {
 	if (paymentStatus === "captured") return <span className="text-xs font-semibold text-green-400">{booking.status} · charged</span>
 
 	// Free bookings / legacy rows: pending is not the same as confirmed, so don't paint it green.
-	const color = booking.status === "cancelled" || booking.status === "rejected" || booking.status === "failed"
-		? "text-red-400"
-		: booking.status === "pending"
-			? "text-amber-400"
-			: "text-green-400"
+	// A dead one is named rather than printed raw — `failed` means the card hold lapsed before
+	// the host approved, which is not something a host can read off the word itself.
+	const deadKind = deadBookingKind(booking)
+	if (deadKind) {
+		return (
+			<span className={`text-xs font-semibold ${DEAD_BOOKING_COLOR[deadKind] === "gray" ? "text-gray-400" : "text-red-400"}`}>
+				{deadBookingLabel(booking)}
+			</span>
+		)
+	}
+	const color = booking.status === "pending" ? "text-amber-400" : "text-green-400"
 	return <span className={`text-xs font-semibold ${color}`}>{booking.status}</span>
 }
 
-function EventBookings({ eventId }: { eventId: string }) {
+function EventBookings({ eventId, eventName, canManage }: { eventId: string; eventName?: string; canManage?: boolean }) {
 	const [page, setPage] = React.useState(1)
 	const [openId, setOpenId] = React.useState<string | null>(null)
+	// One dialog for the panel; the row only names which booking it is about.
+	const [cancelTarget, setCancelTarget] = React.useState<Booking | null>(null)
+	const [cancelling, setCancelling] = React.useState(false)
+	const queryClient = useQueryClient()
+	const toast = useToast()
 	const perPage = 10
+
+	const handleCancelBooking = async () => {
+		const bookingRef = cancelTarget?.bookingRef
+		if (!bookingRef) return
+		setCancelling(true)
+		try {
+			const res = await axios.post("/api/bookings/cancel", { bookingRef })
+			if (res.data?.status === false) {
+				toast({ title: res.data?.message || "Failed to cancel booking.", status: "error", duration: 6000, isClosable: true })
+				return
+			}
+			queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+			// The Active / Inactive counters at the top of this panel come from the totals
+			// query, not from the rows — without this they contradict the row just cancelled.
+			queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+			setCancelTarget(null)
+			toast({ title: "Booking cancelled.", status: "success", duration: 5000, isClosable: true })
+		} catch (err: any) {
+			toast({ title: err?.response?.data?.message || "Failed to cancel booking.", status: "error", duration: 6000, isClosable: true })
+		} finally {
+			setCancelling(false)
+		}
+	}
 
 	const { data: bookings, isLoading } = useQuery({
 		queryKey: ["eventBookings", eventId],
@@ -2691,7 +2726,9 @@ function EventBookings({ eventId }: { eventId: string }) {
 			{!isLoading &&
 				paged.map((booking: Booking) => {
 					const isOpen = openId === booking._id
-					const cancelled = booking.status === "cancelled"
+					// Rejected and expired rows are just as dead as cancelled ones and were
+					// rendering at full opacity beside live bookings.
+					const cancelled = isCancelledBooking(booking)
 					// Authorized funds are not collected funds — never render them as plain revenue.
 					const onHold = booking.payment?.status === "authorized" || booking.payment?.status === "capturing" || booking.payment?.status === "failed"
 					const bookingDiscount = describeDiscount(booking as any)
@@ -2835,6 +2872,22 @@ function EventBookings({ eventId }: { eventId: string }) {
 											)}
 										</div>
 									)}
+
+									{/* Cancel sits at the BOTTOM of the opened row, so the money state above
+									    it — charged, on hold, or free — is on screen when the host decides.
+									    Live bookings only: a pending request is declined with Reject in the
+									    Approvals tab, which releases the hold and emails the guest. */}
+									{canManage && !cancelled && !isPendingBooking(booking as any) && (
+										<div className="mt-4 flex justify-end">
+											<button
+												type="button"
+												onClick={() => setCancelTarget(booking)}
+												className="text-sm font-semibold text-orange-300 hover:text-orange-200 hover:underline"
+											>
+												Cancel booking
+											</button>
+										</div>
+									)}
 								</div>
 							)}
 						</div>
@@ -2842,6 +2895,20 @@ function EventBookings({ eventId }: { eventId: string }) {
 				})}
 
 			<Pagination totalItems={list.length} perPageItems={perPage} pageNo={page} onPageChange={setPage} />
+
+			{/* `asManager` — the host is ending somebody else's booking. The dialog's job is the
+			    money warning: a captured payment is never refunded. */}
+			<CancelBookingDialog
+				isOpen={!!cancelTarget}
+				onClose={() => setCancelTarget(null)}
+				onConfirm={handleCancelBooking}
+				isLoading={cancelling}
+				eventName={eventName}
+				guestName={cancelTarget?.customerName}
+				asManager
+				moneyState={bookingMoneyState(cancelTarget as any) as MoneyState}
+				amount={bookingMoneyAmount(cancelTarget as any)}
+			/>
 		</div>
 	)
 }
