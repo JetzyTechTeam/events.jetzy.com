@@ -85,6 +85,17 @@ export const DEAD_BOOKING_TOOLTIP: Record<DeadBookingKind, string> = {
 	expired: "The card hold lapsed before this request was approved. The guest did not cancel and was never charged — the request timed out.",
 }
 
+/**
+ * The same three facts told to the person they happened to. The host's copy talks ABOUT
+ * the guest ("the guest was never charged"), which is the wrong voice on the guest's own
+ * booking page — `/my-bookings` is the only surface that uses this one.
+ */
+export const DEAD_BOOKING_TOOLTIP_GUEST: Record<DeadBookingKind, string> = {
+	cancelled: "This booking was cancelled. Any payment already taken is not refunded.",
+	rejected: "The host could not approve this request. The hold on your card was released and you were not charged.",
+	expired: "This request wasn't reviewed in time, so the hold on your card was released. You were not charged — you can book again if there is still room.",
+}
+
 /** Label for a dead booking, falling back to the plain word for anything else. */
 export const deadBookingLabel = (b?: { status?: string } | null): string => {
 	const kind = deadBookingKind(b)

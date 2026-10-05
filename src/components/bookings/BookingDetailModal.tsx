@@ -24,7 +24,7 @@ import { getEventZone, formatEventZoneLabel } from "@/utils/eventTime"
 import { pricingFromBooking } from "@/lib/ticket-pricing"
 import { stripHtml } from "@/utils/text"
 import { PaymentBadge, HoldExpiry } from "@/components/bookings/PaymentBadge"
-import { isAuthorizedHold, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
+import { isAuthorizedHold, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP_GUEST } from "@/lib/booking-status"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { BookingRow } from "./BookingCard"
 import { BookingStatus } from "@/models/events/types"
@@ -120,7 +120,7 @@ export default function BookingDetailModal({ booking, isOpen, onClose, onCancel,
 										{deadKind ? deadBookingLabel(booking) : booking.status}
 									</Badge>
 								)
-								return deadKind ? <Tooltip hasArrow label={DEAD_BOOKING_TOOLTIP[deadKind]}>{badge}</Tooltip> : badge
+								return deadKind ? <Tooltip hasArrow label={DEAD_BOOKING_TOOLTIP_GUEST[deadKind]}>{badge}</Tooltip> : badge
 							})()}
 						</Field>
 						<Field label="Payment">
