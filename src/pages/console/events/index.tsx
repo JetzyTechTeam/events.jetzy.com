@@ -1,4 +1,5 @@
 import { DateTimeSVG, LocationSVG } from "@/assets/icons"
+import { LOCATION_TBA } from "@/lib/event-location"
 import { eventPath } from "@/lib/event-slug"
 import { eventMedia } from "@/lib/event-media"
 import { isAwaitingAdminReview } from "@/lib/event-approval"
@@ -402,7 +403,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 							    still measured as wide as that run, so the text painted outside the
 							    card even though it was willing to break. Same reason the manage
 							    page's <h1> sets it. */}
-							<Heading as="h3" fontSize={18} cursor="pointer" overflowWrap="anywhere" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
+							{/* `noOfLines` as well as `overflowWrap`: the two solve different problems and this
+							    row only ever had the second. `anywhere` stops a long name painting outside the
+							    card; nothing stopped it growing DOWNWARDS, so a 150-emoji title rendered as
+							    about fifteen lines on a phone and buried the badge, the date and Manage Event
+							    under it. Two lines, matching `EventListingCard` — and the location line
+							    directly below has clamped since long before this. */}
+							<Heading as="h3" fontSize={18} cursor="pointer" noOfLines={2} overflowWrap="anywhere" _hover={{ textDecoration: "underline" }} className={props.isEnded ? 'text-gray-400' : ''}>
 								{stripHtml(event.name)}
 							</Heading>
 						</Link>
@@ -463,7 +470,7 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 								<span className="shrink-0 flex mt-[3px]">
 									<LocationSVG width={15} height={16} stroke="#EC5E5E" />
 								</span>
-								<span className="min-w-0 line-clamp-2 sm:line-clamp-1 [overflow-wrap:anywhere]">{event.location}</span>
+								<span className="min-w-0 line-clamp-2 sm:line-clamp-1 [overflow-wrap:anywhere]">{event.location || LOCATION_TBA}</span>
 							</>
 						)}
 					</div>
