@@ -3749,3 +3749,29 @@ Below `md` (768px) `/console/events/[eventId]/manage` has its own layout. **Ever
   months first", pointing at a field they no longer have.
 - Existing host-set months are **left alone** — no migration, nothing is zeroed.
 - A host revive (recreating a soft-deleted code) resets months to 0, like every other term.
+
+## Profile photo is positioned before upload (IMPLEMENTED 2026-10-06)
+
+- **`src/components/profile/ProfilePhotoCropper.tsx`** — drag to move, slider or pinch to zoom,
+  arrow keys to nudge. Shown inside `ProfileCompletionModal` in place of the form once a file is
+  picked; **Cancel** / **Use photo**. No new dependency (pointer events + one canvas).
+- **The alignment is BAKED INTO THE FILE, never stored as an offset.** The cropper draws the chosen
+  square to a canvas and that JPEG (max 1024px, never upscaled, white behind transparency) is what
+  `uploadFile(..., { folder: "photos" })` receives. `image` is read by the navbar, `/profile/[id]`
+  and the mobile app, each with its own cover-crop and no knowledge of an offset — a stored
+  x/y/zoom would be honoured by none of them. Nothing about `PUT /api/profile` or the backend
+  payload changed.
+- The crop is a **square**; the circle is only a guide (it is the shape the photo is shown in).
+  The dimmed corners are saved too.
+- **Offsets are clamped so the photo always covers the square** — zoom 1 is the short side
+  filling it, so no gap can be dragged into view.
+- **"Adjust position"** sits beside "Change photo" and reopens the SAME original where it was
+  left (`photoSource` holds the `File` + last `CropView`). Only for a photo chosen in this
+  sitting: a stored photo is a cross-origin url and a canvas that draws it is tainted, so a
+  previously saved photo offers "Change photo" only.
+- **A file the browser can't decode** (HEIC on desktop) skips the cropper and uploads as is —
+  the pre-cropper behaviour — rather than blocking the person at a gate they can't dismiss.
+- The form is **hidden, not unmounted**, while positioning: the file input and everything typed
+  live inside it.
+- The crop area is `touch-none` (or a drag scrolls the dialog) and its `<img>` is `max-w-none`
+  (Tailwind's preflight caps images at 100% of their box, which squashes a zoomed photo).

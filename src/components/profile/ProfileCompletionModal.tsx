@@ -7,6 +7,7 @@ import { useAppDispatch } from "@Jetzy/redux/stores"
 import { destroySession } from "@Jetzy/redux/reducers/appSlice"
 import Spinner from "@Jetzy/components/misc/Spinner"
 import { countryCodeForName, listCountries } from "@/lib/countries"
+import ProfilePhotoCropper, { type CropView } from "./ProfilePhotoCropper"
 import {
 	GENDER_OPTIONS,
 	dobParts,
@@ -250,6 +251,12 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 	const [step, setStep] = React.useState<1 | 2>(1)
 	const [image, setImage] = React.useState("")
 	const [uploading, setUploading] = React.useState(false)
+	// The photo being positioned. While set, the cropper takes the place of the form.
+	const [cropFile, setCropFile] = React.useState<File | null>(null)
+	// The ORIGINAL of the photo now showing, and where it was left — so "Adjust position" reopens
+	// the same picture rather than sending the person back to their gallery. Only for a photo
+	// chosen in this sitting: a stored one is a url on another origin, which a canvas can't read.
+	const [photoSource, setPhotoSource] = React.useState<{ file: File; view?: CropView } | null>(null)
 	const [fullName, setFullName] = React.useState("")
 	const [month, setMonth] = React.useState<number | undefined>()
 	const [day, setDay] = React.useState<number | undefined>()
@@ -306,15 +313,40 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 			return
 		}
 		setError(null)
+		// Positioned first, uploaded after: the circle crops to the centre, which is rarely where
+		// the face is.
+		setCropFile(file)
+	}
+
+	const uploadPhoto = async (file: File) => {
 		setUploading(true)
 		try {
 			const { url } = await uploadFile(file, { folder: "photos" })
 			setImage(url)
+			return true
 		} catch {
 			setError("Photo upload failed. Please try again.")
+			return false
 		} finally {
 			setUploading(false)
 		}
+	}
+
+	const handleCropped = async (cropped: File, view: CropView) => {
+		const original = cropFile
+		setCropFile(null)
+		const uploaded = await uploadPhoto(cropped)
+		// Remembered only once it is the photo on screen — after a failed upload the circle still
+		// shows the previous picture, and "Adjust position" must not open a different one.
+		if (uploaded && original) setPhotoSource({ file: original, view })
+	}
+
+	// A file the browser can't draw (HEIC on desktop, say) can't be positioned. It is uploaded as
+	// it is, which is what every photo did before the cropper existed.
+	const handleUncroppable = async (file: File) => {
+		setCropFile(null)
+		setPhotoSource(null)
+		await uploadPhoto(file)
 	}
 
 	const goNext = () => {
@@ -403,6 +435,19 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 						<div className={`h-1.5 flex-1 rounded-full ${step === 2 ? "bg-app" : "bg-[#343536]"}`} />
 					</div>
 
+					{cropFile && (
+						<ProfilePhotoCropper
+							file={cropFile}
+							initialView={photoSource?.file === cropFile ? photoSource.view : undefined}
+							onCancel={() => setCropFile(null)}
+							onConfirm={handleCropped}
+							onUnsupported={handleUncroppable}
+						/>
+					)}
+
+					{/* Hidden, not unmounted, while a photo is being positioned — the file input and
+					    everything already typed live in here. */}
+					<div className={cropFile ? "hidden" : undefined}>
 					{step === 1 && (
 						<>
 							<p className="mt-4 text-sm text-gray-400">Add a photo, your name, and date of birth so others can recognize you.</p>
@@ -430,9 +475,16 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 								<input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
 							</div>
 							{image && !uploading && (
-								<button type="button" onClick={() => fileRef.current?.click()} className="mx-auto mt-2 block text-xs font-medium text-app">
-									Change photo
-								</button>
+								<div className="mt-2 flex items-center justify-center gap-4">
+									{photoSource && (
+										<button type="button" onClick={() => setCropFile(photoSource.file)} className="text-xs font-medium text-app">
+											Adjust position
+										</button>
+									)}
+									<button type="button" onClick={() => fileRef.current?.click()} className="text-xs font-medium text-app">
+										Change photo
+									</button>
+								</div>
 							)}
 
 							<label htmlFor="profile-full-name" className="mt-5 block text-sm font-semibold text-white">
@@ -600,6 +652,7 @@ export default function ProfileCompletionModal({ isOpen, initialProfile, onCompl
 					<button type="button" onClick={logout} data-analytics-ignore="" className="mx-auto mt-4 block text-xs text-gray-500 hover:text-gray-300">
 						Log out
 					</button>
+					</div>
 				</div>
 			</ModalContent>
 		</Modal>
