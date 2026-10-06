@@ -20,6 +20,7 @@ import { DateTime } from "luxon"
 import { isPendingBooking, isHoldExpired, isCaptureFailed } from "@/lib/booking-status"
 import { HoldExpiry, PaymentBadge } from "@/components/bookings/PaymentBadge"
 import AnswerText from "@/components/events/AnswerText"
+import Pagination from "@/components/misc/Pagination"
 
 /**
  * Approval requests for an event, split into two views:
@@ -48,6 +49,9 @@ const money = (n?: number) => `$${Number(n || 0).toFixed(2)}`
  */
 const ACTIONS_W = "170px"
 
+/** Processed requests per page. The list only ever grows, and it sits below the pending queue. */
+const PROCESSED_PER_PAGE = 10
+
 export function ApprovalRequests({
 	eventId,
 	event,
@@ -62,6 +66,7 @@ export function ApprovalRequests({
 	surfaceBg?: string
 }) {
 	const [showProcessed, setShowProcessed] = useState(false)
+	const [processedPage, setProcessedPage] = useState(1)
 
 	const { data: bookings = [], isLoading, isError } = useQuery({
 		queryKey: ["event-bookings", eventId],
@@ -89,6 +94,11 @@ export function ApprovalRequests({
 	const processed = (bookings as any[])
 		.filter((b) => !isPendingBooking(b) && b?.payment?.status)
 		.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime())
+
+	// Paged client-side — the rows are already here, from the one query both lists share.
+	// Clamped rather than trusted: the list can shrink under an open page after a refetch.
+	const processedPageNo = Math.min(processedPage, Math.max(1, Math.ceil(processed.length / PROCESSED_PER_PAGE)))
+	const processedRows = processed.slice((processedPageNo - 1) * PROCESSED_PER_PAGE, processedPageNo * PROCESSED_PER_PAGE)
 
 	const expiringSoon = expiringSoonBookings(pending)
 
@@ -421,7 +431,7 @@ export function ApprovalRequests({
 					{showProcessed && (
 						<>
 						<Flex display={{ base: "flex", md: "none" }} direction="column" gap={2} mt={3}>
-							{processed.map((b: any) => (
+							{processedRows.map((b: any) => (
 								<Box key={b.bookingRef} bg="#101010" border="1px solid #2A2D31" borderRadius="10px" p={3}>
 									<Flex justify="space-between" align="flex-start" gap={2}>
 										<Box minW={0}>
@@ -451,7 +461,7 @@ export function ApprovalRequests({
 									</Tr>
 								</Thead>
 								<Tbody>
-										{processed.map((b: any) => (
+										{processedRows.map((b: any) => (
 											<Tr key={b.bookingRef}>
 												<Td color="white">{b.customerName || "—"}</Td>
 												<Td color="white">{b.customerEmail || "—"}</Td>
@@ -463,6 +473,8 @@ export function ApprovalRequests({
 								</Tbody>
 							</Table>
 						</TableContainer>
+						{/* One pager under both layouts — the cards and the table show the same page. */}
+						<Pagination totalItems={processed.length} perPageItems={PROCESSED_PER_PAGE} pageNo={processedPageNo} onPageChange={setProcessedPage} />
 						</>
 					)}
 				</Box>

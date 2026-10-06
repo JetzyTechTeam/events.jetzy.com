@@ -1642,7 +1642,7 @@ Two different codes can now hand out free membership months. They share the mech
 | | Where it is typed | Where the offer lives | Applies to |
 |---|---|---|---|
 | Invite code | `/subscribe`, `PremiumPaywallModal` | `TRIAL_CODES` in `src/lib/invite-trial.ts` (hardcoded) | A direct Premium subscription |
-| Referral code | Event checkout | `referralCodes.freeMembershipMonths` (per code, host-set) | A **ticket that already sells Premium** |
+| Referral code | Event checkout | `referralCodes.freeMembershipMonths` (per code, **admin-set** since 2026-10-06) | A **ticket that already sells Premium** |
 
 **A trial, not a 100%-off coupon.** `trial_end` bills nothing until the date it names and then
 charges the normal price — which is exactly "2 months free, then $20/month". A 100% coupon would
@@ -1658,8 +1658,9 @@ the membership on their next bundled ticket, and reads as a member on selectmemb
 
 - **One number, `freeMembershipMonths` (0–12), not a tickbox plus a count.** Two fields can
   disagree — ticked with zero months, three months with the box unticked — and then the record no
-  longer says what the buyer gets. Absent (every pre-existing code) means none. Host sets it when
-  creating the code; the table shows it.
+  longer says what the buyer gets. Absent (every pre-existing code) means none. An **admin** sets
+  it when creating the code (admin-only since 2026-10-06 — a host neither sees nor can write the
+  field); the table shows it.
 - **Premium only, by decision.** Full Concierge is sold on selectmember.jetzy.com's terms; we don't
   give their product away. Enforced server-side in both checkout endpoints, and the checkout modal
   only previews the offer when the selection is actually buying Premium (`chargedKeys`) — a code
@@ -2322,7 +2323,8 @@ something they didn't.
 
 ## Sharing a referral code as free Jetzy Premium (2026-08-26)
 
-A host sets **Free Months of Jetzy Premium** on a referral code and can now share it as a link:
+**Free Months of Jetzy Premium** on a referral code (set by an admin only, since 2026-10-06 — a
+host can still share a code an admin gave months to) can be shared as a link:
 
 ```
 https://events.jetzy.com/premium?code=JETZY-ME&event=6a83365808b397827ee83341
@@ -3704,3 +3706,46 @@ Below `md` (768px) `/console/events/[eventId]/manage` has its own layout. **Ever
 - **Date & time:** the Start/End marker rail is hidden on phones (its fixed-height markers fell out of line when the fields wrapped); each row is labelled instead and date+time stay on one line.
 - **Data tabs → cards below `md`.** Guests (`guestCells(row, mobile)` builds every cell once — the table row and the card both render from it), Approvals (`ticketLines` / `outcomeBadge` / notices shared), Responses, Photo Requests (`thumb` / `statusBadge` / `toggleButton` shared). Guests filters scroll as one chip row; pagination is "Prev · Page X of Y · Next" on phones. Tab panels drop their double inset on phones (`p-0 md:p-3`). `ApprovalRequests` and `AlbumPhotoRequests` are shared components, so their phone cards also appear wherever else they are mounted.
 - **Dialogs are full-screen on phones** (`size={{ base: "full", md: <old> }}`): Send Blast, blast edit, custom question, guest detail, Invite Guests, daily views, date-poll option, and the shared `TicketEditorModal` (create + event page too). Small confirms stay centred.
+
+## Event page benefits on a phone, processed-request paging, admin-only free months (IMPLEMENTED 2026-10-06)
+
+### Benefits chips leave the banner below `md`
+- `HostedEvents.tsx` stacked the Premium tag and every benefit chip in ONE top-left column over
+  the banner. A phone's banner is `h-52` (208px); the tag plus `MAX_BENEFIT_COUNT` (6) chips
+  stack to ~300px, so they covered the artwork and ran down over the title.
+- Below `md` the benefits render as a **wrapping row of small chips UNDER the banner**
+  (`md:hidden`). From `md` up the overlay column is unchanged. `md`, not `sm`, because that is
+  the breakpoint where the banner itself grows to 335px.
+- The **Premium tag stays on the banner at every width** — it is one chip. The overlay wrapper
+  is `flex` when the event is premium and `hidden md:flex` otherwise, so an event with benefits
+  but no tag leaves no empty absolutely-positioned box on a phone.
+- Both renderings read one `benefitList = benefitChips(shownBenefits)` — the same split the API
+  validates with. Don't re-split inline.
+
+### Processed approval requests are paged
+- `ApprovalRequests.tsx` — the processed list (console tab AND the owner panel on the event
+  page, same component) rendered every row; 47 of them pushed the page out under the pending
+  queue. Now `PROCESSED_PER_PAGE = 10` with the shared `misc/Pagination`.
+- **Client-side**: both lists come from the one `/api/get-bookings` query, so there is nothing
+  to fetch. One pager serves the phone cards and the desktop table — they slice the same
+  `processedRows`. The page number is **clamped** against the current length rather than
+  trusted, since a refetch can shrink the list under an open page.
+- The **pending** list is deliberately NOT paged: it is the work queue, sorted
+  soonest-expiring-first, and a hold about to lapse must not sit on page 2.
+
+### Free Months of Jetzy Premium on a referral code is ADMIN-ONLY
+- Was host-settable. Hosts read the field as something they had to fill in; it gives a
+  membership away and is an admin decision.
+- **UI** (`ReferralCodesManager.tsx`, role from `useSession`): the field is not rendered for a
+  non-admin, and the client **omits the key** rather than sending 0 — on an edit, omitted means
+  unchanged, so a host changing a discount cannot clear months an admin set.
+- **Server is the rule, the UI is the convenience**: `referral-codes/index.ts` writes 0 for a
+  non-admin whatever was sent; `[codeId].ts` skips the key unless admin. **Ignored, not 403** —
+  a stale tab or older client must still be able to create its code.
+- **A host still SEES months an admin put on their code** — that is what their buyers get. The
+  Free Premium column/row shows for a non-admin only when some code carries months
+  (`showFreePremium`), and Share is offered to a non-admin only on a code that has them
+  (`canOfferShare`). Without that, Share on a host's code could only ever answer "add free
+  months first", pointing at a field they no longer have.
+- Existing host-set months are **left alone** — no migration, nothing is zeroed.
+- A host revive (recreating a soft-deleted code) resets months to 0, like every other term.

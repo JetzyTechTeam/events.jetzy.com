@@ -5,6 +5,7 @@ import { useState, useEffect } from "react"
 import { premiumShareLink, shareableReason } from "@/lib/referral-share"
 import { liveScopedTicketIds, referralAppliesToAllTickets } from "@/lib/referral-ticket-scope"
 import axios from "axios"
+import { useSession } from "next-auth/react"
 import ReferralPerformance from "@/components/analytics/ReferralPerformance"
 
 interface ReferralCode {
@@ -59,6 +60,18 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 	const [editingCode, setEditingCode] = useState<ReferralCode | null>(null)
 	const toast = useToast()
 
+	// Free months of Jetzy Premium are an ADMIN-ONLY term. A host never sees the field and never
+	// sends the key — and the two referral-code routes ignore it from a non-admin regardless, so
+	// hiding it here is a convenience, not the rule. A code an admin already gave months to still
+	// SHOWS them to the host (column, Share), since that is what their buyers will get.
+	const { data: session } = useSession()
+	const sessionRole = (session?.user as any)?.role
+	const isAdmin = sessionRole === "admin" || sessionRole === "super admin"
+	const carriesMonths = (code: ReferralCode) => (code.freeMembershipMonths || 0) > 0
+	// Share hands out a membership link and is inert until the code has months. A host can't add
+	// them, so on a code without any the button would only ever answer "add free months first".
+	const canOfferShare = (code: ReferralCode) => isAdmin || carriesMonths(code)
+
 	// Form state
 	const [formData, setFormData] = useState({
 		code: "",
@@ -87,6 +100,10 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 	// differently on a phone and a laptop the moment either side re-derives one of these.
 	const freePremiumLabel = (code: ReferralCode) =>
 		code.freeMembershipMonths ? `${code.freeMembershipMonths} ${code.freeMembershipMonths === 1 ? "month" : "months"}` : "—"
+
+	// A host's own codes never carry months, so the column would be a row of dashes under a
+	// heading for something they can't set. It appears for them only once a code has some.
+	const showFreePremium = isAdmin || codes.some(carriesMonths)
 
 	const maxUsesLabel = (code: ReferralCode) =>
 		code.maxUses == null ? "Unlimited" : `${code.maxUses} (${code.maxUses - code.usageCount} remaining)`
@@ -154,7 +171,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 			const response = await axios.post(`/api/events/${eventId}/referral-codes`, {
 				code: formData.code,
 				discountPercentage: formData.discountPercentage,
-				freeMembershipMonths: formData.freeMembershipMonths || 0,
+				...(isAdmin ? { freeMembershipMonths: formData.freeMembershipMonths || 0 } : {}),
 				maxUses: formData.maxUses || null,
 				ticketIds: submittedTicketIds(),
 			})
@@ -310,7 +327,8 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 		if (!editingCode) return
 		await handleUpdate(editingCode._id, {
 			discountPercentage: formData.discountPercentage,
-			freeMembershipMonths: formData.freeMembershipMonths || 0,
+			// Omitted for a host = unchanged, so editing a discount can't clear months an admin set.
+			...(isAdmin ? { freeMembershipMonths: formData.freeMembershipMonths || 0 } : {}),
 			maxUses: formData.maxUses || null,
 			ticketIds: submittedTicketIds(),
 		})
@@ -421,6 +439,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 
 	const codeActions = (code: ReferralCode) => (
 		<>
+			{canOfferShare(code) && (
 			<Button
 				size="sm"
 				variant="ghost"
@@ -431,6 +450,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 			>
 				Share
 			</Button>
+			)}
 			<Button
 				size="sm"
 				variant="ghost"
@@ -532,7 +552,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 
 									<Stack spacing={2} pb={3} borderBottom="1px solid #2a2a2a">
 										<CardRow label="Discount">{code.discountPercentage}%</CardRow>
-										<CardRow label="Free Premium">{freePremiumLabel(code)}</CardRow>
+										{showFreePremium && <CardRow label="Free Premium">{freePremiumLabel(code)}</CardRow>}
 										<CardRow label="Tickets">
 											<Text fontSize="sm" color={scope.broken ? "red.300" : undefined} title={scope.text}>
 												{scope.text}
@@ -547,6 +567,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 								    reads as a mistake. Same five controls, same handlers. */}
 									<Stack spacing={2} mt={3}>
 										<Flex gap={2}>
+											{canOfferShare(code) && (
 											<Button
 												size="sm"
 												flex={1}
@@ -560,6 +581,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 											>
 												Share
 											</Button>
+											)}
 											<Button
 												size="sm"
 												flex={1}
@@ -626,7 +648,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 							<Tr>
 								<Th>Code</Th>
 								<Th>Discount</Th>
-								<Th>Free Premium</Th>
+								{showFreePremium && <Th>Free Premium</Th>}
 								<Th>Tickets</Th>
 								<Th>Status</Th>
 								<Th>Usage</Th>
@@ -652,7 +674,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 										</Flex>
 									</Td>
 									<Td>{code.discountPercentage}%</Td>
-									<Td>{freePremiumLabel(code)}</Td>
+									{showFreePremium && <Td>{freePremiumLabel(code)}</Td>}
 									<Td maxW="220px">
 										{(() => {
 											const scope = ticketScopeLabel(code)
@@ -741,6 +763,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 								</Text>
 							</FormControl>
 
+							{isAdmin && (
 							<FormControl mb={4}>
 								<FormLabel>Free Months of Jetzy Premium</FormLabel>
 								<NumberInput
@@ -763,6 +786,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 									membership renews at the normal rate until they cancel. It never applies to Full Concierge.
 								</Text>
 							</FormControl>
+							)}
 
 							<FormControl mb={4}>
 								<FormLabel>Applies To</FormLabel>
@@ -794,7 +818,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 								)}
 								<Text fontSize="xs" color="gray.400" mt={1}>
 									{formData.ticketScope === "specific"
-										? "The discount and free months only apply to the tickets ticked here. Other tickets in the same order pay full price, and the code is refused if none of these are in the order."
+										? `The discount${isAdmin ? " and free months" : ""} only ${isAdmin ? "apply" : "applies"} to the tickets ticked here. Other tickets in the same order pay full price, and the code is refused if none of these are in the order.`
 										: "The code works on every ticket of this event, including ones you add later."}
 								</Text>
 							</FormControl>

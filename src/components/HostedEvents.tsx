@@ -11,7 +11,7 @@ import { allowedMediaCount } from "@/lib/event-media-limit"
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
-import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
+import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, benefitChips, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
@@ -334,6 +334,8 @@ export default function HostedEvents({ event }: Props) {
 	const shownName = clonedEvent?.name || ""
 	const shownDesc = clonedEvent?.desc || ""
 	const shownBenefits = clonedEvent?.benefits || ""
+	// One split for both renderings below (over the banner from `md`, under it on a phone).
+	const benefitList = benefitChips(shownBenefits)
 	// `eventMedia` applies the host's `mediaOrder` across the two arrays — never read
 	// `images` directly, or a video lead and any hand-arranged order are lost.
 	const shownMedia = clonedEvent ? eventMedia(clonedEvent) : []
@@ -1322,31 +1324,46 @@ export default function HostedEvents({ event }: Props) {
 
 							{/* Premium tag + Benefits overlay share ONE top-left column — two absolutes
 							    at the same corner would sit on top of each other. The tag leads,
-							    benefits follow underneath. */}
-							{(!!clonedEvent?.premiumEvent || (shownBenefits && shownBenefits.trim() !== "")) && (
-								<div className="absolute top-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
+							    benefits follow underneath.
+							    The benefits are in this column from `md` up ONLY. A phone's banner is
+							    208px tall and the tag plus six chips stack to ~300px, so there they
+							    buried the artwork and ran down over the title; they render as a
+							    wrapping row under the banner instead (below). The tag stays here at
+							    every width — it is one chip. */}
+							{(!!clonedEvent?.premiumEvent || benefitList.length > 0) && (
+								<div className={`absolute top-6 left-6 z-20 flex-col gap-2 max-w-[80%] ${clonedEvent?.premiumEvent ? "flex" : "hidden md:flex"}`}>
 									{!!clonedEvent?.premiumEvent && (
 										<div>
 											<PremiumEventBadge className="px-4 py-2 text-sm shadow-xl" />
 										</div>
 									)}
-									{shownBenefits
-										.split(",")
-										.map((b) => b.trim())
-										.filter((b) => b !== "")
-										.map((benefit, index) => (
-											<div
-												key={index}
-												className="bg-[#F79432] backdrop-blur-md border border-white/20 rounded-lg px-4 py-2 text-black text-sm font-bold shadow-xl transform transition-all duration-300 hover:scale-105"
-												style={{
-													animation: `fadeInUp 0.5s ease-out forwards ${index * 0.1}s`,
-													opacity: 0,
-													transform: "translateY(10px)",
-												}}
-											>
-												{benefit}
-											</div>
-										))}
+									{benefitList.map((benefit, index) => (
+										<div
+											key={index}
+											className="hidden md:block bg-[#F79432] backdrop-blur-md border border-white/20 rounded-lg px-4 py-2 text-black text-sm font-bold shadow-xl transform transition-all duration-300 hover:scale-105"
+											style={{
+												animation: `fadeInUp 0.5s ease-out forwards ${index * 0.1}s`,
+												opacity: 0,
+												transform: "translateY(10px)",
+											}}
+										>
+											{benefit}
+										</div>
+									))}
+								</div>
+							)}
+							{/* Phones: the same benefits, under the banner. `px-1` lines the row up with
+							    the title below (this box pads 12px, the content section 16px). */}
+							{benefitList.length > 0 && (
+								<div className="md:hidden flex flex-wrap gap-1.5 mt-3 px-1">
+									{benefitList.map((benefit, index) => (
+										<span
+											key={index}
+											className="bg-[#F79432] rounded-full px-2.5 py-1 text-black text-xs font-bold max-w-full [overflow-wrap:anywhere]"
+										>
+											{benefit}
+										</span>
+									))}
 								</div>
 							)}
 							<style jsx>{`
