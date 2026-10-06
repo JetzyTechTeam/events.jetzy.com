@@ -1,7 +1,9 @@
 import { describeIssue } from "@/lib/form-errors"
 import axios from "axios"
 
-const BaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
+// Trimmed: staging's value carried a trailing newline. Browsers strip one out of a URL, so it
+// worked by accident — but nothing should depend on that.
+const BaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim()
 
 // On localhost, use current origin to avoid CORS issues with production API
 const getLocalBaseUrl = (): string => {

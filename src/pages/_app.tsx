@@ -22,6 +22,8 @@ import { useInAppNavigationTracking } from "@/lib/navigation";
 import { useAppOriginTracking } from "@/lib/app-return";
 import ProfileGate from "@/components/profile/ProfileGate";
 
+const GA_ID = (process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID || "").trim()
+
 export default function App({
   Component,
   pageProps: { session, ...pageProps },
@@ -58,7 +60,10 @@ export default function App({
               <Component {...pageProps} />
               {/* Blocks a signed-in user with an incomplete Jetzy profile until it's done. */}
               <ProfileGate />
-              <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID as string} />
+              {/* Trimmed: the id is written into an inline script as a quoted string, so a stray
+                  newline in the env var ("G-XXXX\n") is an unterminated string — a SyntaxError on
+                  every page and no analytics at all. Staging's value had exactly that. */}
+              {GA_ID && <GoogleAnalytics gaId={GA_ID} />}
             </AnalyticsProvider>
           </ChakraProvider>
         </SessionProvider>
