@@ -620,8 +620,12 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 						})}
 					</Stack>
 
-					<Box display={{ base: "none", lg: "block" }}>
-					<Table variant="simple">
+					{/* The card around this clips (`overflow: hidden`, for its rounded corners), so a
+					    table wider than the panel lost its last control — Delete — off the right edge
+					    with no way to reach it. Tighter cell padding keeps the eight columns inside
+					    the panel at ordinary desktop widths; the scroll is the net under that. */}
+					<Box display={{ base: "none", lg: "block" }} overflowX="auto">
+					<Table variant="simple" sx={{ "th, td": { px: 3 }, th: { whiteSpace: "nowrap" } }}>
 						<Thead>
 							<Tr>
 								<Th>Code</Th>
@@ -674,7 +678,7 @@ export function ReferralCodesManager({ eventId, tickets = [] }: ReferralCodesMan
 									<Td>{code.usageCount}</Td>
 									<Td>{maxUsesLabel(code)}</Td>
 									<Td>
-										<Flex gap={2}>
+										<Flex gap={1} wrap="nowrap" sx={{ "& > button": { flexShrink: 0 } }}>
 											{codeActions(code)}
 										</Flex>
 									</Td>
