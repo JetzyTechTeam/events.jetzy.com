@@ -95,7 +95,7 @@ export default function TicketEditorModal({
 	}
 
 	return (
-		<Modal isOpen={isOpen} onClose={onClose} isCentered>
+		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "full", md: "md" }}>
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
 				<ModalHeader>{isEditing ? "Edit Ticket" : "Add Ticket"}</ModalHeader>

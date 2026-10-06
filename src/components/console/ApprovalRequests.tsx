@@ -118,6 +118,61 @@ export function ApprovalRequests({
 		return String(ans.answer) || "—"
 	}
 
+	// Cells shared by the tables (from `md` up) and the phone cards below them, so the two
+	// layouts cannot disagree about what a request is for or how it ended.
+	// The ticket NAME, not just a count. A host running VIP and General couldn't tell what
+	// they were approving without opening the dialog.
+	const ticketLines = (b: any, fallback: React.ReactNode) =>
+		ticketBreakdown(b).length > 0 ? (
+			ticketBreakdown(b).map((line, i) => (
+				<Text key={i} fontSize="sm" whiteSpace="nowrap">
+					{line.quantity} &times; {line.name}
+				</Text>
+			))
+		) : (
+			<Text fontSize="sm">{fallback}</Text>
+		)
+
+	const outcomeBadge = (b: any) => {
+		const payment = b.payment || {}
+		return payment.status === "captured" ? (
+			<Badge colorScheme="green">Charged {money(payment.amount)}</Badge>
+		) : payment.status === "expired" ? (
+			<Tooltip label="Never charged. The guest must book again." hasArrow>
+				<Badge colorScheme="red">Hold expired</Badge>
+			</Tooltip>
+		) : payment.status === "canceled" ? (
+			<Badge colorScheme="gray">
+				{b.status === "cancelled" ? "Cancelled" : "Declined"} — {money(payment.amount)} released
+			</Badge>
+		) : (
+			<Badge colorScheme="gray">{payment.status}</Badge>
+		)
+	}
+
+	const processedWhen = (b: any) => {
+		const payment = b.payment || {}
+		const when = payment.capturedAt || payment.canceledAt || b.updatedAt || b.createdAt
+		return when ? DateTime.fromISO(new Date(when).toISOString()).toLocaleString(DateTime.DATETIME_MED) : "—"
+	}
+
+	const captureFailedNotice = (b: any) => (
+		<Box bg="rgba(220,38,38,0.12)" border="1px solid rgba(220,38,38,0.4)" borderRadius="6px" p={2}>
+			<Text color="red.300" fontSize="xs" fontWeight={700}>Charge failed — the guest has not been charged and this request is still open.</Text>
+			{b.payment?.lastError && (
+				<Text color="#D6D6D6" fontSize="xs" mt={1}>{b.payment.lastError}</Text>
+			)}
+		</Box>
+	)
+
+	const expiredNotice = (
+		<Box bg="rgba(220,38,38,0.12)" border="1px solid rgba(220,38,38,0.4)" borderRadius="6px" p={2}>
+			<Text color="red.300" fontSize="xs">
+				The card hold expired before this request was reviewed. The guest was never charged and must book again.
+			</Text>
+		</Box>
+	)
+
 	if (isLoading) return <Text color="white">Loading requests...</Text>
 	if (isError) return <Text color="red.400">Failed to load requests.</Text>
 
@@ -163,7 +218,68 @@ export function ApprovalRequests({
 			{!pending.length ? (
 				<Text color="white">No pending approval requests.</Text>
 			) : (
-				<TableContainer>
+				<>
+				{/* Phones: one card per request — the frozen-column table needs a wide screen. */}
+				<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
+					{pending.map((b: any) => {
+						const qty = bookingTicketCount(b?.tickets)
+						const prior = priorConfirmedFor(b)
+						const priorQty = prior.reduce((sum, p) => sum + bookingTicketCount(p?.tickets), 0)
+						const fit = fitFor(b)
+						const answered = eventQuestions.filter((q) => formatAnswer(q.id, b) !== "—")
+						return (
+							<Box key={b.bookingRef} bg="#101010" border="1px solid #343536" borderRadius="12px" p={4}>
+								<Flex align="center" gap={2} wrap="wrap">
+									<Text color="white" fontWeight={700} fontSize="15px">{b.customerName || "—"}</Text>
+									{prior.length > 0 && (
+										<Badge colorScheme="yellow" fontSize="0.65em" borderRadius="4px" px={1.5}>
+											Has {priorQty} ticket{priorQty === 1 ? "" : "s"}
+										</Badge>
+									)}
+								</Flex>
+								<Text color="#9C9C9C" fontSize="13px" wordBreak="break-all">{b.customerEmail || "—"}</Text>
+								<Flex mt={3} justify="space-between" align="flex-start" gap={3}>
+									<Box color="white">
+										{ticketLines(b, qty)}
+										{!fit.fits && fit.seatable !== null && (
+											<Badge colorScheme={fit.seatable > 0 ? "orange" : "red"} fontSize="0.65em" borderRadius="4px" px={1.5} mt={1}>
+												{fit.seatable > 0 ? `Needs ${qty}, ${fit.seatable} left` : "No spots left"}
+											</Badge>
+										)}
+									</Box>
+									<Flex direction="column" align="flex-end" gap={1} flexShrink={0}>
+										<PaymentBadge booking={b} />
+										<HoldExpiry booking={b} />
+									</Flex>
+								</Flex>
+								{isCaptureFailed(b) && <Box mt={3}>{captureFailedNotice(b)}</Box>}
+								{isHoldExpired(b) && <Box mt={3}>{expiredNotice}</Box>}
+								{answered.length > 0 && (
+									<Box as="details" mt={3} bg="#15181C" border="1px solid #2A2D31" borderRadius="8px" px={3} py={2}>
+										<Box as="summary" color="#D6D6D6" fontSize="13px" cursor="pointer">
+											Answers ({answered.length})
+										</Box>
+										<Flex direction="column" gap={2} mt={2}>
+											{answered.map((q) => (
+												<Box key={q.id}>
+													<Text color="#9C9C9C" fontSize="12px">{q.title}</Text>
+													<Box color="white" fontSize="13px"><AnswerText value={formatAnswer(q.id, b)} /></Box>
+												</Box>
+											))}
+										</Flex>
+									</Box>
+								)}
+								<Flex mt={3} pt={3} borderTop="1px solid #2A2D31" justify="space-between" align="center" gap={2}>
+									<ApprovalActions booking={b} controller={approvals} />
+									<Text color="#9C9C9C" fontSize="12px" textAlign="right">
+										{b.createdAt ? DateTime.fromISO(b.createdAt).toLocaleString(DateTime.DATETIME_MED) : ""}
+									</Text>
+								</Flex>
+							</Box>
+						)
+					})}
+				</Flex>
+				<TableContainer display={{ base: "none", md: "block" }}>
 					<Table variant="simple" size="sm">
 						{/* Actions first and frozen, Guest second and frozen.
 						    Previously Actions sat last: with custom-question columns the table
@@ -257,16 +373,8 @@ export function ApprovalRequests({
 											</Td>
 											{/* The ticket NAME, not just a count. A host running VIP and General
 											    couldn't tell what they were approving without opening the dialog. */}
-											<Td color="white">
-												{ticketBreakdown(b).length > 0 ? (
-													ticketBreakdown(b).map((line, i) => (
-														<Text key={i} fontSize="sm" whiteSpace="nowrap">
-															{line.quantity} &times; {line.name}
-														</Text>
-													))
-												) : (
-													<Text fontSize="sm">{qty}</Text>
-												)}
+												<Td color="white">
+													{ticketLines(b, qty)}
 												{/* Says the squeeze out loud before the host clicks a button that
 												    would only be refused. */}
 												{!fit.fits && fit.seatable !== null && (
@@ -284,25 +392,16 @@ export function ApprovalRequests({
 										</Tr>
 										{captureFailed && (
 											<Tr>
-												<Td colSpan={colSpan} pt={0} borderBottom="1px solid #2A2D31">
-													<Box bg="rgba(220,38,38,0.12)" border="1px solid rgba(220,38,38,0.4)" borderRadius="6px" p={2}>
-														<Text color="red.300" fontSize="xs" fontWeight={700}>Charge failed — the guest has not been charged and this request is still open.</Text>
-														{b.payment?.lastError && (
-															<Text color="#D6D6D6" fontSize="xs" mt={1}>{b.payment.lastError}</Text>
-														)}
-													</Box>
-												</Td>
+													<Td colSpan={colSpan} pt={0} borderBottom="1px solid #2A2D31">
+														{captureFailedNotice(b)}
+													</Td>
 											</Tr>
 										)}
 										{expired && (
 											<Tr>
-												<Td colSpan={colSpan} pt={0} borderBottom="1px solid #2A2D31">
-													<Box bg="rgba(220,38,38,0.12)" border="1px solid rgba(220,38,38,0.4)" borderRadius="6px" p={2}>
-														<Text color="red.300" fontSize="xs">
-															The card hold expired before this request was reviewed. The guest was never charged and must book again.
-														</Text>
-													</Box>
-												</Td>
+													<Td colSpan={colSpan} pt={0} borderBottom="1px solid #2A2D31">
+														{expiredNotice}
+													</Td>
 											</Tr>
 										)}
 									</React.Fragment>
@@ -311,6 +410,7 @@ export function ApprovalRequests({
 						</Tbody>
 					</Table>
 				</TableContainer>
+				</>
 			)}
 
 			{processed.length > 0 && (
@@ -319,7 +419,25 @@ export function ApprovalRequests({
 						{showProcessed ? "Hide" : "Show"} processed requests ({processed.length})
 					</Button>
 					{showProcessed && (
-						<TableContainer mt={3}>
+						<>
+						<Flex display={{ base: "flex", md: "none" }} direction="column" gap={2} mt={3}>
+							{processed.map((b: any) => (
+								<Box key={b.bookingRef} bg="#101010" border="1px solid #2A2D31" borderRadius="10px" p={3}>
+									<Flex justify="space-between" align="flex-start" gap={2}>
+										<Box minW={0}>
+											<Text color="white" fontSize="14px" fontWeight={600}>{b.customerName || "—"}</Text>
+											<Text color="#9C9C9C" fontSize="12px" wordBreak="break-all">{b.customerEmail || "—"}</Text>
+										</Box>
+										<Box flexShrink={0}>{outcomeBadge(b)}</Box>
+									</Flex>
+									<Flex mt={2} justify="space-between" align="flex-end" gap={2} color="white">
+										<Box>{ticketLines(b, bookingTicketCount(b?.tickets) || "—")}</Box>
+										<Text color="#9C9C9C" fontSize="12px">{processedWhen(b)}</Text>
+									</Flex>
+								</Box>
+							))}
+						</Flex>
+						<TableContainer mt={3} display={{ base: "none", md: "block" }}>
 							<Table variant="simple" size="sm">
 								<Thead>
 									<Tr>
@@ -333,46 +451,19 @@ export function ApprovalRequests({
 									</Tr>
 								</Thead>
 								<Tbody>
-									{processed.map((b: any) => {
-										const payment = b.payment || {}
-										const when = payment.capturedAt || payment.canceledAt || b.updatedAt || b.createdAt
-										return (
+										{processed.map((b: any) => (
 											<Tr key={b.bookingRef}>
 												<Td color="white">{b.customerName || "—"}</Td>
 												<Td color="white">{b.customerEmail || "—"}</Td>
-												<Td color="white">
-													{ticketBreakdown(b).length > 0 ? (
-														ticketBreakdown(b).map((line, i) => (
-															<Text key={i} fontSize="sm" whiteSpace="nowrap">
-																{line.quantity} &times; {line.name}
-															</Text>
-														))
-													) : (
-														<Text fontSize="sm">{bookingTicketCount(b?.tickets) || "—"}</Text>
-													)}
-												</Td>
-												<Td>
-													{payment.status === "captured" ? (
-														<Badge colorScheme="green">Charged {money(payment.amount)}</Badge>
-													) : payment.status === "expired" ? (
-														<Tooltip label="Never charged. The guest must book again." hasArrow>
-															<Badge colorScheme="red">Hold expired</Badge>
-														</Tooltip>
-													) : payment.status === "canceled" ? (
-														<Badge colorScheme="gray">
-															{b.status === "cancelled" ? "Cancelled" : "Declined"} — {money(payment.amount)} released
-														</Badge>
-													) : (
-														<Badge colorScheme="gray">{payment.status}</Badge>
-													)}
-												</Td>
-												<Td color="white">{when ? DateTime.fromISO(new Date(when).toISOString()).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
+												<Td color="white">{ticketLines(b, bookingTicketCount(b?.tickets) || "—")}</Td>
+												<Td>{outcomeBadge(b)}</Td>
+												<Td color="white">{processedWhen(b)}</Td>
 											</Tr>
-										)
-									})}
+										))}
 								</Tbody>
 							</Table>
 						</TableContainer>
+						</>
 					)}
 				</Box>
 			)}
