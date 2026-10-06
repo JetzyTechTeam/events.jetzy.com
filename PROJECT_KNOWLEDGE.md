@@ -3213,6 +3213,7 @@ unattributed, and nobody able to see the email before guests did.
   `premium/send-code.ts`. Lowercased for sending — this codebase is repeatedly bitten by mixed-case
   addresses (`Bookings.customerEmail` has no `lowercase: true`). **One address per test, by decision.**
 - **`subject` and `message` are trimmed at the ENDS only** (`blastSubject` / `blastMessage`). A pasted subject
+- **The Edit dialog carries the picker too** (2026-10-07). It showed subject + message only, so a host edited, was asked "Send again?", and resent images they could not see or change. `openEdit` seeds `b.attachments || []` (no default on the field), the PATCH route accepts `attachments` and **re-checks it with the same `blastAttachmentRefusal`** the send path uses, and `doResend` sends the EDITED set — `blast.attachments` is the pre-edit list, so removing an image and resending would have sent it anyway. Omitted = unchanged; `[]` = the host removed them all. Editing a sent blast rewrites what the history says was sent — already true of subject/message, and attachments now follow the same rule rather than a different one.
   routinely carries a trailing newline, which lands in the `<h1>` AND in the SendGrid `subject` header. Inner
   whitespace is left exactly as typed — hosts separate paragraphs with blank lines and collapsing them would
   silently rewrite their copy.

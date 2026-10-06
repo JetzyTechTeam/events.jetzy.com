@@ -2631,9 +2631,13 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 	const [editSubject, setEditSubject] = useState("")
 	const [editMessage, setEditMessage] = useState("")
 	const [savingEdit, setSavingEdit] = useState(false)
+	// Seeded from the row being edited. `|| []` matters: the field has no default, so every
+	// blast sent before attachments existed carries no array at all.
+	const [editAttachments, setEditAttachments] = useState<BlastAttachment[]>([])
+	const [editUploading, setEditUploading] = useState(false)
 
 	// Confirm modals (replace native window.confirm)
-	const [pendingResend, setPendingResend] = useState<{ blast: any; subject: string; message: string } | null>(null)
+	const [pendingResend, setPendingResend] = useState<{ blast: any; subject: string; message: string; attachments?: BlastAttachment[] } | null>(null)
 	const [resending, setResending] = useState(false)
 	const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
 	const [deleting, setDeleting] = useState(false)
@@ -2708,6 +2712,9 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 		setEditing(b)
 		setEditSubject(b.subject || "")
 		setEditMessage(b.message || "")
+		setEditAttachments(b.attachments || [])
+		// Cleared too, or opening a second blast while one was mid-upload leaves Save disabled.
+		setEditUploading(false)
 	}
 
 	const onSaveEdit = async () => {
@@ -2721,11 +2728,14 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 			await axios.patch(`/api/events/${event._id}/blasts/${blast._id}`, {
 				subject: editSubject,
 				message: editMessage,
+				attachments: editAttachments,
 			})
 			refresh()
 			setEditing(null)
 			// Offer to resend the edited blast to the same audience (themed modal).
-			setPendingResend({ blast, subject: editSubject, message: editMessage })
+			// The EDITED set, not `blast.attachments` - that is still the pre-edit list, so removing
+			// an image and resending would send it anyway.
+			setPendingResend({ blast, subject: editSubject, message: editMessage, attachments: editAttachments })
 		} catch (error: any) {
 			toast({ title: "Failed to save blast.", description: error.response?.data?.message || "An unexpected error occurred.", status: "error", duration: 5000 })
 		}
@@ -2734,7 +2744,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 
 	const doResend = async () => {
 		if (!pendingResend) return
-		const { blast, subject: rSubject, message: rMessage } = pendingResend
+		const { blast, subject: rSubject, message: rMessage, attachments: rAttachments } = pendingResend
 		setResending(true)
 		try {
 			const res = await axios.post("/api/send-blast", {
@@ -2748,7 +2758,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 				// Carried forward from the stored blast. Without this a resend silently drops the
 				// pictures, and the host has no way to tell from the confirmation that it did.
-				attachments: blast.attachments || [],
+				attachments: rAttachments || blast.attachments || [],
 			})
 			toast({ title: res.status === 207 ? "Partially sent" : "Blast re-sent!", description: res.data?.message, status: res.status === 207 ? "warning" : "success", duration: 4000 })
 			refresh()
@@ -2974,7 +2984,13 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 							color="white"
 							_placeholder={{ color: "gray.400" }}
 						/>
-						<Button w="full" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={savingEdit} onClick={onSaveEdit}>
+						<Text fontWeight="bold" mb={2}>
+							Images
+						</Text>
+						<BlastAttachmentPicker attachments={editAttachments} onChange={setEditAttachments} onUploadingChange={setEditUploading} compact />
+						{/* An upload still in flight has no url for the server to fetch - same rule both
+						    composers follow. */}
+						<Button w="full" bg="#F79432" color="black" _hover={{ bg: "#E68422" }} isLoading={savingEdit} isDisabled={editUploading} onClick={onSaveEdit}>
 							Save
 						</Button>
 					</ModalBody>
@@ -2991,6 +3007,13 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 						<Text color="#B5B6B7" mb={6}>
 							Blast saved. Would you like to send it again to the same audience?
 						</Text>
+						{/* The moment of commitment - the count belongs here, not only in the editor. */}
+						{(pendingResend?.attachments?.length || 0) > 0 && (
+							<Text color="#B5B6B7" fontSize="sm" mt={-4} mb={6}>
+								📎 {pendingResend!.attachments!.length} image
+								{pendingResend!.attachments!.length === 1 ? "" : "s"} will be attached.
+							</Text>
+						)}
 						<Flex justify="flex-end" gap={3}>
 							<Button bg="#3E3E3E" color="white" _hover={{ bg: "#4A4A4A" }} onClick={() => setPendingResend(null)} isDisabled={resending}>
 								Skip

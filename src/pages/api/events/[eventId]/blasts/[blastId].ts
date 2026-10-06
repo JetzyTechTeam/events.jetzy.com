@@ -8,10 +8,23 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
+import { blastAttachmentRefusal } from "@/lib/blast-attachments"
 
 const updateBlastSchema = zod.object({
 	subject: zod.string().optional(),
 	message: zod.string().min(1).optional(),
+	// Omitted = unchanged. An empty array is the host removing every image, which is a real
+	// edit and distinguishable from absent (absent = a blast sent before attachments existed).
+	attachments: zod
+		.array(
+			zod.object({
+				url: zod.string(),
+				filename: zod.string(),
+				contentType: zod.string(),
+				size: zod.number(),
+			}),
+		)
+		.optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -75,6 +88,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const updateData: any = {}
 			if (validation.data.subject !== undefined) updateData.subject = validation.data.subject
 			if (validation.data.message !== undefined) updateData.message = validation.data.message
+			if (validation.data.attachments !== undefined) {
+				// Re-checked with the SAME function `send-blast.ts` uses, so the edit path cannot
+				// accept a set the send path would refuse - a resend reads straight off this record.
+				const refusal = blastAttachmentRefusal(validation.data.attachments)
+				if (refusal) {
+					return sendResponse(res, null, refusal, false, ResCode.BAD_REQUEST)
+				}
+				updateData.attachments = validation.data.attachments
+			}
 
 			const updated = await Blasts.findByIdAndUpdate(blastId, { $set: updateData }, { new: true })
 			return sendResponse(res, updated, "Blast updated successfully", true, ResCode.OK)
