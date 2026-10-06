@@ -70,7 +70,10 @@ export default function BlastAttachmentPicker({
 		try {
 			for (const file of picked) {
 				const { url } = await uploadFile(file, {
-					folder: "blasts",
+					// "posts", not "blasts": the uploader's folder allowlist is server-side and refuses
+					// anything outside it with a 500. The folder is only an S3 key prefix and nothing
+					// reads it back. See UploadFolder in upload.service.ts.
+					folder: "posts",
 					onProgressChange: (p) => setProgress(p),
 				})
 				added.push({ url, filename: file.name, contentType: file.type, size: file.size })

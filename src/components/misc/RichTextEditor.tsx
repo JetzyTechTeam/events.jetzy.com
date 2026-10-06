@@ -278,7 +278,9 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
     const file = e.target.files?.[0]
     if (!file) return
     try {
-      const { url } = await uploadFile(file, { folder: "events" })
+      // Was "events", which the uploader refuses with a 500 - and the catch below swallowed it,
+      // so inserting an inline image did nothing at all, with no error shown. See UploadFolder.
+      const { url } = await uploadFile(file, { folder: "posts" })
       const editor = quillRef.current?.getEditor()
       if (editor) {
         const range = editor.getSelection(true)

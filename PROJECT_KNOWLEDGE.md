@@ -3224,6 +3224,15 @@ unattributed, and nobody able to see the email before guests did.
   while an upload is in flight (urls the server could not yet fetch).
 - New: `src/components/console/BlastAttachmentPicker.tsx` (deliberately **not** `MediaUploadSection`, which is
   built around the event's images/videos split and `mediaOrder`) and `BlastPreviewModal.tsx`.
+# Uploads
+
+## The uploader takes only TWO folders (recorded 2026-10-07)
+- **`uploadFile(file, { folder })` accepts `"posts"` and `"photos"`. Nothing else.** The allowlist is enforced SERVER-SIDE at `prod-api.jetzy.com/api/v1/uploader/multiple` and we cannot read it; anything outside comes back `{"message":"Invalid Folder","status":false,"code":500}` — a hard 500 in front of whoever was uploading.
+- **`UploadOptions.folder` was `string`**, so an invented name compiled cleanly and failed only in production. It is **`UploadFolder` now** (`src/services/upload.service.ts`), so a bad folder is a `tsc` error. That is the actual fix — the two bugs below were each one word.
+- **`"blasts"` broke blast attachments outright** (QA, 2026-10-07): no host could attach an image at all. **`"events"` in `RichTextEditor.tsx` was broken too, silently** — its catch swallows the error, so inserting an inline image into an event description did nothing and said nothing. Pre-existing, found by the same probe, fixed in the same pass.
+- **Verified empirically, one upload per candidate** — not read from backend source. `posts` ✅, `photos` ✅, `blasts` ❌, `events` ❌, `attachments` ❌. **Adding a folder means probing for it first, never guessing.**
+- The folder is only an S3 key prefix (`.../posts/2026/10/06/<id>`); nothing reads it back, so moving a feature between valid folders needs no migration.
+- `src/lib/edgestore.ts` (legacy shim, still used by the discussion composer) posts to the same endpoint and is under the same rule.
 # Feature: Partial approval + approvals capacity visibility
 
 ## Approvals: seats left, ticket names, and partial approval (IMPLEMENTED 2026-09-24)
