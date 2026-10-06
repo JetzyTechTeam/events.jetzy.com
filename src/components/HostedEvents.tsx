@@ -39,7 +39,7 @@ const InterestsSelector = dynamic(() => import("@/components/events/InterestsSel
 import type { FileUploadData } from "@/components/misc/DragAndDropUploader"
 import { uniqueId } from "@/lib/utils"
 
-import { Roboto } from "next/font/google"
+import { roboto } from "@/lib/fonts"
 import { CalendarDaysIcon, ChevronDownIcon, ClockIcon, PencilIcon } from "@heroicons/react/24/outline"
 import EventCheckoutModel from "@Jetzy/components/EventCheckoutModel"
 import { useWebShare } from "@Jetzy/hooks/useShare"
@@ -88,8 +88,6 @@ dayjs.extend(timezone)
 
 import { stripHtml } from "@/utils/text";
 import { FiShare2, FiChevronDown, FiChevronUp, FiMoreHorizontal } from "react-icons/fi"
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 
 /**
  * Which block of the event page is in edit mode.

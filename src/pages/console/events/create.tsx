@@ -78,7 +78,7 @@ import ListingCardPreview from "@/components/events/ListingCardPreview";
 import { previewPath } from "@/lib/event-preview";
 import TimezoneSelect from "../../../components/timezone-select";
 import { z } from "zod";
-import { Roboto } from "next/font/google";
+import { roboto } from "@/lib/fonts";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
@@ -91,8 +91,6 @@ import { SortableTicketList, SortableTicketItem } from "@/components/events/Sort
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown } from "@/lib/google-place";
 import { blurOnWheel } from "@/lib/number-input"
 import { ticketQuantityLimit } from "@/lib/ticket-quantity"
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
 
 // Shared dark field styling (Figma: bg #090C10, 1px #343536 border, rounded, Roboto 14px)
 const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-sm placeholder:text-gray-500 focus:outline-none";

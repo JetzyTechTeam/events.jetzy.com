@@ -12,9 +12,7 @@ import {
 	Text,
 } from "@chakra-ui/react"
 import { ClockIcon } from "@heroicons/react/24/outline"
-import { Roboto } from "next/font/google"
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
+import { roboto } from "@/lib/fonts"
 
 /**
  * Shown when the host navigates away from an event form holding work that is saved but not

@@ -135,7 +135,7 @@ import { TicketData } from "@/components/events/TicketCard"
 import { FileUploadData } from "@/components/misc/DragAndDropUploader"
 import { EmailProps } from "@/lib/email-service"
 import { z } from "zod"
-import { Roboto } from "next/font/google"
+import { roboto } from "@/lib/fonts"
 import dayjs from "dayjs"
 import utc from "dayjs/plugin/utc"
 import timezone from "dayjs/plugin/timezone"
@@ -143,8 +143,6 @@ import { getEventZone, normalizeTimezone } from "@/utils/eventTime"
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 
 // Shared dark field styling (Figma: bg #090C10, 1px #343536 border, rounded, Roboto 14px)
 const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-sm placeholder:text-gray-500 focus:outline-none"
