@@ -2,8 +2,27 @@ import axios from "axios";
 
 const UPLOAD_ENDPOINT = "https://prod-api.jetzy.com/api/v1/uploader/multiple";
 
+/**
+ * The folders the Jetzy uploader actually accepts.
+ *
+ * This list is enforced SERVER-SIDE and we cannot read it: anything outside it comes back as
+ * `{"message":"Invalid Folder","status":false,"code":500}` - a hard 500 in front of whoever was
+ * uploading. This field was `string`, so inventing a folder name compiled cleanly and failed only
+ * in production. That is exactly how `"blasts"` shipped and broke blast attachments outright, and
+ * how `"events"` sat silently breaking inline images in the description editor.
+ *
+ * Verified empirically against the live endpoint on 2026-10-07 - one upload per candidate, NOT
+ * read from the backend source. `posts` and `photos` succeeded; `blasts`, `events` and
+ * `attachments` were all refused. Adding one means PROBING for it first, never guessing.
+ *
+ * The legacy `src/lib/edgestore.ts` shim posts to the same endpoint and is under the same rule.
+ */
+export type UploadFolder = "posts" | "photos";
+
+export const UPLOAD_FOLDERS: UploadFolder[] = ["posts", "photos"];
+
 interface UploadOptions {
-    folder?: string;
+    folder?: UploadFolder;
     onProgressChange?: (progress: number) => void;
     // Optional AbortSignal so callers can cancel an in-flight upload.
     signal?: AbortSignal;
