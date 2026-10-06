@@ -11,6 +11,7 @@ import { PageView, UserSession } from "@/models/analytics"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
+import { MAX_SESSION_SECONDS, sessionVisitorKey } from "@/lib/analytics-metrics"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "GET") {
@@ -53,9 +54,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Build query matchers up front
 		const bookingMatch: any = { isDeleted: false }
 		if (dateFrom || dateTo) bookingMatch.createdAt = dateFilter
-
-		const checkInMatch: any = {}
-		if (dateFrom || dateTo) checkInMatch.createdAt = dateFilter
 
 		const sessionMatch: any = {}
 		if (dateFrom || dateTo) sessionMatch.startTime = dateFilter
@@ -138,7 +136,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				{
 					$group: {
 						_id: null,
-						totalRevenue: { $sum: "$total" },
+						// `total` is already net of discounts; `subTotal` is the list-price figure.
+						totalRevenue: { $sum: { $ifNull: ["$total", 0] } },
+						grossRevenue: { $sum: { $ifNull: ["$subTotal", 0] } },
 						totalTickets: {
 							$sum: {
 								$reduce: {
@@ -153,16 +153,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 					},
 				},
 			]),
-			// Check-in
-			CheckIn.aggregate([
-				{ $match: checkInMatch },
-				{
-					$group: {
-						_id: null,
-						totalCheckedIn: { $sum: "$checkedInCount" },
-						totalTicketsPurchased: { $sum: "$totalTickets" },
-					},
-				},
+			// Check-in — guests checked in on CONFIRMED bookings made in the range, so the rate is
+			// checked-in ÷ tickets sold. (Summing CheckIn.totalTickets only covered bookings that
+			// had already checked someone in, which put the rate near 100% regardless.)
+			BookingsModel.aggregate([
+				{ $match: { ...bookingMatch, status: BookingStatus.CONFIRMED } },
+				{ $lookup: { from: CheckIn.collection.name, localField: "_id", foreignField: "bookingId", as: "checkIn" } },
+				{ $unwind: "$checkIn" },
+				{ $group: { _id: null, totalCheckedIn: { $sum: { $ifNull: ["$checkIn.checkedInCount", 0] } } } },
 			]),
 			// Users
 			Users.countDocuments({}),
@@ -183,8 +181,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			UserSession.countDocuments(sessionMatch),
 			UserSession.countDocuments({ ...sessionMatch, isLoggedIn: true }),
 			UserSession.countDocuments({ ...sessionMatch, isLoggedIn: false }),
-			// uniqueVisitors: sessionId is unique per row, so count == distinct count
-			UserSession.countDocuments(sessionMatch),
+			// uniqueVisitors: distinct people (user, else browser anonId), not session rows
+			UserSession.aggregate([
+				{ $match: sessionMatch },
+				{ $group: { _id: sessionVisitorKey } },
+				{ $count: "count" },
+			]).then((r: any[]) => r[0]?.count || 0),
 			// uniqueLoggedInUsers: count distinct users via aggregation (avoids loading all IDs into memory)
 			UserSession.aggregate([
 				{ $match: { ...sessionMatch, userId: { $ne: null } } },
@@ -192,8 +194,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				{ $count: "count" },
 			]).then((r: any[]) => r[0]?.count || 0),
 			UserSession.aggregate([
-				{ $match: { ...sessionMatch, duration: { $exists: true, $ne: null } } },
-				{ $group: { _id: null, avgDuration: { $avg: "$duration" } } },
+				// Tabs left open for hours report hours-long "sessions"; keep them out of the average.
+				{ $match: { ...sessionMatch, duration: { $gt: 0, $lte: MAX_SESSION_SECONDS } } },
+				{ $group: { _id: null, avgDuration: { $avg: "$duration" }, measured: { $sum: 1 } } },
 			]),
 			// Page views
 			PageView.countDocuments(pageViewMatch),
@@ -203,10 +206,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		// Derived values
 		const revenueData = (bookingStats as any[])[0] || { totalRevenue: 0, totalTickets: 0, totalDiscounts: 0, uniqueEvents: [] }
 		const eventsWithBookings = revenueData.uniqueEvents?.length || 0
-		const checkInData = (checkInStats as any[])[0] || { totalCheckedIn: 0, totalTicketsPurchased: 0 }
+		const totalCheckedIn = (checkInStats as any[])[0]?.totalCheckedIn || 0
+		const checkInData = { totalCheckedIn, totalTicketsPurchased: revenueData.totalTickets }
 		const checkInRate = checkInData.totalTicketsPurchased > 0 ? (checkInData.totalCheckedIn / checkInData.totalTicketsPurchased) * 100 : 0
 		const referralUsage = (referralStats as any[])[0]?.totalUsage || 0
 		const avgDuration = (avgSessionDuration as any[])[0]?.avgDuration || 0
+		const measuredSessions = (avgSessionDuration as any[])[0]?.measured || 0
 		const bounceRate = (totalSessions as number) > 0 ? ((bouncedSessions as number) / (totalSessions as number)) * 100 : 0
 
 		const inactiveUsers = Math.max(0, (totalUsers as number) - (activeUsers as number))
@@ -236,6 +241,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				cancelled: cancelledBookings,
 				failed: failedBookings,
 				refunded: refundedBookings,
+				eventsWithBookings,
 				byStatus: {
 					confirmed: confirmedBookings,
 					pending: pendingBookings,
@@ -246,7 +252,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			},
 			revenue: {
 				total: revenueData.totalRevenue,
-				netRevenue: revenueData.totalRevenue - revenueData.totalDiscounts,
+				gross: revenueData.grossRevenue || 0,
+				netRevenue: revenueData.totalRevenue,
 				totalDiscounts: revenueData.totalDiscounts,
 				averagePerEvent: avgRevenuePerEvent,
 				averagePerBooking: avgBookingValue,
@@ -289,6 +296,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			sessions: {
 				total: totalSessions,
 				averageDuration: Math.round(avgDuration),
+				measuredForDuration: measuredSessions,
 			},
 			pageViews: {
 				total: totalPageViews,

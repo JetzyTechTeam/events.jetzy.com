@@ -1,18 +1,21 @@
 import ConsoleLayout from "@Jetzy/components/layout/ConsoleLayout"
-import { eventPath } from "@/lib/event-slug"
 import { adminOnly } from "@Jetzy/lib/authSession"
 import { Pages } from "@Jetzy/types"
 import { GetServerSideProps } from "next"
 import Head from "next/head"
-import React, { useState, useEffect } from "react"
-import { Box, Flex, Text, SimpleGrid, useToast, Spinner, Center, Tabs, TabList, TabPanels, Tab, TabPanel, Table, Thead, Tbody, Tr, Th, Td, TableContainer, Image, Badge, Link, Button, HStack, IconButton } from "@chakra-ui/react"
+import { useRouter } from "next/router"
+import React, { useState, useEffect, useMemo } from "react"
+import { Box, Flex, Text, SimpleGrid, useToast, Spinner, Center, Tabs, TabList, TabPanels, Tab, TabPanel, Table, Thead, Tbody, Tr, Th, Td, TableContainer, Badge, Button, HStack, Select } from "@chakra-ui/react"
 import NextLink from "next/link"
-import { FiCalendar, FiUsers, FiDollarSign, FiShoppingCart, FiTrendingUp, FiEye, FiChevronLeft, FiChevronRight } from "react-icons/fi"
+import { FiUsers, FiDollarSign, FiShoppingCart, FiEye, FiDownload } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
 import VisitorChart from "@/components/analytics/VisitorChart"
 import BookingTrendsChart from "@/components/analytics/BookingTrendsChart"
-import SafeHTML from "@/components/misc/SafeHTML"
+import EventPerformanceTab from "@/components/analytics/EventPerformanceTab"
+import TablePagination from "@/components/analytics/TablePagination"
+import { AnalyticsPanel, InfoTip, StatTable, darkTableSx, downloadCsv } from "@/components/analytics/AnalyticsPanel"
+import { usePagedAnalytics } from "@/hooks/usePagedAnalytics"
 
 interface OverviewData {
 	bounceRate?: number
@@ -32,10 +35,12 @@ interface OverviewData {
 		cancelled: number
 		failed: number
 		refunded: number
+		eventsWithBookings?: number
 		byStatus: Record<string, number>
 	}
 	revenue: {
 		total: number
+		gross?: number
 		netRevenue: number
 		totalDiscounts: number
 		averagePerEvent: number
@@ -79,6 +84,7 @@ interface OverviewData {
 	sessions: {
 		total: number
 		averageDuration: number
+		measuredForDuration?: number
 	}
 	pageViews: {
 		total: number
@@ -129,26 +135,6 @@ interface BookingData {
 	}>
 }
 
-interface TopEvent {
-	eventId: string
-	name: string
-	slug: string
-	image: string | null
-	revenue: {
-		total: number
-		net: number
-		discounts: number
-	}
-	bookings: number
-	tickets: {
-		sold: number
-		checkedIn: number
-		checkInRate: number
-	}
-	views: number
-	uniqueViewers: number
-}
-
 interface PaginationData {
 	page: number
 	limit: number
@@ -156,26 +142,6 @@ interface PaginationData {
 	totalPages: number
 	hasNextPage: boolean
 	hasPreviousPage: boolean
-}
-
-interface TopEvent {
-	eventId: string
-	name: string
-	slug: string
-	image: string | null
-	revenue: {
-		total: number
-		net: number
-		discounts: number
-	}
-	bookings: number
-	tickets: {
-		sold: number
-		checkedIn: number
-		checkInRate: number
-	}
-	views: number
-	uniqueViewers: number
 }
 
 interface TopUser {
@@ -293,11 +259,6 @@ interface PageData {
 	}
 }
 
-interface TopEventsData {
-	events: TopEvent[]
-	pagination: PaginationData
-}
-
 interface TopUsersData {
 	users: TopUser[]
 	pagination: PaginationData
@@ -320,181 +281,188 @@ interface NamedEventsData {
 	}
 }
 
+const TABS = [
+	{ key: "overview", label: "Overview" },
+	{ key: "events", label: "Events" },
+	{ key: "visitors", label: "Visitors & Sessions" },
+	{ key: "bookings", label: "Bookings & Revenue" },
+	{ key: "users", label: "Users" },
+	{ key: "traffic", label: "Traffic Sources" },
+	{ key: "devices", label: "Devices & Pages" },
+	{ key: "named-events", label: "Named Events" },
+] as const
+
+const formatCurrency = (amount: number) =>
+	new Intl.NumberFormat("en-US", {
+		style: "currency",
+		currency: "USD",
+	}).format(amount || 0)
+
+const formatNumber = (num: number) => new Intl.NumberFormat("en-US").format(num || 0)
+
+const formatDuration = (seconds: number) => {
+	if (!seconds || seconds < 1) return "0s"
+	if (seconds < 60) return `${Math.round(seconds)}s`
+	if (seconds < 3600) {
+		const m = Math.floor(seconds / 60)
+		const s = Math.round(seconds % 60)
+		return s ? `${m}m ${s}s` : `${m}m`
+	}
+	const h = Math.floor(seconds / 3600)
+	const m = Math.round((seconds % 3600) / 60)
+	return m ? `${h}h ${m}m` : `${h}h`
+}
+
+const share = (part: number, whole: number) => (whole > 0 ? (part / whole) * 100 : null)
+
+const formatDay = (date: string) => {
+	const d = new Date(`${date}T00:00:00`)
+	return isNaN(d.getTime()) ? date : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+}
+
+const pagePathToLabel = (path: string): string => {
+	const map: Record<string, string> = {
+		"/": "Home",
+		"/login": "Login",
+		"/register": "Sign Up",
+		"/forgot-password": "Forgot Password",
+		"/console/events": "My Events",
+		"/console/events/create": "Create Event",
+		"/console/bookings": "My Bookings",
+		"/console/analytics": "Analytics Dashboard",
+		"/console/analytics/journey": "Journey Analytics",
+		"/console/profile": "Profile Settings",
+	}
+	if (map[path]) return map[path]
+	if (/^\/[^/]+$/.test(path) && !path.startsWith("/console") && !path.startsWith("/api")) return `Event Page (${path})`
+	if (path.includes("/[slug]") || path === "/[slug]") return "Event Detail Page"
+	if (path.includes("/manage")) return "Event Management"
+	if (path.includes("/analytics")) return "Event Analytics"
+	if (path.includes("/bookings")) return "Event Bookings"
+	if (path.includes("/checkin") || path.includes("/check-in")) return "Check-in Portal"
+	if (path.includes("/booking")) return "Booking Flow"
+	if (path.includes("/console/events/")) return "Event Console Page"
+	return path
+}
+
+/** Page path cell: readable label, raw path underneath when they differ. */
+const PageCell = ({ path }: { path: string }) => {
+	const label = pagePathToLabel(path)
+	return (
+		<Box maxW="420px">
+			<Text fontWeight="medium" noOfLines={1} title={label}>{label}</Text>
+			{label !== path && (
+				<Text fontSize="xs" color="#9C9C9C" fontFamily="mono" noOfLines={1} title={path}>{path}</Text>
+			)}
+		</Box>
+	)
+}
+
+const tabProps = {
+	color: "#9C9C9C",
+	fontWeight: "semibold",
+	whiteSpace: "nowrap" as const,
+	px: 4,
+	_selected: { color: "#F79432", borderBottom: "2px solid #F79432" },
+	_hover: { color: "white" },
+}
+
+const selectProps = {
+	size: "sm" as const,
+	bg: "#0f0f0f",
+	color: "white",
+	borderColor: "#2a2a2a",
+	focusBorderColor: "#F79432",
+	sx: { "> option": { bg: "#1a1a1a", color: "white" } },
+}
+
+/** Client-side pager for tables whose full data is already loaded (daily breakdowns, named events). */
+function useLocalPager<T>(rows: T[], initialSize = 10) {
+	const [page, setPage] = useState(1)
+	const [pageSize, setPageSize] = useState(initialSize)
+	const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+	const safePage = Math.min(page, totalPages)
+	useEffect(() => {
+		setPage(1)
+	}, [rows.length, pageSize])
+	return {
+		page: safePage,
+		pageSize,
+		setPage,
+		setPageSize,
+		pageRows: rows.slice((safePage - 1) * pageSize, safePage * pageSize),
+	}
+}
+
 export default function AnalyticsPage() {
+	const router = useRouter()
+	const toast = useToast()
+
 	const [overviewData, setOverviewData] = useState<OverviewData | null>(null)
 	const [visitorData, setVisitorData] = useState<VisitorData | null>(null)
 	const [bookingData, setBookingData] = useState<BookingData | null>(null)
-	const [topEventsData, setTopEventsData] = useState<TopEventsData | null>(null)
-	const [topUsersData, setTopUsersData] = useState<TopUsersData | null>(null)
-	const [referrerData, setReferrerData] = useState<ReferrerData | null>(null)
 	const [utmData, setUtmData] = useState<UTMData | null>(null)
 	const [deviceData, setDeviceData] = useState<DeviceData | null>(null)
-	const [pageData, setPageData] = useState<PageData | null>(null)
+	const [entryExitData, setEntryExitData] = useState<PageData | null>(null)
 	const [namedEventsData, setNamedEventsData] = useState<NamedEventsData | null>(null)
 	const [namedEventsCategory, setNamedEventsCategory] = useState<string>("all")
-	const [namedEventsPage, setNamedEventsPage] = useState(1)
-	const NAMED_EVENTS_PER_PAGE = 20
 	const [isLoading, setIsLoading] = useState(true)
+	const [hasLoaded, setHasLoaded] = useState(false)
 	const [dateFrom, setDateFrom] = useState<Date | null>(null)
 	const [dateTo, setDateTo] = useState<Date | null>(null)
+	const [usersSortBy, setUsersSortBy] = useState("activity")
 
-	// Pagination state
-	const [topEventsPage, setTopEventsPage] = useState(1)
-	const [topUsersPage, setTopUsersPage] = useState(1)
-	const [referrersPage, setReferrersPage] = useState(1)
-	const [pagesPage, setPagesPage] = useState(1)
+	// Tab lives in the URL (?tab=events) so a view can be bookmarked or shared.
+	const tabIndex = Math.max(0, TABS.findIndex((t) => t.key === router.query.tab))
+	const handleTabChange = (index: number) => {
+		router.replace({ pathname: router.pathname, query: { ...router.query, tab: TABS[index].key } }, undefined, { shallow: true, scroll: false })
+	}
 
-	const toast = useToast()
+	const dateParams = useMemo(
+		() => ({ dateFrom: dateFrom ? dateFrom.toISOString() : null, dateTo: dateTo ? dateTo.toISOString() : null }),
+		[dateFrom, dateTo]
+	)
 
-	const fetchAnalytics = async (from: Date | null, to: Date | null, eventsPage = 1, usersPage = 1, referrersPageNum = 1, pagesPageNum = 1) => {
+	// Paginated tables fetch independently.
+	const usersTable = usePagedAnalytics<TopUsersData>("/api/analytics/top-users", { ...dateParams, sortBy: usersSortBy }, 10)
+	const referrersTable = usePagedAnalytics<ReferrerData>("/api/analytics/referrers", dateParams, 10)
+	const pagesTable = usePagedAnalytics<PageData>("/api/analytics/pages", dateParams, 10)
+
+	const fetchAnalytics = async (from: Date | null, to: Date | null) => {
 		setIsLoading(true)
 		try {
 			const params = new URLSearchParams()
 			if (from) params.append("dateFrom", from.toISOString())
 			if (to) params.append("dateTo", to.toISOString())
+			const qs = params.toString()
+			const get = (path: string) => fetch(`${path}${path.includes("?") ? "&" : "?"}${qs}`, { method: "GET", credentials: "include", headers: { "Content-Type": "application/json" } })
 
-			// Fetch all analytics data in parallel
-			const [overviewRes, visitorsRes, bookingsRes, topEventsRes, topUsersRes, referrersRes, utmRes, devicesRes, pagesRes, namedEventsRes] = await Promise.all([
-				fetch(`/api/analytics/overview?${params.toString()}`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/visitors?${params.toString()}&groupBy=day`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/bookings?${params.toString()}&groupBy=day`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/top-events?${params.toString()}&limit=10&page=${eventsPage}&sortBy=revenue`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/top-users?${params.toString()}&limit=10&page=${usersPage}&sortBy=activity`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/referrers?${params.toString()}&limit=20&page=${referrersPageNum}`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/utm?${params.toString()}&groupBy=campaign`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/devices?${params.toString()}`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/pages?${params.toString()}&limit=20&page=${pagesPageNum}`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
-				fetch(`/api/analytics/named-events?${params.toString()}`, {
-					method: "GET",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-				}),
+			const [overviewRes, visitorsRes, bookingsRes, utmRes, devicesRes, entryExitRes, namedEventsRes] = await Promise.all([
+				get("/api/analytics/overview"),
+				get("/api/analytics/visitors?groupBy=day"),
+				get("/api/analytics/bookings?groupBy=day"),
+				get("/api/analytics/utm?groupBy=campaign"),
+				get("/api/analytics/devices"),
+				get("/api/analytics/pages?limit=10&page=1"),
+				get("/api/analytics/named-events"),
 			])
 
-			// Process overview data
-			if (overviewRes.ok) {
-				const overviewResult = await overviewRes.json()
-				if (overviewResult.status && overviewResult.data) {
-					setOverviewData(overviewResult.data)
-				}
+			const read = async (res: Response, set: (d: any) => void) => {
+				if (!res.ok) return
+				const result = await res.json()
+				if (result.status && result.data) set(result.data)
 			}
+			await Promise.all([
+				read(overviewRes, setOverviewData),
+				read(visitorsRes, setVisitorData),
+				read(bookingsRes, setBookingData),
+				read(utmRes, setUtmData),
+				read(devicesRes, setDeviceData),
+				read(entryExitRes, setEntryExitData),
+				read(namedEventsRes, setNamedEventsData),
+			])
 
-			// Process visitor data
-			if (visitorsRes.ok) {
-				const visitorsResult = await visitorsRes.json()
-				if (visitorsResult.status && visitorsResult.data) {
-					setVisitorData(visitorsResult.data)
-				}
-			}
-
-			// Process booking data
-			if (bookingsRes.ok) {
-				const bookingsResult = await bookingsRes.json()
-				if (bookingsResult.status && bookingsResult.data) {
-					setBookingData(bookingsResult.data)
-				}
-			}
-
-			// Process top events data
-			if (topEventsRes.ok) {
-				const topEventsResult = await topEventsRes.json()
-				if (topEventsResult.status && topEventsResult.data?.events) {
-					setTopEventsData({
-						events: topEventsResult.data.events,
-						pagination: topEventsResult.data.pagination,
-					})
-				}
-			}
-
-			// Process top users data
-			if (topUsersRes.ok) {
-				const topUsersResult = await topUsersRes.json()
-				if (topUsersResult.status && topUsersResult.data?.users) {
-					setTopUsersData({
-						users: topUsersResult.data.users,
-						pagination: topUsersResult.data.pagination,
-					})
-				}
-			}
-
-			// Process referrer data
-			if (referrersRes.ok) {
-				const referrersResult = await referrersRes.json()
-				if (referrersResult.status && referrersResult.data) {
-					setReferrerData(referrersResult.data)
-				}
-			}
-
-			// Process UTM data
-			if (utmRes.ok) {
-				const utmResult = await utmRes.json()
-				if (utmResult.status && utmResult.data) {
-					setUtmData(utmResult.data)
-				}
-			}
-
-			// Process device data
-			if (devicesRes.ok) {
-				const devicesResult = await devicesRes.json()
-				if (devicesResult.status && devicesResult.data) {
-					setDeviceData(devicesResult.data)
-				}
-			}
-
-			// Process page data
-			if (pagesRes.ok) {
-				const pagesResult = await pagesRes.json()
-				if (pagesResult.status && pagesResult.data) {
-					setPageData(pagesResult.data)
-				}
-			}
-
-			// Process named events data
-			if (namedEventsRes.ok) {
-				const namedEventsResult = await namedEventsRes.json()
-				if (namedEventsResult.status && namedEventsResult.data) {
-					setNamedEventsData(namedEventsResult.data)
-				}
-			}
-
-			// Check if any critical request failed
-			if (!overviewRes.ok || !visitorsRes.ok || !bookingsRes.ok || !topEventsRes.ok) {
+			if (!overviewRes.ok || !visitorsRes.ok || !bookingsRes.ok) {
 				throw new Error("Failed to fetch some analytics data")
 			}
 		} catch (error: any) {
@@ -508,82 +476,43 @@ export default function AnalyticsPage() {
 			})
 		} finally {
 			setIsLoading(false)
+			setHasLoaded(true)
 		}
 	}
 
 	useEffect(() => {
-		fetchAnalytics(dateFrom, dateTo, topEventsPage, topUsersPage, referrersPage, pagesPage)
+		fetchAnalytics(dateFrom, dateTo)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [dateFrom, dateTo, topEventsPage, topUsersPage, referrersPage, pagesPage])
+	}, [dateFrom, dateTo])
 
 	const handleDateChange = (from: Date | null, to: Date | null) => {
 		setDateFrom(from)
 		setDateTo(to)
-		// Reset pagination when date changes
-		setTopEventsPage(1)
-		setTopUsersPage(1)
-		setReferrersPage(1)
-		setPagesPage(1)
 	}
 
-	const formatCurrency = (amount: number) => {
-		return new Intl.NumberFormat("en-US", {
-			style: "currency",
-			currency: "USD",
-		}).format(amount)
-	}
-
-	const formatNumber = (num: number) => {
-		return new Intl.NumberFormat("en-US").format(num)
-	}
-
-	const formatDuration = (seconds: number) => {
-		if (seconds < 60) return `${Math.round(seconds)}s`
-		if (seconds < 3600) return `${Math.round(seconds / 60)}m`
-		return `${Math.round(seconds / 3600)}h`
-	}
+	const filteredNamedRows = useMemo(
+		() => (namedEventsData ? namedEventsData.rows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory) : []),
+		[namedEventsData, namedEventsCategory]
+	)
+	const namedPager = useLocalPager(filteredNamedRows, 25)
+	const visitorDays = useMemo(() => [...(visitorData?.byDate || [])].reverse(), [visitorData])
+	const visitorPager = useLocalPager(visitorDays, 10)
+	const bookingDays = useMemo(() => [...(bookingData?.byDate || [])].reverse(), [bookingData])
+	const bookingPager = useLocalPager(bookingDays, 10)
 
 	const exportNamedEventsCSV = () => {
-		if (!namedEventsData) return
-		const rows = namedEventsData.rows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
-		const header = "Category,Event Name,Total Events,Unique Users"
-		const lines = rows.map((r) => `"${r.category}","${r.eventName.replace(/"/g, '""')}",${r.totalEvents},${r.uniqueUsers}`)
-		const csv = "﻿" + [header, ...lines].join("\n")
-		const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-		const url = URL.createObjectURL(blob)
-		const a = document.createElement("a")
-		a.href = url
-		a.download = `named-events-${new Date().toISOString().slice(0, 10)}.csv`
-		document.body.appendChild(a)
-		a.click()
-		document.body.removeChild(a)
-		URL.revokeObjectURL(url)
+		downloadCsv(
+			`named-events-${new Date().toISOString().slice(0, 10)}.csv`,
+			["Category", "Event Name", "Total Events", "Unique Users"],
+			filteredNamedRows.map((r) => [r.category, r.eventName, r.totalEvents, r.uniqueUsers])
+		)
 	}
 
-	const pagePathToLabel = (path: string): string => {
-		const map: Record<string, string> = {
-			"/": "Home",
-			"/login": "Login",
-			"/register": "Sign Up",
-			"/forgot-password": "Forgot Password",
-			"/console/events": "My Events",
-			"/console/events/create": "Create Event",
-			"/console/bookings": "My Bookings",
-			"/console/analytics": "Analytics Dashboard",
-			"/console/analytics/journey": "Journey Analytics",
-			"/console/profile": "Profile Settings",
-		}
-		if (map[path]) return map[path]
-		if (/^\/[^/]+$/.test(path) && !path.startsWith("/console") && !path.startsWith("/api")) return `Event Page (${path})`
-		if (path.includes("/[slug]") || path === "/[slug]") return "Event Detail Page"
-		if (path.includes("/manage")) return "Event Management"
-		if (path.includes("/analytics")) return "Event Analytics"
-		if (path.includes("/bookings")) return "Event Bookings"
-		if (path.includes("/checkin") || path.includes("/check-in")) return "Check-in Portal"
-		if (path.includes("/booking")) return "Booking Flow"
-		if (path.includes("/console/events/")) return "Event Console Page"
-		return path
-	}
+	const o = overviewData
+	const otherBookings = o ? Math.max(0, o.bookings.total - o.bookings.confirmed - o.bookings.pending - o.bookings.cancelled - o.bookings.failed - o.bookings.refunded) : 0
+	const liveOrUndatedEvents = o ? Math.max(0, o.events.total - o.events.upcoming - o.events.past) : 0
+	const isAllTime = !dateFrom && !dateTo
+	const periodLabel = isAllTime ? "all time" : "the selected period"
 
 	return (
 		<>
@@ -597,7 +526,7 @@ export default function AnalyticsPage() {
 					{/* Date Range Selector */}
 					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
 						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
-						<HStack spacing={2}>
+						<HStack spacing={2} flexWrap="wrap">
 							<NextLink href="/console/analytics/growth" passHref legacyBehavior>
 								<Button as="a" variant="outline" borderColor="#F79432" color="#F79432" _hover={{ bg: "#2a2a2a" }} size="sm">Referrals &amp; Memberships</Button>
 							</NextLink>
@@ -610,617 +539,391 @@ export default function AnalyticsPage() {
 						</HStack>
 					</Flex>
 
-					{/* Loading State */}
-					{isLoading ? (
+					{!hasLoaded ? (
 						<Center py={20}>
 							<Spinner size="xl" color="#F79432" />
 						</Center>
-					) : overviewData ? (
-						<>
-							<Tabs variant="line">
-								<TabList borderBottom="2px solid #2a2a2a" mb={4}>
-									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Overview</Tab>
-									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Visitors & Sessions</Tab>
-									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Bookings & Revenue</Tab>
-									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Users</Tab>
-									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Traffic Sources</Tab>
-									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Devices & Pages</Tab>
-									<Tab color="#9C9C9C" fontWeight="bold" _selected={{ color: "#F79432", borderBottom: "2px solid #F79432" }}>Named Events</Tab>
-								</TabList>
+					) : o ? (
+						<Box position="relative">
+							{isLoading && (
+								<Flex position="fixed" top="80px" left="50%" transform="translateX(-50%)" zIndex={20} bg="#1a1a1a" border="1px solid" borderColor="#2a2a2a" px={4} py={2} borderRadius="full" align="center" gap={2} boxShadow="lg">
+									<Spinner size="sm" color="#F79432" />
+									<Text fontSize="sm" color="white">Updating…</Text>
+								</Flex>
+							)}
+							<Tabs variant="line" index={tabIndex} onChange={handleTabChange} isLazy lazyBehavior="keepMounted">
+								<Box overflowX="auto" mb={4} sx={{ scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
+									<TabList borderBottom="2px solid #2a2a2a" w="max-content" minW="100%">
+										{TABS.map((t) => (
+											<Tab key={t.key} {...tabProps}>{t.label}</Tab>
+										))}
+									</TabList>
+								</Box>
 
 								<TabPanels>
 									{/* Overview Tab */}
 									<TabPanel px={0}>
-										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-												Overview
-											</Text>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-												<MetricsCard
-													dark
-													title="Total Events"
-													value={formatNumber(overviewData.events.total)}
-													icon={FiCalendar}
-													subtitle={`${overviewData.events.public} public, ${overviewData.events.private} private`}
-												/>
-												<MetricsCard
-													dark
-													title="Total Bookings"
-													value={formatNumber(overviewData.bookings.total)}
-													icon={FiUsers}
-													subtitle={`${overviewData.bookings.confirmed} confirmed`}
-												/>
-												<MetricsCard
-													dark
-													title="Total Revenue"
-													value={formatCurrency(overviewData.revenue.total)}
-													icon={FiDollarSign}
-													subtitle={`Net: ${formatCurrency(overviewData.revenue.netRevenue)}`}
-												/>
-												<MetricsCard
-													dark
-													title="Tickets Sold"
-													value={formatNumber(overviewData.tickets.totalSold)}
-													icon={FiShoppingCart}
-													subtitle={`Avg ${overviewData.tickets.averagePerBooking.toFixed(1)} per booking`}
-												/>
-											</SimpleGrid>
-										</Box>
+										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
+											<MetricsCard dark title="Net revenue" value={formatCurrency(o.revenue.netRevenue)} icon={FiDollarSign} subtitle={`${formatCurrency(o.revenue.gross ?? o.revenue.netRevenue + o.revenue.totalDiscounts)} gross − ${formatCurrency(o.revenue.totalDiscounts)} discounts`} />
+											<MetricsCard dark title="Confirmed bookings" value={formatNumber(o.bookings.confirmed)} icon={FiShoppingCart} subtitle={`of ${formatNumber(o.bookings.total)} booking attempts`} />
+											<MetricsCard dark title="Tickets sold" value={formatNumber(o.tickets.totalSold)} icon={FiUsers} subtitle={`${formatNumber(o.checkIns.totalCheckedIn)} checked in (${o.checkIns.checkInRate.toFixed(1)}%)`} />
+											<MetricsCard dark title="Unique visitors" value={formatNumber(o.visitors.uniqueVisitors)} icon={FiEye} subtitle={`${formatNumber(o.visitors.totalSessions)} sessions · ${formatNumber(o.pageViews.total)} page views`} />
+										</SimpleGrid>
 
-										{/* Visitor & Session Metrics */}
-										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-												Visitors & Sessions
-											</Text>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-												<MetricsCard
-													dark
-													title="Total Sessions"
-													value={formatNumber(overviewData.visitors.totalSessions)}
-													icon={FiEye}
-													subtitle={`${overviewData.visitors.loggedInSessions} logged in`}
+										<SimpleGrid columns={{ base: 1, xl: 2 }} spacing={6}>
+											<AnalyticsPanel title="Revenue & tickets" subtitle={`Confirmed bookings made in ${periodLabel}`} mb={0}>
+												<StatTable
+													rows={[
+														{ label: "Gross ticket value", value: formatCurrency(o.revenue.gross ?? o.revenue.netRevenue + o.revenue.totalDiscounts), help: "Tickets at list price, before any discount." },
+														{ label: "Discounts", value: `−${formatCurrency(o.revenue.totalDiscounts)}`, help: "Taken off by referral / promo codes.", tone: o.revenue.totalDiscounts > 0 ? "bad" : undefined },
+														{ label: "Net revenue", value: formatCurrency(o.revenue.netRevenue), help: "What guests actually paid for tickets. Membership fees are not included.", tone: "good" },
+														{ label: "Avg per booking", value: formatCurrency(o.revenue.averagePerBooking), help: "Net revenue ÷ confirmed bookings." },
+														{ label: "Avg per event", value: formatCurrency(o.revenue.averagePerEvent), help: `Net revenue ÷ ${formatNumber(o.bookings.eventsWithBookings ?? 0)} events that had at least one confirmed booking.` },
+														{ label: "Tickets sold", value: formatNumber(o.tickets.totalSold), help: "Tickets on confirmed bookings, free tickets included." },
+														{ label: "Tickets per booking", value: o.tickets.averagePerBooking.toFixed(1), help: "Average group size per confirmed booking." },
+														{ label: "Checked in", value: formatNumber(o.checkIns.totalCheckedIn), help: "Guests scanned / checked in at the door on those bookings." },
+														{ label: "Check-in rate", value: `${o.checkIns.checkInRate.toFixed(1)}%`, help: "Checked in ÷ tickets sold. Upcoming events naturally pull this down." },
+													]}
 												/>
-												<MetricsCard
-													dark
-													title="Unique Visitors"
-													value={formatNumber(overviewData.visitors.uniqueVisitors)}
-													icon={FiUsers}
-													subtitle={`${overviewData.visitors.uniqueLoggedInUsers} logged in`}
-												/>
-												<MetricsCard
-													dark
-													title="Avg Session Duration"
-													value={formatDuration(overviewData.sessions.averageDuration)}
-													icon={FiTrendingUp}
-												/>
-												<MetricsCard
-													dark
-													title="Total Page Views"
-													value={formatNumber(overviewData.pageViews.total)}
-													icon={FiEye}
-												/>
-												{overviewData.bounceRate !== undefined && (
-													<MetricsCard
-														dark
-														title="Bounce Rate"
-														value={`${overviewData.bounceRate.toFixed(1)}%`}
-														icon={FiTrendingUp}
-														bgColor={overviewData.bounceRate > 70 ? "#FFEBEE" : overviewData.bounceRate > 50 ? "#FFF3E0" : "#E8F5E9"}
-														iconColor={overviewData.bounceRate > 70 ? "#F44336" : overviewData.bounceRate > 50 ? "#FF9800" : "#4CAF50"}
-													/>
-												)}
-											</SimpleGrid>
-										</Box>
+											</AnalyticsPanel>
 
-										{/* Event Breakdown */}
-										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-												Event Breakdown
-											</Text>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-												<MetricsCard
-													dark
-													title="Paid Events"
-													value={formatNumber(overviewData.events.paid)}
-													bgColor="#E8F5E9"
-													iconColor="#4CAF50"
+											<AnalyticsPanel title="Bookings by status" subtitle={`All booking attempts created in ${periodLabel}`} mb={0}>
+												<StatTable
+													showShare
+													rows={[
+														{ label: "Confirmed", value: formatNumber(o.bookings.confirmed), share: share(o.bookings.confirmed, o.bookings.total), help: "Booked and paid (or free). These count toward revenue and tickets.", tone: "good" },
+														{ label: "Pending", value: formatNumber(o.bookings.pending), share: share(o.bookings.pending, o.bookings.total), help: "Awaiting host approval or payment.", tone: o.bookings.pending > 0 ? "warn" : undefined },
+														{ label: "Cancelled", value: formatNumber(o.bookings.cancelled), share: share(o.bookings.cancelled, o.bookings.total), help: "Cancelled by the guest, host or an admin." },
+														{ label: "Refunded", value: formatNumber(o.bookings.refunded), share: share(o.bookings.refunded, o.bookings.total), help: "Payment returned to the guest." },
+														{ label: "Failed", value: formatNumber(o.bookings.failed), share: share(o.bookings.failed, o.bookings.total), help: "Checkout started but payment did not go through.", tone: o.bookings.failed > 0 ? "bad" : undefined },
+														...(otherBookings > 0 ? [{ label: "Other", value: formatNumber(otherBookings), share: share(otherBookings, o.bookings.total), help: "Approved-but-unpaid or rejected requests." }] : []),
+														{ label: "Total", value: formatNumber(o.bookings.total), share: o.bookings.total > 0 ? 100 : null, help: "Every booking record, whatever its outcome." },
+													]}
 												/>
-												<MetricsCard
-													dark
-													title="Free Events"
-													value={formatNumber(overviewData.events.free)}
-													bgColor="#E3F2FD"
-													iconColor="#2196F3"
-												/>
-												<MetricsCard
-													dark
-													title="Upcoming Events"
-													value={formatNumber(overviewData.events.upcoming)}
-													bgColor="#FFF3E0"
-													iconColor="#FF9800"
-												/>
-												<MetricsCard
-													dark
-													title="Past Events"
-													value={formatNumber(overviewData.events.past)}
-													bgColor="#F3E5F5"
-													iconColor="#9C27B0"
-												/>
-											</SimpleGrid>
-										</Box>
+											</AnalyticsPanel>
 
-										{/* Booking Status Breakdown */}
-										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-												Booking Status
-											</Text>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-												<MetricsCard
-													dark
-													title="Confirmed"
-													value={formatNumber(overviewData.bookings.confirmed)}
-													bgColor="#E8F5E9"
-													iconColor="#4CAF50"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.confirmed / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
+											<AnalyticsPanel title="Visitors & engagement" subtitle={`Website sessions started in ${periodLabel}`} mb={0}>
+												<StatTable
+													rows={[
+														{ label: "Unique visitors", value: formatNumber(o.visitors.uniqueVisitors), help: "Distinct people — the logged-in account, else the browser." },
+														{ label: "Logged-in visitors", value: formatNumber(o.visitors.uniqueLoggedInUsers), help: "Distinct Jetzy accounts that visited." },
+														{ label: "Sessions", value: formatNumber(o.visitors.totalSessions), help: "Separate visits. One person can have many." },
+														{ label: "Logged-in / anonymous sessions", value: `${formatNumber(o.visitors.loggedInSessions)} / ${formatNumber(o.visitors.anonymousSessions)}`, help: "Whether the visitor was signed in when the visit started." },
+														{ label: "Page views", value: formatNumber(o.pageViews.total), help: "Every page opened across all sessions." },
+														{ label: "Pages per session", value: o.visitors.totalSessions > 0 ? (o.pageViews.total / o.visitors.totalSessions).toFixed(1) : "0", help: "Page views ÷ sessions." },
+														{ label: "Avg session duration", value: formatDuration(o.sessions.averageDuration), help: `Average over ${formatNumber(o.sessions.measuredForDuration ?? 0)} sessions with a recorded end. Tabs left open longer than 4 hours are excluded.` },
+														...(o.bounceRate !== undefined ? [{ label: "Bounce rate", value: `${o.bounceRate.toFixed(1)}%`, help: "Sessions that viewed only one page.", tone: (o.bounceRate > 70 ? "bad" : o.bounceRate > 50 ? "warn" : "good") as "bad" | "warn" | "good" }] : []),
+													]}
 												/>
-												<MetricsCard
-													dark
-													title="Pending"
-													value={formatNumber(overviewData.bookings.pending)}
-													bgColor="#FFF3E0"
-													iconColor="#FF9800"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.pending / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
-												/>
-												<MetricsCard
-													dark
-													title="Cancelled"
-													value={formatNumber(overviewData.bookings.cancelled)}
-													bgColor="#FFEBEE"
-													iconColor="#F44336"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.cancelled / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
-												/>
-												<MetricsCard
-													dark
-													title="Failed"
-													value={formatNumber(overviewData.bookings.failed)}
-													bgColor="#FCE4EC"
-													iconColor="#E91E63"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.failed / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
-												/>
-											</SimpleGrid>
-										</Box>
+											</AnalyticsPanel>
 
-										{/* Revenue & Check-in Metrics */}
-										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-												Revenue & Attendance
-											</Text>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-												<MetricsCard
-													dark
-													title="Net Revenue"
-													value={formatCurrency(overviewData.revenue.netRevenue)}
-													icon={FiDollarSign}
-													bgColor="#E8F5E9"
-													iconColor="#4CAF50"
-													subtitle={`After ${formatCurrency(overviewData.revenue.totalDiscounts)} discounts`}
+											<AnalyticsPanel title="Events" subtitle="Current catalogue (not affected by the date range)" mb={0}>
+												<StatTable
+													showShare
+													rows={[
+														{ label: "Total events", value: formatNumber(o.events.total), share: o.events.total > 0 ? 100 : null, help: "All events that have not been deleted, drafts included." },
+														{ label: "Public", value: formatNumber(o.events.public), share: share(o.events.public, o.events.total), help: "Listed and discoverable." },
+														{ label: "Private", value: formatNumber(o.events.private), share: share(o.events.private, o.events.total), help: "Reachable by direct link only." },
+														{ label: "Paid", value: formatNumber(o.events.paid), share: share(o.events.paid, o.events.total), help: "Sell at least one priced ticket." },
+														{ label: "Free", value: formatNumber(o.events.free), share: share(o.events.free, o.events.total), help: "All tickets free." },
+														{ label: "Upcoming", value: formatNumber(o.events.upcoming), share: share(o.events.upcoming, o.events.total), help: "Start date is in the future." },
+														{ label: "Past", value: formatNumber(o.events.past), share: share(o.events.past, o.events.total), help: "Already ended." },
+														{ label: "Live now / no date", value: formatNumber(liveOrUndatedEvents), share: share(liveOrUndatedEvents, o.events.total), help: "In progress right now, or no date set." },
+													]}
 												/>
-												<MetricsCard
-													dark
-													title="Avg per Event"
-													value={formatCurrency(overviewData.revenue.averagePerEvent)}
-													icon={FiTrendingUp}
-												/>
-												<MetricsCard
-													dark
-													title="Avg per Booking"
-													value={formatCurrency(overviewData.revenue.averagePerBooking)}
-													icon={FiShoppingCart}
-												/>
-												<MetricsCard
-													dark
-													title="Check-in Rate"
-													value={`${overviewData.checkIns.checkInRate.toFixed(1)}%`}
-													icon={FiUsers}
-													bgColor="#E3F2FD"
-													iconColor="#2196F3"
-													subtitle={`${formatNumber(overviewData.checkIns.totalCheckedIn)} of ${formatNumber(overviewData.checkIns.totalTicketsPurchased)}`}
-												/>
-											</SimpleGrid>
-										</Box>
+												<Button mt={4} size="sm" variant="link" color="#F79432" onClick={() => handleTabChange(1)}>
+													See performance per event →
+												</Button>
+											</AnalyticsPanel>
 
-										{/* Users & Referral Codes */}
-										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-												Users & Referrals
-											</Text>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={4}>
-												<MetricsCard
-													dark
-													title="Total Users"
-													value={formatNumber(overviewData.users.total)}
-													icon={FiUsers}
-													subtitle={`${overviewData.users.admins} admins, ${overviewData.users.regular} regular`}
+											<AnalyticsPanel title="Users & referrals" subtitle={isAllTime ? "Active = seen in the last 30 days" : "Active = seen during the selected period"} mb={0}>
+												<StatTable
+													showShare
+													rows={[
+														{ label: "Total users", value: formatNumber(o.users.total), share: o.users.total > 0 ? 100 : null, help: "Every registered account." },
+														{ label: "Active users", value: formatNumber(o.users.active), share: share(o.users.active, o.users.total), help: "Accounts with activity in the window above.", tone: "good" },
+														{ label: "Inactive users", value: formatNumber(o.users.inactive), share: share(o.users.inactive, o.users.total), help: "No activity in that window." },
+														{ label: "Admins (active)", value: `${formatNumber(o.users.admins)} (${formatNumber(o.users.activeAdmins)})`, share: share(o.users.admins, o.users.total), help: "Accounts with admin access." },
+														{ label: "Regular users (active)", value: `${formatNumber(o.users.regular)} (${formatNumber(o.users.activeRegular)})`, share: share(o.users.regular, o.users.total), help: "Guests and hosts." },
+														{ label: "Referral codes (active)", value: `${formatNumber(o.referralCodes.total)} (${formatNumber(o.referralCodes.active)})`, share: null, help: "Discount / referral codes created, and how many are switched on." },
+														{ label: "Referral code uses", value: formatNumber(o.referralCodes.totalUsage), share: null, help: "Times any code was applied to a booking (lifetime)." },
+													]}
 												/>
-												<MetricsCard
-													dark
-													title="Active Users"
-													value={formatNumber(overviewData.users.active)}
-													icon={FiUsers}
-													bgColor="#E8F5E9"
-													iconColor="#4CAF50"
-													subtitle={`${overviewData.users.activeRate.toFixed(1)}% of total`}
-												/>
-												<MetricsCard
-													dark
-													title="Inactive Users"
-													value={formatNumber(overviewData.users.inactive)}
-													icon={FiUsers}
-													bgColor="#FFEBEE"
-													iconColor="#F44336"
-													subtitle={`${overviewData.users.inactiveRate.toFixed(1)}% of total`}
-												/>
-												<MetricsCard
-													dark
-													title="Referral Codes"
-													value={formatNumber(overviewData.referralCodes.total)}
-													icon={FiShoppingCart}
-													subtitle={`${overviewData.referralCodes.active} active`}
-												/>
-											</SimpleGrid>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-												<MetricsCard
-													dark
-													title="Active Admins"
-													value={formatNumber(overviewData.users.activeAdmins)}
-													bgColor="#E3F2FD"
-													iconColor="#2196F3"
-													subtitle={`${overviewData.users.admins > 0 ? ((overviewData.users.activeAdmins / overviewData.users.admins) * 100).toFixed(1) : 0}% of admins`}
-												/>
-												<MetricsCard
-													dark
-													title="Active Regular Users"
-													value={formatNumber(overviewData.users.activeRegular)}
-													bgColor="#E8F5E9"
-													iconColor="#4CAF50"
-													subtitle={`${overviewData.users.regular > 0 ? ((overviewData.users.activeRegular / overviewData.users.regular) * 100).toFixed(1) : 0}% of regular users`}
-												/>
-												<MetricsCard
-													dark
-													title="Inactive Admins"
-													value={formatNumber(overviewData.users.inactiveAdmins)}
-													bgColor="#FFF3E0"
-													iconColor="#FF9800"
-													subtitle={`${overviewData.users.admins > 0 ? ((overviewData.users.inactiveAdmins / overviewData.users.admins) * 100).toFixed(1) : 0}% of admins`}
-												/>
-												<MetricsCard
-													dark
-													title="Code Usage"
-													value={formatNumber(overviewData.referralCodes.totalUsage)}
-													icon={FiTrendingUp}
-													bgColor="#E8F5E9"
-													iconColor="#4CAF50"
-												/>
-											</SimpleGrid>
-										</Box>
+											</AnalyticsPanel>
+										</SimpleGrid>
+									</TabPanel>
+
+									{/* Events Tab */}
+									<TabPanel px={0}>
+										<EventPerformanceTab dateFrom={dateFrom} dateTo={dateTo} />
 									</TabPanel>
 
 									{/* Visitors & Sessions Tab */}
 									<TabPanel px={0}>
+										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
+											<MetricsCard dark title="Unique visitors" value={formatNumber(o.visitors.uniqueVisitors)} icon={FiUsers} subtitle={`${formatNumber(o.visitors.uniqueLoggedInUsers)} logged in`} />
+											<MetricsCard dark title="Sessions" value={formatNumber(o.visitors.totalSessions)} icon={FiEye} subtitle={`${formatNumber(o.visitors.loggedInSessions)} logged in · ${formatNumber(o.visitors.anonymousSessions)} anonymous`} />
+											<MetricsCard dark title="Page views" value={formatNumber(o.pageViews.total)} icon={FiEye} subtitle={`${o.visitors.totalSessions > 0 ? (o.pageViews.total / o.visitors.totalSessions).toFixed(1) : 0} per session`} />
+											<MetricsCard dark title="Avg session" value={formatDuration(o.sessions.averageDuration)} icon={FiUsers} subtitle={o.bounceRate !== undefined ? `${o.bounceRate.toFixed(1)}% bounce rate` : undefined} />
+										</SimpleGrid>
+
 										{visitorData && visitorData.byDate.length > 0 && (
-											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-													Visitor Trends
-												</Text>
+											<AnalyticsPanel title="Visitor trends">
 												<VisitorChart data={visitorData.byDate} />
-											</Box>
+											</AnalyticsPanel>
 										)}
 
-										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-											<MetricsCard
-												dark
-												title="Total Sessions"
-												value={formatNumber(overviewData.visitors.totalSessions)}
-												icon={FiEye}
-												subtitle={`${overviewData.visitors.loggedInSessions} logged in`}
-											/>
-											<MetricsCard
-												dark
-												title="Unique Visitors"
-												value={formatNumber(overviewData.visitors.uniqueVisitors)}
-												icon={FiUsers}
-												subtitle={`${overviewData.visitors.uniqueLoggedInUsers} logged in`}
-											/>
-											<MetricsCard
-												dark
-												title="Avg Session Duration"
-												value={formatDuration(overviewData.sessions.averageDuration)}
-												icon={FiTrendingUp}
-											/>
-											<MetricsCard
-												dark
-												title="Total Page Views"
-												value={formatNumber(overviewData.pageViews.total)}
-												icon={FiEye}
-											/>
-										</SimpleGrid>
+										<AnalyticsPanel title="Daily breakdown" subtitle="Newest first. Unique visitors are counted per day, so they don't add up to the period total.">
+											{visitorDays.length > 0 ? (
+												<>
+													<TableContainer sx={darkTableSx}>
+														<Table variant="simple" size="sm">
+															<Thead>
+																<Tr>
+																	<Th>Date</Th>
+																	<Th isNumeric>Unique visitors</Th>
+																	<Th isNumeric>Sessions</Th>
+																	<Th isNumeric>Logged in</Th>
+																	<Th isNumeric>Anonymous</Th>
+																	<Th isNumeric>Page views</Th>
+																	<Th isNumeric>Pages / session</Th>
+																</Tr>
+															</Thead>
+															<Tbody>
+																{visitorPager.pageRows.map((d) => (
+																	<Tr key={d.date}>
+																		<Td whiteSpace="nowrap">{formatDay(d.date)}</Td>
+																		<Td isNumeric fontWeight="semibold">{formatNumber(d.uniqueVisitors)}</Td>
+																		<Td isNumeric>{formatNumber(d.totalSessions)}</Td>
+																		<Td isNumeric>{formatNumber(d.loggedInSessions)}</Td>
+																		<Td isNumeric>{formatNumber(d.anonymousSessions)}</Td>
+																		<Td isNumeric>{formatNumber(d.totalPageViews)}</Td>
+																		<Td isNumeric>{d.totalSessions > 0 ? (d.totalPageViews / d.totalSessions).toFixed(1) : "—"}</Td>
+																	</Tr>
+																))}
+															</Tbody>
+														</Table>
+													</TableContainer>
+													<TablePagination page={visitorPager.page} pageSize={visitorPager.pageSize} total={visitorDays.length} onPageChange={visitorPager.setPage} onPageSizeChange={visitorPager.setPageSize} noun="days" />
+												</>
+											) : (
+												<Text color="#9C9C9C" fontSize="sm">No sessions in this period.</Text>
+											)}
+										</AnalyticsPanel>
 									</TabPanel>
 
 									{/* Bookings & Revenue Tab */}
 									<TabPanel px={0}>
-										{bookingData && bookingData.byDate.length > 0 && (
-											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-													Booking & Revenue Trends
-												</Text>
-												<BookingTrendsChart data={bookingData.byDate} />
-											</Box>
-										)}
-
 										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-											<MetricsCard
-												dark
-												title="Total Revenue"
-												value={formatCurrency(overviewData.revenue.total)}
-												icon={FiDollarSign}
-												subtitle={`Net: ${formatCurrency(overviewData.revenue.netRevenue)}`}
-											/>
-											<MetricsCard
-												dark
-												title="Total Bookings"
-												value={formatNumber(overviewData.bookings.total)}
-												icon={FiUsers}
-												subtitle={`${overviewData.bookings.confirmed} confirmed`}
-											/>
-											<MetricsCard
-												dark
-												title="Avg Booking Value"
-												value={formatCurrency(overviewData.revenue.averagePerBooking)}
-												icon={FiTrendingUp}
-											/>
-											<MetricsCard
-												dark
-												title="Tickets Sold"
-												value={formatNumber(overviewData.tickets.totalSold)}
-												icon={FiShoppingCart}
-												subtitle={`Avg ${overviewData.tickets.averagePerBooking.toFixed(1)} per booking`}
-											/>
+											<MetricsCard dark title="Net revenue" value={formatCurrency(o.revenue.netRevenue)} icon={FiDollarSign} subtitle={`after ${formatCurrency(o.revenue.totalDiscounts)} discounts`} />
+											<MetricsCard dark title="Confirmed bookings" value={formatNumber(o.bookings.confirmed)} icon={FiShoppingCart} subtitle={`${share(o.bookings.confirmed, o.bookings.total)?.toFixed(1) ?? 0}% of ${formatNumber(o.bookings.total)} attempts`} />
+											<MetricsCard dark title="Avg per booking" value={formatCurrency(o.revenue.averagePerBooking)} icon={FiDollarSign} subtitle={`${o.tickets.averagePerBooking.toFixed(1)} tickets per booking`} />
+											<MetricsCard dark title="Tickets sold" value={formatNumber(o.tickets.totalSold)} icon={FiUsers} subtitle={`${o.checkIns.checkInRate.toFixed(1)}% checked in`} />
 										</SimpleGrid>
 
-										<Box mb={6}>
-											<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>Booking Status Breakdown</Text>
-											<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4}>
-												<MetricsCard
-													dark
-													title="Confirmed"
-													value={formatNumber(overviewData.bookings.confirmed)}
-													bgColor="#E8F5E9"
-													iconColor="#4CAF50"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.confirmed / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
-												/>
-												<MetricsCard
-													dark
-													title="Pending"
-													value={formatNumber(overviewData.bookings.pending)}
-													bgColor="#FFF3E0"
-													iconColor="#FF9800"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.pending / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
-												/>
-												<MetricsCard
-													dark
-													title="Cancelled"
-													value={formatNumber(overviewData.bookings.cancelled)}
-													bgColor="#FFEBEE"
-													iconColor="#F44336"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.cancelled / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
-												/>
-												<MetricsCard
-													dark
-													title="Failed"
-													value={formatNumber(overviewData.bookings.failed)}
-													bgColor="#FCE4EC"
-													iconColor="#E91E63"
-													subtitle={`${overviewData.bookings.total > 0 ? ((overviewData.bookings.failed / overviewData.bookings.total) * 100).toFixed(1) : 0}%`}
-												/>
-											</SimpleGrid>
-										</Box>
+										{bookingData && bookingData.byDate.length > 0 && (
+											<AnalyticsPanel title="Booking & revenue trends">
+												<BookingTrendsChart data={bookingData.byDate} />
+											</AnalyticsPanel>
+										)}
+
+										<AnalyticsPanel title="Daily breakdown" subtitle="Newest first. Revenue and tickets count confirmed bookings only.">
+											{bookingDays.length > 0 ? (
+												<>
+													<TableContainer sx={darkTableSx}>
+														<Table variant="simple" size="sm">
+															<Thead>
+																<Tr>
+																	<Th>Date</Th>
+																	<Th isNumeric>All bookings</Th>
+																	<Th isNumeric>Confirmed</Th>
+																	<Th isNumeric>Pending</Th>
+																	<Th isNumeric>Cancelled</Th>
+																	<Th isNumeric>Failed</Th>
+																	<Th isNumeric>Tickets sold</Th>
+																	<Th isNumeric>Net revenue</Th>
+																</Tr>
+															</Thead>
+															<Tbody>
+																{bookingPager.pageRows.map((d) => (
+																	<Tr key={d.date}>
+																		<Td whiteSpace="nowrap">{formatDay(d.date)}</Td>
+																		<Td isNumeric>{formatNumber(d.totalBookings)}</Td>
+																		<Td isNumeric fontWeight="semibold">{formatNumber(d.byStatus?.confirmed || 0)}</Td>
+																		<Td isNumeric>{formatNumber(d.byStatus?.pending || 0)}</Td>
+																		<Td isNumeric>{formatNumber(d.byStatus?.cancelled || 0)}</Td>
+																		<Td isNumeric>{formatNumber(d.byStatus?.failed || 0)}</Td>
+																		<Td isNumeric>{formatNumber(d.totalTickets)}</Td>
+																		<Td isNumeric color={d.totalRevenue > 0 ? "#4ade80 !important" : undefined}>{formatCurrency(d.totalRevenue)}</Td>
+																	</Tr>
+																))}
+															</Tbody>
+														</Table>
+													</TableContainer>
+													<TablePagination page={bookingPager.page} pageSize={bookingPager.pageSize} total={bookingDays.length} onPageChange={bookingPager.setPage} onPageSizeChange={bookingPager.setPageSize} noun="days" />
+												</>
+											) : (
+												<Text color="#9C9C9C" fontSize="sm">No bookings in this period.</Text>
+											)}
+										</AnalyticsPanel>
 									</TabPanel>
 
 									{/* Users Tab */}
 									<TabPanel px={0}>
-										{topUsersData && topUsersData.users.length > 0 && (
-											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-													Most Active Users
-												</Text>
-												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-													<Table variant="simple">
-														<Thead>
-															<Tr>
-																<Th>User</Th>
-																<Th isNumeric>Sessions</Th>
-																<Th isNumeric>Page Views</Th>
-																<Th isNumeric>Actions</Th>
-																<Th isNumeric>Event Interactions</Th>
-																<Th isNumeric>Activity Score</Th>
-																<Th>Last Activity</Th>
-															</Tr>
-														</Thead>
-														<Tbody>
-															{topUsersData.users.map((user) => (
-																<Tr key={user.userId}>
-																	<Td>
-																		<Box>
-																			<Text fontWeight="semibold">
-																				{user.firstName} {user.lastName}
-																			</Text>
-																			<Text fontSize="sm" color="#9C9C9C">
-																				{user.email}
-																			</Text>
-																			<Badge colorScheme={user.role === "admin" ? "purple" : "blue"} size="sm">
-																				{user.role}
-																			</Badge>
-																		</Box>
-																	</Td>
-																	<Td isNumeric>
-																		<Badge colorScheme="blue">{formatNumber(user.stats.sessions)}</Badge>
-																	</Td>
-																	<Td isNumeric>{formatNumber(user.stats.pageViews)}</Td>
-																	<Td isNumeric>{formatNumber(user.stats.actions)}</Td>
-																	<Td isNumeric>{formatNumber(user.stats.eventInteractions)}</Td>
-																	<Td isNumeric>
-																		<Badge colorScheme="green">{formatNumber(user.stats.activityScore)}</Badge>
-																	</Td>
-																	<Td>
-																		<Text fontSize="sm">
-																			{new Date(user.lastActivity).toLocaleDateString()}
-																		</Text>
-																	</Td>
+										<AnalyticsPanel
+											title="Most active users"
+											subtitle="Logged-in accounts ranked by what they did in the period."
+											actions={
+												<HStack spacing={2}>
+													<Text fontSize="xs" color="#9C9C9C">Sort by</Text>
+													<Select {...selectProps} w="170px" value={usersSortBy} onChange={(e) => setUsersSortBy(e.target.value)} aria-label="Sort users by">
+														<option value="activity">Activity score</option>
+														<option value="sessions">Sessions</option>
+														<option value="pageViews">Page views</option>
+														<option value="recentActivity">Most recent</option>
+													</Select>
+												</HStack>
+											}
+										>
+											{usersTable.data && usersTable.data.users.length > 0 ? (
+												<Box position="relative">
+													{usersTable.isLoading && (
+														<Center position="absolute" inset={0} bg="rgba(26,26,26,0.6)" zIndex={2}><Spinner color="#F79432" /></Center>
+													)}
+													<TableContainer sx={darkTableSx}>
+														<Table variant="simple" size="sm">
+															<Thead>
+																<Tr>
+																	<Th isNumeric w="40px">#</Th>
+																	<Th>User</Th>
+																	<Th isNumeric>Sessions</Th>
+																	<Th isNumeric>Avg session</Th>
+																	<Th isNumeric>Page views</Th>
+																	<Th isNumeric>Actions</Th>
+																	<Th isNumeric>Event interactions<InfoTip label="Event page views, ticket picks and checkouts started." /></Th>
+																	<Th isNumeric>Activity score<InfoTip label="Weighted mix of sessions, page views, actions and event interactions." /></Th>
+																	<Th>Last activity</Th>
 																</Tr>
-															))}
-														</Tbody>
-													</Table>
-												</TableContainer>
-											</Box>
-										)}
+															</Thead>
+															<Tbody>
+																{usersTable.data.users.map((user, idx) => (
+																	<Tr key={user.userId}>
+																		<Td isNumeric color="#6b6b6b !important">{(usersTable.page - 1) * usersTable.pageSize + idx + 1}</Td>
+																		<Td>
+																			<HStack spacing={2}>
+																				<Box minW={0}>
+																					<Text fontWeight="semibold">{`${user.firstName || ""} ${user.lastName || ""}`.trim() || "—"}</Text>
+																					<Text fontSize="xs" color="#9C9C9C">{user.email}</Text>
+																				</Box>
+																				{user.role !== "user" && <Badge colorScheme="purple" variant="subtle" fontSize="10px">{user.role}</Badge>}
+																			</HStack>
+																		</Td>
+																		<Td isNumeric>{formatNumber(user.stats.sessions)}</Td>
+																		<Td isNumeric>{formatDuration(user.stats.avgSessionDuration)}</Td>
+																		<Td isNumeric>{formatNumber(user.stats.pageViews)}</Td>
+																		<Td isNumeric>{formatNumber(user.stats.actions)}</Td>
+																		<Td isNumeric>{formatNumber(user.stats.eventInteractions)}</Td>
+																		<Td isNumeric><Badge colorScheme="green" variant="subtle">{formatNumber(user.stats.activityScore)}</Badge></Td>
+																		<Td whiteSpace="nowrap" color="#9C9C9C !important">{user.lastActivity ? new Date(user.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}</Td>
+																	</Tr>
+																))}
+															</Tbody>
+														</Table>
+													</TableContainer>
+													<TablePagination page={usersTable.page} pageSize={usersTable.pageSize} total={usersTable.data.pagination?.total || 0} onPageChange={usersTable.setPage} onPageSizeChange={usersTable.setPageSize} isLoading={usersTable.isLoading} noun="users" />
+												</Box>
+											) : usersTable.isLoading ? (
+												<Center py={10}><Spinner color="#F79432" /></Center>
+											) : (
+												<Text color="#9C9C9C" fontSize="sm">No logged-in activity in this period.</Text>
+											)}
+										</AnalyticsPanel>
 									</TabPanel>
 
 									{/* Traffic Sources Tab */}
 									<TabPanel px={0}>
-										{referrerData && (
-											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-													Traffic Sources
-												</Text>
-												<SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mb={6}>
-													<MetricsCard
-														dark
-														title="Direct Traffic"
-														value={formatNumber(referrerData.directTraffic.pageViews)}
-														icon={FiEye}
-														subtitle={`${referrerData.directTraffic.percentage.toFixed(1)}% of total`}
-													/>
-													<MetricsCard
-														dark
-														title="Referral Traffic"
-														value={formatNumber(referrerData.total - referrerData.directTraffic.pageViews)}
-														icon={FiTrendingUp}
-														subtitle={`${(100 - referrerData.directTraffic.percentage).toFixed(1)}% of total`}
-													/>
-												</SimpleGrid>
-												{referrerData.referrers.length > 0 && (
-													<>
-														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-															<Table variant="simple">
-																<Thead>
-																	<Tr>
-																		<Th>Referrer</Th>
-																		<Th>Category</Th>
-																		<Th isNumeric>Page Views</Th>
-																		<Th isNumeric>Unique Sessions</Th>
-																		<Th isNumeric>Unique Users</Th>
-																		<Th isNumeric>Percentage</Th>
-																	</Tr>
-																</Thead>
-																<Tbody>
-																	{referrerData.referrers.map((ref, idx) => (
-																		<Tr key={idx}>
-																			<Td>
-																				<Box>
-																					<Text fontWeight="medium" isTruncated maxW="300px">
-																						{ref.domain}
-																					</Text>
-																					<Text fontSize="xs" color="#9C9C9C" isTruncated maxW="300px">
-																						{ref.referrer}
-																					</Text>
-																				</Box>
-																			</Td>
-																			<Td>
-																				<Badge
-																					colorScheme={
-																						ref.category === "search_engine"
-																							? "blue"
-																							: ref.category === "social_media"
-																								? "purple"
-																								: ref.category === "email"
-																									? "orange"
-																									: "gray"
-																					}
-																				>
-																					{ref.category.replace("_", " ")}
-																				</Badge>
-																			</Td>
-																			<Td isNumeric>{formatNumber(ref.pageViews)}</Td>
-																			<Td isNumeric>{formatNumber(ref.uniqueSessions)}</Td>
-																			<Td isNumeric>{formatNumber(ref.uniqueUsers)}</Td>
-																			<Td isNumeric>{ref.percentage.toFixed(1)}%</Td>
-																		</Tr>
-																	))}
-																</Tbody>
-															</Table>
-														</TableContainer>
-														{/* Pagination */}
-														{referrerData.pagination && referrerData.pagination.totalPages > 1 && (
-															<Flex justify="space-between" align="center" mt={4}>
-																<Text fontSize="sm" color="#9C9C9C">
-																	Page {referrerData.pagination.page} of {referrerData.pagination.totalPages} ({formatNumber(referrerData.pagination.total)} total)
-																</Text>
-																<HStack spacing={2}>
-																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-																		aria-label="Previous page"
-																		icon={<FiChevronLeft />}
-																		size="sm"
-																		onClick={() => setReferrersPage((p) => Math.max(1, p - 1))}
-																		isDisabled={!referrerData.pagination.hasPreviousPage}
-																	/>
-																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-																		aria-label="Next page"
-																		icon={<FiChevronRight />}
-																		size="sm"
-																		onClick={() => setReferrersPage((p) => p + 1)}
-																		isDisabled={!referrerData.pagination.hasNextPage}
-																	/>
-																</HStack>
-															</Flex>
-														)}
-													</>
-												)}
-											</Box>
+										{referrersTable.data && (
+											<SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mb={6}>
+												<MetricsCard dark title="Direct traffic" value={formatNumber(referrersTable.data.directTraffic.pageViews)} icon={FiEye} subtitle={`${referrersTable.data.directTraffic.percentage.toFixed(1)}% of page views — typed URL, bookmark or app`} />
+												<MetricsCard dark title="Referred traffic" value={formatNumber(referrersTable.data.total - referrersTable.data.directTraffic.pageViews)} icon={FiUsers} subtitle={`${(100 - referrersTable.data.directTraffic.percentage).toFixed(1)}% of page views — arrived from another site`} />
+											</SimpleGrid>
 										)}
 
-										{utmData && utmData.grouped.length > 0 && (
-											<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-												<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-													UTM Campaign Performance
-												</Text>
-												<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-													<Table variant="simple">
+										<AnalyticsPanel title="Referring sites" subtitle="Where visitors came from before landing on Jetzy Events.">
+											{referrersTable.data && referrersTable.data.referrers.length > 0 ? (
+												<Box position="relative">
+													{referrersTable.isLoading && (
+														<Center position="absolute" inset={0} bg="rgba(26,26,26,0.6)" zIndex={2}><Spinner color="#F79432" /></Center>
+													)}
+													<TableContainer sx={darkTableSx}>
+														<Table variant="simple" size="sm">
+															<Thead>
+																<Tr>
+																	<Th>Referrer</Th>
+																	<Th>Category</Th>
+																	<Th isNumeric>Page views</Th>
+																	<Th isNumeric>Sessions</Th>
+																	<Th isNumeric>Users</Th>
+																	<Th isNumeric>Share</Th>
+																</Tr>
+															</Thead>
+															<Tbody>
+																{referrersTable.data.referrers.map((ref, idx) => (
+																	<Tr key={idx}>
+																		<Td>
+																			<Box>
+																				<Text fontWeight="medium" isTruncated maxW="320px">{ref.domain}</Text>
+																				<Text fontSize="xs" color="#9C9C9C" isTruncated maxW="320px" title={ref.referrer}>{ref.referrer}</Text>
+																			</Box>
+																		</Td>
+																		<Td>
+																			<Badge
+																				variant="subtle"
+																				colorScheme={ref.category === "search_engine" ? "blue" : ref.category === "social_media" ? "purple" : ref.category === "email" ? "orange" : "gray"}
+																			>
+																				{ref.category.replace(/_/g, " ")}
+																			</Badge>
+																		</Td>
+																		<Td isNumeric fontWeight="semibold">{formatNumber(ref.pageViews)}</Td>
+																		<Td isNumeric>{formatNumber(ref.uniqueSessions)}</Td>
+																		<Td isNumeric>{formatNumber(ref.uniqueUsers)}</Td>
+																		<Td isNumeric>{ref.percentage.toFixed(1)}%</Td>
+																	</Tr>
+																))}
+															</Tbody>
+														</Table>
+													</TableContainer>
+													<TablePagination page={referrersTable.page} pageSize={referrersTable.pageSize} total={referrersTable.data.pagination?.total || referrersTable.data.referrers.length} onPageChange={referrersTable.setPage} onPageSizeChange={referrersTable.setPageSize} isLoading={referrersTable.isLoading} noun="referrers" />
+												</Box>
+											) : referrersTable.isLoading ? (
+												<Center py={10}><Spinner color="#F79432" /></Center>
+											) : (
+												<Text color="#9C9C9C" fontSize="sm">No referred traffic in this period.</Text>
+											)}
+										</AnalyticsPanel>
+
+										<AnalyticsPanel title="UTM campaigns" subtitle="Visits from links tagged with utm_campaign / utm_source / utm_medium.">
+											{utmData && utmData.grouped.length > 0 ? (
+												<TableContainer sx={darkTableSx}>
+													<Table variant="simple" size="sm">
 														<Thead>
 															<Tr>
 																<Th>Campaign</Th>
 																<Th>Source</Th>
 																<Th>Medium</Th>
-																<Th isNumeric>Page Views</Th>
-																<Th isNumeric>Unique Sessions</Th>
-																<Th isNumeric>Unique Users</Th>
-																<Th isNumeric>Percentage</Th>
+																<Th isNumeric>Page views</Th>
+																<Th isNumeric>Sessions</Th>
+																<Th isNumeric>Users</Th>
+																<Th isNumeric>Share</Th>
 															</Tr>
 														</Thead>
 														<Tbody>
 															{utmData.grouped.map((utm, idx) => (
 																<Tr key={idx}>
-																	<Td>
-																		<Text fontWeight="medium">{utm.campaign || "N/A"}</Text>
-																	</Td>
-																	<Td>
-																		<Text fontSize="sm">{utm.source || "N/A"}</Text>
-																	</Td>
-																	<Td>
-																		<Badge colorScheme="blue" size="sm">
-																			{utm.medium || "N/A"}
-																		</Badge>
-																	</Td>
-																	<Td isNumeric>{formatNumber(utm.count)}</Td>
+																	<Td fontWeight="medium">{utm.campaign || "—"}</Td>
+																	<Td>{utm.source || "—"}</Td>
+																	<Td>{utm.medium ? <Badge colorScheme="blue" variant="subtle">{utm.medium}</Badge> : "—"}</Td>
+																	<Td isNumeric fontWeight="semibold">{formatNumber(utm.count)}</Td>
 																	<Td isNumeric>{formatNumber(utm.uniqueSessionsCount)}</Td>
 																	<Td isNumeric>{formatNumber(utm.uniqueUsersCount)}</Td>
 																	<Td isNumeric>{utm.percentage.toFixed(1)}%</Td>
@@ -1229,39 +932,34 @@ export default function AnalyticsPage() {
 														</Tbody>
 													</Table>
 												</TableContainer>
-											</Box>
-										)}
+											) : (
+												<Text color="#9C9C9C" fontSize="sm">No UTM-tagged visits in this period.</Text>
+											)}
+										</AnalyticsPanel>
 									</TabPanel>
 
 									{/* Devices & Pages Tab */}
 									<TabPanel px={0}>
 										{deviceData && (
-											<>
-												<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-													<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-														Device Breakdown
-													</Text>
-													{deviceData.devices.length > 0 && (
-														<TableContainer mb={6} sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-															<Table variant="simple">
+											<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={6}>
+												<AnalyticsPanel title="Devices" mb={0}>
+													{deviceData.devices.length > 0 ? (
+														<TableContainer sx={darkTableSx}>
+															<Table variant="simple" size="sm">
 																<Thead>
 																	<Tr>
-																		<Th>Device Type</Th>
-																		<Th isNumeric>Page Views</Th>
-																		<Th isNumeric>Unique Sessions</Th>
-																		<Th isNumeric>Unique Users</Th>
-																		<Th isNumeric>Percentage</Th>
+																		<Th>Device</Th>
+																		<Th isNumeric>Page views</Th>
+																		<Th isNumeric>Sessions</Th>
+																		<Th isNumeric>Users</Th>
+																		<Th isNumeric>Share</Th>
 																	</Tr>
 																</Thead>
 																<Tbody>
 																	{deviceData.devices.map((device, idx) => (
 																		<Tr key={idx}>
-																			<Td>
-																				<Badge colorScheme="blue" textTransform="capitalize">
-																					{device.deviceType}
-																				</Badge>
-																			</Td>
-																			<Td isNumeric>{formatNumber(device.count)}</Td>
+																			<Td textTransform="capitalize" fontWeight="medium">{device.deviceType}</Td>
+																			<Td isNumeric fontWeight="semibold">{formatNumber(device.count)}</Td>
 																			<Td isNumeric>{formatNumber(device.uniqueSessionsCount)}</Td>
 																			<Td isNumeric>{formatNumber(device.uniqueUsersCount)}</Td>
 																			<Td isNumeric>{device.percentage.toFixed(1)}%</Td>
@@ -1270,384 +968,219 @@ export default function AnalyticsPage() {
 																</Tbody>
 															</Table>
 														</TableContainer>
+													) : (
+														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
 													)}
-													{deviceData.browsers.length > 0 && (
-														<>
-															<Text fontSize="lg" fontWeight="semibold" color="white" mb={4}>
-																Browser Breakdown
-															</Text>
-															<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-																<Table variant="simple">
-																	<Thead>
-																		<Tr>
-																			<Th>Browser</Th>
-																			<Th isNumeric>Page Views</Th>
-																			<Th isNumeric>Unique Sessions</Th>
-																			<Th isNumeric>Unique Users</Th>
-																			<Th isNumeric>Percentage</Th>
+												</AnalyticsPanel>
+												<AnalyticsPanel title="Browsers" mb={0}>
+													{deviceData.browsers.length > 0 ? (
+														<TableContainer sx={darkTableSx}>
+															<Table variant="simple" size="sm">
+																<Thead>
+																	<Tr>
+																		<Th>Browser</Th>
+																		<Th isNumeric>Page views</Th>
+																		<Th isNumeric>Sessions</Th>
+																		<Th isNumeric>Users</Th>
+																		<Th isNumeric>Share</Th>
+																	</Tr>
+																</Thead>
+																<Tbody>
+																	{deviceData.browsers.map((browser, idx) => (
+																		<Tr key={idx}>
+																			<Td fontWeight="medium">{browser.browserType}</Td>
+																			<Td isNumeric fontWeight="semibold">{formatNumber(browser.count)}</Td>
+																			<Td isNumeric>{formatNumber(browser.uniqueSessionsCount)}</Td>
+																			<Td isNumeric>{formatNumber(browser.uniqueUsersCount)}</Td>
+																			<Td isNumeric>{browser.percentage.toFixed(1)}%</Td>
 																		</Tr>
-																	</Thead>
-																	<Tbody>
-																		{deviceData.browsers.map((browser, idx) => (
-																			<Tr key={idx}>
-																				<Td>
-																					<Badge colorScheme="purple">{browser.browserType}</Badge>
-																				</Td>
-																				<Td isNumeric>{formatNumber(browser.count)}</Td>
-																				<Td isNumeric>{formatNumber(browser.uniqueSessionsCount)}</Td>
-																				<Td isNumeric>{formatNumber(browser.uniqueUsersCount)}</Td>
-																				<Td isNumeric>{browser.percentage.toFixed(1)}%</Td>
-																			</Tr>
-																		))}
-																	</Tbody>
-																</Table>
-															</TableContainer>
-														</>
+																	))}
+																</Tbody>
+															</Table>
+														</TableContainer>
+													) : (
+														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
 													)}
-												</Box>
-											</>
+												</AnalyticsPanel>
+											</SimpleGrid>
 										)}
 
-										{pageData && (
-											<>
-												{pageData.entryPages.length > 0 && (
-													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-														<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-															Entry Pages
-														</Text>
-														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-															<Table variant="simple">
+										<AnalyticsPanel title="Most viewed pages" subtitle="Every page, ranked by views.">
+											{pagesTable.data && pagesTable.data.mostViewedPages.length > 0 ? (
+												<Box position="relative">
+													{pagesTable.isLoading && (
+														<Center position="absolute" inset={0} bg="rgba(26,26,26,0.6)" zIndex={2}><Spinner color="#F79432" /></Center>
+													)}
+													<TableContainer sx={darkTableSx}>
+														<Table variant="simple" size="sm">
+															<Thead>
+																<Tr>
+																	<Th>Page</Th>
+																	<Th isNumeric>Page views</Th>
+																	<Th isNumeric>Sessions</Th>
+																	<Th isNumeric>Users</Th>
+																	<Th isNumeric>Avg time on page</Th>
+																	<Th isNumeric>Share</Th>
+																</Tr>
+															</Thead>
+															<Tbody>
+																{pagesTable.data.mostViewedPages.map((page, idx) => (
+																	<Tr key={idx}>
+																		<Td><PageCell path={page.page} /></Td>
+																		<Td isNumeric fontWeight="semibold">{formatNumber(page.count)}</Td>
+																		<Td isNumeric>{formatNumber(page.uniqueSessionsCount)}</Td>
+																		<Td isNumeric>{formatNumber(page.uniqueUsersCount)}</Td>
+																		<Td isNumeric>{page.avgTimeSpent ? formatDuration(page.avgTimeSpent) : "—"}</Td>
+																		<Td isNumeric>{page.percentage.toFixed(1)}%</Td>
+																	</Tr>
+																))}
+															</Tbody>
+														</Table>
+													</TableContainer>
+													<TablePagination page={pagesTable.page} pageSize={pagesTable.pageSize} total={pagesTable.data.pagination?.mostViewedPages?.total || 0} onPageChange={pagesTable.setPage} onPageSizeChange={pagesTable.setPageSize} isLoading={pagesTable.isLoading} noun="pages" />
+												</Box>
+											) : pagesTable.isLoading ? (
+												<Center py={10}><Spinner color="#F79432" /></Center>
+											) : (
+												<Text color="#9C9C9C" fontSize="sm">No page views in this period.</Text>
+											)}
+										</AnalyticsPanel>
+
+										{entryExitData && (
+											<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
+												<AnalyticsPanel title="Top entry pages" subtitle="Where sessions started (top 10)." mb={0}>
+													{entryExitData.entryPages.length > 0 ? (
+														<TableContainer sx={darkTableSx}>
+															<Table variant="simple" size="sm">
 																<Thead>
 																	<Tr>
 																		<Th>Page</Th>
 																		<Th isNumeric>Sessions</Th>
-																		<Th isNumeric>Unique Users</Th>
-																		<Th isNumeric>Percentage</Th>
+																		<Th isNumeric>Share</Th>
 																	</Tr>
 																</Thead>
 																<Tbody>
-																	{pageData.entryPages.map((page, idx) => (
+																	{entryExitData.entryPages.map((page, idx) => (
 																		<Tr key={idx}>
-																			<Td>
-																				<Text fontWeight="medium" fontFamily="mono">
-																					{page.page}
-																				</Text>
-																			</Td>
-																			<Td isNumeric>{formatNumber(page.count)}</Td>
-																			<Td isNumeric>{formatNumber(page.uniqueUsersCount)}</Td>
+																			<Td><PageCell path={page.page} /></Td>
+																			<Td isNumeric fontWeight="semibold">{formatNumber(page.count)}</Td>
 																			<Td isNumeric>{page.percentage.toFixed(1)}%</Td>
 																		</Tr>
 																	))}
 																</Tbody>
 															</Table>
 														</TableContainer>
-													</Box>
-												)}
-
-												{pageData.exitPages.length > 0 && (
-													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-														<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-															Exit Pages
-														</Text>
-														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-															<Table variant="simple">
+													) : (
+														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
+													)}
+												</AnalyticsPanel>
+												<AnalyticsPanel title="Top exit pages" subtitle="Last page before leaving (top 10)." mb={0}>
+													{entryExitData.exitPages.length > 0 ? (
+														<TableContainer sx={darkTableSx}>
+															<Table variant="simple" size="sm">
 																<Thead>
 																	<Tr>
 																		<Th>Page</Th>
 																		<Th isNumeric>Sessions</Th>
-																		<Th isNumeric>Percentage</Th>
+																		<Th isNumeric>Share</Th>
 																	</Tr>
 																</Thead>
 																<Tbody>
-																	{pageData.exitPages.map((page, idx) => (
+																	{entryExitData.exitPages.map((page, idx) => (
 																		<Tr key={idx}>
-																			<Td>
-																				<Text fontWeight="medium" fontFamily="mono">
-																					{page.page}
-																				</Text>
-																			</Td>
-																			<Td isNumeric>{formatNumber(page.count)}</Td>
+																			<Td><PageCell path={page.page} /></Td>
+																			<Td isNumeric fontWeight="semibold">{formatNumber(page.count)}</Td>
 																			<Td isNumeric>{page.percentage.toFixed(1)}%</Td>
 																		</Tr>
 																	))}
 																</Tbody>
 															</Table>
 														</TableContainer>
-													</Box>
-												)}
-
-												{pageData.mostViewedPages.length > 0 && (
-													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-														<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-															Most Viewed Pages
-														</Text>
-														<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-															<Table variant="simple">
-																<Thead>
-																	<Tr>
-																		<Th>Page</Th>
-																		<Th isNumeric>Page Views</Th>
-																		<Th isNumeric>Unique Sessions</Th>
-																		<Th isNumeric>Unique Users</Th>
-																		<Th isNumeric>Avg Time</Th>
-																		<Th isNumeric>Percentage</Th>
-																	</Tr>
-																</Thead>
-																<Tbody>
-																	{pageData.mostViewedPages.map((page, idx) => (
-																		<Tr key={idx}>
-																			<Td>
-																				<Text fontWeight="medium" fontFamily="mono">
-																					{page.page}
-																				</Text>
-																			</Td>
-																			<Td isNumeric>{formatNumber(page.count)}</Td>
-																			<Td isNumeric>{formatNumber(page.uniqueSessionsCount)}</Td>
-																			<Td isNumeric>{formatNumber(page.uniqueUsersCount)}</Td>
-																			<Td isNumeric>
-																				{page.avgTimeSpent ? formatDuration(page.avgTimeSpent) : "N/A"}
-																			</Td>
-																			<Td isNumeric>{page.percentage.toFixed(1)}%</Td>
-																		</Tr>
-																	))}
-																</Tbody>
-															</Table>
-														</TableContainer>
-														{/* Pagination - for most viewed pages table */}
-														{pageData.pagination.mostViewedPages && pageData.pagination.mostViewedPages.totalPages > 1 && (
-															<Flex justify="space-between" align="center" mt={4}>
-																<Text fontSize="sm" color="#9C9C9C">
-																	Page {pageData.pagination.mostViewedPages.page} of {pageData.pagination.mostViewedPages.totalPages} ({formatNumber(pageData.pagination.mostViewedPages.total)} total)
-																</Text>
-																<HStack spacing={2}>
-																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-																		aria-label="Previous page"
-																		icon={<FiChevronLeft />}
-																		size="sm"
-																		onClick={() => setPagesPage((p) => Math.max(1, p - 1))}
-																		isDisabled={!pageData.pagination.mostViewedPages.hasPreviousPage}
-																	/>
-																	<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-																		aria-label="Next page"
-																		icon={<FiChevronRight />}
-																		size="sm"
-																		onClick={() => setPagesPage((p) => p + 1)}
-																		isDisabled={!pageData.pagination.mostViewedPages.hasNextPage}
-																	/>
-																</HStack>
-															</Flex>
-														)}
-													</Box>
-												)}
-											</>
+													) : (
+														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
+													)}
+												</AnalyticsPanel>
+											</SimpleGrid>
 										)}
 									</TabPanel>
-										{/* Named Events Tab */}
-										<TabPanel px={0}>
-											{(() => {
-												const filteredRows = namedEventsData
-													? namedEventsData.rows.filter((r) => namedEventsCategory === "all" || r.category === namedEventsCategory)
-													: []
-												const totalPages = Math.max(1, Math.ceil(filteredRows.length / NAMED_EVENTS_PER_PAGE))
-												const safePage = Math.min(namedEventsPage, totalPages)
-												const paginatedRows = filteredRows.slice((safePage - 1) * NAMED_EVENTS_PER_PAGE, safePage * NAMED_EVENTS_PER_PAGE)
-												return (
-													<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6}>
-														<Flex justify="space-between" align="center" mb={4} wrap="wrap" gap={3}>
-															<Box>
-																<Text fontSize="xl" fontWeight="bold" color="white">Named Events</Text>
-																<Text fontSize="sm" color="#9C9C9C">Category / Event Name / Total Events / Unique Users</Text>
-															</Box>
-															<HStack spacing={2} flexWrap="wrap">
-																{["all", "Event Interactions", "CTA Clicks", "Form Events", "Page Views"].map((cat) => (
-																	<Button
-																		key={cat}
-																		size="xs"
-																		onClick={() => { setNamedEventsCategory(cat); setNamedEventsPage(1) }}
-																		bg={namedEventsCategory === cat ? "#F79432" : "#2a2a2a"}
-																		color={namedEventsCategory === cat ? "black" : "#9C9C9C"}
-																		_hover={{ bg: namedEventsCategory === cat ? "#E68422" : "#333" }}
-																		borderRadius="full"
-																		px={3}
-																	>
-																		{cat === "all" ? "All" : cat}
-																	</Button>
+
+									{/* Named Events Tab */}
+									<TabPanel px={0}>
+										{namedEventsData?.summary && (
+											<SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
+												<MetricsCard dark title="Event interactions" value={formatNumber(namedEventsData.summary.eventInteractionsCount)} subtitle="distinct types" />
+												<MetricsCard dark title="CTA clicks" value={formatNumber(namedEventsData.summary.ctaClicksCount)} subtitle="labeled elements" />
+												<MetricsCard dark title="Form events" value={formatNumber(namedEventsData.summary.formEventsCount)} subtitle="form/action pairs" />
+												<MetricsCard dark title="Page views" value={formatNumber(namedEventsData.summary.pageViewsCount)} subtitle="distinct pages" />
+											</SimpleGrid>
+										)}
+										<AnalyticsPanel
+											title="Named events"
+											subtitle="Every tracked interaction, grouped by name."
+											actions={
+												<HStack spacing={2} flexWrap="wrap">
+													{["all", "Event Interactions", "CTA Clicks", "Form Events", "Page Views"].map((cat) => (
+														<Button
+															key={cat}
+															size="xs"
+															onClick={() => setNamedEventsCategory(cat)}
+															bg={namedEventsCategory === cat ? "#F79432" : "#2a2a2a"}
+															color={namedEventsCategory === cat ? "black" : "#9C9C9C"}
+															_hover={{ bg: namedEventsCategory === cat ? "#E68422" : "#333" }}
+															borderRadius="full"
+															px={3}
+														>
+															{cat === "all" ? "All" : cat}
+														</Button>
+													))}
+													{filteredNamedRows.length > 0 && (
+														<Button size="xs" leftIcon={<FiDownload />} onClick={exportNamedEventsCSV} bg="#2a2a2a" color="white" _hover={{ bg: "#333" }} borderRadius="full" px={3}>
+															Export CSV
+														</Button>
+													)}
+												</HStack>
+											}
+										>
+											{filteredNamedRows.length > 0 ? (
+												<>
+													<TableContainer sx={darkTableSx}>
+														<Table variant="simple" size="sm">
+															<Thead>
+																<Tr>
+																	<Th>Category</Th>
+																	<Th>Event name</Th>
+																	<Th isNumeric>Total events</Th>
+																	<Th isNumeric>Unique users</Th>
+																</Tr>
+															</Thead>
+															<Tbody>
+																{namedPager.pageRows.map((row, idx) => (
+																	<Tr key={`${row.category}-${row.eventName}-${idx}`}>
+																		<Td>
+																			<Badge variant="subtle" colorScheme={row.category === "Event Interactions" ? "blue" : row.category === "CTA Clicks" ? "orange" : row.category === "Form Events" ? "green" : "purple"}>
+																				{row.category}
+																			</Badge>
+																		</Td>
+																		<Td>{row.category === "Page Views" ? <PageCell path={row.eventName} /> : row.eventName}</Td>
+																		<Td isNumeric fontWeight="semibold">{formatNumber(row.totalEvents)}</Td>
+																		<Td isNumeric>{formatNumber(row.uniqueUsers)}</Td>
+																	</Tr>
 																))}
-																{namedEventsData && filteredRows.length > 0 && (
-																	<Button size="xs" onClick={exportNamedEventsCSV} bg="#2a2a2a" color="#9C9C9C" _hover={{ bg: "#333", color: "white" }} borderRadius="full" px={3}>
-																		Export CSV
-																	</Button>
-																)}
-															</HStack>
-														</Flex>
-
-														{namedEventsData && namedEventsData.summary && (
-															<SimpleGrid columns={{ base: 2, sm: 4 }} spacing={3} mb={6}>
-																<MetricsCard dark title="Event Interactions" value={formatNumber(namedEventsData.summary.eventInteractionsCount)} subtitle="distinct types" />
-																<MetricsCard dark title="CTA Clicks" value={formatNumber(namedEventsData.summary.ctaClicksCount)} subtitle="labeled elements" />
-																<MetricsCard dark title="Form Events" value={formatNumber(namedEventsData.summary.formEventsCount)} subtitle="form/action pairs" />
-																<MetricsCard dark title="Page Views" value={formatNumber(namedEventsData.summary.pageViewsCount)} subtitle="distinct pages" />
-															</SimpleGrid>
-														)}
-
-														{filteredRows.length > 0 ? (
-															<>
-																<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-																	<Table variant="simple">
-																		<Thead>
-																			<Tr>
-																				<Th>Category</Th>
-																				<Th>Event Name</Th>
-																				<Th isNumeric>Total Events</Th>
-																				<Th isNumeric>Unique Users</Th>
-																			</Tr>
-																		</Thead>
-																		<Tbody>
-																			{paginatedRows.map((row, idx) => (
-																				<Tr key={idx}>
-																					<Td>
-																						<Badge colorScheme={row.category === "Event Interactions" ? "blue" : row.category === "CTA Clicks" ? "orange" : row.category === "Form Events" ? "green" : "purple"}>
-																							{row.category}
-																						</Badge>
-																					</Td>
-																					<Td>
-																						<Text fontSize="sm">
-																							{row.category === "Page Views" ? pagePathToLabel(row.eventName) : row.eventName}
-																						</Text>
-																						{row.category === "Page Views" && pagePathToLabel(row.eventName) !== row.eventName && (
-																							<Text fontSize="xs" color="#9C9C9C" fontFamily="mono">{row.eventName}</Text>
-																						)}
-																					</Td>
-																					<Td isNumeric><Text fontWeight="semibold">{formatNumber(row.totalEvents)}</Text></Td>
-																					<Td isNumeric><Badge colorScheme="teal">{formatNumber(row.uniqueUsers)}</Badge></Td>
-																				</Tr>
-																			))}
-																		</Tbody>
-																	</Table>
-																</TableContainer>
-																{totalPages > 1 && (
-																	<Flex justify="space-between" align="center" mt={4}>
-																		<Text fontSize="sm" color="#9C9C9C">
-																			Page {safePage} of {totalPages} ({formatNumber(filteredRows.length)} total)
-																		</Text>
-																		<HStack spacing={2}>
-																			<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-																				aria-label="Previous page" icon={<FiChevronLeft />} size="sm"
-																				onClick={() => setNamedEventsPage((p) => Math.max(1, p - 1))}
-																				isDisabled={safePage <= 1}
-																			/>
-																			<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-																				aria-label="Next page" icon={<FiChevronRight />} size="sm"
-																				onClick={() => setNamedEventsPage((p) => Math.min(totalPages, p + 1))}
-																				isDisabled={safePage >= totalPages}
-																			/>
-																		</HStack>
-																	</Flex>
-																)}
-															</>
-														) : (
-															<Text color="#9C9C9C" fontSize="sm">No data yet. Add <Text as="code" bg="#2a2a2a" px={1} borderRadius="sm">data-track=&quot;label&quot;</Text> attributes to CTAs to see named click events here.</Text>
-														)}
-													</Box>
-												)
-											})()}
-										</TabPanel>
+															</Tbody>
+														</Table>
+													</TableContainer>
+													<TablePagination page={namedPager.page} pageSize={namedPager.pageSize} total={filteredNamedRows.length} onPageChange={namedPager.setPage} onPageSizeChange={namedPager.setPageSize} noun="rows" />
+												</>
+											) : (
+												<Text color="#9C9C9C" fontSize="sm">
+													No data yet. Add <Text as="code" bg="#2a2a2a" px={1} borderRadius="sm">data-track=&quot;label&quot;</Text> attributes to CTAs to see named click events here.
+												</Text>
+											)}
+										</AnalyticsPanel>
+									</TabPanel>
 								</TabPanels>
 							</Tabs>
-
-							{/* Top Performing Events Table */}
-							{topEventsData && topEventsData.events.length > 0 && (
-								<Box bg="#1a1a1a" color="white" p={6} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mt={6}>
-									<Text fontSize="xl" fontWeight="bold" color="white" mb={4}>
-										Top Performing Events (by Revenue)
-									</Text>
-									<TableContainer sx={{ "& th": { color: "#9C9C9C", borderColor: "#2a2a2a" }, "& td": { borderColor: "#2a2a2a", color: "white" } }}>
-										<Table variant="simple">
-											<Thead>
-												<Tr>
-													<Th>Event</Th>
-													<Th isNumeric>Revenue</Th>
-													<Th isNumeric>Bookings</Th>
-													<Th isNumeric>Tickets Sold</Th>
-													<Th isNumeric>Attendance</Th>
-													<Th isNumeric>Views</Th>
-													<Th isNumeric>Check-in Rate</Th>
-												</Tr>
-											</Thead>
-											<Tbody>
-												{topEventsData.events.map((event) => (
-													<Tr key={event.eventId}>
-														<Td>
-															<Flex align="center" gap={3}>
-																{event.image && (
-																	<Image
-																		src={event.image}
-																		alt={event.name}
-																		boxSize="50px"
-																		objectFit="cover"
-																		borderRadius="md"
-																	/>
-																)}
-																<Box>
-																	<Link as={NextLink} href={eventPath(event.slug)} color="#F79432" fontWeight="medium" _hover={{ textDecoration: "underline" }}>
-																		<SafeHTML html={event.name} />
-																	</Link>
-																</Box>
-															</Flex>
-														</Td>
-														<Td isNumeric>
-															<Text fontWeight="semibold" color="white">{formatCurrency(event.revenue.net)}</Text>
-															{event.revenue.discounts > 0 && (
-																<Text fontSize="xs" color="#9C9C9C">
-																	After {formatCurrency(event.revenue.discounts)} discounts
-																</Text>
-															)}
-														</Td>
-														<Td isNumeric>
-															<Badge colorScheme="blue">{formatNumber(event.bookings)}</Badge>
-														</Td>
-														<Td isNumeric>{formatNumber(event.tickets.sold)}</Td>
-														<Td isNumeric>
-															<Badge colorScheme="green">{formatNumber(event.tickets.checkedIn)}</Badge>
-														</Td>
-														<Td isNumeric>{formatNumber(event.views)}</Td>
-														<Td isNumeric>
-															<Badge colorScheme={event.tickets.checkInRate >= 80 ? "green" : event.tickets.checkInRate >= 50 ? "yellow" : "red"}>
-																{event.tickets.checkInRate.toFixed(1)}%
-															</Badge>
-														</Td>
-													</Tr>
-												))}
-											</Tbody>
-										</Table>
-									</TableContainer>
-									{/* Pagination */}
-									{topEventsData.pagination && topEventsData.pagination.totalPages > 1 && (
-										<Flex justify="space-between" align="center" mt={4}>
-											<Text fontSize="sm" color="#9C9C9C">
-												Page {topEventsData.pagination.page} of {topEventsData.pagination.totalPages} ({formatNumber(topEventsData.pagination.total)} total)
-											</Text>
-											<HStack spacing={2}>
-												<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-													aria-label="Previous page"
-													icon={<FiChevronLeft />}
-													size="sm"
-													onClick={() => setTopEventsPage((p) => Math.max(1, p - 1))}
-													isDisabled={!topEventsData.pagination.hasPreviousPage}
-												/>
-												<IconButton bg="#1a1a1a" color="white" border="1px solid" borderColor="#2a2a2a" _hover={{ bg: "#262626" }}
-													aria-label="Next page"
-													icon={<FiChevronRight />}
-													size="sm"
-													onClick={() => setTopEventsPage((p) => p + 1)}
-													isDisabled={!topEventsData.pagination.hasNextPage}
-												/>
-											</HStack>
-										</Flex>
-									)}
-								</Box>
-							)}
-						</>
+						</Box>
 					) : (
 						<Center py={20}>
 							<Text color="#9C9C9C">No data available</Text>
@@ -1669,4 +1202,3 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		},
 	}
 }
-

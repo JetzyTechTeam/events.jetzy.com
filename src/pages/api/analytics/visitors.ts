@@ -5,6 +5,7 @@ import { UserSession, PageView } from "@/models/analytics"
 import { ensureDbConnected } from "@/configs/database"
 import { getServerSession } from "next-auth"
 import { authOptions } from "../auth/[...nextauth]"
+import { sessionVisitorKey } from "@/lib/analytics-metrics"
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 	if (req.method !== "GET") {
@@ -103,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 								$cond: [{ $eq: ["$isLoggedIn", false] }, 1, 0],
 							},
 						},
-						uniqueVisitors: { $addToSet: "$sessionId" },
+						uniqueVisitors: { $addToSet: sessionVisitorKey },
 						uniqueLoggedInUsers: {
 							$addToSet: {
 								$cond: [{ $ne: ["$userId", null] }, "$userId", "$$REMOVE"],
@@ -183,6 +184,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			totalAnonymousSessions,
 			uniqueLoggedInResult,
 			totalPageViews,
+			uniqueVisitorsResult,
 		] = await Promise.all([
 			UserSession.countDocuments(matchStage),
 			UserSession.countDocuments({ ...matchStage, isLoggedIn: true }),
@@ -193,10 +195,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				{ $count: "count" },
 			]),
 			PageView.countDocuments(pageViewMatch),
+			UserSession.aggregate([{ $match: matchStage }, { $group: { _id: sessionVisitorKey } }, { $count: "count" }]),
 		])
 
-		// sessionId is unique per session row, so count == unique count
-		const totalUniqueVisitors = totalSessions
+		// A visitor is a person (user, else browser anonId), not a session row
+		const totalUniqueVisitors = (uniqueVisitorsResult as any[])[0]?.count || 0
 		const totalUniqueLoggedInUsers = (uniqueLoggedInResult as any[])[0]?.count || 0
 
 		const response = {
