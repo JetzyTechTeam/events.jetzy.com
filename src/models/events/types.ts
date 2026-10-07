@@ -363,6 +363,8 @@ export interface IBlast extends IBaseModelProps {
 		reason?: string
 		respondedAt?: Date
 	}>
+	/** Whether the email opened with "Hi <name>,". Absent reads as true (every pre-toggle blast). */
+	greetByName?: boolean
 	sentAt: Date
 	isDeleted: boolean
 }

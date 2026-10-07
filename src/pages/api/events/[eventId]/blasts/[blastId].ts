@@ -26,6 +26,7 @@ const updateBlastSchema = zod.object({
 			}),
 		)
 		.optional(),
+	greetByName: zod.boolean().optional(),
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -89,6 +90,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			const updateData: any = {}
 			if (validation.data.subject !== undefined) updateData.subject = validation.data.subject
 			if (validation.data.message !== undefined) updateData.message = validation.data.message
+			if (validation.data.greetByName !== undefined) updateData.greetByName = validation.data.greetByName
 			if (validation.data.attachments !== undefined) {
 				// Re-checked with the SAME function `send-blast.ts` uses, so the edit path cannot
 				// accept a set the send path would refuse - a resend reads straight off this record.
