@@ -11,6 +11,7 @@ import {
 	ModalFooter,
 	ModalHeader,
 	ModalOverlay,
+	useToast,
 	Input,
 	Text,
 } from "@chakra-ui/react"
@@ -85,6 +86,7 @@ export default function BlastPreviewModal({
 	/** Mirrors the composer toggle so the preview opens the same way the email will. */
 	greetByName?: boolean
 }) {
+	const toast = useToast({ position: "top" })
 	const [testing, setTesting] = useState(false)
 	// Seeded from the login address but editable: the person operating the console is often not
 	// the person who has to approve the email, and forwarding a test by hand changes the headers
@@ -165,8 +167,27 @@ export default function BlastPreviewModal({
 					? `Sent to ${sentTo}. ${skipped} image${skipped === 1 ? "" : "s"} couldn't be attached.`
 					: `Sent to ${sentTo}. Check that inbox.`,
 			})
+
+			// A toast as well as the line in the dialog: the modal is long and the host may be
+			// scrolled to the top of the preview, where the inline message is off-screen.
+			toast({
+				title: "Test sent",
+				description: skipped
+					? `Sent to ${sentTo}. ${skipped} image${skipped === 1 ? "" : "s"} couldn't be attached.`
+					: `Sent to ${sentTo}. Check that inbox.`,
+				status: skipped ? "warning" : "success",
+				duration: 4000,
+				isClosable: true,
+			})
 		} catch (err: any) {
 			setTestResult({ type: "error", text: err?.response?.data?.error || "That test didn't send." })
+			toast({
+				title: "Test didn't send",
+				description: err?.response?.data?.error || "Something went wrong sending the test.",
+				status: "error",
+				duration: 5000,
+				isClosable: true,
+			})
 		} finally {
 			setTesting(false)
 		}
