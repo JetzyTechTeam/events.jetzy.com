@@ -3785,3 +3785,16 @@ Below `md` (768px) `/console/events/[eventId]/manage` has its own layout. **Ever
   live inside it.
 - The crop area is `touch-none` (or a drag scrolls the dialog) and its `<img>` is `max-w-none`
   (Tailwind's preflight caps images at 100% of their box, which squashes a zoomed photo).
+
+### Create Event on a phone (IMPLEMENTED 2026-10-07)
+
+`/console/events/create` uses the same system below `md`; from `md` up it is pixel-identical (before/after diffs at 1280px and 820px = 0 pixels). No handler, field, autosave or submit logic changed.
+
+- **Same sections, same order as Manage**: Basics (open), Date & time, Location, Description, Tickets, Media (+ listing preview), Options, Interests & benefits. On a new event the summaries ("No date set", "0 ticket types") double as a checklist. Same `display: contents` + `order` technique, same `MobileSection`.
+- **Summaries are shared**: `scheduleSummary` / `textSummary` / `countSummary` live in `src/components/console/manage/sectionSummaries.ts` and both pages import them.
+- **Submit is in the fixed bar** — `ManageMobileActionBar` with no Preview, `leading={<AutosaveStatusPill …/>}`, `isDisabled={isSubmitting || isUploading}`, label `Save as Draft` / `Create Event` (the same expressions the desktop button uses). It calls `formikRef.current?.submitForm()`. The original **Status + Submit card is hidden on phones but stays mounted**, so its `type="submit"` button still makes Enter submit exactly as before. Don't remove it.
+- `ManageMobileActionBar` props are now `onPreview?`, `isDisabled?`, `leading?` (Manage's call is unchanged).
+- The top autosave pill row is hidden on phones (it is in the bar), which also stops it shifting the layout when it appears.
+- Date-poll option dialog and this page's own inline ticket dialog are `size={{ base: "full", md: "md" }}`.
+- **Scripted-edit trap (cost one bug here):** a whitespace-tolerant find/replace that strips leading whitespace will also eat the space BEFORE a mid-line pattern — it produced the class `rounded-mdtext-white`. The desktop pixel diff caught it. Match whole lines, or use exact strings for anything mid-line.
+

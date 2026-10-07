@@ -75,6 +75,9 @@ import MediaUploadSection from "../../../components/media-upload-section";
 import { allowedMediaCount } from "@/lib/event-media-limit";
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title";
 import ListingCardPreview from "@/components/events/ListingCardPreview";
+import { MobileSection } from "@/components/console/manage/MobileSection";
+import { ManageMobileActionBar } from "@/components/console/manage/ManageMobileActionBar";
+import { scheduleSummary, textSummary, countSummary } from "@/components/console/manage/sectionSummaries";
 import { previewPath } from "@/lib/event-preview";
 import TimezoneSelect from "../../../components/timezone-select";
 import { z } from "zod";
@@ -95,7 +98,7 @@ import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" });
 
 // Shared dark field styling (Figma: bg #090C10, 1px #343536 border, rounded, Roboto 14px)
-const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-sm placeholder:text-gray-500 focus:outline-none";
+const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-base md:text-sm placeholder:text-gray-500 focus:outline-none";
 const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`;
 const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`;
 
@@ -537,27 +540,32 @@ const CreateEventPage = () => {
               onAutosave={handleAutosave}
               onStatusChange={setAutosaveState}
             />
+            {/* On phones the pill sits in the fixed bar beside the submit button instead. */}
             {autosaveState.status !== 'idle' && (
-              <Flex justify="flex-end" mb={3}>
+              <Flex display={{ base: "none", md: "flex" }} justify="flex-end" mb={3}>
                 <AutosaveStatusPill state={autosaveState} />
               </Flex>
             )}
             {/* ---- Status (top; mirrors the one at the bottom, same `status` field) ---- */}
-            <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mb={6}>
+            <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} mb={{ base: 3, md: 6 }}>
               <Flex align="center" justifyContent="space-between">
-                <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+                <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Status</Text>
                 <Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#343536] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
                   <option value="published">Published</option>
                   <option value="draft">Draft</option>
                 </Field>
               </Flex>
             </Box>
-            <Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
+            {/* Below `md` both columns and the two multi-group cards are `display: contents`, so
+                every MobileSection is a direct child of this flex column and `order` arranges
+                them for a phone — the same technique as Manage Event, and invisible on desktop. */}
+            <Flex direction={{ base: "column", lg: "row" }} gap={{ base: 3, md: 6 }} align={{ base: "stretch", md: "flex-start" }}>
               {/* ===================== MAIN COLUMN ===================== */}
-              <Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
+              <Flex display={{ base: "contents", md: "flex" }} direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
                 {/* ---- Basic Information ---- */}
-                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-                  <Heading size="md" color="white" mb={5}>Basic Information</Heading>
+                <Box display={{ base: "contents", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <Heading display={{ base: "none", md: "block" }} size="md" color="white" mb={5}>Basic Information</Heading>
+                  <MobileSection title="Basics" summary={textSummary(values.name, "Untitled event")} defaultOpen order={1}>
 
                   <FormControl mb={4}>
                     <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="1.4" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text> <Text as="span" color="#9C9C9C">{EVENT_TITLE_LIMIT_HINT}</Text></FormLabel>
@@ -569,7 +577,7 @@ const CreateEventPage = () => {
                         className={roboto.className}
                         bg="#090C10"
                         color="white"
-                        fontSize="14px"
+                        fontSize={{ base: "16px", md: "14px" }}
                         h="48px"
                         border="1px solid #343536"
                         _focus={{ borderColor: "#343536", boxShadow: "none" }}
@@ -598,6 +606,8 @@ const CreateEventPage = () => {
                     />
                   </FormControl>
 
+                  </MobileSection>
+                  <MobileSection title="Date & time" summary={scheduleSummary(values)} order={2}>
                   <FormControl mb={4}>
                     <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Time zone</FormLabel>
                     <Box position="relative">
@@ -619,14 +629,14 @@ const CreateEventPage = () => {
                     alignItems="stretch"
                     flexWrap={{ base: "wrap", sm: "nowrap" }}
                     mb={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 1 : 4}
-                    bg="#14161B"
+                    bg={{ base: "transparent", md: "#14161B" }}
                     rounded="xl"
-                    p="3"
+                    p={{ base: 0, md: 3 }}
                     opacity={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 0.4 : 1}
                     pointerEvents={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? "none" : "auto"}
                   >
                     {/* Left: Start/End markers + dashed connector */}
-                    <Flex direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
+                    <Flex display={{ base: "none", md: "flex" }} direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
                       <Box position="absolute" left="5px" top="6" bottom="6" borderLeft="1px dashed #5A5D62" />
                       <Flex h="48px" align="center" gap="3">
                         <Box w="11px" h="11px" rounded="full" bg="#F79432" zIndex={1} />
@@ -638,23 +648,33 @@ const CreateEventPage = () => {
                       </Flex>
                     </Flex>
                     {/* Right: two rows of date + time */}
-                    <Flex direction="column" gap="3" flex="1" minW={0}>
-                      <Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
-                        <Box position="relative" flex="1" minW="140px">
+                    <Flex direction="column" gap={{ base: 2, md: 3 }} flex="1" minW={0}>
+                      {/* Phones: the Start/End rail is hidden (its fixed-height markers fell out of
+                          line once the fields wrapped), so each row names itself. */}
+                      <Flex display={{ base: "flex", md: "none" }} align="center" gap={2}>
+                        <Box w="9px" h="9px" rounded="full" bg="#F79432" />
+                        <Text className={roboto.className} color="#FFFFFFCC" fontSize="13px" fontWeight={500}>Starts</Text>
+                      </Flex>
+                      <Flex gap={{ base: 2, md: 3 }} flexWrap="nowrap">
+                        <Box position="relative" flex={{ base: "1.15 1 0", md: "1" }} minW={{ base: 0, md: "140px" }}>
                           <CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                           <DatePicker className={dtFieldCls} onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" defaultDate={values.startDate} />
                         </Box>
-                        <Box position="relative" flex="1" minW="120px">
+                        <Box position="relative" flex={{ base: "1 1 0", md: "1" }} minW={{ base: 0, md: "120px" }}>
                           <ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                           <TimePicker className={dtFieldCls} onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" defaultValue={values.startTime} />
                         </Box>
                       </Flex>
-                      <Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
-                        <Box position="relative" flex="1" minW="140px">
+                      <Flex display={{ base: "flex", md: "none" }} align="center" gap={2} mt={2}>
+                        <Box w="9px" h="9px" rounded="full" bg="#3B82F6" />
+                        <Text className={roboto.className} color="#FFFFFFCC" fontSize="13px" fontWeight={500}>Ends</Text>
+                      </Flex>
+                      <Flex gap={{ base: 2, md: 3 }} flexWrap="nowrap">
+                        <Box position="relative" flex={{ base: "1.15 1 0", md: "1" }} minW={{ base: 0, md: "140px" }}>
                           <CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                           <DatePicker className={dtFieldCls} onChange={(date) => handleEndDateChange(date)} placeholder="End Date" defaultDate={values.endDate} />
                         </Box>
-                        <Box position="relative" flex="1" minW="120px">
+                        <Box position="relative" flex={{ base: "1 1 0", md: "1" }} minW={{ base: 0, md: "120px" }}>
                           <ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                           <TimePicker className={dtFieldCls} onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" defaultValue={values.endTime} />
                         </Box>
@@ -677,8 +697,8 @@ const CreateEventPage = () => {
                     )}
                     <Flex align="center" justifyContent="space-between" mt={3} mb="3">
                       <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Enable Date Poll</Text>
-                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Let attendees vote on preferred event date</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Enable Date Poll</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686" mt={1}>Let attendees vote on preferred event date</Text>
                       </Box>
                       <Switch isChecked={values.datePoll?.isActive} colorScheme="orange" onChange={() => {
                         const next = !values.datePoll?.isActive
@@ -711,6 +731,8 @@ const CreateEventPage = () => {
                     )}
                   </Box>
 
+                  </MobileSection>
+                  <MobileSection title="Location" summary={textSummary(values.location, "No location")} order={3}>
                   <FormControl mb={4}>
                     <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Location</FormLabel>
                     <InputGroup>
@@ -743,7 +765,7 @@ const CreateEventPage = () => {
                             allowPlacesDropdown()
                             field.onBlur(e)
                           }}
-                          className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
+                          className={roboto.className} bg="#090C10" color="white" fontSize={{ base: "16px", md: "14px" }} h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
                         )}
                       </Field>
                     </InputGroup>
@@ -772,7 +794,7 @@ const CreateEventPage = () => {
                       placeholder="e.g. Entrance is from Central Park South, 59th St and 6th Avenue. Map: https://..."
                       maxLength={EVENT_ENTRANCE_LIMIT}
                       rows={3}
-                      className={roboto.className} bg="#090C10" color="white" fontSize="14px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
+                      className={roboto.className} bg="#090C10" color="white" fontSize={{ base: "16px", md: "14px" }} border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
                     />
                     <Flex justify="space-between" gap={2} mt={1}>
                       <Text fontSize="xs" color="gray.500">
@@ -784,20 +806,28 @@ const CreateEventPage = () => {
                     </Flex>
                   </FormControl>
 
+                  </MobileSection>
+                  <MobileSection title="Description" summary={textSummary(values.desc, "No description")} order={4}>
                   <FormControl>
                     <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
                     <RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
                     <Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{countChars(stripHtml(values.desc || ""))}/500</Text>
                   </FormControl>
+                  </MobileSection>
                 </Box>
 
                 {/* ---- Interests ---- */}
-                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                <MobileSection
+                  title="Interests & benefits"
+                  summary={`${countSummary((values.interests || []).length, "interest")} · ${countSummary(benefitChips(values.benefits || "").length, "benefit")}`}
+                  order={8}
+                >
+                <Box bg={{ base: "transparent", md: "#15181C" }} border={{ base: "none", md: "1px solid #343536" }} borderRadius="10px" p={{ base: 0, md: 6 }}>
                   <InterestsSelector bare selected={values.interests ?? []} onChange={(ids) => setFieldValue("interests", ids)} />
                 </Box>
 
                 {/* ---- Event Benefits ---- */}
-                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                <Box bg={{ base: "transparent", md: "#15181C" }} border={{ base: "none", md: "1px solid #343536" }} borderRadius="10px" p={{ base: 0, md: 6 }} mt={{ base: 6, md: 0 }}>
                   <Flex align="baseline" gap={2} mb={4}>
                     <Heading size="md" color="white">Event Benefits</Heading>
                     <Text className={roboto.className} fontSize="sm" color="#9C9C9C">
@@ -827,7 +857,7 @@ const CreateEventPage = () => {
                           className={roboto.className}
                           bg="#090C10"
                           color="white"
-                          fontSize="sm"
+                          fontSize={{ base: "16px", md: "sm" }}
                           h="48px"
                           border="1px solid #343536"
                           _focus={{ borderColor: "#343536", boxShadow: "none" }}
@@ -869,9 +899,16 @@ const CreateEventPage = () => {
                   </Flex>
                 </Box>
 
+                </MobileSection>
+
                 {/* ---- Event Options ---- */}
-                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-                  <Heading size="md" color="white" mb={4}>Event Options</Heading>
+                <Box display={{ base: "contents", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                  <Heading display={{ base: "none", md: "block" }} size="md" color="white" mb={4}>Event Options</Heading>
+                  <MobileSection
+                    title="Options"
+                    summary={`${values.privacy === "private" ? "Private" : "Public"} · Approval ${values.requireApproval ? "on" : "off"}${values.premiumEvent ? " · Premium" : ""}`}
+                    order={7}
+                  >
 
                   {/* The OLD "Premium Event" toggle and its member-discount % stay removed —
                       Jetzy Premium is SOLD per ticket now, see "Includes Jetzy Premium" on each
@@ -881,7 +918,7 @@ const CreateEventPage = () => {
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <Text fontSize="22px" lineHeight="24px" color="#F5C518">★</Text>
                       <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Premium Event</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Premium Event</Text>
                         <Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" mt={1} maxW="360px">
                           Shows a Premium badge on the listing and the event page, and makes the event findable under the Premium filter. Changes no pricing or membership.
                         </Text>
@@ -899,8 +936,8 @@ const CreateEventPage = () => {
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <LockSVG />
                       <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Privacy</Text>
-                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Who can view and join this event</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Privacy</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686" mt={1}>Who can view and join this event</Text>
                       </Box>
                     </Flex>
                     <Field as="select" id="privacy" name="privacy" value={values?.privacy} className="bg-[#090C10] block w-[110px] h-10 rounded-md border border-[#343536] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
@@ -912,7 +949,7 @@ const CreateEventPage = () => {
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <UserTickSVG />
                       <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Require Approval</Text>
                         <Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" mt={1} maxW="360px">
                           Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.
                         </Text>
@@ -939,8 +976,8 @@ const CreateEventPage = () => {
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <LocationSVG />
                       <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Disclose Location After Booking</Text>
-                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Attendees see location only in booking email</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Disclose Location After Booking</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686" mt={1}>Attendees see location only in booking email</Text>
                       </Box>
                     </Flex>
                     <Switch name="locationDisclosedAfterBooking" isChecked={values.locationDisclosedAfterBooking} colorScheme="orange" onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)} />
@@ -949,21 +986,24 @@ const CreateEventPage = () => {
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <DevicePhoneMobileIcon className="text-[#B5B6B7]" />
                       <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Show on Mobile</Text>
-                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Display this event in the Jetzy mobile app</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Show on Mobile</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686" mt={1}>Display this event in the Jetzy mobile app</Text>
                       </Box>
                     </Flex>
                     <Switch name="showOnMobile" isChecked={values.showOnMobile} colorScheme="orange" onChange={() => setFieldValue("showOnMobile", !values.showOnMobile)} />
                   </Flex>
+                  </MobileSection>
+                  <MobileSection title="Tickets" summary={countSummary(values.tickets.length, "ticket type")} order={5}>
                   <Flex align="center" justifyContent="space-between">
-                    <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+                    {/* The section header already says "Tickets" on a phone. */}
+                    <Flex display={{ base: "none", md: "flex" }} gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <TicketSVG />
                       <Box>
-                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Tickets</Text>
-                        <Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686" mt={1}>Manage ticket types and pricing</Text>
+                        <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Tickets</Text>
+                        <Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686" mt={1}>Manage ticket types and pricing</Text>
                       </Box>
                     </Flex>
-                    <Button bg="transparent" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} size="sm" fontSize="16px" onClick={() => { setEditIndex(null); setTempTicket({ id: "", title: "", description: "", price: 0 }); onOpen() }} leftIcon={<TicketIcon className="w-5 h-5" />} p="0">
+                    <Button bg="transparent" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} size="sm" fontSize="16px" onClick={() => { setEditIndex(null); setTempTicket({ id: "", title: "", description: "", price: 0 }); onOpen() }} leftIcon={<TicketIcon className="w-5 h-5" />} p={{ base: 3, md: 0 }} w={{ base: "full", md: "auto" }} h={{ base: "44px", md: 8 }} border={{ base: "1px dashed #F79432", md: "none" }} borderRadius="10px">
                       Add Tickets
                     </Button>
                   </Flex>
@@ -980,7 +1020,7 @@ const CreateEventPage = () => {
                         >
                         {values.tickets.map((ticket, index) => (
                           <SortableTicketItem key={ticket.id || index} id={String(ticket.id || index)}>
-                          <Box p="5" pl="10" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
+                          <Box pt={{ base: 4, md: 5 }} pr={{ base: 4, md: 5 }} pb={{ base: 4, md: 5 }} pl="10" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={{ base: 3, md: 4 }} position="relative">
                             <Flex align="center" gap={2} pr="6" wrap="wrap">
                               <Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
                               {ticketApprovalFlag(values as any, ticket as any) && (
@@ -992,7 +1032,7 @@ const CreateEventPage = () => {
                             <Box my="1" pr="6">
                               <EventDescription description={ticket.description} className={`${roboto.className} text-sm text-[#868686]`} />
                             </Box>
-                            <Text fontWeight="bold" fontSize="2xl" color="#F79432" mt="2">${ticket.price}</Text>
+                            <Text fontWeight="bold" fontSize={{ base: "xl", md: "2xl" }} color="#F79432" mt="2">${ticket.price}</Text>
                             <Box position="absolute" top="4" right="4">
                               <Menu>
                                 <MenuButton as={IconButton} icon={<EllipsisHorizontalIcon className="w-6 h-6" />} variant="ghost" size="sm" color="white" _hover={{ bg: "#333" }} _active={{ bg: "#444" }} />
@@ -1009,12 +1049,14 @@ const CreateEventPage = () => {
                       </>
                     )}
                   </FieldArray>
+                  </MobileSection>
                 </Box>
 
-                {/* ---- Status + Submit ---- */}
-                <Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+                {/* ---- Status + Submit ---- (hidden on phones: Status is at the top and the
+                    submit button is in the fixed bar; this one stays mounted) */}
+                <Box display={{ base: "none", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
                   <Flex align="center" justifyContent="space-between" mb={4}>
-                    <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+                    <Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Status</Text>
                     <Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#343536] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
                       <option value="published">Published</option>
                       <option value="draft">Draft</option>
@@ -1039,10 +1081,11 @@ const CreateEventPage = () => {
               </Flex>
 
               {/* ===================== SIDEBAR ===================== */}
-              <Flex direction="column" gap={6} flex="1" w="full" maxW={{ lg: "360px" }} minW={0}>
+              <Flex display={{ base: "contents", md: "flex" }} direction="column" gap={6} flex="1" w="full" maxW={{ lg: "360px" }} minW={0}>
                 {/* ---- Event Media ---- */}
-                <Box id="images" bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-                  <Heading size="md" color="white" mb={4}>Event Media</Heading>
+                <MobileSection title="Media" summary={countSummary(uploadedImages.length + uploadedVideos.length, "photo or video", "photos and videos")} order={6}>
+                <Box id="images" bg={{ base: "transparent", md: "#15181C" }} border={{ base: "none", md: "1px solid #343536" }} borderRadius="10px" p={{ base: 0, md: 6 }}>
+                  <Heading display={{ base: "none", md: "block" }} size="md" color="white" mb={4}>Event Media</Heading>
                   {/* Admins are uncapped; see src/lib/event-media-limit.ts. Nothing is stored yet
                       on a create, so there is no grandfathered allowance to respect. */}
                   <MediaUploadSection
@@ -1067,16 +1110,31 @@ const CreateEventPage = () => {
                     found out what the result looked like after creating. The card is the
                     cheapest honest answer while typing — the full guest page is one click
                     away from the success modal, and from Manage after that. */}
+                <Box display={{ base: "block", md: "contents" }} mt={{ base: 5, md: 0 }}>
                 <ListingCardPreview
                   images={uploadedImages}
                   videos={uploadedVideos}
                   mediaOrder={mediaOrder}
                 />
+                </Box>
+                </MobileSection>
               </Flex>
             </Flex>
 
+            {/* Phones: the submit button lives in a bar fixed to the bottom of the window, with
+                the autosave pill beside it. Same submit path as the button in the (hidden on
+                phones) Status + Submit card. The spacer keeps the last section clear of it. */}
+            <Box display={{ base: "block", md: "none" }} h="88px" aria-hidden />
+            <ManageMobileActionBar
+              onSave={() => formikRef.current?.submitForm()}
+              saveLabel={values.status === 'draft' ? 'Save as Draft' : 'Create Event'}
+              isSaving={isSubmitting}
+              isDisabled={isSubmitting || isUploading}
+              leading={<AutosaveStatusPill state={autosaveState} />}
+            />
+
             {/* Date Poll Option Modal */}
-            <Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
+            <Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered size={{ base: "full", md: "md" }}>
               <ModalOverlay />
               <ModalContent bg="#1E1E1E" color="white">
                 <ModalHeader>Add Date Option</ModalHeader>
@@ -1148,7 +1206,7 @@ const CreateEventPage = () => {
             {/* Tickets Modal */}
             <FieldArray name="tickets">
               {({ push, replace }) => (
-                <Modal isOpen={isOpen} onClose={onClose} isCentered>
+                <Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "full", md: "md" }}>
                   <ModalOverlay />
                   <ModalContent bg="#1E1E1E" color="white">
                     <ModalHeader>

@@ -129,6 +129,7 @@ import { ManageSectionSwitcher } from "@/components/console/manage/ManageSection
 import { MobileSection } from "@/components/console/manage/MobileSection"
 import { ManageMobileActionBar } from "@/components/console/manage/ManageMobileActionBar"
 import { ManageMobileSummary } from "@/components/console/manage/ManageMobileSummary"
+import { scheduleSummary, textSummary, countSummary } from "@/components/console/manage/sectionSummaries"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
 import { useAppDispatch } from "@/redux/stores"
@@ -186,24 +187,6 @@ const iconBrighten = {
 	"& [stroke]": { stroke: "#E6E6E6" },
 	"& [fill]:not([fill='none'])": { fill: "#E6E6E6", fillOpacity: 1 },
 } as const
-
-// One-line summaries for the collapsed Overview sections on a phone — what is set, at a glance.
-// Pure formatting of form values; nothing here decides anything.
-const scheduleSummary = (values: any): string => {
-	if (values?.datePoll?.isActive) {
-		const n = (values.datePoll.options || []).length
-		return `Date poll · ${n} option${n === 1 ? "" : "s"}`
-	}
-	if (!values?.startDate) return "No date set"
-	const start = dayjs(`${values.startDate}T${values.startTime || "00:00"}`)
-	if (!start.isValid()) return values.startDate
-	return values.startTime ? start.format("ddd, MMM D · h:mm A") : start.format("ddd, MMM D")
-}
-const textSummary = (value: string | undefined, empty: string): string => {
-	const text = stripHtml(value || "").replace(/\s+/g, " ").trim()
-	return text || empty
-}
-const countSummary = (n: number, one: string, many: string = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 const updateEventSchema = z.object({
 	name: z.string().min(1, "Event name is required"),
