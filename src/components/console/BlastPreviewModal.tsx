@@ -64,6 +64,7 @@ export default function BlastPreviewModal({
 	hostName,
 	hostEmail,
 	senderLabel,
+	greetByName = true,
 }: {
 	isOpen: boolean
 	onClose: () => void
@@ -81,6 +82,8 @@ export default function BlastPreviewModal({
 	hostEmail?: string
 	/** "Anna Khan via Jetzy" — resolved server-side; shown here as the From line. */
 	senderLabel?: string
+	/** Mirrors the composer toggle so the preview opens the same way the email will. */
+	greetByName?: boolean
 }) {
 	const [testing, setTesting] = useState(false)
 	// Seeded from the login address but editable: the person operating the console is often not
@@ -110,6 +113,7 @@ export default function BlastPreviewModal({
 			footerContact: "Questions? (the footer is added when the blast is sent)",
 			emailType,
 			baseUrl: typeof window !== "undefined" ? window.location.origin : "",
+			greetByName,
 			images: attachments
 				.filter((a) => attachmentMode(a) === "attach")
 				.map((a, i) => ({ contentId: blastImageContentId(i), filename: a.filename })),
@@ -126,7 +130,7 @@ export default function BlastPreviewModal({
 			bookingRef: emailType === "availability" ? "SAMPLE-REF" : undefined,
 		})
 		return withPreviewableImages(personalized, attachments)
-	}, [subject, message, eventName, eventLink, emailType, attachments, sampleName, sampleEmail])
+	}, [subject, message, eventName, eventLink, emailType, attachments, greetByName, sampleName, sampleEmail])
 
 	// Checked as they type so the button can refuse before a round trip. The API runs the same
 	// function and is the authority - this is feedback, not the gate.
@@ -149,6 +153,7 @@ export default function BlastPreviewModal({
 				emailType,
 				eventLink,
 				attachments,
+				greetByName,
 				testTo: addressCheck.email,
 			})
 			const skipped = res.data?.skippedAttachments?.length || 0

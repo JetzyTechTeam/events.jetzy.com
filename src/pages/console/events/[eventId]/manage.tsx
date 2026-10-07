@@ -63,6 +63,7 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogOverlay,
+	Checkbox,
 } from "@chakra-ui/react"
 import { DateTime } from "luxon"
 import axios from "axios"
@@ -2261,6 +2262,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	const [attachments, setAttachments] = useState<BlastAttachment[]>([])
 	const [uploading, setUploading] = useState(false)
 	const [previewOpen, setPreviewOpen] = useState(false)
+	const [greetByName, setGreetByName] = useState(true)
 	const { data: session } = useSession()
 
 	const toast = useToast({ position: "top" })
@@ -2275,6 +2277,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 			setAttachments([])
 			setUploading(false)
 			setPreviewOpen(false)
+			setGreetByName(true)
 			setError("")
 		}
 	}, [sendBlastModal])
@@ -2297,6 +2300,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 				// The server rebuilds this from the event record; kept correct here anyway.
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 				attachments,
+				greetByName,
 			})
 
 			if (res.status === 207) {
@@ -2310,6 +2314,8 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 			} else {
 				toast({
 					title: "Blast sent!",
+					// The server names the number; the title alone said nothing about reach.
+					description: res.data?.message,
 					status: "success",
 					duration: 3000,
 					isClosable: true,
@@ -2483,6 +2489,11 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						/>
 						{error && <Text color="red.500">{error}</Text>}
 
+						{/* Off when the host's own message already opens with a greeting - otherwise the guest
+						    reads "Hi Sarah," and then "Hi everyone!" one line later. */}
+						<Checkbox isChecked={greetByName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGreetByName(e.target.checked)} mb={3} color="gray.300" size="sm">
+							Greet each guest by name
+						</Checkbox>
 						<BlastAttachmentPicker attachments={attachments} onChange={setAttachments} onUploadingChange={setUploading} />
 
 						<Flex gap={3}>
@@ -2513,6 +2524,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 							event={event}
 							emailType={emailType as "custom" | "availability"}
 							attachments={attachments}
+							greetByName={greetByName}
 							targetType={targetType}
 							status={status}
 							hostName={(session?.user as any)?.name}
@@ -2623,6 +2635,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 	const [attachments, setAttachments] = useState<BlastAttachment[]>([])
 	const [uploading, setUploading] = useState(false)
 	const [previewOpen, setPreviewOpen] = useState(false)
+	const [greetByName, setGreetByName] = useState(true)
 	const { data: session } = useSession()
 
 	const [editing, setEditing] = useState<any | null>(null)
@@ -2689,6 +2702,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				// The server rebuilds this from the event record; kept correct here anyway.
 				eventLink: eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug),
 				attachments,
+				greetByName,
 			})
 			toast({
 				title: res.status === 207 ? "Partially sent" : "Blast sent!",
@@ -2813,6 +2827,11 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 						{sendResult.text}
 					</Text>
 				)}
+				{/* Off when the host's own message already opens with a greeting - otherwise the guest
+				    reads "Hi Sarah," and then "Hi everyone!" one line later. */}
+				<Checkbox isChecked={greetByName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGreetByName(e.target.checked)} mb={3} color="gray.300" size="sm">
+					Greet each guest by name
+				</Checkbox>
 				<BlastAttachmentPicker attachments={attachments} onChange={setAttachments} onUploadingChange={setUploading} compact />
 				<Flex justify="space-between" align="center">
 					<Text as="button" type="button" onClick={onOpenAdvanced} color="#F79432" fontSize="sm" fontWeight="bold">
@@ -2847,6 +2866,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 					event={event}
 					emailType="custom"
 					attachments={attachments}
+					greetByName={greetByName}
 					targetType="all"
 					status="all"
 					hostName={(session?.user as any)?.name}

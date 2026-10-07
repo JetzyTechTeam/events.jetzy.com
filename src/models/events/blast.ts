@@ -115,6 +115,12 @@ const blastSchema = new Schema<IBlast>(
 			],
 			required: false,
 		},
+		// Whether the email opened with "Hi <name>,". NO DEFAULT: absent means a blast sent
+		// before the toggle existed, and those all greeted. Read as `!== false`.
+		greetByName: {
+			type: Boolean,
+			required: false,
+		},
 		sentAt: {
 			type: Date,
 			default: Date.now,

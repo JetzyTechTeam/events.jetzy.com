@@ -48,6 +48,14 @@ export interface BuildBlastHtmlArgs {
 	/** Rendered as a list of anchors under the images. Empty/absent renders nothing. */
 	links?: BlastFileLink[]
 	/** Defaults to the current year; injectable so a test can assert a stable string. */
+	/**
+	 * Whether the email opens with `Hi {{userName}},`.
+	 *
+	 * DEFAULTS TO TRUE — what every blast sent before this option existed did. A host whose own
+	 * message already opens with a greeting turns it off, rather than the guest reading "Hi
+	 * Sarah," immediately followed by "Hi everyone!".
+	 */
+	greetByName?: boolean
 	year?: number
 }
 
@@ -94,7 +102,7 @@ function linksBlock(links?: BlastFileLink[]): string {
 	return `
         <div style="margin: 25px 0; padding: 16px; border: 1px solid #eee; border-radius: 8px;">
           <p style="font-size: 14px; color: #777; margin: 0 0 10px 0; font-weight: bold;">
-            ${links.length === 1 ? "Attached file" : "Attached files"}
+            ${links.length === 1 ? "Download" : "Downloads"}
           </p>
           ${rows}
         </div>`
@@ -130,11 +138,18 @@ export function buildBlastHtml({
 	baseUrl = "",
 	images,
 	links,
+	greetByName = true,
 	year,
 }: BuildBlastHtmlArgs): string {
 	const copyright = year ?? new Date().getFullYear()
 	const pictures = imagesBlock(images)
 	const files = linksBlock(links)
+	// Omitted entirely when off: an empty <p> would still leave a gap above the message.
+	const greeting = greetByName
+		? `<p style="font-size: 16px; color: #555; line-height: 1.6;">
+          Hi {{userName}},
+        </p>`
+		: ""
 
 	// Jetzy brand theme — matches the welcome/invitation emails: favicon logo, orange #F79432 CTA,
 	// white 600px card. Moved here verbatim; do not restyle one template without the other.
@@ -197,9 +212,7 @@ export function buildBlastHtml({
           <img src="https://events.jetzy.com/favicon.ico" width="50" height="50" alt="Jetzy Logo" />
         </div>
         <h1 style="color: #333; text-align: center;">${subject}</h1>
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
-          Hi {{userName}},
-        </p>
+        ${greeting}
         <p style="font-size: 16px; color: #555; line-height: 1.6;">
           ${message}
         </p>${pictures}${files}

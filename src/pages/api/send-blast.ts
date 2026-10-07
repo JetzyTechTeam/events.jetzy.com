@@ -42,7 +42,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   const userId = (session.user as any)?._id?.toString();
   const isAdmin = userRole === "admin" || userRole === "super admin";
 
-  const { status, subject, message, eventLink, event, targetType, emailType, attachments, testTo } = req.body;
+  const { status, subject, message, eventLink, event, targetType, emailType, attachments, testTo, greetByName } = req.body;
 
   // Trimmed at the ENDS only. A pasted subject routinely carries a trailing newline, which lands
   // both in the <h1> and in the SendGrid `subject` header; a message often carries leading blank
@@ -201,6 +201,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       images: fetched.images,
       // Link-mode files: a url in the body, nothing carried per recipient.
       links: fetched.links,
+      // Absent reads as TRUE - every blast sent before the toggle existed opened with "Hi <name>,".
+      greetByName: greetByName !== false,
     });
     const sendGridAttachments = fetched.attachments;
 
@@ -311,6 +313,7 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           // no images stays indistinguishable from one sent before attachments existed - which
           // is the honest reading of both.
           ...(attachmentList.length > 0 ? { attachments: attachmentList } : {}),
+          greetByName: greetByName !== false,
           sentAt: new Date(),
         })
       } catch (persistErr) {
@@ -329,7 +332,11 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       return res.status(207).json({ message: `Blast partially sent. ${succeeded} delivered, ${failed} failed.`, sent: succeeded, failed })
     }
 
-    return res.status(200).json({ message: "Blast sent successfully", sent: succeeded });
+    // Name the number. "Blast sent successfully" left the host with no idea whether it reached
+    // nine guests or one.
+    return res
+      .status(200)
+      .json({ message: `Sent to ${succeeded} ${succeeded === 1 ? "person" : "people"}.`, sent: succeeded });
 
   } catch (error: any) {
     console.error("Send blast error:", error?.response?.body || error)
