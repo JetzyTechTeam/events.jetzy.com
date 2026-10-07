@@ -15,7 +15,7 @@ import {
 	Text,
 } from "@chakra-ui/react"
 
-import { blastImageContentId, formatBytes, type BlastAttachment } from "@/lib/blast-attachments"
+import { attachmentMode, blastImageContentId, formatBytes, type BlastAttachment } from "@/lib/blast-attachments"
 import { normalizeTestAddress } from "@/lib/blast-test-send"
 import { blastFallbackName, buildBlastHtml, personalizeBlastHtml, type BlastEmailType } from "@/lib/blast-template"
 
@@ -38,8 +38,12 @@ import { blastFallbackName, buildBlastHtml, personalizeBlastHtml, type BlastEmai
 
 /** The preview swaps `cid:` for the real url, which is the one thing the browser can render. */
 function withPreviewableImages(html: string, attachments: BlastAttachment[]): string {
+	// Only the attached ones hold a cid, and the index must be their position among THOSE -
+	// the same counter `fetchBlastAttachments` uses. Indexing the whole list would point
+	// `blast-image-2` at the wrong file as soon as one entry is a link.
+	const attached = attachments.filter((a) => attachmentMode(a) === "attach")
 	let out = html
-	attachments.forEach((a, i) => {
+	attached.forEach((a, i) => {
 		out = out.replace(new RegExp(`cid:${blastImageContentId(i)}`, "g"), a.url)
 	})
 	return out
@@ -106,7 +110,13 @@ export default function BlastPreviewModal({
 			footerContact: "Questions? (the footer is added when the blast is sent)",
 			emailType,
 			baseUrl: typeof window !== "undefined" ? window.location.origin : "",
-			images: attachments.map((a, i) => ({ contentId: blastImageContentId(i), filename: a.filename })),
+			images: attachments
+				.filter((a) => attachmentMode(a) === "attach")
+				.map((a, i) => ({ contentId: blastImageContentId(i), filename: a.filename })),
+			// Link-mode files render as the real anchors, exactly as the guest sees them.
+			links: attachments
+				.filter((a) => attachmentMode(a) === "link")
+				.map((a) => ({ url: a.url, filename: a.filename, size: a.size })),
 		})
 		const personalized = personalizeBlastHtml(built, {
 			userName: sampleName,
@@ -198,11 +208,12 @@ export default function BlastPreviewModal({
 					{attachments.length > 0 && (
 						<Box mt={3}>
 							<Text fontSize="xs" color="gray.500" mb={1}>
-								Attached ({attachments.length})
+								Files ({attachments.length})
 							</Text>
 							{attachments.map((a, i) => (
 								<Text key={`${a.url}-${i}`} fontSize="sm" color="gray.300">
-									📎 {a.filename} · {formatBytes(a.size)}
+									{attachmentMode(a) === "attach" ? "🖼️" : "📎"} {a.filename} · {formatBytes(a.size)} ·{" "}
+									{attachmentMode(a) === "attach" ? "in the email" : "link"}
 								</Text>
 							))}
 						</Box>

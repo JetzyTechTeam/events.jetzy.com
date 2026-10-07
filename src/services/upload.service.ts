@@ -16,6 +16,12 @@ const UPLOAD_ENDPOINT = "https://prod-api.jetzy.com/api/v1/uploader/multiple";
  * `attachments` were all refused. Adding one means PROBING for it first, never guessing.
  *
  * The legacy `src/lib/edgestore.ts` shim posts to the same endpoint and is under the same rule.
+ *
+ * IT VALIDATES THE FOLDER AND NOTHING ELSE (probed 2026-10-07). A PDF, an mp4, a CSV, a bare
+ * `.exe` and a 60MB blob were every one accepted and stored under a public, unsigned S3 url.
+ * There is no type check and no size cap behind this call, so any limit a feature needs is the
+ * caller's to enforce - see `blast-attachments.ts`, which carries its own ceilings and an
+ * executable blocklist precisely because nothing here will stop them.
  */
 export type UploadFolder = "posts" | "photos";
 

@@ -1,22 +1,27 @@
 /**
- * Turning a host's uploaded image urls into SendGrid attachment entries.
+ * Turning a host's attach-mode images into SendGrid attachment entries.
  *
  * SERVER ONLY — it fetches over the network and uses `Buffer`. The constants and the validator it
  * leans on are in the pure `blast-attachments.ts`, which the picker also imports; keep that split.
  *
  * Fetched ONCE per blast, before the recipient loop, and the same array is handed to every send.
  * Re-fetching per recipient would mean one CDN round trip per guest.
+ *
+ * LINK-MODE FILES NEVER COME NEAR THIS. They are filtered out before the first fetch: not
+ * downloaded, not base64-encoded, not in any message. That is the entire point of the mode — the
+ * email carries a url instead of a copy, so a 40MB PDF costs the send nothing.
  */
 
 import {
 	BLAST_ATTACHMENT_MAX_COUNT,
 	BLAST_ATTACHMENT_TOTAL_MAX_BYTES,
+	attachmentMode,
 	blastImageContentId,
 	formatBytes,
 	isAllowedBlastImageType,
 	type BlastAttachment,
 } from "./blast-attachments"
-import type { BlastInlineImage } from "./blast-template"
+import type { BlastInlineImage, BlastFileLink } from "./blast-template"
 
 /** The shape SendGrid wants. `content_id` is snake_case — it ignores `contentId` silently. */
 export interface SendGridAttachment {
@@ -36,6 +41,8 @@ export interface FetchedBlastAttachments {
 	attachments: SendGridAttachment[]
 	/** Passed to `buildBlastHtml` so the body references the same cids. */
 	images: BlastInlineImage[]
+	/** The link-mode files, straight through — nothing is fetched for these. */
+	links: BlastFileLink[]
 	/** Non-fatal problems worth logging; a blast is not failed over one unreadable image. */
 	skipped: Array<{ url: string; reason: string }>
 }
@@ -43,7 +50,7 @@ export interface FetchedBlastAttachments {
 const FETCH_TIMEOUT_MS = 15_000
 
 /**
- * Downloads each attachment and base64-encodes it.
+ * Downloads each ATTACH-mode file and base64-encodes it; passes link-mode files through untouched.
  *
  * The size is re-measured from what actually arrives rather than trusted from the request body.
  * The client's `size` is what a browser reported about a file it then uploaded somewhere else;
@@ -55,16 +62,20 @@ const FETCH_TIMEOUT_MS = 15_000
  * that goes out with two images instead of three — and the skip is reported back so they are told.
  */
 export async function fetchBlastAttachments(list: BlastAttachment[]): Promise<FetchedBlastAttachments> {
-	const result: FetchedBlastAttachments = { attachments: [], images: [], skipped: [] }
+	const result: FetchedBlastAttachments = { attachments: [], images: [], links: [], skipped: [] }
 	if (!list || list.length === 0) return result
+
+	// Link-mode files cost nothing and are simply described to the template.
+	result.links = list
+		.filter((item) => attachmentMode(item) === "link")
+		.map((item) => ({ url: item.url, filename: item.filename || "file", size: item.size || 0 }))
 
 	// Defensive: the route validates first, but this helper must not fan out unbounded if it is
 	// ever called from somewhere that forgot to.
-	const capped = list.slice(0, BLAST_ATTACHMENT_MAX_COUNT)
+	const capped = list.filter((item) => attachmentMode(item) === "attach").slice(0, BLAST_ATTACHMENT_MAX_COUNT)
 	let totalBytes = 0
 
-	for (let i = 0; i < capped.length; i++) {
-		const item = capped[i]
+	for (const item of capped) {
 		try {
 			if (!isAllowedBlastImageType(item.contentType)) {
 				result.skipped.push({ url: item.url, reason: `unsupported type ${item.contentType}` })
@@ -90,7 +101,7 @@ export async function fetchBlastAttachments(list: BlastAttachment[]): Promise<Fe
 			if (totalBytes + buffer.byteLength > BLAST_ATTACHMENT_TOTAL_MAX_BYTES) {
 				result.skipped.push({
 					url: item.url,
-					reason: `would exceed the ${formatBytes(BLAST_ATTACHMENT_TOTAL_MAX_BYTES)} total`,
+					reason: `would exceed the ${formatBytes(BLAST_ATTACHMENT_TOTAL_MAX_BYTES)} attached total`,
 				})
 				continue
 			}

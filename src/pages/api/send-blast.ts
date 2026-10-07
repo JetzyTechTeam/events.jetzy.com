@@ -199,6 +199,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       emailType,
       baseUrl: process.env.NEXT_PUBLIC_URL || "",
       images: fetched.images,
+      // Link-mode files: a url in the body, nothing carried per recipient.
+      links: fetched.links,
     });
     const sendGridAttachments = fetched.attachments;
 

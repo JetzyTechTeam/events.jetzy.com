@@ -352,6 +352,8 @@ export interface IBlast extends IBaseModelProps {
 		filename: string
 		contentType: string
 		size: number
+		/** `"attach"` (in every message) or `"link"` (a url only). Absent reads as attach. */
+		mode?: "attach" | "link"
 	}>
 	/** Per-recipient outcome. Updated after the fact by the SendGrid webhook on a bounce. */
 	recipients?: Array<{

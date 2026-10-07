@@ -84,6 +84,9 @@ const blastSchema = new Schema<IBlast>(
 					filename: { type: String, required: true },
 					contentType: { type: String, required: true },
 					size: { type: Number, required: true },
+					// ABSENT MEANS "attach" - every blast sent before linking existed carried real
+					// attachments. No default and no enum: read it through `attachmentMode`.
+					mode: { type: String, required: false },
 				},
 			],
 			required: false,
