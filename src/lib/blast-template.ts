@@ -24,6 +24,14 @@ export interface BlastInlineImage {
 	filename: string
 }
 
+/** A file the email LINKS to rather than carries. Already on S3 with a public, unsigned url. */
+export interface BlastFileLink {
+	url: string
+	filename: string
+	/** Shown beside the name so the reader knows what they are about to open. */
+	size: number
+}
+
 export interface BuildBlastHtmlArgs {
 	subject: string
 	message: string
@@ -37,6 +45,8 @@ export interface BuildBlastHtmlArgs {
 	baseUrl?: string
 	/** Rendered under the message, above the CTA. Empty/absent renders nothing. */
 	images?: BlastInlineImage[]
+	/** Rendered as a list of anchors under the images. Empty/absent renders nothing. */
+	links?: BlastFileLink[]
 	/** Defaults to the current year; injectable so a test can assert a stable string. */
 	year?: number
 }
@@ -62,6 +72,42 @@ function imagesBlock(images?: BlastInlineImage[]): string {
 }
 
 /**
+ * The files the email links to.
+ *
+ * An anchor, deliberately, not an `<img>`: a remote image is blocked by Gmail until the reader
+ * clicks "Display images below", whereas a link is never blocked. Nothing of the file travels
+ * with the message, so this costs the send nothing however large the file is.
+ */
+function linksBlock(links?: BlastFileLink[]): string {
+	if (!links || links.length === 0) return ""
+	const rows = links
+		.map(
+			(file) => `
+          <div style="margin-bottom: 8px;">
+            <a href="${escapeAttribute(file.url)}" style="color: #F79432; text-decoration: none; font-size: 15px;">
+              &#128206; ${escapeAttribute(file.filename)}
+            </a>
+            <span style="color: #999; font-size: 13px;">${file.size > 0 ? ` &middot; ${formatSize(file.size)}` : ""}</span>
+          </div>`,
+		)
+		.join("")
+	return `
+        <div style="margin: 25px 0; padding: 16px; border: 1px solid #eee; border-radius: 8px;">
+          <p style="font-size: 14px; color: #777; margin: 0 0 10px 0; font-weight: bold;">
+            ${links.length === 1 ? "Attached file" : "Attached files"}
+          </p>
+          ${rows}
+        </div>`
+}
+
+/** Local to the template so it stays pure — `blast-attachments.ts` has its own for the UI. */
+function formatSize(bytes: number): string {
+	if (!Number.isFinite(bytes) || bytes <= 0) return ""
+	if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
  * For the `alt` attribute only.
  *
  * `subject` and `message` are deliberately NOT escaped — they are interpolated raw, exactly as
@@ -83,10 +129,12 @@ export function buildBlastHtml({
 	emailType = "custom",
 	baseUrl = "",
 	images,
+	links,
 	year,
 }: BuildBlastHtmlArgs): string {
 	const copyright = year ?? new Date().getFullYear()
 	const pictures = imagesBlock(images)
+	const files = linksBlock(links)
 
 	// Jetzy brand theme — matches the welcome/invitation emails: favicon logo, orange #F79432 CTA,
 	// white 600px card. Moved here verbatim; do not restyle one template without the other.
@@ -121,7 +169,7 @@ export function buildBlastHtml({
         </div>
         <p style="font-size: 16px; color: #555; line-height: 1.6;">
           ${message}
-        </p>${pictures}
+        </p>${pictures}${files}
         <div style="text-align: center; margin: 35px 0;">
           <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details
@@ -154,7 +202,7 @@ export function buildBlastHtml({
         </p>
         <p style="font-size: 16px; color: #555; line-height: 1.6;">
           ${message}
-        </p>${pictures}
+        </p>${pictures}${files}
         <div style="text-align: center; margin: 35px 0;">
           <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details

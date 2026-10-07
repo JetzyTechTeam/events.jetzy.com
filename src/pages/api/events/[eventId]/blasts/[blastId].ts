@@ -22,6 +22,7 @@ const updateBlastSchema = zod.object({
 				filename: zod.string(),
 				contentType: zod.string(),
 				size: zod.number(),
+				mode: zod.enum(["attach", "link"]).optional(),
 			}),
 		)
 		.optional(),
