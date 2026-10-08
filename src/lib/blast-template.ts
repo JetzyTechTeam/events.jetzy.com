@@ -182,9 +182,9 @@ export function buildBlastHtml({
             Cancel My Booking
           </a>
         </div>
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
+        <div style="font-size: 16px; color: #555; line-height: 1.6;">
           ${message}
-        </p>${pictures}${files}
+        </div>${pictures}${files}
         <div style="text-align: center; margin: 35px 0;">
           <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details
@@ -213,9 +213,9 @@ export function buildBlastHtml({
         </div>
         <h1 style="color: #333; text-align: center;">${subject}</h1>
         ${greeting}
-        <p style="font-size: 16px; color: #555; line-height: 1.6;">
+        <div style="font-size: 16px; color: #555; line-height: 1.6;">
           ${message}
-        </p>${pictures}${files}
+        </div>${pictures}${files}
         <div style="text-align: center; margin: 35px 0;">
           <a href="${eventLink}" style="background-color: #F79432; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
             View Event Details
