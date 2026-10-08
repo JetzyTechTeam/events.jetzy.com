@@ -1,10 +1,8 @@
 import React, { useState } from "react"
 import { Box, Button, Flex, Heading, Input, InputGroup, InputRightElement, Text } from "@chakra-ui/react"
 import { MinusCircleIcon } from "@heroicons/react/24/solid"
-import { Roboto } from "next/font/google"
+import { roboto } from "@/lib/fonts"
 import { MAX_BENEFIT_COUNT, MAX_BENEFIT_LENGTH, benefitChips } from "@/lib/event-field-limits"
-
-const roboto = Roboto({ subsets: ["latin"], weight: ["400", "500", "700"] })
 
 /**
  * The "Event Benefits" chips — the orange labels shown over the event banner.

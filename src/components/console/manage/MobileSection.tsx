@@ -1,9 +1,7 @@
 import React, { useState } from "react"
 import { Box, Flex, Text, type BoxProps } from "@chakra-ui/react"
 import { ChevronDownIcon } from "@heroicons/react/24/outline"
-import { Roboto } from "next/font/google"
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
+import { roboto } from "@/lib/fonts"
 
 /**
  * A collapsible card BELOW `md`, and nothing at all from `md` up.

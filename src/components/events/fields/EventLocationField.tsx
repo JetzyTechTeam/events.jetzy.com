@@ -2,13 +2,11 @@ import { EVENT_LOCATION_LIMIT } from "@/lib/event-field-limits"
 import React, { useRef } from "react"
 import { Input, InputGroup, InputLeftElement } from "@chakra-ui/react"
 import { usePlacesWidget } from "react-google-autocomplete"
-import { Roboto } from "next/font/google"
+import { roboto } from "@/lib/fonts"
 
 import { allowPlacesDropdown, buildPlaceSelection, suppressPlacesDropdown, type PlaceSelection } from "@/lib/google-place"
 import { LocationSVG } from "@Jetzy/assets/icons"
 import LocationValuePreview from "./LocationValuePreview"
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 
 /**
  * The Google Places location input, shared by the manage form and the inline editor on the

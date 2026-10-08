@@ -1,11 +1,9 @@
 import React from "react"
 import { useFormikContext } from "formik"
 import { Flex, Text, Box } from "@chakra-ui/react"
-import { Roboto } from "next/font/google"
+import { roboto } from "@/lib/fonts"
 import { CreateEventFormData } from "@/types"
 import { FileUploadData } from "@/components/misc/DragAndDropUploader"
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 
 export type AutosaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error"
 export interface AutosaveState {

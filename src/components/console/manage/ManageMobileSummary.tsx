@@ -1,9 +1,7 @@
 import React from "react"
 import { Box, Flex, SimpleGrid, Text } from "@chakra-ui/react"
 import { MegaphoneIcon, QrCodeIcon, ShareIcon, UserPlusIcon } from "@heroicons/react/24/outline"
-import { Roboto } from "next/font/google"
-
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
+import { roboto } from "@/lib/fonts"
 
 /**
  * Phone-only "at a glance" strip at the top of Manage Event's Overview. On desktop the stats

@@ -13,12 +13,11 @@ import { Button, Heading, Text, Input, InputGroup, InputLeftElement, Flex, Alert
 import { GetServerSideProps } from "next"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
-import { Roboto } from "next/font/google"
+import { roboto } from "@/lib/fonts"
 import Link from "next/link"
 import { sortEvents, getEventStatus, EventStatus } from "@/utils/eventSort"
 import { formatEventTime, formatEventZoneLabel, formatEventDateParts } from "@/utils/eventTime"
 
-const roboto = Roboto({ weight: ["400", "700"], subsets: ["latin"], display: "swap" })
 import { useRouter } from "next/router"
 import React, { useRef, useState } from "react"
 import { toast } from "react-toastify"
