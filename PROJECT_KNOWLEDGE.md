@@ -3819,3 +3819,14 @@ Below `md` (768px) `/console/events/[eventId]/manage` has its own layout. **Ever
 - Date-poll option dialog and this page's own inline ticket dialog are `size={{ base: "full", md: "md" }}`.
 - **Scripted-edit trap (cost one bug here):** a whitespace-tolerant find/replace that strips leading whitespace will also eat the space BEFORE a mid-line pattern — it produced the class `rounded-mdtext-white`. The desktop pixel diff caught it. Match whole lines, or use exact strings for anything mid-line.
 
+### Ticket dialog on a phone (IMPLEMENTED 2026-10-08)
+
+The Add / Edit ticket dialog was full-screen on phones but still the desktop dialog stretched: a 400px description editor filled the screen, and the title and the Add / Cancel buttons scrolled away with the form.
+
+- **Below 768px the dialog is exactly one screen tall; the header and footer stay put and only the fields scroll.** Footer is Cancel (left, outlined) + the save button (right, wider), 48px, with safe-area padding. Inputs are 48px; Require Approval is one card.
+- **There are TWO copies of this dialog** - `TicketEditorModal` (Manage Event + the public event page) and the inline duplicate in `console/events/create.tsx`. Both spread the prop objects in **`src/components/events/ticketModalMobile.ts`**, so the layout has one definition. The copies themselves are NOT merged: their save/cancel logic, labels and toasts differ.
+- **Every rule in `ticketModalMobile.ts` is inside one `max-width: 47.99em` media query** (via `sx`). There is no `md` value to get wrong because nothing applies at those widths. Verified: both pages and both open dialogs diff to 0 pixels at 1280px, and the dialogs measure the same size before and after.
+- **`RichTextEditor` has `compactOnMobile`** (default off): 120px minimum height on phones instead of 400px, still grows with content. Only the two ticket dialogs pass it. The same media query also sets **every** editor's font to 16px on phones - iOS zooms into a contenteditable under 16px, exactly as it does an input.
+- `inputMode="decimal"` on Price and `inputMode="numeric"` on Quantity are keypad hints only; the fields are still `type="number"` and their value handling is unchanged.
+- `TicketMembershipToggles` (admin-only block) got phone touch targets: taller checkbox rows, 44px Monthly / Annual buttons, a 48px free-months input.
+

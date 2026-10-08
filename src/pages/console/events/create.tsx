@@ -78,6 +78,18 @@ import ListingCardPreview from "@/components/events/ListingCardPreview";
 import { MobileSection } from "@/components/console/manage/MobileSection";
 import { ManageMobileActionBar } from "@/components/console/manage/ManageMobileActionBar";
 import { scheduleSummary, textSummary, countSummary } from "@/components/console/manage/sectionSummaries";
+import {
+  ticketApprovalRow,
+  ticketCancelButton,
+  ticketField,
+  ticketFooterRow,
+  ticketModalBody,
+  ticketModalClose,
+  ticketModalContent,
+  ticketModalFooter,
+  ticketModalHeader,
+  ticketPrimaryButton,
+} from "@/components/events/ticketModalMobile";
 import { previewPath } from "@/lib/event-preview";
 import TimezoneSelect from "../../../components/timezone-select";
 import { z } from "zod";
@@ -1208,12 +1220,12 @@ const CreateEventPage = () => {
               {({ push, replace }) => (
                 <Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "full", md: "md" }}>
                   <ModalOverlay />
-                  <ModalContent bg="#1E1E1E" color="white">
-                    <ModalHeader>
+                  <ModalContent bg="#1E1E1E" color="white" {...ticketModalContent}>
+                    <ModalHeader {...ticketModalHeader}>
                       {editIndex !== null ? "Edit Ticket" : "Add Ticket"}
                     </ModalHeader>
-                    <ModalCloseButton />
-                    <ModalBody>
+                    <ModalCloseButton {...ticketModalClose} />
+                    <ModalBody {...ticketModalBody}>
                       <FormControl mb={4}>
                         <FormLabel>Ticket Name</FormLabel>
                         <Input
@@ -1222,6 +1234,7 @@ const CreateEventPage = () => {
                           placeholder="Enter ticket name"
                           bg="#090C10"
                           border="1px solid #444"
+                          {...ticketField}
                           value={tempTicket.title}
                           onChange={(e) =>
                             setTempTicket({
@@ -1238,6 +1251,7 @@ const CreateEventPage = () => {
                             through the shared EventDescription, which still handles the plain-text
                             descriptions written before this. */}
                         <RichTextEditor
+                          compactOnMobile
                           value={tempTicket.description}
                           onChange={(val) => setTempTicket({ ...tempTicket, description: val })}
                           placeholder="Enter description"
@@ -1253,9 +1267,12 @@ const CreateEventPage = () => {
                           onWheel={blurOnWheel}
                           min={0}
                           step="0.01"
+                          // A keypad hint only: the decimal pad on a phone. Still type="number".
+                          inputMode="decimal"
                           placeholder="Enter price (0 for free)"
                           bg="#090C10"
                           border="1px solid #444"
+                          {...ticketField}
                           // NaN would render as a broken controlled value, so an empty
                           // field shows empty and is treated as free ($0) on save.
                           value={Number.isFinite(tempTicket.price) ? tempTicket.price : ""}
@@ -1284,9 +1301,11 @@ const CreateEventPage = () => {
                           onWheel={blurOnWheel}
                           min={0}
                           step="1"
+                          inputMode="numeric"
                           placeholder="Leave blank for unlimited"
                           bg="#090C10"
                           border="1px solid #444"
+                          {...ticketField}
                           value={ticketQuantityLimit(tempTicket as any) === null ? "" : ticketQuantityLimit(tempTicket as any)!}
                           onChange={(e) => {
                             const raw = e.target.value
@@ -1305,7 +1324,7 @@ const CreateEventPage = () => {
                         </Text>
                       </FormControl>
                       <FormControl mb={4}>
-                        <Flex align="center" justify="space-between" gap={4}>
+                        <Flex align="center" justify="space-between" gap={4} {...ticketApprovalRow}>
                           <Box>
                             <FormLabel mb={0}>Require Approval</FormLabel>
                             <Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
@@ -1351,13 +1370,16 @@ const CreateEventPage = () => {
                       )}
                     </ModalBody>
 
-                    <ModalFooter>
-                      <Flex flexDirection="column" w="full" gap="3">
+                    {/* Phone layout from ticketModalMobile.ts, shared with TicketEditorModal so the
+                        two copies of this dialog cannot drift on layout. Media-query only. */}
+                    <ModalFooter {...ticketModalFooter}>
+                      <Flex flexDirection="column" w="full" gap="3" {...ticketFooterRow}>
                         <Button
                           bg="#F79432"
                           w="full"
                           color="black"
                           mr={3}
+                          {...ticketPrimaryButton}
                           onClick={() => {
                             // Only the title is required. Price is deliberately NOT checked for
                             // truthiness — a free ticket is $0, and testing `tempTicket.price`
@@ -1402,6 +1424,7 @@ const CreateEventPage = () => {
                         </Button>
                         <Button
                           variant="unstyled"
+                          {...ticketCancelButton}
                           onClick={() => {
                             setTempTicket({
                               id: "",
