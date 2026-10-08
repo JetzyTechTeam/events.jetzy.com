@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react"
+import axios from "axios"
 import { Box, Button, Flex, Image, Text } from "@chakra-ui/react"
 
 import {
@@ -39,9 +40,12 @@ export default function BlastAttachmentPicker({
 	compact?: boolean
 }) {
 	const inputRef = useRef<HTMLInputElement>(null)
+	// One controller per batch, so cancelling a run never reaches into the next one.
+	const abortRef = useRef<AbortController | null>(null)
 	const [uploading, setUploading] = useState(false)
 	const [progress, setProgress] = useState(0)
-	const [error, setError] = useState<string | null>(null)
+	// `tone` matters: an upload the host cancelled is not a failure and must not be shown in red.
+	const [notice, setNotice] = useState<{ tone: "error" | "muted"; text: string } | null>(null)
 
 	const setBusy = (busy: boolean) => {
 		setUploading(busy)
@@ -60,7 +64,7 @@ export default function BlastAttachmentPicker({
 
 	const handleFiles = async (fileList: FileList | null) => {
 		if (!fileList || fileList.length === 0) return
-		setError(null)
+		setNotice(null)
 
 		const picked = Array.from(fileList)
 
@@ -77,33 +81,50 @@ export default function BlastAttachmentPicker({
 			...picked.map((f) => ({ filename: f.name, contentType: f.type, size: f.size, mode: modeFor(f) })),
 		])
 		if (refusal) {
-			setError(refusal)
+			setNotice({ tone: "error", text: refusal })
 			if (inputRef.current) inputRef.current.value = ""
 			return
 		}
 
 		setBusy(true)
+		const controller = new AbortController()
+		abortRef.current = controller
 		setProgress(0)
 		const added: BlastAttachment[] = []
 		try {
 			for (const file of picked) {
+				// Aborting only kills the request in flight; without this the loop would carry on to
+				// files 3, 4 and 5 after a cancel during file 2.
+				if (controller.signal.aborted) break
 				const { url } = await uploadFile(file, {
 					// "posts", not "blasts": the uploader's folder allowlist is server-side and refuses
 					// anything outside it with a 500. The folder is only an S3 key prefix and nothing
 					// reads it back. See UploadFolder in upload.service.ts.
 					folder: "posts",
 					onProgressChange: (p) => setProgress(p),
+					signal: controller.signal,
 				})
 				added.push({ url, filename: file.name, contentType: file.type, size: file.size, mode: modeFor(file) })
 			}
 			onChange([...attachments, ...added])
+			// The abort can also land BETWEEN files, in which case nothing rejected and the loop just
+			// broke - say so, or the host clicks Cancel and sees no acknowledgement at all.
+			if (controller.signal.aborted) setNotice({ tone: "muted", text: "Upload cancelled." })
 		} catch (err: any) {
 			// Anything that did upload is kept: making the host re-pick five files because the
 			// fourth failed is worse than showing them four and the reason.
 			if (added.length > 0) onChange([...attachments, ...added])
-			setError(err?.message || "That upload didn't go through. Try again.")
+			// Cancelling rejects the request, but the host asked for that - the same check
+			// `EventAlbums` uses. Reporting it in red would be calling their own click an error.
+			if (axios.isCancel(err) || err?.name === "CanceledError" || err?.name === "AbortError") {
+				setNotice({ tone: "muted", text: "Upload cancelled." })
+			} else {
+				setNotice({ tone: "error", text: err?.message || "That upload didn't go through. Try again." })
+			}
 		} finally {
 			setBusy(false)
+			// MUST run on the abort path too, or Send stays disabled for the life of the page.
+			abortRef.current = null
 			setProgress(0)
 			if (inputRef.current) inputRef.current.value = ""
 		}
@@ -113,7 +134,7 @@ export default function BlastAttachmentPicker({
 		// Local only. There is no delete endpoint for an uploaded blast file, and `deleteFile` is
 		// a documented no-op — removing it here means it is not SENT, which is what the host means.
 		onChange(attachments.filter((_, i) => i !== index))
-		setError(null)
+		setNotice(null)
 	}
 
 	const setMode = (index: number, mode: "attach" | "link") => {
@@ -122,10 +143,10 @@ export default function BlastAttachmentPicker({
 		// nothing was added.
 		const refusal = blastAttachmentRefusal(next.map(asRule))
 		if (refusal) {
-			setError(refusal)
+			setNotice({ tone: "error", text: refusal })
 			return
 		}
-		setError(null)
+		setNotice(null)
 		onChange(next)
 	}
 
@@ -144,6 +165,18 @@ export default function BlastAttachmentPicker({
 				>
 					{uploading ? `Uploading… ${progress}%` : "Add file"}
 				</Button>
+				{uploading && (
+					<Button
+						type="button"
+						size="sm"
+						variant="ghost"
+						color="gray.300"
+						_hover={{ bg: "#2A2A2A" }}
+						onClick={() => abortRef.current?.abort()}
+					>
+						Cancel
+					</Button>
+				)}
 				<Text fontSize="xs" color="gray.500">
 					Images can show in the email ({attachedCount}/{BLAST_ATTACHMENT_MAX_COUNT}) · anything else is sent as a link (
 					{linkedCount}/{BLAST_LINK_MAX_COUNT})
@@ -153,9 +186,9 @@ export default function BlastAttachmentPicker({
 			{/* No `accept` filter: any file may be LINKED, and the mode is decided per file below. */}
 			<input ref={inputRef} type="file" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
 
-			{error && (
-				<Text fontSize="sm" color="#FC8181" mt={2}>
-					{error}
+			{notice && (
+				<Text fontSize="sm" color={notice.tone === "error" ? "#FC8181" : "gray.400"} mt={2}>
+					{notice.text}
 				</Text>
 			)}
 
