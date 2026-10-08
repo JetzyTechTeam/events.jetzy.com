@@ -2446,7 +2446,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						{/* The same editor the event description uses, so a blast is written and re-edited
 						    the same way everywhere. Quill emits HTML, which the template interpolates raw. */}
 						<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
-							<RichTextEditor value={message} onChange={(val) => setMessage(val)} placeholder="Write your message…" />
+							<RichTextEditor hideImageButton value={message} onChange={(val) => setMessage(val)} placeholder="Write your message…" />
 						</Box>
 						{error && <Text color="red.500">{error}</Text>}
 
@@ -2781,7 +2781,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 				{/* The same editor the event description uses, so a blast is written and re-edited
 				    the same way everywhere. Quill emits HTML, which the template interpolates raw. */}
 				<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
-					<RichTextEditor value={message} onChange={(val) => setMessage(val)} placeholder="Send a blast to your guests…" />
+					<RichTextEditor hideImageButton value={message} onChange={(val) => setMessage(val)} placeholder="Send a blast to your guests…" />
 				</Box>
 				{sendResult && (
 					<Text fontSize="sm" mb={3} color={sendResult.type === "success" ? "#48BB78" : sendResult.type === "warning" ? "#F79432" : "#FC8181"}>
@@ -2956,7 +2956,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 						{/* The same editor the event description uses, so a blast is written and re-edited
 						    the same way everywhere. Quill emits HTML, which the template interpolates raw. */}
 						<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
-							<RichTextEditor value={editMessage} onChange={(val) => setEditMessage(val)} placeholder="Write your message…" />
+							<RichTextEditor hideImageButton value={editMessage} onChange={(val) => setEditMessage(val)} placeholder="Write your message…" />
 						</Box>
 						<Text fontWeight="bold" mb={2}>
 							Images

@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState, useLayoutEffect } from "react"
+import { useRef, useCallback, useMemo, useEffect, useState, useLayoutEffect } from "react"
 import { uploadFile } from "@/services/upload.service"
 
 // ─── Custom Image blot — preserves width through Delta round-trips ────────────
@@ -191,31 +191,49 @@ const formats = [
   "list", "bullet", "blockquote", "link", "image", "width",
 ]
 
-const modules = {
+/**
+ * Built per instance, because the image button is optional.
+ *
+ * MEMOISE the result (see `useMemo` below). react-quill rebuilds the editor when the `modules`
+ * object identity changes, so handing it a fresh object every render would tear Quill down and
+ * back up on each keystroke.
+ */
+const buildModules = (allowImage: boolean) => ({
   toolbar: {
     container: [
       [{ header: [1, 2, 3, false] }],
       ["bold", "italic", "underline", "strike"],
       [{ list: "ordered" }, { list: "bullet" }],
-      ["blockquote", "link", "image"],
+      allowImage ? ["blockquote", "link", "image"] : ["blockquote", "link"],
       ["clean"],
     ],
   },
   clipboard: { matchVisual: false },
-}
+})
 
 interface Props {
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  /**
+   * Hides the toolbar's image button.
+   *
+   * Set by the blast composer: that button inserts a REMOTE `<img>`, which Gmail blocks until
+   * the reader allows images, whereas the composer's own Add file attaches images as `cid:`
+   * and they always display. Two ways to add a picture, one of which quietly may not arrive,
+   * is the thing being removed. Defaults to showing it - the event description wants it.
+   */
+  hideImageButton?: boolean
 }
 
-export default function RichTextEditor({ value, onChange, placeholder }: Props) {
+export default function RichTextEditor({ value, onChange, placeholder, hideImageButton }: Props) {
   const [QuillComp, setQuillComp]   = useState<any>(null)
   const quillRef                     = useRef<any>(null)
   const wrapperRef                   = useRef<HTMLDivElement>(null)
   const fileInputRef                 = useRef<HTMLInputElement>(null)
   const [selectedImg, setSelectedImg] = useState<HTMLImageElement | null>(null)
+  // Identity must be stable or Quill is rebuilt on every render.
+  const modules = useMemo(() => buildModules(!hideImageButton), [hideImageButton])
 
   // Client-only load: register custom blot first, then expose component
   useEffect(() => {
@@ -265,14 +283,14 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
 
   // Wire image toolbar button to file input
   useEffect(() => {
-    if (!QuillComp) return
+    if (!QuillComp || hideImageButton) return
     const trySetup = () => {
       const editor = quillRef.current?.getEditor()
       if (!editor) { setTimeout(trySetup, 200); return }
       editor.getModule("toolbar").addHandler("image", () => fileInputRef.current?.click())
     }
     trySetup()
-  }, [QuillComp])
+  }, [QuillComp, hideImageButton])
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
