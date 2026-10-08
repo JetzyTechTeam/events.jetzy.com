@@ -25,6 +25,17 @@ import { isBelowStripeMinimum, BELOW_MIN_PRICE_MESSAGE } from "@/lib/ticket-pric
 import { blurOnWheel } from "@/lib/number-input"
 import { ticketQuantityLimit } from "@/lib/ticket-quantity"
 import type { TicketData } from "@/components/events/TicketCard"
+import {
+	ticketApprovalRow,
+	ticketCancelButton,
+	ticketField,
+	ticketModalBody,
+	ticketModalClose,
+	ticketModalContent,
+	ticketModalFooterButtons,
+	ticketModalHeader,
+	ticketPrimaryButton,
+} from "@/components/events/ticketModalMobile"
 
 /**
  * Add / edit one ticket.
@@ -95,18 +106,22 @@ export default function TicketEditorModal({
 	}
 
 	return (
-		<Modal isOpen={isOpen} onClose={onClose} isCentered>
+		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "full", md: "md" }}>
 			<ModalOverlay />
-			<ModalContent bg="#1E1E1E" color="white">
-				<ModalHeader>{isEditing ? "Edit Ticket" : "Add Ticket"}</ModalHeader>
-				<ModalCloseButton />
-				<ModalBody>
+			{/* Phone layout (one screen tall, header + footer fixed, fields scroll) comes from
+			    ticketModalMobile.ts, shared with Create's inline copy of this dialog. Every rule
+			    in it is inside a max-width media query, so desktop is untouched. */}
+			<ModalContent bg="#1E1E1E" color="white" {...ticketModalContent}>
+				<ModalHeader {...ticketModalHeader}>{isEditing ? "Edit Ticket" : "Add Ticket"}</ModalHeader>
+				<ModalCloseButton {...ticketModalClose} />
+				<ModalBody {...ticketModalBody}>
 					<FormControl mb={4}>
 						<FormLabel>Ticket Name</FormLabel>
 						<Input
 							placeholder="Enter ticket name"
 							bg="#090C10"
 							border="1px solid #444"
+							{...ticketField}
 							value={ticket.title}
 							onChange={(e) => onTicketChange({ ...ticket, title: e.target.value })}
 						/>
@@ -116,6 +131,7 @@ export default function TicketEditorModal({
 						{/* Same editor as the event description — stores HTML, rendered publicly through
 						    the shared EventDescription, which still handles older plain-text values. */}
 						<RichTextEditor
+							compactOnMobile
 							value={ticket.description}
 							onChange={(val) => onTicketChange({ ...ticket, description: val })}
 							placeholder="Enter description"
@@ -136,9 +152,13 @@ export default function TicketEditorModal({
 							onWheel={blurOnWheel}
 							min={0}
 							step="0.01"
+							// A keypad hint only: the decimal pad on a phone. The field is still
+							// type="number" and its value handling is unchanged.
+							inputMode="decimal"
 							placeholder="Enter price (0 for free)"
 							bg="#090C10"
 							border="1px solid #444"
+							{...ticketField}
 							value={Number.isFinite(ticket.price) ? ticket.price : ""}
 							onChange={(e) => onTicketChange({ ...ticket, price: Math.max(0, parseFloat(e.target.value)) })}
 						/>
@@ -159,9 +179,11 @@ export default function TicketEditorModal({
 							onWheel={blurOnWheel}
 							min={0}
 							step="1"
+							inputMode="numeric"
 							placeholder="Leave blank for unlimited"
 							bg="#090C10"
 							border="1px solid #444"
+							{...ticketField}
 							value={limit === null ? "" : limit}
 							onChange={(e) => {
 								const raw = e.target.value
@@ -179,7 +201,7 @@ export default function TicketEditorModal({
 						</Text>
 					</FormControl>
 					<FormControl mb={4}>
-						<Flex align="center" justify="space-between" gap={4}>
+						<Flex align="center" justify="space-between" gap={4} {...ticketApprovalRow}>
 							<Box>
 								<FormLabel mb={0}>Require Approval</FormLabel>
 								<Text fontSize="12px" color="#868686" mt={1} maxW="320px" lineHeight="140%">
@@ -224,11 +246,11 @@ export default function TicketEditorModal({
 						/>
 					)}
 				</ModalBody>
-				<ModalFooter>
-					<Button bg="#F79432" color="black" mr={3} onClick={save} isLoading={isSaving}>
+				<ModalFooter {...ticketModalFooterButtons}>
+					<Button bg="#F79432" color="black" mr={3} onClick={save} isLoading={isSaving} {...ticketPrimaryButton}>
 						{isEditing ? "Save Changes" : "Add Ticket"}
 					</Button>
-					<Button variant="ghost" color="white" _hover={{ color: "black", bg: "orange" }} onClick={onClose}>
+					<Button variant="ghost" color="white" _hover={{ color: "black", bg: "orange" }} onClick={onClose} {...ticketCancelButton}>
 						Cancel
 					</Button>
 				</ModalFooter>

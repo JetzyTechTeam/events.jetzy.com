@@ -11,7 +11,7 @@ import { allowedMediaCount } from "@/lib/event-media-limit"
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
-import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
+import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, benefitChips, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
@@ -52,12 +52,12 @@ import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { LOCATION_TBA } from "@/lib/event-location"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
-import { isPendingBooking, holdTimeRemaining } from "@/lib/booking-status"
+import { isPendingBooking, holdTimeRemaining, isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
-import { MoneyState } from "@/lib/booking-cancellation"
+import { MoneyState, bookingMoneyAmount, bookingMoneyState } from "@/lib/booking-cancellation"
 import { getEventStatus } from "@/utils/eventSort"
 import { IEvent } from "@/models/events/types"
 import { Badge, Button, Image, Switch, Tabs, TabList, TabPanels, TabPanel, Tab, Box, Text, Heading, useDisclosure, Flex, IconButton, Icon, useToast, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalCloseButton, ModalBody, ModalFooter, Input, InputGroup, InputLeftElement, Textarea, FormControl, FormLabel } from "@chakra-ui/react"
@@ -67,7 +67,7 @@ import MediaLightbox from "@/components/events/MediaLightbox"
 import MediaBackdrop from "@/components/events/MediaBackdrop"
 import Pagination from "@/components/misc/Pagination"
 import { EventWaitingList } from "@/components/events/EventWaitingList"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import axios from "axios"
 import Link from "next/link"
 import { signOut, useSession } from "next-auth/react"
@@ -332,6 +332,8 @@ export default function HostedEvents({ event }: Props) {
 	const shownName = clonedEvent?.name || ""
 	const shownDesc = clonedEvent?.desc || ""
 	const shownBenefits = clonedEvent?.benefits || ""
+	// One split for both renderings below (over the banner from `md`, under it on a phone).
+	const benefitList = benefitChips(shownBenefits)
 	// `eventMedia` applies the host's `mediaOrder` across the two arrays — never read
 	// `images` directly, or a video lead and any hand-arranged order are lost.
 	const shownMedia = clonedEvent ? eventMedia(clonedEvent) : []
@@ -1320,31 +1322,46 @@ export default function HostedEvents({ event }: Props) {
 
 							{/* Premium tag + Benefits overlay share ONE top-left column — two absolutes
 							    at the same corner would sit on top of each other. The tag leads,
-							    benefits follow underneath. */}
-							{(!!clonedEvent?.premiumEvent || (shownBenefits && shownBenefits.trim() !== "")) && (
-								<div className="absolute top-6 left-6 z-20 flex flex-col gap-2 max-w-[80%]">
+							    benefits follow underneath.
+							    The benefits are in this column from `md` up ONLY. A phone's banner is
+							    208px tall and the tag plus six chips stack to ~300px, so there they
+							    buried the artwork and ran down over the title; they render as a
+							    wrapping row under the banner instead (below). The tag stays here at
+							    every width — it is one chip. */}
+							{(!!clonedEvent?.premiumEvent || benefitList.length > 0) && (
+								<div className={`absolute top-6 left-6 z-20 flex-col gap-2 max-w-[80%] ${clonedEvent?.premiumEvent ? "flex" : "hidden md:flex"}`}>
 									{!!clonedEvent?.premiumEvent && (
 										<div>
 											<PremiumEventBadge className="px-4 py-2 text-sm shadow-xl" />
 										</div>
 									)}
-									{shownBenefits
-										.split(",")
-										.map((b) => b.trim())
-										.filter((b) => b !== "")
-										.map((benefit, index) => (
-											<div
-												key={index}
-												className="bg-[#F79432] backdrop-blur-md border border-white/20 rounded-lg px-4 py-2 text-black text-sm font-bold shadow-xl transform transition-all duration-300 hover:scale-105"
-												style={{
-													animation: `fadeInUp 0.5s ease-out forwards ${index * 0.1}s`,
-													opacity: 0,
-													transform: "translateY(10px)",
-												}}
-											>
-												{benefit}
-											</div>
-										))}
+									{benefitList.map((benefit, index) => (
+										<div
+											key={index}
+											className="hidden md:block bg-[#F79432] backdrop-blur-md border border-white/20 rounded-lg px-4 py-2 text-black text-sm font-bold shadow-xl transform transition-all duration-300 hover:scale-105"
+											style={{
+												animation: `fadeInUp 0.5s ease-out forwards ${index * 0.1}s`,
+												opacity: 0,
+												transform: "translateY(10px)",
+											}}
+										>
+											{benefit}
+										</div>
+									))}
+								</div>
+							)}
+							{/* Phones: the same benefits, under the banner. `px-1` lines the row up with
+							    the title below (this box pads 12px, the content section 16px). */}
+							{benefitList.length > 0 && (
+								<div className="md:hidden flex flex-wrap gap-1.5 mt-3 px-1">
+									{benefitList.map((benefit, index) => (
+										<span
+											key={index}
+											className="bg-[#F79432] rounded-full px-2.5 py-1 text-black text-xs font-bold max-w-full [overflow-wrap:anywhere]"
+										>
+											{benefit}
+										</span>
+									))}
 								</div>
 							)}
 							<style jsx>{`
@@ -1988,7 +2005,7 @@ export default function HostedEvents({ event }: Props) {
 
 										{/* Tab Content */}
 										<div className="p-6">
-											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} />}
+											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} canManage={canManage} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
 											{/* `surfaceBg` is what the frozen Actions/Guest columns paint themselves
 											    with so the scrolling columns don't show through. This panel is a
@@ -2609,18 +2626,53 @@ function BookingStatusPill({ booking }: { booking: Booking }) {
 	if (paymentStatus === "captured") return <span className="text-xs font-semibold text-green-400">{booking.status} · charged</span>
 
 	// Free bookings / legacy rows: pending is not the same as confirmed, so don't paint it green.
-	const color = booking.status === "cancelled" || booking.status === "rejected" || booking.status === "failed"
-		? "text-red-400"
-		: booking.status === "pending"
-			? "text-amber-400"
-			: "text-green-400"
+	// A dead one is named rather than printed raw — `failed` means the card hold lapsed before
+	// the host approved, which is not something a host can read off the word itself.
+	const deadKind = deadBookingKind(booking)
+	if (deadKind) {
+		return (
+			<span className={`text-xs font-semibold ${DEAD_BOOKING_COLOR[deadKind] === "gray" ? "text-gray-400" : "text-red-400"}`}>
+				{deadBookingLabel(booking)}
+			</span>
+		)
+	}
+	const color = booking.status === "pending" ? "text-amber-400" : "text-green-400"
 	return <span className={`text-xs font-semibold ${color}`}>{booking.status}</span>
 }
 
-function EventBookings({ eventId }: { eventId: string }) {
+function EventBookings({ eventId, eventName, canManage }: { eventId: string; eventName?: string; canManage?: boolean }) {
 	const [page, setPage] = React.useState(1)
 	const [openId, setOpenId] = React.useState<string | null>(null)
+	// One dialog for the panel; the row only names which booking it is about.
+	const [cancelTarget, setCancelTarget] = React.useState<Booking | null>(null)
+	const [cancelling, setCancelling] = React.useState(false)
+	const queryClient = useQueryClient()
+	const toast = useToast()
 	const perPage = 10
+
+	const handleCancelBooking = async () => {
+		const bookingRef = cancelTarget?.bookingRef
+		if (!bookingRef) return
+		setCancelling(true)
+		try {
+			const res = await axios.post("/api/bookings/cancel", { bookingRef })
+			if (res.data?.status === false) {
+				toast({ title: res.data?.message || "Failed to cancel booking.", status: "error", duration: 6000, isClosable: true })
+				return
+			}
+			queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+			// The Active / Inactive counters at the top of this panel come from the totals
+			// query, not from the rows — without this they contradict the row just cancelled.
+			queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+			setCancelTarget(null)
+			toast({ title: "Booking cancelled.", status: "success", duration: 5000, isClosable: true })
+		} catch (err: any) {
+			toast({ title: err?.response?.data?.message || "Failed to cancel booking.", status: "error", duration: 6000, isClosable: true })
+		} finally {
+			setCancelling(false)
+		}
+	}
 
 	const { data: bookings, isLoading } = useQuery({
 		queryKey: ["eventBookings", eventId],
@@ -2689,7 +2741,9 @@ function EventBookings({ eventId }: { eventId: string }) {
 			{!isLoading &&
 				paged.map((booking: Booking) => {
 					const isOpen = openId === booking._id
-					const cancelled = booking.status === "cancelled"
+					// Rejected and expired rows are just as dead as cancelled ones and were
+					// rendering at full opacity beside live bookings.
+					const cancelled = isCancelledBooking(booking)
 					// Authorized funds are not collected funds — never render them as plain revenue.
 					const onHold = booking.payment?.status === "authorized" || booking.payment?.status === "capturing" || booking.payment?.status === "failed"
 					const bookingDiscount = describeDiscount(booking as any)
@@ -2833,6 +2887,22 @@ function EventBookings({ eventId }: { eventId: string }) {
 											)}
 										</div>
 									)}
+
+									{/* Cancel sits at the BOTTOM of the opened row, so the money state above
+									    it — charged, on hold, or free — is on screen when the host decides.
+									    Live bookings only: a pending request is declined with Reject in the
+									    Approvals tab, which releases the hold and emails the guest. */}
+									{canManage && !cancelled && !isPendingBooking(booking as any) && (
+										<div className="mt-4 flex justify-end">
+											<button
+												type="button"
+												onClick={() => setCancelTarget(booking)}
+												className="text-sm font-semibold text-orange-300 hover:text-orange-200 hover:underline"
+											>
+												Cancel booking
+											</button>
+										</div>
+									)}
 								</div>
 							)}
 						</div>
@@ -2840,6 +2910,20 @@ function EventBookings({ eventId }: { eventId: string }) {
 				})}
 
 			<Pagination totalItems={list.length} perPageItems={perPage} pageNo={page} onPageChange={setPage} />
+
+			{/* `asManager` — the host is ending somebody else's booking. The dialog's job is the
+			    money warning: a captured payment is never refunded. */}
+			<CancelBookingDialog
+				isOpen={!!cancelTarget}
+				onClose={() => setCancelTarget(null)}
+				onConfirm={handleCancelBooking}
+				isLoading={cancelling}
+				eventName={eventName}
+				guestName={cancelTarget?.customerName}
+				asManager
+				moneyState={bookingMoneyState(cancelTarget as any) as MoneyState}
+				amount={bookingMoneyAmount(cancelTarget as any)}
+			/>
 		</div>
 	)
 }

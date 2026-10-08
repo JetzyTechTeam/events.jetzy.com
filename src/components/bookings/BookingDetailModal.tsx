@@ -13,6 +13,7 @@ import {
 	ModalHeader,
 	ModalOverlay,
 	Text,
+	Tooltip,
 } from "@chakra-ui/react"
 import NextLink from "next/link"
 import dayjs from "dayjs"
@@ -23,7 +24,7 @@ import { getEventZone, formatEventZoneLabel } from "@/utils/eventTime"
 import { pricingFromBooking } from "@/lib/ticket-pricing"
 import { stripHtml } from "@/utils/text"
 import { PaymentBadge, HoldExpiry } from "@/components/bookings/PaymentBadge"
-import { isAuthorizedHold } from "@/lib/booking-status"
+import { isAuthorizedHold, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP_GUEST } from "@/lib/booking-status"
 import { MoneyState } from "@/lib/booking-cancellation"
 import { BookingRow } from "./BookingCard"
 import { BookingStatus } from "@/models/events/types"
@@ -110,7 +111,17 @@ export default function BookingDetailModal({ booking, isOpen, onClose, onCancel,
 					<Flex gap={6} wrap="wrap" mb={5}>
 						<Field label="Booking Reference">{booking.bookingRef}</Field>
 						<Field label="Status">
-							<Badge colorScheme={STATUS_COLOR[booking.status] || "gray"}>{booking.status}</Badge>
+							{(() => {
+								// An expired hold is not a cancellation: nobody acted and the guest was
+								// never charged. Red + the raw word "failed" said the opposite.
+								const deadKind = deadBookingKind(booking)
+								const badge = (
+									<Badge colorScheme={deadKind ? DEAD_BOOKING_COLOR[deadKind] : STATUS_COLOR[booking.status] || "gray"}>
+										{deadKind ? deadBookingLabel(booking) : booking.status}
+									</Badge>
+								)
+								return deadKind ? <Tooltip hasArrow label={DEAD_BOOKING_TOOLTIP_GUEST[deadKind]}>{badge}</Tooltip> : badge
+							})()}
 						</Field>
 						<Field label="Payment">
 							{moneyState === "free" ? (
@@ -133,12 +144,12 @@ export default function BookingDetailModal({ booking, isOpen, onClose, onCancel,
 					<Text fontSize="xs" color="#9C9C9C" mb={1}>Event</Text>
 					{event.slug || event._id ? (
 						<NextLink href={eventPath(event.slug || event._id)} target="_blank">
-							<Text fontWeight="bold" fontSize="lg" color="#F79432" _hover={{ textDecoration: "underline" }}>
+							<Text fontWeight="bold" fontSize="lg" noOfLines={2} overflowWrap="anywhere" color="#F79432" _hover={{ textDecoration: "underline" }}>
 								{stripHtml(event.name || "Event")}
 							</Text>
 						</NextLink>
 					) : (
-						<Text fontWeight="bold" fontSize="lg">{stripHtml(event.name || "Event")}</Text>
+						<Text fontWeight="bold" fontSize="lg" noOfLines={2} overflowWrap="anywhere">{stripHtml(event.name || "Event")}</Text>
 					)}
 
 					<Flex gap={6} wrap="wrap" mt={4} mb={5}>

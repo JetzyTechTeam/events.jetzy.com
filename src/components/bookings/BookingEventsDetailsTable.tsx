@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react"
-import { Table, Thead, Tbody, Tr, Th, Td, TableCaption, TableContainer, Flex, Button, Text, Box, Badge, Spinner } from "@chakra-ui/react"
+import { Table, Thead, Tbody, Tr, Th, Td, TableCaption, TableContainer, Flex, Button, Text, Box, Badge, Spinner, Tooltip } from "@chakra-ui/react"
 import { PlusCircleIcon } from "@heroicons/react/24/outline"
 
 import { Exportable } from "@/pages/console/bookings"
 import { downloadExcel } from "react-export-table-to-excel"
 import { Booking } from "@/pages/console/bookings"
-import { isCancelledBooking } from "@/lib/booking-status"
+import { isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_LABEL, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
 import { PaymentBadge } from "@/components/bookings/PaymentBadge"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import EditBookingTicketsDialog, { EditableTicketRow } from "@/components/bookings/EditBookingTicketsDialog"
@@ -54,7 +54,9 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 		row.booking.bookingRef,
 		row.event.name,
 		row.booking.total.toLocaleString("en-US", { style: "currency", currency: "USD" }),
-		row.booking.status,
+		// Same three-way distinction the table draws — an export that says "failed" where
+		// the screen says "Expired" sends the host back to ask what it means.
+		deadBookingLabel(row.booking),
 		`${row.booking.customerName} | ${row.booking.customerEmail} | ${row.booking.customerPhone}`,
 		row.bookedTickets.length > 0 ? row.bookedTickets.join(", ") : "No-ticket event",
 		checkInMap[row.booking._id?.toString()]?.checkedInCount > 0
@@ -205,6 +207,9 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 						{localRows.map((row) => {
 							const ci = checkInMap[row._id.toString()]
 							const cancelled = isCancelledBooking(row)
+							// `failed` used to print raw, so an expired hold read as the literal word
+							// "failed" beside real cancellations. It means nobody approved in time.
+							const deadKind = deadBookingKind(row)
 							return (
 								<Tr key={row._id.toString()} opacity={cancelled ? 0.55 : 1}>
 									<Td fontWeight={"bold"}>
@@ -221,7 +226,13 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 									</Td>
 									<Td>{row.total.toLocaleString("en-US", { style: "currency", currency: "USD" })}</Td>
 									<Td>
-										<Badge colorScheme={cancelled ? "red" : row.status === "pending" ? "yellow" : "green"}>{row.status}</Badge>
+										{deadKind ? (
+											<Tooltip hasArrow label={DEAD_BOOKING_TOOLTIP[deadKind]}>
+												<Badge colorScheme={DEAD_BOOKING_COLOR[deadKind]}>{DEAD_BOOKING_LABEL[deadKind]}</Badge>
+											</Tooltip>
+										) : (
+											<Badge colorScheme={row.status === "pending" ? "yellow" : "green"}>{row.status}</Badge>
+										)}
 									</Td>
 									<Td>
 										{row.payment?.status
@@ -251,8 +262,8 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 										</Box>
 									</Td>
 									<Td>
-										{cancelled ? (
-											<Badge colorScheme="red">Cancelled</Badge>
+										{deadKind ? (
+											<Badge colorScheme={DEAD_BOOKING_COLOR[deadKind]}>{DEAD_BOOKING_LABEL[deadKind]}</Badge>
 										) : ci?.checkedInCount > 0 ? (
 											<Badge colorScheme="green">
 												{ci.isFullyCheckedIn ? "Fully Checked In" : `Partial (${ci.checkedInCount})`}

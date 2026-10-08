@@ -89,6 +89,8 @@ const TicketMembershipToggles: React.FC<Props> = ({
 						colorScheme="yellow"
 						isChecked={selected.includes(key)}
 						onChange={(e) => toggle(key, e.target.checked)}
+						// Phones only: a taller row, so the box is not a 16px target.
+						sx={{ "@media screen and (max-width: 47.99em)": { paddingTop: "8px", paddingBottom: "8px" } }}
 					>
 						<Text fontSize="14px">
 							{MEMBERSHIPS[key].label}
@@ -124,6 +126,7 @@ const TicketMembershipToggles: React.FC<Props> = ({
 								color="white"
 								fontSize="13px"
 								fontWeight={600}
+								sx={{ "@media screen and (max-width: 47.99em)": { flex: "1 1 0", minHeight: "44px" } }}
 							>
 								{option === "month" ? "Monthly" : "Annual"}
 							</Box>
@@ -168,6 +171,7 @@ const TicketMembershipToggles: React.FC<Props> = ({
 						bg="#1C1E21"
 						borderColor="#343536"
 						color="white"
+						sx={{ "@media screen and (max-width: 47.99em)": { height: "48px" } }}
 						onChange={(e) => {
 							const next = Math.floor(Number(e.target.value))
 							onFreeMonthsChange?.(Number.isFinite(next) && next > 0 ? Math.min(next, MAX_MEMBERSHIP_FREE_MONTHS) : 0)

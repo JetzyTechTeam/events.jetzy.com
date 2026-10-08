@@ -67,7 +67,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				return sendResponse(res, validation.error.errors, zodIssuesToMessage(validation.error.errors), false, ResCode.BAD_REQUEST)
 			}
 
-			const { code, discountPercentage, freeMembershipMonths, maxUses } = validation.data
+			const { code, discountPercentage, maxUses } = validation.data
+			// Free months are an ADMIN-ONLY term — they give a membership away. A host's value is
+			// ignored rather than refused, so a stale tab or an older client still creates its code.
+			const freeMembershipMonths = isAdmin ? validation.data.freeMembershipMonths : 0
 
 			const scope = resolveReferralTicketIds(event, validation.data.ticketIds)
 			if (!scope.ok) {

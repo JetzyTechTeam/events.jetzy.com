@@ -2023,7 +2023,13 @@ export const sendBookingCancellation = async ({ event, firstName, lastName, emai
     const cancelledByHost = cancelledBy !== "guest"
 
     await sgMail.send({
-      to: [email, "tech@jetzyapp.com"],
+      // The GUEST only. `bookings/cancel.ts` fires `sendHostCancellationNotice` immediately
+      // after this one, and that already reaches ADMIN_NOTIFICATION_EMAIL (tech@jetzyapp.com)
+      // with more than this receipt carries — who cancelled, the money position, and a link to
+      // Manage Event. Adding the inbox here too put two near-identically titled emails in it
+      // for every single cancellation, and showed the guest an internal Jetzy address in their
+      // To: line. Don't "restore" it: the inbox copy is not missing, it is the other email.
+      to: email,
       from: mailFrom(),
       subject: `Jetzy [Booking Cancelled] ${decodeHTMLEntities(event.name)}`,
       html: wrapHtml(`

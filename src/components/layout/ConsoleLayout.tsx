@@ -58,9 +58,9 @@ export default function ConsoleLayout({
             `flex-col md:flex-row` replaces `md:flex-row xs:flex-col`, which is the same thing at
             every width a real device has and only reads as if it were doing more. */}
         <div
-          className={`mx-auto px-4 pt-4 sm:px-6 sm:pt-6 lg:px-8 flex flex-col md:flex-row justify-between gap-4 ${
-            maxW ? maxW : "max-w-7xl"
-          }`}
+          className={`mx-auto px-4 sm:px-6 sm:pt-6 lg:px-8 flex flex-col md:flex-row justify-between ${
+            stickyHeader ? "pt-2 gap-2 md:gap-4" : "pt-4 gap-4"
+          } ${maxW ? maxW : "max-w-7xl"}`}
         >
           {/* `minW={0}` + `flex` from `md` up: a flex item's min-width defaults to `auto`, so this
               column could not shrink below its own content. A 150-character event title therefore

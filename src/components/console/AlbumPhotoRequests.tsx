@@ -60,6 +60,15 @@ const escapeCsv = (value: any) => {
 	return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str
 }
 
+// Shared with the Manage Event section switcher, which badges the pending count. Same key and
+// same fetcher, so the badge reads this tab's cache entry rather than making its own request.
+export const albumPhotoRequestsQueryKey = (eventId: string) => ["album-photo-requests", eventId]
+
+export async function fetchAlbumPhotoRequests(eventId: string): Promise<PhotoRequest[]> {
+	const res = await axios.get(`/api/events/${eventId}/albums/photo-requests`)
+	return (res.data?.data?.items || []) as PhotoRequest[]
+}
+
 export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; eventName?: string }) {
 	const toast = useToast()
 	const queryClient = useQueryClient()
@@ -69,11 +78,8 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 	const [savingId, setSavingId] = useState<string | null>(null)
 
 	const { data, isLoading } = useQuery({
-		queryKey: ["album-photo-requests", eventId],
-		queryFn: async () => {
-			const res = await axios.get(`/api/events/${eventId}/albums/photo-requests`)
-			return (res.data?.data?.items || []) as PhotoRequest[]
-		},
+		queryKey: albumPhotoRequestsQueryKey(eventId),
+		queryFn: () => fetchAlbumPhotoRequests(eventId),
 	})
 
 	const rows = useMemo(() => data || [], [data])
@@ -177,6 +183,57 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 		)
 	}
 
+
+	// Shared by the table (from `md` up) and the phone cards, so both say the same thing.
+	// The requested file, at a glance. A video row shows a link instead — an email client
+	// can't render a frame and neither can an <img>.
+	const thumb = (r: PhotoRequest, size: string) =>
+		r.mediaType === "video" ? (
+			<Text as="a" href={r.mediaUrl} target="_blank" rel="noreferrer" color="#F79432" fontSize="xs">
+				Open video
+			</Text>
+		) : (
+			<Box
+				as="a"
+				href={r.mediaUrl}
+				target="_blank"
+				rel="noreferrer"
+				display="block"
+				width={size}
+				height={size}
+				borderRadius="6px"
+				overflow="hidden"
+				bg="black"
+			>
+				<Image src={r.mediaUrl} alt="" width="100%" height="100%" objectFit="contain" loading="lazy" />
+			</Box>
+		)
+	const batchBadge = (r: PhotoRequest) =>
+		r.batchId && (batchSizes.get(r.batchId) || 0) > 1 ? (
+			<Badge ml={2} colorScheme="purple" variant="subtle">
+				{batchPositions.get(r._id) ?? 1} of {batchSizes.get(r.batchId)}
+			</Badge>
+		) : null
+	const statusBadge = (r: PhotoRequest) => (
+		<Badge colorScheme={r.status === "handled" ? "green" : "orange"} flexShrink={0}>
+			{r.status === "handled" ? "Handled" : "Pending"}
+		</Badge>
+	)
+	const requestedAt = (r: PhotoRequest) => (r.date ? DateTime.fromISO(r.date).toFormat("dd LLL yyyy, HH:mm") : "—")
+	const toggleButton = (r: PhotoRequest, size: "xs" | "sm") => (
+		<Button
+			size={size}
+			variant="outline"
+			color="white"
+			borderColor="#2A2A2A"
+			_hover={{ bg: "#2A2A2A" }}
+			isLoading={savingId === r._id}
+			onClick={() => setStatus(r, r.status === "handled" ? "pending" : "handled")}
+		>
+			{r.status === "handled" ? "Reopen" : "Mark handled"}
+		</Button>
+	)
+
 	return (
 		<Box>
 			<Flex align="center" gap={3} mb={4} wrap="wrap">
@@ -202,7 +259,7 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 			</Flex>
 
 			<Flex gap={3} mb={4} wrap="wrap" align="center">
-				<InputGroup maxW="280px">
+				<InputGroup maxW={{ base: "none", md: "280px" }} flexBasis={{ base: "100%", md: "auto" }}>
 					<InputLeftElement pointerEvents="none">
 						<Box as={MagnifyingGlassIcon} width="16px" height="16px" color="#9C9C9C" />
 					</InputLeftElement>
@@ -210,6 +267,7 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
 						placeholder="Search name, email or album"
+						fontSize={{ base: "16px", md: "sm" }}
 						bg="#1E1E1E"
 						borderColor="#2A2A2A"
 						color="white"
@@ -226,7 +284,9 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 					color="white"
 					size="sm"
 					borderRadius="8px"
-					maxW="180px"
+					maxW={{ base: "none", md: "180px" }}
+					flex={{ base: "1 1 0", md: "initial" }}
+					fontSize={{ base: "16px", md: "sm" }}
 				>
 					<option value="all">All statuses</option>
 					<option value="pending">Pending</option>
@@ -245,7 +305,31 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 					{rows.length === 0 ? "No one has requested an unwatermarked photo yet." : "No requests match those filters."}
 				</Text>
 			) : (
-				<TableContainer>
+				<>
+				{/* Phones: the photo leads each card, since it is what the host is matching. */}
+				<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
+					{paged.map((r) => (
+						<Flex key={r._id} gap={3} bg="#101010" border="1px solid #343536" borderRadius="12px" p={3} align="flex-start">
+							<Box flexShrink={0}>{thumb(r, "72px")}</Box>
+							<Box flex="1" minW={0}>
+								<Flex justify="space-between" align="flex-start" gap={2}>
+									<Text color="white" fontWeight={700} fontSize="14px" noOfLines={1}>{r.name}</Text>
+									{statusBadge(r)}
+								</Flex>
+								<Text color="#9C9C9C" fontSize="12px" wordBreak="break-all">{r.email}</Text>
+								<Text color="#D6D6D6" fontSize="12px" mt={1} noOfLines={1}>
+									{r.albumTitle}
+									{batchBadge(r)}
+								</Text>
+								<Flex mt={2} justify="space-between" align="center" gap={2}>
+									<Text color="#9C9C9C" fontSize="12px">{requestedAt(r)}</Text>
+									{toggleButton(r, "sm")}
+								</Flex>
+							</Box>
+						</Flex>
+					))}
+				</Flex>
+				<TableContainer display={{ base: "none", md: "block" }}>
 					<Table variant="simple" size="sm">
 						<Thead>
 							<Tr>
@@ -261,65 +345,22 @@ export function AlbumPhotoRequests({ eventId, eventName }: { eventId: string; ev
 						<Tbody>
 							{paged.map((r) => (
 								<Tr key={r._id}>
-									<Td>
-										{/* The requested file, at a glance. A video row shows a link
-										    instead — an email client can't render a frame and neither
-										    can an <img>. */}
-										{r.mediaType === "video" ? (
-											<Text as="a" href={r.mediaUrl} target="_blank" rel="noreferrer" color="#F79432" fontSize="xs">
-												Open video
-											</Text>
-										) : (
-											<Box
-												as="a"
-												href={r.mediaUrl}
-												target="_blank"
-												rel="noreferrer"
-												display="block"
-												width="56px"
-												height="56px"
-												borderRadius="6px"
-												overflow="hidden"
-												bg="black"
-											>
-												<Image src={r.mediaUrl} alt="" width="100%" height="100%" objectFit="contain" loading="lazy" />
-											</Box>
-										)}
-									</Td>
+									<Td>{thumb(r, "56px")}</Td>
 									<Td color="white">{r.albumTitle}</Td>
 									<Td color="white">
 										{r.name}
-										{r.batchId && (batchSizes.get(r.batchId) || 0) > 1 && (
-											<Badge ml={2} colorScheme="purple" variant="subtle">
-												{batchPositions.get(r._id) ?? 1} of {batchSizes.get(r.batchId)}
-											</Badge>
-										)}
+										{batchBadge(r)}
 									</Td>
 									<Td color="white">{r.email}</Td>
-									<Td>
-										<Badge colorScheme={r.status === "handled" ? "green" : "orange"}>
-											{r.status === "handled" ? "Handled" : "Pending"}
-										</Badge>
-									</Td>
-									<Td color="#9C9C9C">{r.date ? DateTime.fromISO(r.date).toFormat("dd LLL yyyy, HH:mm") : "—"}</Td>
-									<Td>
-										<Button
-											size="xs"
-											variant="outline"
-											color="white"
-											borderColor="#2A2A2A"
-											_hover={{ bg: "#2A2A2A" }}
-											isLoading={savingId === r._id}
-											onClick={() => setStatus(r, r.status === "handled" ? "pending" : "handled")}
-										>
-											{r.status === "handled" ? "Reopen" : "Mark handled"}
-										</Button>
-									</Td>
+									<Td>{statusBadge(r)}</Td>
+									<Td color="#9C9C9C">{requestedAt(r)}</Td>
+									<Td>{toggleButton(r, "xs")}</Td>
 								</Tr>
 							))}
 						</Tbody>
 					</Table>
 				</TableContainer>
+				</>
 			)}
 
 			{totalPages > 1 && (

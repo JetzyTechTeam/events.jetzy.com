@@ -535,7 +535,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 					{/* Door staff are always on a phone here. Without `overflowWrap="anywhere"` a
 					    long title with no spaces overflowed the 600px box and put a horizontal
 					    scrollbar on the one screen that has to work one-handed. */}
-					<Text color="gray.400" fontSize="sm" overflowWrap="anywhere" minW={0}>
+					<Text color="gray.400" fontSize="sm" noOfLines={2} overflowWrap="anywhere" minW={0}>
 						{eventName}
 					</Text>
 				</Box>

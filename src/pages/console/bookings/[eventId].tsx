@@ -91,7 +91,7 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
           is one unbreakable word, and only `anywhere` counts toward min-content, so without it this
           line set the page's width and gave the whole console a horizontal scrollbar on a phone.
           Same rule as the My Events rows. `stripHtml` matches every other display of the name. */}
-      <Text fontSize={20} fontWeight="semibold" overflowWrap="anywhere" minW={0}>
+      <Text fontSize={20} fontWeight="semibold" noOfLines={2} overflowWrap="anywhere" minW={0}>
         Event Name : {stripHtml(event.name || "")}
       </Text>
       <Text fontSize={17} fontWeight="semibold">

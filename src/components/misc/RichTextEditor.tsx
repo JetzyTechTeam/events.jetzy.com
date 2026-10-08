@@ -224,9 +224,18 @@ interface Props {
    * is the thing being removed. Defaults to showing it - the event description wants it.
    */
   hideImageButton?: boolean
+  /**
+   * Shrinks the editor's 400px minimum height to 120px on a PHONE (below 768px) only.
+   *
+   * Set by the ticket dialog, where a 400px box filled the whole screen and pushed Price,
+   * Quantity and Require Approval a long scroll below it. The editor still grows with what is
+   * typed. Off by default - the event description wants the room - and it changes nothing
+   * from tablet width up.
+   */
+  compactOnMobile?: boolean
 }
 
-export default function RichTextEditor({ value, onChange, placeholder, hideImageButton }: Props) {
+export default function RichTextEditor({ value, onChange, placeholder, hideImageButton, compactOnMobile }: Props) {
   const [QuillComp, setQuillComp]   = useState<any>(null)
   const quillRef                     = useRef<any>(null)
   const wrapperRef                   = useRef<HTMLDivElement>(null)
@@ -311,18 +320,22 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
 
   if (!QuillComp) {
     return (
-      <div style={{
+      <div className={compactOnMobile ? "rte-loading-compact-mobile" : undefined} style={{
         background: "#141619", border: "1px solid #3a3d42", borderRadius: "8px",
         minHeight: "400px", display: "flex", alignItems: "center",
         justifyContent: "center", color: "#6b7280", fontSize: "14px",
       }}>
         Loading editor…
+        {/* Inline `minHeight` above needs !important to be overridden, and only on a phone. */}
+        {compactOnMobile && (
+          <style>{`@media screen and (max-width: 47.99em) { .rte-loading-compact-mobile { min-height: 164px !important; } }`}</style>
+        )}
       </div>
     )
   }
 
   return (
-    <div ref={wrapperRef} className="rich-text-editor-wrapper" style={{ position: "relative" }}>
+    <div ref={wrapperRef} className={`rich-text-editor-wrapper${compactOnMobile ? " rte-compact-mobile" : ""}`} style={{ position: "relative" }}>
       <input ref={fileInputRef} type="file" accept="image/*"
         style={{ display: "none" }} onChange={handleFileChange} />
 
@@ -399,6 +412,17 @@ export default function RichTextEditor({ value, onChange, placeholder, hideImage
           background: #1e2124 !important; border: 1px solid #3a3d42 !important;
         }
         .rich-text-editor-wrapper .ql-picker-item { color: #a0aec0 !important; }
+
+        /* PHONES ONLY (below Chakra's md, 768px). Nothing here applies from tablet width up. */
+        @media screen and (max-width: 47.99em) {
+          /* iOS Safari zooms the page in when a field under 16px takes focus, and that
+             includes a contenteditable. 15px is fine everywhere else. */
+          .rich-text-editor-wrapper .ql-container { font-size: 16px; }
+          /* compactOnMobile: see the prop. Still grows with its content. */
+          .rich-text-editor-wrapper.rte-compact-mobile .ql-container,
+          .rich-text-editor-wrapper.rte-compact-mobile .ql-editor { min-height: 120px; }
+          .rich-text-editor-wrapper.rte-compact-mobile .ql-editor { padding: 12px 14px; }
+        }
       `}</style>
     </div>
   )

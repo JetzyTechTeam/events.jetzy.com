@@ -95,7 +95,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			if (validation.data.discountPercentage !== undefined) {
 				updateData.discountPercentage = validation.data.discountPercentage
 			}
-			if (validation.data.freeMembershipMonths !== undefined) {
+			// ADMIN ONLY. From a host the key is ignored, which reads as "unchanged" — so a host
+			// editing the discount on a code an admin gave months to leaves those months alone.
+			if (isAdmin && validation.data.freeMembershipMonths !== undefined) {
 				updateData.freeMembershipMonths = validation.data.freeMembershipMonths
 			}
 			if (validation.data.maxUses !== undefined) {

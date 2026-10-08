@@ -63,6 +63,7 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogOverlay,
+	Portal,
 	Checkbox,
 } from "@chakra-ui/react"
 import { DateTime } from "luxon"
@@ -70,7 +71,7 @@ import axios from "axios"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { LocationSVG, MessageSVG, UserPlusSVG, LockSVG, MultipleUsersSVG, PlusSVG, TicketSVG, UserTickSVG } from "@/assets/icons"
 import { ShareIcon, EyeIcon } from "@heroicons/react/20/solid"
-import { ChevronDownIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline"
+import { ChevronDownIcon, ChevronLeftIcon, CalendarDaysIcon, ClockIcon, DevicePhoneMobileIcon, TicketIcon, EllipsisHorizontalIcon, MagnifyingGlassIcon, ArrowDownTrayIcon } from "@heroicons/react/24/outline"
 import { StarIcon } from "@heroicons/react/24/solid"
 import { useRouter } from "next/router"
 import { useSession, signOut } from "next-auth/react"
@@ -107,8 +108,10 @@ import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
 import { uploadFile, deleteFile } from "@/services/upload.service"
 import { uniqueId } from "@/lib/utils"
-import { isCancelledBooking, isPendingBooking } from "@/lib/booking-status"
+import { isCancelledBooking, isPendingBooking, deadBookingKind, DEAD_BOOKING_LABEL, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
 import { apportionRevenue, describeDiscount, describePriceChange, isOnHold } from "@/lib/booking-revenue"
+import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking-cancellation"
+import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
 import {
 	BLAST_STATUS_COLOR,
@@ -123,7 +126,13 @@ import { isPendingAdminApproval, isAwaitingAdminReview } from "@/lib/event-appro
 import { eventPath, eventUrl, eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
 import { previewPath } from "@/lib/event-preview"
 import { ApprovalRequests } from "@/components/console/ApprovalRequests"
-import { AlbumPhotoRequests } from "@/components/console/AlbumPhotoRequests"
+import { AlbumPhotoRequests, albumPhotoRequestsQueryKey, fetchAlbumPhotoRequests } from "@/components/console/AlbumPhotoRequests"
+import { buildManageSections } from "@/components/console/manage/manageSections"
+import { ManageSectionSwitcher } from "@/components/console/manage/ManageSectionSwitcher"
+import { MobileSection } from "@/components/console/manage/MobileSection"
+import { ManageMobileActionBar } from "@/components/console/manage/ManageMobileActionBar"
+import { ManageMobileSummary } from "@/components/console/manage/ManageMobileSummary"
+import { scheduleSummary, textSummary, countSummary } from "@/components/console/manage/sectionSummaries"
 import { Error } from "@/lib/_toaster"
 import { ROUTES } from "@/configs/routes"
 import { useAppDispatch } from "@/redux/stores"
@@ -148,7 +157,7 @@ dayjs.extend(utc)
 dayjs.extend(timezone)
 
 // Shared dark field styling (Figma: bg #090C10, 1px #343536 border, rounded, Roboto 14px)
-const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-sm placeholder:text-gray-500 focus:outline-none"
+const fieldBase = "w-full h-12 bg-[#090C10] border border-[#343536] rounded-md text-white text-base md:text-sm placeholder:text-gray-500 focus:outline-none"
 const tzFieldCls = `${roboto.className} appearance-none ${fieldBase} px-3 pr-10 cursor-pointer`
 const dtFieldCls = `${roboto.className} ${fieldBase} pl-10 pr-3`
 
@@ -416,6 +425,27 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 			return res.data || []
 		},
 	})
+
+	// One ordered list drives BOTH the desktop tab bar and the phone section switcher, so the
+	// two can't disagree about which index opens which panel.
+	const manageSections = React.useMemo(() => buildManageSections(hasApprovalTickets), [hasApprovalTickets])
+
+	// Same cache entry the Photo Requests tab reads (its panel is mounted with the page), so the
+	// switcher's badge costs no extra request and moves when a request is marked handled.
+	const { data: photoRequests = [] } = useQuery({
+		queryKey: albumPhotoRequestsQueryKey(String(event._id)),
+		queryFn: () => fetchAlbumPhotoRequests(String(event._id)),
+	})
+
+	// "Needs you" counts for the phone section switcher. Pending approvals are counted from the
+	// live bookings query (approve/reject invalidate it), not the server's load-time count.
+	const sectionBadges = React.useMemo(
+		() => ({
+			approvals: (eventBookings as any[]).filter((b) => isPendingBooking(b)).length,
+			photoRequests: (photoRequests as any[]).filter((r) => r.status === "pending").length,
+		}),
+		[eventBookings, photoRequests],
+	)
 
 	// Per-ticket-type sold count + revenue, keyed by ticket _id (matches the `id` field on form values).
 	//
@@ -1172,12 +1202,89 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 			<ConsoleLayout
 				stickyHeader
 				page={
-					<span className="flex flex-col mt-3 min-w-0">
+					<span className="flex flex-col mt-0 md:mt-3 min-w-0">
+						{/* PHONE header — one row: back, the title on ONE line, the autosave state as a
+						    dot, and the ⋯ menu. The desktop breadcrumb + heading + PENDING chip below
+						    are hidden under `md`; this sticky header is paid on every scroll, and on a
+						    phone the old one took over a third of the screen before the tab bar. */}
+						<span className="flex md:hidden items-center gap-1 min-w-0">
+							<Link
+								href={ROUTES.dashboard.events.index}
+								aria-label="Back to My Events"
+								className="-ml-2 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
+							>
+								<ChevronLeftIcon className="w-6 h-6" />
+							</Link>
+							<span className={`${roboto.className} line-clamp-1 flex-1 min-w-0`} style={{ fontSize: "18px", fontWeight: 700, lineHeight: "1.25", letterSpacing: "-0.02em", color: "#FFFFFF", overflowWrap: "anywhere" }}>
+								{stripHtml(event.name)}
+							</span>
+							{tabIndex === 0 && autosaveState.status !== "idle" && (
+								<Tooltip
+									hasArrow
+									label={autosaveState.status === "saved" ? "Changes saved" : autosaveState.status === "saving" ? "Saving…" : autosaveState.status === "error" ? "Save failed — retrying" : "Unsaved changes"}
+								>
+									<Box
+										as="span"
+										role="status"
+										aria-label={autosaveState.status === "saved" ? "Changes saved" : autosaveState.status === "saving" ? "Saving" : autosaveState.status === "error" ? "Save failed" : "Unsaved changes"}
+										display="inline-flex"
+										alignItems="center"
+										gap="6px"
+										px="8px"
+										h="26px"
+										borderRadius="full"
+										bg="#15181C"
+										border="1px solid #343536"
+										flexShrink={0}
+									>
+										<Box as="span" w="7px" h="7px" borderRadius="full" bg={autosaveState.status === "saved" ? "#7BC47F" : autosaveState.status === "error" ? "#EC5E5E" : "#F79432"} />
+										<Text as="span" className={roboto.className} fontSize="11px" color={autosaveState.status === "saved" ? "#7BC47F" : autosaveState.status === "error" ? "#EC5E5E" : "#9C9C9C"} whiteSpace="nowrap">
+											{autosaveState.status === "saved" ? "Saved" : autosaveState.status === "saving" ? "Saving" : autosaveState.status === "error" ? "Retrying" : "Unsaved"}
+										</Text>
+									</Box>
+								</Tooltip>
+							)}
+							<Menu placement="bottom-end">
+								<MenuButton
+									as={IconButton}
+									size="sm"
+									h="40px"
+									minW="40px"
+									flexShrink={0}
+									aria-label="More event actions"
+									icon={<EllipsisHorizontalIcon className="w-6 h-6" />}
+									variant="ghost"
+									color="white"
+									_hover={{ bg: "whiteAlpha.100" }}
+									_active={{ bg: "whiteAlpha.200" }}
+								/>
+								{/* Portalled: this row renders inside the layout's <h1>, whose 30px bold would
+								    otherwise cascade into every menu item. */}
+								<Portal>
+								<MenuList bg="#1D1F24" border="1px solid #444" color="white" minW="220px" zIndex={50} fontSize="15px" fontWeight={400}>
+									<MenuItem bg="transparent" h="44px" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => window.open(previewPath(event.slug || String(event._id)), "_blank", "noopener")}>
+										Preview as a guest
+									</MenuItem>
+									{isAdmin && (
+										<MenuItem bg="transparent" h="44px" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => router.push(`/console/events/${event._id}/analytics`)}>
+											View Analytics
+										</MenuItem>
+									)}
+									<MenuItem bg="transparent" h="44px" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} isDisabled={isCloning} onClick={handleCloneEvent}>
+										{isCloning ? "Cloning…" : "Clone Event"}
+									</MenuItem>
+									<MenuItem bg="transparent" h="44px" color="#EC5E5E" _hover={{ bg: "#3A2222" }} _focus={{ bg: "#3A2222" }} onClick={onDeleteOpen}>
+										Delete Event
+									</MenuItem>
+								</MenuList>
+								</Portal>
+							</Menu>
+						</span>
 						{/* `truncate` matters on a phone: the name here is the same name the <h1> below
 						    repeats, and without it a long one wraps the breadcrumb onto a second line
 						    that says nothing new. "My Events" is a real link — it was a plain span,
 						    so the only way back to the list was the browser's own back button. */}
-						<span className={`${roboto.className} mb-2 block truncate`} style={{ fontSize: "16px", lineHeight: "1.4", letterSpacing: "0" }}>
+						<span className={`${roboto.className} mb-2 hidden md:block truncate`} style={{ fontSize: "16px", lineHeight: "1.4", letterSpacing: "0" }}>
 							<Link href={ROUTES.dashboard.events.index} className="font-normal hover:underline" style={{ color: "rgba(255,255,255,0.8)" }}>
 								My Events
 							</Link>
@@ -1187,7 +1294,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 						{/* Title and badge are flex siblings, not inline text: as an inline span the
 						    badge broke across two lines ("PENDING" / "APPROVAL") the moment the name
 						    filled the row. `whiteSpace: nowrap` keeps it one chip whatever the width. */}
-						<span className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+						<span className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
 							{/* Clamped because this header is `sticky top-0` at EVERY width, so its height is
 							    paid on every scroll — a 150-character title at 24px wraps to roughly eight
 							    lines on a phone and then stays pinned there. ONE line below `md`, two from
@@ -1217,8 +1324,16 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 					   Delete the same presence as the primary Save. The row now carries only what is
 					   used while editing — Approve (when it applies), Preview, Update Event — and the
 					   rest sit behind a "More" menu. The autosave pill moves above the row so it stops
-					   competing with the buttons for the same line. */
-					<div className="flex flex-col w-full md:w-auto items-stretch md:items-end gap-2 self-stretch md:self-end min-w-0">
+					   competing with the buttons for the same line.
+
+					   Below `md` this whole row is replaced: the actions move to the ⋯ menu in the
+					   title row and the fixed bar at the bottom, and this slot holds the section
+					   switcher that stands in for the tab bar. */
+					<>
+					<div className="md:hidden w-full">
+						<ManageSectionSwitcher sections={manageSections} tabIndex={tabIndex} onChange={setTabIndex} badges={sectionBadges} />
+					</div>
+					<div className="hidden md:flex flex-col w-full md:w-auto items-stretch md:items-end gap-2 self-stretch md:self-end min-w-0">
 						{tabIndex === 0 && (
 							<div className="flex justify-end">
 								<AutosaveStatusPill state={autosaveState} />
@@ -1298,6 +1413,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 						</Menu>
 						</div>
 					</div>
+					</>
 				}
 			>
 				{/* INVITE GUESTS MODAL  */}
@@ -1316,8 +1432,24 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 					dailyViews={analytics?.trends?.views || []}
 				/>
 
+				{/* Phone: the Approve button leaves the header with the rest of the actions, so the
+				    state it acts on gets said in words. Same dialog as the desktop button. */}
+				{isAdmin && canApproveEvent && (
+					<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3} bg="rgba(47,168,79,0.10)" border="1px solid rgba(47,168,79,0.45)" borderRadius="10px" p={4} mb={3}>
+						<Box>
+							<Text className={roboto.className} color="white" fontWeight={700} fontSize="15px">Awaiting your review</Text>
+							<Text className={roboto.className} color="#B5B6B7" fontSize="13px" mt={1} lineHeight="140%">
+								Approving puts this event live and emails the host. It can&apos;t be undone.
+							</Text>
+						</Box>
+						<Button h="44px" bg="#2FA84F" color="white" _hover={{ bg: "#279143" }} _active={{ bg: "#279143" }} fontWeight="bold" isLoading={isApproving} onClick={onApproveOpen}>
+							Approve Event
+						</Button>
+					</Flex>
+				)}
+
 				{event.privacy === "private" && (
-					<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={4} mt={4}>
+					<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 3, md: 4 }} mt={{ base: 0, md: 4 }}>
 						<Text className={roboto.className} color="white" fontWeight={700} fontSize="14px">Private event</Text>
 						<Text className={roboto.className} color="#868686" fontSize="12px" mt={1} lineHeight="140%">
 							This event is hidden from the public events list. Anyone you share the link with can
@@ -1326,39 +1458,20 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 					</Box>
 				)}
 
-				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={{ base: 4, md: 6 }}>
-					<TabList position="sticky" top="var(--console-header-h, 112px)" zIndex={20} bg="#0B0B0B" borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
-						<Tab {...manageTabProps}>
-							Overview
-						</Tab>
-						<Tab {...manageTabProps}>
-							Guests
-						</Tab>
-						<Tab {...manageTabProps}>
-							Referral Codes
-						</Tab>
-						<Tab {...manageTabProps}>
-							Custom Questions
-						</Tab>
-						<Tab {...manageTabProps}>
-							Responses
-						</Tab>
-						<Tab {...manageTabProps}>
-							Blasts
-						</Tab>
-						{hasApprovalTickets && (
-							<Tab {...manageTabProps}>
-								Approvals
+				<Tabs variant="line" index={tabIndex} onChange={setTabIndex} mt={{ base: 3, md: 6 }}>
+					{/* Hidden on phones — `ManageSectionSwitcher` in the header stands in for it. Both
+					    render from `manageSections`, so the indices are the same list. Approvals is
+					    conditional and Photo Requests stays LAST; the TabPanels below must keep that
+					    order. */}
+					<TabList display={{ base: "none", md: "flex" }} position="sticky" top="var(--console-header-h, 112px)" zIndex={20} bg="#0B0B0B" borderBottom="2px solid #9C9C9C" overflowX="auto" overflowY="hidden" sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" }, "& > button": { flexShrink: 0 } }}>
+						{manageSections.map((section) => (
+							<Tab key={section.key} {...manageTabProps}>
+								{section.label}
 							</Tab>
-						)}
-						{/* Unconditional, and LAST — Approvals above it is conditional, so anything
-						    added before it would shift its index. */}
-						<Tab {...manageTabProps}>
-							Photo Requests
-						</Tab>
+						))}
 					</TabList>
 					<TabPanels>
-						<TabPanel px={0}>
+						<TabPanel px={0} pt={{ base: 1, md: 4 }} pb={{ base: "104px", md: 4 }}>
 							<Formik
 								innerRef={formikRef}
 								initialValues={initialValues}
@@ -1378,7 +1491,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 										/>
 										{draftPayload && (
 											<Flex
-												mb={4}
+												mb={{ base: 3, md: 4 }}
 												px={4}
 												py={3}
 												borderRadius="10px"
@@ -1392,7 +1505,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 												{/* "Draft" is the event's STATUS. Unpublished edits are "changes" — the two
 												    were both called draft, and a host reading "discard draft" next to a Status
 												    dropdown set to Draft could not tell which one they were about to lose. */}
-												<Text className={roboto.className} color="#F5C77E" fontSize="14px" lineHeight="130%">
+												<Text className={roboto.className} color="#F5C77E" fontSize={{ base: "13px", md: "14px" }} lineHeight={{ base: "140%", md: "130%" }}>
 													You&rsquo;re editing unpublished changes{draftSavedAt ? ` from ${dayjs(draftSavedAt).format("MMM D, h:mm A")}` : ""}. The live event still shows the published version until you press <b>Update Event</b>.
 												</Text>
 												<Button
@@ -1404,18 +1517,40 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 													isLoading={isDiscardingDraft}
 													onClick={handleDiscardDraft}
 													flexShrink={0}
+													h={{ base: "40px", md: 8 }}
+													alignSelf={{ base: "stretch", md: "auto" }}
 												>
 													Discard changes
 												</Button>
 											</Flex>
 										)}
-										<Flex direction={{ base: "column", lg: "row" }} gap={6} align="flex-start">
+										{/* Phone only: stats + quick actions, which on desktop sit in the sidebar
+										    beside the form — on a phone that sidebar lands below the whole form. */}
+										<ManageMobileSummary
+											views={analytics?.summary?.views ?? 0}
+											ticketsSold={analytics?.summary?.tickets?.sold ?? 0}
+											attendees={analytics?.summary?.bookings ?? 0}
+											onViewsClick={() => setShowDailyViewsModal(true)}
+											actionsLocked={isPendingApproval}
+											lockedMessage={event.status === "draft"
+												? "Quick actions unlock once you publish this event and it's approved. You'll be able to invite guests, send blasts and open the check-in portal then."
+												: "Quick actions unlock once your event is approved. You'll be able to invite guests, send blasts and open the check-in portal then."}
+											onInvite={() => setInviteGuestsModal(true)}
+											onBlast={() => setTabIndex(5)}
+											onShare={() => setShareModal(true)}
+											onCheckIn={() => router.push(`/console/events/${event._id}/check-in`)}
+										/>
+										{/* Below `md` both columns and the two multi-group cards are
+										    `display: contents`, so every MobileSection becomes a direct child of
+										    this flex column — which is what lets `order` arrange them for a phone
+										    (Tickets and Media up, settings down) without touching desktop. */}
+										<Flex direction={{ base: "column", lg: "row" }} gap={{ base: 3, md: 6 }} align={{ base: "stretch", md: "flex-start" }}>
 											{/* ===================== MAIN COLUMN ===================== */}
-											<Flex direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
+											<Flex display={{ base: "contents", md: "flex" }} direction="column" gap={6} flex={{ base: "1", lg: "2" }} w="full" minW={0}>
 												{/* ---- Status (top; mirrors the one further down, same `status` field) ---- */}
 												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 													<Flex align="center" justifyContent="space-between">
-														<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+														<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Status</Text>
 														<Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#2A2D31] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
 															<option value="published">Published</option>
 															<option value="draft">Draft</option>
@@ -1423,8 +1558,9 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 													</Flex>
 												</Box>
 												{/* ---- Basic Information ---- */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-													<Heading size="md" color="white" mb={5}>Basic Information</Heading>
+												<Box display={{ base: "contents", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Heading display={{ base: "none", md: "block" }} size="md" color="white" mb={5}>Basic Information</Heading>
+													<MobileSection title="Basics" summary={textSummary(values.name, "Untitled event")} defaultOpen order={1}>
 
 													<FormControl mb={4}>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="1.4" fontWeight={400} mb={2}>Event title <Text as="span" color="#F79432">*</Text> <Text as="span" color="#9C9C9C">{EVENT_TITLE_LIMIT_HINT}</Text></FormLabel>
@@ -1436,7 +1572,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																className={roboto.className}
 																bg="#090C10"
 																color="white"
-																fontSize="14px"
+																fontSize={{ base: "16px", md: "14px" }}
 																h="48px"
 																border="1px solid #343536"
 																_focus={{ borderColor: "#343536", boxShadow: "none" }}
@@ -1468,6 +1604,8 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														/>
 													</FormControl>
 
+													</MobileSection>
+													<MobileSection title="Date & time" summary={scheduleSummary(values)} order={2}>
 													<FormControl mb={4}>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Time zone</FormLabel>
 														<Box position="relative">
@@ -1489,14 +1627,14 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														alignItems="stretch"
 														flexWrap={{ base: "wrap", sm: "nowrap" }}
 														mb={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 1 : 4}
-														bg="#14161B"
+														bg={{ base: "transparent", md: "#14161B" }}
 														rounded="xl"
-														p="3"
+														p={{ base: 0, md: 3 }}
 														opacity={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? 0.4 : 1}
 														pointerEvents={!!((values.datePoll?.isActive) && !(values.startDate || values.endDate)) ? "none" : "auto"}
 													>
 														{/* Left: Start/End markers + dashed connector */}
-														<Flex direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
+														<Flex display={{ base: "none", md: "flex" }} direction="column" gap="3" position="relative" pr="1" flexShrink={0}>
 															<Box position="absolute" left="5px" top="6" bottom="6" borderLeft="1px dashed #5A5D62" />
 															<Flex h="48px" align="center" gap="3">
 																<Box w="11px" h="11px" rounded="full" bg="#F79432" zIndex={1} />
@@ -1508,23 +1646,33 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 															</Flex>
 														</Flex>
 														{/* Right: two rows of date + time */}
-														<Flex direction="column" gap="3" flex="1" minW={0}>
-															<Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
-																<Box position="relative" flex="1" minW="140px">
+														<Flex direction="column" gap={{ base: 2, md: 3 }} flex="1" minW={0}>
+															{/* Phones: the Start/End rail is hidden (its fixed-height markers fell out of
+															    line once the fields wrapped), so each row names itself. */}
+															<Flex display={{ base: "flex", md: "none" }} align="center" gap={2}>
+																<Box w="9px" h="9px" rounded="full" bg="#F79432" />
+																<Text className={roboto.className} color="#FFFFFFCC" fontSize="13px" fontWeight={500}>Starts</Text>
+															</Flex>
+															<Flex gap={{ base: 2, md: 3 }} flexWrap="nowrap">
+																<Box position="relative" flex={{ base: "1.15 1 0", md: "1" }} minW={{ base: 0, md: "140px" }}>
 																	<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
 																	<DatePicker className={dtFieldCls} onChange={(date) => handleStartDateChange(date)} placeholder="Start Date" defaultDate={values.startDate} />
 																</Box>
-																<Box position="relative" flex="1" minW="120px">
+																<Box position="relative" flex={{ base: "1 1 0", md: "1" }} minW={{ base: 0, md: "120px" }}>
 																	<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
 																	<TimePicker className={dtFieldCls} onChange={(time) => handleStartDateChange(undefined, time)} placeholder="Start Time" defaultValue={values.startTime} />
 																</Box>
 															</Flex>
-															<Flex gap="3" flexWrap={{ base: "wrap", md: "nowrap" }}>
-																<Box position="relative" flex="1" minW="140px">
+															<Flex display={{ base: "flex", md: "none" }} align="center" gap={2} mt={2}>
+																<Box w="9px" h="9px" rounded="full" bg="#3B82F6" />
+																<Text className={roboto.className} color="#FFFFFFCC" fontSize="13px" fontWeight={500}>Ends</Text>
+															</Flex>
+															<Flex gap={{ base: 2, md: 3 }} flexWrap="nowrap">
+																<Box position="relative" flex={{ base: "1.15 1 0", md: "1" }} minW={{ base: 0, md: "140px" }}>
 																	<CalendarDaysIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
 																	<DatePicker className={dtFieldCls} onChange={(date) => handleEndDateChange(date)} placeholder="End Date" defaultDate={values.endDate} />
 																</Box>
-																<Box position="relative" flex="1" minW="120px">
+																<Box position="relative" flex={{ base: "1 1 0", md: "1" }} minW={{ base: 0, md: "120px" }}>
 																	<ClockIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
 																	<TimePicker className={dtFieldCls} onChange={(time) => handleEndDateChange(undefined, time)} placeholder="End Time" defaultValue={values.endTime} />
 																</Box>
@@ -1547,8 +1695,8 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														)}
 														<Flex align="center" justifyContent="space-between" mt={3} mb="3">
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Enable Date Poll</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Let attendees vote on preferred event date</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Enable Date Poll</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686">Let attendees vote on preferred event date</Text>
 															</Box>
 															<Switch isChecked={values.datePoll?.isActive} colorScheme="orange" onChange={() => {
 																const next = !values.datePoll?.isActive
@@ -1590,6 +1738,8 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														)}
 													</Box>
 
+													</MobileSection>
+													<MobileSection title="Location" summary={textSummary(values.location, "No location")} order={3}>
 													<FormControl mb={4}>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Location</FormLabel>
 														<InputGroup>
@@ -1621,7 +1771,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																			allowPlacesDropdown()
 																			field.onBlur(e)
 																		}}
-																		className={roboto.className} bg="#090C10" color="white" fontSize="14px" h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
+																		className={roboto.className} bg="#090C10" color="white" fontSize={{ base: "16px", md: "14px" }} h="48px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }} pl="10" />
 																)}
 															</Field>
 														</InputGroup>
@@ -1650,7 +1800,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 															placeholder="e.g. Entrance is from Central Park South, 59th St and 6th Avenue. Map: https://..."
 															maxLength={EVENT_ENTRANCE_LIMIT}
 															rows={3}
-															className={roboto.className} bg="#090C10" color="white" fontSize="14px" border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
+															className={roboto.className} bg="#090C10" color="white" fontSize={{ base: "16px", md: "14px" }} border="1px solid #343536" _focus={{ borderColor: "#343536", boxShadow: "none" }}
 														/>
 														<Flex justify="space-between" gap={2} mt={1}>
 															<Text fontSize="xs" color="gray.500">
@@ -1662,16 +1812,20 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														</Flex>
 													</FormControl>
 
+													</MobileSection>
+													<MobileSection title="Description" summary={textSummary(values.desc, "No description")} order={4}>
 													<FormControl>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
 														<RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
 														<Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{countChars(stripHtml(values.desc || ""))}/500</Text>
 													</FormControl>
+													</MobileSection>
 												</Box>
 
 												{/* ---- Post-Event Thank You ---- */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-													<Heading size="md" color="white" mb={2}>Post-Event Thank You</Heading>
+												<MobileSection title="Thank-you email" summary={event.feedbackFormUrl ? (event.thankYouEmailSentAt ? "Sent" : "Feedback link saved") : "No feedback link"} order={9}>
+												<Box bg={{ base: "transparent", md: "#15181C" }} border={{ base: "none", md: "1px solid #343536" }} borderRadius="10px" p={{ base: 0, md: 6 }}>
+													<Heading display={{ base: "none", md: "block" }} size="md" color="white" mb={2}>Post-Event Thank You</Heading>
 													<Text fontSize="sm" color="#9C9C9C" mb={5}>
 														Add a feedback form link (e.g. Google Forms) below. Once added, you can send a thank you email blast to all confirmed participants.
 													</Text>
@@ -1700,21 +1854,35 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 													)}
 												</Box>
 
+												</MobileSection>
+
 												{/* ---- Interests ---- */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+												<MobileSection
+													title="Interests & benefits"
+													summary={`${countSummary((values.interests || []).length, "interest")} · ${countSummary(String(values.benefits || "").split(",").map((b) => b.trim()).filter(Boolean).length, "benefit")}`}
+													order={8}
+												>
+												<Box bg={{ base: "transparent", md: "#15181C" }} border={{ base: "none", md: "1px solid #343536" }} borderRadius="10px" p={{ base: 0, md: 6 }}>
 													<InterestsSelector bare selected={values.interests ?? []} onChange={(ids) => setFieldValue("interests", ids)} />
 												</Box>
 
 												{/* ---- Event Benefits ----
 												    The same control the public event page's inline editor uses, so the two
 												    cannot drift. */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+												<Box bg={{ base: "transparent", md: "#15181C" }} border={{ base: "none", md: "1px solid #343536" }} borderRadius="10px" p={{ base: 0, md: 6 }} mt={{ base: 6, md: 0 }}>
 													<BenefitsField value={values.benefits || ""} onChange={(next) => setFieldValue("benefits", next)} />
 												</Box>
 
+												</MobileSection>
+
 												{/* ---- Event Options ---- */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-													<Heading size="md" color="white" mb={4}>Event Options</Heading>
+												<Box display={{ base: "contents", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Heading display={{ base: "none", md: "block" }} size="md" color="white" mb={4}>Event Options</Heading>
+													<MobileSection
+														title="Options"
+														summary={`${values.privacy === "private" ? "Private" : "Public"} · Approval ${values.requireApproval ? "on" : "off"}${values.premiumEvent ? " · Premium" : ""}`}
+														order={7}
+													>
 
 													{/* The OLD "Premium Event" toggle and its member-discount % stay removed —
 													    Jetzy Premium is SOLD per ticket now, see "Includes Jetzy Premium" on each
@@ -1724,7 +1892,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<Text fontSize="22px" lineHeight="24px" color="#F5C518">★</Text>
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Premium Event</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Premium Event</Text>
 																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" maxW="360px">
 																	Shows a Premium badge on the listing and the event page, and makes the event findable under the Premium filter. Changes no pricing or membership.
 																</Text>
@@ -1742,8 +1910,8 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<LockSVG />
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Privacy</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Who can view and join this event</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Privacy</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686">Who can view and join this event</Text>
 															</Box>
 														</Flex>
 														<Field as="select" id="privacy" name="privacy" value={values?.privacy} className="bg-[#090C10] block w-[110px] h-10 rounded-md border border-[#2A2D31] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
@@ -1755,7 +1923,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<UserTickSVG />
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Require Approval</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Require Approval</Text>
 																<Text className={roboto.className} fontSize="12px" lineHeight="140%" color="#868686" maxW="360px">
 																	Default for tickets that don&apos;t set their own. Paid tickets authorize the card at checkout and are only charged when you approve.
 																</Text>
@@ -1782,8 +1950,8 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<UserTickSVG />
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Send Update Email to Attendees</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Notify booked attendees of changes on save</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Send Update Email to Attendees</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686">Notify booked attendees of changes on save</Text>
 															</Box>
 														</Flex>
 														<Switch isChecked={sendUpdateEmailCheck} colorScheme="orange" onChange={(e) => setSendUpdateEmailCheck(e.target.checked)} />
@@ -1792,8 +1960,8 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<LocationSVG />
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Disclose Location After Booking</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Attendees see location only in booking email</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Disclose Location After Booking</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686">Attendees see location only in booking email</Text>
 															</Box>
 														</Flex>
 														<Switch name="locationDisclosedAfterBooking" isChecked={values.locationDisclosedAfterBooking} colorScheme="orange" onChange={() => setFieldValue("locationDisclosedAfterBooking", !values.locationDisclosedAfterBooking)} />
@@ -1802,21 +1970,28 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<DevicePhoneMobileIcon className="text-[#B5B6B7]" />
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Show on Mobile</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Display this event in the Jetzy mobile app</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Show on Mobile</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686">Display this event in the Jetzy mobile app</Text>
 															</Box>
 														</Flex>
 														<Switch name="showOnMobile" isChecked={values.showOnMobile} colorScheme="orange" onChange={() => setFieldValue("showOnMobile", !values.showOnMobile)} />
 													</Flex>
+													</MobileSection>
+													<MobileSection
+														title="Tickets"
+														summary={`${countSummary(values.tickets.length, "ticket type")} · ${Array.from(ticketSalesSummary.values()).reduce((n, t) => n + t.sold, 0)} sold`}
+														order={5}
+													>
 													<Flex align="center" justifyContent="space-between">
-														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
+														{/* The section header already says "Tickets" on a phone. */}
+														<Flex display={{ base: "none", md: "flex" }} gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<TicketSVG />
 															<Box>
-																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Tickets</Text>
-																<Text className={roboto.className} fontSize="12px" lineHeight="100%" color="#868686">Manage ticket types and pricing</Text>
+																<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Tickets</Text>
+																<Text className={roboto.className} fontSize="12px" lineHeight={{ base: "140%", md: "100%" }} color="#868686">Manage ticket types and pricing</Text>
 															</Box>
 														</Flex>
-														<Button bg="transparent" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} size="sm" fontSize="16px" onClick={() => { setEditIndex(null); setTempTicket({ id: "", title: "", description: "", price: 0 }); onOpen() }} leftIcon={<TicketIcon className="w-5 h-5" />} p="0">
+														<Button bg="transparent" color="#F79432" _hover={{ bg: "transparent" }} _active={{ bg: "transparent" }} size="sm" fontSize="16px" onClick={() => { setEditIndex(null); setTempTicket({ id: "", title: "", description: "", price: 0 }); onOpen() }} leftIcon={<TicketIcon className="w-5 h-5" />} p={{ base: 3, md: 0 }} w={{ base: "full", md: "auto" }} h={{ base: "44px", md: 8 }} border={{ base: "1px dashed #F79432", md: "none" }} borderRadius="10px">
 															Add Tickets
 														</Button>
 													</Flex>
@@ -1836,7 +2011,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																	const stats = ticketSalesSummary.get(ticket.id.toString())
 																	return (
 																			<SortableTicketItem key={ticket.id || index} id={String(ticket.id || index)}>
-																			<Box p="5" pl="10" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={4} position="relative">
+																			<Box pt={{ base: 4, md: 5 }} pr={{ base: 4, md: 5 }} pb={{ base: 4, md: 5 }} pl="10" bg="#1E1E1E" borderRadius="10px" border="1px solid #343536" mt={{ base: 3, md: 4 }} position="relative">
 																			<Flex align="center" gap={2} pr="6" wrap="wrap">
 																				<Text className={roboto.className} fontWeight="bold" fontSize="lg" color="white">{ticket.title}</Text>
 																				{ticketApprovalFlag(values as any, ticket as any) && (
@@ -1850,7 +2025,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 																				<EventDescription description={ticket.description} className={`${roboto.className} text-sm text-[#868686]`} />
 																			</Box>
 																			<Flex align="center" justify="space-between" mt="2" wrap="wrap" gap={2}>
-																				<Text fontWeight="bold" fontSize="2xl" color="#F79432">${ticket.price}</Text>
+																				<Text fontWeight="bold" fontSize={{ base: "xl", md: "2xl" }} color="#F79432">${ticket.price}</Text>
 																				<Flex gap={2} wrap="wrap">
 																					<Badge colorScheme="purple" fontSize="0.75em" px={2} py={1} borderRadius="6px">{stats?.sold ?? 0} sold</Badge>
 																					<Badge colorScheme="green" fontSize="0.75em" px={2} py={1} borderRadius="6px">${(stats?.revenue ?? 0).toFixed(2)} collected</Badge>
@@ -1902,12 +2077,13 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 															</>
 														)}
 													</FieldArray>
+													</MobileSection>
 												</Box>
 
-												{/* Status (kept) */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+												{/* Status (kept) — the top one is enough on a phone */}
+												<Box display={{ base: "none", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 													<Flex align="center" justifyContent="space-between">
-														<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight="100%">Status</Text>
+														<Text className={roboto.className} color="white" fontWeight={500} fontSize="16px" lineHeight={{ base: "125%", md: "100%" }}>Status</Text>
 														<Field as="select" name="status" value={values?.status} className="bg-[#090C10] block w-[130px] h-10 rounded-md border border-[#2A2D31] py-1 shadow-sm sm:text-sm sm:leading-6 p-3 text-white">
 															<option value="published">Published</option>
 															<option value="draft">Draft</option>
@@ -1917,10 +2093,11 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 											</Flex>
 
 											{/* ===================== SIDEBAR ===================== */}
-											<Flex direction="column" gap={6} flex="1" w="full" maxW={{ lg: "360px" }} minW={0}>
+											<Flex display={{ base: "contents", md: "flex" }} direction="column" gap={6} flex="1" w="full" maxW={{ lg: "360px" }} minW={0}>
 												{/* ---- Event Media ---- */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
-													<Heading size="md" color="white" mb={4}>Event Media</Heading>
+												<MobileSection title="Media" summary={countSummary(uploadedImages.length + uploadedVideos.length, "photo or video", "photos and videos")} order={6}>
+												<Box bg={{ base: "transparent", md: "#15181C" }} border={{ base: "none", md: "1px solid #343536" }} borderRadius="10px" p={{ base: 0, md: 6 }}>
+													<Heading display={{ base: "none", md: "block" }} size="md" color="white" mb={4}>Event Media</Heading>
 													<MediaUploadSection
 														uploadedImages={uploadedImages}
 														uploadedVideos={uploadedVideos}
@@ -1942,19 +2119,22 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 												    Sits under the media box on purpose: it is mostly a question about the
 												    banner. Cards letterbox on black rather than crop, so a portrait poster
 												    looks nothing like it does in the upload box. */}
+												<Box display={{ base: "block", md: "contents" }} mt={{ base: 5, md: 0 }}>
 												<ListingCardPreview
 													images={uploadedImages}
 													videos={uploadedVideos}
 													mediaOrder={mediaOrder}
 													eventId={String(event._id)}
 												/>
+												</Box>
+												</MobileSection>
 
 												{/* ---- Quick Actions ----
 												    Hidden while the event is awaiting admin approval: guests can't open
 												    the event yet, so an invite or blast would send them to the
 												    "not yet approved" page. Server-side guards enforce the same rule. */}
 												{isPendingApproval ? (
-													<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
+													<Box display={{ base: "none", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }}>
 														<Heading size="md" color="white" mb={2}>Quick Actions</Heading>
 														{/* Still gated on the loose flag — a draft mustn't invite or blast either — but
 														    the copy has to name the step the host is actually missing. */}
@@ -1965,7 +2145,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 														</Text>
 													</Box>
 												) : (
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "20px", height: "20px" } }}>
+												<Box display={{ base: "none", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "20px", height: "20px" } }}>
 													<Heading size="md" color="white" mb={4}>Quick Actions</Heading>
 													<Flex direction="column" gap={3}>
 														<Flex as="button" type="button" align="center" gap={2} border="1px solid #FFFFFF29" borderRadius="10px" p={4} _hover={{ bg: "#FFFFFF0A" }} onClick={() => setInviteGuestsModal(true)}>
@@ -1985,7 +2165,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 												)}
 
 												{/* ---- Event Stats ---- */}
-												<Box bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "22px", height: "22px" } }}>
+												<Box display={{ base: "none", md: "block" }} bg="#15181C" border="1px solid #343536" borderRadius="10px" p={{ base: 4, md: 6 }} sx={{ ...iconBrighten, "& svg": { width: "22px", height: "22px" } }}>
 													<Heading size="md" color="white" mb={4}>Event Stats</Heading>
 													<Flex direction="column">
 														<Flex align="center" gap={3} cursor="pointer" py={2} onClick={() => setShowDailyViewsModal(true)}>
@@ -2039,7 +2219,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 										</FieldArray>
 
 										{/* Date Poll Option Modal */}
-										<Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered>
+										<Modal isOpen={isPollModalOpen} onClose={onPollModalClose} isCentered size={{ base: "full", md: "md" }}>
 											<ModalOverlay />
 											<ModalContent bg="#1E1E1E" color="white">
 												<ModalHeader>{editPollIndex !== null ? "Edit Date Option" : "Add Date Option"}</ModalHeader>
@@ -2086,14 +2266,14 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 								)}
 							</Formik>
 						</TabPanel>
-						<TabPanel>
+						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
 							{/* Guests list content goes here */}
-							<div className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3">
+							<div className="md:bg-[#181818] rounded-xl p-0 md:p-3 flex flex-col gap-y-3">
 								<GuestsList eventId={event._id} event={event} />
 							</div>
 						</TabPanel>
-						<TabPanel>
-							<div className="bg-[#181818] rounded-xl p-3">
+						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
+							<div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
 								{/* Performance lives behind the row's Analytics button, not under the table:
 								    the tab's job is managing codes, and a permanent report below it pushed
 								    that work off the screen. */}
@@ -2103,35 +2283,47 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 								/>
 							</div>
 						</TabPanel>
-						<TabPanel>
-							<div className="bg-[#181818] rounded-xl p-3">
+						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
+							<div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
 								<CustomQuestionsManager event={event} />
 							</div>
 						</TabPanel>
-						<TabPanel>
-							<div className="bg-[#181818] rounded-xl p-3">
+						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
+							<div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
 								<ResponsesList eventId={event._id} event={event} />
 							</div>
 						</TabPanel>
-						<TabPanel>
-							<div className="bg-[#181818] rounded-xl p-3">
+						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
+							<div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
 								<BlastsManager event={event} onOpenAdvanced={() => setSendBlastModal(true)} />
 							</div>
 						</TabPanel>
 						{hasApprovalTickets && (
-							<TabPanel>
-								<div className="bg-[#181818] rounded-xl p-3">
+							<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
+								<div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
 									<ApprovalRequests eventId={event._id} event={event} />
 								</div>
 							</TabPanel>
 						)}
-						<TabPanel>
-							<div className="bg-[#181818] rounded-xl p-3">
+						<TabPanel px={{ base: 0, md: 4 }} pt={{ base: 1, md: 4 }}>
+							<div className="md:bg-[#181818] rounded-xl p-0 md:p-3">
 								<AlbumPhotoRequests eventId={event._id} eventName={event.name} />
 							</div>
 						</TabPanel>
 					</TabPanels>
 				</Tabs>
+
+				{/* Phone save bar. Overview only — it is the only tab the form lives on; the other
+				    tabs save their own rows, and Preview is in the header's ⋯ menu there. */}
+				{tabIndex === 0 && (
+					<ManageMobileActionBar
+						onPreview={() => window.open(previewPath(event.slug || String(event._id)), "_blank", "noopener")}
+						onSave={() => formikRef.current?.submitForm()}
+						saveLabel={willUnpublish ? "Unpublish" : "Update Event"}
+						isSaving={isSubmitting}
+						isDirty={isFormDirty}
+					/>
+				)}
 
 				{/* APPROVE EVENT CONFIRMATION — same wording as the events list's, so the two screens
 				    can't drift about what approving does. */}
@@ -2339,7 +2531,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	}
 
 	return (
-		<Modal isOpen={sendBlastModal} onClose={() => setSendBlastModal(false)} isCentered size="xl" scrollBehavior="inside">
+		<Modal isOpen={sendBlastModal} onClose={() => setSendBlastModal(false)} isCentered size={{ base: "full", md: "xl" }} scrollBehavior="inside">
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
 				<ModalHeader>Send a Blast</ModalHeader>
@@ -2794,11 +2986,12 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 					Greet each guest by name
 				</Checkbox>
 				<BlastAttachmentPicker attachments={attachments} onChange={setAttachments} onUploadingChange={setUploading} compact />
-				<Flex justify="space-between" align="center">
-					<Text as="button" type="button" onClick={onOpenAdvanced} color="#F79432" fontSize="sm" fontWeight="bold">
+				{/* Phones: the two send buttons share the full width, the advanced link sits under them. */}
+				<Flex justify="space-between" align={{ base: "stretch", md: "center" }} direction={{ base: "column-reverse", md: "row" }} gap={{ base: 3, md: 0 }}>
+					<Text as="button" type="button" onClick={onOpenAdvanced} color="#F79432" fontSize="sm" fontWeight="bold" alignSelf={{ base: "center", md: "auto" }} py={{ base: 1, md: 0 }}>
 						↗ Advanced options
 					</Text>
-					<Flex gap={2}>
+					<Flex gap={2} sx={{ "@media screen and (max-width: 47.99em)": { "& > button": { flex: 1, height: "44px" } } }}>
 						<Button
 							variant="outline"
 							borderColor="#444444"
@@ -2931,7 +3124,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 			)}
 
 			{/* Edit modal */}
-			<Modal isOpen={!!editing} onClose={() => setEditing(null)} isCentered size="xl">
+			<Modal isOpen={!!editing} onClose={() => setEditing(null)} isCentered size={{ base: "full", md: "xl" }}>
 				<ModalOverlay />
 				<ModalContent bg="#1E1E1E" color="white">
 					<ModalHeader>Edit Blast</ModalHeader>
@@ -3139,7 +3332,7 @@ function CustomQuestionsManager({ event }: { event: any }) {
 			))}
 
 			{/* Add/Edit Modal */}
-			<Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} isCentered size="lg">
+			<Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} isCentered size={{ base: "full", md: "lg" }}>
 				<ModalOverlay />
 				<ModalContent bg="#1E1E1E" color="white">
 					<ModalHeader>{editingIndex !== null ? 'Edit Question' : 'Add Question'}</ModalHeader>
@@ -3274,6 +3467,10 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const [selectedGuest, setSelectedGuest] = useState<{ guest: any; booking: any; checkIn: any } | null>(null)
 	const [page, setPage] = useState(1)
 	const [deletingEmail, setDeletingEmail] = useState<string | null>(null)
+	// One dialog for the table, not one per row — it is mounted once at the bottom and the
+	// row only names its booking.
+	const [cancelTarget, setCancelTarget] = useState<any | null>(null)
+	const [cancellingRef, setCancellingRef] = useState<string | null>(null)
 	const [ticketTypeFilter, setTicketTypeFilter] = useState<string>("all")
 	const [searchQuery, setSearchQuery] = useState("")
 	// Invited vs booked is a second axis, independent of the ticket-type filter — the two compose.
@@ -3288,6 +3485,42 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 	const formatBookingTickets = (booking: any): string => {
 		if (!booking?.tickets?.length) return '—'
 		return booking.tickets.map((t: any) => `${ticketNameById[t.ticketId?.toString()] || 'Ticket'} ×${t.quantity}`).join(', ')
+	}
+
+	// Cancelling is the ordinary way to end a booking: the guest is emailed, any live card
+	// hold is released and `cancelledBy` / `cancelledAt` are written. Delete (below) destroys
+	// the record silently and stays only for cleaning up junk rows.
+	const handleCancelBooking = async () => {
+		const bookingRef = cancelTarget?.bookingRef
+		if (!bookingRef) return
+		setCancellingRef(bookingRef)
+		try {
+			const res = await axios.post("/api/bookings/cancel", { bookingRef })
+			// The route answers 200 with `status: false` for a refusal it expects (an already
+			// dead booking), so a non-throwing response is not necessarily a success.
+			// NOTE: `Error` is shadowed by the toaster import in this file — don't `throw new Error`.
+			if (res.data?.status === false) {
+				toast({ title: res.data?.message || "Failed to cancel booking.", status: "error", duration: 6000, isClosable: true })
+				return
+			}
+			queryClient.invalidateQueries({ queryKey: ["guests-list", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
+			// A cancelled confirmed booking frees a seat; the Approvals "doesn't fit" badges
+			// read this query and would otherwise keep showing the pre-cancellation count.
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+			setCancelTarget(null)
+			toast({ title: "Booking cancelled.", status: "success", duration: 5000, isClosable: true })
+		} catch (err: any) {
+			// The server refuses an already-dead booking with a reason worth reading.
+			toast({
+				title: err?.response?.data?.message || "Failed to cancel booking.",
+				status: "error",
+				duration: 6000,
+				isClosable: true,
+			})
+		} finally {
+			setCancellingRef(null)
+		}
 	}
 
 	const handleDeleteGuest = async (email: string, guest: any, booking: any) => {
@@ -3498,8 +3731,12 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				const ci = booking?._id ? checkInMap[booking._id.toString()] : null
 				const cancelled = isCancelledBooking(booking)
 				const pending = isPendingBooking(booking)
+				// An expired hold is not a cancellation — nobody acted, the authorization
+				// simply lapsed. Flattening the three into "Cancelled" told the host the
+				// guest walked away when in fact the request was left to time out.
+				const deadLabel = DEAD_BOOKING_LABEL[deadBookingKind(booking) ?? 'cancelled']
 				const checkInLabel = cancelled
-					? 'Cancelled'
+					? deadLabel
 					: pending ? 'N/A'
 					: !booking?._id ? 'N/A'
 					: !ci ? 'Not Checked In'
@@ -3510,7 +3747,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 					booking.customerEmail || row.email,
 					GUEST_KIND_LABEL[row.kind],
 					booking.bookingRef || '',
-					cancelled ? (booking.status === 'rejected' ? 'Rejected' : 'Cancelled') : pending ? 'Pending approval' : 'Confirmed',
+					cancelled ? deadLabel : pending ? 'Pending approval' : 'Confirmed',
 					row.invitationStatus || '',
 					invitedAt,
 					formatBookingTickets(booking),
@@ -3540,8 +3777,238 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 		{ key: "needs_approval", label: "Needs approval" },
 		{ key: "booked", label: "Booked" },
 		{ key: "invited_only", label: "Invited only" },
-		{ key: "cancelled", label: "Cancelled" },
+		// The filter is every DEAD booking, which includes holds that expired without the
+		// host acting — labelling it "Cancelled" hid those behind a word that blames the guest.
+		{ key: "cancelled", label: "Cancelled / expired" },
 	]
+
+	// Every cell of a guest row, built ONCE and laid out twice: as table cells from `md` up and as
+	// a card below it. Moved here verbatim from the table so the two layouts cannot drift on what
+	// a status, an amount or an action means. `mobile` only changes control sizes and puts the
+	// occasional actions behind a menu.
+	const guestCells = (row: GuestRow, mobile = false) => {
+		const email = row.key
+		const booking = row.primaryBooking
+		const ci = booking?._id ? checkInMap[booking._id.toString()] : null
+		// A row is struck through only when EVERY booking on it is dead — somebody
+		// with a cancelled order and a live one is not a cancelled guest.
+		const cancelled = row.cancelledOnly
+		// Which KIND of dead. `expired` means the card hold lapsed before the
+		// host approved — the guest never cancelled anything.
+		const deadKind = deadBookingKind(booking) ?? 'cancelled'
+		const pending = row.pendingBookings.length > 0
+
+		/* Where this person came from. An invitation and a booking share no key
+		    but the email string, so somebody who was invited AND bought is ONE
+		    row that says both — not two rows that look like two people. */
+		const type = (
+			<Flex gap={1} align="center" flexWrap="wrap">
+				<Tooltip
+					hasArrow
+					label={
+						row.kind === "invited_and_booked"
+							? "Invited by you, and has since booked."
+							: row.kind === "booked"
+								? "Booked directly — never sent an invite."
+								: "Invited by you. No booking yet."
+					}
+				>
+					<Badge
+						colorScheme={row.kind === "invited_and_booked" ? "teal" : row.kind === "booked" ? "green" : "purple"}
+						variant={row.kind === "invited" ? "outline" : "solid"}
+						borderRadius="6px"
+					>
+						{GUEST_KIND_LABEL[row.kind]}
+					</Badge>
+				</Tooltip>
+				{row.bookings.length > 1 && (
+					<Tooltip hasArrow label={`${row.bookings.length} separate bookings on this address.`}>
+						<Badge colorScheme="gray" borderRadius="6px">{row.bookings.length} bookings</Badge>
+					</Tooltip>
+				)}
+				{/* Emailed invite vs an in-app invite to a Jetzy user. Two different
+				    actions the host took; the tab used to show only the first. */}
+				{row.invitationSource === 'app' && (
+					<Tooltip hasArrow label="Invited through the Jetzy app, not by email.">
+						<Badge colorScheme="cyan" variant="outline" borderRadius="6px">via app</Badge>
+					</Tooltip>
+				)}
+				{row.duplicateInvitationCount > 1 && (
+					<Tooltip hasArrow label={`Invited ${row.duplicateInvitationCount} times.`}>
+						<Badge colorScheme="gray" variant="outline" borderRadius="6px">×{row.duplicateInvitationCount}</Badge>
+					</Tooltip>
+				)}
+			</Flex>
+
+		)
+		const status = (
+			<>
+			{pending ? (
+				<Flex direction="column" gap={1} align="start">
+					<Badge colorScheme="yellow">Pending Approval</Badge>
+					{/* How long the card hold has left — the reason this is urgent. */}
+					{row.pendingBookings.map((pb: any) => (
+						<HoldExpiry key={pb.bookingRef} booking={pb} />
+					))}
+				</Flex>
+			) : cancelled ? (
+				<Tooltip hasArrow label={DEAD_BOOKING_TOOLTIP[deadKind]}>
+					<Badge colorScheme={DEAD_BOOKING_COLOR[deadKind]}>{DEAD_BOOKING_LABEL[deadKind]}</Badge>
+				</Tooltip>
+			) : row.bookings.length > 0 ? (
+				<Badge colorScheme="green">Confirmed</Badge>
+			) : row.invitationStatus === 'accepted' ? (
+				/* An accepted invite creates NO booking. Falling back to "Purchased"
+				   here, as this cell used to, told the host about a ticket sale that
+				   never happened. */
+				<Tooltip hasArrow label="Accepted the invitation but has not booked a ticket.">
+					<Badge colorScheme="blue">Accepted — no ticket</Badge>
+				</Tooltip>
+			) : row.invitationStatus === 'declined' ? (
+				<Badge colorScheme="red" variant="outline">Declined</Badge>
+			) : row.invitationStatus === 'cancelled' ? (
+				/* Written by the Jetzy backend, not by us — it is not in our schema enum,
+				   but it is real and must not read as a live invitation. */
+				<Badge colorScheme="gray" variant="outline">Invite cancelled</Badge>
+			) : (
+				<Badge colorScheme="purple" variant="outline">Invited</Badge>
+			)}
+
+			</>
+		)
+		/* The amount alone can't distinguish a free ticket from a $95 one
+		    comped by a code. Naming the code is the point: it's the only place
+		    a host can see that a guest came in on a 100%-off comp. */
+		const amount = (
+			<>
+			{booking ? `$${Number(booking.total ?? 0).toFixed(2)}` : "—"}
+			{(() => {
+				if (!booking) return null
+				const d = describeDiscount(booking)
+				// The ticket may have been repriced since this guest bought. Nothing
+				// records what they paid, but `subTotal` is pre-discount, so
+				// subTotal/quantity recovers it — and a discount can't be mistaken
+				// for a price change.
+				const rows = booking.tickets || []
+				const currentPrice = rows.length === 1 ? currentPriceOfTicket(String(rows[0]?.ticketId)) : null
+				const priceChange = describePriceChange(booking, currentPrice)
+				if (!d.discounted && !priceChange) return null
+				return (
+					<>
+						{d.discounted && (
+							<Badge ml={2} colorScheme={d.comped ? "blue" : "yellow"} fontSize="0.65em" borderRadius="4px" px={1.5}>
+								{d.comped ? (d.code || "Comped") : `−$${d.amount.toFixed(2)}${d.code ? ` ${d.code}` : ""}`}
+							</Badge>
+						)}
+						{priceChange && (
+							<Tooltip label={`This ticket now lists at $${priceChange.current.toFixed(2)}. This guest bought it at $${priceChange.paid.toFixed(2)}.`} hasArrow>
+								<Badge ml={2} colorScheme="purple" fontSize="0.65em" borderRadius="4px" px={1.5}>
+									{priceChange.label}
+								</Badge>
+							</Tooltip>
+						)}
+					</>
+				)
+			})()}
+
+			</>
+		)
+		const checkIn = (
+			<>
+			{cancelled
+				? <Badge colorScheme={DEAD_BOOKING_COLOR[deadKind]}>{DEAD_BOOKING_LABEL[deadKind]}</Badge>
+				: pending
+				? <Badge colorScheme="gray">N/A</Badge>
+				: !booking?._id
+				? <Badge colorScheme="gray">N/A</Badge>
+				: !ci
+				? <Badge colorScheme="gray">Not Checked In</Badge>
+				: ci.isFullyCheckedIn
+				? <Badge colorScheme="green">Fully Checked In</Badge>
+				: <Badge colorScheme="yellow">Partial ({ci.checkedInCount})</Badge>
+			}
+
+			</>
+		)
+		/* Approve / Reject, one pair per pending request. Never merged: two
+		    requests are two card holds and two calls to /api/bookings/approve.
+
+		    Gated on the row actually HOLDING a pending booking, not on the
+		    ticket's current flag — a host who switches requireApproval off
+		    afterwards still has live holds to resolve, and gating on the flag
+		    would strand them. `showApprovalsSurface` keeps the Approvals tab
+		    itself for the same reason. */
+		const approvalActions = (
+			<>
+			{row.pendingBookings.map((pb: any) => {
+				const fit = approvals.fitFor(pb)
+				return (
+					<Flex key={pb.bookingRef} direction="column" gap={1} mb={2} align="start">
+						{row.pendingBookings.length > 1 && (
+							<Text fontSize="xs" color="#9C9C9C">{pb.bookingRef}</Text>
+						)}
+						<ApprovalActions booking={pb} controller={approvals} size={mobile ? "sm" : "xs"} />
+						{!fit.fits && (
+							<Badge colorScheme="orange" fontSize="0.65em" borderRadius="4px" px={1.5}>
+								Needs {bookingTicketCount(pb?.tickets)}, {fit.seatable ?? 0} left
+							</Badge>
+						)}
+					</Flex>
+				)
+			})}
+			</>
+		)
+		const viewDetails = (
+			<Button
+				size="sm"
+				variant="ghost"
+				color="#F79432"
+				_hover={{ bg: '#2A2A2A' }}
+				leftIcon={<EyeIcon style={{ width: 14, height: 14 }} />}
+				onClick={() => setSelectedGuest({ guest: row.invitation, booking, checkIn: ci })}
+			>
+				View Details
+			</Button>
+		)
+		const otherActions = (
+			<>
+			{/* Cancel on LIVE bookings only. A pending row keeps Approve / Reject,
+			    which already releases the hold and emails the guest — a second
+			    differently-worded way to decline the same request would be worse
+			    than not having one here. */}
+			{booking?.bookingRef && !cancelled && !pending && (
+				<Button
+					size="sm"
+					variant="ghost"
+					color="orange.300"
+					_hover={{ bg: '#2A2A2A' }}
+					isLoading={cancellingRef === booking.bookingRef}
+					onClick={() => setCancelTarget(booking)}
+					ml={1}
+				>
+					Cancel
+				</Button>
+			)}
+			{/* With a real Reject button on the row, the old delete-as-decline path
+			    would be a second, different way to turn somebody down. Delete is
+			    offered only where there is nothing to decide. */}
+			{!pending && (
+				<Button
+					size="sm"
+					variant="ghost"
+					color="red.400"
+					_hover={{ bg: '#2A2A2A' }}
+					isLoading={deletingEmail === email}
+					onClick={() => handleDeleteGuest(email, row.invitation, booking)}
+					ml={1}
+				>
+					{row.bookings.length === 0 ? 'Remove invite' : 'Delete'}
+				</Button>
+			)}
+			</>
+		)
+		return { email, booking, ci, cancelled, pending, type, status, amount, checkIn, approvalActions, viewDetails, otherActions }
+	}
 
 	return (
 		<>
@@ -3568,7 +4035,17 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 			<Flex direction="column" gap={2} mb={3}>
 				{/* Invited vs booked as its own axis. The ticket-type Select below narrows within
 				    whichever audience is chosen — they compose rather than replace each other. */}
-				<Flex align="center" gap={2} flexWrap="wrap">
+				{/* Phones: one scrolling row rather than three wrapped ones. */}
+				<Flex
+					align="center"
+					gap={2}
+					flexWrap={{ base: "nowrap", md: "wrap" }}
+					overflowX={{ base: "auto", md: "visible" }}
+					mx={{ base: -1, md: 0 }}
+					px={{ base: 1, md: 0 }}
+					pb={{ base: 1, md: 0 }}
+					sx={{ scrollbarWidth: "none", "::-webkit-scrollbar": { display: "none" } }}
+				>
 					{AUDIENCE_CHIPS.map((chip) => {
 						const count = audienceCounts[chip.key]
 						const active = audience === chip.key
@@ -3581,6 +4058,10 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							<Button
 								key={chip.key}
 								size="xs"
+								h={{ base: "36px", md: 6 }}
+								px={{ base: 3.5, md: 2 }}
+								fontSize={{ base: "13px", md: "xs" }}
+								flexShrink={0}
 								borderRadius="full"
 								bg={active ? "#F79432" : "#2A2A2A"}
 								color={active ? "black" : "white"}
@@ -3595,12 +4076,15 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				</Flex>
 
 				<Flex align="center" gap={3} flexWrap="wrap">
-					<InputGroup size="sm" maxW="280px">
-						<InputLeftElement pointerEvents="none">
+					<InputGroup size="sm" maxW={{ base: "none", md: "280px" }} flexBasis={{ base: "100%", md: "auto" }}>
+						<InputLeftElement pointerEvents="none" h={{ base: 10, md: 8 }}>
 							<MagnifyingGlassIcon className="w-4 h-4" style={{ color: "#9C9C9C" }} />
 						</InputLeftElement>
 						<Input
 							placeholder="Search by name or email"
+							h={{ base: 10, md: 8 }}
+							fontSize={{ base: "16px", md: "sm" }}
+							borderRadius={{ base: "md", md: "sm" }}
 							bg="#0F1114"
 							border="1px solid #343536"
 							color="white"
@@ -3612,7 +4096,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 					{eventTickets.length > 0 && (
 						<Select
 							size="sm"
-							maxW="280px"
+							maxW={{ base: "none", md: "280px" }}
+							flex={{ base: "1 1 0", md: "initial" }}
+							minW={0}
+							h={{ base: 10, md: 8 }}
+							fontSize={{ base: "16px", md: "sm" }}
 							bg="#0F1114"
 							border="1px solid #343536"
 							color="white"
@@ -3647,6 +4135,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							leftIcon={<ArrowDownTrayIcon className="w-4 h-4" />}
 							onClick={handleExportCsv}
 							ml="auto"
+							h={{ base: 10, md: 8 }}
 						>
 							Export CSV
 						</Button>
@@ -3682,8 +4171,84 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 					<Button size="sm" variant="link" color="#F79432" onClick={clearFilters}>Clear filters</Button>
 				</Flex>
 			) : (
-			<Box className="bg-[#181818] rounded-xl p-3 flex flex-col gap-y-3" overflowX="auto">
-				<TableContainer>
+			<Box className="bg-[#181818] rounded-xl p-0 md:p-3 flex flex-col gap-y-3" overflowX="auto">
+				{/* Phones: one card per guest. Nine columns of table were a sideways scroll. */}
+				<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
+					{pagedRows.map((row: GuestRow) => {
+						const c = guestCells(row, true)
+						const ticketsLabel = c.booking ? formatBookingTickets(c.booking) : ""
+						return (
+							<Box key={c.email} bg="#101010" border="1px solid #343536" borderRadius="12px" p={4} opacity={c.cancelled ? 0.6 : 1}>
+								<Flex justify="space-between" align="flex-start" gap={3}>
+									<Box minW={0} flex="1">
+										<Text color="white" fontWeight={700} fontSize="15px" noOfLines={1} textDecoration={c.cancelled ? "line-through" : undefined}>
+											{row.name || "—"}
+										</Text>
+										<Text color="#9C9C9C" fontSize="13px" noOfLines={1} wordBreak="break-all" textDecoration={c.cancelled ? "line-through" : undefined}>
+											{row.email}
+										</Text>
+									</Box>
+									<Box flexShrink={0} textAlign="right">{c.status}</Box>
+								</Flex>
+								{c.booking && (
+									<Flex mt={3} gap={2} align="center" flexWrap="wrap" fontSize="13px" color="#D6D6D6">
+										{ticketsLabel && <Text>{ticketsLabel}</Text>}
+										{ticketsLabel && <Text color="#5A5D62">·</Text>}
+										<Box>{c.amount}</Box>
+									</Flex>
+								)}
+								<Flex mt={2} gap={2} align="center" flexWrap="wrap">
+									{c.type}
+									{!c.pending && c.booking?._id && !c.cancelled && c.checkIn}
+								</Flex>
+								{c.pending && <Box mt={3}>{c.approvalActions}</Box>}
+								<Flex mt={3} pt={3} borderTop="1px solid #2A2D31" align="center" justify="space-between" gap={2}>
+									<Button
+										size="sm"
+										h="40px"
+										variant="outline"
+										borderColor="#343536"
+										color="#F79432"
+										_hover={{ bg: '#2A2A2A' }}
+										leftIcon={<EyeIcon style={{ width: 16, height: 16 }} />}
+										onClick={() => setSelectedGuest({ guest: row.invitation, booking: c.booking, checkIn: c.ci })}
+									>
+										View details
+									</Button>
+									{!c.pending && (
+										<Menu placement="bottom-end">
+											<MenuButton
+												as={IconButton}
+												aria-label={`More actions for ${row.name || row.email}`}
+												icon={<EllipsisHorizontalIcon className="w-5 h-5" />}
+												size="sm"
+												h="40px"
+												minW="40px"
+												variant="ghost"
+												color="white"
+												_hover={{ bg: "#2A2A2A" }}
+												_active={{ bg: "#333" }}
+												isLoading={cancellingRef === c.booking?.bookingRef || deletingEmail === c.email}
+											/>
+											<MenuList bg="#1D1F24" border="1px solid #444" color="white" minW="200px">
+												{/* Same two actions, same guards as the row's buttons. */}
+												{c.booking?.bookingRef && !c.cancelled && (
+													<MenuItem bg="transparent" h="44px" color="orange.300" _hover={{ bg: "#333" }} _focus={{ bg: "#333" }} onClick={() => setCancelTarget(c.booking)}>
+														Cancel booking
+													</MenuItem>
+												)}
+												<MenuItem bg="transparent" h="44px" color="red.400" _hover={{ bg: "#3A2222" }} _focus={{ bg: "#3A2222" }} onClick={() => handleDeleteGuest(c.email, row.invitation, c.booking)}>
+													{row.bookings.length === 0 ? 'Remove invite' : 'Delete guest'}
+												</MenuItem>
+											</MenuList>
+										</Menu>
+									)}
+								</Flex>
+							</Box>
+						)
+					})}
+				</Flex>
+				<TableContainer display={{ base: "none", md: "block" }}>
 					<Table variant="simple" size="sm">
 						<Thead>
 							<Tr>
@@ -3700,191 +4265,21 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 						</Thead>
 						<Tbody>
 							{pagedRows.map((row: GuestRow) => {
-								const email = row.key
-								const booking = row.primaryBooking
-								const ci = booking?._id ? checkInMap[booking._id.toString()] : null
-								// A row is struck through only when EVERY booking on it is dead — somebody
-								// with a cancelled order and a live one is not a cancelled guest.
-								const cancelled = row.cancelledOnly
-								const rejected = cancelled && booking?.status === 'rejected'
-								const pending = row.pendingBookings.length > 0
+								const c = guestCells(row)
 								return (
-									<Tr key={email} opacity={cancelled ? 0.55 : 1}>
-										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{row.name || "—"}</Td>
-										<Td color="white" textDecoration={cancelled ? "line-through" : undefined}>{row.email}</Td>
-										{/* Where this person came from. An invitation and a booking share no key
-										    but the email string, so somebody who was invited AND bought is ONE
-										    row that says both — not two rows that look like two people. */}
-										<Td>
-											<Flex gap={1} align="center" flexWrap="wrap">
-												<Tooltip
-													hasArrow
-													label={
-														row.kind === "invited_and_booked"
-															? "Invited by you, and has since booked."
-															: row.kind === "booked"
-																? "Booked directly — never sent an invite."
-																: "Invited by you. No booking yet."
-													}
-												>
-													<Badge
-														colorScheme={row.kind === "invited_and_booked" ? "teal" : row.kind === "booked" ? "green" : "purple"}
-														variant={row.kind === "invited" ? "outline" : "solid"}
-														borderRadius="6px"
-													>
-														{GUEST_KIND_LABEL[row.kind]}
-													</Badge>
-												</Tooltip>
-												{row.bookings.length > 1 && (
-													<Tooltip hasArrow label={`${row.bookings.length} separate bookings on this address.`}>
-														<Badge colorScheme="gray" borderRadius="6px">{row.bookings.length} bookings</Badge>
-													</Tooltip>
-												)}
-												{/* Emailed invite vs an in-app invite to a Jetzy user. Two different
-												    actions the host took; the tab used to show only the first. */}
-												{row.invitationSource === 'app' && (
-													<Tooltip hasArrow label="Invited through the Jetzy app, not by email.">
-														<Badge colorScheme="cyan" variant="outline" borderRadius="6px">via app</Badge>
-													</Tooltip>
-												)}
-												{row.duplicateInvitationCount > 1 && (
-													<Tooltip hasArrow label={`Invited ${row.duplicateInvitationCount} times.`}>
-														<Badge colorScheme="gray" variant="outline" borderRadius="6px">×{row.duplicateInvitationCount}</Badge>
-													</Tooltip>
-												)}
-											</Flex>
-										</Td>
-										<Td color="white">
-											{pending ? (
-												<Flex direction="column" gap={1} align="start">
-													<Badge colorScheme="yellow">Pending Approval</Badge>
-													{/* How long the card hold has left — the reason this is urgent. */}
-													{row.pendingBookings.map((pb: any) => (
-														<HoldExpiry key={pb.bookingRef} booking={pb} />
-													))}
-												</Flex>
-											) : cancelled ? (
-												<Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
-											) : row.bookings.length > 0 ? (
-												<Badge colorScheme="green">Confirmed</Badge>
-											) : row.invitationStatus === 'accepted' ? (
-												/* An accepted invite creates NO booking. Falling back to "Purchased"
-												   here, as this cell used to, told the host about a ticket sale that
-												   never happened. */
-												<Tooltip hasArrow label="Accepted the invitation but has not booked a ticket.">
-													<Badge colorScheme="blue">Accepted — no ticket</Badge>
-												</Tooltip>
-											) : row.invitationStatus === 'declined' ? (
-												<Badge colorScheme="red" variant="outline">Declined</Badge>
-											) : row.invitationStatus === 'cancelled' ? (
-												/* Written by the Jetzy backend, not by us — it is not in our schema enum,
-												   but it is real and must not read as a live invitation. */
-												<Badge colorScheme="gray" variant="outline">Invite cancelled</Badge>
-											) : (
-												<Badge colorScheme="purple" variant="outline">Invited</Badge>
-											)}
-										</Td>
-										<Td color="white">{formatBookingTickets(booking)}</Td>
-										{/* The amount alone can't distinguish a free ticket from a $95 one
-										    comped by a code. Naming the code is the point: it's the only place
-										    a host can see that a guest came in on a 100%-off comp. */}
-										<Td color="white">
-											{booking ? `$${Number(booking.total ?? 0).toFixed(2)}` : "—"}
-											{(() => {
-												if (!booking) return null
-												const d = describeDiscount(booking)
-												// The ticket may have been repriced since this guest bought. Nothing
-												// records what they paid, but `subTotal` is pre-discount, so
-												// subTotal/quantity recovers it — and a discount can't be mistaken
-												// for a price change.
-												const rows = booking.tickets || []
-												const currentPrice = rows.length === 1 ? currentPriceOfTicket(String(rows[0]?.ticketId)) : null
-												const priceChange = describePriceChange(booking, currentPrice)
-												if (!d.discounted && !priceChange) return null
-												return (
-													<>
-														{d.discounted && (
-															<Badge ml={2} colorScheme={d.comped ? "blue" : "yellow"} fontSize="0.65em" borderRadius="4px" px={1.5}>
-																{d.comped ? (d.code || "Comped") : `−$${d.amount.toFixed(2)}${d.code ? ` ${d.code}` : ""}`}
-															</Badge>
-														)}
-														{priceChange && (
-															<Tooltip label={`This ticket now lists at $${priceChange.current.toFixed(2)}. This guest bought it at $${priceChange.paid.toFixed(2)}.`} hasArrow>
-																<Badge ml={2} colorScheme="purple" fontSize="0.65em" borderRadius="4px" px={1.5}>
-																	{priceChange.label}
-																</Badge>
-															</Tooltip>
-														)}
-													</>
-												)
-											})()}
-										</Td>
+									<Tr key={c.email} opacity={c.cancelled ? 0.55 : 1}>
+										<Td color="white" textDecoration={c.cancelled ? "line-through" : undefined}>{row.name || "—"}</Td>
+										<Td color="white" textDecoration={c.cancelled ? "line-through" : undefined}>{row.email}</Td>
+										<Td>{c.type}</Td>
+										<Td color="white">{c.status}</Td>
+										<Td color="white">{formatBookingTickets(c.booking)}</Td>
+										<Td color="white">{c.amount}</Td>
 										<Td color="white">{row.invitedAt ? DateTime.fromISO(row.invitedAt).toLocaleString(DateTime.DATETIME_MED) : "—"}</Td>
+										<Td>{c.checkIn}</Td>
 										<Td>
-											{cancelled
-												? <Badge colorScheme="red">{rejected ? 'Rejected' : 'Cancelled'}</Badge>
-												: pending
-												? <Badge colorScheme="gray">N/A</Badge>
-												: !booking?._id
-												? <Badge colorScheme="gray">N/A</Badge>
-												: !ci
-												? <Badge colorScheme="gray">Not Checked In</Badge>
-												: ci.isFullyCheckedIn
-												? <Badge colorScheme="green">Fully Checked In</Badge>
-												: <Badge colorScheme="yellow">Partial ({ci.checkedInCount})</Badge>
-											}
-										</Td>
-										<Td>
-											{/* Approve / Reject, one pair per pending request. Never merged: two
-											    requests are two card holds and two calls to /api/bookings/approve.
-
-											    Gated on the row actually HOLDING a pending booking, not on the
-											    ticket's current flag — a host who switches requireApproval off
-											    afterwards still has live holds to resolve, and gating on the flag
-											    would strand them. `showApprovalsSurface` keeps the Approvals tab
-											    itself for the same reason. */}
-											{row.pendingBookings.map((pb: any) => {
-												const fit = approvals.fitFor(pb)
-												return (
-													<Flex key={pb.bookingRef} direction="column" gap={1} mb={2} align="start">
-														{row.pendingBookings.length > 1 && (
-															<Text fontSize="xs" color="#9C9C9C">{pb.bookingRef}</Text>
-														)}
-														<ApprovalActions booking={pb} controller={approvals} size="xs" />
-														{!fit.fits && (
-															<Badge colorScheme="orange" fontSize="0.65em" borderRadius="4px" px={1.5}>
-																Needs {bookingTicketCount(pb?.tickets)}, {fit.seatable ?? 0} left
-															</Badge>
-														)}
-													</Flex>
-												)
-											})}
-											<Button
-												size="sm"
-												variant="ghost"
-												color="#F79432"
-												_hover={{ bg: '#2A2A2A' }}
-												leftIcon={<EyeIcon style={{ width: 14, height: 14 }} />}
-												onClick={() => setSelectedGuest({ guest: row.invitation, booking, checkIn: ci })}
-											>
-												View Details
-											</Button>
-											{/* With a real Reject button on the row, the old delete-as-decline path
-											    would be a second, different way to turn somebody down. Delete is
-											    offered only where there is nothing to decide. */}
-											{!pending && (
-												<Button
-													size="sm"
-													variant="ghost"
-													color="red.400"
-													_hover={{ bg: '#2A2A2A' }}
-													isLoading={deletingEmail === email}
-													onClick={() => handleDeleteGuest(email, row.invitation, booking)}
-													ml={1}
-												>
-													{row.bookings.length === 0 ? 'Remove invite' : 'Delete'}
-												</Button>
-											)}
+											{c.approvalActions}
+											{c.viewDetails}
+											{c.otherActions}
 										</Td>
 									</Tr>
 								)
@@ -3894,9 +4289,10 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 				</TableContainer>
 
 				{totalPages > 1 && (
-					<Flex justify="center" align="center" gap={2} mt={3} flexWrap="wrap">
+					<Flex justify={{ base: "space-between", md: "center" }} align="center" gap={2} mt={3} flexWrap={{ base: "nowrap", md: "wrap" }}>
 						<Button
 							size="sm"
+							h={{ base: "40px", md: 8 }}
 							bg="#2A2A2A" color="white" border="1px solid #444"
 							_hover={{ bg: '#3A3A3A' }}
 							_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -3905,9 +4301,13 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 						>
 							&lt; Prev
 						</Button>
+						<Text display={{ base: "block", md: "none" }} color="#9C9C9C" fontSize="sm" px={2}>
+							Page <Text as="span" color="white" fontWeight="bold">{page}</Text> of {totalPages}
+						</Text>
 						{Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
 							<Button
 								key={p}
+								display={{ base: "none", md: "inline-flex" }}
 								size="sm"
 								bg={p === page ? '#F79432' : '#2A2A2A'}
 								color={p === page ? 'black' : 'white'}
@@ -3924,6 +4324,7 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 							_hover={{ bg: '#3A3A3A' }}
 							_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
 							isDisabled={page >= totalPages}
+							h={{ base: "40px", md: 8 }}
 							onClick={() => setPage(p => p + 1)}
 						>
 							Next &gt;
@@ -3938,8 +4339,22 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 			    option it would there. */}
 			<ApprovalDialogs controller={approvals} event={event} />
 
+			{/* The host is cancelling somebody else's booking, so `asManager` — and the money
+			    warning is the point of the dialog: a captured payment is not refunded. */}
+			<CancelBookingDialog
+				isOpen={!!cancelTarget}
+				onClose={() => setCancelTarget(null)}
+				onConfirm={handleCancelBooking}
+				isLoading={!!cancellingRef}
+				eventName={event?.name}
+				guestName={cancelTarget?.customerName}
+				asManager
+				moneyState={bookingMoneyState(cancelTarget || undefined) as MoneyState}
+				amount={bookingMoneyAmount(cancelTarget || undefined)}
+			/>
+
 			{/* Guest Detail Modal */}
-			<Modal isOpen={!!selectedGuest} onClose={() => setSelectedGuest(null)} isCentered size="2xl">
+			<Modal isOpen={!!selectedGuest} onClose={() => setSelectedGuest(null)} isCentered size={{ base: "full", md: "2xl" }}>
 				<ModalOverlay />
 				<ModalContent bg="#1E1E1E" color="white">
 					<ModalHeader borderBottom="1px solid #3E3E3E">Guest Details</ModalHeader>
@@ -4043,7 +4458,24 @@ function ResponsesList({ eventId, event }: { eventId: string; event?: any }) {
 	return (
 		<Box overflowX="auto">
 			<Text color="#9C9C9C" fontSize="sm" mb={3}>{respondents.length} guest{respondents.length === 1 ? '' : 's'} responded</Text>
-			<TableContainer>
+			{/* Phones: a card per guest, questions down the card instead of across a table. */}
+			<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
+				{paged.map((booking: any) => (
+					<Box key={booking._id || booking.bookingRef || booking.customerEmail} bg="#101010" border="1px solid #343536" borderRadius="12px" p={4}>
+						<Text color="white" fontWeight={700} fontSize="15px">{booking.customerName || '—'}</Text>
+						<Text color="#9C9C9C" fontSize="13px" wordBreak="break-all">{booking.customerEmail || '—'}</Text>
+						<Flex direction="column" gap={3} mt={3} pt={3} borderTop="1px solid #2A2D31">
+							{questions.map((q: any) => (
+								<Box key={q.id}>
+									<Text color="#9C9C9C" fontSize="12px">{stripHtml(q.title || '')}{q.isRequired ? ' *' : ''}</Text>
+									<Box color="white" fontSize="14px" mt="2px"><AnswerText value={formatAnswer(q.id, booking)} /></Box>
+								</Box>
+							))}
+						</Flex>
+					</Box>
+				))}
+			</Flex>
+			<TableContainer display={{ base: "none", md: "block" }}>
 				<Table variant="simple" size="sm">
 					<Thead>
 						<Tr>
@@ -4069,9 +4501,10 @@ function ResponsesList({ eventId, event }: { eventId: string; event?: any }) {
 			</TableContainer>
 
 			{totalPages > 1 && (
-				<Flex justify="center" align="center" gap={2} mt={3} flexWrap="wrap">
+				<Flex justify={{ base: "space-between", md: "center" }} align="center" gap={2} mt={3} flexWrap={{ base: "nowrap", md: "wrap" }}>
 					<Button
 						size="sm"
+						h={{ base: "40px", md: 8 }}
 						bg="#2A2A2A" color="white" border="1px solid #444"
 						_hover={{ bg: '#3A3A3A' }}
 						_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -4080,9 +4513,13 @@ function ResponsesList({ eventId, event }: { eventId: string; event?: any }) {
 					>
 						&lt; Prev
 					</Button>
+					<Text display={{ base: "block", md: "none" }} color="#9C9C9C" fontSize="sm" px={2}>
+						Page <Text as="span" color="white" fontWeight="bold">{page}</Text> of {totalPages}
+					</Text>
 					{Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
 						<Button
 							key={p}
+							display={{ base: "none", md: "inline-flex" }}
 							size="sm"
 							bg={p === page ? '#F79432' : '#2A2A2A'}
 							color={p === page ? 'black' : 'white'}
@@ -4099,6 +4536,7 @@ function ResponsesList({ eventId, event }: { eventId: string; event?: any }) {
 						_hover={{ bg: '#3A3A3A' }}
 						_disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
 						isDisabled={page >= totalPages}
+						h={{ base: "40px", md: 8 }}
 						onClick={() => setPage(p => p + 1)}
 					>
 						Next &gt;
@@ -4226,7 +4664,7 @@ function InviteGuestsModal({ inviteGuestsModal, setInviteGuestsModal, event }: {
 	}, [inviteGuestsModal])
 
 	return (
-		<Modal isOpen={inviteGuestsModal} onClose={() => setInviteGuestsModal(false)} isCentered size={inviteMode === "email" && step === 2 ? "4xl" : "2xl"}>
+		<Modal isOpen={inviteGuestsModal} onClose={() => setInviteGuestsModal(false)} isCentered size={{ base: "full", md: inviteMode === "email" && step === 2 ? "4xl" : "2xl" }}>
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
 				<ModalHeader>Invite Guests</ModalHeader>
@@ -4473,7 +4911,7 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 
 function DailyViewsModal({ isOpen, onClose, dailyViews }: { isOpen: boolean; onClose: () => void; dailyViews: any[] }) {
 	return (
-		<Modal isOpen={isOpen} onClose={onClose} isCentered size="xl">
+		<Modal isOpen={isOpen} onClose={onClose} isCentered size={{ base: "full", md: "xl" }}>
 			<ModalOverlay />
 			<ModalContent bg="#1E1E1E" color="white">
 				<ModalHeader>Daily Event Views</ModalHeader>

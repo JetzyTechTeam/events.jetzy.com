@@ -1137,7 +1137,7 @@ Runs BEFORE checkout on the **standalone** Premium purchase (`/premium`, `/subsc
 | Events list | `src/pages/console/events/index.tsx` | admin=all, user=own (ownerId filter) |
 | Create event | `src/pages/console/events/create.tsx` | authenticated. Figma card design (mirrors Manage Overview): Basic Information / Interests(bare) / Event Benefits / Event Options / Date Poll / Status+Submit cards + Event Media sidebar. Shares styling tokens with manage (`#15181C`/`#343536`/10px cards, Roboto, full-width tz+chevron, date/time w/ icons). Logic unchanged (`CreateEventThunk`, success modal). |
 | Edit event | `src/pages/console/events/[eventId]/update.tsx` | **Redirect shim → `/manage`** (editing merged into Manage Overview). Old route/bookmarks still resolve. |
-| Manage event | `src/pages/console/events/[eventId]/manage.tsx` | admin OR owner. Figma redesign: **Overview tab is now the inline editable event form** (Formik, ported verbatim from old update.tsx — `initialValues`, `onSubmit`/`UpdateEventThunk` + send-update-event-email, image/video/ticket/poll handlers, Places autocomplete). 2-col responsive: main col (Basic Information, Post-Event Thank You, Interests, Event Benefits as chips over comma-string, Event Options, Date Poll, Status) + sidebar (Event Media `MediaUploadSection`, Quick Actions, Event Stats from `/api/analytics/events`). Header: breadcrumb + name, "Update Event" → `formikRef.submitForm()`, "Delete Event" → confirm dialog → `DeleteEventThunk`. Tabs (all 6, scrollable on mobile): Overview, Guests, Referral Codes, Custom Questions, Responses, Blasts |
+| Manage event | `src/pages/console/events/[eventId]/manage.tsx` | admin OR owner. Figma redesign: **Overview tab is now the inline editable event form** (Formik, ported verbatim from old update.tsx — `initialValues`, `onSubmit`/`UpdateEventThunk` + send-update-event-email, image/video/ticket/poll handlers, Places autocomplete). 2-col responsive: main col (Basic Information, Post-Event Thank You, Interests, Event Benefits as chips over comma-string, Event Options, Date Poll, Status) + sidebar (Event Media `MediaUploadSection`, Quick Actions, Event Stats from `/api/analytics/events`). Header: breadcrumb + name, "Update Event" → `formikRef.submitForm()`, "Delete Event" → confirm dialog → `DeleteEventThunk`. Tabs: Overview, Guests, Referral Codes, Custom Questions, Responses, Blasts, Approvals (conditional), Photo Requests — desktop `TabList` and the phone section switcher both render from `buildManageSections`. **Phone layout (below `md`) is separate — see "Manage Event on a phone".** |
 | Check-in | `src/pages/console/events/[eventId]/check-in.tsx` | admin OR owner |
 | Event analytics | `src/pages/console/events/[eventId]/analytics.tsx` | admin only — Overview tab (existing metrics) + Journey tab (funnel/heatmap/dwell/top targets) |
 | Ticket mgmt | `src/pages/console/events/[eventId]/tickets.tsx` | — |
@@ -1256,7 +1256,7 @@ The banner renders from three sources and only one of them is schema-checked: th
 - `events/` — AddTickets, CreateDiscussionModal, DiscussionBoard, DiscussionPostView, EventsTableComponent, EventTicketTable, JetzyChatIntegration, QRCodeModal, ReactionsListModal, TicketCard
 - `form/` — CheckoutForm, DatePicker, TimePicker
 - `layout/` — ConsoleLayout, ConsoleNavbar, EnhancedLayout, Layout
-  - `ConsoleLayout` takes optional `stickyHeader` (type in `src/types/layout.ts`): pins the title + action-button header to `top-0` (`z-30`) and publishes its measured height as the CSS var `--console-header-h` (ResizeObserver) so page content can stick beneath it. Used by `console/events/[eventId]/manage.tsx` so **Update Event / Clone / Delete** stay reachable while scrolling the long edit form; that page also pins its `TabList` at `top: var(--console-header-h)` and swaps the button label to "Save Changes" + dot when Formik is `dirty` (via local `FormDirtyWatcher`).
+  - `ConsoleLayout` takes optional `stickyHeader` (type in `src/types/layout.ts`): pins the title + action-button header to `top-0` (`z-30`) and publishes its measured height as the CSS var `--console-header-h` (ResizeObserver) so page content can stick beneath it. Used by `console/events/[eventId]/manage.tsx` so **Update Event / Clone / Delete** stay reachable while scrolling the long edit form; that page also pins its `TabList` at `top: var(--console-header-h)` and swaps the button label to "Save Changes" + dot when Formik is `dirty` (via local `FormDirtyWatcher`). With `stickyHeader` the header container is `pt-2 gap-2 md:gap-4` on phones (manage is the only user).
   - Header height must stay **constant** — an earlier collapse-on-scroll version jittered (height change → reflow → threshold re-crossed → oscillation).
   - `html, body` use `overflow-x: clip` (not `hidden`) in `src/styles/globals.scss`; `hidden` makes body a scroll container and disables `position: sticky` everywhere.
 - `misc/` — EventsListing, LoginModal, ForgotPasswordModal, RichTextEditor, SafeHTML, Pagination, ProgressBar, Spinner, CardGroup, DragAndDropUploader, ListGroup, TicketQuantityInput
@@ -1395,9 +1395,20 @@ Guest-side counterpart to `/console/bookings`. Before this, a guest had no way t
 - **No refunds** in any path (see "No refunds — by decision" above).
 - Capacity is released only when the booking was CONFIRMED (a PENDING approval never incremented the tracker). The `CheckIn` row is deleted.
 
+**A dead booking is one of THREE things, and the console used to call them all "Cancelled"** (2026-10-05). `BookingStatus.FAILED` is written only when a card authorization lapsed or was already canceled — `webhooks/stripe.ts` on `payment_intent.canceled`, and `approve.ts` finding the PI canceled — always alongside `payment.status: "expired"`. So the status alone distinguishes them.
+- **Use `deadBookingKind` / `DEAD_BOOKING_LABEL` / `DEAD_BOOKING_COLOR` / `DEAD_BOOKING_TOOLTIP` / `deadBookingLabel`** in `src/lib/booking-status.ts`. Never re-derive, and never print `booking.status` raw — `/console/bookings/[eventId]` did, so an expired hold read as the literal word **`failed`**.
+- `cancelled` (somebody ended it; `cancelledBy` says who) · `rejected` (the host declined) · **`expired`** (NOBODY acted — the ~7 day hold lapsed). Expired renders **grey, not red**: it is not the guest's doing, and telling a host the guest cancelled is backwards.
+- **`DEAD_BOOKING_TOOLTIP_GUEST` is the second-person twin**, for `BookingDetailModal` — `/my-bookings` is the only surface that uses it, and the host copy talks *about* the guest.
+- Covered: Guests tab (badge, check-in cell, CSV, and the filter chip, now "Cancelled / expired"), the host bookings table + its Excel export, the guest modal, and `BookingStatusPill` in `HostedEvents.tsx`. The Approvals tab already said "Hold expired" and `BookingCard` already said EXPIRED — those were right and are untouched.
+- The guest's own email was always honest: `sendApprovalRejected({ reason: "expired" })` says the request "wasn't reviewed in time", that they were not charged, and offers **Book Again**.
+
 **Host side**
 - `BookingEventsDetailsTable.tsx` gained a Payment column (`PaymentBadge`) and a **Cancel** action. Cancel is gated on the new `canManage` prop (admin **or** owner); Delete stays `isAdmin`-only. `/console/bookings/[eventId]` now projects the `payment` sub-doc (minus Stripe ids) and serializes its dates.
-- `sendHostCancellationNotice` emails the event owner + `ADMIN_NOTIFICATION_EMAIL` on every cancellation; non-fatal by design.
+- **Cancel is on all three host surfaces now** (2026-10-05): that table, the **Guests tab** of Manage Event, and the **Bookings & Waiting List** panel on the event detail page (`EventBookings` in `HostedEvents.tsx`). All three post to the same `/api/bookings/cancel` and mount the same `CancelBookingDialog` with `asManager` — no second endpoint, no second confirmation copy.
+  - **Live bookings only.** A pending request keeps Approve / Reject, which already releases the hold and emails the guest; a Cancel beside them would be a second, differently-worded way to decline the same request.
+  - The Guests tab **keeps its Delete** (`/api/bookings/delete`) alongside Cancel, by decision. Note Delete destroys the record and sends the guest **nothing** — Cancel is the normal action and the only one that writes `cancelledBy` / `cancelledAt`.
+  - **Invalidate the right queries or the page contradicts itself.** Guests tab: `guests-list`, `event-bookings`, **`event-availability`** (the Approvals "doesn't fit" badges read it). Event detail panel: `eventBookings` **and `eventTotals`** — the Active / Inactive counters above the rows come from the second query.
+- `sendHostCancellationNotice` emails the event owner + `ADMIN_NOTIFICATION_EMAIL` on every cancellation; non-fatal by design. It de-duplicates owner against admin, so a Jetzy-run event gets one copy. **It is the ONLY mail the Jetzy inbox gets for a cancellation** — `sendBookingCancellation` used to hardcode `tech@jetzyapp.com` into its `to` as well, which meant two near-identically titled emails per cancellation and an internal address in the guest's `To:` line (fixed 2026-10-05).
 
 **User linkage** — paid bookings previously had **no `bookerUserId`** (35 such rows in prod); it was only ever written by `free-events.ts`. Fixed forward: `checkout/index.ts` puts `bookerUserId` in the Stripe metadata and `checkout-fulfillment.ts` persists it. Older bookings still resolve by email, which is why the email match must stay case-insensitive.
 
@@ -1631,7 +1642,7 @@ Two different codes can now hand out free membership months. They share the mech
 | | Where it is typed | Where the offer lives | Applies to |
 |---|---|---|---|
 | Invite code | `/subscribe`, `PremiumPaywallModal` | `TRIAL_CODES` in `src/lib/invite-trial.ts` (hardcoded) | A direct Premium subscription |
-| Referral code | Event checkout | `referralCodes.freeMembershipMonths` (per code, host-set) | A **ticket that already sells Premium** |
+| Referral code | Event checkout | `referralCodes.freeMembershipMonths` (per code, **admin-set** since 2026-10-06) | A **ticket that already sells Premium** |
 
 **A trial, not a 100%-off coupon.** `trial_end` bills nothing until the date it names and then
 charges the normal price — which is exactly "2 months free, then $20/month". A 100% coupon would
@@ -1647,8 +1658,9 @@ the membership on their next bundled ticket, and reads as a member on selectmemb
 
 - **One number, `freeMembershipMonths` (0–12), not a tickbox plus a count.** Two fields can
   disagree — ticked with zero months, three months with the box unticked — and then the record no
-  longer says what the buyer gets. Absent (every pre-existing code) means none. Host sets it when
-  creating the code; the table shows it.
+  longer says what the buyer gets. Absent (every pre-existing code) means none. An **admin** sets
+  it when creating the code (admin-only since 2026-10-06 — a host neither sees nor can write the
+  field); the table shows it.
 - **Premium only, by decision.** Full Concierge is sold on selectmember.jetzy.com's terms; we don't
   give their product away. Enforced server-side in both checkout endpoints, and the checkout modal
   only previews the offer when the selection is actually buying Premium (`chargedKeys`) — a code
@@ -2311,7 +2323,8 @@ something they didn't.
 
 ## Sharing a referral code as free Jetzy Premium (2026-08-26)
 
-A host sets **Free Months of Jetzy Premium** on a referral code and can now share it as a link:
+**Free Months of Jetzy Premium** on a referral code (set by an admin only, since 2026-10-06 — a
+host can still share a code an admin gave months to) can be shared as a link:
 
 ```
 https://events.jetzy.com/premium?code=JETZY-ME&event=6a83365808b397827ee83341
@@ -3706,3 +3719,114 @@ Found in the same audit, fixed with it.
   **object** (it is read back as the seed for the manage form) and is under 512KB. It is stored as
   `Mixed` on the event document, which has a hard 16MB ceiling — an unbounded write here could make
   the event itself unreadable.
+
+
+## Manage Event on a phone (IMPLEMENTED 2026-10-06)
+
+Below `md` (768px) `/console/events/[eventId]/manage` has its own layout. **Everything from `md` up is pixel-identical to before** — verified by before/after screenshot diffs at 1280px and 820px (Overview, Guests, Approvals) with fonts normalised. Every change is a responsive prop or a `display={{ base, md }}` toggle; no handler, field, autosave or guard logic changed.
+
+- **Shell.** The sticky header is one row (back · one-line title · autosave chip · ⋯ menu with Preview / Analytics / Clone / Delete) plus **`ManageSectionSwitcher`** — a full-width button that opens a bottom-sheet `Drawer` listing every section. It replaces the tab bar (`TabList` is `display: none` below `md`). Badges are "needs you" counts only: pending approvals from the live `["event-bookings", id]` query, pending photo requests from the shared `albumPhotoRequestsQueryKey` cache entry (`fetchAlbumPhotoRequests` is exported from `AlbumPhotoRequests.tsx` for this).
+- **`buildManageSections(hasApprovalTickets)`** (`src/components/console/manage/manageSections.ts`) is the ONE ordered list. The desktop `TabList` maps over it too, so the sheet and the tabs can't disagree about indices. The `TabPanels` must keep the same order; Approvals stays conditional and before Photo Requests.
+- **Save bar.** `ManageMobileActionBar` is `position: fixed` at the bottom on the Overview tab only (Preview + Update Event/Unpublish, same handlers, safe-area padding). The Overview panel has `pb=104px` on phones to clear it. Keep it mounted outside any transformed ancestor.
+- **Approve Event** leaves the header on phones and becomes a green "Awaiting your review" banner above the tabs (same `AlertDialog`).
+- **Overview = collapsible sections (`MobileSection`).** Basics (open), Date & time, Location, Description, Tickets, Media, Options, Interests & benefits, Thank-you email — each with a one-line summary when closed (`scheduleSummary` / `textSummary` / `countSummary` in manage.tsx). Stats + quick actions move to a strip at the top (`ManageMobileSummary`); the sidebar cards are hidden on phones. The bottom duplicate Status card is hidden on phones.
+  - **How it works without touching desktop:** below `md` both columns and the Basic Information / Event Options cards are `display: contents`, so every `MobileSection` becomes a direct child of the outer flex column and `order` arranges them (Tickets + Media up, settings down). From `md` up `MobileSection`'s own wrappers are `display: contents` instead, so it generates no box at all.
+  - **Collapsing HIDES, never unmounts.** DatePicker/TimePicker are uncontrolled, Places binds to `placesRef`, Quill owns its DOM. Never render a Formik field twice for the phone layout; duplicate only non-field UI (buttons, stats, menus).
+  - **Responsive shorthand beats longhand.** `p={{ base, md }}` emits a media-query `padding` that overrides a plain `pl` at `md`. That broke the ticket-card drag handle once; use `pt/pr/pb` beside a fixed `pl`.
+- **16px inputs on phones** (`fieldBase` is `text-base md:text-sm`, Chakra inputs `fontSize={{ base: "16px", md: "14px" }}`) — iOS Safari zooms on focus below 16px.
+- **Date & time:** the Start/End marker rail is hidden on phones (its fixed-height markers fell out of line when the fields wrapped); each row is labelled instead and date+time stay on one line.
+- **Data tabs → cards below `md`.** Guests (`guestCells(row, mobile)` builds every cell once — the table row and the card both render from it), Approvals (`ticketLines` / `outcomeBadge` / notices shared), Responses, Photo Requests (`thumb` / `statusBadge` / `toggleButton` shared). Guests filters scroll as one chip row; pagination is "Prev · Page X of Y · Next" on phones. Tab panels drop their double inset on phones (`p-0 md:p-3`). `ApprovalRequests` and `AlbumPhotoRequests` are shared components, so their phone cards also appear wherever else they are mounted.
+- **Dialogs are full-screen on phones** (`size={{ base: "full", md: <old> }}`): Send Blast, blast edit, custom question, guest detail, Invite Guests, daily views, date-poll option, and the shared `TicketEditorModal` (create + event page too). Small confirms stay centred.
+
+## Event page benefits on a phone, processed-request paging, admin-only free months (IMPLEMENTED 2026-10-06)
+
+### Benefits chips leave the banner below `md`
+- `HostedEvents.tsx` stacked the Premium tag and every benefit chip in ONE top-left column over
+  the banner. A phone's banner is `h-52` (208px); the tag plus `MAX_BENEFIT_COUNT` (6) chips
+  stack to ~300px, so they covered the artwork and ran down over the title.
+- Below `md` the benefits render as a **wrapping row of small chips UNDER the banner**
+  (`md:hidden`). From `md` up the overlay column is unchanged. `md`, not `sm`, because that is
+  the breakpoint where the banner itself grows to 335px.
+- The **Premium tag stays on the banner at every width** — it is one chip. The overlay wrapper
+  is `flex` when the event is premium and `hidden md:flex` otherwise, so an event with benefits
+  but no tag leaves no empty absolutely-positioned box on a phone.
+- Both renderings read one `benefitList = benefitChips(shownBenefits)` — the same split the API
+  validates with. Don't re-split inline.
+
+### Processed approval requests are paged
+- `ApprovalRequests.tsx` — the processed list (console tab AND the owner panel on the event
+  page, same component) rendered every row; 47 of them pushed the page out under the pending
+  queue. Now `PROCESSED_PER_PAGE = 10` with the shared `misc/Pagination`.
+- **Client-side**: both lists come from the one `/api/get-bookings` query, so there is nothing
+  to fetch. One pager serves the phone cards and the desktop table — they slice the same
+  `processedRows`. The page number is **clamped** against the current length rather than
+  trusted, since a refetch can shrink the list under an open page.
+- The **pending** list is deliberately NOT paged: it is the work queue, sorted
+  soonest-expiring-first, and a hold about to lapse must not sit on page 2.
+
+### Free Months of Jetzy Premium on a referral code is ADMIN-ONLY
+- Was host-settable. Hosts read the field as something they had to fill in; it gives a
+  membership away and is an admin decision.
+- **UI** (`ReferralCodesManager.tsx`, role from `useSession`): the field is not rendered for a
+  non-admin, and the client **omits the key** rather than sending 0 — on an edit, omitted means
+  unchanged, so a host changing a discount cannot clear months an admin set.
+- **Server is the rule, the UI is the convenience**: `referral-codes/index.ts` writes 0 for a
+  non-admin whatever was sent; `[codeId].ts` skips the key unless admin. **Ignored, not 403** —
+  a stale tab or older client must still be able to create its code.
+- **A host still SEES months an admin put on their code** — that is what their buyers get. The
+  Free Premium column/row shows for a non-admin only when some code carries months
+  (`showFreePremium`), and Share is offered to a non-admin only on a code that has them
+  (`canOfferShare`). Without that, Share on a host's code could only ever answer "add free
+  months first", pointing at a field they no longer have.
+- Existing host-set months are **left alone** — no migration, nothing is zeroed.
+- A host revive (recreating a soft-deleted code) resets months to 0, like every other term.
+
+## Profile photo is positioned before upload (IMPLEMENTED 2026-10-06)
+
+- **`src/components/profile/ProfilePhotoCropper.tsx`** — drag to move, slider or pinch to zoom,
+  arrow keys to nudge. Shown inside `ProfileCompletionModal` in place of the form once a file is
+  picked; **Cancel** / **Use photo**. No new dependency (pointer events + one canvas).
+- **The alignment is BAKED INTO THE FILE, never stored as an offset.** The cropper draws the chosen
+  square to a canvas and that JPEG (max 1024px, never upscaled, white behind transparency) is what
+  `uploadFile(..., { folder: "photos" })` receives. `image` is read by the navbar, `/profile/[id]`
+  and the mobile app, each with its own cover-crop and no knowledge of an offset — a stored
+  x/y/zoom would be honoured by none of them. Nothing about `PUT /api/profile` or the backend
+  payload changed.
+- The crop is a **square**; the circle is only a guide (it is the shape the photo is shown in).
+  The dimmed corners are saved too.
+- **Offsets are clamped so the photo always covers the square** — zoom 1 is the short side
+  filling it, so no gap can be dragged into view.
+- **"Adjust position"** sits beside "Change photo" and reopens the SAME original where it was
+  left (`photoSource` holds the `File` + last `CropView`). Only for a photo chosen in this
+  sitting: a stored photo is a cross-origin url and a canvas that draws it is tainted, so a
+  previously saved photo offers "Change photo" only.
+- **A file the browser can't decode** (HEIC on desktop) skips the cropper and uploads as is —
+  the pre-cropper behaviour — rather than blocking the person at a gate they can't dismiss.
+- The form is **hidden, not unmounted**, while positioning: the file input and everything typed
+  live inside it.
+- The crop area is `touch-none` (or a drag scrolls the dialog) and its `<img>` is `max-w-none`
+  (Tailwind's preflight caps images at 100% of their box, which squashes a zoomed photo).
+
+### Create Event on a phone (IMPLEMENTED 2026-10-07)
+
+`/console/events/create` uses the same system below `md`; from `md` up it is pixel-identical (before/after diffs at 1280px and 820px = 0 pixels). No handler, field, autosave or submit logic changed.
+
+- **Same sections, same order as Manage**: Basics (open), Date & time, Location, Description, Tickets, Media (+ listing preview), Options, Interests & benefits. On a new event the summaries ("No date set", "0 ticket types") double as a checklist. Same `display: contents` + `order` technique, same `MobileSection`.
+- **Summaries are shared**: `scheduleSummary` / `textSummary` / `countSummary` live in `src/components/console/manage/sectionSummaries.ts` and both pages import them.
+- **Submit is in the fixed bar** — `ManageMobileActionBar` with no Preview, `leading={<AutosaveStatusPill …/>}`, `isDisabled={isSubmitting || isUploading}`, label `Save as Draft` / `Create Event` (the same expressions the desktop button uses). It calls `formikRef.current?.submitForm()`. The original **Status + Submit card is hidden on phones but stays mounted**, so its `type="submit"` button still makes Enter submit exactly as before. Don't remove it.
+- `ManageMobileActionBar` props are now `onPreview?`, `isDisabled?`, `leading?` (Manage's call is unchanged).
+- The top autosave pill row is hidden on phones (it is in the bar), which also stops it shifting the layout when it appears.
+- Date-poll option dialog and this page's own inline ticket dialog are `size={{ base: "full", md: "md" }}`.
+- **Scripted-edit trap (cost one bug here):** a whitespace-tolerant find/replace that strips leading whitespace will also eat the space BEFORE a mid-line pattern — it produced the class `rounded-mdtext-white`. The desktop pixel diff caught it. Match whole lines, or use exact strings for anything mid-line.
+
+### Ticket dialog on a phone (IMPLEMENTED 2026-10-08)
+
+The Add / Edit ticket dialog was full-screen on phones but still the desktop dialog stretched: a 400px description editor filled the screen, and the title and the Add / Cancel buttons scrolled away with the form.
+
+- **Below 768px the dialog is exactly one screen tall; the header and footer stay put and only the fields scroll.** Footer is Cancel (left, outlined) + the save button (right, wider), 48px, with safe-area padding. Inputs are 48px; Require Approval is one card.
+- **There are TWO copies of this dialog** - `TicketEditorModal` (Manage Event + the public event page) and the inline duplicate in `console/events/create.tsx`. Both spread the prop objects in **`src/components/events/ticketModalMobile.ts`**, so the layout has one definition. The copies themselves are NOT merged: their save/cancel logic, labels and toasts differ.
+- **Every rule in `ticketModalMobile.ts` is inside one `max-width: 47.99em` media query** (via `sx`). There is no `md` value to get wrong because nothing applies at those widths. Verified: both pages and both open dialogs diff to 0 pixels at 1280px, and the dialogs measure the same size before and after.
+- **`RichTextEditor` has `compactOnMobile`** (default off): 120px minimum height on phones instead of 400px, still grows with content. Only the two ticket dialogs pass it. The same media query also sets **every** editor's font to 16px on phones - iOS zooms into a contenteditable under 16px, exactly as it does an input.
+- `inputMode="decimal"` on Price and `inputMode="numeric"` on Quantity are keypad hints only; the fields are still `type="number"` and their value handling is unchanged.
+- `TicketMembershipToggles` (admin-only block) got phone touch targets: taller checkbox rows, 44px Monthly / Annual buttons, a 48px free-months input.
+
