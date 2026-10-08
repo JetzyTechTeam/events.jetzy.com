@@ -78,7 +78,8 @@ export default function BlastPreviewModal({
 	emailType?: BlastEmailType
 	attachments: BlastAttachment[]
 	targetType: string
-	status: string
+	/** A single status, or several since the composer became checkboxes. Passed straight through. */
+	status: string | string[]
 	hostName?: string
 	hostEmail?: string
 	/** "Anna Khan via Jetzy" — resolved server-side; shown here as the From line. */

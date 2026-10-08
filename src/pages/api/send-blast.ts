@@ -16,6 +16,7 @@ import type { BlastRecipient } from "@/lib/blast-delivery";
 import { blastAttachmentRefusal, type BlastAttachment } from "@/lib/blast-attachments";
 import { fetchBlastAttachments } from "@/lib/blast-attachments-server";
 import { blastFallbackName, buildBlastHtml, personalizeBlastHtml } from "@/lib/blast-template";
+import { blastStatusIsAll, parseBlastStatuses, serializeBlastStatuses } from "@/lib/blast-status";
 import {
   BLAST_TEST_MAX_PER_WINDOW,
   BLAST_TEST_RATE_LIMIT_MESSAGE,
@@ -50,6 +51,11 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
   // blank lines, and collapsing those would silently rewrite their copy.
   const blastSubject = typeof subject === "string" ? subject.trim() : "";
   const blastMessage = typeof message === "string" ? message.trim() : "";
+
+  // One selection, three shapes on the wire: an array from the new checkboxes, a bare string
+  // from every older caller, or a comma-joined string read back off a stored blast for a
+  // resend. `parseBlastStatuses` is the only thing that should ever read this field.
+  const statusForFilter = blastStatusIsAll(status) ? null : parseBlastStatuses(status);
 
   if (!event?._id) {
     return res.status(400).json({ error: "Event ID is required." });
@@ -146,12 +152,12 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
       // Find people with bookings for this event.
       // 'all' = every status (pending, approved, confirmed, cancelled, failed, refunded).
       const bookingFilter: any = { eventId: eventObjectId };
-      if (status !== 'all') bookingFilter.status = status;
+      if (statusForFilter) bookingFilter.status = { $in: statusForFilter };
       findPeople = await Bookings.find(bookingFilter).select('customerEmail customerName bookingRef status')
     } else {
       // Invitations. 'all' drops the status filter (mirror bookings).
       const inviteFilter: any = { eventId: eventObjectId };
-      if (status !== 'all') inviteFilter.status = status;
+      if (statusForFilter) inviteFilter.status = { $in: statusForFilter };
       findPeople = await EventInvitation.find(inviteFilter)
     }
 
@@ -298,7 +304,8 @@ export default async function sendBlast(req: NextApiRequest, res: NextApiRespons
           subject: blastSubject,
           message: blastMessage,
           targetType: targetType || "invitations",
-          status: status || "all",
+          // Serialized, so a single selection stores exactly the bare string it always did.
+          status: serializeBlastStatuses(status),
           emailType: emailType || "custom",
           recipientCount: findPeople.length,
           succeededCount: succeeded,

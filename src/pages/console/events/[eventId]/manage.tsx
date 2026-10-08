@@ -86,6 +86,8 @@ import DatePicker from "@/components/form/DatePicker"
 import TimePicker from "@/components/form/TimePicker"
 import { blurOnWheel } from "@/lib/number-input"
 import RichTextEditor from "@/components/misc/RichTextEditor"
+import { CheckboxGroup, Stack as ChakraStack } from "@chakra-ui/react"
+import { describeBlastStatuses, nextBlastStatusSelection, parseBlastStatuses } from "@/lib/blast-status"
 import EventDescription from "@/components/events/EventDescription"
 import AnswerText from "@/components/events/AnswerText"
 import InterestsSelector from "@/components/events/InterestsSelector"
@@ -2254,7 +2256,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlastModal: boolean; setSendBlastModal: (sendBlastModal: boolean) => void; event: any }) {
 	const [subject, setSubject] = useState("")
 	const [message, setMessage] = useState("")
-	const [status, setStatus] = useState("all")
+	const [status, setStatus] = useState<string[]>(["all"])
 	const [targetType, setTargetType] = useState("invitations")
 	const [emailType, setEmailType] = useState("custom")
 	const [loading, setLoading] = useState(false)
@@ -2271,7 +2273,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 		if (!sendBlastModal) {
 			setSubject("")
 			setMessage("")
-			setStatus("all")
+			setStatus(["all"])
 			setTargetType("invitations")
 			setEmailType("custom")
 			setAttachments([])
@@ -2283,7 +2285,9 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	}, [sendBlastModal])
 
 	const onSendBlast = async () => {
-		if (!status || !subject.trim() || !message.trim()) {
+		// `status` is an array now, so `!status` would never fire. An empty body in the rich-text
+		// editor is `<p><br></p>`, which is truthy - the text has to be stripped before trimming.
+		if (status.length === 0 || !subject.trim() || !stripHtml(message).trim()) {
 			setError("All fields are required.")
 			return
 		}
@@ -2349,7 +2353,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 							onChange={(e) => {
 								setTargetType(e.target.value)
 								// Reset status to "All" — valid first option in every target branch.
-								setStatus("all")
+								setStatus(["all"])
 							}}
 							isRequired
 							bg="#090C10"
@@ -2405,61 +2409,25 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 							</option>
 						</Select>
 						<Text fontWeight="bold">Status</Text>
-						<Select
-							mb={4}
+						{/* Checkboxes, not a dropdown: an admin needs pending AND approved in one send,
+						    rather than mailing the same blast twice and splitting the history in two. */}
+						<CheckboxGroup
 							value={status}
-							onChange={(e) => setStatus(e.target.value)}
-							isRequired
-							bg="#090C10"
-							borderColor="#444444"
-							color="white"
-							_placeholder={{ color: "gray.400" }}
-							_focus={{
-								bg: "#090C10",
-								borderColor: "#888",
-								color: "white",
-							}}
-							_hover={{
-								bg: "#090C10",
-								borderColor: "#666",
-							}}
+							onChange={(next) => setStatus(nextBlastStatusSelection(status, next as string[]))}
 						>
-							{targetType === "all" ? (
-								<option style={{ backgroundColor: "#090C10", color: "white" }} value="all">
-									All
-								</option>
-							) : targetType === "bookings" ? (
-								<>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="all">
-										All
-									</option>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="pending">
-										Pending
-									</option>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="approved">
-										Approved
-									</option>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="confirmed">
-										Confirmed
-									</option>
-								</>
-							) : (
-								<>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="all">
-										All
-									</option>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="pending">
-										Pending
-									</option>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="accepted">
-										Accepted
-									</option>
-									<option style={{ backgroundColor: "#090C10", color: "white" }} value="rejected">
-										Rejected
-									</option>
-								</>
-							)}
-						</Select>
+							<ChakraStack spacing={2} mb={4} pl={1}>
+								{(targetType === "all"
+									? [["all", "All"]]
+									: targetType === "bookings"
+										? [["all", "All"], ["pending", "Pending"], ["approved", "Approved"], ["confirmed", "Confirmed"]]
+										: [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"], ["rejected", "Rejected"]]
+								).map(([value, label]) => (
+									<Checkbox key={value} value={value} color="gray.300" size="sm">
+										{label}
+									</Checkbox>
+								))}
+							</ChakraStack>
+						</CheckboxGroup>
 						<h3 className="font-bold">Subject</h3>
 						<Input
 							type="text"
@@ -2475,18 +2443,11 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 						/>
 
 						<h3 className="font-bold">Body</h3>
-						<Textarea
-							rows={5}
-							placeholder="Enter your blast message here..."
-							value={message}
-							onChange={(e) => setMessage(e.target.value)}
-							mb={2}
-							isRequired
-							bg="#090C10"
-							borderColor="#444444"
-							color="white"
-							_placeholder={{ color: "gray.400" }}
-						/>
+						{/* The same editor the event description uses, so a blast is written and re-edited
+						    the same way everywhere. Quill emits HTML, which the template interpolates raw. */}
+						<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
+							<RichTextEditor value={message} onChange={(val) => setMessage(val)} placeholder="Write your message…" />
+						</Box>
 						{error && <Text color="red.500">{error}</Text>}
 
 						{/* Off when the host's own message already opens with a greeting - otherwise the guest
@@ -2686,7 +2647,8 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 
 	const onSend = async () => {
 		setSendResult(null)
-		if (!message.trim()) {
+		// `<p><br></p>` is the rich-text editor's empty state and is truthy - strip before trimming.
+		if (!stripHtml(message).trim()) {
 			flashResult("error", "Message is required.")
 			return
 		}
@@ -2730,7 +2692,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 	}
 
 	const onSaveEdit = async () => {
-		if (!editMessage.trim()) {
+		if (!stripHtml(editMessage).trim()) {
 			toast({ title: "Message is required.", status: "error", duration: 3000 })
 			return
 		}
@@ -2795,7 +2757,12 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 		setDeleteTarget(null)
 	}
 
-	const targetLabel = (b: any) => (b.targetType === "all" ? "All guests" : b.targetType === "bookings" ? "Bookings" : "Invitations")
+	const targetLabel = (b: any) => {
+		const where = b.targetType === "all" ? "All guests" : b.targetType === "bookings" ? "Bookings" : "Invitations"
+		// A blast can now name several statuses, and the row should say which.
+		const statuses = describeBlastStatuses(b.status)
+		return statuses && statuses !== "All" ? `${where} · ${statuses}` : where
+	}
 
 	return (
 		<Box>
@@ -2811,17 +2778,11 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 					color="white"
 					_placeholder={{ color: "gray.400" }}
 				/>
-				<Textarea
-					rows={4}
-					placeholder="Send a blast to your guests..."
-					value={message}
-					onChange={(e) => setMessage(e.target.value)}
-					mb={3}
-					bg="#090C10"
-					borderColor="#444444"
-					color="white"
-					_placeholder={{ color: "gray.400" }}
-				/>
+				{/* The same editor the event description uses, so a blast is written and re-edited
+				    the same way everywhere. Quill emits HTML, which the template interpolates raw. */}
+				<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
+					<RichTextEditor value={message} onChange={(val) => setMessage(val)} placeholder="Send a blast to your guests…" />
+				</Box>
 				{sendResult && (
 					<Text fontSize="sm" mb={3} color={sendResult.type === "success" ? "#48BB78" : sendResult.type === "warning" ? "#F79432" : "#FC8181"}>
 						{sendResult.text}
@@ -2892,7 +2853,7 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 										{b.subject || "(no subject)"}
 									</Text>
 									<Text color="#B5B6B7" fontSize="sm" noOfLines={2} mt={1}>
-										{b.message}
+										{stripHtml(b.message || "")}
 									</Text>
 									<Flex gap={3} mt={2} wrap="wrap" align="center">
 										<Badge colorScheme="orange">{targetLabel(b)}</Badge>
@@ -2992,16 +2953,11 @@ function BlastsManager({ event, onOpenAdvanced }: { event: any; onOpenAdvanced: 
 						<Text fontWeight="bold" mb={2}>
 							Message
 						</Text>
-						<Textarea
-							rows={6}
-							value={editMessage}
-							onChange={(e) => setEditMessage(e.target.value)}
-							mb={4}
-							bg="#090C10"
-							borderColor="#444444"
-							color="white"
-							_placeholder={{ color: "gray.400" }}
-						/>
+						{/* The same editor the event description uses, so a blast is written and re-edited
+						    the same way everywhere. Quill emits HTML, which the template interpolates raw. */}
+						<Box mb={3} sx={{ ".ql-container": { minHeight: "140px" } }}>
+							<RichTextEditor value={editMessage} onChange={(val) => setEditMessage(val)} placeholder="Write your message…" />
+						</Box>
 						<Text fontWeight="bold" mb={2}>
 							Images
 						</Text>
