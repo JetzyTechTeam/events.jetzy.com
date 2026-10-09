@@ -3699,10 +3699,17 @@ The field name was always on the wire (`path: ["benefits"]`) and was thrown away
 ### Counting, aligned
 
 - Benefits count code points, so an emoji no longer silently eats two of the 23.
-- **`desc` is 20000 on all three routes.** The "/500" under the editor stays as guidance, but the
-  three screens now count it identically — `create.tsx` used a bare tag-strip while the other two
-  used `stripHtml`, which also decodes entities and trims, so the same text read differently on
-  Create than on Manage.
+- **`desc` is 20000 on all three routes.** The three screens count it identically — `create.tsx`
+  used a bare tag-strip while the other two used `stripHtml`, which also decodes entities and
+  trims, so the same text read differently on Create than on Manage.
+- **The counter under the editor reads `/20,000`, not `/500`** (2026-10-09). The "/500" was a
+  literal kept "as guidance" and enforced nowhere, so a host stopped writing at a limit that did
+  not exist. Always `eventDescCounter(stripHtml(desc))` + `isEventDescOverLimit(desc)` from
+  `event-field-limits.ts`. They measure different things on purpose: the counter shows VISIBLE
+  characters (what a host can check), the over-limit test measures the STORED HTML in UTF-16
+  units (what zod's `.max()` refuses). So heavy formatting can turn the counter red while the
+  number is still under 20,000 — `EVENT_FIELD_MESSAGES.descOverWithFormatting` renders beside it
+  to say why. No client submit guard was added; the routes already return `descTooLong`.
 - **The title's 500 raw backstop is billed in code points** in `details.ts`, matching
   `clampEventTitle`. It was `.max(500)` (UTF-16 units), so a title the clamp accepted could still
   400 — which is exactly what `event-title.ts`'s docstring promises can never happen.

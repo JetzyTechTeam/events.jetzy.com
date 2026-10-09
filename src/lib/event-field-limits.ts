@@ -51,6 +51,25 @@ export const countWords = (value: string): number => (value || "").trim().split(
 export const EVENT_DESC_LIMIT = 20000
 
 /**
+ * "490/20,000" under the description editor. The counter read `/500` as a literal on all three
+ * forms while nothing anywhere enforced 500 — a host stopped writing at a limit that did not exist.
+ *
+ * Takes the VISIBLE text (the caller strips the HTML; this module stays dependency-free), because
+ * that is the number a host can check against what they typed. The fixed locale keeps the server
+ * render and the browser from disagreeing about the thousands separator.
+ */
+export const eventDescCounter = (visibleText: string): string =>
+	`${countChars(visibleText || "").toLocaleString("en-US")}/${EVENT_DESC_LIMIT.toLocaleString("en-US")}`
+
+/**
+ * The rule the three write routes actually apply: zod's `.max()` on the STORED value, which is
+ * the editor's HTML — tags, links and all — counted in UTF-16 units. So heavy formatting can go
+ * over while the visible count above is still under; this is what turns the counter red.
+ */
+export const isEventDescOverLimit = (storedHtml: string | undefined | null): boolean =>
+	(storedHtml || "").length > EVENT_DESC_LIMIT
+
+/**
  * Location and entrance are limited in WORDS; the character numbers below are only a paste
  * backstop, the same asymmetry `event-title.ts` has (150 non-whitespace characters, with
  * `EVENT_TITLE_RAW_LIMIT` as the `maxLength` the browser can actually express). A single input
@@ -110,6 +129,8 @@ export const EVENT_FIELD_MESSAGES = {
 	benefitsTooLong: "Those event benefits are too long to store. Shorten them and try again.",
 	tooManyBenefits: `You can have at most ${MAX_BENEFIT_COUNT} event benefits. Remove some and try again.`,
 	descTooLong: `A description can be at most ${EVENT_DESC_LIMIT.toLocaleString()} characters.`,
+	// Beside the counter, where the visible count can still read under the limit.
+	descOverWithFormatting: "Too long to save — formatting and links count too.",
 	locationTooLong: `A location can be at most ${EVENT_LOCATION_WORD_LIMIT} words.`,
 	venueNameTooLong: `A venue name can be at most ${EVENT_VENUE_NAME_LIMIT} characters.`,
 	entranceTooLong: `Arrival instructions can be at most ${EVENT_ENTRANCE_WORD_LIMIT} words.`,

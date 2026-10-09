@@ -97,7 +97,7 @@ import { roboto } from "@/lib/fonts";
 import RichTextEditor from "@/components/misc/RichTextEditor";
 import EventDescription from "@/components/events/EventDescription";
 import InterestsSelector from "@/components/events/InterestsSelector";
-import { MAX_BENEFIT_LENGTH, MAX_BENEFIT_COUNT, DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, benefitChips, withinWordLimit, wordCounter } from "@/lib/event-field-limits";
+import { MAX_BENEFIT_LENGTH, MAX_BENEFIT_COUNT, DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, benefitChips, eventDescCounter, isEventDescOverLimit, withinWordLimit, wordCounter } from "@/lib/event-field-limits";
 import { stripHtml } from "@/utils/text";
 import { useSession } from "next-auth/react";
 import { ticketMemberships, ticketMembershipInterval, ticketMembershipFreeMonths } from "@/lib/premium-bundle";
@@ -821,7 +821,10 @@ const CreateEventPage = () => {
                   <FormControl>
                     <FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
                     <RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
-                    <Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{countChars(stripHtml(values.desc || ""))}/500</Text>
+                    <Text fontSize="xs" color={isEventDescOverLimit(values.desc) ? "red.300" : "gray.500"} mt={1} textAlign="right">
+                      {isEventDescOverLimit(values.desc) && `${EVENT_FIELD_MESSAGES.descOverWithFormatting} `}
+                      {eventDescCounter(stripHtml(values.desc || ""))}
+                    </Text>
                   </FormControl>
                   </MobileSection>
                 </Box>
