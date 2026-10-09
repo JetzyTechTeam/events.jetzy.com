@@ -2458,7 +2458,10 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 	const [message, setMessage] = useState("")
 	const [status, setStatus] = useState<string[]>(["all"])
 	const [targetType, setTargetType] = useState("invitations")
-	const [emailType, setEmailType] = useState("custom")
+	// Event Availability was withdrawn (2026-10-09), leaving one layout - so there is nothing to
+	// choose and the dropdown went with it. Still SENT and still stored, so the wire format and
+	// the blast record are unchanged. See the note in CLAUDE.md before restoring the option.
+	const emailType = "custom"
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState("")
 	const [attachments, setAttachments] = useState<BlastAttachment[]>([])
@@ -2475,7 +2478,6 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 			setMessage("")
 			setStatus(["all"])
 			setTargetType("invitations")
-			setEmailType("custom")
 			setAttachments([])
 			setUploading(false)
 			setPreviewOpen(false)
@@ -2580,34 +2582,6 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 								Event Bookings
 							</option>
 						</Select>
-
-						<Text fontWeight="bold">Email Type</Text>
-						<Select
-							mb={4}
-							value={emailType}
-							onChange={(e) => setEmailType(e.target.value)}
-							isRequired
-							bg="#090C10"
-							borderColor="#444444"
-							color="white"
-							_placeholder={{ color: "gray.400" }}
-							_focus={{
-								bg: "#090C10",
-								borderColor: "#888",
-								color: "white",
-							}}
-							_hover={{
-								bg: "#090C10",
-								borderColor: "#666",
-							}}
-						>
-							<option style={{ backgroundColor: "#090C10", color: "white" }} value="custom">
-								Custom Message
-							</option>
-							<option style={{ backgroundColor: "#090C10", color: "white" }} value="availability">
-								Event Availability
-							</option>
-						</Select>
 						<Text fontWeight="bold">Status</Text>
 						{/* Checkboxes, not a dropdown: an admin needs pending AND approved in one send,
 						    rather than mailing the same blast twice and splitting the history in two. */}
@@ -2683,7 +2657,7 @@ function SendBlastModal({ sendBlastModal, setSendBlastModal, event }: { sendBlas
 							eventName={event.name}
 							eventLink={eventUrl(process.env.NEXT_PUBLIC_URL || "", event.slug)}
 							event={event}
-							emailType={emailType as "custom" | "availability"}
+							emailType={emailType}
 							attachments={attachments}
 							greetByName={greetByName}
 							targetType={targetType}
