@@ -11,7 +11,7 @@ import { allowedMediaCount } from "@/lib/event-media-limit"
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { uploadFile } from "@/services/upload.service"
 import BenefitsField from "@/components/events/BenefitsField"
-import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, benefitChips, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
+import { DATE_POLL_OPTION_LABEL_LIMIT, DATE_POLL_QUESTION_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, benefitChips, eventDescCounter, isEventDescOverLimit, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import PremiumEventBadge from "@/components/events/PremiumEventBadge"
 import type { PlaceSelection } from "@/lib/google-place"
 import type { TicketData } from "@/components/events/TicketCard"
@@ -1688,7 +1688,10 @@ export default function HostedEvents({ event }: Props) {
 										    host wrote in the console. `EventDescription` below already
 										    sanitises and renders that HTML for guests. */}
 										<RichTextEditor value={draftDesc} onChange={setDraftDesc} placeholder="Add Description" />
-										<p className="text-xs text-[#8a8a8a] mt-1 text-right">{countChars(stripHtml(draftDesc || ""))}/500</p>
+										<p className={`text-xs mt-1 text-right ${isEventDescOverLimit(draftDesc) ? "text-red-300" : "text-[#8a8a8a]"}`}>
+											{isEventDescOverLimit(draftDesc) && `${EVENT_FIELD_MESSAGES.descOverWithFormatting} `}
+											{eventDescCounter(stripHtml(draftDesc || ""))}
+										</p>
 										<InlineEditActions section="description" />
 										</>)}
 

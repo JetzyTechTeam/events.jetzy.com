@@ -102,7 +102,7 @@ import { ApprovalDialogs } from "@/components/console/approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "@/components/console/approvals/ApprovalActions"
 import { HoldExpiry } from "@/components/bookings/PaymentBadge"
 import BenefitsField from "@/components/events/BenefitsField"
-import { DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, countChars, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
+import { DATE_POLL_OPTION_LABEL_LIMIT, EVENT_ENTRANCE_LIMIT, EVENT_ENTRANCE_WORD_LIMIT, EVENT_FIELD_MESSAGES, EVENT_LOCATION_WORD_LIMIT, eventDescCounter, isEventDescOverLimit, withinWordLimit, wordCounter } from "@/lib/event-field-limits"
 import TicketEditorModal from "@/components/events/TicketEditorModal"
 import ListingCardPreview from "@/components/events/ListingCardPreview"
 import TimezoneSelect from "@/components/timezone-select"
@@ -1821,7 +1821,10 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 													<FormControl>
 														<FormLabel className={roboto.className} color="#FFFFFF" fontSize="12px" lineHeight="100%" fontWeight={400} mb={2}>Description</FormLabel>
 														<RichTextEditor value={values.desc} onChange={(val) => setFieldValue("desc", val)} placeholder="Add Description" />
-														<Text fontSize="xs" color="gray.500" mt={1} textAlign="right">{countChars(stripHtml(values.desc || ""))}/500</Text>
+														<Text fontSize="xs" color={isEventDescOverLimit(values.desc) ? "red.300" : "gray.500"} mt={1} textAlign="right">
+															{isEventDescOverLimit(values.desc) && `${EVENT_FIELD_MESSAGES.descOverWithFormatting} `}
+															{eventDescCounter(stripHtml(values.desc || ""))}
+														</Text>
 													</FormControl>
 													</MobileSection>
 												</Box>
