@@ -648,7 +648,9 @@ export default function HostedEvents({ event }: Props) {
 				payload.requireApproval = draftRequireApproval
 				payload.locationDisclosedAfterBooking = draftLocationDisclosed
 				payload.showOnMobile = draftShowOnMobile
-				payload.premiumEvent = draftPremiumEvent
+				// Admin-only, and OMITTED for a host rather than sent as false — `/details` moves
+				// a key only when it is sent, so leaving it out is what keeps an admin's tag.
+				if (isAdmin) payload.premiumEvent = draftPremiumEvent
 			// `capacity` is no longer sent from here — there is no input for it any more, and
 			// sending a value this form no longer collects would write `0` (= unlimited) over a
 			// ceiling a live event still relies on. `/details` still accepts the key; nothing
@@ -1750,7 +1752,9 @@ export default function HostedEvents({ event }: Props) {
 												</Flex>
 												{/* Same toggle as both event forms — a curation tag that badges and
 												    filters the event. Nothing to do with the retired member-discount
-												    "Premium Event", or with the per-ticket Jetzy Premium bundle. */}
+												    "Premium Event", or with the per-ticket Jetzy Premium bundle.
+												    ADMIN-ONLY: the tag is Jetzy's curation, not the host's to award. */}
+												{isAdmin && (
 												<Flex align="center" justify="space-between" gap={4}>
 													<Box>
 														<Text color="white" fontWeight={500}>Premium Event</Text>
@@ -1760,6 +1764,7 @@ export default function HostedEvents({ event }: Props) {
 													</Box>
 													<Switch colorScheme="orange" isChecked={draftPremiumEvent} onChange={(e) => setDraftPremiumEvent(e.target.checked)} />
 												</Flex>
+												)}
 												{/* Draft/published is a workflow, not an edit — publishing from the
 												    public page would be a surprising place to do it. */}
 												<Text fontSize="xs" color="#8a8a8a">

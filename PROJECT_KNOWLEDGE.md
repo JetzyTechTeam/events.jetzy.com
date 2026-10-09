@@ -1422,13 +1422,19 @@ Consumers: `api/events/index.ts` (public list), `console/events/index.tsx` getSe
 Per-card status badge (LIVE green / UPCOMING orange / TBD gray / ENDED gray) on both public `EventCard` and My Events `ListingCard`. NOTE: event lifecycle `status` (draft/published) is separate from `timeStatus` — do not conflate.
 
 ## Feature: Premium Event tag (`premiumEvent`, 2026-09-03)
-A host toggle in **Event Options** on both event forms that badges and filters an event. **It is a curation tag and nothing else** — no pricing, no membership, no hosting gate.
+An **admin-only** toggle in **Event Options** that badges and filters an event. **It is a curation tag and nothing else** — no pricing, no membership, no hosting gate.
+
+- **ADMIN-ONLY since 2026-10-09.** It was a host toggle; a host could tag their own event Premium, and the tag is Jetzy's curation. Same shape as free months on a referral code — **hidden in the UI, ignored on the server, never a 403**, so a stale tab still saves everything else.
+  - **UI:** the switch renders only for `admin` / `super admin` on all three edit surfaces. `HostedEvents.tsx` also **omits** the key for a host rather than sending `false` — `/details` moves a key only when sent, so omitting is what keeps an admin's tag.
+  - **Server (the actual rule):** `create.ts` writes `false` for a non-admin; `update.ts` and `details.ts` treat a non-admin's value as omitted (neither sets nor clears); `clone.ts` gives a non-admin an **untagged** copy (cloning must not mint a Premium event nobody chose); `draft-revision.ts` **deletes the key from a non-admin's draft**.
+  - **Why the draft matters:** a shadow draft is read back as the manage form's seed by whoever opens it next. A host's draft carrying `premiumEvent: true` would be published by the first admin to press Update Event. With the key gone, `manage.tsx`'s draft seed falls back to the live event's value.
+  - A host still **sees** the badge and the "· Premium" section summary — only the control is gone. Events a host tagged before this stay tagged; no migration.
 
 - **Not the deprecated `premium` field.** That one was the retired member-discount concept and stays dead (kept only so the shared collection and the mobile app are undisturbed). Two separate fields on purpose; the comments beside both say so. Nor is it `@/components/premium/PremiumBadge`, which marks a premium *subscriber*.
 - Schema `premiumEvent: { type: Boolean, default: false }` (`src/models/events/index.ts`), `IEvent.premiumEvent?`, `CreateEventFormData.premiumEvent?`.
 - `create.ts` writes `premiumEvent ?? false`. **`update.ts` is preserve-on-omit** (`...(premiumEvent !== undefined ? …)`) like `mediaOrder` — the mobile app and the admin portal write this collection and must not clear a host's tag by not knowing about it. `details.ts` accepts it too — the toggle is in the **Event Options block of the on-page inline editor** alongside Require Approval / Show on Mobile, so it is in that route's zod schema, its `set`, **and its `.select()` projection** (a field missing from that projection never comes back in the response).
 - Autosave needs nothing — `buildEventPayload` spreads `...values`.
-- **Three edit surfaces, all of which must keep the toggle**: Create Event, Manage Event, and the inline "Edit" on the public event page (`HostedEvents.tsx` → `draftPremiumEvent`, seeded in `startEventEdit`, sent in `saveEventEdits`).
+- **Three edit surfaces, all of which must keep the toggle (for an admin)**: Create Event, Manage Event, and the inline "Edit" on the public event page (`HostedEvents.tsx` → `draftPremiumEvent`, seeded in `startEventEdit`, sent in `saveEventEdits`).
 - Badge component: **`src/components/events/PremiumEventBadge.tsx`**, one definition for every surface. Plain markup, not Chakra, so it drops into the Tailwind pages. **Shown to everyone**, unlike the PRIVATE badge, which is admin-only.
   - Public/dashboard card (`EventListingCard`): absolute **top-left** — status + PRIVATE own the top-right, benefits own the bottom.
   - My Events row (`console/events/index.tsx` → `ListingCard`): **right edge**, above Manage Event, not in the badge cluster by the title (that cluster is *state*: status/DRAFT/PENDING/PRIVATE).

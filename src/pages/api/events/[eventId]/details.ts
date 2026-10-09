@@ -194,7 +194,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (requireApproval !== undefined) set.requireApproval = requireApproval
 		if (locationDisclosedAfterBooking !== undefined) set.locationDisclosedAfterBooking = locationDisclosedAfterBooking
 		if (showOnMobile !== undefined) set.showOnMobile = showOnMobile
-		if (premiumEvent !== undefined) set.premiumEvent = premiumEvent
+		// ADMIN-ONLY, same rule as `update.ts`: ignored for a host, never a 403.
+		if (isAdmin && premiumEvent !== undefined) set.premiumEvent = premiumEvent
 		if (capacity !== undefined) set.capacity = capacity
 
 		// Only written when actually sent — `update.ts` writes `privacy` unconditionally, so an

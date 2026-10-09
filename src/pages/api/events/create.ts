@@ -337,7 +337,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			benefits,
 			locationDisclosedAfterBooking: locationDisclosedAfterBooking ?? false,
 			showOnMobile: showOnMobile ?? true,
-			premiumEvent: premiumEvent ?? false,
+			// ADMIN-ONLY. The Premium tag is Jetzy's curation, not something a host awards
+			// their own event. Ignored rather than refused for a non-admin, so a stale tab
+			// that still shows the old toggle creates its event instead of failing.
+			premiumEvent: isAdminRole((session.user as any)?.role) ? premiumEvent ?? false : false,
 			status: status ?? 'published',
 			interests: interests ?? [],
 			datePoll: datePoll?.isActive && datePoll.options.length > 0
