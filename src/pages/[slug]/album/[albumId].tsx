@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { eventAlbumPath, eventAlbumUrl, eventPath, findEventByPreviousSlug, withQuery } from "@/lib/event-slug"
+import { ALBUM_DESCRIPTION_LIMIT, ALBUM_TITLE_LIMIT, albumFieldCounter, albumFieldRefusal } from "@/lib/album-field-limits"
 import Head from "next/head"
 import { GetServerSideProps } from "next"
 import { useRouter } from "next/router"
@@ -359,8 +360,9 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 
 	const saveEdits = async () => {
 		const cleanTitle = draftTitle.trim()
-		if (!cleanTitle) {
-			toast({ title: "The album needs a title", status: "warning", duration: 3000, isClosable: true })
+		const refusal = albumFieldRefusal({ title: draftTitle, description: draftDescription })
+		if (refusal) {
+			toast({ title: refusal, status: "warning", duration: 3500, isClosable: true })
 			return
 		}
 		if (draft.length === 0) {
@@ -705,9 +707,12 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 											borderColor="#343536"
 											borderRadius="10px"
 											color="white"
-											mb={3}
-											maxLength={120}
+											mb={1}
+											maxLength={ALBUM_TITLE_LIMIT}
 										/>
+										<Text fontSize="xs" textAlign="right" mb={2} color={draftTitle.length >= ALBUM_TITLE_LIMIT ? "#F79432" : "#8a8a8a"}>
+											{albumFieldCounter(draftTitle, ALBUM_TITLE_LIMIT)}
+										</Text>
 										<Text fontSize="xs" color="#8a8a8a" mb={1}>Description</Text>
 										<Textarea
 											value={draftDescription}
@@ -718,7 +723,7 @@ function AlbumPhotoTourPage({ album: albumJson, event: eventJson }: { album: str
 											borderRadius="10px"
 											color="white"
 											rows={3}
-											maxLength={2000}
+											maxLength={ALBUM_DESCRIPTION_LIMIT}
 										/>
 										{/* Undefined means SHOW — albums predating the toggle carry no
 										    value, so this must not be rendered as an unchecked box. */}

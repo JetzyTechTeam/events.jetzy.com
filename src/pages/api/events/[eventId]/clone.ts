@@ -124,8 +124,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			benefits: source.benefits,
 			locationDisclosedAfterBooking: source.locationDisclosedAfterBooking,
 			showOnMobile: source.showOnMobile,
-			// Curation tag — badge + filter. `?? false` like create.ts.
-			premiumEvent: source.premiumEvent ?? false,
+			// Curation tag — badge + filter. ADMIN-ONLY, like create.ts: a host cloning an
+			// event an admin tagged would otherwise mint a second Premium event nobody chose.
+			premiumEvent: isAdmin ? source.premiumEvent ?? false : false,
 			feedbackFormUrl: source.feedbackFormUrl,
 			interests: source.interests,
 			// reset votes on every poll option so the clone starts clean

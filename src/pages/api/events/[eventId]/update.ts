@@ -359,8 +359,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 				showOnMobile: showOnMobile ?? false,
 				// Preserve-on-omit, like mediaOrder above — the mobile app and the admin portal
 				// write this collection and know nothing about the flag; a payload without it
-				// must not clear the host's tag.
-				...(premiumEvent !== undefined ? { premiumEvent } : {}),
+				// must not clear the tag.
+				// ADMIN-ONLY to change: a host's save is treated as omitted, so it neither sets
+				// the tag nor clears one an admin gave the event. Ignored, not a 403 — Manage
+				// Event sends every field on every save and must still save the rest.
+				...(isAdmin && premiumEvent !== undefined ? { premiumEvent } : {}),
 				status: status ?? 'published',
 				interests: interests ?? [],
 				// Built above, with the stored votes re-attached by option id.

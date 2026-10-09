@@ -76,6 +76,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 			return sendResponse(res, null, "Invalid payload.", false, ResCode.BAD_REQUEST)
 		}
 
+		// The Premium tag is admin-only, and `update.ts` already ignores it from a host. It is
+		// dropped HERE as well because a draft is read back as the seed for the manage form by
+		// whoever opens it next: a host's draft carrying `premiumEvent: true` would be published
+		// by the first admin to press Update Event. Absent, the form falls back to the live value.
+		if (!isAdmin) delete payload.premiumEvent
+
 		const savedAt = new Date()
 		// `timestamps: false`: autosaving a shadow draft does NOT change the live event, so it
 		// must not move `updatedAt`. Manage Event compares the draft's `savedAt` against

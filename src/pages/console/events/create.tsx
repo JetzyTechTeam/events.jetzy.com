@@ -923,7 +923,10 @@ const CreateEventPage = () => {
                   {/* The OLD "Premium Event" toggle and its member-discount % stay removed —
                       Jetzy Premium is SOLD per ticket now, see "Includes Jetzy Premium" on each
                       ticket. The toggle below is a different thing entirely: `premiumEvent` is a
-                      curation tag that badges and filters the event and touches no pricing. */}
+                      curation tag that badges and filters the event and touches no pricing.
+                      ADMIN-ONLY: the tag is Jetzy's curation, so a host is not shown the switch
+                      at all (and `create.ts` writes false for one whatever is sent). */}
+                  {isAdmin && (
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
                       <Text fontSize="22px" lineHeight="24px" color="#F5C518">★</Text>
@@ -941,6 +944,7 @@ const CreateEventPage = () => {
                       onChange={() => setFieldValue("premiumEvent", !values.premiumEvent)}
                     />
                   </Flex>
+                  )}
 
                   <Flex align="center" justifyContent="space-between" mb={4}>
                     <Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>

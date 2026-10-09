@@ -631,6 +631,10 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 				tickets: (rest.tickets || []).map(mapDraftTicket),
 				images: NO_MEDIA,
 				status: intendedStatus === "draft" ? "draft" : "published",
+				// A host's draft carries no Premium tag (the server drops it — the tag is
+				// admin-only), so fall back to the live event or the switch reads off on an
+				// event that is tagged.
+				premiumEvent: rest.premiumEvent ?? (event.premiumEvent || false),
 			} as CreateEventFormData
 		}
 
@@ -1887,7 +1891,10 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 													{/* The OLD "Premium Event" toggle and its member-discount % stay removed —
 													    Jetzy Premium is SOLD per ticket now, see "Includes Jetzy Premium" on each
 													    ticket. The toggle below is a different thing entirely: `premiumEvent` is a
-													    curation tag that badges and filters the event and touches no pricing. */}
+													    curation tag that badges and filters the event and touches no pricing.
+													    ADMIN-ONLY: the tag is Jetzy's curation, so a host is not shown the
+													    switch at all (and `update.ts` ignores the field from one). */}
+													{isAdmin && (
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
 															<Text fontSize="22px" lineHeight="24px" color="#F5C518">★</Text>
@@ -1905,6 +1912,7 @@ function Manage({ event: eventProp, isAuthorized = true, pendingApprovalCount = 
 															onChange={() => setFieldValue("premiumEvent", !values.premiumEvent)}
 														/>
 													</Flex>
+													)}
 
 													<Flex align="center" justifyContent="space-between" mb={4}>
 														<Flex gap="3" alignItems="center" sx={{ "& > svg": { width: "24px", height: "24px" } }}>
