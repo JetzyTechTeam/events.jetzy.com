@@ -8,16 +8,22 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/pages/api/auth/[...nextauth]"
 import { Types } from "mongoose"
 import zod from "zod"
+import { ALBUM_DESCRIPTION_LIMIT, ALBUM_FIELD_MESSAGES, ALBUM_TITLE_LIMIT } from "@/lib/album-field-limits"
 
 const mediaSchema = zod.object({
-	url: zod.string().url(),
-	type: zod.enum(["image", "video"]),
+	url: zod.string({ required_error: ALBUM_FIELD_MESSAGES.mediaInvalid }).url(ALBUM_FIELD_MESSAGES.mediaInvalid),
+	type: zod.enum(["image", "video"], { errorMap: () => ({ message: ALBUM_FIELD_MESSAGES.mediaInvalid }) }),
 })
 
 const updateAlbumSchema = zod.object({
-	title: zod.string().min(1).max(120),
-	description: zod.string().max(2000).optional(),
-	media: zod.array(mediaSchema).min(1, "Add at least one photo or video"),
+	title: zod
+		.string({ required_error: ALBUM_FIELD_MESSAGES.titleRequired })
+		.min(1, ALBUM_FIELD_MESSAGES.titleRequired)
+		.max(ALBUM_TITLE_LIMIT, ALBUM_FIELD_MESSAGES.titleTooLong),
+	description: zod.string().max(ALBUM_DESCRIPTION_LIMIT, ALBUM_FIELD_MESSAGES.descriptionTooLong).optional(),
+	media: zod
+		.array(mediaSchema, { required_error: ALBUM_FIELD_MESSAGES.mediaRequired })
+		.min(1, ALBUM_FIELD_MESSAGES.mediaRequired),
 	showEvents: zod.boolean().optional(),
 })
 
@@ -61,7 +67,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		if (req.method === "PUT") {
 			const validation = updateAlbumSchema.safeParse(req.body)
 			if (!validation.success) {
-				return sendResponse(res, validation.error.errors, "Invalid album data", false, ResCode.BAD_REQUEST)
+				// Same rule as the create route: say which field and what the limit is.
+				const reason = validation.error.errors[0]?.message || ALBUM_FIELD_MESSAGES.fallback
+				return sendResponse(res, validation.error.errors, reason, false, ResCode.BAD_REQUEST)
 			}
 			const { title, description, media, showEvents } = validation.data
 			album.title = title

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react"
 import { eventAlbumPath, eventAlbumUrl } from "@/lib/event-slug"
+import { ALBUM_DESCRIPTION_LIMIT, ALBUM_TITLE_LIMIT, albumFieldCounter, albumFieldRefusal } from "@/lib/album-field-limits"
 import {
 	Box,
 	Button,
@@ -1622,8 +1623,11 @@ function AlbumFormModal({
 	}
 
 	const handleSave = async () => {
-		if (!title.trim()) {
-			toast({ title: "Title is required", status: "warning", duration: 2500, isClosable: true })
+		// The inputs cap themselves, but `maxLength` is not a guarantee — some phone keyboards
+		// commit a composed word past it — so the rule is checked here in the server's own words.
+		const refusal = albumFieldRefusal({ title, description })
+		if (refusal) {
+			toast({ title: refusal, status: "warning", duration: 3500, isClosable: true })
 			return
 		}
 		const media = staged.filter((s) => !s.uploading && !s.error && s.url).map((s) => ({ url: s.url as string, type: s.type }))
@@ -1657,10 +1661,15 @@ function AlbumFormModal({
 				<ModalCloseButton />
 				<ModalBody>
 					<Text fontSize="sm" color="#bbb" mb={1}>Title</Text>
-					<Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Album title" bg="#1E1E1E" borderColor="#343536" color="white" mb={4} _placeholder={{ color: "#666" }} />
+					<Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Album title" maxLength={ALBUM_TITLE_LIMIT} bg="#1E1E1E" borderColor="#343536" color="white" mb={1} _placeholder={{ color: "#666" }} />
+					{/* The counter is what tells a host WHY typing stopped — a capped input with
+					    no number beside it just looks like a stuck keyboard. */}
+					<Text fontSize="xs" textAlign="right" mb={3} color={title.length >= ALBUM_TITLE_LIMIT ? "#F79432" : "#8a8a8a"}>
+						{albumFieldCounter(title, ALBUM_TITLE_LIMIT)}
+					</Text>
 
 					<Text fontSize="sm" color="#bbb" mb={1}>Description (optional)</Text>
-					<Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description" bg="#1E1E1E" borderColor="#343536" color="white" mb={4} _placeholder={{ color: "#666" }} />
+					<Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description" maxLength={ALBUM_DESCRIPTION_LIMIT} bg="#1E1E1E" borderColor="#343536" color="white" mb={4} _placeholder={{ color: "#666" }} />
 
 					{/* Hosts don't always want the album page selling other events — a client
 					    handover gallery, say. Off hides the rail on this album's page only. */}
