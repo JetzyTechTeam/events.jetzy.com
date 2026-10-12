@@ -3864,3 +3864,17 @@ Below `md` only; ten before/after captures (both bookings pages, Manage's Approv
 - **Approvals / Guests cards, hold countdown**: `HoldExpiry` sets no font size. The table gave it 14px; a card let it inherit 16px, so "in 6 days" outgrew the badge above it. The cards wrap it at 12px, and the Approvals card says "Hold expires" in front of it. `HoldExpiry` itself is unchanged - **wrap it, don't restyle it**, other screens rely on inheriting.
 - **Event page, date-poll teaser**: avatars and "N voted" shared the row with the text and left it ~90px wide. On phones they sit under the text; one `voters` const renders in whichever place applies.
 
+### Premium Applications + My Events on a phone (IMPLEMENTED 2026-10-12)
+
+Before/after captures at 1280px and 820px diff to 0 pixels on both screens (Pending and Processed tabs; My Events as admin, as host, and with the Pending filter selected). No handler or condition changed.
+
+**Premium Applications** (`/console/admin/premium-applications`, admin-only) - below `md`
+- Pending and Processed render a card per application instead of a table; Approve / Decline are a full-width 44px row, where the table had pushed them off-screen.
+- `applicationActions(application)` and `planCell(application, withTrial)` are the one definition of the two buttons and of the plan + "Nmo free" badge - the table cell and the card both render them.
+- The page no longer adds its own 16px gutter on phones (it sat inside `ConsoleLayout`'s, insetting everything 32px).
+
+**My Events** (`/console/events`) - below its OWN breakpoints, which are kept
+- This page predates the redesign and switches at Tailwind `sm` (640px) for the card and Chakra `sm` (480px) for the search row - not at `md` like the newer screens. They were left alone so everything from 640px up is untouched (verified at 700px as well).
+- Search box takes the row and Search / Clear share the next one; the filter chips are one sideways-scrolling row; Approve takes a row with Manage and Delete side by side under it; paging is one row.
+- **The selected chip is scrolled into view within the row** (`chipRowRef`, keyed on `filter`), and again on `document.fonts.ready`: the chips widen when the web font swaps in, which pushed the selected chip back past the edge after the first pass. It sets `scrollLeft` on the row only - never scrolls the page.
+
