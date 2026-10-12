@@ -79,6 +79,10 @@ interface EventGuest {
 	checkedInBy: string
 }
 
+// Phones only (below Chakra's `md`, 768px). Every rule that uses this sits inside the media
+// query, so nothing here can reach a tablet or a desktop.
+const PHONE = "@media screen and (max-width: 47.99em)"
+
 const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => {
 	const [identifier, setIdentifier] = useState("")
 	const [bookingInfo, setBookingInfo] = useState<BookingInfo | null>(null)
@@ -525,11 +529,11 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 	}
 
 	return (
-		<Box maxW="600px" mx="auto" p={4}>
+		<Box maxW="600px" mx="auto" p={4} sx={{ [PHONE]: { padding: 0 } }}>
 			<VStack spacing={6} align="stretch">
 				{/* Header */}
 				<Box textAlign="center">
-					<Heading size="lg" mb={2} color="white">
+					<Heading size="lg" mb={2} color="white" sx={{ [PHONE]: { fontSize: "22px" } }}>
 						Event Check-In Portal
 					</Heading>
 					{/* Door staff are always on a phone here. Without `overflowWrap="anywhere"` a
@@ -549,6 +553,13 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 							</Text>
 							<Input
 								placeholder="Email Address"
+								// Keyboard hints for a phone at the door: the @ keyboard, and no
+								// auto-capitalised or "corrected" address. Nothing about the value
+								// that is typed, validated or sent changes.
+								inputMode="email"
+								autoCapitalize="none"
+								autoCorrect="off"
+								spellCheck={false}
 								value={identifier}
 								onChange={(e) => setIdentifier(e.target.value)}
 								onKeyPress={(e) => e.key === "Enter" && handleValidate()}
@@ -615,7 +626,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 									<Text fontSize="sm" color="gray.400">
 										Email
 									</Text>
-									<Text color="white">{bookingInfo.customerEmail}</Text>
+									<Text color="white" sx={{ [PHONE]: { overflowWrap: "anywhere" } }}>{bookingInfo.customerEmail}</Text>
 								</Box>
 
 								<Box>
@@ -667,7 +678,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 												</Text>
 												<NumberInput value={guestCount} onChange={(valueString) => setGuestCount(Number(valueString))} min={1} max={bookingInfo.remainingTickets} size="lg" bg="#1E1E1E">
 													<NumberInputField color="white" borderColor="#434343" _focus={{ borderColor: "#F79432" }} />
-													<NumberInputStepper>
+													<NumberInputStepper sx={{ [PHONE]: { width: "44px" } }}>
 														<NumberIncrementStepper color="white" borderColor="#434343" />
 														<NumberDecrementStepper color="white" borderColor="#434343" />
 													</NumberInputStepper>
@@ -711,6 +722,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 																}
 															}}
 															style={{ cursor: "pointer" }}
+															className="w-5 h-5 shrink-0 md:w-auto md:h-auto"
 														/>
 														<Text color="white" fontSize="sm">
 															Collect guest details (optional)
@@ -731,7 +743,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 																			</Badge>
 																		)}
 																	</HStack>
-																	<VStack spacing={2}>
+																	<VStack spacing={2} sx={{ [PHONE]: { "& input": { height: "44px", fontSize: "16px" } } }}>
 																		<Input
 																			placeholder="Full Name"
 																			value={guestDetails[index]?.name || ""}
@@ -849,7 +861,7 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 								) : (
 									<VStack spacing={2} align="stretch" maxH="400px" overflowY="auto">
 										{guestList.map((guest) => (
-											<Box key={guest.id} p={3} bg="#2A2A2A" borderRadius="md">
+											<Box key={guest.id} p={3} bg="#2A2A2A" borderRadius="md" sx={{ [PHONE]: { "& p": { overflowWrap: "anywhere" } } }}>
 												<HStack justify="space-between" mb={1}>
 													<Text fontWeight="semibold" color="white">
 														{guest.guestName}
@@ -918,7 +930,10 @@ const CheckInPortal: React.FC<CheckInPortalProps> = ({ eventId, eventName }) => 
 							)}
 						</VStack>
 					</ModalBody>
-					<ModalFooter>
+					{/* Phones: two thumb-sized buttons, clear of the home indicator. Cancel is a ghost
+				    button whose default text colour is near-black - on this black window it could
+				    barely be seen, so it gets white text and an outline there. */}
+				<ModalFooter sx={{ [PHONE]: { paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))", "& > button": { flex: "1 1 0", height: "48px" }, "& > button:last-of-type": { color: "white", border: "1px solid #555" } } }}>
 						<Button colorScheme="orange" mr={3} onClick={captureImage} isLoading={isScanning} loadingText="Scanning..." disabled={isScanning}>
 							Capture & Scan
 						</Button>

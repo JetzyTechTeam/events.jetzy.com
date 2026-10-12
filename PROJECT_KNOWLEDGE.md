@@ -3893,3 +3893,16 @@ An admin scanning a list of events could see tickets and guests on each card but
 - **`null` is not zero.** `getEventViewCounts` returns `null` when the count couldn't be read, and `attachEventViewCounts` then returns the events untouched. Both cards render on `typeof totalViews === "number"`, so a failed count shows nothing rather than a false "0 views", and a listing never fails because analytics did.
 - Rendered in `EventListingCard` (`👁 N` beside guests/tickets, in the existing admin-only row — so `previewAsGuest` hides it for free) and My Events' `ListingCard` (`👁 N views`, gated on `props.isAdmin`). `toLocaleString("en-US")` with an explicit locale: My Events is server-rendered.
 - **Hosts don't get it on their cards**, by request. They still read Views on Manage Event for their own events. To extend it, drop the `isAdmin` condition in the console `getServerSideProps` — that list is already narrowed to `ownerId`.
+
+### Check-in portal on a phone (IMPLEMENTED 2026-10-13)
+
+`/console/events/[eventId]/check-in` is the one console screen used almost entirely on a phone, at the door, and it had no phone work at all. Below `md` only; six before/after captures (the page, a validated booking with guest details open, the scanner window - at 1280px and 820px) diff to 0 pixels. No handler changed: validate, check-in, guest details, scanning and the 30-second stats refresh are untouched.
+
+- **Stats are one row of four small tiles** (`CheckInStats`, `columns={{ base: 4, md: 2, lg: 4 }}`). Stacked one per row they were about 500px tall, so the email box and Scan button started below the first screen. The helper line under each number is hidden on phones.
+- **One gutter instead of three.** `ConsoleLayout`, the page `Container` and the portal `Box` each added 16px, leaving the form 48px in from both edges of a 390px screen.
+- **Email box** has `inputMode="email"`, `autoCapitalize="none"`, `autoCorrect="off"`, `spellCheck={false}` - keyboard hints only; what is typed, validated and sent is unchanged.
+- **Guest-details inputs are 44px / 16px** on phones (`size="sm"` is 32px with 14px text, and iOS zooms under 16px). The "Collect guest details" checkbox is 20px there; the guest-count stepper has a 44px-wide tap area.
+- **Scanner window**: Capture & Scan and Cancel are a full-width 48px row with safe-area padding. Cancel is a ghost button whose default text colour is near-black - on the scanner's black window it could barely be seen, so on phones it gets white text and an outline. (It is still near-invisible on desktop; left alone to keep desktop pixel-identical.)
+- Every phone rule in `CheckInPortal.tsx` / `CheckInStats.tsx` goes through one `PHONE` media-query constant via `sx`, so none of it can reach a tablet or desktop.
+- **Testing note:** the scanner window can be opened in headless Chrome with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`. Reading a real QR code can only be checked on a real phone.
+
