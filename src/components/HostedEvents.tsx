@@ -1981,20 +1981,20 @@ export default function HostedEvents({ event }: Props) {
 										<div className="flex border-y border-[#434343]">
 											<button
 												onClick={() => setActiveTab("bookings")}
-												className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "bookings" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+												className={`flex-1 px-2 py-3 md:px-6 md:py-4 text-center md:text-left text-sm md:text-base whitespace-nowrap font-semibold transition-colors ${activeTab === "bookings" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
 											>
 												Bookings
 											</button>
 											<button
 												onClick={() => setActiveTab("waiting-list")}
-												className={`flex-1 px-6 py-4 text-left font-semibold transition-colors ${activeTab === "waiting-list" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+												className={`flex-1 px-2 py-3 md:px-6 md:py-4 text-center md:text-left text-sm md:text-base whitespace-nowrap font-semibold transition-colors ${activeTab === "waiting-list" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
 											>
 												Waiting List
 											</button>
 											{showApprovals && (
 												<button
 													onClick={() => setActiveTab("approvals")}
-													className={`flex-1 px-6 py-4 text-left font-semibold transition-colors flex items-center gap-2 ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
+													className={`flex-1 px-2 py-3 md:px-6 md:py-4 text-center md:text-left text-sm md:text-base whitespace-nowrap font-semibold transition-colors flex items-center justify-center md:justify-start gap-1.5 md:gap-2 ${activeTab === "approvals" ? "bg-[#F79432] text-black" : "text-white hover:bg-[#434343]"}`}
 												>
 													Approvals
 													{pendingApprovalCount > 0 && (
@@ -2012,7 +2012,7 @@ export default function HostedEvents({ event }: Props) {
 										</div>
 
 										{/* Tab Content */}
-										<div className="p-6">
+										<div className="p-4 md:p-6">
 											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} canManage={canManage} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
 											{/* `surfaceBg` is what the frozen Actions/Guest columns paint themselves
@@ -2710,7 +2710,37 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 
 	return (
 		<div>
-			<div className="flex items-center justify-between mb-4">
+			{/* PHONES: the six figures as a small grid under the title. On one row beside it (the
+			    desktop layout below) the labels wrapped into a ragged block. Same numbers, same
+			    colours, and the amber / red rows appear under the same conditions. */}
+			<div className="md:hidden mb-4">
+				<h3 className="text-lg font-semibold text-white">Bookings</h3>
+				{!isLoading && !totalsLoading && (
+					<div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-x-6 gap-y-2 rounded-lg border border-[#343536] bg-[#15181C] px-4 py-3 text-sm">
+						<span />
+						<span className="text-right text-xs font-medium uppercase tracking-wide text-[#9C9C9C]">Tickets</span>
+						<span className="text-right text-xs font-medium uppercase tracking-wide text-[#9C9C9C]">Customers</span>
+						<span className="font-semibold text-white">Active</span>
+						<span className="text-right font-semibold text-green-400">{totalTickets}</span>
+						<span className="text-right font-semibold text-green-400">{uniqueCustomers}</span>
+						{(pendingTickets > 0 || pendingGuests > 0) && (
+							<>
+								<span className="font-semibold text-white">Pending</span>
+								<span className="text-right font-semibold text-amber-400">{pendingTickets}</span>
+								<span className="text-right font-semibold text-amber-400">{pendingGuests}</span>
+							</>
+						)}
+						{(cancelledTickets > 0 || cancelledGuests > 0) && (
+							<>
+								<span className="font-semibold text-white">Inactive</span>
+								<span className="text-right font-semibold text-red-400">{cancelledTickets}</span>
+								<span className="text-right font-semibold text-red-400">{cancelledGuests}</span>
+							</>
+						)}
+					</div>
+				)}
+			</div>
+			<div className="hidden md:flex items-center justify-between mb-4">
 				<h3 className="text-lg font-semibold text-white">Bookings</h3>
 				{!isLoading && !totalsLoading && (
 					<div className="text-sm text-white">
@@ -2764,15 +2794,20 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 							<button
 								type="button"
 								onClick={() => setOpenId(isOpen ? null : booking._id)}
-								className="w-full flex items-center justify-between gap-4 py-4 text-left"
+								className="w-full flex items-center justify-between gap-2 md:gap-4 py-4 text-left"
 								aria-expanded={isOpen}
 							>
 								<div className="min-w-0">
 									<p className="text-sm font-semibold text-white truncate">{booking.customerName}</p>
 									<p className="text-xs text-[#bbbbbb] mt-0.5 truncate">Ref: {booking.bookingRef}</p>
+									<div className="mt-1 md:hidden">
+										<BookingStatusPill booking={booking} />
+									</div>
 								</div>
-								<div className="flex items-center gap-4 flex-shrink-0">
-									<BookingStatusPill booking={booking} />
+								<div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+									<div className="hidden md:contents">
+										<BookingStatusPill booking={booking} />
+									</div>
 									<span className={`text-sm font-semibold ${onHold ? "text-amber-400" : "text-white"}`}>${booking.total}</span>
 									<Icon as={isOpen ? FiChevronUp : FiChevronDown} color="white" boxSize={5} />
 								</div>
@@ -3178,6 +3213,28 @@ function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () =
 	const totalVotes = pollData?.totalVotes || (pollData?.options || []).reduce((sum: number, o: any) => sum + (o.voters?.length || o.voteCount || o.votes?.length || 0), 0)
 	const allVoters = (pollData.options || []).flatMap((o: any) => o.voters || [])
 
+	// Who has voted, and how many. Rendered in ONE of two places: beside the text from `md` up,
+	// under it on a phone — where sharing the row left the text about 90px wide and it wrapped
+	// one word per line.
+	const voters = (
+		<>
+			{allVoters.length > 0 && (
+				<div className="flex -space-x-1.5">
+					{allVoters.slice(0, 3).map((voter: any, i: number) => (
+						<div key={i} className="w-6 h-6 rounded-full bg-[#444] border-2 border-[#1E2024] flex items-center justify-center overflow-hidden">
+							{voter.image ? (
+								<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
+							) : (
+								<span className="text-[9px] font-bold text-white uppercase">{voter.name?.charAt(0) || "?"}</span>
+							)}
+						</div>
+					))}
+				</div>
+			)}
+			<span className="text-xs text-[#888] whitespace-nowrap">{totalVotes} voted</span>
+		</>
+	)
+
 	return (
 		<button
 			onClick={onOpenPoll}
@@ -3191,22 +3248,10 @@ function DatePollTeaser({ event, onOpenPoll }: { event: IEvent; onOpenPoll: () =
 			<div className="flex-1 min-w-0">
 				<p className="text-sm font-semibold text-white">What date and time work best for you</p>
 				<p className="text-xs text-[#888] mt-0.5">Vote now and help finalize the event schedule.</p>
+				<div className="mt-2 flex items-center gap-2 md:hidden">{voters}</div>
 			</div>
 			<div className="flex items-center gap-2 flex-shrink-0">
-				{allVoters.length > 0 && (
-					<div className="flex -space-x-1.5">
-						{allVoters.slice(0, 3).map((voter: any, i: number) => (
-							<div key={i} className="w-6 h-6 rounded-full bg-[#444] border-2 border-[#1E2024] flex items-center justify-center overflow-hidden">
-								{voter.image ? (
-									<img src={voter.image} alt={voter.name} className="w-full h-full object-cover" />
-								) : (
-									<span className="text-[9px] font-bold text-white uppercase">{voter.name?.charAt(0) || "?"}</span>
-								)}
-							</div>
-						))}
-					</div>
-				)}
-				<span className="text-xs text-[#888] whitespace-nowrap">{totalVotes} voted</span>
+				<div className="hidden md:flex items-center gap-2">{voters}</div>
 				<svg className="w-4 h-4 text-[#555] group-hover:text-[#F79432] transition-colors lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
 				</svg>

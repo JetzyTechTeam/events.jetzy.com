@@ -52,7 +52,63 @@ const BookingTableEvents:React.FC<Props> = ({events , pagination, search} ) => {
         }
 
     return (
-    <Table>
+    <>
+    {/* Phones: a card per event. Same links and the same Prev / Next handlers as the table. */}
+    <Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
+        {events.map((event) => (
+            <Flex key={event._id.toString()} direction="column" gap={3} bg="#101010" border="1px solid #343536" borderRadius="12px" p={4}>
+                <Text color="white" fontWeight={700} fontSize="15px" noOfLines={2} overflowWrap="anywhere">{event.name}</Text>
+                <Flex direction="column" gap={1} fontSize="13px" color="#9C9C9C">
+                    <Text>Starts: <Text as="span" color="#D6D6D6">{event.startsOn ? new Date(event.startsOn).toLocaleString() : "TBD"}</Text></Text>
+                    <Text>Ends: <Text as="span" color="#D6D6D6">{event.endsOn ? new Date(event.endsOn).toLocaleString() : "TBD"}</Text></Text>
+                </Flex>
+                <Flex align="center" justify="space-between" gap={3}>
+                    <Text fontSize="13px" color="#D6D6D6"><Text as="span" color="white" fontWeight={700} fontSize="15px">{event.bookingsCount ?? 0}</Text> bookings</Text>
+                    <Button
+                    onClick={() => router.push(`/console/bookings/${event._id}`)}
+                    colorScheme="blue"
+                    size="sm"
+                    h="40px"
+                    px={5}
+                    >
+                    View Bookings
+                    </Button>
+                </Flex>
+            </Flex>
+        ))}
+        <Flex justify="space-between" align="center" gap={2} mt={1}>
+            <Button
+                size="sm"
+                h="40px"
+                bg="#2A2A2A"
+                color="white"
+                border="1px solid #444"
+                _hover={{ bg: '#3A3A3A' }}
+                _disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
+                onClick={handlePrev}
+                isDisabled={pagination.page <= 1}
+            >
+                &lt; Prev
+            </Button>
+            <Text color="#9C9C9C" fontSize="sm">
+                Page <Text as="span" color="white" fontWeight="bold">{pagination.page}</Text> of {pagination.totalPages}
+            </Text>
+            <Button
+                size="sm"
+                h="40px"
+                bg="#2A2A2A"
+                color="white"
+                border="1px solid #444"
+                _hover={{ bg: '#3A3A3A' }}
+                _disabled={{ opacity: 0.4, cursor: 'not-allowed' }}
+                onClick={handleNext}
+                isDisabled={pagination.page >= pagination.totalPages}
+            >
+                Next &gt;
+            </Button>
+        </Flex>
+    </Flex>
+    <Table display={{ base: "none", md: "table" }}>
         <Thead>
             <Tr>
                 <Th>Event</Th>
@@ -129,6 +185,7 @@ const BookingTableEvents:React.FC<Props> = ({events , pagination, search} ) => {
         </Tfoot>
 
     </Table>
+    </>
     )
 }
 

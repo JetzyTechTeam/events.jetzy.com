@@ -17,7 +17,7 @@ import {
 import axios from "axios"
 import { useQuery } from "@tanstack/react-query"
 import { DateTime } from "luxon"
-import { isPendingBooking, isHoldExpired, isCaptureFailed } from "@/lib/booking-status"
+import { isPendingBooking, isHoldExpired, isCaptureFailed, holdTimeRemaining } from "@/lib/booking-status"
 import { HoldExpiry, PaymentBadge } from "@/components/bookings/PaymentBadge"
 import AnswerText from "@/components/events/AnswerText"
 import Pagination from "@/components/misc/Pagination"
@@ -249,7 +249,8 @@ export function ApprovalRequests({
 								</Flex>
 								<Text color="#9C9C9C" fontSize="13px" wordBreak="break-all">{b.customerEmail || "—"}</Text>
 								<Flex mt={3} justify="space-between" align="flex-start" gap={3}>
-									<Box color="white">
+									{/* Ticket names may wrap on a card - in the table they stay on one line. */}
+									<Box color="white" minW={0} sx={{ "& > p": { whiteSpace: "normal", overflowWrap: "anywhere" } }}>
 										{ticketLines(b, qty)}
 										{!fit.fits && fit.seatable !== null && (
 											<Badge colorScheme={fit.seatable > 0 ? "orange" : "red"} fontSize="0.65em" borderRadius="4px" px={1.5} mt={1}>
@@ -257,9 +258,15 @@ export function ApprovalRequests({
 											</Badge>
 										)}
 									</Box>
+									{/* `HoldExpiry` sets no font size: the table gave it 14px, this card let it
+									    inherit 16px, so "in 6 days" outgrew the badge above it. One small line
+									    that also says WHAT is expiring. */}
 									<Flex direction="column" align="flex-end" gap={1} flexShrink={0}>
 										<PaymentBadge booking={b} />
-										<HoldExpiry booking={b} />
+										<Flex align="center" gap={1} fontSize="12px" lineHeight="1.3">
+											{holdTimeRemaining(b) !== null && holdTimeRemaining(b)! > 0 && <Text color="#9C9C9C">Hold expires</Text>}
+											<HoldExpiry booking={b} />
+										</Flex>
 									</Flex>
 								</Flex>
 								{isCaptureFailed(b) && <Box mt={3}>{captureFailedNotice(b)}</Box>}

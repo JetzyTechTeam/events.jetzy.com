@@ -30,7 +30,23 @@ export default function BookingFilters({ eventId, initialFilters }: Props) {
     }
 
     return (
-    <Flex gap={2} p={2} wrap="wrap">
+    // Phones: search on its own row, the rest two to a row, Apply full width. The fixed pixel
+    // widths below still rule from tablet up - every rule here sits in a max-width media query.
+    // `!important` on width because each field sets its own `width` at the same specificity.
+    <Flex
+        gap={2}
+        p={2}
+        wrap="wrap"
+        sx={{ "@media screen and (max-width: 47.99em)": {
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            padding: 0,
+            "& > *": { width: "100% !important", minWidth: 0 },
+            "& > :first-child, & > input[type=date], & > button": { gridColumn: "1 / -1" },
+            "& input, & select": { fontSize: "16px", height: "44px" },
+            "& > button": { height: "44px" },
+        } }}
+    >
             <Input placeholder="Name or Email" value={search} onChange={(e) => setSearch(e.target.value)} width="350px"/>
             <Input
                 placeholder="Min Amount"

@@ -88,7 +88,7 @@ export function EventWaitingList({ eventId, eventName }: { eventId: string; even
 					const isOpen = openId === user._id
 					return (
 						<div key={user._id} className="border-b border-[#434343] last:border-b-0">
-							<div className="flex justify-between items-center gap-4 py-4">
+							<div className="flex justify-between items-center gap-2 md:gap-4 py-4">
 								<button
 									type="button"
 									onClick={() => setOpenId(isOpen ? null : user._id)}
@@ -110,7 +110,7 @@ export function EventWaitingList({ eventId, eventName }: { eventId: string; even
 											e.stopPropagation()
 											handleApprove(user._id)
 										}}
-										className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+										className="bg-green-600 text-white px-3 py-2 md:py-1 rounded text-sm hover:bg-green-700 transition-colors"
 									>
 										Approve
 									</button>
@@ -119,7 +119,7 @@ export function EventWaitingList({ eventId, eventName }: { eventId: string; even
 											e.stopPropagation()
 											handleRemove(user._id)
 										}}
-										className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+										className="bg-red-600 text-white px-3 py-2 md:py-1 rounded text-sm hover:bg-red-700 transition-colors"
 									>
 										Remove
 									</button>

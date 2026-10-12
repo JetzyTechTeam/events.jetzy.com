@@ -3847,3 +3847,20 @@ The Add / Edit ticket dialog was full-screen on phones but still the desktop dia
 - `inputMode="decimal"` on Price and `inputMode="numeric"` on Quantity are keypad hints only; the fields are still `type="number"` and their value handling is unchanged.
 - `TicketMembershipToggles` (admin-only block) got phone touch targets: taller checkbox rows, 44px Monthly / Annual buttons, a 48px free-months input.
 
+### Event Bookings pages on a phone + four QA fixes (IMPLEMENTED 2026-10-12)
+
+Below `md` only; ten before/after captures (both bookings pages, Manage's Approvals / Guests / Blasts tabs, the event page with and without the owner panel, at 1280px and 820px) diff to 0 pixels. No handler, guard or field changed.
+
+**Event Bookings pages**
+- `/console/bookings`: the events table becomes a card per event (name, starts / ends, booking count, View Bookings) with `Prev - Page X of Y - Next`. The search box takes the row and the buttons share the next one.
+- `/console/bookings/[eventId]`: three equal-width tabs instead of a sideways scroll; the filter row is a 2-column grid (search and date full width, Apply full width) instead of fixed pixel widths; the 8-column bookings table becomes cards.
+- **`bookingCells(row)` in `BookingEventsDetailsTable.tsx`** builds every cell once - the `Tr` and the card both render from it, the same pattern as `guestCells` on Manage. Edit / Cancel / Delete keep their guards (`!cancelled && canEdit(row)`, `canManage && !cancelled`, `isAdmin`) because they are the same JSX.
+- The bordered `70vh` scroll box around the table is desktop-only now (`md:` classes); cards scroll with the page.
+- The filter grid uses `width: 100% !important` inside the media query: each field sets its own pixel `width` at the same specificity, so nothing weaker wins.
+
+**QA fixes (all were layout, none was logic)**
+- **Event page, owner's Bookings panel**: the six figures are a small Tickets / Customers grid under the title on phones (the desktop one-row layout wrapped into a ragged block). Tab headers are single-line and centred; the status pill sits under the booking reference instead of beside the name, which it had been cutting to a few letters.
+- **Blasts, delivery details**: Edit / Delete took ~140px beside the text column that also holds the delivery list, so recipient cards were squeezed. On phones the text column is `display: contents` and `order` stacks subject, message, meta, the two buttons (full width), then delivery details at full width.
+- **Approvals / Guests cards, hold countdown**: `HoldExpiry` sets no font size. The table gave it 14px; a card let it inherit 16px, so "in 6 days" outgrew the badge above it. The cards wrap it at 12px, and the Approvals card says "Hold expires" in front of it. `HoldExpiry` itself is unchanged - **wrap it, don't restyle it**, other screens rely on inheriting.
+- **Event page, date-poll teaser**: avatars and "N voted" shared the row with the text and left it ~90px wide. On phones they sit under the text; one `voters` const renders in whichever place applies.
+

@@ -76,7 +76,13 @@ export default function BookingsPage({ events, pagination, search }: Props) {
 
 	return (
 		<ConsoleLayout page={Pages.Bookings}>
-			<Flex gap={2} mb={4} px={2}>
+			{/* Phones: the search box takes the row, the buttons share the next one. */}
+			<Flex
+				gap={2}
+				mb={4}
+				px={2}
+				sx={{ "@media screen and (max-width: 47.99em)": { flexWrap: "wrap", paddingLeft: 0, paddingRight: 0, "& > input": { flexBasis: "100%", maxWidth: "none", height: "44px", fontSize: "16px" }, "& > button": { flex: "1 1 0", height: "44px" } } }}
+			>
 				<Input
 					placeholder="Search events by name or location..."
 					value={searchInput}
