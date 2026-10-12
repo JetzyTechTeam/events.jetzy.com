@@ -51,6 +51,8 @@ export interface EventCardItem {
 	premiumEvent?: boolean
 	ownerId?: any
 	createdAt?: any
+	/** All-time views. Stamped by the list endpoints for an admin only; absent for everyone else. */
+	totalViews?: number
 }
 
 const STATUS_BADGE: Record<EventStatus, { bg: string; color: string; border?: string }> = {
@@ -284,6 +286,11 @@ export default function EventListingCard({ event, onClick, previewAsGuest = fals
 						<Flex fontSize="sm" color="gray.400" gap="4">
 							<Text>👥 {uniqueGuests}</Text>
 							<Text>🎟️ {totalTickets}</Text>
+							{/* A number, not truthiness: 0 is a real answer, an absent field means the
+							    count couldn't be read and must not be shown as zero. */}
+							{typeof event.totalViews === "number" && (
+								<Text title="Total views">👁 {event.totalViews.toLocaleString("en-US")}</Text>
+							)}
 						</Flex>
 					)}
 				</Stack>

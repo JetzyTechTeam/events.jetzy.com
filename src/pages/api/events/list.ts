@@ -5,6 +5,9 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import { Events } from "@/models/events"
 import { ensureDbConnected } from "@/configs/database"
 import { escapeRegExp } from "@/utils/text"
+import { attachEventViewCounts } from "@/lib/event-view-counts"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../auth/[...nextauth]"
 import { z } from "zod"
 
 const validationSchema = z.object({
@@ -34,11 +37,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		let query: any = { isDeleted: false, location: { $regex: escapeRegExp(locFilter), $options: "i" } };
 
 		//    get all the events from the database
-		const events = await Events.find(query)
+		const foundEvents = await Events.find(query)
 			.sort({ createdAt: -1 })
 			.skip(skip)
 			.limit(limit)
 			.lean()
+
+		// View counts for the dashboard cards — admins only. The route itself stays open to
+		// everyone exactly as before; the session is read for this and nothing else.
+		const session = await getServerSession(req, res, authOptions)
+		const role = (session?.user as any)?.role
+		const isAdmin = role === "admin" || role === "super admin"
+		const events = isAdmin ? await attachEventViewCounts(foundEvents as any[]) : foundEvents
 
 		// gt total documents
 		const totalEvents = await Events.countDocuments(query)

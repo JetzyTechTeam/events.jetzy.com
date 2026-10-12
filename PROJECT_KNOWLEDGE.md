@@ -3878,3 +3878,18 @@ Before/after captures at 1280px and 820px diff to 0 pixels on both screens (Pend
 - Search box takes the row and Search / Clear share the next one; the filter chips are one sideways-scrolling row; Approve takes a row with Manage and Delete side by side under it; paging is one row.
 - **The selected chip is scrolled into view within the row** (`chipRowRef`, keyed on `filter`), and again on `document.fonts.ready`: the chips widen when the web font swaps in, which pushed the selected chip back past the edge after the first pass. It sets `scrollLeft` on the row only - never scrolls the page.
 
+
+### Total views on event cards, admin only (IMPLEMENTED 2026-10-12)
+
+An admin scanning a list of events could see tickets and guests on each card but not views — "which of these is getting traffic" meant opening every event's Manage page in turn. Each card now carries the all-time view count.
+
+- **The number is Manage Event's "Views"**, not a new definition: every `EventInteraction` row with `interactionType: "view"` for the event (`api/analytics/events.ts` → `summary.views`). Visits, repeats included — not unique people. `?preview=1` visits are already excluded where they are recorded.
+- **`src/lib/event-view-counts.ts`** (server only): `getEventViewCounts(ids)` runs ONE aggregate over a page of ids; `attachEventViewCounts(events)` stamps `totalViews` onto each. It guards its own connection and loads the model through a dynamic import, like `ticket-availability.ts`.
+- **Counted per PAGE, attached server-side** — not a request per card. The cards already fire one `/totals` call each, and `/totals` is deliberately public, so it is the wrong home for an admin-only number.
+- **The field's presence is the gate.** Three call sites, each inside the `isAdmin` it already computes; a non-admin response is unchanged:
+  - `console/events/index.tsx` `getServerSideProps` (My Events) — after pagination and the out-of-range redirect.
+  - `api/events/index.ts` (public home page) — after the page is sliced.
+  - `api/events/list.ts` (the `/console` dashboard, which renders the shared card) — the route stays open to everyone; the session is read only to decide this.
+- **`null` is not zero.** `getEventViewCounts` returns `null` when the count couldn't be read, and `attachEventViewCounts` then returns the events untouched. Both cards render on `typeof totalViews === "number"`, so a failed count shows nothing rather than a false "0 views", and a listing never fails because analytics did.
+- Rendered in `EventListingCard` (`👁 N` beside guests/tickets, in the existing admin-only row — so `previewAsGuest` hides it for free) and My Events' `ListingCard` (`👁 N views`, gated on `props.isAdmin`). `toLocaleString("en-US")` with an explicit locale: My Events is server-rendered.
+- **Hosts don't get it on their cards**, by request. They still read Views on Manage Event for their own events. To extend it, drop the `isAdmin` condition in the console `getServerSideProps` — that list is already narrowed to `ownerId`.

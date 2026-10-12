@@ -516,6 +516,13 @@ const ListingCard = (props: IEvent & { onEventRemoved: (id: string) => void; isE
 					<div className="flex items-center gap-x-4 text-xs text-gray-400">
 						<span className="flex items-center gap-1">🎟️ {totalTickets} tickets</span>
 						<span className="flex items-center gap-1">👥 {uniqueGuests} guests</span>
+						{/* Admin only — getServerSideProps stamps `totalViews` for nobody else. Checked
+						    as a number, not for truthiness: 0 is a real answer, while an absent field
+						    means the count couldn't be read and must not be shown as zero. Explicit
+						    locale because this row is server-rendered. */}
+						{props.isAdmin && typeof (event as any).totalViews === "number" && (
+							<span className="flex items-center gap-1" title="Total views">👁 {(event as any).totalViews.toLocaleString("en-US")} views</span>
+						)}
 					</div>
 				</div>
 
@@ -745,9 +752,14 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (context) 
 		return { redirect: { destination: `/console/events${qs ? `?${qs}` : ""}`, permanent: false } }
 	}
 
+	// View counts for the rows — admins only, and only for the page being rendered. A host's
+	// list is left exactly as it was: they read Views on Manage Event, for their own events.
+	const { attachEventViewCounts } = await import("@/lib/event-view-counts")
+	const eventsForPage = isAdmin ? await attachEventViewCounts(paginatedEvents) : paginatedEvents
+
 	return {
 		props: {
-			events: JSON?.stringify(paginatedEvents),
+			events: JSON?.stringify(eventsForPage),
 			pagination: { total, page, showing: paginatedEvents.length, limit: LIMIT, totalPages },
 			isAdmin,
 			search,
