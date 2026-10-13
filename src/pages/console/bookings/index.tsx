@@ -47,7 +47,15 @@ export type Booking = {
 		authExpiresAt?: string | null;
 		capturedAt?: string | null;
 		canceledAt?: string | null;
+		/** Key + status only — enough to know the request sells a membership, with no Stripe id. */
+		memberships?: Array<{ key: string; status?: string }>;
+		premiumStatus?: string;
 	} | null;
+	/**
+	 * The lower quantity a host intends to approve on a held request. Read through
+	 * `plannedTickets()`, never directly.
+	 */
+	adjustedTickets?: { ticketId: string; quantity: number }[] | null;
 };
 
 export type Exportable = {

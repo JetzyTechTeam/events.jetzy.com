@@ -131,7 +131,15 @@ export default function BookingsEventPage({ bookings, event, filters, exportable
                 canManage
                 // Names for the edit dialog — a booking stores `ticketId` only. Already in
                 // the props for the Approvals tab, so nothing extra is fetched.
-                eventTickets={(event.tickets || []).map((t: any) => ({ _id: String(t._id), name: t.name }))}
+                // `price` / `memberships` let the pending-request editor refuse, before it
+              // sends anything, an added seat on a ticket that is now paid or bundled.
+              eventTickets={(event.tickets || []).map((t: any) => ({
+                _id: String(t._id),
+                name: t.name,
+                price: t.price,
+                ...(Array.isArray(t.memberships) ? { memberships: t.memberships } : {}),
+                ...(t.includesPremium !== undefined ? { includesPremium: t.includesPremium } : {}),
+              }))}
                 onDeleteSuccess={() => router.replace(router.asPath)}
                 onCancelSuccess={() => router.replace(router.asPath)}
                 onEditSuccess={() => router.replace(router.asPath)}
@@ -250,6 +258,14 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
     "payment.authExpiresAt": 1,
     "payment.capturedAt": 1,
     "payment.canceledAt": 1,
+    // For the pending-request editor on this table. Whether the request sells a membership
+    // decides if its quantity may change at all — key + status only, so no subscription or
+    // price id reaches the browser — and `adjustedTickets` is the lower number a host has
+    // already set on a held request.
+    "payment.memberships.key": 1,
+    "payment.memberships.status": 1,
+    "payment.premiumStatus": 1,
+    adjustedTickets: 1,
   })
     .sort({ createdAt: -1 })
     .lean()
@@ -281,9 +297,12 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
       const bookedTickets = b.tickets.map((t: any) => {
         return `Ticket ${t.ticketId.toString()} x ${t.quantity}`;
       });
+      // `adjustedTickets` holds ObjectIds and the export doesn't use it — left out rather than
+      // serialized, since this object is a prop as well.
+      const { adjustedTickets: _adjustedTickets, ...bookingForExport } = b;
       return {
         booking: {
-          ...b,
+          ...bookingForExport,
           _id: b._id.toString(),
           eventId: b.eventId.toString(),
           createdAt: b.createdAt ? b.createdAt.toString() : "",
@@ -337,6 +356,10 @@ export const getServerSideProps: GetServerSideProps<any, any> = async (ctx) => {
           ticketId: t.ticketId.toString(),
           quantity: t.quantity,
         })),
+        // ObjectIds again — and `null` rather than absent, since `undefined` is not a valid prop.
+        adjustedTickets: Array.isArray(b.adjustedTickets) && b.adjustedTickets.length > 0
+          ? b.adjustedTickets.map((t: any) => ({ ticketId: String(t.ticketId), quantity: t.quantity }))
+          : null,
       })),
       exportable,
       checkInMap,

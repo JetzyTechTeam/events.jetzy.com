@@ -128,6 +128,21 @@ export const PARTIAL_REFUSAL_MESSAGE: Record<PartialApprovalRefusal, string> = {
 	nothing_fits: "There are no spots left at all, so none of this request can be approved right now.",
 }
 
+/**
+ * What to capture, in CENTS, when fewer tickets are approved than the card is held for.
+ *
+ * `ticketPortion` is the part of the hold that belongs to tickets (major units). It is scaled
+ * PROPORTIONALLY rather than by a unit price, because a booking stores no per-ticket price —
+ * exact under any discount, but only when every ticket in the order costs the same, which is
+ * why a multi-type booking is never reduced.
+ *
+ * One function for `api/bookings/approve.ts` and for the figure the console shows the host
+ * before they press Approve, so the amount promised and the amount taken cannot differ.
+ * Capturing under the authorization is not a refund: Stripe releases the difference at no cost.
+ */
+export const partialCaptureCents = (ticketPortion: number, approved: number, requested: number): number =>
+	Math.max(0, Math.round(ticketPortion * (approved / requested) * 100))
+
 /** The reduced ticket list to send when seating only part of a request. */
 export const buildPartialSelection = (
 	tickets: BookingTicketRow[] | null | undefined,

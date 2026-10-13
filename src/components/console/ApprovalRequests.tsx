@@ -37,6 +37,7 @@ import Pagination from "@/components/misc/Pagination"
  */
 
 import { bookingTicketCount } from "@/lib/booking-approval"
+import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
 import { useBookingApprovals } from "./approvals/useBookingApprovals"
 import { ApprovalDialogs, ticketBreakdown as buildTicketBreakdown } from "./approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "./approvals/ApprovalActions"
@@ -46,8 +47,10 @@ const money = (n?: number) => `$${Number(n || 0).toFixed(2)}`
 /**
  * Width of the frozen Actions column. Fixed rather than auto, because the Guest column's
  * `left` offset has to equal it exactly or the two frozen columns overlap.
+ *
+ * Approve + Reject + the Edit icon. It was 170px for the first two alone.
  */
-const ACTIONS_W = "170px"
+const ACTIONS_W = "214px"
 
 /** Processed requests per page. The list only ever grows, and it sits below the pending queue. */
 const PROCESSED_PER_PAGE = 10
@@ -132,16 +135,30 @@ export function ApprovalRequests({
 	// layouts cannot disagree about what a request is for or how it ended.
 	// The ticket NAME, not just a count. A host running VIP and General couldn't tell what
 	// they were approving without opening the dialog.
-	const ticketLines = (b: any, fallback: React.ReactNode) =>
-		ticketBreakdown(b).length > 0 ? (
-			ticketBreakdown(b).map((line, i) => (
-				<Text key={i} fontSize="sm" whiteSpace="nowrap">
-					{line.quantity} &times; {line.name}
-				</Text>
-			))
-		) : (
-			<Text fontSize="sm">{fallback}</Text>
+	//
+	// A pending request a host has edited down shows the number it WILL be approved for, with
+	// what was asked for beneath it — `tickets` itself still says what the card is held for.
+	// `plannedTickets` returns the booking's own rows for anything not pending, so the
+	// processed list is unaffected.
+	const ticketLines = (b: any, fallback: React.ReactNode) => {
+		const lines = ticketBreakdown({ tickets: plannedTickets(b) })
+		if (lines.length === 0) return <Text fontSize="sm">{fallback}</Text>
+		const asked = bookingTicketCount(b?.tickets)
+		return (
+			<>
+				{lines.map((line, i) => (
+					<Text key={i} fontSize="sm" whiteSpace="nowrap">
+						{line.quantity} &times; {line.name}
+					</Text>
+				))}
+				{isRequestAdjusted(b) && (
+					<Text fontSize="xs" color="#F79432" whiteSpace="nowrap">
+						Edited &middot; asked for {asked}
+					</Text>
+				)}
+			</>
 		)
+	}
 
 	const outcomeBadge = (b: any) => {
 		const payment = b.payment || {}
@@ -232,7 +249,8 @@ export function ApprovalRequests({
 				{/* Phones: one card per request — the frozen-column table needs a wide screen. */}
 				<Flex display={{ base: "flex", md: "none" }} direction="column" gap={3}>
 					{pending.map((b: any) => {
-						const qty = bookingTicketCount(b?.tickets)
+						// What the request will be approved for — the edited number when there is one.
+						const qty = bookingTicketCount(plannedTickets(b))
 						const prior = priorConfirmedFor(b)
 						const priorQty = prior.reduce((sum, p) => sum + bookingTicketCount(p?.tickets), 0)
 						const fit = fitFor(b)
@@ -342,7 +360,7 @@ export function ApprovalRequests({
 						</Thead>
 						<Tbody>
 							{pending.map((b: any) => {
-								const qty = bookingTicketCount(b?.tickets)
+								const qty = bookingTicketCount(plannedTickets(b))
 								const expired = isHoldExpired(b)
 								const captureFailed = isCaptureFailed(b)
 								// Actions, Guest, Tickets, Payment, Expires, …questions…, Requested.

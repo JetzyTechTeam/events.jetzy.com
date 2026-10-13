@@ -16,8 +16,10 @@ import { isCaptureFailed } from "@/lib/booking-status"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
-import { bookingTicketCount, partialApprovalRefusal, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
+import { bookingTicketCount, partialApprovalRefusal, partialCaptureCents, PARTIAL_REFUSAL_MESSAGE } from "@/lib/booking-approval"
+import { plannedTickets } from "@/lib/booking-request-edit"
 import type { BookingApprovalsController } from "./useBookingApprovals"
+import { EditRequestDialog } from "./EditRequestDialog"
 
 /**
  * The approve and reject confirmation dialogs.
@@ -70,8 +72,13 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 							if (!approveTarget) return null
 							const prior = priorConfirmedFor(approveTarget)
 							const priorQty = prior.reduce((sum, p) => sum + bookingTicketCount(p?.tickets), 0)
-							const thisQty = bookingTicketCount(approveTarget?.tickets)
-							const lines = ticketBreakdown(event, approveTarget)
+							// What the guest ASKED for, and what this approval is FOR. They differ once a
+							// host has edited the request down: `tickets` stays what the card is held
+							// for, and the lower number is read through `plannedTickets`.
+							const askedQty = bookingTicketCount(approveTarget?.tickets)
+							const planned = plannedTickets(approveTarget)
+							const thisQty = bookingTicketCount(planned)
+							const lines = ticketBreakdown(event, { tickets: planned })
 							// See `rejectHoldAmount` — `payment.amount` alone no longer means money exists.
 							const held = approveTarget?.payment?.status ? approveTarget?.payment?.amount : undefined
 							const approveDiscount = describeDiscount(approveTarget)
@@ -91,6 +98,18 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 								: null
 							const canSeatPart = shortfall && !refusal && seatable > 0
 
+							// How many tickets pressing the button will actually confirm, and what that
+							// does to the money. Fewer than were asked for — whether the host edited
+							// the request or the room ran short — means the card is charged for those
+							// only: the same proportional capture `approve.ts` makes, from the same
+							// function, so the figure here is the figure taken. A request that can be
+							// reduced never carries a membership, so the whole hold is tickets.
+							const approveQty = canSeatPart ? seatable : thisQty
+							const reduced = approveQty < askedQty && askedQty > 0
+							const ratio = reduced ? approveQty / askedQty : 1
+							const chargeNow =
+								held !== undefined && reduced ? partialCaptureCents(Number(held) || 0, approveQty, askedQty) / 100 : held
+
 							return (
 								<>
 									<AlertDialogHeader fontSize="lg" fontWeight="bold" color="white">
@@ -102,6 +121,13 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 											Approve <b>{approveTarget.customerName || "this guest"}</b>
 											{approveTarget.customerEmail ? ` (${approveTarget.customerEmail})` : ""} for{" "}
 											<b>{thisQty} ticket{thisQty === 1 ? "" : "s"}</b>?
+											{/* Said at the point of no return: the guest asked for more, and this
+											    approval settles the request for fewer. */}
+											{thisQty < askedQty && (
+												<Text as="span" color="#F79432">
+													{" "}Edited down from the {askedQty} they asked for.
+												</Text>
+											)}
 										</Text>
 
 										{/* What was actually requested, by ticket type. */}
@@ -124,13 +150,15 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 											{Number(approveTarget.subTotal ?? 0) > 0 && (
 												<Flex justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" py={0.5}>
 													<Text>Ticket subtotal</Text>
-													<Text>{money(approveTarget.subTotal)}</Text>
+													{/* Scaled with the quantity, as `approve.ts` scales what the booking
+													    records — or the lines wouldn't add up to the charge below. */}
+													<Text>{money(Number(approveTarget.subTotal) * ratio)}</Text>
 												</Flex>
 											)}
 											{approveDiscount.discounted && (
 												<Flex justify="space-between" gap={3} fontSize="xs" py={0.5} color="#F5C518">
 													<Text>Discount{approveDiscount.code ? ` (${approveDiscount.code})` : ""}</Text>
-													<Text>−{money(approveDiscount.amount)}</Text>
+													<Text>−{money(approveDiscount.amount * ratio)}</Text>
 												</Flex>
 											)}
 											{/* A code that took nothing off still gets named — the host may be
@@ -170,9 +198,18 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 												    that will not happen. */}
 												<Text>{held !== undefined ? (retrying ? "Charge now" : "Card will be charged") : "Guest pays"}</Text>
 												<Text color={held !== undefined ? "#F79432" : "#9C9C9C"}>
-													{money(held !== undefined ? held : Number(approveTarget.total ?? 0))}
+													{money(held !== undefined ? chargeNow : Number(approveTarget.total ?? 0) * ratio)}
 												</Text>
 											</Flex>
+											{/* The other part of the hold. Released, not refunded — it was never
+											    taken — and worth a line of its own because the guest's bank shows
+											    the full hold until this approval goes through. */}
+											{held !== undefined && reduced && (
+												<Flex justify="space-between" gap={3} fontSize="xs" color="#D6D6D6" pt={1}>
+													<Text>Released from the {money(held)} hold</Text>
+													<Text>{money((Number(held) || 0) - (Number(chargeNow) || 0))}</Text>
+												</Flex>
+											)}
 										</Box>
 
 										{/* The squeeze, explained at the point of no return. Either the host
@@ -230,11 +267,19 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 										    could only be refused. Either seat what fits, or cancel and reject. */}
 										{canSeatPart ? (
 											<Button colorScheme="orange" onClick={() => confirmApprove(seatable)} ml={3}>
-												Approve {seatable} of {thisQty}
+												Approve {seatable} of {askedQty}
 											</Button>
 										) : shortfall ? null : (
 											<Button colorScheme={retrying ? "orange" : "green"} onClick={() => confirmApprove()} ml={3}>
-												{retrying ? "Retry charge" : prior.length > 0 ? "Approve anyway" : "Approve"}
+												{/* An edited request names its numbers on the button itself — it is
+												    the last thing read before the card is charged for fewer. */}
+												{retrying
+													? "Retry charge"
+													: thisQty < askedQty
+														? `Approve ${thisQty} of ${askedQty}`
+														: prior.length > 0
+															? "Approve anyway"
+															: "Approve"}
 											</Button>
 										)}
 									</AlertDialogFooter>
@@ -263,6 +308,10 @@ export function ApprovalDialogs({ controller, event }: { controller: BookingAppr
 					</AlertDialogContent>
 				</AlertDialogOverlay>
 			</AlertDialog>
+
+			{/* Edit the name / ticket quantity of a pending request. Here rather than in each
+			    table, so the Approvals tab and the Guests tab get the same editor. */}
+			<EditRequestDialog controller={controller} eventTickets={event?.tickets} />
 		</>
 	)
 }

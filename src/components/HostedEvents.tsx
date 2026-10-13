@@ -52,7 +52,10 @@ import { ApprovalRequests } from "@/components/console/ApprovalRequests"
 import LinkedText from "@Jetzy/components/misc/LinkedText"
 import { LOCATION_TBA } from "@/lib/event-location"
 import { showApprovalsSurface, ticketApprovalFlag } from "@/lib/ticket-approval"
-import { isPendingBooking, holdTimeRemaining, isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR } from "@/lib/booking-status"
+import { isPendingBooking, isHoldExpired, holdTimeRemaining, isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_COLOR } from "@/lib/booking-status"
+import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
+import { EditRequestDialog } from "@/components/console/approvals/EditRequestDialog"
+import { useRequestEdit } from "@/components/console/approvals/useRequestEdit"
 import { describeDiscount } from "@/lib/booking-revenue"
 import { bookingMemberships } from "@/lib/booking-memberships"
 import { MEMBERSHIPS, type MembershipKey } from "@/lib/memberships"
@@ -2013,7 +2016,7 @@ export default function HostedEvents({ event }: Props) {
 
 										{/* Tab Content */}
 										<div className="p-4 md:p-6">
-											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} canManage={canManage} />}
+											{activeTab === "bookings" && <EventBookings eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} canManage={canManage} eventTickets={clonedEvent.tickets as any} />}
 											{activeTab === "waiting-list" && <EventWaitingList eventId={clonedEvent._id.toString()} eventName={clonedEvent.name} />}
 											{/* `surfaceBg` is what the frozen Actions/Guest columns paint themselves
 											    with so the scrolling columns don't show through. This panel is a
@@ -2648,7 +2651,18 @@ function BookingStatusPill({ booking }: { booking: Booking }) {
 	return <span className={`text-xs font-semibold ${color}`}>{booking.status}</span>
 }
 
-function EventBookings({ eventId, eventName, canManage }: { eventId: string; eventName?: string; canManage?: boolean }) {
+function EventBookings({
+	eventId,
+	eventName,
+	canManage,
+	eventTickets,
+}: {
+	eventId: string
+	eventName?: string
+	canManage?: boolean
+	/** The event's ticket types — names (and price / memberships) for the pending-request editor. */
+	eventTickets?: any[]
+}) {
 	const [page, setPage] = React.useState(1)
 	const [openId, setOpenId] = React.useState<string | null>(null)
 	// One dialog for the panel; the row only names which booking it is about.
@@ -2657,6 +2671,19 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 	const queryClient = useQueryClient()
 	const toast = useToast()
 	const perPage = 10
+
+	// A pending request can be corrected from this list too — the name on it and how many
+	// tickets it is for — through the same dialog and endpoint as the Approvals tab beside it.
+	// Both lists are refreshed: this panel's (`eventBookings`) and the Approvals tab's
+	// (`event-bookings`), which are different queries over the same bookings.
+	const requestEditor = useRequestEdit({
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: ["eventBookings", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-bookings", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["eventTotals", eventId] })
+			queryClient.invalidateQueries({ queryKey: ["event-availability", eventId] })
+		},
+	})
 
 	const handleCancelBooking = async () => {
 		const bookingRef = cancelTarget?.bookingRef
@@ -2789,6 +2816,10 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 					// charged ticket + the first period of each of these, so without them the panel
 					// shows a $90 total above a $110 charge and never says where the $20 came from.
 					const bookingMembershipRows = bookingMemberships(booking.payment as any)
+					// What a pending request WILL be approved for. Same rows, same order, as
+					// `booking.tickets` — only the quantity differs once a host has edited it down.
+					const planned = plannedTickets(booking as any)
+					const adjusted = isRequestAdjusted(booking as any)
 					return (
 						<div key={booking._id} className={`border-b border-[#434343] last:border-b-0 ${cancelled ? "opacity-60" : ""}`}>
 							<button
@@ -2829,11 +2860,17 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 										<p className="font-semibold text-white text-sm">Tickets:</p>
 										{booking.tickets.length > 0 ? (
 											<ul className="list-disc pl-5 mt-1 text-[#bbbbbb] text-sm">
-												{booking.tickets.map((ticket) => (
-													<li key={ticket._id}>
-														Quantity: <span className="text-white">{ticket.quantity}</span>
-													</li>
-												))}
+												{booking.tickets.map((ticket, i) => {
+													const quantity = planned[i]?.quantity ?? ticket.quantity
+													return (
+														<li key={ticket._id}>
+															Quantity: <span className="text-white">{quantity}</span>
+															{adjusted && quantity !== ticket.quantity && (
+																<span className="text-amber-400"> — edited, asked for {ticket.quantity}</span>
+															)}
+														</li>
+													)
+												})}
 											</ul>
 										) : (
 											<p className="mt-1 text-[#bbbbbb] text-sm">No-ticket event (registration only)</p>
@@ -2946,6 +2983,21 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 											</button>
 										</div>
 									)}
+
+									{/* A pending request is approved or declined in the Approvals tab, but
+									    its name and ticket quantity can be corrected right here. Not once
+									    the card hold has lapsed — that request can no longer be approved. */}
+									{canManage && !cancelled && isPendingBooking(booking as any) && !isHoldExpired(booking as any) && (
+										<div className="mt-4 flex justify-end">
+											<button
+												type="button"
+												onClick={() => requestEditor.requestEdit(booking)}
+												className="text-sm font-semibold text-[#F79432] hover:text-orange-300 hover:underline"
+											>
+												Edit name or tickets
+											</button>
+										</div>
+									)}
 								</div>
 							)}
 						</div>
@@ -2967,6 +3019,8 @@ function EventBookings({ eventId, eventName, canManage }: { eventId: string; eve
 				moneyState={bookingMoneyState(cancelTarget as any) as MoneyState}
 				amount={bookingMoneyAmount(cancelTarget as any)}
 			/>
+
+			<EditRequestDialog controller={requestEditor} eventTickets={eventTickets} />
 		</div>
 	)
 }

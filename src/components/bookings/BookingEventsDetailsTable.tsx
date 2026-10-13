@@ -5,11 +5,15 @@ import { PlusCircleIcon } from "@heroicons/react/24/outline"
 import { Exportable } from "@/pages/console/bookings"
 import { downloadExcel } from "react-export-table-to-excel"
 import { Booking } from "@/pages/console/bookings"
-import { isCancelledBooking, deadBookingKind, deadBookingLabel, DEAD_BOOKING_LABEL, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
+import { isCancelledBooking, isPendingBooking, isHoldExpired, deadBookingKind, deadBookingLabel, DEAD_BOOKING_LABEL, DEAD_BOOKING_COLOR, DEAD_BOOKING_TOOLTIP } from "@/lib/booking-status"
 import { PaymentBadge } from "@/components/bookings/PaymentBadge"
 import CancelBookingDialog from "@/components/bookings/CancelBookingDialog"
 import EditBookingTicketsDialog, { EditableTicketRow } from "@/components/bookings/EditBookingTicketsDialog"
+import { EditRequestDialog } from "@/components/console/approvals/EditRequestDialog"
+import { useRequestEdit } from "@/components/console/approvals/useRequestEdit"
 import { bookingMoneyAmount, bookingMoneyState, MoneyState } from "@/lib/booking-cancellation"
+import { bookingTicketCount } from "@/lib/booking-approval"
+import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
 
 type Props = {
 	rows: Booking[]
@@ -26,8 +30,11 @@ type Props = {
 	/**
 	 * The event's ticket types, so the edit dialog can name the rows a booking holds — a
 	 * booking stores `ticketId` only. Omit it and the Edit action isn't offered.
+	 *
+	 * `price` / `memberships` / `includesPremium` are for the pending-request editor, which
+	 * refuses up front an added seat on a ticket that has since become paid or bundled.
 	 */
-	eventTickets?: Array<{ _id: string; name: string }>
+	eventTickets?: Array<{ _id: string; name: string; price?: number; memberships?: string[]; includesPremium?: boolean }>
 	onDeleteSuccess?: () => void
 	onCancelSuccess?: () => void
 	onEditSuccess?: () => void
@@ -41,6 +48,17 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 	const [editTarget, setEditTarget] = useState<Booking | null>(null)
 	const [editingRef, setEditingRef] = useState<string | null>(null)
 	const [localRows, setLocalRows] = useState(rows)
+
+	// A PENDING row is an approval request, and it gets the request editor — the same dialog
+	// and the same endpoint as the Approvals tab, so a request can be corrected from this list
+	// on identical terms: the name, and the quantity (down only when a card hold is behind it).
+	// The older tickets dialog below stays for a CONFIRMED free booking, which is a different
+	// operation with different rules (capacity, the check-in floor).
+	const requestEditor = useRequestEdit({
+		onSettled: (saved) => {
+			if (saved) onEditSuccess?.()
+		},
+	})
 
 	// Re-sync when SSR returns new rows (e.g. after applying search/filters);
 	// the component stays mounted on client navigation so useState won't reseed.
@@ -146,6 +164,14 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 	const canEdit = (booking: Booking) =>
 		!!canManage && !!eventTickets && bookingMoneyState(booking as any) === "free" && ((booking.tickets as any[]) || []).length > 0
 
+	/**
+	 * A request still awaiting a decision. Free or paid alike — the dialog and the server decide
+	 * what the quantity may do. Not once the card hold has lapsed: that request can no longer
+	 * be approved, so there is nothing an edit could lead to.
+	 */
+	const canEditRequest = (booking: Booking) =>
+		!!canManage && !!eventTickets && isPendingBooking(booking) && !isHoldExpired(booking as any)
+
 	const handleEdit = async (next: EditableTicketRow[]) => {
 		if (!editTarget) return
 		const bookingRef = editTarget.bookingRef
@@ -218,11 +244,22 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 			</>
 		)
 		const ticketsBadge = (() => {
-			const qty = row.tickets.reduce((sum, t) => sum + (t.quantity || 0), 0)
+			// What a pending request WILL be approved for — the edited number when a host has
+			// lowered it, with what was asked for alongside. `plannedTickets` returns the
+			// booking's own rows for anything that isn't a pending request.
+			const qty = bookingTicketCount(plannedTickets(row as any))
+			const asked = bookingTicketCount(row.tickets)
 			return qty > 0 ? (
-				<Badge colorScheme="blue" fontSize={"smaller"}>
-					{qty} tickets
-				</Badge>
+				<>
+					<Badge colorScheme="blue" fontSize={"smaller"}>
+						{qty} tickets
+					</Badge>
+					{isRequestAdjusted(row as any) && (
+						<Badge ml={1} colorScheme="orange" fontSize={"smaller"}>
+							edited · asked for {asked}
+						</Badge>
+					)}
+				</>
 			) : (
 				<Badge colorScheme="purple" fontSize={"smaller"}>
 					No-ticket event
@@ -253,7 +290,13 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 		const date = new Date(row.createdAt).toLocaleString()
 		const actions = (
 			<Flex gap={1}>
-				{!cancelled && canEdit(row) && (
+				{/* One Edit per row. A pending request opens the request editor (name + tickets);
+				    a confirmed free booking keeps the tickets-only dialog. */}
+				{!cancelled && canEditRequest(row) ? (
+					<Button size="xs" colorScheme="blue" variant="ghost" onClick={() => requestEditor.requestEdit(row)}>
+						Edit
+					</Button>
+				) : !cancelled && !isPendingBooking(row) && canEdit(row) ? (
 					<Button
 						size="xs"
 						colorScheme="blue"
@@ -263,7 +306,7 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 					>
 						Edit
 					</Button>
-				)}
+				) : null}
 				{canManage && !cancelled && (
 					<Button
 						size="xs"
@@ -415,6 +458,8 @@ const BookingTableComponent: React.FC<Props> = ({ rows, exportable, checkInMap, 
 				guestName={editTarget?.customerName}
 				rows={editableRows(editTarget)}
 			/>
+
+			<EditRequestDialog controller={requestEditor} eventTickets={eventTickets} />
 		</>
 	)
 }

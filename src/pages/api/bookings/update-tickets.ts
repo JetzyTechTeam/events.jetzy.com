@@ -9,7 +9,7 @@ import { Events } from "@/models/events"
 import { isCancelledBooking } from "@/lib/booking-status"
 import { bookingMoneyState, NON_REFUNDABLE_MESSAGE } from "@/lib/booking-cancellation"
 import { sessionIsAdmin, sessionUserId } from "@/lib/booking-identity"
-import { ticketMemberships } from "@/lib/premium-bundle"
+import { freeTicketEditRefusal } from "@/lib/booking-request-edit"
 import { verifyAvailability } from "@/lib/ticket-availability"
 import { adjustBookedTickets, bookingConsumedCapacity } from "@/lib/event-tracker-sync"
 import { Types } from "mongoose"
@@ -94,42 +94,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 		)
 	}
 
-	// Only rows already on the booking, and every one of them. A permutation check both ways:
-	// if the submitted set doesn't match the stored set, the client is working from a stale
-	// copy and the safe answer is to refuse rather than guess which rows it meant.
-	const storedIds = (booking.tickets || []).map((t: any) => String(t.ticketId))
-	const incomingIds = incoming.map((t) => String(t.ticketId))
-	const sameSet =
-		storedIds.length === incomingIds.length &&
-		new Set(storedIds).size === storedIds.length &&
-		new Set(incomingIds).size === incomingIds.length &&
-		storedIds.every((id) => incomingIds.includes(id))
-	if (!sameSet) {
-		return sendResponse(res, null, "This booking changed — refresh and try again.", false, ResCode.BAD_REQUEST)
-	}
+	// Only rows already on the booking, and every one of them; at least one ticket left; and no
+	// row growing on a ticket that is now priced or now sells a membership. The three checks
+	// live in `booking-request-edit.ts` because the Approvals tab's request editor enforces the
+	// same ones on a free request.
+	const refusal = freeTicketEditRefusal(booking.tickets as any, incoming, event.tickets as any)
+	if (refusal) return sendResponse(res, null, refusal, false, ResCode.BAD_REQUEST)
 
 	const newTotal = incoming.reduce((sum, t) => sum + t.quantity, 0)
-	if (newTotal <= 0) {
-		return sendResponse(res, null, "A booking needs at least one ticket. Cancel it instead.", false, ResCode.BAD_REQUEST)
-	}
-
-	// Belt and braces against the money rule above: the booking reads as free, but the host may
-	// have repriced or bundled the ticket since it was made. Adding seats on a now-paid or
-	// now-membership-selling ticket would hand over something nobody was charged for.
-	const eventTicketsById = new Map((event.tickets || []).map((t: any) => [String(t._id), t]))
-	const oldById = new Map((booking.tickets || []).map((t: any) => [String(t.ticketId), Number(t.quantity) || 0]))
-	for (const row of incoming) {
-		const stored: any = eventTicketsById.get(String(row.ticketId))
-		if (!stored) continue // the ticket type was deleted; the seats still count, nothing new is granted
-		const increased = row.quantity > (oldById.get(String(row.ticketId)) || 0)
-		if (!increased) continue
-		if (Number(stored.price) > 0) {
-			return sendResponse(res, null, `"${stored.name}" is a paid ticket — you can't add seats to it without a payment.`, false, ResCode.BAD_REQUEST)
-		}
-		if (ticketMemberships(stored).length > 0) {
-			return sendResponse(res, null, `"${stored.name}" sells a membership, so its quantity can't be changed here.`, false, ResCode.BAD_REQUEST)
-		}
-	}
 
 	const oldTotal = (booking.tickets || []).reduce((sum: number, t: any) => sum + (Number(t.quantity) || 0), 0)
 	const delta = newTotal - oldTotal

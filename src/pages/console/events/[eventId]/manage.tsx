@@ -97,6 +97,7 @@ import { allowedMediaCount } from "@/lib/event-media-limit"
 import { EVENT_TITLE_LIMIT_HINT, EVENT_TITLE_RAW_LIMIT, clampEventTitle, eventTitleCounter, isEventTitleOverLimit } from "@/lib/event-title"
 import { buildGuestRows, matchesAudience, GUEST_KIND_LABEL, type GuestRow, type GuestAudience } from "@/lib/guest-rows"
 import { bookingTicketCount } from "@/lib/booking-approval"
+import { isRequestAdjusted, plannedTickets } from "@/lib/booking-request-edit"
 import { useBookingApprovals } from "@/components/console/approvals/useBookingApprovals"
 import { ApprovalDialogs } from "@/components/console/approvals/ApprovalDialogs"
 import { ApprovalActions, expiringSoonBookings } from "@/components/console/approvals/ApprovalActions"
@@ -3484,7 +3485,11 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 
 	const formatBookingTickets = (booking: any): string => {
 		if (!booking?.tickets?.length) return '—'
-		return booking.tickets.map((t: any) => `${ticketNameById[t.ticketId?.toString()] || 'Ticket'} ×${t.quantity}`).join(', ')
+		// A pending request a host has edited down reads as the number it WILL be approved for,
+		// with what was asked for after it — the same thing the Approvals tab shows. For every
+		// other booking `plannedTickets` is the booking's own rows, so nothing else changes.
+		const label = plannedTickets(booking).map((t) => `${ticketNameById[t.ticketId] || 'Ticket'} ×${t.quantity}`).join(', ')
+		return isRequestAdjusted(booking) ? `${label} (edited — asked for ${bookingTicketCount(booking.tickets)})` : label
 	}
 
 	// Cancelling is the ordinary way to end a booking: the guest is emailed, any live card
@@ -3950,7 +3955,9 @@ function GuestsList({ eventId, event }: { eventId: string; event?: any }) {
 						<ApprovalActions booking={pb} controller={approvals} size={mobile ? "sm" : "xs"} />
 						{!fit.fits && (
 							<Badge colorScheme="orange" fontSize="0.65em" borderRadius="4px" px={1.5}>
-								Needs {bookingTicketCount(pb?.tickets)}, {fit.seatable ?? 0} left
+								{/* `fit.requested` is what the request WILL be approved for — the edited
+								    number when a host has lowered it — not the raw rows. */}
+								Needs {fit.requested}, {fit.seatable ?? 0} left
 							</Badge>
 						)}
 					</Flex>

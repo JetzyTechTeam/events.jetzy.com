@@ -258,6 +258,8 @@ if (!isAdmin && event.ownerId?.toString() !== userId) {
 
 `/api/bookings/update-tickets` — POST `{ bookingRef, tickets: [{ ticketId, quantity }] }`. **Session required** (no bearer path), admin OR event owner. **Free bookings only** — refuses `hold`/`captured`/`released`/`unknown`. Ticket set must be an exact permutation of the stored one; capacity re-checked on increase (this booking excluded); check-in count is a floor. Money fields untouched. Adjusts `EventTracker` by the delta via `adjustBookedTickets`, only when the booking was CONFIRMED. Writes `ticketsEditedAt`/`ticketsEditedBy`/`ticketsEditHistory`.
 
+`/api/bookings/update-request` — POST `{ bookingRef, customerName?, tickets?: [{ ticketId, quantity }] }`. **Session required**, admin OR event owner. **PENDING requests only.** Name: booking only, audited in `customerNameEditHistory`. Tickets by `requestEditMode`: **free** → `tickets` changed up or down (no capacity check, no tracker write); **card hold** → DOWN only, `tickets` untouched, the lower number stored as `adjustedTickets` and applied by `approve.ts`; **locked** (membership, multi-type hold, mid-capture, lapsed hold, unknown money) → 400. No money field is written. Atomic write refused once the request is decided or `payment.status` is `capturing`.
+
 `/api/bookings/my-for-event` — GET `?eventId`. The caller's live booking for one event, plus `moneyState`/`moneyAmount`/`canCancel`. Excludes CANCELLED/REJECTED/FAILED.
 
 `/api/bookings/delete`
@@ -3141,6 +3143,52 @@ Before this, a new booking emailed the buyer and the hardcoded `tech@jetzyapp.co
 - `src/lib/event-tracker-sync.ts` (`adjustBookedTickets`, `bookingConsumedCapacity`) applies the delta, clamped. `bookings/delete.ts` now routes through it, which clamps its previously-unclamped `$inc`.
 - Audit: `ticketsEditedAt`, `ticketsEditedBy`, `ticketsEditHistory` on the booking (no defaults).
 - UI: `EditBookingTicketsDialog.tsx` + an Edit action in `BookingEventsDetailsTable.tsx` (`eventTickets` prop supplies the names).
+
+## Feature: Edit a pending request from the Approvals interface (2026-10-13)
+
+CEO ask: change the number of tickets a request is for, and the name on it, without leaving the approval screen. An **Edit** icon sits beside Approve / Reject on every pending row, on the Approvals tab and the Guests tab alike (both mount `ApprovalActions` + `ApprovalDialogs`).
+
+**The no-refund rule decides what a quantity edit may do.**
+
+| Request | Quantity | How it is stored |
+|---|---|---|
+| Free | up or down | `booking.tickets` is changed |
+| Card hold (`authorized` / `failed`) | **down only** | `booking.tickets` untouched; lower number in `adjustedTickets` |
+| Sells a membership, multi-type hold, mid-capture, lapsed hold, priced with no payment record | locked | — |
+
+- **Why a hold can't go up:** Stripe cannot capture more than was authorized, so an added ticket can't be charged without the guest paying again — and once captured, money is never returned. A guest who wants more books again.
+- **Why a hold's `tickets` is never rewritten:** the failure direction. A path that ignores `adjustedTickets` approves the request as the guest made it and charges the full hold for the full tickets — consistent. Had the edit rewritten `tickets`, a path that forgot would capture the full hold for fewer tickets, with no refund to fix it. Reject, guest cancel and hold expiry all read the booking unchanged and needed no edits.
+- **The reduction becomes real at approval**, through `approve.ts`'s existing partial path: proportional `amount_to_capture`, the rest of the hold released (not a refund — never taken), `subTotal`/`discountAmount`/`total` scaled, `ticketsEditHistory` written, guest told. No new money math.
+- **Until approval it can be put back up** to what was asked for; equal-to-requested `$unset`s the plan.
+- **`src/lib/booking-request-edit.ts`** (pure, client-safe) is the one home of the rules: `requestEditMode`, `plannedTickets` (THE reader of `adjustedTickets`), `isRequestAdjusted`, `holdPlanRefusal`, `freeTicketEditRefusal`, `normalizeGuestName`, `REQUEST_LOCK_MESSAGE`. The dialog and `update-request.ts` both import it. `freeTicketEditRefusal` was extracted from `update-tickets.ts`, which now imports it.
+- **`plannedTickets` ignores a plan that isn't a valid reduction** (wrong ticket id, above the hold, booking not pending) and returns the request as made. `approve.ts` reads through it too, so the server approves exactly what the console is showing.
+- **`approve.ts` applies the plan even when the caller sends no `tickets`** — an approval from a tab that loaded before the edit still seats what was decided. A caller may go lower than the plan (capacity ran short), never above it (400).
+- **Edit-vs-approve race:** `update-request.ts` writes with `{ status: PENDING, "payment.status": { $ne: "capturing" } }`; `approve.ts` re-reads the plan off the latched document and, if it moved, rolls the latch back and refuses before charging.
+- **`partialCaptureCents`** (`booking-approval.ts`) is the capture expression, used by `approve.ts` and by both dialogs' "card will be charged" figure — shown and taken cannot differ.
+- **Email:** `sendTicketConfirmation`'s `partialApproval` gained `reason: "adjusted"`; without it the note says "the event only had room for N", untrue when the host chose the number.
+- **Name edit is the booking only** — never the guest's account, never the email (identity and memberships follow the email). Whitespace collapsed, control characters refused, 120 code points. No email on edit; the approval confirmation greets the new name.
+- **Scope:** pending only. A confirmed paid booking is still un-editable; a confirmed free one still uses `update-tickets`.
+- Schema: `adjustedTickets`, `adjustedTicketsAt`, `adjustedTicketsBy`, `customerNameEditHistory` — arrays `default: undefined`. Restart the dev server after pulling.
+
+**Where the editor appears** — one `EditRequestDialog`, one hook `useRequestEdit` (`src/components/console/approvals/`):
+
+| Screen | Control | Wired through |
+|---|---|---|
+| Manage Event → Approvals tab | pencil beside Approve / Reject | `ApprovalRequests` → `useBookingApprovals` |
+| `/console/bookings/[eventId]` → Approvals tab | same | same |
+| Event page → host panel → Approvals | same | same |
+| Manage Event → Guests tab | pencil beside Approve / Reject on a pending row | `ApprovalActions` + `ApprovalDialogs` |
+| `/console/bookings/[eventId]` → Bookings tab | **Edit** on a pending row | `BookingEventsDetailsTable` → `useRequestEdit` |
+| Event page → host panel → Bookings | **Edit name or tickets** in the opened row | `EventBookings` (`HostedEvents.tsx`) → `useRequestEdit` |
+
+- Every one of them shows the PLANNED quantity with "asked for N" (`plannedTickets` / `isRequestAdjusted`), including the Guests tab's ticket text and its CSV.
+- On the Bookings table a pending row opens the request editor; a **confirmed free** booking keeps `EditBookingTicketsDialog` + `update-tickets` (capacity check, check-in floor — a different operation).
+- `/console/bookings/[eventId]` `getServerSideProps` projects a fixed field list and was extended: `adjustedTickets` (serialized; excluded from `exportable`), `payment.memberships.key`/`.status`, `payment.premiumStatus`. The table's `eventTickets` prop now carries `price` / `memberships` / `includesPremium`.
+- Not changed: the guest's own `/my-bookings` still shows what they requested (true until approval), and `/api/events/[eventId]/totals` still counts requested tickets in its pending figure.
+
+### Fixed in the same change: partial approval + failed capture + retry overcharged
+
+`approve.ts` wrote the reduced `tickets` and scaled totals onto the in-memory booking **before** the capture. Every capture-failure branch ends in `booking.save()`, which persisted them: the booking came back PENDING with fewer tickets and the **full** hold, and the "Retry charge" that followed was an ordinary approval (stored quantity already matched) that captured the whole hold. The reduction is now a closure (`applyReduction`) run only after the capture succeeds, or immediately when there is no hold; the capacity check takes the reduced selection directly (`seatTickets`). **Bookings already left in that state by the old code are not detected** — `payment.status: "failed"` with a `ticketsEditHistory` entry whose `from` is larger than the current `tickets`.
 
 # Feature: Blast sender identity + delivery detail
 
