@@ -32,7 +32,7 @@ import { FiArrowDown, FiArrowUp, FiBarChart2, FiDownload, FiRefreshCw, FiSearch 
 import { eventPath } from "@/lib/event-slug"
 import MetricsCard from "./MetricsCard"
 import TablePagination from "./TablePagination"
-import { AnalyticsPanel, InfoTip, darkTableSx, downloadCsv } from "./AnalyticsPanel"
+import { AnalyticsPanel, InfoTip, PHONE, darkTableSx, downloadCsv, phoneTableSx } from "./AnalyticsPanel"
 
 type Timing = "upcoming" | "ongoing" | "past" | "undated"
 
@@ -85,6 +85,17 @@ interface Column {
 	sortKey?: SortKey
 	render: (r: EventRow) => React.ReactNode
 	csv: (r: EventRow) => string | number
+}
+
+// Phones: the frozen Event column is ~150px, and a 40px thumbnail left the name about seven
+// characters. Below 768px the thumbnail goes and the name may run to two lines. Spread AFTER
+// phoneTableSx, whose phone block this extends rather than replaces.
+const phoneEventCellSx = {
+	[PHONE]: {
+		...phoneTableSx(2)[PHONE],
+		"& .ev-thumb": { display: "none" },
+		"& .ev-name": { WebkitLineClamp: "2" },
+	},
 }
 
 const money = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0)
@@ -339,11 +350,11 @@ export default function EventPerformanceTab({ dateFrom, dateTo }: Props) {
 	return (
 		<Box>
 			{/* Totals for everything matching the filters (all pages) */}
-			<SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
-				<MetricsCard dark title="Events" value={num(totals?.events || 0)} subtitle={isFiltered ? "matching filters" : "all events"} />
-				<MetricsCard dark title="Page views" value={num(totals?.views || 0)} subtitle={`${num(totals?.uniqueViewers || 0)} unique viewers`} />
-				<MetricsCard dark title="Bookings · Tickets" value={`${num(totals?.bookings || 0)} · ${num(totals?.tickets || 0)}`} subtitle={`${rate(totals?.conversionRate || 0)} of viewers booked`} />
-				<MetricsCard dark title="Net revenue" value={money(totals?.revenue || 0)} subtitle={`${money(totals?.gross || 0)} gross − ${money(totals?.discounts || 0)} discounts`} />
+			<SimpleGrid columns={{ base: 2, md: 4 }} spacing={{ base: 2, md: 4 }} mb={6}>
+				<MetricsCard dark compactOnMobile title="Events" value={num(totals?.events || 0)} subtitle={isFiltered ? "matching filters" : "all events"} />
+				<MetricsCard dark compactOnMobile title="Page views" value={num(totals?.views || 0)} subtitle={`${num(totals?.uniqueViewers || 0)} unique viewers`} />
+				<MetricsCard dark compactOnMobile title="Bookings · Tickets" value={`${num(totals?.bookings || 0)} · ${num(totals?.tickets || 0)}`} subtitle={`${rate(totals?.conversionRate || 0)} of viewers booked`} />
+				<MetricsCard dark compactOnMobile title="Net revenue" value={money(totals?.revenue || 0)} subtitle={`${money(totals?.gross || 0)} gross − ${money(totals?.discounts || 0)} discounts`} />
 			</SimpleGrid>
 
 			<Box ref={tableTopRef} scrollMarginTop="80px" />
@@ -476,7 +487,7 @@ export default function EventPerformanceTab({ dateFrom, dateTo }: Props) {
 							)}
 						</Center>
 					) : (
-						<TableContainer sx={darkTableSx} overflowX="auto" maxH="70vh" overflowY="auto" border="1px solid" borderColor="#2a2a2a" borderRadius="md">
+						<TableContainer sx={{ ...darkTableSx, ...phoneTableSx(2), ...phoneEventCellSx }} overflowX="auto" maxH="70vh" overflowY="auto" border="1px solid" borderColor="#2a2a2a" borderRadius="md">
 							<Table variant="simple" size="sm">
 								<Thead>
 									<Tr>
@@ -514,12 +525,12 @@ export default function EventPerformanceTab({ dateFrom, dateTo }: Props) {
 											<Td position="sticky" left={0} bg="#1a1a1a" zIndex={1} maxW="360px">
 												<Flex align="center" gap={3}>
 													{r.image ? (
-														<Image src={r.image} alt="" boxSize="40px" objectFit="cover" borderRadius="md" flexShrink={0} />
+														<Image className="ev-thumb" src={r.image} alt="" boxSize="40px" objectFit="cover" borderRadius="md" flexShrink={0} />
 													) : (
-														<Box boxSize="40px" bg="#2a2a2a" borderRadius="md" flexShrink={0} />
+														<Box className="ev-thumb" boxSize="40px" bg="#2a2a2a" borderRadius="md" flexShrink={0} />
 													)}
 													<Box minW={0}>
-														<Link as={NextLink} href={eventPath(r.slug)} target="_blank" color="#F79432" fontWeight="medium" display="block" noOfLines={1} whiteSpace="normal" title={r.name} _hover={{ textDecoration: "underline" }}>
+														<Link className="ev-name" as={NextLink} href={eventPath(r.slug)} target="_blank" color="#F79432" fontWeight="medium" display="block" noOfLines={1} whiteSpace="normal" title={r.name} _hover={{ textDecoration: "underline" }}>
 															{r.name}
 														</Link>
 														<HStack spacing={1} mt={1} flexWrap="wrap">

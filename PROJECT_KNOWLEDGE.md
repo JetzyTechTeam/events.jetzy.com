@@ -3919,3 +3919,23 @@ An admin scanning a list of events could see tickets and guests on each card but
 - **`DateRangeSelector` (shared with platform analytics)** got media-query-only rules: 44px / 16px date inputs side by side, Apply / Clear sharing a row, the five presets as one sideways-scrolling row. Its desktop was verified identical on platform analytics too.
 - **Verification gap worth knowing:** platform analytics shows "No data available" when rendered logged out, so its `MetricsCard` tiles were never on screen in the regression capture. They are covered by this page (same component, 0 pixels), and without `compactOnMobile` the component only gains two inert class names.
 
+### Platform analytics on a phone (IMPLEMENTED 2026-10-13)
+
+`/console/analytics` and its three sub-pages - Growth (`/growth`), Journey (`/journey`), QR Signups (`/qr-signups`) - all admin-only. Below `md` only; every tab of all four pages at 1280px and 820px diffs to 0 pixels against the previous build. Dates, exports, sorting, filters, paging and every query are untouched.
+
+- **One gutter on all four pages.** Each added 16px inside `ConsoleLayout`'s own, so content sat 32px from both edges.
+- **Headline numbers are two tiles per row** (`MetricsCard compactOnMobile`, the prop added for per-event analytics).
+- **Tab rows scroll sideways** instead of wrapping or being cut off (main page already did; Growth and Journey now do).
+- **Two ways a table is handled, chosen by what it is for:**
+  - **A list** (`PhoneStatRows`) where a row is "a name plus a few numbers": Top users, Referring sites, UTM campaigns, Devices, Browsers, Most viewed / Top entry / Top exit pages, Named events. The table is `display={{ base: "none", md: "block" }}`.
+  - **It stays a table with a frozen name column** where comparing down a column is the point or the row is a person with many fields: both Daily breakdowns, Event performance, Memberships, Signup invite codes, Page funnel, Referral share links, Referral codes + buyers, Journey sessions, QR signups. The table scrolls inside its own box; the page never scrolls sideways.
+- **`phoneTableSx(nameColumn = 1, background = "#1a1a1a")`** in `AnalyticsPanel.tsx` is that frozen-column rule, and `PHONE` is the media query every analytics phone rule sits in. `darkTableSx` spreads `phoneTableSx(1)`. Pass the 1-based index of the column that says what the row is (2 where a date or rank comes first) and the panel's background where it isn't `#1a1a1a` (the buyers dialog is `#1E1E1E`). To add rules for one table, spread `phoneTableSx(n)[PHONE]` inside your own `[PHONE]` block - a second `[PHONE]` key replaces the first rather than merging.
+- **`StatTable`** shows each row's explanation under the metric name on phones: the "What it means" column is hidden there and the text was simply gone.
+- **`TablePagination`** shows "Page X of Y" between 40px arrows on phones in place of up to seven numbered buttons. Same handlers.
+- **Event performance**: the frozen Event cell drops its 40px thumbnail and lets the name run to two lines (`.ev-thumb` / `.ev-name`, phone rules only).
+- **Trend charts** (Visitors, Bookings) scroll sideways inside their panel - one bar per day was wider than the panel past about a week and the rest was cut off. The charts themselves are unchanged, including their known faults (inverted axis, flat bars).
+- **QR Signups**: the signed-up date and time stack on two lines so the frozen address column starts sooner; a long location chip wraps instead of running off the panel.
+- **Session timeline** (Journey) and the **referral buyers** dialog are full screen on phones.
+- **`ReferralPerformance` is shared with Manage Event's Referral Codes tab**, so its phone changes show there too.
+- **Checked with mocked endpoints**, not real data: the pages need an admin session and live analytics to render anything.
+

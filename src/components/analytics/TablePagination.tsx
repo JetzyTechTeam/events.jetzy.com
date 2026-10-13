@@ -46,7 +46,22 @@ export default function TablePagination({ page, pageSize, total, onPageChange, o
 	const go = (p: number) => onPageChange(Math.min(totalPages, Math.max(1, p)))
 
 	return (
-		<Flex justify="space-between" align="center" mt={4} gap={3} wrap="wrap">
+		// Phones: up to seven numbered buttons plus four arrows did not fit a 358px row. Below
+		// 768px the numbers give way to "Page X of Y" between 40px arrows; the handlers are the
+		// same ones. Media-query only.
+		<Flex
+			justify="space-between"
+			align="center"
+			mt={4}
+			gap={3}
+			wrap="wrap"
+			sx={{ "@media screen and (max-width: 47.99em)": {
+				"& > div:first-of-type": { flexWrap: "wrap", rowGap: "6px" },
+				"& .pg-num, & .pg-gap": { display: "none" },
+				"& .pg-nav": { width: "100%", justifyContent: "space-between" },
+				"& .pg-nav > button": { height: "40px", minWidth: "40px" },
+			} }}
+		>
 			<HStack spacing={3} color="#9C9C9C" fontSize="sm">
 				<Text>
 					Showing <Text as="span" color="white" fontWeight="semibold">{from.toLocaleString()}–{to.toLocaleString()}</Text> of{" "}
@@ -76,15 +91,16 @@ export default function TablePagination({ page, pageSize, total, onPageChange, o
 			</HStack>
 
 			{totalPages > 1 && (
-				<HStack spacing={1}>
+				<HStack spacing={1} className="pg-nav">
 					<IconButton {...navBtn} aria-label="First page" icon={<FiChevronsLeft />} onClick={() => go(1)} isDisabled={page <= 1 || isLoading} />
 					<IconButton {...navBtn} aria-label="Previous page" icon={<FiChevronLeft />} onClick={() => go(page - 1)} isDisabled={page <= 1 || isLoading} />
 					{pageWindow(page, totalPages).map((p, i) =>
 						p === "gap" ? (
-							<Text key={`gap-${i}`} color="#6b6b6b" px={1}>…</Text>
+							<Text key={`gap-${i}`} className="pg-gap" color="#6b6b6b" px={1}>…</Text>
 						) : (
 							<Button
 								key={p}
+								className="pg-num"
 								{...navBtn}
 								minW="32px"
 								px={2}
@@ -97,6 +113,9 @@ export default function TablePagination({ page, pageSize, total, onPageChange, o
 							</Button>
 						)
 					)}
+					<Text display={{ base: "block", md: "none" }} flex="1" textAlign="center" color="#9C9C9C" fontSize="sm">
+						Page <Text as="span" color="white" fontWeight="semibold">{page}</Text> of {totalPages.toLocaleString()}
+					</Text>
 					<IconButton {...navBtn} aria-label="Next page" icon={<FiChevronRight />} onClick={() => go(page + 1)} isDisabled={page >= totalPages || isLoading} />
 					<IconButton {...navBtn} aria-label="Last page" icon={<FiChevronsRight />} onClick={() => go(totalPages)} isDisabled={page >= totalPages || isLoading} />
 				</HStack>

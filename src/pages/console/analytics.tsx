@@ -14,7 +14,8 @@ import VisitorChart from "@/components/analytics/VisitorChart"
 import BookingTrendsChart from "@/components/analytics/BookingTrendsChart"
 import EventPerformanceTab from "@/components/analytics/EventPerformanceTab"
 import TablePagination from "@/components/analytics/TablePagination"
-import { AnalyticsPanel, InfoTip, StatTable, darkTableSx, downloadCsv } from "@/components/analytics/AnalyticsPanel"
+import { AnalyticsPanel, InfoTip, PHONE, StatTable, darkTableSx, downloadCsv } from "@/components/analytics/AnalyticsPanel"
+import PhoneStatRows from "@/components/analytics/PhoneStatRows"
 import { usePagedAnalytics } from "@/hooks/usePagedAnalytics"
 
 interface OverviewData {
@@ -358,6 +359,17 @@ const PageCell = ({ path }: { path: string }) => {
 	)
 }
 
+/** PageCell for the phone lists: the same label, but wrapping instead of a 420px one-liner. */
+const PhonePageTitle = ({ path }: { path: string }) => {
+	const label = pagePathToLabel(path)
+	return (
+		<>
+			<Text fontWeight="medium">{label}</Text>
+			{label !== path && <Text fontSize="xs" color="#9C9C9C" fontFamily="mono">{path}</Text>}
+		</>
+	)
+}
+
 const tabProps = {
 	color: "#9C9C9C",
 	fontWeight: "semibold",
@@ -522,9 +534,10 @@ export default function AnalyticsPage() {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Analytics} maxW="100%">
-				<Box maxW="1400px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
+				{/* `px` was 16px on phones INSIDE ConsoleLayout's own 16px gutter - 32px each side. */}
+				<Box maxW="1400px" mx="auto" px={0} py={{ base: 2, md: 6 }}>
 					{/* Date Range Selector */}
-					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
+					<Flex bg="#1a1a1a" color="white" p={{ base: 3, md: 4 }} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={{ base: 4, md: 6 }} justify="space-between" align="center" gap={4} wrap="wrap" sx={{ "@media screen and (max-width: 47.99em)": { "& > div:first-of-type": { width: "100%", minWidth: 0 } } }}>
 						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
 						<HStack spacing={2} flexWrap="wrap">
 							<NextLink href="/console/analytics/growth" passHref legacyBehavior>
@@ -563,11 +576,11 @@ export default function AnalyticsPage() {
 								<TabPanels>
 									{/* Overview Tab */}
 									<TabPanel px={0}>
-										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-											<MetricsCard dark title="Net revenue" value={formatCurrency(o.revenue.netRevenue)} icon={FiDollarSign} subtitle={`${formatCurrency(o.revenue.gross ?? o.revenue.netRevenue + o.revenue.totalDiscounts)} gross − ${formatCurrency(o.revenue.totalDiscounts)} discounts`} />
-											<MetricsCard dark title="Confirmed bookings" value={formatNumber(o.bookings.confirmed)} icon={FiShoppingCart} subtitle={`of ${formatNumber(o.bookings.total)} booking attempts`} />
-											<MetricsCard dark title="Tickets sold" value={formatNumber(o.tickets.totalSold)} icon={FiUsers} subtitle={`${formatNumber(o.checkIns.totalCheckedIn)} checked in (${o.checkIns.checkInRate.toFixed(1)}%)`} />
-											<MetricsCard dark title="Unique visitors" value={formatNumber(o.visitors.uniqueVisitors)} icon={FiEye} subtitle={`${formatNumber(o.visitors.totalSessions)} sessions · ${formatNumber(o.pageViews.total)} page views`} />
+										<SimpleGrid columns={{ base: 2, sm: 2, lg: 4 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+											<MetricsCard dark compactOnMobile title="Net revenue" value={formatCurrency(o.revenue.netRevenue)} icon={FiDollarSign} subtitle={`${formatCurrency(o.revenue.gross ?? o.revenue.netRevenue + o.revenue.totalDiscounts)} gross − ${formatCurrency(o.revenue.totalDiscounts)} discounts`} />
+											<MetricsCard dark compactOnMobile title="Confirmed bookings" value={formatNumber(o.bookings.confirmed)} icon={FiShoppingCart} subtitle={`of ${formatNumber(o.bookings.total)} booking attempts`} />
+											<MetricsCard dark compactOnMobile title="Tickets sold" value={formatNumber(o.tickets.totalSold)} icon={FiUsers} subtitle={`${formatNumber(o.checkIns.totalCheckedIn)} checked in (${o.checkIns.checkInRate.toFixed(1)}%)`} />
+											<MetricsCard dark compactOnMobile title="Unique visitors" value={formatNumber(o.visitors.uniqueVisitors)} icon={FiEye} subtitle={`${formatNumber(o.visitors.totalSessions)} sessions · ${formatNumber(o.pageViews.total)} page views`} />
 										</SimpleGrid>
 
 										<SimpleGrid columns={{ base: 1, xl: 2 }} spacing={6}>
@@ -660,16 +673,17 @@ export default function AnalyticsPage() {
 
 									{/* Visitors & Sessions Tab */}
 									<TabPanel px={0}>
-										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-											<MetricsCard dark title="Unique visitors" value={formatNumber(o.visitors.uniqueVisitors)} icon={FiUsers} subtitle={`${formatNumber(o.visitors.uniqueLoggedInUsers)} logged in`} />
-											<MetricsCard dark title="Sessions" value={formatNumber(o.visitors.totalSessions)} icon={FiEye} subtitle={`${formatNumber(o.visitors.loggedInSessions)} logged in · ${formatNumber(o.visitors.anonymousSessions)} anonymous`} />
-											<MetricsCard dark title="Page views" value={formatNumber(o.pageViews.total)} icon={FiEye} subtitle={`${o.visitors.totalSessions > 0 ? (o.pageViews.total / o.visitors.totalSessions).toFixed(1) : 0} per session`} />
-											<MetricsCard dark title="Avg session" value={formatDuration(o.sessions.averageDuration)} icon={FiUsers} subtitle={o.bounceRate !== undefined ? `${o.bounceRate.toFixed(1)}% bounce rate` : undefined} />
+										<SimpleGrid columns={{ base: 2, sm: 2, lg: 4 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+											<MetricsCard dark compactOnMobile title="Unique visitors" value={formatNumber(o.visitors.uniqueVisitors)} icon={FiUsers} subtitle={`${formatNumber(o.visitors.uniqueLoggedInUsers)} logged in`} />
+											<MetricsCard dark compactOnMobile title="Sessions" value={formatNumber(o.visitors.totalSessions)} icon={FiEye} subtitle={`${formatNumber(o.visitors.loggedInSessions)} logged in · ${formatNumber(o.visitors.anonymousSessions)} anonymous`} />
+											<MetricsCard dark compactOnMobile title="Page views" value={formatNumber(o.pageViews.total)} icon={FiEye} subtitle={`${o.visitors.totalSessions > 0 ? (o.pageViews.total / o.visitors.totalSessions).toFixed(1) : 0} per session`} />
+											<MetricsCard dark compactOnMobile title="Avg session" value={formatDuration(o.sessions.averageDuration)} icon={FiUsers} subtitle={o.bounceRate !== undefined ? `${o.bounceRate.toFixed(1)}% bounce rate` : undefined} />
 										</SimpleGrid>
 
 										{visitorData && visitorData.byDate.length > 0 && (
 											<AnalyticsPanel title="Visitor trends">
-												<VisitorChart data={visitorData.byDate} />
+												{/* Phones: one bar per day is wider than the panel past a week or so, and the rest was cut off. It scrolls sideways inside the panel instead. */}
+												<Box sx={{ [PHONE]: { overflowX: "auto", overflowY: "hidden" } }}><VisitorChart data={visitorData.byDate} /></Box>
 											</AnalyticsPanel>
 										)}
 
@@ -714,16 +728,16 @@ export default function AnalyticsPage() {
 
 									{/* Bookings & Revenue Tab */}
 									<TabPanel px={0}>
-										<SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={4} mb={6}>
-											<MetricsCard dark title="Net revenue" value={formatCurrency(o.revenue.netRevenue)} icon={FiDollarSign} subtitle={`after ${formatCurrency(o.revenue.totalDiscounts)} discounts`} />
-											<MetricsCard dark title="Confirmed bookings" value={formatNumber(o.bookings.confirmed)} icon={FiShoppingCart} subtitle={`${share(o.bookings.confirmed, o.bookings.total)?.toFixed(1) ?? 0}% of ${formatNumber(o.bookings.total)} attempts`} />
-											<MetricsCard dark title="Avg per booking" value={formatCurrency(o.revenue.averagePerBooking)} icon={FiDollarSign} subtitle={`${o.tickets.averagePerBooking.toFixed(1)} tickets per booking`} />
-											<MetricsCard dark title="Tickets sold" value={formatNumber(o.tickets.totalSold)} icon={FiUsers} subtitle={`${o.checkIns.checkInRate.toFixed(1)}% checked in`} />
+										<SimpleGrid columns={{ base: 2, sm: 2, lg: 4 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+											<MetricsCard dark compactOnMobile title="Net revenue" value={formatCurrency(o.revenue.netRevenue)} icon={FiDollarSign} subtitle={`after ${formatCurrency(o.revenue.totalDiscounts)} discounts`} />
+											<MetricsCard dark compactOnMobile title="Confirmed bookings" value={formatNumber(o.bookings.confirmed)} icon={FiShoppingCart} subtitle={`${share(o.bookings.confirmed, o.bookings.total)?.toFixed(1) ?? 0}% of ${formatNumber(o.bookings.total)} attempts`} />
+											<MetricsCard dark compactOnMobile title="Avg per booking" value={formatCurrency(o.revenue.averagePerBooking)} icon={FiDollarSign} subtitle={`${o.tickets.averagePerBooking.toFixed(1)} tickets per booking`} />
+											<MetricsCard dark compactOnMobile title="Tickets sold" value={formatNumber(o.tickets.totalSold)} icon={FiUsers} subtitle={`${o.checkIns.checkInRate.toFixed(1)}% checked in`} />
 										</SimpleGrid>
 
 										{bookingData && bookingData.byDate.length > 0 && (
 											<AnalyticsPanel title="Booking & revenue trends">
-												<BookingTrendsChart data={bookingData.byDate} />
+												<Box sx={{ [PHONE]: { overflowX: "auto", overflowY: "hidden" } }}><BookingTrendsChart data={bookingData.byDate} /></Box>
 											</AnalyticsPanel>
 										)}
 
@@ -790,7 +804,32 @@ export default function AnalyticsPage() {
 													{usersTable.isLoading && (
 														<Center position="absolute" inset={0} bg="rgba(26,26,26,0.6)" zIndex={2}><Spinner color="#F79432" /></Center>
 													)}
-													<TableContainer sx={darkTableSx}>
+													<>
+												<PhoneStatRows
+													rows={usersTable.data.users.map((user, idx) => ({
+														key: user.userId,
+														title: (
+															<>
+																<Text fontWeight="semibold">
+																	<Text as="span" color="#6b6b6b" fontWeight="normal">{(usersTable.page - 1) * usersTable.pageSize + idx + 1}. </Text>
+																	{`${user.firstName || ""} ${user.lastName || ""}`.trim() || "—"}
+																</Text>
+																<Text fontSize="xs" color="#9C9C9C">{user.email}</Text>
+															</>
+														),
+														badge: user.role !== "user" ? <Badge colorScheme="purple" variant="subtle" fontSize="10px">{user.role}</Badge> : undefined,
+														stats: [
+															{ label: "Sessions", value: formatNumber(user.stats.sessions) },
+															{ label: "Avg session", value: formatDuration(user.stats.avgSessionDuration) },
+															{ label: "Page views", value: formatNumber(user.stats.pageViews) },
+															{ label: "Actions", value: formatNumber(user.stats.actions) },
+															{ label: "Event interactions", value: formatNumber(user.stats.eventInteractions) },
+															{ label: "Activity score", value: formatNumber(user.stats.activityScore) },
+															{ label: "Last activity", value: user.lastActivity ? new Date(user.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—" },
+														],
+													}))}
+												/>
+												<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 														<Table variant="simple" size="sm">
 															<Thead>
 																<Tr>
@@ -830,6 +869,7 @@ export default function AnalyticsPage() {
 															</Tbody>
 														</Table>
 													</TableContainer>
+													</>
 													<TablePagination page={usersTable.page} pageSize={usersTable.pageSize} total={usersTable.data.pagination?.total || 0} onPageChange={usersTable.setPage} onPageSizeChange={usersTable.setPageSize} isLoading={usersTable.isLoading} noun="users" />
 												</Box>
 											) : usersTable.isLoading ? (
@@ -843,9 +883,9 @@ export default function AnalyticsPage() {
 									{/* Traffic Sources Tab */}
 									<TabPanel px={0}>
 										{referrersTable.data && (
-											<SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mb={6}>
-												<MetricsCard dark title="Direct traffic" value={formatNumber(referrersTable.data.directTraffic.pageViews)} icon={FiEye} subtitle={`${referrersTable.data.directTraffic.percentage.toFixed(1)}% of page views — typed URL, bookmark or app`} />
-												<MetricsCard dark title="Referred traffic" value={formatNumber(referrersTable.data.total - referrersTable.data.directTraffic.pageViews)} icon={FiUsers} subtitle={`${(100 - referrersTable.data.directTraffic.percentage).toFixed(1)}% of page views — arrived from another site`} />
+											<SimpleGrid columns={{ base: 2, md: 2 }} spacing={{ base: 2, md: 4 }} mb={6}>
+												<MetricsCard dark compactOnMobile title="Direct traffic" value={formatNumber(referrersTable.data.directTraffic.pageViews)} icon={FiEye} subtitle={`${referrersTable.data.directTraffic.percentage.toFixed(1)}% of page views — typed URL, bookmark or app`} />
+												<MetricsCard dark compactOnMobile title="Referred traffic" value={formatNumber(referrersTable.data.total - referrersTable.data.directTraffic.pageViews)} icon={FiUsers} subtitle={`${(100 - referrersTable.data.directTraffic.percentage).toFixed(1)}% of page views — arrived from another site`} />
 											</SimpleGrid>
 										)}
 
@@ -855,7 +895,30 @@ export default function AnalyticsPage() {
 													{referrersTable.isLoading && (
 														<Center position="absolute" inset={0} bg="rgba(26,26,26,0.6)" zIndex={2}><Spinner color="#F79432" /></Center>
 													)}
-													<TableContainer sx={darkTableSx}>
+													<>
+<PhoneStatRows
+	rows={referrersTable.data.referrers.map((ref, idx) => ({
+		key: idx,
+		title: (
+			<>
+				<Text fontWeight="medium">{ref.domain}</Text>
+				<Text fontSize="xs" color="#9C9C9C" noOfLines={1} title={ref.referrer}>{ref.referrer}</Text>
+			</>
+		),
+		badge: (
+			<Badge variant="subtle" colorScheme={ref.category === "search_engine" ? "blue" : ref.category === "social_media" ? "purple" : ref.category === "email" ? "orange" : "gray"}>
+				{ref.category.replace(/_/g, " ")}
+			</Badge>
+		),
+		stats: [
+			{ label: "Page views", value: formatNumber(ref.pageViews) },
+			{ label: "Sessions", value: formatNumber(ref.uniqueSessions) },
+			{ label: "Users", value: formatNumber(ref.uniqueUsers) },
+			{ label: "Share", value: `${ref.percentage.toFixed(1)}%` },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 														<Table variant="simple" size="sm">
 															<Thead>
 																<Tr>
@@ -893,6 +956,7 @@ export default function AnalyticsPage() {
 															</Tbody>
 														</Table>
 													</TableContainer>
+</>
 													<TablePagination page={referrersTable.page} pageSize={referrersTable.pageSize} total={referrersTable.data.pagination?.total || referrersTable.data.referrers.length} onPageChange={referrersTable.setPage} onPageSizeChange={referrersTable.setPageSize} isLoading={referrersTable.isLoading} noun="referrers" />
 												</Box>
 											) : referrersTable.isLoading ? (
@@ -904,7 +968,26 @@ export default function AnalyticsPage() {
 
 										<AnalyticsPanel title="UTM campaigns" subtitle="Visits from links tagged with utm_campaign / utm_source / utm_medium.">
 											{utmData && utmData.grouped.length > 0 ? (
-												<TableContainer sx={darkTableSx}>
+												<>
+<PhoneStatRows
+	rows={utmData.grouped.map((utm, idx) => ({
+		key: idx,
+		title: (
+			<>
+				<Text fontWeight="medium">{utm.campaign || "—"}</Text>
+				<Text fontSize="xs" color="#9C9C9C">Source: {utm.source || "—"}</Text>
+			</>
+		),
+		badge: utm.medium ? <Badge colorScheme="blue" variant="subtle">{utm.medium}</Badge> : undefined,
+		stats: [
+			{ label: "Page views", value: formatNumber(utm.count) },
+			{ label: "Sessions", value: formatNumber(utm.uniqueSessionsCount) },
+			{ label: "Users", value: formatNumber(utm.uniqueUsersCount) },
+			{ label: "Share", value: `${utm.percentage.toFixed(1)}%` },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 													<Table variant="simple" size="sm">
 														<Thead>
 															<Tr>
@@ -932,6 +1015,7 @@ export default function AnalyticsPage() {
 														</Tbody>
 													</Table>
 												</TableContainer>
+</>
 											) : (
 												<Text color="#9C9C9C" fontSize="sm">No UTM-tagged visits in this period.</Text>
 											)}
@@ -944,7 +1028,20 @@ export default function AnalyticsPage() {
 											<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={6}>
 												<AnalyticsPanel title="Devices" mb={0}>
 													{deviceData.devices.length > 0 ? (
-														<TableContainer sx={darkTableSx}>
+														<>
+<PhoneStatRows
+	rows={deviceData.devices.map((device, idx) => ({
+		key: idx,
+		title: <Text fontWeight="medium" textTransform="capitalize">{device.deviceType}</Text>,
+		stats: [
+			{ label: "Page views", value: formatNumber(device.count) },
+			{ label: "Sessions", value: formatNumber(device.uniqueSessionsCount) },
+			{ label: "Users", value: formatNumber(device.uniqueUsersCount) },
+			{ label: "Share", value: `${device.percentage.toFixed(1)}%` },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 															<Table variant="simple" size="sm">
 																<Thead>
 																	<Tr>
@@ -968,13 +1065,27 @@ export default function AnalyticsPage() {
 																</Tbody>
 															</Table>
 														</TableContainer>
+</>
 													) : (
 														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
 													)}
 												</AnalyticsPanel>
 												<AnalyticsPanel title="Browsers" mb={0}>
 													{deviceData.browsers.length > 0 ? (
-														<TableContainer sx={darkTableSx}>
+														<>
+<PhoneStatRows
+	rows={deviceData.browsers.map((browser, idx) => ({
+		key: idx,
+		title: <Text fontWeight="medium">{browser.browserType}</Text>,
+		stats: [
+			{ label: "Page views", value: formatNumber(browser.count) },
+			{ label: "Sessions", value: formatNumber(browser.uniqueSessionsCount) },
+			{ label: "Users", value: formatNumber(browser.uniqueUsersCount) },
+			{ label: "Share", value: `${browser.percentage.toFixed(1)}%` },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 															<Table variant="simple" size="sm">
 																<Thead>
 																	<Tr>
@@ -998,6 +1109,7 @@ export default function AnalyticsPage() {
 																</Tbody>
 															</Table>
 														</TableContainer>
+</>
 													) : (
 														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
 													)}
@@ -1011,7 +1123,20 @@ export default function AnalyticsPage() {
 													{pagesTable.isLoading && (
 														<Center position="absolute" inset={0} bg="rgba(26,26,26,0.6)" zIndex={2}><Spinner color="#F79432" /></Center>
 													)}
-													<TableContainer sx={darkTableSx}>
+													<PhoneStatRows
+	rows={pagesTable.data.mostViewedPages.map((page, idx) => ({
+		key: idx,
+		title: <PhonePageTitle path={page.page} />,
+		stats: [
+			{ label: "Page views", value: formatNumber(page.count) },
+			{ label: "Sessions", value: formatNumber(page.uniqueSessionsCount) },
+			{ label: "Users", value: formatNumber(page.uniqueUsersCount) },
+			{ label: "Avg time", value: page.avgTimeSpent ? formatDuration(page.avgTimeSpent) : "—" },
+			{ label: "Share", value: `${page.percentage.toFixed(1)}%` },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 														<Table variant="simple" size="sm">
 															<Thead>
 																<Tr>
@@ -1050,7 +1175,18 @@ export default function AnalyticsPage() {
 											<SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
 												<AnalyticsPanel title="Top entry pages" subtitle="Where sessions started (top 10)." mb={0}>
 													{entryExitData.entryPages.length > 0 ? (
-														<TableContainer sx={darkTableSx}>
+														<>
+<PhoneStatRows
+	rows={entryExitData.entryPages.map((page, idx) => ({
+		key: idx,
+		title: <PhonePageTitle path={page.page} />,
+		stats: [
+			{ label: "Sessions", value: formatNumber(page.count) },
+			{ label: "Share", value: `${page.percentage.toFixed(1)}%` },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 															<Table variant="simple" size="sm">
 																<Thead>
 																	<Tr>
@@ -1070,13 +1206,25 @@ export default function AnalyticsPage() {
 																</Tbody>
 															</Table>
 														</TableContainer>
+</>
 													) : (
 														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
 													)}
 												</AnalyticsPanel>
 												<AnalyticsPanel title="Top exit pages" subtitle="Last page before leaving (top 10)." mb={0}>
 													{entryExitData.exitPages.length > 0 ? (
-														<TableContainer sx={darkTableSx}>
+														<>
+<PhoneStatRows
+	rows={entryExitData.exitPages.map((page, idx) => ({
+		key: idx,
+		title: <PhonePageTitle path={page.page} />,
+		stats: [
+			{ label: "Sessions", value: formatNumber(page.count) },
+			{ label: "Share", value: `${page.percentage.toFixed(1)}%` },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 															<Table variant="simple" size="sm">
 																<Thead>
 																	<Tr>
@@ -1096,6 +1244,7 @@ export default function AnalyticsPage() {
 																</Tbody>
 															</Table>
 														</TableContainer>
+</>
 													) : (
 														<Text color="#9C9C9C" fontSize="sm">No data.</Text>
 													)}
@@ -1107,11 +1256,11 @@ export default function AnalyticsPage() {
 									{/* Named Events Tab */}
 									<TabPanel px={0}>
 										{namedEventsData?.summary && (
-											<SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
-												<MetricsCard dark title="Event interactions" value={formatNumber(namedEventsData.summary.eventInteractionsCount)} subtitle="distinct types" />
-												<MetricsCard dark title="CTA clicks" value={formatNumber(namedEventsData.summary.ctaClicksCount)} subtitle="labeled elements" />
-												<MetricsCard dark title="Form events" value={formatNumber(namedEventsData.summary.formEventsCount)} subtitle="form/action pairs" />
-												<MetricsCard dark title="Page views" value={formatNumber(namedEventsData.summary.pageViewsCount)} subtitle="distinct pages" />
+											<SimpleGrid columns={{ base: 2, md: 4 }} spacing={{ base: 2, md: 4 }} mb={6}>
+												<MetricsCard dark compactOnMobile title="Event interactions" value={formatNumber(namedEventsData.summary.eventInteractionsCount)} subtitle="distinct types" />
+												<MetricsCard dark compactOnMobile title="CTA clicks" value={formatNumber(namedEventsData.summary.ctaClicksCount)} subtitle="labeled elements" />
+												<MetricsCard dark compactOnMobile title="Form events" value={formatNumber(namedEventsData.summary.formEventsCount)} subtitle="form/action pairs" />
+												<MetricsCard dark compactOnMobile title="Page views" value={formatNumber(namedEventsData.summary.pageViewsCount)} subtitle="distinct pages" />
 											</SimpleGrid>
 										)}
 										<AnalyticsPanel
@@ -1143,7 +1292,22 @@ export default function AnalyticsPage() {
 										>
 											{filteredNamedRows.length > 0 ? (
 												<>
-													<TableContainer sx={darkTableSx}>
+													<PhoneStatRows
+	rows={namedPager.pageRows.map((row, idx) => ({
+		key: `${row.category}-${row.eventName}-${idx}`,
+		title: row.category === "Page Views" ? <PhonePageTitle path={row.eventName} /> : row.eventName,
+		badge: (
+			<Badge variant="subtle" colorScheme={row.category === "Event Interactions" ? "blue" : row.category === "CTA Clicks" ? "orange" : row.category === "Form Events" ? "green" : "purple"}>
+				{row.category}
+			</Badge>
+		),
+		stats: [
+			{ label: "Total events", value: formatNumber(row.totalEvents) },
+			{ label: "Unique users", value: formatNumber(row.uniqueUsers) },
+		],
+	}))}
+/>
+<TableContainer display={{ base: "none", md: "block" }} sx={darkTableSx}>
 														<Table variant="simple" size="sm">
 															<Thead>
 																<Tr>

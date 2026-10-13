@@ -2,6 +2,38 @@ import React from "react"
 import { Box, Flex, Table, TableContainer, Tbody, Td, Text, Th, Thead, Tr, Tooltip, Icon } from "@chakra-ui/react"
 import { FiInfo } from "react-icons/fi"
 
+/** Below Chakra's `md` (768px). Every phone rule on the analytics pages sits inside this query. */
+export const PHONE = "@media screen and (max-width: 47.99em)"
+
+/**
+ * How an analytics table behaves on a phone when it STAYS a table (time series, wide person
+ * lists): the column that says what the row is gets frozen and may wrap, and cells are
+ * tightened, so the numbers can be swiped under a name that never leaves the screen. The table
+ * scrolls inside its own box; the page does not.
+ *
+ * `nameColumn` is 1-based: pass 2 where the first column is a rank or a date and the second
+ * is the name. `background` must be the colour of the panel the table sits on - a frozen cell
+ * is opaque, or the numbers scrolling under it would show through. Nothing here applies from
+ * tablet width up.
+ */
+export const phoneTableSx = (nameColumn = 1, background = "#1a1a1a") => ({
+	[PHONE]: {
+		"& th, & td": { paddingLeft: "8px", paddingRight: "8px" },
+		[`& th:nth-of-type(${nameColumn}), & td:nth-of-type(${nameColumn})`]: {
+			position: "sticky",
+			left: 0,
+			zIndex: 2,
+			background,
+			whiteSpace: "normal",
+			overflowWrap: "anywhere",
+			minWidth: "132px",
+			maxWidth: "160px",
+		},
+		// the header cell of that column is frozen both ways where the header is sticky too
+		[`& th:nth-of-type(${nameColumn})`]: { zIndex: 3 },
+	},
+})
+
 /** Dark table styling shared by every analytics table: sticky header, row hover, muted borders. */
 export const darkTableSx = {
 	"& th": {
@@ -18,6 +50,9 @@ export const darkTableSx = {
 	"& td": { borderColor: "#2a2a2a", color: "white", fontSize: "sm" },
 	"& tbody tr:hover td": { bg: "#202020" },
 	"& tbody tr:last-of-type td": { borderBottom: "none" },
+	// Phones: freeze the first column (see phoneTableSx). A table whose name is in another
+	// column spreads `phoneTableSx(n)` after this, which replaces the whole block.
+	...phoneTableSx(1),
 }
 
 interface AnalyticsPanelProps {
@@ -70,7 +105,10 @@ const toneColor = { good: "#4ade80", warn: "#fbbf24", bad: "#f87171" }
  */
 export function StatTable({ rows, showShare = false }: { rows: StatRow[]; showShare?: boolean }) {
 	return (
-		<TableContainer sx={darkTableSx}>
+		// Phones: "What it means" is a hidden column there, so the explanation an admin needs was
+		// simply gone. It sits under the metric's name instead. No frozen column - with two or
+		// three columns the table fits once the label is allowed to wrap.
+		<TableContainer sx={{ ...darkTableSx, [PHONE]: { "& th, & td": { paddingLeft: "8px", paddingRight: "8px" }, "& td:first-of-type": { whiteSpace: "normal" } } }}>
 			<Table variant="simple" size="sm">
 				<Thead>
 					<Tr>
@@ -83,7 +121,10 @@ export function StatTable({ rows, showShare = false }: { rows: StatRow[]; showSh
 				<Tbody>
 					{rows.map((r) => (
 						<Tr key={r.label}>
-							<Td fontWeight="medium">{r.label}</Td>
+							<Td fontWeight="medium">
+								{r.label}
+								<Text display={{ base: "block", md: "none" }} fontSize="11px" fontWeight="normal" color="#9C9C9C" lineHeight="1.35" mt="2px">{r.help}</Text>
+							</Td>
 							<Td isNumeric fontWeight="semibold" color={r.tone ? `${toneColor[r.tone]} !important` : undefined}>{r.value}</Td>
 							{showShare && <Td isNumeric color="#9C9C9C !important">{r.share === null || r.share === undefined ? "—" : `${r.share.toFixed(1)}%`}</Td>}
 							<Td display={{ base: "none", md: "table-cell" }} color="#9C9C9C !important" whiteSpace="normal" fontSize="xs !important">{r.help}</Td>

@@ -29,6 +29,7 @@ import {
 import { FiEye, FiUsers, FiUserPlus, FiTrendingUp, FiGift } from "react-icons/fi"
 import MetricsCard from "@/components/analytics/MetricsCard"
 import DateRangeSelector from "@/components/analytics/DateRangeSelector"
+import { PHONE, phoneTableSx } from "@/components/analytics/AnalyticsPanel"
 
 interface FunnelStage {
 	stage: string
@@ -66,6 +67,15 @@ interface SignupRow {
 	signupSource: string
 	signupSessionId: string
 	isInferred: boolean
+}
+
+// Phones: the address is the frozen column, but "9/30/2026, 7:05:00 PM" in front of it took
+// 150 of 358px before the address began. The date and time stack on two lines there.
+const signupsTableSx = {
+	[PHONE]: {
+		...phoneTableSx(2)[PHONE],
+		"& td:first-of-type": { whiteSpace: "normal", minWidth: "92px" },
+	},
 }
 
 const dash = (v: any) => (v === null || v === undefined || v === "" ? "—" : v)
@@ -179,19 +189,19 @@ export default function QRSignupsPage() {
 				<meta name="robots" content="noindex, nofollow" />
 			</Head>
 			<ConsoleLayout page={Pages.Analytics} maxW="100%" backBtn="/console/analytics">
-				<Box maxW="1400px" mx="auto" px={{ base: 4, md: 0 }} py={6}>
-					<Flex bg="#1a1a1a" color="white" p={4} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={6} justify="space-between" align="center" gap={4} wrap="wrap">
+				<Box maxW="1400px" mx="auto" px={0} py={{ base: 2, md: 6 }}>
+					<Flex bg="#1a1a1a" color="white" p={{ base: 3, md: 4 }} borderRadius="lg" border="1px solid" borderColor="#2a2a2a" mb={{ base: 4, md: 6 }} justify="space-between" align="center" gap={4} wrap="wrap" sx={{ "@media screen and (max-width: 47.99em)": { "& > div:first-of-type": { width: "100%", minWidth: 0 } } }}>
 						<DateRangeSelector dark dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
 						<Text fontSize="sm" color="#9C9C9C">QR Signup Analytics · /jetzyqrsignup</Text>
 					</Flex>
 
 					{/* Metric cards */}
-					<SimpleGrid columns={{ base: 1, sm: 2, lg: 5 }} spacing={4} mb={6}>
-						<MetricsCard dark title="Page Views" value={(totals?.pageViews ?? 0).toLocaleString()} icon={FiEye} iconColor="#F79432" />
-						<MetricsCard dark title="Unique Visitors" value={(totals?.uniqueVisitors ?? 0).toLocaleString()} icon={FiUsers} iconColor="#F79432" />
-						<MetricsCard dark title="Accounts Created" value={(totals?.accountsCreated ?? 0).toLocaleString()} icon={FiUserPlus} iconColor="#F79432" subtitle={`${totals?.viaEmail ?? 0} email · ${totals?.viaSso ?? 0} social`} />
-						<MetricsCard dark title="Conversion" value={`${totals?.conversionPct ?? 0}%`} icon={FiTrendingUp} iconColor="#F79432" subtitle="visitors → accounts" />
-						<MetricsCard dark title="With Invite Code" value={(totals?.withRefCode ?? 0).toLocaleString()} icon={FiGift} iconColor="#F79432" />
+					<SimpleGrid columns={{ base: 2, sm: 2, lg: 5 }} spacing={{ base: 2, sm: 4 }} mb={6}>
+						<MetricsCard dark compactOnMobile title="Page Views" value={(totals?.pageViews ?? 0).toLocaleString()} icon={FiEye} iconColor="#F79432" />
+						<MetricsCard dark compactOnMobile title="Unique Visitors" value={(totals?.uniqueVisitors ?? 0).toLocaleString()} icon={FiUsers} iconColor="#F79432" />
+						<MetricsCard dark compactOnMobile title="Accounts Created" value={(totals?.accountsCreated ?? 0).toLocaleString()} icon={FiUserPlus} iconColor="#F79432" subtitle={`${totals?.viaEmail ?? 0} email · ${totals?.viaSso ?? 0} social`} />
+						<MetricsCard dark compactOnMobile title="Conversion" value={`${totals?.conversionPct ?? 0}%`} icon={FiTrendingUp} iconColor="#F79432" subtitle="visitors → accounts" />
+						<MetricsCard dark compactOnMobile title="With Invite Code" value={(totals?.withRefCode ?? 0).toLocaleString()} icon={FiGift} iconColor="#F79432" />
 					</SimpleGrid>
 
 					{/* Funnel */}
@@ -227,7 +237,7 @@ export default function QRSignupsPage() {
 										<Text fontSize="xs" color="#9C9C9C" fontWeight="600" textTransform="uppercase" mb={2}>Top locations</Text>
 										<HStack spacing={2} wrap="wrap">
 											{topLocations.map((l) => (
-												<Badge key={l.location} bg="#2a2a2a" color="white" px={2} py={1} borderRadius="md" fontWeight="normal">
+												<Badge key={l.location} bg="#2a2a2a" color="white" px={2} py={1} borderRadius="md" fontWeight="normal" sx={{ [PHONE]: { whiteSpace: "normal", maxWidth: "100%" } }}>
 													{l.location} · {l.count}
 												</Badge>
 											))}
@@ -275,7 +285,7 @@ export default function QRSignupsPage() {
 						<Center py={10}><Spinner color="#F79432" /></Center>
 					) : (
 						<>
-							<TableContainer bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a">
+							<TableContainer bg="#1a1a1a" borderRadius="lg" border="1px solid" borderColor="#2a2a2a" sx={signupsTableSx}>
 								<Table size="sm">
 									<Thead>
 										<Tr>
